@@ -15,6 +15,7 @@ import {
 import { isWorkedTripDay } from "@/lib/crm/trip-day-meetings";
 import { humanizeCode } from "@/lib/format/code-label";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
+import { type HiddenBorrowedCheckins, routeTripDay } from "@/lib/outstation/route-checkins";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
 
@@ -36,9 +37,14 @@ export type WorkloadCheckinDetail = {
   address: string | null;
   at: string | null;
   contact: string | null;
+  contactCrmId?: number | null;
   lat: number | null;
   lon: number | null;
+  /** Saved taps this one stop stands for — set by routeTripDay, absent on the raw payload. */
+  taps?: number;
   via: string | null;
+  /** A borrowed check-in at a place the person was not visited with (visit-workload.ts). */
+  withoutPerson?: boolean;
 };
 
 export type WorkloadEvidenceDay = {
@@ -46,10 +52,14 @@ export type WorkloadEvidenceDay = {
   campaign: number;
   checkins: WorkloadCheckinDetail[];
   date: string;
+  /** Set by routeTripDay: the rep's check-ins that day at places the person was not visited with. */
+  hiddenCheckins?: HiddenBorrowedCheckins[];
   /** The traveller's own recorded meetings that day — never a visit, but the day's work
    * (trip-day-meetings.ts). Optional so a payload from a server built before it still renders. */
   meetings?: number;
   other: number;
+  /** Set by routeTripDay: own visits that day when none of them has a GPS check-in. */
+  ownVisitsWithoutGps?: number;
   /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional only so a payload from
    * a server built before the split still renders (it reads 0 there). */
   pharmacies?: number;
@@ -119,11 +129,17 @@ export function formatClock(value: string | null) {
 function DayDetail({
   checkins,
   firstCheckinNumber,
+  hiddenCheckins = [],
+  ownVisitsWithoutGps = 0,
   visits,
 }: {
+  /** The day's ROUTE (routeTripDay): repeat taps folded, borrowed stops only where shared. */
   checkins: WorkloadCheckinDetail[];
   /** Trip-wide numbering when the whole trip is on one map; 1 for a day on its own. */
   firstCheckinNumber: number;
+  hiddenCheckins?: HiddenBorrowedCheckins[];
+  /** Said only where the caller passes it — an approver's screen, which reads every source of GPS. */
+  ownVisitsWithoutGps?: number;
   visits: WorkloadVisitDetail[];
 }) {
   return (
@@ -156,6 +172,13 @@ function DayDetail({
                     {visit.contact && visit.customer && visit.customer !== visit.contact ? (
                       <span className="text-slate-400"> · {visit.customer}</span>
                     ) : null}
+                    {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
+                        clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
+                    {visit.ampm ? (
+                      <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
+                        {visitListLabel(visit.ampm)}
+                      </span>
+                    ) : null}
                     {visit.role === "partner" ? (
                       visit.repName ? (
                         <>
@@ -178,7 +201,6 @@ function DayDetail({
                   </span>
                   <span className="whitespace-nowrap font-mono text-slate-500">
                     {formatClock(visit.submittedAt)}
-                    {visit.ampm ? ` · ${visit.ampm}` : ""}
                   </span>
                 </span>
               </li>
@@ -208,6 +230,9 @@ function DayDetail({
                       <span className="block text-slate-500">{checkin.address}</span>
                     ) : null}
                     {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
+                    {(checkin.taps ?? 1) > 1 ? (
+                      <span className="text-slate-400"> · ×{fmt(checkin.taps ?? 1)} taps</span>
+                    ) : null}
                   </span>
                 </span>
                 <span className="flex shrink-0 flex-col items-end leading-tight">
@@ -220,9 +245,29 @@ function DayDetail({
             ))}
           </ol>
         )}
+        {ownVisitsWithoutGps > 0 ? (
+          <p className="mt-1.5 text-xs text-slate-500">
+            {fmt(ownVisitsWithoutGps)} of the employee&apos;s own {ownVisitsWithoutGps === 1 ? "visit has" : "visits have"} no GPS check-in
+          </p>
+        ) : null}
+        {hiddenCheckins.map((hidden) => (
+          <p className="mt-1.5 text-xs text-slate-500" key={hidden.via}>
+            {fmt(hidden.count)} more {hidden.count === 1 ? "check-in" : "check-ins"} by {hidden.via} that day{" "}
+            {hidden.count === 1 ? "was on a visit" : "were on visits"} without this employee, so{" "}
+            {hidden.count === 1 ? "it is" : "they are"} not part of this trip&apos;s route
+          </p>
+        ))}
       </div>
     </div>
   );
+}
+
+/** A visit's AM/PM tag is the customer's LIST in the old CRM, so it is printed as one. */
+function visitListLabel(ampm: string) {
+  const value = ampm.trim();
+  if (/^am$/i.test(value)) return "AM list";
+  if (/^pm$/i.test(value)) return "PM list";
+  return `${value} list`;
 }
 
 // Memoize the mapped check-ins so FieldWorkforceRouteMap gets a stable `checkins` reference. Passing
@@ -332,7 +377,7 @@ function TripDayRow({
           {head}
         </summary>
         <div className="space-y-3 border-t border-slate-100 bg-slate-50 px-3 py-3">
-          <DayDetail checkins={checkins} firstCheckinNumber={1} visits={visits} />
+          <DayDetail checkins={checkins} firstCheckinNumber={1} hiddenCheckins={day.hiddenCheckins} visits={visits} />
           {opened && checkins.length > 0 ? (
             <div className="min-w-0">
               <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
@@ -425,7 +470,13 @@ function TripDayOpen({
       {map}
       {visits.length > 0 || checkins.length > 0 ? (
         <div className="border-t border-slate-200 px-3 py-3">
-          <DayDetail checkins={checkins} firstCheckinNumber={firstCheckinNumber} visits={visits} />
+          <DayDetail
+            checkins={checkins}
+            firstCheckinNumber={firstCheckinNumber}
+            hiddenCheckins={day.hiddenCheckins}
+            ownVisitsWithoutGps={day.ownVisitsWithoutGps}
+            visits={visits}
+          />
         </div>
       ) : null}
     </li>
@@ -492,6 +543,9 @@ export function TripWorkloadEvidencePanel({
     error?: string;
     sessionExpired?: boolean;
   }>({ status: "idle" });
+  // Each day as its ROUTE (route-checkins.ts): repeat taps folded, a borrowed route cut to the stops
+  // shared with this person. Memoised on the payload so every day map keeps a stable reference.
+  const routedDays = useMemo(() => (state.data?.dateBreakdown ?? []).map((day) => routeTripDay(day)), [state.data]);
   // The latest callback, read when the fetch lands — a new function identity on every render of
   // the caller must not re-run the fetch.
   const onLoadedRef = useRef(onLoaded);
@@ -691,10 +745,10 @@ export function TripWorkloadEvidencePanel({
               No days in range.
             </li>
           ) : (
-            data.dateBreakdown.map((day, index) => {
+            routedDays.map((day, index) => {
               // The check-ins are numbered across the whole trip, matching their pins on the map.
               const firstCheckinNumber =
-                1 + data.dateBreakdown.slice(0, index).reduce((sum, earlier) => sum + (earlier.checkins?.length ?? 0), 0);
+                1 + routedDays.slice(0, index).reduce((sum, earlier) => sum + earlier.checkins.length, 0);
               return (
                 <TripDayOpen
                   day={day}
@@ -714,7 +768,7 @@ export function TripWorkloadEvidencePanel({
           {data.dateBreakdown.length === 0 ? (
             <li className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</li>
           ) : (
-            data.dateBreakdown.map((day, index) => (
+            routedDays.map((day, index) => (
               <TripDayRow
                 day={day}
                 dayCount={data.dateBreakdown.length}

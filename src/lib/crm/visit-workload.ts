@@ -87,10 +87,17 @@ export type RepCheckinDetail = {
   address: string | null;
   at: string | null;
   contact: string | null;
+  contactCrmId: number | null;
   lat: number | null;
   lon: number | null;
   /** Rep name when the check-in is borrowed (the person was the double/triple-visitor, not the submitter). */
   via: string | null;
+  /**
+   * On a borrowed check-in: true when the rep checked in at a place this person was NOT visited with
+   * that day (owner, 2026-11-07, Sally Saied's 20 Sep trip: two shared visits drew the rep's whole
+   * day as hers). Display only — route-checkins.ts lists these apart; nothing counts or judges them.
+   */
+  withoutPerson?: boolean;
 };
 
 export type RepVisitWorkloadDay = {
@@ -165,6 +172,7 @@ type WorkloadVisitRow = {
    * vendor's label — which on a handed-over account names its LATER holder (see repName). */
   agent_name: string | null;
   ampm: string | null;
+  contact_crm_id: number | null;
   contact_name: string | null;
   crm_save_date: string | null;
   customer_name: string | null;
@@ -178,6 +186,18 @@ type WorkloadVisitRow = {
   visit_date: string;
   visit_type: number | null;
 };
+
+/**
+ * A visit's or check-in's place, as the keys a borrowed check-in is matched on: the contact's CRM id
+ * and its name, lower-cased. Either one matching makes the check-in a shared stop. Pure, for the test.
+ */
+export function sharedPlaceKeys(contactCrmId: number | null | undefined, contactName: string | null | undefined): string[] {
+  const keys: string[] = [];
+  if (contactCrmId != null && Number.isFinite(Number(contactCrmId))) keys.push(`id:${Number(contactCrmId)}`);
+  const name = contactName?.trim().toLowerCase();
+  if (name) keys.push(`n:${name}`);
+  return keys;
+}
 
 /**
  * The rep's name on a visit this person was the double-visit PARTNER on — the person who logged it,
@@ -288,7 +308,7 @@ export async function getRepTripVisitWorkload(input: {
   // so his outstation trip carried no workload evidence however many visits he logged.
   const data = await queryVisits<WorkloadVisitRow>({
     columns:
-      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, is_unplanned, source, speciality, visit_date, visit_type",
+      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, is_unplanned, source, speciality, visit_date, visit_type",
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
@@ -335,6 +355,9 @@ export async function getRepTripVisitWorkload(input: {
     if (empHrKey && emp.displayName && !nameByHrKey.has(empHrKey)) nameByHrKey.set(empHrKey, emp.displayName);
   }
   const repNameByDayOwner = new Map<string, string>();
+  // The places this person was visited AT with each rep, per day — the only stops of the rep's route
+  // that are theirs (sharedPlaceKeys).
+  const sharedPlacesByDayOwner = new Map<string, Set<string>>();
   const unattributedPartnerVisits: Array<{ crmId: number; day: string; label: string; ownerKey: string; visit: RepVisitDetail }> = [];
 
   for (const row of data) {
@@ -413,6 +436,11 @@ export async function getRepTripVisitWorkload(input: {
       submittedAt: row.crm_save_date ?? null,
     };
     entry.visits.push(visit);
+    if (role === "partner" && submitterKey != null) {
+      const placesKey = `${day}|${submitterKey}`;
+      if (!sharedPlacesByDayOwner.has(placesKey)) sharedPlacesByDayOwner.set(placesKey, new Set());
+      for (const place of sharedPlaceKeys(row.contact_crm_id, row.contact_name)) sharedPlacesByDayOwner.get(placesKey)!.add(place);
+    }
     if (repName && submitterKey != null) repNameByDayOwner.set(`${day}|${submitterKey}`, repName);
     if (role === "partner" && !agentHrKey && vendorLabel && submitterCrm != null && Number.isFinite(submitterCrm) && submitterKey != null) {
       unattributedPartnerVisits.push({ crmId: submitterCrm, day, label: vendorLabel, ownerKey: submitterKey, visit });
@@ -512,13 +540,20 @@ export async function getRepTripVisitWorkload(input: {
     const dayOwners = checkinOwnersByDate.get(day);
     if (owner == null || !dayOwners || !dayOwners.has(owner)) continue; // not part of this person's route that day
     const ownerLabel = owner.startsWith("hr:") ? (row.agent_hr_id ?? owner.slice(3)) : owner;
+    // A check-in that names no place cannot be matched either way, so it stays on the route.
+    const places = sharedPlaceKeys(row.contact_crm_id, row.contact_name);
+    const sharedPlaces = sharedPlacesByDayOwner.get(`${day}|${owner}`);
     entry.checkins.push({
       address: row.address ?? null,
       at: row.check_date ?? null,
       contact: row.contact_name ?? null,
+      contactCrmId: row.contact_crm_id ?? null,
       lat: row.lat ?? null,
       lon: row.lon ?? null,
       via: owner === selfKey ? null : repNameByDayOwner.get(`${day}|${owner}`) ?? nameByOwnerKey.get(owner) ?? `rep ${ownerLabel}`,
+      ...(owner !== selfKey && places.length > 0
+        ? { withoutPerson: !places.some((place) => sharedPlaces?.has(place) === true) }
+        : {}),
     });
   }
 

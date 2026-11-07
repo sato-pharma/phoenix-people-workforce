@@ -197,6 +197,7 @@ import { runOutstationTerritoryFlagIsInvertedTests } from "./outstation-territor
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
 import { runOutstationPartnerRepNameTests } from "./outstation-partner-rep-name.test.ts";
+import { runOutstationRouteCheckinsTests } from "./outstation-route-checkins.test.ts";
 import { runExpenseReviewRowHeightTests } from "./expense-review-row-height.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runOutstationExpenseTemplatePharmaciesTests } from "./outstation-expense-template-pharmacies.test.ts";
@@ -9469,6 +9470,10 @@ await runTest(
 await runTest(
   "a manager's joint visits in Expense Approvals name the rep he was with — a resigned rep by the row's own hr id, a handed-over account's earlier holder as 'Previous holder ( territory )', never the later holder; the borrowed check-in wears the same name",
   runOutstationPartnerRepNameTests,
+);
+await runTest(
+  "an outstation trip's route is its places, not the phone's taps (repeat taps within 120 seconds fold into one stop), a borrowed route is only the stops shared with the person, the person's own visits with no GPS are said, the AM/PM tag reads as the customer's list, and the map legend reads down its columns in time order",
+  runOutstationRouteCheckinsTests,
 );
 await runTest(
   "the expenses review row height comes from the HR DECISION column, not the person column (all five body cells py-2, the headers keep py-3, the fieldset gap is 1.5, and every approval control keeps its full size and unconditional reason field)",
