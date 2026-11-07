@@ -156,6 +156,7 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(stage, /\{ hint: "[^"]+", icon: List, key: "data-first", label: "Data first" \}/);
   assert.match(stage, /aria-pressed=\{active\}/, "the chosen view is announced");
   assert.match(stage, /<DeckFieldWork\s+attachments=\{attachments\}\s+dayOrder=\{dayOrder\}/);
-  assert.match(deck, /const \[dayOrder, setDayOrder\] = useState<DayOrder>\("map-first"\);/, "HEADLINE: chosen once, kept from trip to trip while the reviewer is open");
+  assert.match(deck, /const \[dayOrder, setDayOrder\] = useState<DayOrder>\("data-first"\);/, "HEADLINE: the reviewer opens on Data first, and the choice is kept from trip to trip (owner, 2026-11-07: \"make Data first the default view\")");
+  assert.ok(stage.indexOf('key: "data-first"') < stage.indexOf('key: "map-first"'), "the default sits first in the switch");
   assert.doesNotMatch(stage, /localStorage/, "screen state only — nothing new is stored in the browser");
 }
