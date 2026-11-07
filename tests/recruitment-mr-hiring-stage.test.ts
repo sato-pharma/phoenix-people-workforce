@@ -27,6 +27,7 @@ function facts(overrides: Partial<MrCandidateFacts> = {}): MrCandidateFacts {
     candidateId: "11111111-1111-4111-8111-111111111111",
     offer: null,
     onOfficialLine: true,
+    pediaAreaUnderRsm: false,
     receivedAt: "2026-11-08T08:00:00.000Z",
     recommendations: [],
     results: [],
@@ -196,6 +197,8 @@ export function runRecruitmentMrHiringStageTests() {
     const through = throughDsm();
     return {
       ...through,
+      // Nasr City is inside the regional manager's region; the RSM rule's second half is pinned below.
+      pediaAreaUnderRsm: true,
       results: through.results!.map((row) => (row.step === "hr_first" ? { ...row, confirmedArea: "Nasr City", confirmedLine: line } : row)),
     };
   };
@@ -205,6 +208,18 @@ export function runRecruitmentMrHiringStageTests() {
   assert.notEqual(mrBookingRefusal(cns, "rsm"), null, "nor an RSM interview to book");
   assert.equal(mrHiringStage(facts(onLine("anti_infective")), NOW).checklist.find((item) => item.step === "rsm")?.status, "skipped", "nor on Anti Infective");
   const pedia = mrHiringStage(facts(onLine("pedia")), NOW);
+  // Owner, 7 Nov 2026: "the step of the regional manager in Pedia is only if this candidate is in …
+  // one of the regions of this regional manager". A Pedia area directly under the NSM has no RSM step.
+  const pediaOutsideRsm = mrHiringStage(facts({ ...onLine("pedia"), pediaAreaUnderRsm: false }), NOW);
+  assert.ok(pediaOutsideRsm.open && pediaOutsideRsm.step === "hr_manager" && pediaOutsideRsm.action === "book_hr_manager", "Pedia outside the RSM's regions → straight on to the 3rd interview");
+  assert.equal(pediaOutsideRsm.checklist.find((item) => item.step === "rsm")?.status, "skipped", "no RSM step outside his regions");
+  assert.notEqual(mrBookingRefusal(pediaOutsideRsm, "rsm"), null, "nor an RSM interview to book there");
+  assert.equal(mrStageHeadline(pediaOutsideRsm), "Step 4 of 8 · 3rd interview · HR Manager", "and the journey counts eight steps");
+  assert.equal(
+    mrHiringStage(facts({ ...onLine("cns"), pediaAreaUnderRsm: true }), NOW).checklist.find((item) => item.step === "rsm")?.status,
+    "skipped",
+    "an RSM region never gives the step off the Pedia line",
+  );
   assert.ok(pedia.open && pedia.step === "rsm" && pedia.state === "to_book" && pedia.action === "book_rsm", "HR confirmed Pedia → after the DSM, the RSM interview is booked");
   assert.equal(mrStageHeadline(pedia), "Step 4 of 9 · RSM interview · Pedia line", "it is step 4 of 9, between the DSM and the HR Manager");
   assert.equal(mrBookingRefusal(pedia, "rsm"), null, "HR books the RSM interview");

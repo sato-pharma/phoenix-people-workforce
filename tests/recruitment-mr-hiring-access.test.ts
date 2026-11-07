@@ -52,6 +52,7 @@ function facts(overrides: Partial<MrCandidateFacts> = {}): MrCandidateFacts {
     candidateId: "22222222-2222-4222-8222-222222222222",
     offer: null,
     onOfficialLine: true,
+    pediaAreaUnderRsm: false,
     receivedAt: "2026-11-08T08:00:00.000Z",
     recommendations: [],
     results: [],

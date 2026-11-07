@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 //      NSM where the area has no real DSM; a PASS only.
 //   2. "I set up the time for the interview as a phone call. Make me able to change this time."
 
-import { pickMrAreaManagers, type MrOrgSeat } from "../src/lib/recruitment/mr-hiring/area-manager.ts";
+import { mrSeatUnderRsm, pickMrAreaManagers, type MrOrgSeat } from "../src/lib/recruitment/mr-hiring/area-manager.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import {
   MR_AREA_MANAGER_CHANNELS,
@@ -32,6 +32,7 @@ function facts(bookings: MrBookingFact[]): MrCandidateFacts {
     candidateId: "11111111-1111-4111-8111-111111111111",
     offer: null,
     onOfficialLine: true,
+    pediaAreaUnderRsm: false,
     receivedAt: "2026-11-08T08:00:00.000Z",
     recommendations: [],
     results: [],
@@ -76,6 +77,16 @@ export function runRecruitmentMrHiringAreaNoticeTests() {
   assert.deepEqual(pickMrAreaManagers("DM-VACANT", tree), { hrIds: ["N-1"], seat: "nsm" }, "a vacant district seat climbs to the NSM");
   assert.equal(pickMrAreaManagers("DM-ORPHAN", tree), null, "a seat whose parent is unknown finds nobody, never a guess");
   assert.equal(pickMrAreaManagers("NOT-A-SEAT", tree), null, "an unknown seat finds nobody");
+
+  // The RSM interview's region test (owner, 7 Nov 2026): a district seat under an occupied RSM seat.
+  assert.equal(mrSeatUnderRsm("DM-REAL", tree), true, "a district under the RSM is in his region");
+  assert.equal(mrSeatUnderRsm("DM-OTHERS", tree), true, "so is the Others bucket hung under him");
+  assert.equal(mrSeatUnderRsm("DM-HANDOVER", tree), false, "a district directly under the NSM is not");
+  assert.equal(mrSeatUnderRsm("DM-ORPHAN", tree), false, "a seat whose parent is unknown is not, never a guess");
+  assert.equal(mrSeatUnderRsm("NOT-A-SEAT", tree), false, "nor an unknown seat");
+  const vacantRsm = new Map(tree);
+  vacantRsm.set("RSM-1", seat("RSM-1", "RSM", "NSM-CNS", []));
+  assert.equal(mrSeatUnderRsm("DM-REAL", vacantRsm), false, "a vacant RSM seat is no regional manager");
 
   // ── Every way there is: the bell, push, Telegram AND email, on its own policy row ───────────────
   for (const channel of ["in_app", "push", "telegram", "email"]) {

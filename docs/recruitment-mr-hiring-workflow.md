@@ -19,7 +19,7 @@ One vocabulary everywhere — the page, the drawer, the portal panel, the worksp
 | 1 | New CV · HR screening | 1–3 | HR: Pass / Keep as backup / Do not pass |
 | 2 | 1st interview · HR | 3, 5 | Book → interview → HR's result |
 | 3 | 2nd interview · DSM | 4, 5, 6 | Book (sends the CV to the DSM and notifies him) → the DSM's feedback, or HR decides without it |
-| 4 | RSM interview · Pedia line | RSM section | Only when HR confirmed the Pedia line at the 1st interview (see below) → book → the RSM's evaluation |
+| 4 | RSM interview · Pedia line | RSM section | Only when HR confirmed the Pedia line at the 1st interview, in an area of the RSM's regions (see below) → book → the RSM's evaluation |
 | 5 | 3rd interview · HR Manager | 7 | Book → the HR Manager's result |
 | 6 | Final interview · NSM (or Joint final · HR Manager + NSM) | 7 | Book → result |
 | 7 | NSM recommendation | 8 | The NSM: Make an offer / Keep as backup, with the salary and the joining date |
@@ -117,6 +117,12 @@ outcome sync and Mark as hired therefore move it without any second write that c
   wait for it. An RSM interview booked before the line was asked keeps its step, so nothing that happened
   disappears. Booking the RSM interview notifies the RSM; it does **not** send the CV to the RSM, which would
   move it away from the DSM it was sent to.
+- **Only inside the RSM's regions** (owner, 7 Nov 2026: "the step of the regional manager in Pedia is only if
+  this candidate is in … one of the regions of this regional manager"). The organogram answers: the area HR
+  confirmed → its Pedia district seat (`au_v_line_area_map`) → its parents (`au_v_org_tree_sales`). The step
+  appears only when that climb reaches an occupied RSM seat before the NSM (`mrSeatUnderRsm`,
+  `loadPediaAreasUnderRsm`). Measured 7 Nov 2026: 17 of the 49 Pedia areas sit under the RSM, and the other 32
+  sit directly under the NSM, so a Pedia candidate there goes from the DSM straight on to the 3rd interview.
 - **Who records the RSM's evaluation:** the RSM on that interview, or the HR Manager (the same rule as the
   3rd interview and the final). Talent Acquisition, another RSM, the DSM and the CEO cannot.
 - **No round is chosen on the interview calendar.** The calendar takes a location, but rounds are booked only
