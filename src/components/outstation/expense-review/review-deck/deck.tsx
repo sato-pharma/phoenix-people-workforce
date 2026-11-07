@@ -64,8 +64,9 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
   // Trips whose idle-day pre-cut was set aside ("Keep full claim", or a figure typed in) while the
   // reviewer is open. Screen state only: nothing is written for a trip until Approve and Save.
   const [keptFull, setKeptFull] = useState<Record<string, true>>({});
-  // Map first or data first: chosen once, kept from trip to trip while the reviewer is open.
-  const [dayOrder, setDayOrder] = useState<DayOrder>("map-first");
+  // Data first or map first: chosen once, kept from trip to trip while the reviewer is open. Data
+  // first is where it opens (owner, 2026-11-07: "make Data first the default view").
+  const [dayOrder, setDayOrder] = useState<DayOrder>("data-first");
   const keepFull = useCallback((tripId: string) => setKeptFull((current) => (current[tripId] ? current : { ...current, [tripId]: true })), []);
 
   const close = useCallback(() => {
