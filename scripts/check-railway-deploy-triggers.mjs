@@ -27,7 +27,9 @@
 // on the old GitHub account for two hours while every source already read the new one, and the old
 // check passed them: it only compared a trigger's repository with its instance's, and both still
 // named a repository that existed (GitHub redirects a moved one). A source or a trigger on any owner
-// but GITHUB_OWNER is a finding, because it stops deploying the day the old account's app is removed.
+// but the one its repository belongs on is a finding, because it stops deploying the day the old
+// account's app is removed. Since 2026-11-06 that is GITHUB_OWNER for this repository and
+// PERSONAL_OWNER for the rest (the website stayed there): expectedOwnerOf in required-check-names.mjs.
 //
 // It reads EVERY project in RAILWAY_PROJECT_ID plus RAILWAY_PROJECT_IDS (comma- or space-separated).
 // Before 2026-10-27 it read Phoenix only, so the website's three services were never checked.
@@ -41,7 +43,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GITHUB_OWNER } from "./required-check-names.mjs";
+import { expectedOwnerOf, GITHUB_OWNER, PERSONAL_OWNER } from "./required-check-names.mjs";
 
 const API = "https://backboard.railway.com/graphql/v2";
 
@@ -59,22 +61,24 @@ export function projectIdsFrom(env) {
  * The gaps between what deploys from git and what is wired to deploy. `live` is `{ environments: [{
  * id, name }], services: [{ id, name }], instances: [{ environmentId, serviceId, repo }], triggers:
  * [{ environmentId, serviceId, branch, repository }] }`, where `repo` is null for an image-sourced
- * instance. `owner` is the GitHub account every source and trigger must sit on. Returns one
+ * instance. `owner` is the account this repository sits on and `personal` the account every other
+ * repository of ours sits on; each source and trigger is held to its own repository's. Returns one
  * plain-words line per gap.
  */
-export function findTriggerGaps(live, { owner = GITHUB_OWNER } = {}) {
+export function findTriggerGaps(live, { owner = GITHUB_OWNER, personal = PERSONAL_OWNER } = {}) {
   const environmentName = new Map(live.environments.map((e) => [e.id, e.name]));
   const serviceName = new Map(live.services.map((s) => [s.id, s.name]));
   const where = (environmentId, serviceId) =>
     `${environmentName.get(environmentId) ?? environmentId}/${serviceName.get(serviceId) ?? serviceId}`;
-  const notOurs = (slug) => Boolean(slug) && ownerOf(slug) !== owner.toLowerCase();
+  const ownerFor = (slug) => expectedOwnerOf(slug, owner, personal);
+  const notOurs = (slug) => Boolean(slug) && ownerOf(slug) !== ownerFor(slug).toLowerCase();
   const gaps = [];
 
   for (const instance of live.instances) {
     if (!instance.repo) continue;
     if (notOurs(instance.repo)) {
       gaps.push(
-        `${where(instance.environmentId, instance.serviceId)}: deploys from ${instance.repo}, which ${owner} does not own — ` +
+        `${where(instance.environmentId, instance.serviceId)}: deploys from ${instance.repo}, which ${ownerFor(instance.repo)} does not own — ` +
           "it keeps deploying only while that account's GitHub app stays installed",
       );
     }
@@ -92,7 +96,7 @@ export function findTriggerGaps(live, { owner = GITHUB_OWNER } = {}) {
       if (notOurs(trigger.repository)) {
         gaps.push(
           `${where(instance.environmentId, instance.serviceId)}: its deployment trigger watches ${trigger.repository}, ` +
-            `which ${owner} does not own — merges on ${owner} will not fire it`,
+            `which ${ownerFor(trigger.repository)} does not own — merges on ${ownerFor(trigger.repository)} will not fire it`,
         );
       }
       if (trigger.repository && trigger.repository !== instance.repo) {
@@ -244,7 +248,7 @@ async function main() {
     return;
   }
   console.log(
-    `[railway-deploy-triggers] OK — all ${deployedCount} git-sourced service instances across ${projectIds.length} project(s) deploy from ${GITHUB_OWNER} and have a deployment trigger in their own environment.`,
+    `[railway-deploy-triggers] OK — all ${deployedCount} git-sourced service instances across ${projectIds.length} project(s) deploy from the owner their repository belongs on (${GITHUB_OWNER} for this one, ${PERSONAL_OWNER} for the rest) and have a deployment trigger in their own environment.`,
   );
 }
 

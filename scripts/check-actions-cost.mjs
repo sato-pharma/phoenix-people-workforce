@@ -13,7 +13,9 @@
 // (never minutes times a rate for the spend), works out the daily rate over the last complete days,
 // projects the month's end against `ACTIONS_MONTHLY_BUDGET`, and names the day the budget would be
 // reached. The included minutes are the one figure it multiplies: the plan's allowance
-// (`ACTIONS_INCLUDED_MINUTES`, Pro = 3,000) times the API's own Linux price.
+// (`ACTIONS_INCLUDED_MINUTES`; a personal Pro account defaults to 3,000, an organization that does not
+// state its plan's figure counts as 0 and the run says the reading is an estimate) times the API's own
+// Linux price.
 //
 // Exit 0 = the month ends under the budget · 1 = at this rate the budget is reached this month (the
 // line says which day, Cairo time) · 2 = cannot tell (no budget set, no token, or the API refused).
@@ -133,6 +135,29 @@ export function usagePath(owner, isOrg = GITHUB_OWNER_IS_ORG) {
   return `${isOrg ? "organizations" : "users"}/${owner}`;
 }
 
+/** The billing PAGE, which is not the API path: a personal account's is github.com/settings/billing. */
+export function billingPage(owner, isOrg = GITHUB_OWNER_IS_ORG) {
+  return isOrg ? `github.com/organizations/${owner}/settings/billing` : "github.com/settings/billing";
+}
+
+/**
+ * The plan's included minutes, or null when the variable holds something that is not a number. A personal
+ * Pro account has 3,000; an organization's depends on its plan (Free, Team, an Enterprise trial), so
+ * unset there counts as 0 and the billing API's own discount is the allowance (`projectActionsCost` takes
+ * the larger of the two). The alarm stays live; `allowanceIsEstimated` says the reading is rougher.
+ */
+export function includedMinutesFrom(env, isOrg = GITHUB_OWNER_IS_ORG) {
+  const raw = String(env.ACTIONS_INCLUDED_MINUTES ?? "").trim();
+  if (raw === "") return isOrg ? 0 : 3000;
+  const minutes = Number(raw);
+  return Number.isFinite(minutes) && minutes >= 0 ? minutes : null;
+}
+
+/** True when an organization's allowance is not stated, so only the API's own discount stands for it. */
+export function allowanceIsEstimated(env, isOrg = GITHUB_OWNER_IS_ORG) {
+  return isOrg && String(env.ACTIONS_INCLUDED_MINUTES ?? "").trim() === "";
+}
+
 function readUsage(owner, year, month) {
   const raw = execFileSync("gh", ["api", `${usagePath(owner)}/settings/billing/usage?year=${year}&month=${month}`], {
     encoding: "utf8",
@@ -145,15 +170,20 @@ function readUsage(owner, year, month) {
 }
 
 /** Why a read failed, in words that say what to do. Never a token. */
-export function describeReadFailure(error) {
+export function describeReadFailure(error, { owner = GITHUB_OWNER, isOrg = GITHUB_OWNER_IS_ORG } = {}) {
   const text = `${error?.stderr || ""} ${error?.message || ""}`;
   if (error?.code === "ENOENT") return "the `gh` CLI is not on PATH here";
   // A 401 is the token itself (expired or revoked); a 403/404 is a live token without the permission.
   if (/\bHTTP 401\b|Bad credentials/i.test(text)) {
-    return "GitHub refused the token itself (HTTP 401: it expired or was revoked). Regenerate it on github.com/settings/personal-access-tokens and store it under the same secret name";
+    return "GitHub refused the token itself (HTTP 401: it expired or was revoked). Regenerate it on github.com/settings/personal-access-tokens, with the organization as its resource owner, and store it under the same secret name";
   }
   if (/gh auth login|not logged|authentication token/i.test(text)) return "no GitHub token reached the step (ACTIONS_BILLING_READ_TOKEN is unset)";
   if (/\b(403|404)\b|Resource not accessible|Not Found/i.test(text)) {
+    // An organization's billing is read only by a token whose RESOURCE OWNER is that organization, made by
+    // one of its owners or billing managers; no permission added to a personal-account token reaches it.
+    if (isOrg) {
+      return `GitHub refused the billing read of the organization ${owner}. It needs a fine-grained token whose resource owner is ${owner}, with the organization permission "Administration: Read-only", made by an owner or billing manager of ${owner} (github.com/settings/personal-access-tokens); a token on the personal account can never read it. Store it as ACTIONS_BILLING_READ_TOKEN`;
+    }
     return 'GitHub refused the billing read. The token needs the account permission "Plan: Read-only" (github.com/settings/personal-access-tokens): add it to the phoenix-synthetic-dispatch token, or store a token that has it as ACTIONS_BILLING_READ_TOKEN';
   }
   return `the billing read failed (${String(error?.message || error).split("\n")[0].slice(0, 200)})`;
@@ -163,12 +193,19 @@ async function main() {
   const budget = Number(process.env.ACTIONS_MONTHLY_BUDGET);
   if (!(budget > 0)) {
     console.log(
-      `[actions-cost] CANNOT TELL — the repository variable ACTIONS_MONTHLY_BUDGET is unset. Set it to the Actions budget on github.com/${usagePath(GITHUB_OWNER)}/settings/billing. This is not a pass.`,
+      `[actions-cost] CANNOT TELL — the repository variable ACTIONS_MONTHLY_BUDGET is unset. Set it to the Actions budget on ${billingPage(GITHUB_OWNER)}. This is not a pass.`,
     );
     process.exitCode = 2;
     return;
   }
-  const includedMinutes = Number(process.env.ACTIONS_INCLUDED_MINUTES || 3000);
+  const includedMinutes = includedMinutesFrom(process.env);
+  if (includedMinutes === null) {
+    console.log(
+      `[actions-cost] CANNOT TELL — the repository variable ACTIONS_INCLUDED_MINUTES is not a number. Set it to the plan's included minutes on ${billingPage(GITHUB_OWNER)}, or delete it. This is not a pass.`,
+    );
+    process.exitCode = 2;
+    return;
+  }
   const now = new Date();
   const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   let items;
@@ -184,9 +221,14 @@ async function main() {
   }
   const projection = projectActionsCost(items, { now, budget, includedMinutes });
   for (const line of describeProjection(projection, { now })) console.log(`  ${line}`);
+  if (allowanceIsEstimated(process.env)) {
+    console.log(
+      `  ESTIMATE: ACTIONS_INCLUDED_MINUTES is unset, so ${GITHUB_OWNER}'s included minutes count only as far as the billing API has discounted them. Set it to the plan's figure on ${billingPage(GITHUB_OWNER)} for an exact reading.`,
+    );
+  }
   if (projection.finding) {
     console.log(
-      `[actions-cost] OVER BUDGET THIS MONTH — the amount is the owner's decision on github.com/${usagePath(GITHUB_OWNER)}/settings/billing; CI's own minutes are in docs/ci-self-hosted-runner.md.`,
+      `[actions-cost] OVER BUDGET THIS MONTH — the amount is the owner's decision on ${billingPage(GITHUB_OWNER)}; CI's own minutes are in docs/ci-self-hosted-runner.md.`,
     );
     process.exitCode = 1;
     return;

@@ -28,6 +28,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { GITHUB_OWNER, REPO as OWNED_REPO } from "./required-check-names.mjs";
 
 // A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs): `--sha` mistyped as `--shaa`
 // would otherwise be read as absent, and a switch to production is the last place for that. Every flag any command takes:
@@ -39,8 +40,9 @@ refuseUnknownFlags({
   known: ["--env", "--sha", "--services", "--out", "--from-env"],
 });
 
-export const REPO = "sato-pharma/phoenix-people-workforce";
-export const IMAGE_REPO = "ghcr.io/sato-pharma/phoenix-people-workforce";
+// The owner comes from the one place the scripts read it (scripts/required-check-names.mjs); a registry path is lower-case.
+export const REPO = OWNED_REPO;
+export const IMAGE_REPO = `ghcr.io/${GITHUB_OWNER.toLowerCase()}/phoenix-people-workforce`;
 export const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
 export const PROJECT_ID = "dc218ad3-99b7-4aff-be38-953a57524a71";
 export const PRODUCTION_URL = "https://phoenix-hr.satopharma.com";

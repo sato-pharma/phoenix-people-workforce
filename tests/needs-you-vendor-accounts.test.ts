@@ -78,6 +78,7 @@ export function runNeedsYouVendorAccountsTests(): void {
 function checkTheSentencesReadBack(): void {
   assert.equal(classifySyntheticDispatchFailure(GITHUB_403), "refused", "a suspended account's 403 is a refusal");
   assert.equal(classifySyntheticDispatchFailure(syntheticDispatchRefused(401)), "refused");
+  assert.equal(classifySyntheticDispatchFailure(syntheticDispatchRefused(404)), "refused", "a token outside the owner is answered 404, and the board reads it as refused");
   assert.equal(classifySyntheticDispatchFailure(syntheticDispatchOtherStatus(404)), "refused", "a repository that can no longer be seen needs a person");
   assert.equal(classifySyntheticDispatchFailure(syntheticDispatchOtherStatus(503)), "not-answered", "🔴 GitHub's own trouble is not a refused account");
   assert.equal(classifySyntheticDispatchFailure(syntheticDispatchOtherStatus(429)), "not-answered", "nor is a rate limit");
@@ -214,6 +215,12 @@ function checkTheWiring(): void {
   const dispatch = stripComments(readFileSync("src/lib/observability/dispatch-synthetic-journeys.ts", "utf8"));
   assert.ok(dispatch.includes("reason: syntheticDispatchRefused(response.status)"), "the dispatch files the sentence the board reads");
   assert.ok(dispatch.includes("reason: syntheticDispatchOtherStatus(response.status)"));
+  // 🔴 A fine-grained token made on another account is answered 404 by the organization's repository, so 404 is a refusal
+  //    here — and the log names the other thing a 404 means (a renamed workflow file or a missing ref).
+  const refusedBranch = /if \(response\.status === 401 \|\| response\.status === 403 \|\| response\.status === 404\) \{([\s\S]*?)\r?\n  \}/.exec(dispatch)?.[1] ?? "";
+  assert.ok(refusedBranch.includes("reason: syntheticDispatchRefused(response.status)"), "a 404 is filed as a refusal, not an unexpected status");
+  assert.ok(refusedBranch.includes("resource owner"), "the log names the token's owner");
+  assert.ok(refusedBranch.includes("${WORKFLOW_FILE}") && refusedBranch.includes("no longer exists"), "and the other cause of a 404, so the cause is not misattributed");
   const route = stripComments(readFileSync("app/api/cron/run-synthetic-journeys/route.ts", "utf8"));
   assert.ok(route.includes("`${SYNTHETIC_DISPATCH_FAILURE_PREFIX}${result.reason}`"));
 

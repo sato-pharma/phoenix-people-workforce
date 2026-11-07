@@ -151,10 +151,11 @@ jobs:
       - name: Keep the script outside the build context
         run: |
           set -euo pipefail
-          # The script and the one helper it imports, side by side as they are in the repository.
+          # The script and the two helpers it imports, side by side as they are in the repository.
           mkdir -p "${RUNNER_TEMP}/fallback-tools/lib"
           cp scripts/fallback-image-deploy.mjs "${RUNNER_TEMP}/fallback-tools/fallback-image-deploy.mjs"
           cp scripts/lib/refuse-arguments.mjs "${RUNNER_TEMP}/fallback-tools/lib/refuse-arguments.mjs"
+          cp scripts/required-check-names.mjs "${RUNNER_TEMP}/fallback-tools/required-check-names.mjs"
 
       - name: Check out the commit to build
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

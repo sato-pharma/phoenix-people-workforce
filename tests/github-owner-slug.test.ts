@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GITHUB_OWNER, PERSONAL_OWNER } from "../scripts/required-check-names.mjs";
+import { expectedOwnerOf, GITHUB_OWNER, ORG_REPOSITORIES, PERSONAL_OWNER } from "../scripts/required-check-names.mjs";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,9 +25,6 @@ const SELF = "tests/github-owner-slug.test.ts";
 
 /** Accounts that owned these repositories before. Assembled, so this file never names one itself. */
 const RETIRED_OWNERS = [["Gawish", "1997"].join("-"), ["it", "gawish", "hr"].join("-"), ["gawish", "theit"].join("")];
-
-/** This repository, on the organization. A reference to it must name `GITHUB_OWNER`. */
-const ORG_REPOSITORIES = ["phoenix-people-workforce"];
 
 /** Every repository the personal account holds. A reference to one of these must name `PERSONAL_OWNER`. */
 const PERSONAL_REPOSITORIES = [
@@ -67,12 +64,9 @@ function rootFiles(): string[] {
   return cachedReaddir(ROOT).filter((name) => SWEPT_FILE.test(name) && !cachedIsDirectory(path.join(ROOT, name)));
 }
 
+// The repositories on the organization, and which owner each belongs on, are kept in scripts/required-check-names.mjs
+// (ORG_REPOSITORIES, expectedOwnerOf) — the one list the Railway trigger check reads too.
 const OWN_REPOSITORIES = [...ORG_REPOSITORIES, ...PERSONAL_REPOSITORIES];
-
-/** The owner a repository of ours lives on. */
-export function expectedOwner(repo: string, org = GITHUB_OWNER, personal = PERSONAL_OWNER): string {
-  return ORG_REPOSITORIES.some((name) => name.toLowerCase() === repo.toLowerCase()) ? org : personal;
-}
 
 /** Each written `<owner>/<one of our repositories>` that the code points at, with the owner it names. */
 export function ownerReferences(files: { code: string; file: string }[]): { file: string; owner: string; repo: string; ghcr: boolean }[] {
@@ -96,7 +90,7 @@ export function findOwnerSlugBreaches(files: { code: string; file: string }[], o
     }
   }
   for (const ref of ownerReferences(files)) {
-    const owner = expectedOwner(ref.repo, org, personal);
+    const owner = expectedOwnerOf(ref.repo, org, personal);
     if (ref.owner.toLowerCase() !== owner.toLowerCase()) breaches.push(`${ref.file}: points at ${ref.owner}/${ref.repo}, not ${owner}`);
     else if (ref.ghcr && ref.owner !== owner.toLowerCase()) breaches.push(`${ref.file}: a GHCR path must be lowercase (${ref.owner})`);
   }

@@ -34,6 +34,15 @@ export const GITHUB_OWNER_IS_ORG = true;
 export const PERSONAL_OWNER = 'Omar-3-xx';
 export const REPO = `${GITHUB_OWNER}/phoenix-people-workforce`;
 
+/** The repositories that moved to the organization. Every other repository of ours stays on `PERSONAL_OWNER`. */
+export const ORG_REPOSITORIES = ['phoenix-people-workforce'];
+
+/** The owner a repository of ours belongs on, from its `<owner>/<name>` slug or its bare name. */
+export function expectedOwnerOf(slugOrName, org = GITHUB_OWNER, personal = PERSONAL_OWNER) {
+  const name = String(slugOrName).split('/').pop().toLowerCase();
+  return ORG_REPOSITORIES.includes(name) ? org : personal;
+}
+
 /**
  * What branch protection ACTUALLY requires, or `{ skipped: <why> }`. Never throws and never guesses.
  *

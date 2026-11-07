@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describeWiring, findTriggerGaps, projectIdsFrom } from "../scripts/check-railway-deploy-triggers.mjs";
+import { GITHUB_OWNER, PERSONAL_OWNER } from "../scripts/required-check-names.mjs";
 
 type Live = {
   environments: Array<{ id: string; name: string }>;
@@ -133,6 +134,19 @@ export function runRailwayDeployTriggersTests() {
     "🔴 sources and triggers both on the old owner agree with each other, so only the owner check can see it",
   );
   assert.deepEqual(findTriggerGaps(liveFixed(), { owner: "SATO-PHARMA" }), [], "an owner differs from GitHub's casing, not from itself");
+  // 🔴 Since 2026-11-06 only this repository is on the organization; the website stayed on the personal account.
+  const website = (repo: string) => ({
+    environments: [{ id: "e-web", name: "production" }],
+    services: [{ id: "s-web", name: "website" }],
+    instances: [{ environmentId: "e-web", serviceId: "s-web", repo }],
+    triggers: [{ environmentId: "e-web", serviceId: "s-web", branch: "main", repository: repo }],
+  });
+  assert.deepEqual(findTriggerGaps(website(`${PERSONAL_OWNER}/website`)), [], "🔴 the website on the personal account was read as a stale owner");
+  assert.equal(
+    findTriggerGaps(website(`${GITHUB_OWNER}/website`)).filter((line: string) => line.includes(`which ${PERSONAL_OWNER} does not own`)).length,
+    2,
+    "a website repository named on the organization is held to the personal account",
+  );
 
   // Every project named is read once, the Phoenix one first, so the website's services are covered too.
   assert.deepEqual(projectIdsFrom({ RAILWAY_PROJECT_ID: "p1", RAILWAY_PROJECT_IDS: "p1, p2\np3" }), ["p1", "p2", "p3"]);
