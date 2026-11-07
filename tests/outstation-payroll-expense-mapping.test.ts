@@ -87,6 +87,24 @@ export function runOutstationPayrollExpenseMappingTests() {
     trip_start_date: "2026-09-02T00:00:00.000Z",
   });
   assert.equal(arabic.employeeNote, "استلام نسخة العقد", "an Arabic note arrives whole, trimmed");
+
+  // The stored notes carry the system's evidence stamp after the employee's words (owner,
+  // 2026-11-07, on request 112: "why employee notes are awful like this, tidy them").
+  const stamp =
+    "Car live evidence: source=live_camera hr_id=B-119 captured_at=2026-09-01T11:09:56.430Z " +
+    "location=6W33+78P, Mahta Al Raml Sq., Al Mesallah Sharq, Al Attarin, Alexandria Governorate 5373011, Egypt " +
+    "· Brick محطة الرمل · Area Alex Center · Region Alex-BHR gps=31.2033172,29.9034106 " +
+    "draft_id=eee72441-5482-4703-8281-e61a9aa90b9d request_id=112";
+  const stampOnly = mapOutstationRequestRowToPayrollApproval({ id: 112, notes: stamp, status: "submitted", trip_start_date: "2026-09-01T00:00:00.000Z" });
+  assert.equal(stampOnly.employeeNote, null, "HEADLINE: a claim whose notes are only the system's stamp shows no employee note");
+  const typed = mapOutstationRequestRowToPayrollApproval({
+    id: 113,
+    notes: `كارتة رايح جاي ٣٠\n${stamp}\nAllowance guard: No allowance: a trip to Cairo from a regional base does not earn an outstation per-diem allowance.`,
+    status: "submitted",
+    trip_start_date: "2026-09-01T00:00:00.000Z",
+  });
+  assert.equal(typed.employeeNote, "كارتة رايح جاي ٣٠", "HEADLINE: the employee's typed words stay, the stamp and the allowance line go");
+  assert.match(typed.description, /Car live evidence:/, "the stored description is left as it is — other readers key on it");
   assert.notEqual(arabic.employeeNote, arabic.hrComment, "the employee's note is never HR's decision box");
   // Since the 2026-11-07 rebuild the queue row is the rail and the trip under review is its own page.
   const rail = readFileSync(
