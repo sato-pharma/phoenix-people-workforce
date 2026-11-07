@@ -76,6 +76,7 @@ export async function loadRepCommitments(
           .select("id, customer_id, visit_date, captured_at, next_step, next_step_on, customer:phoenix_crm_customers!customer_id(name)")
           .eq("seat_id", seat.seatId)
           .eq("is_test", isTest)
+          .is("archived_at", null)
           .gte("visit_date", fromDay),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),

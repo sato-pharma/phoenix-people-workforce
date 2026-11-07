@@ -105,6 +105,8 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
       .select(visitColumns)
       .eq("rep_hr_id", repHrId)
       .eq("is_test", isTest)
+      // A converted old visit carries the old check-in's position (owner, 2026-11-07): never a prior fix.
+      .is("imported_from_ireports360_at", null)
       .gte("captured_at", ownSince)
       .not("lat", "is", null)
       .limit(500),
@@ -113,6 +115,7 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
       .from("phoenix_crm_visits")
       .select(visitColumns)
       .eq("is_test", isTest)
+      .is("imported_from_ireports360_at", null)
       .gte("captured_at", replaySince)
       .gte("lat", latLow)
       .lte("lat", latHigh)

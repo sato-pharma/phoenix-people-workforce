@@ -370,6 +370,8 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     dateFrom: window.from,
     dateTo: window.to,
     hrIds: earlier,
+    // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+    kpiOnly: true,
   });
   return [...earlierRows, ...own];
 }
@@ -392,6 +394,8 @@ async function fetchOwnRecordVisitRows(hrId: string, window: Employee360Window):
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
     // the activity mix is unchanged.
     collapseDoubleVisits: true,
+    // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+    kpiOnly: true,
   });
 }
 

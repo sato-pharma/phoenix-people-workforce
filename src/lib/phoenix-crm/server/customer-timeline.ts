@@ -74,6 +74,8 @@ export async function loadCustomerTimeline(
       .eq("seat_id", seat.seatId)
       .eq("customer_id", customerId)
       .eq("is_test", isTest)
+      // A copied visit in the visits archive (owner, 2026-11-07) is no visit.
+      .is("archived_at", null)
       .order("visit_date", { ascending: false })
       .order("captured_at", { ascending: false })
       .limit(TIMELINE_VISITS_MAX + 1),

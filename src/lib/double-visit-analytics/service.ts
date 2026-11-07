@@ -576,7 +576,7 @@ function extractNameAreaLine(value: string | null | undefined) {
 async function paginateLiveMirrorVisits(
   dateFrom: string,
   dateTo: string,
-  options?: { includeResignedAgents?: boolean; shareSettledWeeks?: boolean; visitDates?: readonly string[]; withoutVisitDetail?: boolean },
+  options?: { includeResignedAgents?: boolean; kpiOnly?: boolean; shareSettledWeeks?: boolean; visitDates?: readonly string[]; withoutVisitDetail?: boolean },
 ): Promise<MirrorVisitRow[]> {
   // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
   // row cap, resigned/excluded agents removed by default). The canonical double-visit predicate —
@@ -592,6 +592,9 @@ async function paginateLiveMirrorVisits(
     getDoubleVisitRows<MirrorVisitRow>({
       ...filter,
       includeResignedAgents: options?.includeResignedAgents,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      // Outstation trip evidence passes kpiOnly: false — money is decided on it, so it reads every worked row.
+      kpiOnly: options?.kpiOnly ?? true,
       visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
       columns:
         "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
@@ -938,6 +941,8 @@ export async function getLiveDoubleVisitRows(
   employees: EmployeeDirectoryRow[],
   options?: {
     includeResignedAgents?: boolean;
+    /** false = every worked row, campaign and old-CRM visits included (outstation trip evidence, which money is decided on). Default true. */
+    kpiOnly?: boolean;
     /** Read only these whole days of the window (see findDoubleVisitCalendarDays). */
     visitDates?: readonly string[];
     /** Leave the Phoenix field set out of the read, for a caller that prints no visit (the focus panel). */
@@ -2979,7 +2984,8 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
   }
 
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-  const rows = await getLiveDoubleVisitRows(start, end, employees);
+  // kpiOnly: false — trip evidence reads every worked row, exactly as before the old-CRM conversion (money).
+  const rows = await getLiveDoubleVisitRows(start, end, employees, { kpiOnly: false });
   // Slot 1 only, deliberately: this is outstation TRIP evidence, which money is decided on, and the
   // 2026-10-08 chain-visit ruling was not extended to it. Widening it is the owner's decision.
   const ownRows = rows.filter((row) => normalizeHrIdForAccess(row.double_visitor_hr_id) === employeeKey);

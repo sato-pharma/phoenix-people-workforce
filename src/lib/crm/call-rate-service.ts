@@ -122,6 +122,8 @@ export async function loadCallRateReport(
       dateTo: input.dateTo,
       columns: VISIT_COLUMNS,
       reuseRecentWindow,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      kpiOnly: true,
       ...narrowTo,
     }),
     queryCheckins<CheckinRow>({

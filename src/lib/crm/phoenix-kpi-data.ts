@@ -195,6 +195,8 @@ export async function loadPhoenixRepKpis(input: {
           columns: VISIT_COLUMNS,
           collapseDoubleVisits: true,
           reuseRecentWindow,
+          // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+          kpiOnly: true,
           ...people,
         })
       : Promise.resolve([] as VisitRecord[]),

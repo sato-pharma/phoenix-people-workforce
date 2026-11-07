@@ -152,7 +152,7 @@ function withClock(
  * this one (owner, 2026-10-02, "Still planned"), and only the returned day reads as not sent.
  */
 const TEAM_TODAY_VISIT_COLUMNS =
-  "seat_id, customer_id, list_type, captured_at, is_unplanned, unplanned_kind, " +
+  "seat_id, customer_id, list_type, captured_at, is_unplanned, unplanned_kind, imported_from_ireports360_at, ireports360_kpi_counted, " +
   "customer:phoenix_crm_customers!customer_id(validated_at), unplanned:phoenix_crm_unplanned_visits!visit_id(status)";
 
 /** Why a visit is in no KPI — read off the row the same way the visit list reads it (visits.ts). */
@@ -169,6 +169,8 @@ export function teamTodayHoldBack(row: Row): KpiHoldBack | null {
     isUnplanned,
     unplannedKind,
     unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
+    copiedFromOldSystem: typeof row.imported_from_ireports360_at === "string",
+    oldSystemKpiCounted: row.ireports360_kpi_counted === true,
   });
 }
 
@@ -196,7 +198,8 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
         .select(TEAM_TODAY_VISIT_COLUMNS)
         .in("seat_id", part)
         .eq("is_test", isTest)
-        .eq("visit_date", date),
+        .eq("visit_date", date)
+        .is("archived_at", null),
     ]);
     throwIfError(plans.error);
     throwIfError(dayVisits.error);

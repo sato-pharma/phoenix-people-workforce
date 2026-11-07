@@ -1471,6 +1471,8 @@ async function computeLeaderImpact(
     dateTo: maxDate,
     columns: "agent_hr_id, visit_date, visit_type, visit_type_description, comment, contact_crm_id, contact_name, customer_name",
     limit: 12000,
+    // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+    kpiOnly: true,
   });
   // The 12,000-row cap (newest-first) can silently drop older rows and skew the before/after window.
   const truncated = data.length >= 12000;
@@ -1699,6 +1701,8 @@ async function getLeadershipActivity(
       columns: "agent_hr_id, agent_name, crm_visit_id, double2_hr_id, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source, is_unplanned",
       limit: 8000,
       collapseDoubleVisits: true,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      kpiOnly: true,
     }),
     phoenixVisitsRead,
   ]);

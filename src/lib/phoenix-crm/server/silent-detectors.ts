@@ -564,6 +564,8 @@ async function runVisitPhotographGap(
               // A visit with no reading has nothing to measure: one the Super Admin entered for a rep who
               // missed logging it carries none by design, and it accuses nobody.
               .not("lat", "is", null)
+              // A converted old visit carries the old check-in's position (owner, 2026-11-07); nothing here judges it.
+              .is("imported_from_ireports360_at", null)
               .order("visit_date", { ascending: true })
               .order("id", { ascending: true }),
           { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM visits for the photograph check", uniqueBy: (row) => String(row.id) },

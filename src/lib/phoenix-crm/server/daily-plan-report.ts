@@ -141,6 +141,7 @@ async function loadVisits(seatId: string, period: DailyPlanPeriod, includeTest: 
         .from("phoenix_crm_visits")
         .select("id, customer_id, visit_date, captured_at, is_test, is_unplanned")
         .eq("seat_id", seatId)
+        .is("archived_at", null)
         .gte("visit_date", period.from)
         .lte("visit_date", period.to);
       return includeTest ? query : query.eq("is_test", false);

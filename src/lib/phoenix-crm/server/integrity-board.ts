@@ -835,7 +835,9 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
           .select("id, customer_id, lat, lon, accuracy_meters, captured_at")
           .in("customer_id", caseCustomerIds.slice(index, index + 50))
           .eq("is_test", false)
-          .not("lat", "is", null),
+          .not("lat", "is", null)
+          // A converted old visit carries the old check-in's position (owner, 2026-11-07); it judges nobody.
+          .is("imported_from_ireports360_at", null),
       ),
     );
     for (const { rows: pointRows, failed } of pages) {

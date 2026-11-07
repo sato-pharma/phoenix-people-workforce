@@ -111,6 +111,8 @@ export async function runPhoenixCrmVisitRollup(
         .eq("is_test", false)
         .eq("is_unplanned", false)
         .is("linked_from_visit_id", null)
+        // A visit copied from iReports360 (converted or not) is the old system's; the roll-up never reads it.
+        .is("imported_from_ireports360_at", null)
         .neq("list_type", PHARMACY_LIST_TYPE)
         .gte("captured_at", windowStart.toISOString())
         .lt("captured_at", windowEnd.toISOString()),

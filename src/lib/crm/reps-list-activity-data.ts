@@ -118,6 +118,8 @@ export async function loadRepsListActivity(input: {
       columns: VISIT_COLUMNS,
       dateFrom: from,
       dateTo: to,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      kpiOnly: true,
       // Campaign rows are loaded and then dropped inside the builder. They are fetched because a rep
       // whose month was all campaign work must not read as idle; they can never satisfy a planned
       // call, because a campaign row names no doctor.

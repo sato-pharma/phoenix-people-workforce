@@ -619,6 +619,7 @@ import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
 import { runEarlyBirdsCloseSchedulerTests } from "./early-birds-close-scheduler.test.ts";
 import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
+import { runCrmCountsInKpiReadersTests } from "./crm-counts-in-kpi-readers.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
@@ -2999,6 +3000,7 @@ import { runEmployeeNicknameReachesLoginTests } from "./employee-nickname-reache
 import { runOfferEmailViaTurbifyTests } from "./offer-email-via-turbify.test.ts";
 import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
 import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
+import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archive-screen.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4407,6 +4409,7 @@ await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicat
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
 await runTest("early birds close scheduler (keeps its host guards; the retired iReports360 poller is never started again)", runEarlyBirdsCloseSchedulerTests);
 await runTest("crm participant visit filter (agent-or-partner door filter fails closed)", runCrmParticipantFilterTests);
+await runTest("crm counts_in_kpi (visit counts filter it; deductions, attendance and outstation never do)", runCrmCountsInKpiReadersTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
@@ -11949,6 +11952,7 @@ await runTest("a saved nickname reaches the login's name, every HR id spelling, 
 await runTest("job offers through the hr@ Turbify mailbox and no standing admin BCC (6 Nov 2026): set, an offer leaves from hr@ and never Resend, a failure never falls back, a lost Sent copy never resends; unset, Resend as before; no email carries the admin BCC and the Telegram mirror stays", runOfferEmailViaTurbifyTests);
 await runTest("no read stops silently at 1,000 rows (7 Nov 2026): a read cut at the ceiling is reported from its headers, and a new hard 1,000 in src or app is refused", runRowCapRatchetTests);
 await runTest("a recruitment offer letter reuses this candidate's older draft even beyond the newest 200 offers (7 Nov 2026): the route asks the database by email and pages to the last row, the exact title-and-email match is kept, and a blank email never matches", runOfferDraftLookupTests);
+await runTest("the Phoenix CRM visits archive screen (owner, 7 Nov 2026): only the Super Admin and the SFE Manager read it, reasons read as words, the page cursor survives the address bar, a plain date is never shifted, and the screen reads only the archive by keyset", runPhoenixCrmVisitArchiveScreenTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
