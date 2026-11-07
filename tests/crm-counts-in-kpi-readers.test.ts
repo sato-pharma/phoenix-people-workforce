@@ -55,7 +55,6 @@ const KPI_READERS: Record<string, number> = {
   "src/lib/employee-360/service.ts": 2,
   // The coaching impact's productive visits, and the double visits a leader conducted.
   "src/lib/employee-360/deep-service.ts": 2,
-  "src/lib/double-visit-analytics/service.ts": 1,
 };
 
 /**
@@ -122,6 +121,15 @@ export function runCrmCountsInKpiReadersTests(): void {
     const end = reads.indexOf("\nexport ", start + declaration.length);
     assert.doesNotMatch(reads.slice(start, end), /kpiOnly|counts_in_kpi/, `${declaration} serves every row: the deductions and attendance read through it`);
   }
+  // The double-visit loader counts by default, and outstation TRIP evidence (money) opts out of it.
+  const doubleVisit = read("src/lib/double-visit-analytics/service.ts");
+  assert.match(doubleVisit, /kpiOnly: options\?\.kpiOnly \?\? true,/, "the double-visit board counts only the rows that count by default");
+  const tripEvidence = doubleVisit.slice(doubleVisit.indexOf("export async function getDoubleVisitExpenseWorkloadEvidence("));
+  assert.match(
+    tripEvidence.slice(0, tripEvidence.indexOf("\nexport ")),
+    /getLiveDoubleVisitRows\(start, end, employees, \{ kpiOnly: false \}\)/,
+    "outstation trip evidence decides money: it reads every worked row, never only the KPI-counted ones",
+  );
   // queryOwnVisitsOfDepartedAgents passes it only when its caller asks (Employee 360) — never by default.
   const departed = reads.slice(reads.indexOf("export async function queryOwnVisitsOfDepartedAgents<"));
   assert.match(departed.slice(0, departed.indexOf("\nexport ")), /kpiOnly: options\.kpiOnly,/, "an earlier record's visits count only when the caller counts");
