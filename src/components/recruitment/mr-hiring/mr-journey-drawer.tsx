@@ -24,20 +24,29 @@ import { MrBookingForm, MrRecommendationForm, MrResultForm } from "@/components/
 import { phxButtonAccentClassName, phxButtonGhostClassName, phxButtonPrimaryClassName } from "@/components/ui/form-tokens";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import type { CandidateTimelineEvent } from "@/lib/recruitment/candidate-timeline";
-import { cairoWhen, dayLabel, mrStageHeadline, mrStageStateLine, mrStageTone } from "@/lib/recruitment/mr-hiring/display";
+import {
+  cairoWhen,
+  dayLabel,
+  mrStageHeadline,
+  mrStageStateLine,
+  mrStageTone,
+  mrVisibleChecklist,
+  mrWhere,
+} from "@/lib/recruitment/mr-hiring/display";
 import type { MrRow } from "@/lib/recruitment/mr-hiring/rows";
 import {
+  MR_LINE_LABELS,
   MR_RECOMMENDATION_LABELS,
   MR_RESULT_STEP_LABELS,
   MR_ROUND_LABELS,
   MR_STEP_LABELS,
   mrResultLabel,
-  mrStepNumber,
+  type MrAreaChoice,
   type MrResultStep,
 } from "@/lib/recruitment/mr-hiring/vocabulary";
 import { cn } from "@/lib/utils";
 
-type Journey = { row: MrRow; timeline: CandidateTimelineEvent[] };
+type Journey = { row: MrRow; timeline: CandidateTimelineEvent[]; areaChoices: MrAreaChoice[] };
 type Mode = null | { kind: "result"; step: MrResultStep; withoutDsm: boolean } | { kind: "recommend" } | { kind: "book" };
 
 const MONEY = new Intl.NumberFormat("en-EG", { maximumFractionDigits: 0 });
@@ -77,7 +86,11 @@ export function MrJourneyDrawer({
     try {
       const data = await getJson(`/api/recruitment/mr-hiring/${encodeURIComponent(candidateId)}/journey`);
       const loaded = data.row as MrRow;
-      setJourney({ row: loaded, timeline: (data.timeline as CandidateTimelineEvent[]) ?? [] });
+      setJourney({
+        areaChoices: (data.areaChoices as MrAreaChoice[] | undefined) ?? [],
+        row: loaded,
+        timeline: (data.timeline as CandidateTimelineEvent[]) ?? [],
+      });
       setError(null);
       if (!initialApplied.current) {
         initialApplied.current = true;
@@ -122,7 +135,9 @@ export function MrJourneyDrawer({
             </h2>
             {row ? (
               <p className="mt-0.5 break-words text-xs text-slate-300">
-                {[row.area, row.governorate, row.arrivedOn ? `CV on ${row.arrivedOn}` : null].filter(Boolean).join(" · ")}
+                {[row.area, row.line ? `${MR_LINE_LABELS[row.line]} line` : null, row.governorate, row.arrivedOn ? `CV on ${row.arrivedOn}` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             ) : null}
           </div>
@@ -187,9 +202,12 @@ export function MrJourneyDrawer({
                     <div className="mt-4 border-t border-slate-200 pt-4">
                       {mode.kind === "result" ? (
                         <MrResultForm
+                          areaChoices={journey?.areaChoices ?? []}
                           candidateId={row.candidateId}
                           candidateName={row.name}
                           decidedWithoutDsm={mode.withoutDsm}
+                          defaultArea={row.area}
+                          defaultLine={row.line}
                           onCancel={() => setMode(null)}
                           onDone={() => done()}
                           step={mode.step}
@@ -208,7 +226,7 @@ export function MrJourneyDrawer({
                 <section>
                   <h3 className="text-phx-xs font-black uppercase tracking-[0.15em] text-slate-700">The steps</h3>
                   <ol className="mt-2 divide-y divide-slate-200 border border-slate-200">
-                    {row.stage.checklist.map((item) => {
+                    {mrVisibleChecklist(row.stage).map((item, index) => {
                       const label = item.step === "final" && row.stage.jointFinal ? "Joint final · HR Manager + NSM" : MR_STEP_LABELS[item.step];
                       const result = item.result;
                       const recommendation = item.step === "recommendation" ? row.recommendation : null;
@@ -231,22 +249,20 @@ export function MrJourneyDrawer({
                             ) : item.status === "current" ? (
                               <CircleDashed className="h-3.5 w-3.5" />
                             ) : (
-                              mrStepNumber(item.step)
+                              index + 1
                             )}
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className="break-words text-sm font-bold text-slate-900">
                               {label}
                               {item.status === "skipped" ? (
-                                <span className="ml-1 font-normal text-slate-500">
-                                  {item.step === "rsm" ? "· not needed (Pedia line only)" : "· replaced by the joint final"}
-                                </span>
+                                <span className="ml-1 font-normal text-slate-500">· replaced by the joint final</span>
                               ) : null}
                             </p>
                             {item.booking ? (
                               <p className="break-words text-xs text-slate-600">
                                 {cairoWhen(item.booking.startsAt)} ·{" "}
-                                {item.booking.platform === "zoom" ? "Zoom" : `In person · ${item.booking.location?.trim() || "Head office"}`}
+                                {mrWhere(item.booking)}
                                 {item.booking.interviewerName ? ` · ${item.booking.interviewerName}` : ""}
                               </p>
                             ) : null}

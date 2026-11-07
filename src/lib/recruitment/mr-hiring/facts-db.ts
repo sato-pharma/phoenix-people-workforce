@@ -25,16 +25,20 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadPeople, personName } from "@/lib/recruitment/interview-calendar";
 import type { MrIntakeEventFact } from "@/lib/recruitment/mr-hiring/official-line";
 import { isOfficialWhatsAppEvent, officialLineIds } from "@/lib/recruitment/mr-hiring/official-line";
-import type {
-  MrBookingFact,
-  MrCandidateFacts,
-  MrOfferFact,
-  MrRecommendationFact,
-  MrStepResultFact,
+import {
+  mrConfirmedArea,
+  mrConfirmedLine,
+  type MrBookingFact,
+  type MrCandidateFacts,
+  type MrOfferFact,
+  type MrRecommendationFact,
+  type MrStepResultFact,
 } from "@/lib/recruitment/mr-hiring/stage";
 import {
   isInMrWorkflow,
   isMrInterviewRound,
+  isMrLine,
+  type MrLine,
   isMrRecommendation,
   isMrResult,
   isMrResultStep,
@@ -50,8 +54,13 @@ export type MrCandidateRecord = {
   facts: MrCandidateFacts;
   name: string;
   governorate: string | null;
-  /** The area the candidate is filed under, or the one they asked for. */
+  /**
+   * The area HR confirmed at the 1st interview; before that, the area the candidate is filed under, or
+   * the one they asked for.
+   */
   area: string | null;
+  /** The line HR confirmed at the 1st interview, or null before it. */
+  line: MrLine | null;
   source: string | null;
   offerId: string | null;
   intake: MrIntakeEventFact[];
@@ -102,6 +111,8 @@ type ResultRow = {
   rating: number | null;
   comment: string;
   decided_without_dsm: boolean | null;
+  confirmed_area_name: string | null;
+  confirmed_line: string | null;
   by_hr_id: string;
   created_at: string;
 };
@@ -126,7 +137,8 @@ const CANDIDATE_COLUMNS =
   "id,full_name,status,created_at,governorate,preferred_area_name,source,offer_id,manager_notified_hr_id,manager_notified_name,archived_at";
 const BOOKING_COLUMNS =
   "id,candidate_id,interview_round,starts_at,duration_minutes,platform,location,zoom_join_url,outcome,interviewer_hr_id,panelist_hr_ids,shared_with_hr_ids";
-const RESULT_COLUMNS = "id,candidate_id,booking_id,step,result,rating,comment,decided_without_dsm,by_hr_id,created_at";
+const RESULT_COLUMNS =
+  "id,candidate_id,booking_id,step,result,rating,comment,decided_without_dsm,confirmed_area_name,confirmed_line,by_hr_id,created_at";
 const RECOMMENDATION_COLUMNS = "id,candidate_id,booking_id,recommendation,proposed_salary,proposed_joining_date,note,by_hr_id,created_at";
 
 /** An offer's free-text date as YYYY-MM-DD, or null when it cannot be read. */
@@ -254,7 +266,7 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
           location: booking.location,
           outcome: booking.outcome,
           panelistHrIds: booking.panelist_hr_ids ?? [],
-          platform: booking.platform === "zoom" ? "zoom" : "in_office",
+          platform: booking.platform === "zoom" ? "zoom" : booking.platform === "phone" ? "phone" : "in_office",
           round: isMrInterviewRound(booking.interview_round) ? booking.interview_round : null,
           startsAt: booking.starts_at,
           zoomJoinUrl: booking.zoom_join_url,
@@ -295,6 +307,8 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
             byHrId: result.by_hr_id,
             byName: personName(people, result.by_hr_id),
             comment: result.comment,
+            confirmedArea: result.confirmed_area_name,
+            confirmedLine: isMrLine(result.confirmed_line) ? result.confirmed_line : null,
             createdAt: result.created_at,
             decidedWithoutDsm: Boolean(result.decided_without_dsm),
             id: String(result.id),
@@ -306,7 +320,8 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
       status: normalizeCandidateStatus(row.status) ?? "new",
     };
     return {
-      area: areaById.get(row.id) ?? row.preferred_area_name ?? null,
+      // What HR confirmed at the 1st interview wins over the filing and over the area asked for.
+      area: mrConfirmedArea(facts) ?? areaById.get(row.id) ?? row.preferred_area_name ?? null,
       bookingPeople: candidateBookings.map((booking) => ({
         bookingId: booking.id,
         hrIds: [booking.interviewer_hr_id, ...(booking.panelist_hr_ids ?? []), ...(booking.shared_with_hr_ids ?? [])].filter(
@@ -317,6 +332,7 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
       facts,
       governorate: row.governorate,
       intake: events,
+      line: mrConfirmedLine(facts),
       name: String(row.full_name ?? "").trim() || "Unnamed candidate",
       offerId: row.offer_id,
       sentToHrId: row.manager_notified_hr_id,

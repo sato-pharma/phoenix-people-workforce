@@ -3,8 +3,8 @@
 //
 // PURE and client-safe: no database, no process.env. Times are printed in Cairo.
 
-import type { MrNextAction, MrStage } from "@/lib/recruitment/mr-hiring/stage";
-import { MR_CLOSED_LABELS, MR_STEP_LABELS, MR_STEPS, mrStepNumber } from "@/lib/recruitment/mr-hiring/vocabulary";
+import type { MrBookingFact, MrChecklistItem, MrNextAction, MrStage } from "@/lib/recruitment/mr-hiring/stage";
+import { MR_CLOSED_LABELS, MR_STEP_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 /** "Sun 9 Nov, 11:00" in Cairo. */
 export function cairoWhen(iso: string): string {
@@ -31,11 +31,27 @@ export function dayLabel(day: string | null): string {
   );
 }
 
-/** "Step 3 of 8 · 2nd interview · DSM", or the closed reason. */
+/** Where an interview is held, in words: "Zoom", "Phone call" or "In person · Head office". */
+export function mrWhere(booking: Pick<MrBookingFact, "platform" | "location">): string {
+  if (booking.platform === "zoom") return "Zoom";
+  if (booking.platform === "phone") return "Phone call";
+  return `In person · ${booking.location?.trim() || "Head office"}`;
+}
+
+/**
+ * The steps this candidate's journey shows. The RSM interview is there only on the Pedia line (owner,
+ * 7 Nov 2026: "by default, it is not appearing"), so a candidate off it reads eight steps, not nine.
+ */
+export function mrVisibleChecklist(stage: Pick<MrStage, "checklist">): MrChecklistItem[] {
+  return stage.checklist.filter((item) => !(item.step === "rsm" && item.status === "skipped"));
+}
+
+/** "Step 3 of 8 · 2nd interview · DSM", or the closed reason. Counted over the steps it shows. */
 export function mrStageHeadline(stage: MrStage): string {
   if (!stage.open) return MR_CLOSED_LABELS[stage.closed];
   const label = stage.step === "final" && stage.jointFinal ? "Joint final · HR Manager + NSM" : MR_STEP_LABELS[stage.step];
-  return `Step ${mrStepNumber(stage.step)} of ${MR_STEPS.length} · ${label}`;
+  const visible = mrVisibleChecklist(stage);
+  return `Step ${visible.findIndex((item) => item.step === stage.step) + 1} of ${visible.length} · ${label}`;
 }
 
 /** The second line — what the step is waiting for, in plain words. */
@@ -49,7 +65,7 @@ export function mrStageStateLine(stage: MrStage): string {
     return "";
   }
   const booking = stage.booking;
-  const where = booking ? (booking.platform === "zoom" ? "Zoom" : `In person · ${booking.location?.trim() || "Head office"}`) : "";
+  const where = booking ? mrWhere(booking) : "";
   switch (stage.state) {
     case "to_record":
       return "Waiting for HR to screen the CV";

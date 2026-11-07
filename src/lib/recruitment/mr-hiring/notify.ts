@@ -15,7 +15,7 @@ import { createSystemNotificationForRecipients } from "@/lib/notifications/syste
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
 import { hrIdsForRoles } from "@/lib/recruitment/inbound/recruitment-notify";
 import { cairoWhen } from "@/lib/recruitment/mr-hiring/display";
-import { MR_ROUND_LABELS, type MrInterviewRound } from "@/lib/recruitment/mr-hiring/vocabulary";
+import { MR_ROUND_LABELS, type MrInterviewRound, type MrPlatform } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 /** The event types — `recruitment.<event>` in the notification policy. */
 export const MR_INTERVIEW_BOOKED_EVENT = "mr_interview_booked";
@@ -46,10 +46,15 @@ export function mrInterviewBookedMessage(input: {
   candidateName: string;
   round: MrInterviewRound;
   startsAt: string;
-  platform: "zoom" | "in_office";
+  platform: MrPlatform;
   location: string | null;
 }): string {
-  const where = input.platform === "zoom" ? "on Zoom (the link is on the interview)" : `in person at ${input.location?.trim() || "the office"}`;
+  const where =
+    input.platform === "zoom"
+      ? "on Zoom (the link is on the interview)"
+      : input.platform === "phone"
+        ? "by phone call"
+        : `in person at ${input.location?.trim() || "the office"}`;
   return `${MR_ROUND_LABELS[input.round]} with ${input.candidateName}, Medical Representative — ${cairoWhen(input.startsAt)} Cairo time, ${where}. Open the CV before the interview.`;
 }
 
@@ -59,7 +64,7 @@ export async function notifyMrInterviewBooked(input: {
   candidateName: string;
   round: MrInterviewRound;
   startsAt: string;
-  platform: "zoom" | "in_office";
+  platform: MrPlatform;
   location: string | null;
   recipientHrIds: Array<string | null | undefined>;
 }): Promise<void> {

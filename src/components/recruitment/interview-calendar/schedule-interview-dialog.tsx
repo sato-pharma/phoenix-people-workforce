@@ -350,7 +350,7 @@ export function ScheduleInterviewDialog({
                     todayKey={todayKey}
                   />
                   <p className="mt-2 text-[13px] font-bold text-slate-900">{formatDayLong(dateKey)}</p>
-                  <p className="text-[11px] text-slate-500">Sunday to Thursday, 9:00 AM to 5:00 PM (Cairo).</p>
+                  <p className="text-[11px] text-slate-500">Any day of the week, 9:00 AM to 5:00 PM (Cairo).</p>
                 </section>
 
                 <section aria-label="Time">

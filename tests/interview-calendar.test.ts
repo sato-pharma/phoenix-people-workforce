@@ -273,16 +273,16 @@ function runInterviewerAccessTests() {
   assert.match(domain, /if \(purpose === "interviewer"\) assertMayPickInterviewer\(caller\)/, "the picker search uses the pick gate, not the book gate");
 }
 
-// ── 1 · The week: Sunday to Thursday, 9 to 5, in Cairo ─────────────────────────────────────────
+// ── 1 · The week: every day, 9 to 5, in Cairo ──────────────────────────────────────────────────
 function runWeekTests() {
   // 2026-09-18 is a Friday, 2026-09-20 a Sunday.
-  assert.equal(weekStartFor("2026-09-18"), "2026-09-13", "a Friday belongs to the week it ends");
+  assert.equal(weekStartFor("2026-09-18"), "2026-09-13", "a Friday belongs to the week that started on the Sunday before");
   assert.equal(weekStartFor("2026-09-19"), "2026-09-13", "and so does a Saturday");
   assert.equal(weekStartFor("2026-09-20"), "2026-09-20", "a Sunday starts its own week");
   assert.deepEqual(
     weekDays("2026-09-22"),
-    ["2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"],
-    "the grid is Sunday to Thursday — the owner's choice — whatever day it is asked from",
+    ["2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26"],
+    "the grid is every day, Sunday to Saturday (owner, 7 Nov 2026: \"make able to schedule any day in the week\"), whatever day it is asked from",
   );
 
   const starts = slotStarts();
@@ -292,10 +292,10 @@ function runWeekTests() {
   assert.equal(formatTimeOfDay(720), "12:00 PM", "noon is 12:00 PM, never 0:00 PM");
   assert.equal(slotFor(9 * 60 + 15), 9 * 60, "a 9:15 interview is drawn in the 9:00 row");
 
-  assert.equal(isBookableDay("2026-09-18"), false, "no interview on a Friday");
-  assert.equal(isBookableDay("2026-09-19"), false, "or a Saturday");
+  assert.equal(isBookableDay("2026-09-18"), true, "a Friday holds interviews");
+  assert.equal(isBookableDay("2026-09-19"), true, "and so does a Saturday");
   assert.equal(isBookableDay("2026-09-20"), true);
-  assert.equal(isBookableDay("2026-09-24"), true, "Thursday is the last interview day");
+  assert.equal(isBookableDay("2026-09-24"), true, "and every weekday");
   assert.equal(isDateKey("2026-02-30"), false, "a date that does not exist is refused, not rolled into March");
 
   assert.equal(isBookableWindow(8 * 60 + 30, 30), false, "nothing before 9:00 AM");
@@ -305,14 +305,15 @@ function runWeekTests() {
   assert.equal(isBookableWindow(9 * 60 + 5, 30), false, "starts fall on a quarter hour");
 
   // THE CAIRO TRAP. The server runs in UTC; Cairo is two or three hours ahead. Just after midnight
-  // on a Friday in Cairo it is still Thursday in UTC, and a calendar keyed on the server's clock
-  // would open on a week with no interview day left in it.
-  assert.equal(upcomingWeekStart(new Date("2026-09-18T09:00:00Z")), "2026-09-20", "on a Friday the calendar opens on the coming week");
-  assert.equal(upcomingWeekStart(new Date("2026-09-17T20:30:00Z")), "2026-09-13", "Thursday 11:30 PM in Cairo is still this week");
+  // on a Sunday in Cairo it is still Saturday in UTC, and a calendar keyed on the server's clock
+  // would open on the week that just ended. With every day an interview day, the calendar always
+  // opens on the week today is in — counted in Cairo.
+  assert.equal(upcomingWeekStart(new Date("2026-09-18T09:00:00Z")), "2026-09-13", "on a Friday the calendar stays on this week — Friday and Saturday hold interviews");
+  assert.equal(upcomingWeekStart(new Date("2026-09-19T20:30:00Z")), "2026-09-13", "Saturday 11:30 PM in Cairo is still this week");
   assert.equal(
-    upcomingWeekStart(new Date("2026-09-17T21:30:00Z")),
+    upcomingWeekStart(new Date("2026-09-19T21:30:00Z")),
     "2026-09-20",
-    "Friday 12:30 AM in Cairo is Friday, though UTC still reads Thursday",
+    "Sunday 12:30 AM in Cairo is the new week, though UTC still reads Saturday",
   );
 
   // DAYLIGHT SAVING. Egypt keeps it again since 2023 (+3 in summer, +2 in winter), so the offset
@@ -340,9 +341,9 @@ function runWeekTests() {
   assert.deepEqual(september[4], ["2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", null, null, null]);
   assert.ok(september.every((row) => row.length === 7), "every row is a whole week");
 
-  assert.equal(formatWeekRange("2026-09-20"), "20 – 24 September 2026");
-  assert.equal(formatWeekRange("2026-09-27"), "27 September – 1 October 2026", "a week across a month names both");
-  assert.equal(formatWeekRange("2025-12-28"), "28 December 2025 – 1 January 2026", "and across a year, both years");
+  assert.equal(formatWeekRange("2026-09-20"), "20 – 26 September 2026", "the week runs Sunday to Saturday");
+  assert.equal(formatWeekRange("2026-09-27"), "27 September – 3 October 2026", "a week across a month names both");
+  assert.equal(formatWeekRange("2025-12-28"), "28 December 2025 – 3 January 2026", "and across a year, both years");
   assert.equal(formatWeekOf("2026-09-23"), "Week of: 20 September", "the grid is headed the way the owner's sheet is");
 }
 
@@ -533,7 +534,8 @@ function runValidationTests() {
     startMinutes: 600,
   });
   assert.equal(validateInterviewBookingInput({ ...good, notes: "   " }).notes, null, "a blank note is no note");
-  assert.throws(() => validateInterviewBookingInput({ ...good, dateKey: "2026-09-18" }), /Sunday to Thursday/, "a Friday is refused");
+  assert.equal(validateInterviewBookingInput({ ...good, dateKey: "2026-09-18" }).dateKey, "2026-09-18", "a Friday is booked like any day");
+  assert.equal(validateInterviewBookingInput({ ...good, dateKey: "2026-09-19" }).dateKey, "2026-09-19", "and a Saturday");
   assert.throws(() => validateInterviewBookingInput({ ...good, startMinutes: 8 * 60 + 30 }), /9:00 AM or later/);
   assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 60, startMinutes: 16 * 60 + 30 }), /ends by 5:00 PM/);
   assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 20 }), /30 minutes up to the whole day/);
@@ -577,7 +579,8 @@ function runSessionAndOutsideTests() {
   assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 30, slotMinutes: 45 }), /shorter than one slot/);
   assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 25 }), /at least 30 minutes/);
   assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 390 }), /ends by 5:00 PM/, "11:00 AM plus 6 h 30 min runs past five");
-  assert.throws(() => validateInterviewSessionInput({ ...session, dateKey: "2026-09-18" }), /Sunday to Thursday/);
+  assert.equal(validateInterviewSessionInput({ ...session, dateKey: "2026-09-18" }).dateKey, "2026-09-18", "a session may be held on a Friday");
+  assert.throws(() => validateInterviewSessionInput({ ...session, platform: "phone" }), /In office or Zoom/, "but never as a phone call — a session is one meeting for many");
   assert.throws(() => validateInterviewSessionInput({ ...session, platform: "teams" }), /In office or Zoom/);
 
   // Someone from outside Phoenix: a name, and a phone or e-mail if known.
@@ -819,7 +822,7 @@ async function runExportTests() {
     weekStart: "2026-09-23",
   });
   assert.equal(model.weekStart, "2026-09-20", "any day of the week exports that week");
-  assert.deepEqual(model.days.map((day) => day.weekday), ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"]);
+  assert.deepEqual(model.days.map((day) => day.weekday), ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], "the export carries every day of the week");
   assert.deepEqual(
     model.slots[0].perDay[0].map((entry) => entry.id),
     [early.id, second.id],
@@ -835,8 +838,8 @@ async function runExportTests() {
     `https://phoenix-hr.satopharma.com/recruitment/interview-calendar?week=2026-09-20&open=${zoom.id}`,
     "a name opens that interview on the calendar with its CV up",
   );
-  assert.equal(interviewCalendarFilename(model, "pdf"), "interview-calendar-20-24-september-2026.pdf", "the file is named by its week, in words");
-  assert.equal(interviewCalendarFilename(model, "xlsx"), "interview-calendar-20-24-september-2026.xlsx");
+  assert.equal(interviewCalendarFilename(model, "pdf"), "interview-calendar-20-26-september-2026.pdf", "the file is named by its week, in words");
+  assert.equal(interviewCalendarFilename(model, "xlsx"), "interview-calendar-20-26-september-2026.xlsx");
 
   // THE PDF — the owner's first choice, "I click on name the CV appear even in the export".
   const html = buildInterviewCalendarPdfHtml(model);
@@ -896,7 +899,7 @@ async function runExportTests() {
   assert.ok(html.includes('<header class="pm-mast pm-mast--compact">'), "the premium masthead heads the sheet, compact so the grid keeps its height");
   assert.ok(html.includes('<h1 class="pm-mast__t pm-mast__t--en" dir="ltr" lang="en">Interview Calendar</h1>'), "and its title is the one the old letterhead carried");
   assert.ok(
-    html.includes("Week of: 20 September · 20 – 24 September 2026 · generated 18 September 2026 at 15:00 (Cairo)"),
+    html.includes("Week of: 20 September · 20 – 26 September 2026 · generated 18 September 2026 at 15:00 (Cairo)"),
     "the old letterhead's one subtitle line is the masthead's subtitle, word for word",
   );
   assert.ok(!html.includes('class="lh"') && !html.includes("rpt__title"), "the hand-rolled letterhead is gone, not hidden");
@@ -905,7 +908,7 @@ async function runExportTests() {
   const foot = /<div class="pm-foot__code" dir="ltr">([^<]*)<\/div>/.exec(html)?.[1] ?? "";
   assert.equal(
     foot,
-    "Sato Pharma · Interview Calendar · 20 – 24 September 2026 · SATO-DIS-2026-01 v1.0",
+    "Sato Pharma · Interview Calendar · 20 – 26 September 2026 · SATO-DIS-2026-01 v1.0",
     "the running foot names the company, the paper and its week — what Chrome's footer used to say — and the identity code",
   );
   assert.ok(!/phoenix/i.test(foot), "a company paper's foot says Sato Pharma, never Phoenix");

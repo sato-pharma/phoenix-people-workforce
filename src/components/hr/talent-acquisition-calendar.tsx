@@ -74,7 +74,7 @@ const VIEWS: readonly { key: View; label: string }[] = [
   { key: "month", label: "Month" },
 ];
 
-/** Sunday-first, because the company week is (`CALENDAR_WEEKDAYS` is 0..4 plus the weekend). */
+/** Sunday-first, because the company week is (`CALENDAR_WEEKDAYS` runs Sunday to Saturday). */
 const MONTH_COLUMN_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /**

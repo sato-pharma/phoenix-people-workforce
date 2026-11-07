@@ -6,6 +6,10 @@
 // A RESULT IS A NEW ROW, NEVER AN EDIT. Both tables are append-only in the database itself; a changed
 // mind is a second row and the newest wins (stage.ts).
 //
+// THE 1ST INTERVIEW'S RESULT CONFIRMS THE AREA AND THE LINE (owner, 7 Nov 2026). They are stored on the
+// result row itself (append-only like the rest), the confirmed area wins over the workspace filing on
+// the Medical Rep Hiring page and for the DSM's folder, and the Pedia line adds the RSM interview.
+//
 // WHAT A RESULT ALSO MOVES, so the rest of the system agrees with it:
 //   * the interview's own `outcome` (pass → shortlisted, backup → backup, not pass → rejected), so the
 //     calendar's "Outcome?" flag, its daily nag and the ten-minute settle job never ask again;
@@ -25,6 +29,7 @@ import { statusChangeRefusal } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadPeople, personName } from "@/lib/recruitment/interview-calendar";
 import { mayRecommend, mayRecordStep, mrViewer } from "@/lib/recruitment/mr-hiring/access";
+import { isKnownMrArea, loadMrAreaChoices } from "@/lib/recruitment/mr-hiring/areas";
 import { loadMrCandidate } from "@/lib/recruitment/mr-hiring/facts-db";
 import {
   parseMrRecommendationInput,
@@ -85,6 +90,11 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
   const check = mayRecordStep(viewer, record.facts, input.step, { decidedWithoutDsm: input.decidedWithoutDsm });
   if (!check.ok) throw forbiddenError(check.reason);
 
+  // The confirmed area is one of the areas the WhatsApp bot offers, by its own name — never free text.
+  if (input.confirmedArea && !isKnownMrArea(await loadMrAreaChoices(), input.confirmedArea)) {
+    throw validationError("Choose the area from the list.");
+  }
+
   const actor = hrIdForStorage(access.hrId);
   if (!actor) throw forbiddenError("Sign in again to record a result.");
   const { error } = await recruitmentDb()
@@ -94,6 +104,8 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
       by_hr_id: actor,
       candidate_id: candidateId,
       comment: input.comment,
+      confirmed_area_name: input.confirmedArea,
+      confirmed_line: input.confirmedLine,
       decided_without_dsm: check.decidedWithoutDsm,
       rating: input.rating,
       result: input.result,

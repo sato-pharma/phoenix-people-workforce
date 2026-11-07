@@ -19,7 +19,7 @@ import { RecruitmentPanel, RecruitmentPill } from "@/components/recruitment/recr
 import { MrJourneyDrawer } from "@/components/recruitment/mr-hiring/mr-journey-drawer";
 import { phxButtonAccentClassName, phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { portalCandidatesHref } from "@/lib/recruitment/candidate-page-link";
-import { cairoWhen, mrStageHeadline, mrStageStateLine, mrStageTone } from "@/lib/recruitment/mr-hiring/display";
+import { cairoWhen, mrStageHeadline, mrStageStateLine, mrStageTone, mrWhere } from "@/lib/recruitment/mr-hiring/display";
 import type { MrInterviewRow } from "@/lib/recruitment/mr-hiring/rows";
 import { MR_ROUND_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 
@@ -72,7 +72,7 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
                               "Zoom — the link is on the interview calendar"
                             )
                           ) : (
-                            `In person · ${booking.location?.trim() || "Head office"}`
+                            mrWhere(booking)
                           )}
                         </li>
                       ))}

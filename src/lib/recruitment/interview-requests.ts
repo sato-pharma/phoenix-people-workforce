@@ -352,7 +352,7 @@ export async function createInterviewRequest(
 
   if (!isDateKey(input.requestedDay)) throw new Error("Choose the day for the interviews.");
   const day = input.requestedDay;
-  if (!isBookableDay(day)) throw new Error("Interviews run Sunday to Thursday — choose one of those days.");
+  if (!isBookableDay(day)) throw new Error("Choose the day of the interviews.");
 
   const interviewer = await requireRequestInterviewer(input.interviewerHrId);
 

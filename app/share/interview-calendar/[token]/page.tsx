@@ -78,7 +78,7 @@ export default async function SharedInterviewCalendarPage({
         <RecruitmentPageHeader
           badges={
             <>
-              <AdminInsightChip tone="orange">Sunday to Thursday · Cairo time</AdminInsightChip>
+              <AdminInsightChip tone="orange">Every day · Cairo time</AdminInsightChip>
               {lockedWeek ? <AdminInsightChip tone="slate">This link opens one week</AdminInsightChip> : null}
             </>
           }

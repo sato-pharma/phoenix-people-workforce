@@ -116,8 +116,11 @@ function companyLines(): InvitationLine[] {
   ];
 }
 
-function whereLines(facts: InvitationFacts): InvitationLine[] {
+function whereLines(facts: InvitationFacts, recipient: InvitationRecipient): InvitationLine[] {
   if (facts.platform === "zoom") return facts.zoomJoinUrl ? [{ label: "Zoom link", value: facts.zoomJoinUrl }] : [];
+  if (facts.platform === "phone") {
+    return [{ label: "Interview", value: recipient === "candidate" ? "By phone call — we will call you at this time" : "By phone call — call the candidate at this time" }];
+  }
   // A place the booker named is printed as it was typed — the head office's map link would send the
   // candidate to the wrong building.
   const place = facts.location?.trim();
@@ -160,13 +163,13 @@ export function buildInvitationMessage(input: { recipient: InvitationRecipient; 
     };
   }
 
-  const where = whereLines(facts);
+  const where = whereLines(facts, recipient);
   const isZoom = facts.platform === "zoom";
   const action = isZoom
     ? facts.zoomJoinUrl
       ? { href: facts.zoomJoinUrl, label: "Join the Zoom meeting" }
       : null
-    : facts.location?.trim()
+    : facts.platform === "phone" || facts.location?.trim()
       ? null
       : { href: VENUE.mapUrl, label: "Open the location on the map" };
 

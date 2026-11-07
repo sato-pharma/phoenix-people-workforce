@@ -22,6 +22,8 @@ import {
   receivedOnOrAfter,
   type MrClosed,
   type MrInterviewRound,
+  type MrLine,
+  type MrPlatform,
   type MrRecommendation,
   type MrResult,
   type MrResultStep,
@@ -33,7 +35,7 @@ export type MrBookingFact = {
   round: MrInterviewRound | null;
   startsAt: string;
   durationMinutes: number;
-  platform: "zoom" | "in_office";
+  platform: MrPlatform;
   location: string | null;
   zoomJoinUrl: string | null;
   outcome: string | null;
@@ -49,6 +51,10 @@ export type MrStepResultFact = {
   rating: number | null;
   comment: string;
   decidedWithoutDsm: boolean;
+  /** The 1st-interview result only: the area the candidate is applying to, as HR confirmed it. */
+  confirmedArea: string | null;
+  /** The 1st-interview result only: the line HR confirmed. Pedia adds the RSM interview. */
+  confirmedLine: MrLine | null;
   bookingId: string | null;
   byHrId: string;
   byName: string | null;
@@ -198,6 +204,26 @@ function latestResult(results: readonly MrStepResultFact[], steps: readonly MrRe
   return newest(results.filter((row) => steps.includes(row.step)));
 }
 
+/** The line HR confirmed at the newest 1st-interview result, or null when none was confirmed. */
+export function mrConfirmedLine(facts: Pick<MrCandidateFacts, "results">): MrLine | null {
+  return latestResult(facts.results, ["hr_first"])?.confirmedLine ?? null;
+}
+
+/** The area HR confirmed at the newest 1st-interview result, or null when none was confirmed. */
+export function mrConfirmedArea(facts: Pick<MrCandidateFacts, "results">): string | null {
+  return latestResult(facts.results, ["hr_first"])?.confirmedArea?.trim() || null;
+}
+
+/**
+ * Whether this candidate has the RSM interview: HR confirmed the Pedia line at the 1st interview
+ * (owner, 7 Nov 2026 — "by default, it is not appearing"). An RSM interview already booked or
+ * evaluated keeps its step, so nothing that happened ever disappears from the journey.
+ */
+export function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings">): boolean {
+  if (mrConfirmedLine(facts) === "pedia") return true;
+  return facts.bookings.some((booking) => booking.round === "rsm") || facts.results.some((row) => row.step === "rsm");
+}
+
 /** Whether an interview's time is over. */
 export function mrInterviewEnded(booking: Pick<MrBookingFact, "startsAt" | "durationMinutes">, now: Date): boolean {
   const start = new Date(booking.startsAt).getTime();
@@ -252,6 +278,10 @@ export function mrHiringStage(facts: MrCandidateFacts, now: Date = new Date()): 
 
   const checklist: MrChecklistItem[] = MR_STEPS.map((step) => ({ booking: null, result: null, status: "upcoming", step }));
   const item = (step: MrStep) => checklist[MR_STEPS.indexOf(step)];
+  // The RSM interview is the Pedia line's alone — decided up front, so a candidate who is not on it
+  // never shows the step, not even as "upcoming" while the earlier steps run.
+  const rsmApplies = mrRsmApplies(facts);
+  if (!rsmApplies) item("rsm").status = "skipped";
   const mark = (step: MrStep, status: MrChecklistItem["status"], result: MrStepResultFact | null = null, booking: MrBookingFact | null = null) => {
     const entry = item(step);
     entry.status = status;
@@ -320,13 +350,10 @@ export function mrHiringStage(facts: MrCandidateFacts, now: Date = new Date()): 
     const rounds = spec.step === "final" ? (jointFinal ? (["joint_final"] as const) : (["nsm_final"] as const)) : spec.rounds;
     const booking = latestBooking(facts.bookings, rounds);
     const result = latestResult(facts.results, rounds as readonly MrResultStep[]);
-    // The RSM interview is "if applicable" (the Pedia line): with none booked and none recorded it is
-    // not needed, and the candidate goes on to the 3rd interview. Once booked, its evaluation is
-    // mandatory like every other round's.
-    if (spec.step === "rsm" && !booking && !result) {
-      mark("rsm", "skipped");
-      continue;
-    }
+    // The RSM interview is "if applicable" (the Pedia line, as HR confirmed it at the 1st interview):
+    // off the Pedia line the candidate goes straight on to the 3rd interview. On it, the RSM interview
+    // is booked and evaluated like every other round, and the 3rd interview waits for it.
+    if (spec.step === "rsm" && !rsmApplies) continue;
     if (result) {
       mark(spec.step, "done", result, booking);
       const closed = closedByResult(result, spec.step);

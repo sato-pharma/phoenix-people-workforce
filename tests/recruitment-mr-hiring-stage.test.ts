@@ -15,8 +15,8 @@ import {
   type MrRecommendationFact,
   type MrStepResultFact,
 } from "../src/lib/recruitment/mr-hiring/stage.ts";
-import { mrStageHeadline, mrStageStateLine } from "../src/lib/recruitment/mr-hiring/display.ts";
-import { isInMrWorkflow, type MrInterviewRound, type MrResult, type MrResultStep } from "../src/lib/recruitment/mr-hiring/vocabulary.ts";
+import { mrStageHeadline, mrStageStateLine, mrVisibleChecklist, mrWhere } from "../src/lib/recruitment/mr-hiring/display.ts";
+import { isInMrWorkflow, type MrInterviewRound, type MrLine, type MrResult, type MrResultStep } from "../src/lib/recruitment/mr-hiring/vocabulary.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 const NOW = new Date("2026-11-12T12:00:00.000Z");
@@ -60,6 +60,8 @@ function result(step: MrResultStep, value: MrResult, createdAt: string, extra: P
     byHrId: "B-10",
     byName: "Hassan Kamel",
     comment: "Clear and confident.",
+    confirmedArea: null,
+    confirmedLine: null,
     createdAt,
     decidedWithoutDsm: false,
     id: `r-${seq}`,
@@ -98,7 +100,7 @@ export function runRecruitmentMrHiringStageTests() {
   // 1 — a new CV on a company WhatsApp waits for HR's screening.
   const fresh = mrHiringStage(facts(), NOW);
   assert.ok(fresh.open && fresh.step === "screening" && fresh.state === "to_record" && fresh.action === "record_screening", "a new CV waits for HR screening");
-  assert.equal(mrStageHeadline(fresh), "Step 1 of 9 · New CV · HR screening", "the headline numbers the step in the email's own words");
+  assert.equal(mrStageHeadline(fresh), "Step 1 of 8 · New CV · HR screening", "the headline numbers the step in the email's own words");
 
   // CVs from 7 Nov (owner, 7 Nov 2026: "all the cvs recieved starting from 7 nov"): a CV received before
   // 7 Nov 00:00 Cairo is not in the workflow at all — not on the page, no journey, nothing recorded or
@@ -183,26 +185,52 @@ export function runRecruitmentMrHiringStageTests() {
   assert.equal(mrBookingRefusal(atHrManager, "hr_manager"), null, "or the 3rd interview itself");
   assert.notEqual(mrBookingRefusal(atHrManager, "nsm_final"), null, "the NSM final waits for the 3rd interview");
 
-  // The RSM interview — "If Applicable" (the Pedia line), owner's added section of 7 Nov 2026. With
-  // none booked it is not needed and the candidate goes on to the 3rd interview; HR books it from there.
-  assert.equal(atHrManager.checklist.find((item) => item.step === "rsm")?.status, "skipped", "no RSM interview booked → the RSM step is not needed");
-  assert.equal(mrBookingRefusal(atHrManager, "rsm"), null, "after the DSM passes, HR may book the RSM interview");
-  assert.notEqual(mrBookingRefusal(dsmSilent, "rsm"), null, "never before the DSM has passed");
-  assert.notEqual(mrBookingRefusal(fresh, "rsm"), null, "nor at screening");
-  const rsmBooked = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("rsm", "2026-11-13T08:00:00.000Z", "R-1", "Hany Fouad")] }), NOW);
+  // The RSM interview — "If Applicable" (the Pedia line), owner's added section of 7 Nov 2026. It is
+  // there only when HR confirms the Pedia line at the 1st interview's result (owner, 7 Nov 2026: "by
+  // default, it is not appearing"); off it the candidate goes straight on to the 3rd interview.
+  assert.equal(atHrManager.checklist.find((item) => item.step === "rsm")?.status, "skipped", "no line confirmed → no RSM step");
+  assert.notEqual(mrBookingRefusal(atHrManager, "rsm"), null, "and no RSM interview to book");
+  assert.equal(mrVisibleChecklist(fresh).some((item) => item.step === "rsm"), false, "a new CV's journey does not show the RSM step at all");
+  assert.equal(mrVisibleChecklist(fresh).length, 8, "it reads eight steps");
+  const onLine = (line: MrLine): Partial<MrCandidateFacts> => {
+    const through = throughDsm();
+    return {
+      ...through,
+      results: through.results!.map((row) => (row.step === "hr_first" ? { ...row, confirmedArea: "Nasr City", confirmedLine: line } : row)),
+    };
+  };
+  const cns = mrHiringStage(facts(onLine("cns")), NOW);
+  assert.ok(cns.open && cns.step === "hr_manager" && cns.action === "book_hr_manager", "HR confirmed CNS → straight on to the 3rd interview");
+  assert.equal(cns.checklist.find((item) => item.step === "rsm")?.status, "skipped", "no RSM step on the CNS line");
+  assert.notEqual(mrBookingRefusal(cns, "rsm"), null, "nor an RSM interview to book");
+  assert.equal(mrHiringStage(facts(onLine("anti_infective")), NOW).checklist.find((item) => item.step === "rsm")?.status, "skipped", "nor on Anti Infective");
+  const pedia = mrHiringStage(facts(onLine("pedia")), NOW);
+  assert.ok(pedia.open && pedia.step === "rsm" && pedia.state === "to_book" && pedia.action === "book_rsm", "HR confirmed Pedia → after the DSM, the RSM interview is booked");
+  assert.equal(mrStageHeadline(pedia), "Step 4 of 9 · RSM interview · Pedia line", "it is step 4 of 9, between the DSM and the HR Manager");
+  assert.equal(mrBookingRefusal(pedia, "rsm"), null, "HR books the RSM interview");
+  assert.notEqual(mrBookingRefusal(pedia, "hr_manager"), null, "the 3rd interview waits for the RSM");
+  assert.notEqual(mrBookingRefusal(pedia, "joint_final"), null, "and so does the joint final");
+  const pediaFirst = onLine("pedia");
+  const pediaAtDsm = mrHiringStage(facts({ ...pediaFirst, bookings: pediaFirst.bookings!.slice(0, 1), results: pediaFirst.results!.slice(0, 2) }), NOW);
+  assert.ok(pediaAtDsm.open && pediaAtDsm.step === "dsm", "a Pedia candidate still sees the DSM first");
+  assert.equal(pediaAtDsm.checklist.find((item) => item.step === "rsm")?.status, "upcoming", "with the RSM step shown as coming next");
+  assert.notEqual(mrBookingRefusal(pediaAtDsm, "rsm"), null, "never booked before the DSM has passed");
+  assert.equal(mrStageHeadline(pediaAtDsm), "Step 3 of 9 · 2nd interview · DSM", "the Pedia line counts nine steps");
+  const pediaBookings = pediaFirst.bookings!;
+  const pediaResults = pediaFirst.results!;
+  const rsmBooked = mrHiringStage(facts({ ...pediaFirst, bookings: [...pediaBookings, booking("rsm", "2026-11-13T08:00:00.000Z", "R-1", "Hany Fouad")] }), NOW);
   assert.ok(rsmBooked.open && rsmBooked.step === "rsm" && rsmBooked.state === "booked", "once booked, the RSM interview is the step the candidate is on");
-  assert.equal(mrStageHeadline(rsmBooked), "Step 4 of 9 · RSM interview · Pedia line", "it is step 4, between the DSM and the HR Manager");
   assert.match(mrBookingRefusal(rsmBooked, "hr_manager") ?? "", /already has an interview/, "the 3rd interview waits for the RSM's evaluation");
-  const rsmEnded = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")] }), NOW);
+  const rsmEnded = mrHiringStage(facts({ ...pediaFirst, bookings: [...pediaBookings, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")] }), NOW);
   assert.ok(rsmEnded.open && rsmEnded.state === "awaiting_result" && rsmEnded.action === "record_rsm", "an ended RSM interview waits for the RSM's evaluation — it is mandatory once booked");
   assert.ok(rsmEnded.open && rsmEnded.waitingFor.kind === "interviewer" && rsmEnded.waitingFor.hrId === "R-1", "it waits for the RSM who held it");
   assert.equal(mrStageStateLine(rsmEnded), "Waiting for Hany Fouad's evaluation since 11 Nov", "the state line says evaluation, in the email's word");
   assert.equal(rsmEnded.open && rsmEnded.hrMayDecideWithoutDsm, false, "HR's no-feedback decision is the DSM's step only");
   const rsmPassed = mrHiringStage(
     facts({
-      ...throughDsm(),
-      bookings: [...throughDsm().bookings!, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")],
-      results: [...throughDsm().results!, result("rsm", "pass", "2026-11-11T09:00:00.000Z", { byHrId: "R-1" })],
+      ...pediaFirst,
+      bookings: [...pediaBookings, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")],
+      results: [...pediaResults, result("rsm", "pass", "2026-11-11T09:00:00.000Z", { byHrId: "R-1" })],
     }),
     NOW,
   );
@@ -211,15 +239,16 @@ export function runRecruitmentMrHiringStageTests() {
   assert.notEqual(mrBookingRefusal(rsmPassed, "rsm"), null, "an RSM interview already evaluated is not booked again");
   const rsmFailed = mrHiringStage(
     facts({
-      ...throughDsm(),
-      bookings: [...throughDsm().bookings!, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")],
-      results: [...throughDsm().results!, result("rsm", "not_pass", "2026-11-11T09:00:00.000Z", { byHrId: "R-1" })],
+      ...pediaFirst,
+      bookings: [...pediaBookings, booking("rsm", "2026-11-11T08:00:00.000Z", "R-1", "Hany Fouad")],
+      results: [...pediaResults, result("rsm", "not_pass", "2026-11-11T09:00:00.000Z", { byHrId: "R-1" })],
     }),
     NOW,
   );
   assert.ok(!rsmFailed.open && rsmFailed.closed === "rejected" && rsmFailed.closedAt === "rsm", "Do not pass at the RSM rejects at the RSM");
-  const hrManagerBooked = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("hr_manager", "2026-11-13T08:00:00.000Z", "B-10", "Hassan Kamel")] }), NOW);
-  assert.notEqual(mrBookingRefusal(hrManagerBooked, "rsm"), null, "once the 3rd interview is booked, the RSM interview is no longer offered");
+  // An RSM interview booked before the line was asked never disappears from the journey.
+  const earlierRsm = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("rsm", "2026-11-13T08:00:00.000Z", "R-1", "Hany Fouad")] }), NOW);
+  assert.ok(earlierRsm.open && earlierRsm.step === "rsm" && earlierRsm.state === "booked", "an RSM interview already booked keeps its step, line or no line");
 
   const base = throughDsm();
   const atRecommendation = mrHiringStage(
@@ -241,7 +270,7 @@ export function runRecruitmentMrHiringStageTests() {
     NOW,
   );
   assert.ok(joint.open && joint.jointFinal && joint.step === "recommendation", "a passed joint final goes straight to the recommendation");
-  assert.equal(mrStageHeadline(dsmSilent), "Step 3 of 9 · 2nd interview · DSM", "the DSM is step 3 of 9");
+  assert.equal(mrStageHeadline(dsmSilent), "Step 3 of 8 · 2nd interview · DSM", "off the Pedia line the DSM is step 3 of 8");
   assert.equal(joint.checklist.find((item) => item.step === "hr_manager")?.status, "skipped", "the 3rd interview shows as skipped, not missing");
 
   // 7 — the HR Manager's decision, then 8 — the offer.
@@ -271,6 +300,12 @@ export function runRecruitmentMrHiringStageTests() {
   // The workspace's own reject closes the candidate wherever they were.
   const rejectedInWorkspace = mrHiringStage(facts({ ...throughDsm(), status: "rejected" }), NOW);
   assert.ok(!rejectedInWorkspace.open && rejectedInWorkspace.closed === "rejected" && rejectedInWorkspace.closedAt === "hr_manager", "a reject made elsewhere closes at the step they were on");
+
+  // Where an interview is held, in words — the phone call is the 1st interview's third way.
+  assert.equal(mrWhere({ location: null, platform: "zoom" }), "Zoom");
+  assert.equal(mrWhere({ location: null, platform: "phone" }), "Phone call", "a phone call reads as a phone call, never as a place");
+  assert.equal(mrWhere({ location: " Maadi office ", platform: "in_office" }), "In person · Maadi office");
+  assert.equal(mrWhere({ location: null, platform: "in_office" }), "In person · Head office");
 
   // The counts strip adds every candidate exactly once.
   const counts = mrStageCounts([fresh, held, screened, hired, kept]);

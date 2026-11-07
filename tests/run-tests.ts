@@ -10248,7 +10248,7 @@ await runTest(
 );
 
 await runTest(
-  "the interview calendar books Sunday to Thursday, 9 to 5 in Cairo across daylight saving; only its owner shares it, only editors book; Phoenix makes the Zoom meeting and sends the candidate nothing; the PDF and Excel week make every name a link to its CV; and Schedule interview sits on every CV screen",
+  "the interview calendar books every day of the week, 9 to 5 in Cairo across daylight saving; only its owner shares it, only editors book; Phoenix makes the Zoom meeting and sends the candidate nothing; the PDF and Excel week make every name a link to its CV; and Schedule interview sits on every CV screen",
   runInterviewCalendarTests,
 );
 

@@ -1,9 +1,9 @@
 "use client";
 
 // The interview calendar's date picker: one month, Sunday first, and only the days an interview can
-// be held on are choosable — Sunday to Thursday (the owner's choice, 2026-09-18), and never a day
-// already gone. Friday and Saturday stay on the grid, struck quiet, so the month still reads as a
-// month rather than as a five-column puzzle.
+// be held on are choosable — every day of the week since 7 Nov 2026 (it was Sunday to Thursday), and
+// never a day already gone. A day that cannot be booked stays on the grid, struck quiet, so the month
+// still reads as a month.
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 

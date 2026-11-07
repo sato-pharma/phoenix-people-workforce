@@ -8,7 +8,7 @@
 //   · Nothing is sent to the candidate. The calendar is the whole of it.
 //   · Only he and the people he shares it with can see it.
 //   · Phoenix creates the Zoom meeting itself (src/lib/zoom/meetings.ts).
-//   · Sunday to Thursday, 9:00 AM to 5:00 PM, half-hour rows (interview-calendar-week.ts).
+//   · every day of the week, 9:00 AM to 5:00 PM, half-hour rows (interview-calendar-week.ts).
 //
 // The same evening he asked for more, and answered each question in chat:
 //
@@ -76,6 +76,7 @@ import {
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
   isInterviewPlatform,
+  isSessionPlatform,
   isInterviewVerdict,
   readInterviewOutcome,
   resolveCalendarRole,
@@ -1619,7 +1620,7 @@ export function validateExternalPerson(raw: unknown): ExternalPersonInput {
 export function validateInterviewTime(input: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown }) {
   const dateKey = typeof input.dateKey === "string" ? input.dateKey.trim() : "";
   if (!isDateKey(dateKey)) throw new Error("Choose a date for the interview.");
-  if (!isBookableDay(dateKey)) throw new Error("Interviews are booked Sunday to Thursday only.");
+  if (!isBookableDay(dateKey)) throw new Error("Interviews are not booked on that day.");
   const startMinutes = Number(input.startMinutes);
   const durationMinutes = Number(input.durationMinutes);
   if (!ALL_DURATION_CHOICES.includes(durationMinutes)) {
@@ -1655,6 +1656,15 @@ export function validateInterviewBookingInput(input: {
   return { candidateId: candidateId || null, external, ...time, notes: cleanNotes(input.notes), platform: input.platform };
 }
 
+/**
+ * A phone call is the Medical Rep HR 1st interview's third way and no other interview's (owner,
+ * 7 Nov 2026: "only for hr first interview u will add a third option which is phone call"). Checked
+ * on every booking and every move, so the calendar's own routes cannot book one either.
+ */
+export function phoneCallRefusal(platform: unknown, round: unknown): string | null {
+  return platform === "phone" && round !== "hr_first" ? "A phone call is for the HR 1st interview only — choose In office or Zoom." : null;
+}
+
 export type InterviewSessionInput = {
   title: string | null;
   dateKey: string;
@@ -1679,7 +1689,7 @@ export function validateInterviewSessionInput(input: {
   if (title.length > 120) throw new Error("Keep the session's name under 120 characters.");
   const dateKey = typeof input.dateKey === "string" ? input.dateKey.trim() : "";
   if (!isDateKey(dateKey)) throw new Error("Choose the day of the session.");
-  if (!isBookableDay(dateKey)) throw new Error("Interviews are booked Sunday to Thursday only.");
+  if (!isBookableDay(dateKey)) throw new Error("Sessions are not held on that day.");
   const startMinutes = Number(input.startMinutes);
   const durationMinutes = Number(input.durationMinutes);
   if (!Number.isInteger(durationMinutes) || durationMinutes < 30 || durationMinutes > MAX_DURATION_MINUTES || durationMinutes % 15 !== 0) {
@@ -1691,7 +1701,7 @@ export function validateInterviewSessionInput(input: {
   const slotMinutes = Number(input.slotMinutes);
   if (!(SESSION_SLOT_CHOICES as readonly number[]).includes(slotMinutes)) throw new Error("Choose the slot length: 15, 30, 45 or 60 minutes.");
   if (slotMinutes > durationMinutes) throw new Error("The session is shorter than one slot.");
-  if (!isInterviewPlatform(input.platform)) throw new Error("Choose In office or Zoom.");
+  if (!isSessionPlatform(input.platform)) throw new Error("Choose In office or Zoom.");
   return { dateKey, durationMinutes, notes: cleanNotes(input.notes), platform: input.platform, slotMinutes, startMinutes, title: title || null };
 }
 
@@ -2014,6 +2024,8 @@ export async function createInterviewBooking(
     assertMayBookInterview(caller, weekStartFor(input.dateKey), raw.interviewerHrId);
   }
   const interviewRound = interviewRoundValue(raw.interviewRound);
+  const phoneRefused = phoneCallRefusal(input.platform, interviewRound);
+  if (phoneRefused) throw new Error(phoneRefused);
   const location = interviewLocationLabel(raw.location);
   const interviewerHrId = await resolveInterviewer(raw.interviewerHrId, null, interviewRound);
   const panelistHrIds = await resolvePanelists(raw.panelistHrIds, interviewerHrId);
@@ -2224,6 +2236,10 @@ export async function updateInterviewBooking(
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
   const nextRound = patch.interviewRound === undefined ? row.interview_round : interviewRoundValue(patch.interviewRound);
+  // Into a session's slot the session's own place applies; anywhere else the place it ends with.
+  const intoSession = typeof patch.sessionId === "string" && patch.sessionId.trim() !== "";
+  const phoneRefused = intoSession ? null : phoneCallRefusal(patch.platform ?? row.platform, nextRound);
+  if (phoneRefused) throw new Error(phoneRefused);
   const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id, nextRound);
   // The panel is validated against the EFFECTIVE lead — the new interviewer if one is being set,
   // otherwise the one already on the row — so the lead is never also listed as a panel member.
@@ -2317,14 +2333,14 @@ export async function updateInterviewBooking(
     if (!isInterviewPlatform(platform)) throw new Error("Choose In office or Zoom.");
     // The week the interview LANDS in is a book-tier check — but a requester has no book right, so for
     // them the gate above (their own request) is what authorises the move; the day itself is still held
-    // to a bookable Sun–Thu future slot by validateInterviewTime.
+    // to a bookable future slot by validateInterviewTime.
     if (hasBook) requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
     const moved =
       input.dateKey !== cairoDateKey(at) || input.startMinutes !== cairoMinutesOfDay(at) || input.durationMinutes !== Number(row.duration_minutes);
 
     let zoom: ZoomOutcome;
     let fresh = false;
-    if (platform === "in_office") {
+    if (platform !== "zoom") {
       if (row.zoom_meeting_id) {
         await dropMeeting(zoomConfig, row.zoom_meeting_id);
         await unhookPolls({ bookingId: row.id });
@@ -2393,7 +2409,7 @@ export async function retryInterviewZoomMeeting(
   const row = await loadBookingRow(bookingId);
   requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
   if (row.session_id) throw new Error("This interview is a slot in a session and uses the session's meeting — try again on the session.");
-  if (row.platform !== "zoom") throw new Error("This interview is in the office, so it has no Zoom meeting.");
+  if (row.platform !== "zoom") throw new Error("This interview is not on Zoom, so it has no Zoom meeting.");
   if (row.zoom_status === "created" && row.zoom_meeting_id) return getInterviewBooking(caller, row.id);
   if (!zoomConfig) throw new Error("Zoom is not connected to Phoenix yet.");
   return updateInterviewBooking(caller, bookingId, {}, zoomConfig);

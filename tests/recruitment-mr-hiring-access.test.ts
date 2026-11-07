@@ -43,7 +43,7 @@ function booking(round: MrInterviewRound, startsAt: string, interviewerHrId: str
 
 function result(step: MrResultStep, value: MrResult, createdAt: string): MrStepResultFact {
   seq += 1;
-  return { bookingId: null, byHrId: "B-10", byName: null, comment: "Written on the CV.", createdAt, decidedWithoutDsm: false, id: `r-${seq}`, rating: null, result: value, step };
+  return { bookingId: null, byHrId: "B-10", byName: null, comment: "Written on the CV.", confirmedArea: null, confirmedLine: null, createdAt, decidedWithoutDsm: false, id: `r-${seq}`, rating: null, result: value, step };
 }
 
 function facts(overrides: Partial<MrCandidateFacts> = {}): MrCandidateFacts {
@@ -70,6 +70,7 @@ function record(candidateFacts: MrCandidateFacts, extra: Partial<MrCandidateReco
     facts: candidateFacts,
     governorate: "Giza",
     intake: [],
+    line: null,
     name: "Dr Karim Fathy",
     offerId: null,
     sentToHrId: null,
@@ -116,14 +117,16 @@ export function runRecruitmentMrHiringAccessTests() {
   // 5 and 6 — the NSM's final and recommendation.
   const dsmPassed = [...screenedAndFirst, result("dsm", "pass", "2026-11-10T09:00:00.000Z")];
 
-  // The RSM interview (Pedia line, if applicable): "the RSM ... must submit their evaluation in the system".
+  // The RSM interview (Pedia line, as HR confirmed it at the 1st interview): "the RSM ... must submit
+  // their evaluation in the system".
+  const pediaDsmPassed = dsmPassed.map((row) => (row.step === "hr_first" ? { ...row, confirmedArea: "Giza (1)", confirmedLine: "pedia" as const } : row));
   const rsmEnded = facts({
     bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1"), booking("rsm", "2026-11-11T08:00:00.000Z", "R-1")],
-    results: dsmPassed,
+    results: pediaDsmPassed,
   });
   const rsmRunning = facts({
     bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1"), booking("rsm", "2026-11-12T11:45:00.000Z", "R-1")],
-    results: dsmPassed,
+    results: pediaDsmPassed,
   });
   assert.equal(mayRecordStep(rsm, rsmEnded, "rsm", { now: NOW }).ok, true, "the RSM who held the interview submits the evaluation");
   assert.equal(mayRecordStep(rsm, rsmRunning, "rsm", { now: NOW }).ok, false, "not before the interview has ended");
@@ -140,9 +143,11 @@ export function runRecruitmentMrHiringAccessTests() {
   const atThird = facts({ bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1")], results: dsmPassed });
   assert.deepEqual(
     buildMrRow(talent, record(atThird), NOW).can.book,
-    ["hr_manager", "joint_final", "rsm"],
-    "after the DSM, HR may book the 3rd interview, the joint final or the RSM's — the 3rd interview first, so the page's button books it",
+    ["hr_manager", "joint_final"],
+    "after the DSM, HR may book the 3rd interview or the joint final — no RSM interview unless HR confirmed the Pedia line",
   );
+  const atRsm = facts({ bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1")], results: pediaDsmPassed });
+  assert.deepEqual(buildMrRow(talent, record(atRsm), NOW).can.book, ["rsm"], "on the Pedia line, the RSM interview is the only one HR books after the DSM");
   const finalEnded = facts({
     bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1"), booking("joint_final", "2026-11-11T08:00:00.000Z", "N-1", ["B-10"])],
     results: dsmPassed,

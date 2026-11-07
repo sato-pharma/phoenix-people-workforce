@@ -19,7 +19,7 @@ One vocabulary everywhere — the page, the drawer, the portal panel, the worksp
 | 1 | New CV · HR screening | 1–3 | HR: Pass / Keep as backup / Do not pass |
 | 2 | 1st interview · HR | 3, 5 | Book → interview → HR's result |
 | 3 | 2nd interview · DSM | 4, 5, 6 | Book (sends the CV to the DSM and notifies him) → the DSM's feedback, or HR decides without it |
-| 4 | RSM interview · Pedia line | RSM section | Only when HR books it (see below) → the RSM's evaluation |
+| 4 | RSM interview · Pedia line | RSM section | Only when HR confirmed the Pedia line at the 1st interview (see below) → book → the RSM's evaluation |
 | 5 | 3rd interview · HR Manager | 7 | Book → the HR Manager's result |
 | 6 | Final interview · NSM (or Joint final · HR Manager + NSM) | 7 | Book → result |
 | 7 | NSM recommendation | 8 | The NSM: Make an offer / Keep as backup, with the salary and the joining date |
@@ -51,6 +51,21 @@ outcome sync and Mark as hired therefore move it without any second write that c
   or Giza, on Zoom for anyone else**: the question is pre-filled from the candidate's governorate (English or
   Arabic spelling) and HR confirms it. The company's Giza *region* is never used — it also covers Beni Suef and
   Fayoum. The Zoom link comes from the Sato Pharma Zoom account automatically.
+- **The 1st interview may also be a phone call** (owner, 7 Nov 2026: "only for hr first interview u will add a
+  third option which is phone call"). HR picks it as the third tile beside In person and Zoom; it needs no
+  Cairo-or-Giza answer, keeps no place and makes no Zoom meeting, and the notice and invitation say "by phone
+  call". No other interview may be a phone call — the Medical Rep page refuses it for every later round, and
+  the interview calendar's own booking and move routes refuse it too (`phoneCallRefusal`). A session (one
+  meeting for many candidates) is never a phone call; the database allows `phone` on a booking only.
+- **The 1st interview's result confirms the area and the line** (owner, 7 Nov 2026: "make the HR able to
+  confirm the location … the candidate is applying to, and the line"). The area is chosen from the WhatsApp
+  bot's own list of Medical Rep areas, grouped by region (`areas.ts`) — never typed — and the server refuses a
+  name that is not on it. The line is Pedia, Anti Infective or CNS. A pass needs both; a backup or a "do not
+  pass" may carry them. The confirmed area wins over the workspace filing on the page, and the line rides on
+  every later interview booking.
+- **Interviews on any day.** The interview calendar opened Friday and Saturday on 7 Nov 2026 (owner: "remove
+  this Interviews are booked Sunday to Thursday only. make able to schedule any day in the week"): every day,
+  9:00 AM to 5:00 PM Cairo, and the evening reminder looks to the very next day.
 - **§4 The DSM receives the CV through Phoenix.** Booking the DSM round sends the CV to that DSM through the
   existing Send to manager door and notifies him (in-app, push and Telegram — never email).
 - **§5 Interview details.** Every interview carries its Zoom link, or its date, time and place. The interview
@@ -86,13 +101,16 @@ outcome sync and Mark as hired therefore move it without any second write that c
 
 ## Decisions made while building
 
-- **"If applicable" means "HR booked it".** Every Medical Rep area exists on all three lines
+- **"If applicable" means "HR confirmed the Pedia line".** Every Medical Rep area exists on all three lines
   (`au_v_line_area_map`, checked 7 Nov 2026), so Phoenix cannot tell from the area whether a candidate is for
-  the Pedia line. The RSM step is therefore **offered to HR after the DSM passes, until the 3rd interview is
-  booked**; with no RSM interview booked it shows as "not needed (Pedia line only)" and the candidate goes on
-  to the 3rd interview. Once booked, the RSM's evaluation is mandatory like every other round's, and the 3rd
-  interview waits for it. Booking the RSM interview notifies the RSM; it does **not** send the CV to the RSM,
-  which would move it away from the DSM it was sent to.
+  the Pedia line — HR says it at the 1st interview's result. **The RSM step appears only when that line is
+  Pedia** (owner, 7 Nov 2026: "by default, it is not appearing. It only choose if the talent acquisition or the
+  HR doing the first interview choose that this is PD-align"). Off the Pedia line the journey shows eight
+  steps and the candidate goes from the DSM straight to the 3rd interview; on it, nine, and after the DSM
+  passes HR books the RSM interview, whose evaluation is mandatory, and the 3rd interview and the joint final
+  wait for it. An RSM interview booked before the line was asked keeps its step, so nothing that happened
+  disappears. Booking the RSM interview notifies the RSM; it does **not** send the CV to the RSM, which would
+  move it away from the DSM it was sent to.
 - **Who records the RSM's evaluation:** the RSM on that interview, or the HR Manager (the same rule as the
   3rd interview and the final). Talent Acquisition, another RSM, the DSM and the CEO cannot.
 - **No round is chosen on the interview calendar.** The calendar takes a location, but rounds are booked only
@@ -117,8 +135,11 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - `20261107123708_ats_mr_hiring_workflow.sql` — `interview_round` and `location` on `ats_interview_bookings`;
   the append-only `ats_mr_hiring_step_results` and `ats_mr_hiring_recommendations` (service role only).
 - `20261107132746_ats_mr_hiring_rsm_round.sql` — adds `rsm` to the two allowed-value lists.
+- `20261107191445_ats_mr_hiring_phone_and_confirmed_line.sql` — `phone` as a booking platform; the nullable
+  `confirmed_area_name` and `confirmed_line` on `ats_mr_hiring_step_results`, filled by the 1st interview's
+  result only (a check refuses them on any other step).
 
-Both were applied to staging and production on 7 November 2026 and read back from the catalog.
+All three were applied to staging and production on 7 November 2026 and read back from the catalog.
 
 ## Tests
 

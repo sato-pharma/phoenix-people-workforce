@@ -21,7 +21,7 @@ import {
   type MrStage,
   type MrStepResultFact,
 } from "@/lib/recruitment/mr-hiring/stage";
-import { MR_INTERVIEW_ROUNDS, type MrInterviewRound, type MrResultStep, type MrStep } from "@/lib/recruitment/mr-hiring/vocabulary";
+import { MR_INTERVIEW_ROUNDS, type MrInterviewRound, type MrLine, type MrResultStep, type MrStep } from "@/lib/recruitment/mr-hiring/vocabulary";
 import { normalizeGovernorate } from "@/lib/recruitment/candidate-region";
 
 /** What this viewer may do to this candidate now. */
@@ -39,7 +39,10 @@ export type MrRowActions = {
 export type MrRow = {
   candidateId: string;
   name: string;
+  /** The area HR confirmed at the 1st interview, or before that the filed or asked-for area. */
   area: string | null;
+  /** The line HR confirmed at the 1st interview, or null before it. */
+  line: MrLine | null;
   governorate: string | null;
   /** Answer to §3's question, read from the governorate; null when no governorate is recorded. */
   inCairoOrGiza: boolean | null;
@@ -96,10 +99,8 @@ export function mrBookingRefusal(stage: MrStage, round: MrInterviewRound): strin
   const allowed =
     (round === "hr_first" && (stage.step === "screening" || (stage.step === "hr_first" && toBook))) ||
     (round === "dsm" && stage.step === "dsm" && toBook) ||
-    // The RSM interview is "if applicable" (the Pedia line): with none booked the stage has already
-    // moved past it to the 3rd interview, so it is offered there, until the 3rd interview is booked —
-    // and only while it was never held (an RSM interview already evaluated is not booked again).
-    (round === "rsm" && stage.step === "hr_manager" && toBook && stage.checklist.some((item) => item.step === "rsm" && item.status === "skipped")) ||
+    // The RSM interview is its own step, there only when HR confirmed the Pedia line (stage.ts).
+    (round === "rsm" && stage.step === "rsm" && toBook) ||
     (round === "hr_manager" && stage.step === "hr_manager" && toBook) ||
     (round === "nsm_final" && stage.step === "final" && toBook && !stage.jointFinal) ||
     // §7's "or": the joint final replaces the 3rd interview and the NSM final, so it is offered from
@@ -133,10 +134,8 @@ export function buildMrRow(viewer: MrViewer, record: MrCandidateRecord, now: Dat
   const decideWithoutDsm =
     stage.open && stage.step === "dsm" && stage.hrMayDecideWithoutDsm && mayRecordStep(viewer, facts, "dsm", { decidedWithoutDsm: true, now }).ok;
   const recommend = mayRecommend(viewer, facts, now).ok;
-  // The RSM interview is offered beside the 3rd interview, never ahead of it: the first round listed is
-  // the one the page's button books, and the RSM's applies to the Pedia line only.
-  const bookable = mayBookMrInterview(viewer) ? MR_INTERVIEW_ROUNDS.filter((round) => mrBookingRefusal(stage, round) === null) : [];
-  const book = [...bookable.filter((round) => round !== "rsm"), ...bookable.filter((round) => round === "rsm")];
+  // The first round listed is the one the page's button books.
+  const book = mayBookMrInterview(viewer) ? MR_INTERVIEW_ROUNDS.filter((round) => mrBookingRefusal(stage, round) === null) : [];
 
   // The salary leaves the server only for the HR Manager, Talent Acquisition and the NSM who wrote it.
   const visible = redactFactsFor(viewer, facts);
@@ -153,6 +152,7 @@ export function buildMrRow(viewer: MrViewer, record: MrCandidateRecord, now: Dat
     governorate: record.governorate,
     inCairoOrGiza: governorateKnown ? isCairoOrGiza(record.governorate) : null,
     lastResult: newestResult(facts.results),
+    line: record.line,
     name: record.name,
     offerHref: offerNext && viewer.canWork ? offerComposerHref(facts.candidateId, null, "medical_rep", null, recommendation?.proposedJoiningDate ?? null) : null,
     offerId: record.offerId,

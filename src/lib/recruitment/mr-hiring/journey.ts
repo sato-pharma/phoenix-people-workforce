@@ -15,9 +15,10 @@
 
 import { buildCandidateTimeline, type CandidateTimelineEvent } from "@/lib/recruitment/candidate-timeline";
 import type { MrCandidateRecord } from "@/lib/recruitment/mr-hiring/facts-db";
-import { dayLabel } from "@/lib/recruitment/mr-hiring/display";
+import { dayLabel, mrWhere } from "@/lib/recruitment/mr-hiring/display";
 import { firstOfficialArrival } from "@/lib/recruitment/mr-hiring/official-line";
 import {
+  MR_LINE_LABELS,
   MR_RECOMMENDATION_LABELS,
   MR_RESULT_STEP_LABELS,
   MR_ROUND_LABELS,
@@ -57,7 +58,7 @@ export function buildMrJourneyTimeline(
 
   for (const booking of facts.bookings) {
     if (!booking.round) continue;
-    const where = booking.platform === "zoom" ? "Zoom" : `In person · ${booking.location?.trim() || "Head office"}`;
+    const where = mrWhere(booking);
     events.push({
       at: booking.startsAt,
       detail: [where, booking.interviewerName ? `with ${booking.interviewerName}` : null].filter(Boolean).join(" · "),
@@ -72,7 +73,15 @@ export function buildMrJourneyTimeline(
     const who = result.decidedWithoutDsm ? "Decided by HR, no DSM feedback" : result.byName;
     events.push({
       at: result.createdAt,
-      detail: [who, result.rating ? `Rating ${result.rating} of 5` : null, result.comment].filter(Boolean).join(" · "),
+      detail: [
+        who,
+        result.confirmedArea ? `Area ${result.confirmedArea}` : null,
+        result.confirmedLine ? `${MR_LINE_LABELS[result.confirmedLine]} line` : null,
+        result.rating ? `Rating ${result.rating} of 5` : null,
+        result.comment,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       id: `mr:result:${result.id}`,
       kind: "decision",
       title: `${MR_RESULT_STEP_LABELS[result.step]} — ${said}`,
