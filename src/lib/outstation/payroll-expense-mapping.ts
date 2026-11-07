@@ -1,6 +1,7 @@
 import type { PayrollExpenseApproval, ExpenseTripRecord } from "@/lib/payroll/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
+import { parseOutstationDescription } from "@/lib/outstation/description-format";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
 
@@ -354,7 +355,11 @@ export function mapOutstationRequestRowToPayrollApproval(
     departurePhotoFlagged: departurePhotoFlagged(row.departure_evidence_metadata),
     description: toText(row.notes) || "Outstation expense request",
     // The employee's own words, with no placeholder — Expense Approvals shows them on the card.
-    employeeNote: toText(row.notes) || null,
+    // The stored notes also carry the system's "Car live evidence: source=… hr_id=… gps=…
+    // draft_id=…" and "Allowance guard: …" lines (owner, 2026-11-07: "why employee notes are awful
+    // like this, tidy them"), so only the typed words are kept; the photo's time, place and
+    // position are already printed on the trip's photo card.
+    employeeNote: parseOutstationDescription(toText(row.notes)).note,
     from: origin || "Residence",
     hr: hrStatus,
     hrApproved: status === "Approved",
