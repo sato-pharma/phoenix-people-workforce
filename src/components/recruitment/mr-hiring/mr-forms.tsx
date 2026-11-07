@@ -19,7 +19,6 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
-import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import { cairoDateKey, cairoMinutesOfDay } from "@/lib/recruitment/interview-calendar-week";
 import type { MrRow } from "@/lib/recruitment/mr-hiring/rows";
 import type { MrBookingFact } from "@/lib/recruitment/mr-hiring/stage";
@@ -213,7 +212,7 @@ export function MrResultForm({
           rows={4}
           value={comment}
         />
-        <MrDictate disabled={busy} onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, MR_COMMENT_LIMIT))} />
+        <MrDictate candidateId={candidateId} disabled={busy} kind="result" limit={MR_COMMENT_LIMIT} onChange={setComment} value={comment} />
       </FormField>
       <FormError>{error}</FormError>
       <FormActions
@@ -317,7 +316,7 @@ export function MrRecommendationForm({
       </div>
       <FormField htmlFor="mr-note" label="Note">
         <textarea className={phxTextareaClassName} id="mr-note" maxLength={MR_COMMENT_LIMIT} onChange={(event) => setNote(event.target.value)} rows={3} value={note} />
-        <MrDictate disabled={busy} onAppend={(spoken) => setNote((current) => appendDictated(current, spoken, MR_COMMENT_LIMIT))} />
+        <MrDictate candidateId={candidateId} disabled={busy} kind="recommendation" limit={MR_COMMENT_LIMIT} onChange={setNote} value={note} />
       </FormField>
       <FormError>{error}</FormError>
       <FormActions
@@ -620,7 +619,7 @@ export function MrBookingForm({
             rows={2}
             value={notes}
           />
-          <MrDictate disabled={busy} onAppend={(spoken) => setNotes((current) => appendDictated(current, spoken, MR_BOOKING_NOTES_LIMIT))} />
+          <MrDictate candidateId={row.candidateId} disabled={busy} kind="booking" limit={MR_BOOKING_NOTES_LIMIT} onChange={setNotes} value={notes} />
         </FormField>
       )}
       <FormError>{error}</FormError>

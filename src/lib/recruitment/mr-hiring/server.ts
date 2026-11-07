@@ -62,6 +62,18 @@ async function readableMrRecord(access: AccessContext, candidateId: string): Pro
   return record;
 }
 
+/**
+ * Whether this person may have spoken words rewritten for a comment on this candidate: someone who reads the
+ * journey and can write on it — the CEO reads every journey but records nothing, so he is refused. The words
+ * themselves never reach the model with the candidate's name; this only keeps a paid call to the people who
+ * have a comment box open on this candidate.
+ */
+export async function assertMayPolishMrWords(access: AccessContext, candidateId: string): Promise<void> {
+  const viewer = mrViewer(access);
+  if (viewer.isCeo && !viewer.canWork) throw forbiddenError("The CEO reads the Medical Rep hiring journey; he records nothing on it.");
+  await readableMrRecord(access, candidateId);
+}
+
 /** One candidate's whole journey (§10), salary removed for anyone who may not see it. */
 export async function loadMrJourney(access: AccessContext, candidateId: string): Promise<MrJourney> {
   const record = await readableMrRecord(access, candidateId);

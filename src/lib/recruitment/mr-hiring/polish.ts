@@ -1,0 +1,225 @@
+// Recruitment / Medical Rep hiring — the spoken words turned into a professional English comment.
+//
+// The owner, 8 Nov 2026: "when I talk first, it fix, it understand me and it fix the spelling and the grammar
+// … like ChatGPT. It take what I want and then it rephrase it into professional corporate language." The
+// microphone (`MrDictate`) writes the words as they are said — Egyptian Arabic with English mixed in, and the
+// speech engine's own mishearings — and when the speaker presses Stop, those words come here and go back as
+// clear corporate English, in the same box, before anything is saved. The speaker reads it, edits it or puts
+// his own words back ("Keep my own words"); nothing here saves, sends or decides anything.
+//
+// TWO GUARDS on the way out, each failing the call rather than patching it — the box then keeps the words as
+// spoken, which is never worse than before this existed:
+//   1. no number that was not said: a salary, a rating or a date the model invented would be read as the
+//      speaker's own on the candidate's record;
+//   2. no word that the text was generated (owner rule 2026-08-04: users never learn a model was involved).
+//
+// The candidate is never named to the model — it is given the spoken words and the kind of box, nothing else.
+
+import { createOpenAiResponseText, hasAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { MR_BOOKING_NOTES_LIMIT, MR_COMMENT_LIMIT } from "@/lib/recruitment/mr-hiring/vocabulary";
+
+/** Which box the words were spoken into — it decides the register of the rewrite and its cap. */
+export const MR_POLISH_KINDS = ["result", "recommendation", "booking"] as const;
+export type MrPolishKind = (typeof MR_POLISH_KINDS)[number];
+
+export function isMrPolishKind(value: unknown): value is MrPolishKind {
+  return typeof value === "string" && (MR_POLISH_KINDS as readonly string[]).includes(value);
+}
+
+/** The box's own cap: the rewrite has to fit where the spoken words were. */
+export function mrPolishLimit(kind: MrPolishKind): number {
+  return kind === "booking" ? MR_BOOKING_NOTES_LIMIT : MR_COMMENT_LIMIT;
+}
+
+export class MrPolishError extends Error {
+  code: "polish_failed" | "polish_not_configured" | "polish_rate_limited";
+
+  constructor(code: MrPolishError["code"], message: string) {
+    super(message);
+    this.name = "MrPolishError";
+    this.code = code;
+  }
+}
+
+// ── Pure ──────────────────────────────────────────────────────────────────────
+
+/** Arabic-Indic and Persian digits read as the same numbers as 0–9, so "١٥٠٠٠" said is "15000" written. */
+export function westernDigits(value: string): string {
+  return String(value ?? "")
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+}
+
+/** Every number in a text, normalised so "15,000", "15000.00" and "١٥٠٠٠" compare equal. */
+export function mrNumberTokens(value: string): string[] {
+  return Array.from(westernDigits(value).matchAll(/\d[\d,]*(?:\.\d+)?/g)).map((match) => {
+    const cleaned = match[0].replace(/,/g, "");
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? String(parsed) : cleaned;
+  });
+}
+
+/** The spoken words, whitespace folded and cut to the box's cap — the browser is their only source. */
+export function normalizeSpoken(spoken: string, kind: MrPolishKind): string {
+  const folded = String(spoken ?? "").replace(/\s+/g, " ").trim();
+  return folded.slice(0, mrPolishLimit(kind)).trim();
+}
+
+const kindLine: Record<MrPolishKind, string> = {
+  booking: "These are HR's notes for the interviewer about an interview being booked with a Medical Representative candidate.",
+  recommendation: "This is the National Sales Manager's note on his recommendation after the final interview of a Medical Representative candidate.",
+  result: "This is an interviewer's evaluation of a Medical Representative candidate, kept on the candidate's record.",
+};
+
+export function buildMrPolishPrompt(spoken: string, kind: MrPolishKind): string {
+  return [`Box: ${kindLine[kind]}`, "What the speaker said (speech-to-text):", normalizeSpoken(spoken, kind)].join("\n\n");
+}
+
+// "AI" is also how a manager says the Anti Infective line, so a word the SPEAKER said is his to keep.
+const AI_WORDS = ["ai", "gpt", "chatgpt", "openai", "llm", "artificial intelligence", "language model"];
+
+function wordsIn(text: string): string {
+  return ` ${String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+}
+
+/** Packaging a chat model reaches for — fences, markdown, a wrapping quote, a greeting — never the words. */
+export function sanitizeMrPolished(raw: string, kind: MrPolishKind): string {
+  let text = String(raw ?? "");
+  text = text.replace(/```[a-z]*\n?/gi, "").replace(/```/g, "");
+  text = text.replace(/^\s*[-*•]\s+/gm, "");
+  text = text.replace(/[*_`#]/g, "");
+  text = text.replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, " ").trim();
+  text = text.replace(/^["'“”‘’]+/, "").replace(/["'“”‘’]+$/, "").trim();
+  const limit = mrPolishLimit(kind);
+  if (text.length > limit) {
+    const head = text.slice(0, limit);
+    // The last whole sentence, else the last whole word. Never an ellipsis (owner rule).
+    const sentenceEnd = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+    if (sentenceEnd > 0) text = head.slice(0, sentenceEnd + 1).trim();
+    else {
+      const wordEnd = head.lastIndexOf(" ");
+      text = (wordEnd > 0 ? head.slice(0, wordEnd) : head).trim();
+    }
+  }
+  return text;
+}
+
+/** Why a rewrite must not replace the spoken words. Empty means it may. */
+export function findMrPolishViolations(polished: string, spoken: string): string[] {
+  const clean = String(polished ?? "").trim();
+  if (!clean) return ["it came back empty"];
+  const violations: string[] = [];
+  const written = wordsIn(clean);
+  const said = wordsIn(spoken);
+  if (AI_WORDS.some((word) => written.includes(` ${word} `) && !said.includes(` ${word} `))) violations.push("it mentions how it was written");
+  const saidNumbers = new Set(mrNumberTokens(spoken));
+  const invented = Array.from(new Set(mrNumberTokens(clean).filter((token) => !saidNumbers.has(token))));
+  if (invented.length > 0) violations.push(`numbers that were never said (${invented.join(", ")})`);
+  return violations;
+}
+
+// ── I/O ───────────────────────────────────────────────────────────────────────
+
+const instructions = [
+  "You turn what a manager said into a microphone into the professional English text of a comment box inside Phoenix Workforce, the HR system of an Egyptian pharmaceutical company that is hiring Medical Representatives.",
+  [
+    "THE INPUT:",
+    "- It is speech-to-text, mostly Egyptian Arabic with English words mixed in, without punctuation.",
+    "- The speech engine mishears: words may be misspelt, split, merged or replaced by a similar-sounding word. Work out what the speaker meant.",
+  ].join("\n"),
+  [
+    "THE OUTPUT:",
+    "- Always English, whatever language was spoken: clear, professional corporate English with correct spelling, grammar and punctuation.",
+    "- Concise. Plain sentences, no greeting, no sign-off, no headings, no bullets, no markdown, no surrounding quotation marks.",
+    "- About the candidate, the interview or the arrangement — in the third person (\"The candidate…\") unless the speaker gave an instruction to someone, which stays an instruction.",
+  ].join("\n"),
+  [
+    "MEANING — keep it exactly:",
+    "- Keep every fact, opinion, judgement, concern and instruction the speaker gave, and nothing else. Never soften or strengthen a verdict.",
+    "- Never add a fact, a reason, a condition, a recommendation or a next step the speaker did not say.",
+    "- Keep every number exactly as said, written in digits (amounts, ratings, years, dates, times). Never add a number that was not said.",
+    "- Keep names of people, places, companies and products as said.",
+    "- If a part cannot be understood, leave it out rather than guess.",
+    "- Never mention that the text was rewritten, translated or generated.",
+  ].join("\n"),
+].join("\n\n");
+
+const textFormat = {
+  format: {
+    name: "phoenix_mr_hiring_comment",
+    schema: {
+      additionalProperties: false,
+      properties: {
+        text: { description: "The finished comment, in professional English. Plain text only.", type: "string" },
+      },
+      required: ["text"],
+      type: "object",
+    },
+    strict: true,
+    type: "json_schema",
+  },
+} as const;
+
+function polishErrorFromOpenAi(error: PhoenixOpenAiError): MrPolishError {
+  switch (error.code) {
+    case "not_configured":
+      return new MrPolishError("polish_not_configured", "Your words were kept as you said them.");
+    case "quota_exceeded":
+    case "rate_limited":
+      return new MrPolishError("polish_rate_limited", "Your words were kept as you said them — the wording service is busy.");
+    default:
+      return new MrPolishError("polish_failed", "Your words were kept as you said them.");
+  }
+}
+
+function parsePolished(text: string): string {
+  const cleaned = String(text ?? "").replace(/```(?:json)?/gi, "").trim();
+  const attempt = (candidate: string) => {
+    try {
+      const parsed = JSON.parse(candidate) as { text?: unknown };
+      return typeof parsed?.text === "string" ? parsed.text : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = attempt(cleaned);
+  if (direct !== null) return direct;
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  const sliced = start >= 0 && end > start ? attempt(cleaned.slice(start, end + 1)) : null;
+  if (sliced !== null) return sliced;
+  throw new MrPolishError("polish_failed", "Your words were kept as you said them.");
+}
+
+/**
+ * The spoken words as professional English, for the speaker to read in the box. Never saves anything.
+ * The caller has already decided the speaker may write on this candidate (`assertMayPolishMrWords`).
+ */
+export async function polishMrSpokenWords(input: { kind: MrPolishKind; spoken: string }): Promise<{ text: string }> {
+  const spoken = normalizeSpoken(input.spoken, input.kind);
+  if (!spoken) throw new MrPolishError("polish_failed", "Nothing was said.");
+  if (!hasAiApiKey()) throw new MrPolishError("polish_not_configured", "Your words were kept as you said them.");
+
+  let outputText: string;
+  try {
+    // The fast tier at low effort: the speaker has just pressed Stop and is waiting with the form open.
+    const response = await createOpenAiResponseText({
+      input: buildMrPolishPrompt(spoken, input.kind),
+      instructions,
+      maxOutputTokens: 2000,
+      purpose: "recruitment-mr-hiring-dictation-polish",
+      reasoning: { effort: "low" },
+      text: textFormat,
+    });
+    outputText = response.outputText;
+  } catch (error) {
+    if (error instanceof PhoenixOpenAiError) throw polishErrorFromOpenAi(error);
+    throw new MrPolishError("polish_failed", "Your words were kept as you said them.");
+  }
+
+  const text = sanitizeMrPolished(parsePolished(outputText), input.kind);
+  if (findMrPolishViolations(text, spoken).length > 0) {
+    throw new MrPolishError("polish_failed", "Your words were kept as you said them.");
+  }
+  return { text };
+}
