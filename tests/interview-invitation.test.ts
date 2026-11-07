@@ -120,6 +120,15 @@ function runWordingTests() {
   assert.match(zoom.text, /• Website : /, "and the website");
   assert.equal(zoom.action?.href, "https://zoom.us/j/123456789", "the e-mail's button joins the meeting");
 
+  // A phone call (the Medical Rep 1st interview's third way, owner 7 Nov 2026): no place, no link, no
+  // map button — the candidate is told we will call, the interviewer to call.
+  const phoneCall = buildInvitationMessage({ facts: { ...OFFICE, location: "Head office", platform: "phone" }, kind: "invitation", name: "Nevin", recipient: "candidate" });
+  assert.match(phoneCall.text, /• Interview: By phone call — we will call you at this time/, "the candidate is told we will call");
+  assert.doesNotMatch(phoneCall.text, /Location:|Address:|Zoom link:/, "and given no place or link");
+  assert.equal(phoneCall.action, null, "no map button and no meeting to join");
+  const phoneInterviewer = buildInvitationMessage({ facts: { ...OFFICE, platform: "phone" }, kind: "invitation", name: "Omar", recipient: "interviewer" });
+  assert.match(phoneInterviewer.text, /• Interview: By phone call — call the candidate at this time/, "the interviewer is told to call");
+
   // Zoom with no link yet has nothing to point at — the panel refuses to send it (see below).
   const noLink = buildInvitationMessage({ facts: { ...OFFICE, platform: "zoom" }, kind: "invitation", name: "Nevin", recipient: "candidate" });
   assert.equal(noLink.action, null);

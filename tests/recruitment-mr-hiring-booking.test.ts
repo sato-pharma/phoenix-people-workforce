@@ -9,8 +9,9 @@ import { readFileSync } from "node:fs";
 // And the notices themselves: never email, never the candidate, and each person lands on the screen
 // where they act on it.
 
-import { interviewLocationLabel, interviewRoundValue } from "../src/lib/recruitment/interview-calendar.ts";
-import { isHrInterviewerTitle, mayConductInterview } from "../src/lib/recruitment/interview-calendar-types.ts";
+import { interviewLocationLabel, interviewRoundValue, phoneCallRefusal } from "../src/lib/recruitment/interview-calendar.ts";
+import { PLATFORM_LABEL, isHrInterviewerTitle, isInterviewPlatform, isSessionPlatform, mayConductInterview } from "../src/lib/recruitment/interview-calendar-types.ts";
+import { isKnownMrArea, mrAreaChoicesFrom } from "../src/lib/recruitment/mr-hiring/areas.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { isCairoOrGiza, parseMrBookingInput, parseMrRecommendationInput, parseMrResultInput } from "../src/lib/recruitment/mr-hiring/inputs.ts";
 import {
@@ -43,6 +44,50 @@ export function runRecruitmentMrHiringBookingTests() {
   assert.equal(remote.location, null, "a Zoom interview keeps no place — its place is the link");
   assert.throws(() => parseMrBookingInput({ ...base, round: "hr_first" }), /Cairo or Giza/, "HR must answer the Cairo-or-Giza question");
   assert.equal(parseMrBookingInput({ ...base, inCairoOrGiza: false, round: "hr_first" }).interviewerHrId, null, "the 1st interview may leave the interviewer to the person booking it");
+
+  // The 1st interview's third way — a phone call (owner, 7 Nov 2026: "only for hr first interview u
+  // will add a third option which is phone call"). It needs no Cairo-or-Giza answer and keeps no place.
+  const phone = parseMrBookingInput({ ...base, location: "Head office", platform: "phone", round: "hr_first" });
+  assert.equal(phone.platform, "phone", "HR may hold the 1st interview as a phone call");
+  assert.equal(phone.location, null, "a phone call keeps no place");
+  assert.equal(parseMrBookingInput({ ...base, inCairoOrGiza: true, platform: "phone", round: "hr_first" }).platform, "phone", "a phone call wins over the Cairo-or-Giza answer");
+  assert.throws(() => parseMrBookingInput({ ...base, interviewerHrId: "D-1", platform: "phone", round: "dsm" }), /HR 1st interview only/, "the DSM's interview is never a phone call");
+  assert.throws(() => parseMrBookingInput({ ...base, interviewerHrId: "R-1", platform: "phone", round: "rsm" }), /HR 1st interview only/, "nor the RSM's");
+  assert.throws(() => parseMrBookingInput({ ...base, round: "hr_first" }), /or choose a phone call/, "the question offers the phone call too");
+  // The calendar's own doors hold the same line, so no route books a phone call for another interview.
+  assert.equal(phoneCallRefusal("phone", "hr_first"), null, "the calendar books a phone call for the 1st interview");
+  assert.match(phoneCallRefusal("phone", null) ?? "", /HR 1st interview only/, "never for an ordinary interview");
+  assert.match(phoneCallRefusal("phone", "nsm_final") ?? "", /HR 1st interview only/, "nor a later round");
+  assert.equal(phoneCallRefusal("zoom", null), null, "Zoom and in person stay open to every interview");
+  assert.equal(isInterviewPlatform("phone"), true, "a booking may be a phone call");
+  assert.equal(isSessionPlatform("phone"), false, "a session — one meeting for many — never is");
+  assert.equal(PLATFORM_LABEL.phone, "Phone call", "and it reads as a phone call");
+  const calendar = codeOnly("src/lib/recruitment/interview-calendar.ts");
+  assert.match(calendar, /const phoneRefused = phoneCallRefusal\(input\.platform, interviewRound\);\s*if \(phoneRefused\) throw/, "a new booking is checked");
+  assert.match(calendar, /phoneCallRefusal\(patch\.platform \?\? row\.platform, nextRound\);\s*if \(phoneRefused\) throw/, "and so is every move or change of round");
+
+  // The 1st interview's result confirms the area and the line (owner, 7 Nov 2026). A pass needs both.
+  const passed = parseMrResultInput({ comment: "Good.", confirmedArea: "  Nasr  City ", confirmedLine: "pedia", result: "pass", step: "hr_first" });
+  assert.equal(passed.confirmedArea, "Nasr City", "the area is kept, its spaces folded");
+  assert.equal(passed.confirmedLine, "pedia", "and the line");
+  assert.throws(() => parseMrResultInput({ comment: "Good.", confirmedLine: "cns", result: "pass", step: "hr_first" }), /Confirm the area/, "a pass needs the area");
+  assert.throws(() => parseMrResultInput({ comment: "Good.", confirmedArea: "Nasr City", result: "pass", step: "hr_first" }), /Confirm the line/, "and the line");
+  assert.throws(() => parseMrResultInput({ comment: "Good.", confirmedArea: "Nasr City", confirmedLine: "oncology", result: "pass", step: "hr_first" }), /Pedia, Anti Infective or CNS/, "a line outside the three is refused");
+  assert.equal(parseMrResultInput({ comment: "Not now.", result: "not_pass", step: "hr_first" }).confirmedLine, null, "a Do not pass needs neither");
+  const dsmResult = parseMrResultInput({ comment: "Good.", confirmedArea: "Nasr City", confirmedLine: "pedia", result: "pass", step: "dsm" });
+  assert.ok(dsmResult.confirmedArea === null && dsmResult.confirmedLine === null, "no other step carries either");
+  const choices = mrAreaChoicesFrom({
+    regions: [
+      { areas: [{ name: "Nasr City" }, { name: "Maadi" }], name: "Cairo" },
+      { areas: [], name: "Empty" },
+    ],
+  } as never);
+  assert.deepEqual(choices, [{ areas: ["Nasr City", "Maadi"], region: "Cairo" }], "the areas come grouped by region, an empty region left out");
+  assert.equal(isKnownMrArea(choices, " Nasr  City "), true, "an area on the list is accepted as the bot spells it");
+  assert.equal(isKnownMrArea(choices, "Atlantis"), false, "an area off the list is refused");
+  assert.equal(isKnownMrArea(choices, "  "), false, "and so is a blank one");
+  const recordCode = codeOnly("src/lib/recruitment/mr-hiring/record.ts");
+  assert.match(recordCode, /isKnownMrArea\(await loadMrAreaChoices\(\)/, "the server checks the area against the list before writing");
 
   // §5 — the other rounds may be either, and always name who conducts them.
   assert.throws(() => parseMrBookingInput({ ...base, platform: "zoom", round: "dsm" }), /who conducts/, "a DSM interview names the DSM");
@@ -95,6 +140,11 @@ export function runRecruitmentMrHiringBookingTests() {
     mrInterviewBookedMessage({ candidateName: "Dr Karim Fathy", location: null, platform: "zoom", round: "nsm_final", startsAt: "2026-11-15T09:00:00.000Z" }),
     /on Zoom/,
     "a Zoom interview says Zoom",
+  );
+  assert.match(
+    mrInterviewBookedMessage({ candidateName: "Dr Karim Fathy", location: "Head office", platform: "phone", round: "hr_first", startsAt: "2026-11-15T09:00:00.000Z" }),
+    /by phone call\. /,
+    "a phone call says so, and names no place",
   );
   assert.match(
     mrInterviewBookedMessage({ candidateName: "Dr Karim Fathy", location: null, platform: "zoom", round: "rsm", startsAt: "2026-11-15T09:00:00.000Z" }),

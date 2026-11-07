@@ -78,11 +78,12 @@ export async function runInterviewReminderTests() {
   assert.deepEqual(kinds(planInterviewReminders(tomorrow, at("2026-09-23", 0, 10))), [], "and stops at midnight");
   assert.deepEqual(kinds(planInterviewReminders([interview("f", "2026-09-24", 10)], at("2026-09-22", 17, 5))), [], "the day after tomorrow is not on tomorrow's list");
 
-  // Thursday evening looks to Sunday, since the calendar has no Friday or Saturday.
-  assert.equal(nextWorkingDayAfter("2026-09-24"), "2026-09-27", "Thursday looks to Sunday");
-  assert.equal(nextWorkingDayAfter("2026-09-25"), "2026-09-27", "Friday looks to Sunday");
+  // Every day holds interviews (owner, 7 Nov 2026), so each evening looks to the very next day.
+  assert.equal(nextWorkingDayAfter("2026-09-24"), "2026-09-25", "Thursday looks to Friday");
+  assert.equal(nextWorkingDayAfter("2026-09-25"), "2026-09-26", "Friday looks to Saturday");
   assert.equal(nextWorkingDayAfter("2026-09-22"), "2026-09-23", "Tuesday looks to Wednesday");
-  assert.deepEqual(kinds(planInterviewReminders([interview("g", "2026-09-27", 10)], at("2026-09-24", 17, 30))), ["evening:D-07"], "Sunday's interviews are listed on Thursday evening");
+  assert.deepEqual(kinds(planInterviewReminders([interview("g", "2026-09-27", 10)], at("2026-09-26", 17, 30))), ["evening:D-07"], "Sunday's interviews are listed on Saturday evening");
+  assert.deepEqual(kinds(planInterviewReminders([interview("g", "2026-09-27", 10)], at("2026-09-24", 17, 30))), [], "not on Thursday evening any more");
 
   // The list's key changes only when the list does: a booking added after 5 PM sends it again.
   const first = planInterviewReminders(tomorrow, at("2026-09-22", 17, 3)).find((r) => r.recipientHrId === "D-07");

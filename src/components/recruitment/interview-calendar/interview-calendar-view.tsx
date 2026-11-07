@@ -4,9 +4,10 @@
 // owner's own "DAILY SCHEDULE" sheet is laid out (2026-09-18), and better: every name on it opens
 // that candidate's CV, the export carries the same links, and he can share it from here.
 //
-// Sunday to Thursday, 9:00 AM to 5:00 PM, Cairo time — his choice. Desktop draws the grid; a phone
-// gets the same week as one card per day, because a five-column grid at 375px is a grid nobody can
-// read (the fits-the-screen rule: never a sideways scroll).
+// Every day of the week, Sunday first, 9:00 AM to 5:00 PM, Cairo time — his choice (Friday and
+// Saturday opened 7 Nov 2026). Desktop draws the grid; a phone gets the same week as one card per day,
+// because a seven-column grid at 375px is a grid nobody can read (the fits-the-screen rule: never a
+// sideways scroll).
 //
 // A FREE TIME IS PRESSABLE (the owner, 2026-09-18): pressing an empty cell books someone there —
 // from Recruitment, or from outside with their CV — or sets up an interview SESSION: one Zoom
@@ -158,6 +159,7 @@ function byTime<T extends { dateKey: string; startMinutes: number }>(list: T[]):
 }
 
 function PlatformIcon({ platform, className }: { platform: InterviewBooking["platform"]; className?: string }) {
+  if (platform === "phone") return <Phone className={className} />;
   return platform === "zoom" ? <Video className={className} /> : <Building2 className={className} />;
 }
 
@@ -570,7 +572,7 @@ export function InterviewCalendarView({
             </p>
             <h2 className="mt-1 break-words text-[22px] font-black leading-tight tracking-tight text-white">{formatWeekOf(weekStart)}</h2>
             <p className="mt-0.5 break-words text-[12px] tabular-nums text-slate-300">
-              {formatWeekRange(weekStart)} · Sunday to Thursday, 9:00 AM to 5:00 PM, Cairo time
+              {formatWeekRange(weekStart)} · Every day, 9:00 AM to 5:00 PM, Cairo time
             </p>
           </div>
           {role !== "owner" ? (

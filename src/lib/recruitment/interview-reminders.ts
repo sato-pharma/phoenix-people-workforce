@@ -86,7 +86,7 @@ function linkTo(interview: ReminderInterview): string {
   });
 }
 
-/** The next working day after `today` (Sunday to Thursday) — Thursday evening looks to Sunday. */
+/** The next interview day after `today` — every day is one since 7 Nov 2026, so it is tomorrow. */
 export function nextWorkingDayAfter(today: string): string | null {
   for (let step = 1; step <= SEARCH_AHEAD_DAYS; step += 1) {
     const day = addDays(today, step);

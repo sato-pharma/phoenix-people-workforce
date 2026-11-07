@@ -27,8 +27,10 @@ import {
   mrCandidateIdsInterviewedBy,
   type MrCandidateRecord,
 } from "@/lib/recruitment/mr-hiring/facts-db";
+import { loadMrAreaChoices } from "@/lib/recruitment/mr-hiring/areas";
 import { buildMrJourneyTimeline } from "@/lib/recruitment/mr-hiring/journey";
 import { buildMrRow, type MrInterviewRow, type MrRow } from "@/lib/recruitment/mr-hiring/rows";
+import type { MrAreaChoice } from "@/lib/recruitment/mr-hiring/vocabulary";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { answerChipsFor, answerMarkHrIds, loadAnswerChipContext } from "@/lib/recruitment/workspace/answer-chips";
 import type { WorkspaceAnswerChip } from "@/lib/recruitment/workspace/types";
@@ -45,7 +47,12 @@ export function mrRowsFor(access: AccessContext, records: readonly MrCandidateRe
   return records.map((record) => buildMrRow(viewer, record, now));
 }
 
-export type MrJourney = { row: MrRow; timeline: CandidateTimelineEvent[] };
+export type MrJourney = {
+  row: MrRow;
+  timeline: CandidateTimelineEvent[];
+  /** The areas HR may confirm — sent only while this viewer may record the 1st interview's result. */
+  areaChoices: MrAreaChoice[];
+};
 
 /** The candidate, when this viewer may read their journey; anyone else is told they are not there. */
 async function readableMrRecord(access: AccessContext, candidateId: string): Promise<MrCandidateRecord> {
@@ -67,7 +74,9 @@ export async function loadMrJourney(access: AccessContext, candidateId: string):
     { ...record, facts: redactFactsFor(viewer, record.facts) },
     { sends: sends.map((send) => ({ managerName: send.managerName, position: send.position, sentAt: send.sentAt })), statusEvents },
   );
-  return { row: buildMrRow(viewer, record), timeline };
+  const row = buildMrRow(viewer, record);
+  const areaChoices = row.can.record === "hr_first" ? await loadMrAreaChoices().catch(() => []) : [];
+  return { areaChoices, row, timeline };
 }
 
 export type MrCvAndApplication = {

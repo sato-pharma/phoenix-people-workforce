@@ -14,9 +14,11 @@
 
 /**
  * The steps in the email's order. `final` is the NSM final OR the joint HR Manager + NSM final.
- * `rsm` is "if applicable" (the Pedia line): HR books it after the DSM passes, and a candidate with no
- * RSM interview shows the step as not needed. Phoenix cannot tell the line from the candidate — every
- * area exists on all three lines (measured 7 Nov 2026) — so the booking IS the "applicable".
+ * `rsm` is "if applicable" (the Pedia line). Phoenix cannot tell the line from the candidate — every
+ * area exists on all three lines (measured 7 Nov 2026) — so HR SAYS it: the 1st-interview result
+ * confirms the area and the line, and the RSM step appears only when that line is Pedia (owner,
+ * 7 Nov 2026: "by default, it is not appearing. It only choose if the talent acquisition or the HR
+ * doing the first interview choose that this is PD-align"). Otherwise it is not shown at all.
  */
 export const MR_STEPS = ["screening", "hr_first", "dsm", "rsm", "hr_manager", "final", "recommendation", "decision", "offer"] as const;
 export type MrStep = (typeof MR_STEPS)[number];
@@ -32,6 +34,29 @@ export type MrInterviewRound = (typeof MR_INTERVIEW_ROUNDS)[number];
 /** Where a result can be recorded — the `step` column of `ats_mr_hiring_step_results`. */
 export const MR_RESULT_STEPS = ["hr_screening", "hr_first", "dsm", "rsm", "hr_manager", "nsm_final", "joint_final", "final_decision"] as const;
 export type MrResultStep = (typeof MR_RESULT_STEPS)[number];
+
+/**
+ * The three lines a Medical Rep works on — the `confirmed_line` column's own values. HR confirms one
+ * at the 1st-interview result; Pedia adds the RSM interview after the DSM's.
+ */
+export const MR_LINES = ["pedia", "anti_infective", "cns"] as const;
+export type MrLine = (typeof MR_LINES)[number];
+
+export const MR_LINE_LABELS: Record<MrLine, string> = {
+  anti_infective: "Anti Infective",
+  cns: "CNS",
+  pedia: "Pedia",
+};
+
+export function isMrLine(value: unknown): value is MrLine {
+  return typeof value === "string" && (MR_LINES as readonly string[]).includes(value);
+}
+
+/** The areas HR may confirm, grouped by region in the WhatsApp bot's own order (areas.ts). */
+export type MrAreaChoice = { region: string; areas: string[] };
+
+/** How an interview is held. A phone call is the HR 1st interview's third way (owner, 7 Nov 2026). */
+export type MrPlatform = "zoom" | "in_office" | "phone";
 
 /** The three answers, everywhere. */
 export const MR_RESULTS = ["pass", "backup", "not_pass"] as const;
@@ -85,11 +110,6 @@ export const MR_STEP_LABELS: Record<MrStep, string> = {
   recommendation: "NSM recommendation",
   screening: "New CV · HR screening",
 };
-
-/** The step's number on screen, 1 to 8. */
-export function mrStepNumber(step: MrStep): number {
-  return MR_STEPS.indexOf(step) + 1;
-}
 
 export const MR_CLOSED_LABELS: Record<MrClosed, string> = {
   backup: "Kept as backup",
@@ -172,3 +192,6 @@ export const MR_COMMENT_LIMIT = 2000;
 
 /** The longest place an in-person interview may name — the column's own check. */
 export const MR_LOCATION_LIMIT = 300;
+
+/** The longest area name HR may confirm — the `confirmed_area_name` column's own check. */
+export const MR_AREA_LIMIT = 120;

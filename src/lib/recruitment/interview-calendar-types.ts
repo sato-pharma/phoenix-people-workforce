@@ -291,14 +291,25 @@ export function interviewCalendarLinkPath(token: string): string {
 
 // ── Platform and Zoom ───────────────────────────────────────────────────────────────────────────
 
-export type InterviewPlatform = "in_office" | "zoom";
+/**
+ * How an interview is held. A phone call (owner, 7 Nov 2026) makes no Zoom meeting and has no place;
+ * the Medical Rep hiring 1st interview offers it, the calendar's own dialogs offer the two others. A
+ * SESSION — one meeting for many candidates — is never a phone call (`isSessionPlatform`).
+ */
+export type InterviewPlatform = "in_office" | "zoom" | "phone";
 
 export const PLATFORM_LABEL: Record<InterviewPlatform, string> = {
   in_office: "In office",
+  phone: "Phone call",
   zoom: "Zoom",
 };
 
 export function isInterviewPlatform(value: unknown): value is InterviewPlatform {
+  return value === "in_office" || value === "zoom" || value === "phone";
+}
+
+/** A session's platform: in office or Zoom — the database refuses a phone-call session. */
+export function isSessionPlatform(value: unknown): value is "in_office" | "zoom" {
   return value === "in_office" || value === "zoom";
 }
 
