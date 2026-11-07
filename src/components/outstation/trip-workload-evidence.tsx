@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
+import { EvidenceTable } from "@/components/outstation/evidence-table";
 import { Badge } from "@/components/ui/badge";
 import {
   formatPharmacyFigure,
@@ -145,40 +146,57 @@ function DayDetail({
   return (
     // `[&>*]:min-w-0`: below `md` this is one column, and a grid item defaults to
     // `min-width: auto`, so the longest visit line would size the column (measured 283 vs 436).
-    <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
+    // Each list is a zebra table (owner, 2026-11-07: "tidy this part by putting in a zebra table,
+    // premium polish"): the time is a column of its own, read down, and its header names the clock,
+    // so no row repeats "Saved visit time" or "Check-in time".
+    <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0" data-day-detail>
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
         {visits.length === 0 ? (
-          <p className="mt-1 text-xs text-slate-400">No visits saved</p>
+          <>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visits</p>
+            <p className="mt-1 text-xs text-slate-400">No visits saved</p>
+          </>
         ) : (
-          <ul className="mt-1 space-y-1">
-            {visits.map((visit, index) => (
-              <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                      visit.kind === "campaign"
-                        ? "bg-violet-100 text-violet-700"
-                        : visit.kind === "meeting"
-                          ? "bg-slate-200 text-slate-700"
-                          : "bg-sky-100 text-sky-700",
-                    )}
-                  >
-                    {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
-                  </span>
-                  <span className="break-words text-slate-700">
-                    {visit.contact || visit.customer || "—"}
-                    {visit.contact && visit.customer && visit.customer !== visit.contact ? (
-                      <span className="text-slate-400"> · {visit.customer}</span>
-                    ) : null}
-                    {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
-                        clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
-                    {visit.ampm ? (
-                      <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
-                        {visitListLabel(visit.ampm)}
-                      </span>
-                    ) : null}
+          <EvidenceTable
+            columns={[
+              { label: "Type", role: "badge", width: "5.5rem" },
+              { label: "Visited", role: "body", width: null },
+              // Each timing says what it IS: when the rep SAVED the CRM record is a different clock
+              // from the check-in on site.
+              { hint: "When the visit was saved in the CRM, not the check-in on site", label: "Saved", role: "time", width: "4.25rem" },
+            ]}
+            rows={visits.map((visit, index) => ({
+              badge: (
+                <span
+                  className={cn(
+                    "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                    visit.kind === "campaign"
+                      ? "bg-violet-100 text-violet-700"
+                      : visit.kind === "meeting"
+                        ? "bg-slate-200 text-slate-700"
+                        : "bg-sky-100 text-sky-700",
+                  )}
+                >
+                  {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
+                </span>
+              ),
+              body: (
+                <>
+                  <bdi className="font-semibold text-slate-900">{visit.contact || visit.customer || "—"}</bdi>
+                  {visit.contact && visit.customer && visit.customer !== visit.contact ? (
+                    <span className="text-slate-400">
+                      {" · "}
+                      <bdi>{visit.customer}</bdi>
+                    </span>
+                  ) : null}
+                  {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
+                      clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
+                  {visit.ampm ? (
+                    <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
+                      {visitListLabel(visit.ampm)}
+                    </span>
+                  ) : null}
+                  <span className="text-slate-500">
                     {visit.role === "partner" ? (
                       visit.repName ? (
                         <>
@@ -192,58 +210,70 @@ function DayDetail({
                       " · own visit"
                     ) : null}
                   </span>
-                </span>
-                {/* Each timing says what it IS: when the rep SAVED the CRM record is a
-                    different clock from when he physically checked in. */}
-                <span className="flex shrink-0 flex-col items-end leading-tight">
-                  <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                    {visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}
-                  </span>
-                  <span className="whitespace-nowrap tabular-nums text-slate-500">
-                    {formatClock(visit.submittedAt)}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
+                </>
+              ),
+              key: String(index),
+              time: <span title={visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}>{formatClock(visit.submittedAt)}</span>,
+            }))}
+            title={
+              <>
+                Visits <span className="tabular-nums text-slate-400">· {fmt(visits.length)}</span>
+              </>
+            }
+          />
         )}
       </div>
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
         {checkins.length === 0 ? (
-          <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
+          <>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Check-ins</p>
+            <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
+          </>
         ) : (
-          <ol className="mt-1 space-y-1">
-            {checkins.map((checkin, index) => (
-              <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                <span className="flex min-w-0 items-start gap-1.5">
-                  <span className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
-                    {firstCheckinNumber + index}
-                  </span>
-                  <span className="break-words text-slate-700">
+          <EvidenceTable
+            columns={[
+              { hint: "The number its pin wears on the map", label: "Pin", role: "badge", width: "2.75rem" },
+              { label: "Place", role: "body", width: null },
+              { hint: "The time of the GPS check-in itself", label: "Check-in", role: "time", width: "4.25rem" },
+            ]}
+            rows={checkins.map((checkin, index) => ({
+              badge: (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
+                  {firstCheckinNumber + index}
+                </span>
+              ),
+              body: (
+                <>
+                  <bdi className="font-semibold text-slate-900">
                     {checkin.contact ||
                       checkin.address ||
                       (checkin.lat != null && checkin.lon != null
                         ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
                         : "—")}
-                    {checkin.contact && checkin.address ? (
-                      <span className="block text-slate-500">{checkin.address}</span>
-                    ) : null}
-                    {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
-                    {(checkin.taps ?? 1) > 1 ? (
-                      <span className="text-slate-400"> · ×{fmt(checkin.taps ?? 1)} taps</span>
-                    ) : null}
-                  </span>
-                </span>
-                <span className="flex shrink-0 flex-col items-end leading-tight">
-                  <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                    Check-in time
-                  </span>
-                  <span className="whitespace-nowrap tabular-nums text-slate-500">{formatClock(checkin.at)}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
+                  </bdi>
+                  {checkin.contact && checkin.address ? (
+                    <span className="block text-slate-500">
+                      <bdi>{checkin.address}</bdi>
+                    </span>
+                  ) : null}
+                  {checkin.via || (checkin.taps ?? 1) > 1 ? (
+                    <span className="block text-slate-400">
+                      {checkin.via ? <>via {checkin.via}</> : null}
+                      {checkin.via && (checkin.taps ?? 1) > 1 ? " · " : null}
+                      {(checkin.taps ?? 1) > 1 ? <>×{fmt(checkin.taps ?? 1)} taps</> : null}
+                    </span>
+                  ) : null}
+                </>
+              ),
+              key: String(index),
+              time: <span>{formatClock(checkin.at)}</span>,
+            }))}
+            title={
+              <>
+                Check-ins <span className="tabular-nums text-slate-400">· {fmt(checkins.length)}</span>
+              </>
+            }
+          />
         )}
         {ownVisitsWithoutGps > 0 ? (
           <p className="mt-1.5 text-xs text-slate-500">

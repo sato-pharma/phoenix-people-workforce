@@ -10,6 +10,7 @@ import {
   type RouteMarker,
   type TripRouteLine,
 } from "@/components/field-workforce-compliance/field-workforce-route-map";
+import { EvidenceTable } from "@/components/outstation/evidence-table";
 import type { AttachmentsData } from "@/components/outstation/trip-attachments";
 import {
   type TripWorkloadEvidence,
@@ -341,6 +342,94 @@ function DayMap({
   // Nothing of this day's own carries a position and no route is drawn on it: ONE line, never a 420px
   // map holding only the submitted-from pin.
   const empty = !loading && pinned === 0 && !tripRoute;
+  // The route, home and submitted-from first; then every photo, stop and check-in in time order.
+  const legendRows: LegendTableRow[] = [
+    ...(tripRoute
+      ? [
+          {
+            badge: <span aria-hidden className="mt-1.5 block h-1 w-5 bg-orange-500" />,
+            body: (
+              <>
+                <span className="font-bold text-slate-900">The trip&rsquo;s route from home</span>
+                {tripRoute.route.distanceKm !== null ? (
+                  <span className="tabular-nums"> · {formatNumberValue(tripRoute.route.distanceKm)} km</span>
+                ) : null}
+              </>
+            ),
+            key: "route",
+          },
+        ]
+      : []),
+    ...(home
+      ? [
+          {
+            badge: <PinBadge label="H" tone="photo" />,
+            body: (
+              <>
+                <span className="font-bold text-slate-900">Home</span>
+                {home.label ? (
+                  <>
+                    {" · "}
+                    <bdi dir="auto">{displayPlace(home.label)}</bdi>
+                  </>
+                ) : null}
+                <span className="block tabular-nums text-slate-500">{coordinates(home.lat, home.lon)}</span>
+              </>
+            ),
+            key: "home",
+          },
+        ]
+      : []),
+    ...(submittedAt && !empty
+      ? [
+          {
+            badge: <PinBadge label="○" tone="submitted" />,
+            body: (
+              <>
+                <span className="font-bold text-slate-900">Submitted from</span>
+                {submittedLabel ? (
+                  <>
+                    {" · "}
+                    <bdi dir="auto">{submittedLabel}</bdi>
+                  </>
+                ) : null}
+                <span className="block tabular-nums text-slate-500">{coordinates(submittedAt.lat, submittedAt.lon)}</span>
+              </>
+            ),
+            key: "submitted",
+          },
+        ]
+      : []),
+    ...timeline.map((row): LegendTableRow =>
+      row.kind === "pin"
+        ? { badge: <PinBadge label={row.item.label} tone="photo" />, body: row.item.line, key: `pin-${row.item.label}` }
+        : {
+            badge: <PinBadge label={String(firstCheckinNumber + row.index)} tone="checkin" />,
+            body: (
+              <>
+                <span className="font-bold text-slate-900">{mapped[row.index]?.contactName ?? "Check-in"}</span>
+                <span className="tabular-nums"> · {formatClock(mapped[row.index]?.checkDate ?? null)}</span>
+                {(checkins[row.index]?.taps ?? 1) > 1 ? ` · ×${formatNumberValue(checkins[row.index]?.taps ?? 1)} taps` : ""}
+                {/* The place is in the Check-ins table under the map; here only a check-in with no
+                    contact name is named by its address. */}
+                {!checkins[row.index]?.contact && checkins[row.index]?.address ? (
+                  <>
+                    {" · "}
+                    <bdi dir="auto">{displayPlace(checkins[row.index]?.address ?? "")}</bdi>
+                  </>
+                ) : null}
+                {checkins[row.index]?.lat == null || checkins[row.index]?.lon == null ? (
+                  <span className="text-amber-700"> · no coordinates, not on the map</span>
+                ) : null}
+              </>
+            ),
+            key: `checkin-${mapped[row.index]?.id ?? row.index}`,
+          },
+    ),
+  ];
+  // Down, then across: the first half fills the left table top to bottom, the rest the right one —
+  // never row by row, which reads zig-zag (owner, 2026-11-07). Three rows or fewer stay one table.
+  const legendHalf = legendRows.length > 3 ? Math.ceil(legendRows.length / 2) : legendRows.length;
   return (
     <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey} data-map-drawn={seen ? "yes" : "no"} ref={ref}>
       <p className="mb-2 flex flex-wrap items-center gap-x-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
@@ -368,77 +457,14 @@ function DayMap({
         // The map's own box size, so the column does not jump when the map replaces it.
         <div aria-hidden className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" />
       )}
-      {/* Columns, never a grid: a grid fills row by row, so two columns read zig-zag (owner, 2026-11-07).
-          The route, home and submitted-from first; then every photo, stop and check-in in time order. */}
-      <ul className="mt-3 gap-x-6 text-xs sm:columns-2 [&>*]:mb-1 [&>*]:min-w-0 [&>*]:break-inside-avoid" data-map-legend>
-        {tripRoute ? (
-          <li className="flex items-start gap-2">
-            <span aria-hidden className="mt-1.5 h-1 w-5 shrink-0 bg-orange-500" />
-            <span className="min-w-0 break-words text-slate-700">
-              <span className="font-bold text-slate-900">The trip&rsquo;s route from home</span>
-              {tripRoute.route.distanceKm !== null ? ` · ${formatNumberValue(tripRoute.route.distanceKm)} km` : ""}
-            </span>
-          </li>
-        ) : null}
-        {home ? (
-          <li className="flex items-start gap-2">
-            <PinBadge label="H" tone="photo" />
-            <span className="min-w-0 break-words text-slate-700">
-              <span className="font-bold text-slate-900">Home</span>
-              {home.label ? (
-                <>
-                  {" · "}
-                  <bdi dir="auto">{displayPlace(home.label)}</bdi>
-                </>
-              ) : null}
-              <span className="tabular-nums text-slate-500"> · {coordinates(home.lat, home.lon)}</span>
-            </span>
-          </li>
-        ) : null}
-        {submittedAt && !empty ? (
-          <li className="flex items-start gap-2">
-            <PinBadge label="○" tone="submitted" />
-            <span className="min-w-0 break-words text-slate-700">
-              <span className="font-bold text-slate-900">Submitted from</span>
-              <span className="tabular-nums text-slate-500"> · {coordinates(submittedAt.lat, submittedAt.lon)}</span>
-              {submittedLabel ? (
-                <>
-                  {" · "}
-                  <bdi dir="auto">{submittedLabel}</bdi>
-                </>
-              ) : null}
-            </span>
-          </li>
-        ) : null}
-        {timeline.map((row) =>
-          row.kind === "pin" ? (
-            <li className="flex items-start gap-2" key={row.item.label}>
-              <PinBadge label={row.item.label} tone="photo" />
-              <span className="min-w-0 break-words text-slate-700">{row.item.line}</span>
-            </li>
-          ) : (
-            <li className="flex items-start gap-2" key={mapped[row.index]?.id ?? row.index}>
-              <PinBadge label={String(firstCheckinNumber + row.index)} tone="checkin" />
-              <span className="min-w-0 break-words text-slate-700">
-                <span className="font-bold text-slate-900">{mapped[row.index]?.contactName ?? "Check-in"}</span>
-                {(checkins[row.index]?.taps ?? 1) > 1 ? ` · ×${formatNumberValue(checkins[row.index]?.taps ?? 1)} taps` : ""}
-                {` · ${formatClock(mapped[row.index]?.checkDate ?? null)}`}
-                {/* The place is in the Check-ins list under the map; here only a check-in with no
-                    contact name is named by its address. */}
-                {!checkins[row.index]?.contact && checkins[row.index]?.address ? (
-                  <>
-                    {" · "}
-                    <bdi dir="auto">{displayPlace(checkins[row.index]?.address ?? "")}</bdi>
-                  </>
-                ) : null}
-                {checkins[row.index]?.lat == null || checkins[row.index]?.lon == null ? (
-                  <span className="text-amber-700"> · no coordinates, not on the map</span>
-                ) : null}
-              </span>
-            </li>
-          ),
-        )}
-      </ul>
+      {/* Two zebra tables side by side (owner, 2026-11-07: "tidy this part by putting in a zebra
+          table, premium polish"); each reads down, the left one first. */}
+      {legendRows.length > 0 ? (
+        <div className={cn("mt-3 grid gap-3 [&>*]:min-w-0", legendHalf < legendRows.length && "sm:grid-cols-2")} data-map-legend>
+          <LegendTable rows={legendRows.slice(0, legendHalf)} />
+          {legendHalf < legendRows.length ? <LegendTable rows={legendRows.slice(legendHalf)} /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -480,6 +506,18 @@ function legendTimeline(legend: DayLegendItem[], checkins: WorkloadCheckinDetail
   return rows
     .sort((a, b) => (a.key === null ? (b.key === null ? 0 : 1) : b.key === null ? -1 : a.key.localeCompare(b.key)))
     .map((entry) => entry.row);
+}
+
+type LegendTableRow = { badge: ReactNode; body: ReactNode; key: string };
+
+const LEGEND_COLUMNS = [
+  { label: "Pin", role: "badge", width: "3rem" },
+  { label: "On this day's map", role: "body", width: null },
+] as const;
+
+/** One half of a day's map legend: a zebra table of pin and what it marks. */
+function LegendTable({ rows }: { rows: LegendTableRow[] }) {
+  return <EvidenceTable columns={LEGEND_COLUMNS} rows={rows} />;
 }
 
 /** The pin's label as it appears on the map, so the legend and the map read the same. */

@@ -101,7 +101,26 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /if \(\/\^am\$\/i\.test\(value\)\) return "AM list";/, "HEADLINE: AM reads 'AM list' beside the name");
   assert.doesNotMatch(panel, /\{visit\.ampm \? ` · \$\{visit\.ampm\}` : ""\}/, "and never sits beside the saved time as if it were the clock");
   const review = source("../src/components/outstation/expense-review/review-deck/deck-days.tsx");
-  assert.match(review, /sm:columns-2/, "HEADLINE: the map legend reads down its columns");
-  assert.doesNotMatch(review, /<ul className="[^"]*grid[^"]*" data-map-legend/, "never a grid, which reads zig-zag");
+  assert.match(
+    review,
+    /<LegendTable rows=\{legendRows\.slice\(0, legendHalf\)\} \/>\s*\{legendHalf < legendRows\.length \? <LegendTable rows=\{legendRows\.slice\(legendHalf\)\} \/> : null\}/,
+    "HEADLINE: the map legend reads down — the first half fills the left table, the rest the right one",
+  );
+  assert.match(review, /const legendHalf = legendRows\.length > 3 \? Math\.ceil\(legendRows\.length \/ 2\) : legendRows\.length;/);
+  assert.doesNotMatch(review, /<ul className="[^"]*grid[^"]*" data-map-legend/, "never a grid of rows, which reads zig-zag");
   assert.match(review, /legendTimeline\(legend, checkins\)/, "the photos, stops and check-ins are one time-ordered list");
+
+  // 6. Zebra tables (owner, 2026-11-07: "tidy this part by putting in a zebra table, premium polish").
+  const zebra = source("../src/components/outstation/evidence-table.tsx");
+  assert.match(zebra, /export const evidenceRowClassName = "align-top even:bg-slate-50";/, "HEADLINE: every second evidence row sits on a faint band");
+  assert.match(zebra, /className="w-full table-fixed border-collapse[^"]*"/, "fixed columns, so the table fits its panel");
+  assert.match(zebra, /<colgroup>/);
+  assert.match(zebra, /<div className="hidden md:block">\s*<table /, "HEADLINE: desktop only, like every outstation table");
+  assert.match(zebra, /<ul className="[^"]*md:hidden">[\s\S]*?even:bg-slate-50/, "HEADLINE: below md the same rows are zebra cards");
+  assert.match(zebra, /\{column\.label\}<\/span>\s*<span className="tabular-nums[^"]*">\{row\[column\.role\]\}/, "a card's time keeps its column's label");
+  assert.doesNotMatch(zebra, /overflow-x-auto|min-w-\[|w-max|truncate|rounded/, "never a sideways scroll, a cut-off name or a round corner");
+  assert.match(panel, /label: "Saved", role: "time", width: "4\.25rem"/, "HEADLINE: the visits are a zebra table, the saved time a column of its own");
+  assert.match(panel, /label: "Check-in", role: "time", width: "4\.25rem"/, "HEADLINE: the check-ins are a zebra table, the check-in time a column of its own");
+  assert.doesNotMatch(panel, /<(ul|ol) className="mt-1 space-y-1">/, "the old bullet lists are gone");
+  assert.match(review, /return <EvidenceTable columns=\{LEGEND_COLUMNS\} rows=\{rows\} \/>;/, "HEADLINE: the map legend is a zebra table");
 }

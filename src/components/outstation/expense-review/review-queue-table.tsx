@@ -216,10 +216,11 @@ function FoundCell({ actions, record }: { actions: RowActions; record: LoadedRec
   const decision = actions.decisionFor(record);
   const state = expenseApprovalState(decision);
   const imported = isImportedHistoryTrip(record.date);
-  // Only a trip still waiting carries its reasons and its wait: a decided row says what happened in
-  // its own pill.
+  // Every live trip keeps what the system found, decided or not: a ticked decision used to blank the
+  // column, so a row read empty until it was opened (owner, 2026-11-07: "show the system's findings
+  // on decided rows too"). Only the wait belongs to a trip still waiting.
   const awaiting = state === "pending" && !imported;
-  const reading = awaiting ? expenseTripTriage(record) : null;
+  const reading = imported ? null : expenseTripTriage(record);
   const daysAwaiting = awaiting ? expenseTripDaysAwaiting(record.submittedAt, actions.now) : null;
   const flag = record.km ? distanceFlag(record.km) : null;
   return (
