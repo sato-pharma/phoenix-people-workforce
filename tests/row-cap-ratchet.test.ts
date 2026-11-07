@@ -85,6 +85,10 @@ const EXEMPT: ReadonlyArray<{ key: string; why: string }> = [
     why: "text: the longest interview note, in characters",
   },
   {
+    key: "src/lib/recruitment/mr-hiring/vocabulary.ts::export const MR_BOOKING_NOTES_LIMIT = 1000;",
+    why: "text: the Medical Rep booking's notes for the interviewer, in characters — the calendar's NOTE_LIMIT above",
+  },
+  {
     key: "src/lib/sales/normalizer/phoenix-template-workbook.ts::export const PHOENIX_TEMPLATE_PREWIRED_ROWS = 1000;",
     why: "text: formula rows pre-wired in a downloadable workbook template, not a read",
   },
