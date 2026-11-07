@@ -70,7 +70,7 @@ import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
-import { fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
+import { fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -884,7 +884,19 @@ function AddFlow({
       {back}
       <CrmBlock>
         <CrmNote title={customer.name} tone="warn">
-          {customer.needsFullName ? fullNameNeededSentence(customer.name) : UNVALIDATED_CUSTOMER_VISIT_REFUSED}
+          {UNVALIDATED_CUSTOMER_VISIT_REFUSED}
+        </CrmNote>
+      </CrmBlock>
+    </CrmPanel>
+  );
+  // Owner, 2026-11-07 (pm-name-rules.ts): a PM customer a rep added with one or two names is not visited
+  // until the full name is written — the save refuses it, so he reads the way out before the form.
+  const fullNameFirst = (customer: VisitCustomerOption) => (
+    <CrmPanel>
+      {back}
+      <CrmBlock>
+        <CrmNote title={customer.name} tone="warn">
+          {fullNameNeededSentence(customer.name)}
         </CrmNote>
       </CrmBlock>
     </CrmPanel>
@@ -927,7 +939,8 @@ function AddFlow({
     if (!customer) return missing(step.customerName);
     if (customer.waitingToSend) return alreadyWaiting(customer);
     // Owner, 2026-11-07: a doctor he added with one or two names is not visited until the full name is written.
-    if (customer.validateFirst || customer.needsFullName) return validateFirst(customer);
+    if (customer.validateFirst) return validateFirst(customer);
+    if (customer.needsFullName) return fullNameFirst(customer);
     current = routeFor(customer);
   }
 
@@ -1073,7 +1086,8 @@ function AddFlow({
       const customer = find(formStep.customerId);
       if (!customer) return missing(null);
       if (customer.waitingToSend) return alreadyWaiting(customer);
-      if (customer.validateFirst || customer.needsFullName) return validateFirst(customer);
+      if (customer.validateFirst) return validateFirst(customer);
+      if (customer.needsFullName) return fullNameFirst(customer);
       return shell(
         formStep,
         <VisitLogForm

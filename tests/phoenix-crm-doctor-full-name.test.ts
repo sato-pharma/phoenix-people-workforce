@@ -12,13 +12,13 @@ import {
   joinDoctorName,
   parseDoctorFullName,
   splitDoctorName,
-} from "@/lib/phoenix-crm/doctor-name-rules";
+} from "@/lib/phoenix-crm/pm-name-rules";
 import { parseNewCustomer, parseOutsideCustomer } from "@/lib/phoenix-crm/entry-rules";
 import { buildDayCopyPlacements } from "@/lib/phoenix-crm/plan-copy";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 
 /**
- * Owner, 2026-11-07 (doctor-name-rules.ts): a clinic doctor's name is first, middle and last — three
+ * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
  * required boxes, each a real name; a doctor a rep added with one or two names is blocked from the plan
  * and Add visit until the full name is written; the full name is held against his signboard — 60%+
  * saved, under 40% refused, in between it waits for the Super Admin — "do not strict rejection or
@@ -30,7 +30,7 @@ function checkEachBoxIsARealName(): void {
   assert.equal(doctorNamePartProblem("Kamal", "Middle name"), null);
   // A compound written with a space is one name.
   assert.equal(doctorNamePartProblem("عبد العزيز", "Middle name"), null);
-  assert.match(doctorNamePartProblem("", "First name") ?? "", /Write the doctor's first name/);
+  assert.match(doctorNamePartProblem("", "First name") ?? "", /Write the first name/);
   assert.match(doctorNamePartProblem("د", "First name") ?? "", /without Dr/);
   assert.match(doctorNamePartProblem("أحمد كمال", "First name") ?? "", /one name/);
   assert.match(doctorNamePartProblem("Ahmed1", "First name") ?? "", /letters only/);

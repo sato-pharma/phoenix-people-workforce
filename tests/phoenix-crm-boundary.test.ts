@@ -205,6 +205,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "approve"),
+  // A PM customer's full name that matched the signboard only in part (owner, 2026-11-07, pm-name-rules.ts):
+  // `approve` at the route, and `decideHeldFullName` narrows it to the Super Admin and the SFE Manager
+  // before a row is read.
+  post("full-names", "approve"),
   // The Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue. `approve` at the route,
   // and `setVenueCap` narrows it to the Super Admin and the SFE Manager before a row is read.
   post("venue-caps", "approve"),
@@ -1067,6 +1071,9 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261103120000_phoenix_crm_visit_resend.sql",
   // "Show visit times" on a manager's plan board (owner, 5 Nov 2026): one NEW read-only function; nothing replaced.
   "supabase/migrations/20261105210430_phoenix_crm_customer_last_visits.sql",
+  // A PM customer's full name (owner, 7 Nov 2026): seven columns on the customer and two NEW functions, one that
+  // holds a name for a decision and one that decides it; nothing replaced.
+  "supabase/migrations/20261107045402_phoenix_crm_doctor_full_name.sql",
 ];
 
 /**

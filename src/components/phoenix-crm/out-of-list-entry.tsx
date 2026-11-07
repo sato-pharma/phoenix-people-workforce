@@ -22,14 +22,14 @@ import { UserPlus } from "lucide-react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
-import { DoctorNameFields } from "@/components/phoenix-crm/doctor-name-fields";
+import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
-import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/doctor-name-rules";
+import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -98,7 +98,7 @@ export function OutOfListEntry({
   const [adding, setAdding] = useState(false);
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
-  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, doctor-name-rules.ts).
+  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
   // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).

@@ -48,7 +48,7 @@ import {
   weeklyPlanDueOn,
 } from "@/lib/phoenix-crm/calendar";
 import { summarizeReadiness } from "@/lib/phoenix-crm/coverage";
-import { doctorNeedsFullName } from "@/lib/phoenix-crm/doctor-name-rules";
+import { doctorNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
 import { noDayStarts, parsePlanDayStarts, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";

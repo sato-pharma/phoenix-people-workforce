@@ -44,7 +44,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
-import { FULL_NAME_NEEDED_TAG, fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
+import { FULL_NAME_NEEDED_TAG, fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED } from "@/lib/phoenix-crm/entry-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { offPlanBlock, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
@@ -333,10 +333,10 @@ export function VisitCustomerPicker({
                                   31 Oct 2026): listed with the save's own sentence and not offered, like a doctor the
                                   allowance holds no place for. */}
                               <span className="mt-1 block text-xs font-semibold text-slate-600">
-                                {customer.needsFullName
-                                  ? fullNameNeededSentence(customer.name)
-                                  : customer.validateFirst
-                                    ? UNVALIDATED_CUSTOMER_VISIT_REFUSED
+                                {customer.validateFirst
+                                  ? UNVALIDATED_CUSTOMER_VISIT_REFUSED
+                                  : customer.needsFullName
+                                    ? fullNameNeededSentence(customer.name)
                                     : customer.pending
                                       ? pendingVisitsText(customer.visitsThisMonth)
                                       : monthVisitsText(customer.visitsThisMonth, customer.target)}

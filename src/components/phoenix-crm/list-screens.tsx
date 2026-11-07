@@ -32,7 +32,7 @@ import { useRef, useState } from "react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
-import { DoctorNameFields } from "@/components/phoenix-crm/doctor-name-fields";
+import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { cairoStamp, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -99,7 +99,7 @@ import {
   joinDoctorName,
   splitDoctorName,
   type DoctorNameParts,
-} from "@/lib/phoenix-crm/doctor-name-rules";
+} from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from "@/lib/phoenix-crm/schedule-rules";
@@ -610,7 +610,7 @@ export function ValidateScreen({
   const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? [], seatedSessionOf(listed?.listType)));
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
-  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, doctor-name-rules.ts).
+  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
   const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
   // Optional, and saved with the validation itself (owner, 2026-09-30).

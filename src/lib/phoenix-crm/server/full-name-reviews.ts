@@ -1,5 +1,5 @@
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
-import type { HeldFullName } from "@/lib/phoenix-crm/doctor-name-rules";
+import type { HeldFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -39,7 +39,7 @@ export async function decideHeldFullName(
 ): Promise<{ customerId: string; decision: "approve" | "reject" }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
-  if (!isUuid(body.customerId)) throw validationError("Choose the doctor to decide.");
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to decide.");
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
   if (!decision) throw validationError("Choose approve or reject.");
   const customerId = String(body.customerId).toLowerCase();

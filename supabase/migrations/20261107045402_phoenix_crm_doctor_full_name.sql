@@ -20,6 +20,7 @@
 -- Additive only: no row is changed by this file.
 
 begin;
+set local lock_timeout = '5s';
 
 alter table public.phoenix_crm_customers
   add column if not exists full_name_held text,
@@ -177,5 +178,7 @@ revoke execute on function public.phoenix_crm_hold_full_name(jsonb) from public,
 revoke execute on function public.phoenix_crm_decide_full_name(jsonb) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_hold_full_name(jsonb) to service_role;
 grant execute on function public.phoenix_crm_decide_full_name(jsonb) to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;

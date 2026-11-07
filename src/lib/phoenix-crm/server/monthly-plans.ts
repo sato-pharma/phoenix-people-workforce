@@ -131,7 +131,7 @@ import {
   type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import { doctorNeedsFullName } from "@/lib/phoenix-crm/doctor-name-rules";
+import { doctorNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";

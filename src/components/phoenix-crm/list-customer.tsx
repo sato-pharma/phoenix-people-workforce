@@ -68,7 +68,7 @@ import {
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
 import { directionsUrl } from "@/lib/phoenix-crm/directions";
-import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/doctor-name-rules";
+import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/pm-name-rules";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
@@ -355,7 +355,7 @@ export function CustomerScreen({
         {customer.needsFullName && view.canEdit ? (
           <>
             <CrmNote className="mt-3" title={FULL_NAME_NEEDED_TAG} tone="warn">
-              {customer.name} stays out of your plan and Add visit until you write the doctor&apos;s first, middle and last name, as the signboard
+              {customer.name} stays out of your plan and your visits until you write the customer&apos;s first, middle and last name, as the signboard
               shows them.
             </CrmNote>
             <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">

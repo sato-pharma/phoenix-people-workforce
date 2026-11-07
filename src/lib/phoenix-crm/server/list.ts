@@ -43,7 +43,7 @@ import {
   fullNameMatchPercent,
   fullNameRuling,
   parseDoctorFullName,
-} from "@/lib/phoenix-crm/doctor-name-rules";
+} from "@/lib/phoenix-crm/pm-name-rules";
 import {
   cleanText,
   CUSTOMER_NAME_MAX,
@@ -379,7 +379,7 @@ export type ListCustomer = {
   origin: "reference" | "new";
   referenceContactCrmId: number | null;
   /**
-   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, doctor-name-rules.ts): never
+   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, pm-name-rules.ts): never
    * planned and never visited until he writes the first, middle and last name in Change the details.
    */
   needsFullName?: boolean;
@@ -2761,7 +2761,7 @@ export async function renameCustomer(
 
 /**
  * The name `renameCustomer` saves, and the full name it holds for the Super Admin (owner, 2026-11-07,
- * doctor-name-rules.ts). A clinic doctor's NEW name must be three names and is held against what was
+ * pm-name-rules.ts). A clinic doctor's NEW name must be three names and is held against what was
  * read off his signboard or timetable: 60%+ is saved, under 40% refused, in between the old name stays
  * and the new one waits — the doctor is no longer blocked meanwhile. An AM account, a pharmacy and a
  * name left as it was keep the old rule.

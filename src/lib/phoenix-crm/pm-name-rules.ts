@@ -45,11 +45,11 @@ export const FULL_NAME_REFUSE_BELOW = 40;
 
 /** What the rep reads when the name does not match the board. His own fix, never who checked. */
 export const FULL_NAME_REFUSED =
-  "This name does not match the name on the doctor's signboard. Write the doctor's first, middle and last name as the sign shows them.";
+  "This name does not match the name on the signboard. Write the first, middle and last name as the sign shows them.";
 
 /** What the plan and Add visit say about a blocked doctor: the way out, in his own words. */
 export function fullNameNeededSentence(name: string): string {
-  return `${name} needs a full name first. Open this doctor in your list, tap Change the details and write the first, middle and last name.`;
+  return `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
 }
 
 /** The short label beside a blocked doctor in a picker. */
@@ -102,7 +102,7 @@ function cleanPart(value: unknown): string {
  */
 export function doctorNamePartProblem(value: unknown, label: string): string | null {
   const part = cleanPart(value);
-  if (!part) return `Write the doctor's ${label.toLowerCase()}.`;
+  if (!part) return `Write the ${label.toLowerCase()}.`;
   const words = personNameWords(part);
   if (words.length === 0) return `Write the ${label.toLowerCase()} without Dr or د.`;
   if (words.length > 1) return `Write one name in ${label}. Use the other boxes for the rest of the name.`;
@@ -117,7 +117,7 @@ export function doctorNamePartProblem(value: unknown, label: string): string | n
   if (folded.replace(/\s/g, "").length < 2) return `${label} is too short to be a name.`;
   if (/(.)\1\1/u.test(folded.replace(/\s/g, ""))) return `${label} does not look like a name. Write it as the sign shows it.`;
   if (folded.split(" ").some((word) => PLACE_WORDS.has(word))) {
-    return `${label} names a place, not a doctor. Write the doctor's own name.`;
+    return `${label} names a place, not a person. Write the person's own name.`;
   }
   return null;
 }
@@ -152,7 +152,7 @@ export function parseDoctorFullName(
     return problem ? { ok: false, error: problem } : { ok: true, value: joinDoctorName(parts) };
   }
   const whole = cleanPart(name);
-  if (doctorNameWordCount(whole) < 3) return { ok: false, error: "Write the doctor's first, middle and last name." };
+  if (doctorNameWordCount(whole) < 3) return { ok: false, error: "Write the first, middle and last name." };
   return { ok: true, value: whole };
 }
 
@@ -261,7 +261,7 @@ export function fullNameRuling(percent: number | null, validated: boolean): Full
 
 /**
  * A clinic doctor's full name that matched his signboard 40–59%, or a validated doctor whose board was
- * never read — waiting for a person (owner, 2026-11-07, doctor-name-rules.ts). The same people decide it
+ * never read — waiting for a person (owner, 2026-11-07, pm-name-rules.ts). The same people decide it
  * as decide Place checks: the Super Admin and the SFE Manager. The rep is never told it waits; the doctor
  * is not blocked meanwhile.
  */

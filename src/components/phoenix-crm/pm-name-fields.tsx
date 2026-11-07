@@ -1,14 +1,14 @@
 "use client";
 
 import { CrmField, crmInputClassName } from "@/components/phoenix-crm/ui";
-import { DOCTOR_NAME_FIELDS, type DoctorNameParts } from "@/lib/phoenix-crm/doctor-name-rules";
+import { DOCTOR_NAME_FIELDS, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
 
 /** One box holds one name; a compound (عبد العزيز) still fits. */
 const PART_MAX = 40;
 
 /**
  * A clinic doctor's name as three required boxes, first, middle and last (owner, 2026-11-07,
- * doctor-name-rules.ts). An AM account and a pharmacy keep their one name box.
+ * pm-name-rules.ts). An AM account and a pharmacy keep their one name box.
  */
 export function DoctorNameFields({
   disabled,
@@ -39,7 +39,7 @@ export function DoctorNameFields({
         </CrmField>
       ))}
       <p className="text-xs font-medium leading-5 text-slate-500 sm:col-span-3">
-        The doctor&apos;s own three names, as the signboard shows them. No Dr or د.
+        The customer&apos;s own three names, as the signboard shows them. No Dr or د.
       </p>
     </div>
   );

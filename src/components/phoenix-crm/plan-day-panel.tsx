@@ -99,7 +99,7 @@ import {
   type DailyCaps,
   type PlannedActivity,
 } from "@/lib/phoenix-crm/plan-week-draft";
-import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/doctor-name-rules";
+import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/pm-name-rules";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import { PHOENIX_CRM_WEEKDAY_NAMES, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade } from "@/lib/phoenix-crm/types";
@@ -985,7 +985,7 @@ function RowPills({ row }: { row: TickRow }) {
   if (!row.noRamadanTime && !row.followUp && !row.needsFullName) return null;
   return (
     <span className="mt-1 flex max-w-full flex-wrap gap-1">
-      {/* The way out, in his words: Change the details on his list (doctor-name-rules.ts). */}
+      {/* The way out, in his words: Change the details on his list (pm-name-rules.ts). */}
       {row.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
       {/* His own commitment from his latest visit, due this week — the one thing on the row that asks him to act. */}
       {row.followUp ? <CrmPill tone="info">{row.followUp}</CrmPill> : null}

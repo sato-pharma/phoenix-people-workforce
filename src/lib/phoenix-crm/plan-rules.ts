@@ -21,7 +21,7 @@ import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
 import { isUuid as isUuidText } from "@/lib/http/uuid";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { editablePlanDays, fieldWeekDays, planDayListTypes, PLAN_DEADLINE_LABEL, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
-import { fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
+import { fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { sharedPlanCapRefusal, type SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmDoctorListType, PhoenixCrmPlanStatus, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
@@ -399,7 +399,7 @@ export type PlanRuleCustomer = {
   listType: PhoenixCrmDoctorListType;
   /** Carried over from iReports360 and not validated yet: no place, no timings, and it counts in nothing. */
   pending: boolean;
-  /** A clinic doctor he added with one or two names: never planned until he writes the full name (doctor-name-rules.ts). */
+  /** A clinic doctor he added with one or two names: never planned until he writes the full name (pm-name-rules.ts). */
   needsFullName?: boolean;
   /**
    * `sharedPlaceId` is the polyclinic, centre, tower or hospital outpatient suite a seated place sits

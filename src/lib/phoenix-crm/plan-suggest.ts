@@ -300,7 +300,7 @@ export function suggestDay(input: SuggestInput & { date: string }): SuggestResul
 
   const candidates: Candidate[] = [];
   for (const customer of input.customers) {
-    // A doctor waiting for his full name is never planned (owner, 2026-11-07, doctor-name-rules.ts).
+    // A doctor waiting for his full name is never planned (owner, 2026-11-07, pm-name-rules.ts).
     if (customer.needsFullName) continue;
     if (onDay.has(customer.customerId) || !day.listTypes.includes(customer.listType) || room[customer.listType] <= 0) continue;
     const fit = customerOnDay(customer, day.date, day.ramadan);

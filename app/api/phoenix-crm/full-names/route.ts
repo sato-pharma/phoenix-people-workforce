@@ -10,7 +10,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = approve or reject a doctor's full name that matched his board only in part (owner, 2026-11-07).
+// POST = approve or reject a PM customer's full name that matched the board only in part (owner, 2026-11-07).
 // `approve` here is gate one; the service refuses everyone but the Super Admin and the SFE Manager
 // (`canDecideValidationReviews`) before anything is read.
 export async function POST(request: Request) {

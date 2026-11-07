@@ -101,7 +101,7 @@ export type PlannerCustomer = {
   /** Carried over from iReports360 and not validated yet: no place and no days and hours. */
   pending: boolean;
   /**
-   * A clinic doctor he added with one or two names (owner, 2026-11-07, doctor-name-rules.ts): shown on
+   * A clinic doctor he added with one or two names (owner, 2026-11-07, pm-name-rules.ts): shown on
    * the board, never ticked, suggested or copied until he writes the full name.
    */
   needsFullName?: boolean;

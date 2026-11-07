@@ -45,7 +45,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay, fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
-import { doctorNeedsFullName, fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
+import { doctorNeedsFullName, fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { loadDayStartOn } from "@/lib/phoenix-crm/server/day-start";
 import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
@@ -745,7 +745,7 @@ export type VisitCustomerOption = {
    */
   validateFirst: boolean;
   /**
-   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, doctor-name-rules.ts): Add visit
+   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, pm-name-rules.ts): Add visit
    * offers no visit until he writes the full name, and the save refuses one. False on a manager's form.
    */
   needsFullName?: boolean;
@@ -1700,7 +1700,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     throwIfError(earlierVisits.error);
     const customer = unvalidatedCustomer.data as Row | null;
     // 🔴 A doctor he added with one or two names is never visited until the full name is written (owner,
-    // 2026-11-07, doctor-name-rules.ts) — the rep's own save only, before anything is written.
+    // 2026-11-07, pm-name-rules.ts) — the rep's own save only, before anything is written.
     if (
       customer &&
       doctorNeedsFullName({
