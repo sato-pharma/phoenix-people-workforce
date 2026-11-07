@@ -168,6 +168,17 @@ const instructions = [
     "Said: \"هو كويس بس متوتر شوية و الكومينكيشن بتاعه حلو و عنده خبره سنتين في نوفارتس بس الانجلش ضعيف شويه انا شايف انه ينفع للمرحله الجايه\"",
     "Written: \"The candidate made a good overall impression and has good communication skills, although the candidate appeared somewhat nervous during the interview. The candidate brings 2 years of experience at Novartis. The candidate's English is relatively weak. In my assessment, the candidate is suitable to proceed to the next stage.\"",
   ].join("\n"),
+  // The words of Egyptian pharma hiring a general model gets wrong (owner's screenshot, 8 Nov 2026: "امتياز"
+  // came back as "franchise", "التكليف" as "assignment" with no meaning).
+  [
+    "EGYPTIAN PHARMA HIRING WORDS — use these meanings:",
+    "- امتياز (imtiyaz): the pharmacy or medical internship year a graduate completes before practising — \"internship year\", never \"franchise\" or \"distinction\".",
+    "- تكليف (takleef): the compulsory government service posting after graduation — \"government assignment\".",
+    "- دعاية / مجال الدعاية: medical promotion, the Medical Representative's work — \"medical promotion\".",
+    "- مندوب / مندوب دعاية: Medical Representative. خط: a product line. منطقة: an area or territory. تارجت: the sales target.",
+    "- صيدلي / خريج صيدلة: pharmacist / pharmacy graduate. بيطري: veterinary. علوم: science graduate.",
+    "- اسيب / يسيب: to leave. يكمل: to stay on or continue. مرتب / مرتب متوقع: salary / expected salary.",
+  ].join("\n"),
   [
     "MEANING — keep it exactly:",
     "- Keep every fact, opinion, judgement, concern and instruction the speaker gave, and nothing else. Never soften or strengthen a verdict.",

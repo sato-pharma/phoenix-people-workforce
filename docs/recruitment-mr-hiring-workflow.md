@@ -169,6 +169,9 @@ outcome sync and Mark as hired therefore move it without any second write that c
   as a word ("خمسة" → 5) and a number said with ألف ("15 ألف" → 15,000) count as said. A refused rewrite now
   leaves one row in the error table (route `/ai/recruitment/mr-hiring-dictation-polish/refused`) naming the
   reason, the model and the box, never the words.
+- **It knows the words of Egyptian pharma hiring** (owner screenshot, 8 Nov 2026): امتياز is the internship
+  year (it had come back as "franchise"), تكليف the government assignment, دعاية medical promotion. The list is
+  in the rewrite instructions in `polish.ts`; a word it keeps getting wrong goes there.
 
 ## Everything is open to HR (owner, 8 Nov 2026)
 

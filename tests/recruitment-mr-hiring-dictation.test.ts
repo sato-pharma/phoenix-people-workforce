@@ -99,6 +99,9 @@ export function runRecruitmentMrHiringDictationTests() {
   assert.match(polish, /preferProvider: "anthropic",/, "Claude is asked first");
   assert.match(polish, /model: OPENAI_STRONG_MODEL,/, "never the nano tier, even when OpenAI answers");
   assert.match(polish, /route: "\/ai\/recruitment\/mr-hiring-dictation-polish\/refused"/, "a refused rewrite leaves a row");
+  // The Egyptian pharma hiring words (owner's screenshot, 8 Nov 2026: امتياز came back as "franchise").
+  assert.match(polish, /امتياز[^\n]*internship year[^\n]*never \\"franchise\\"/, "امتياز is the internship year");
+  assert.match(polish, /تكليف[^\n]*government assignment/, "تكليف is the government assignment");
   assert.equal(sanitizeMrPolished('"**The candidate** communicates clearly."', "result"), "The candidate communicates clearly.");
   const long = sanitizeMrPolished("The candidate is confident. ".repeat(60), "booking");
   assert.ok(long.length <= mrPolishLimit("booking") && long.endsWith("confident.") && !long.includes("…"), "cut at a whole sentence inside the box's cap, never an ellipsis");
