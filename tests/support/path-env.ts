@@ -10,11 +10,11 @@ import { delimiter } from "node:path";
  * C10 test read `allow` (2026-11-07): `findstr` had vanished with the rest of the path. Every
  * spelling of the key is removed here and one `PATH` is written, which is also what Linux reads.
  */
-export function envWithPathFirst(base: NodeJS.ProcessEnv, ...dirs: string[]): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base };
+export function envWithPathFirst<E extends Record<string, string | undefined>>(base: E, ...dirs: string[]): E {
+  const env: Record<string, string | undefined> = { ...base };
   const keys = Object.keys(env).filter((key) => key.toUpperCase() === "PATH");
   const existing = (keys.includes("PATH") ? env.PATH : keys.map((key) => env[key]).find((value) => value)) ?? "";
   for (const key of keys) delete env[key];
   env.PATH = [...dirs, existing].filter((part) => part !== "").join(delimiter);
-  return env;
+  return env as E;
 }
