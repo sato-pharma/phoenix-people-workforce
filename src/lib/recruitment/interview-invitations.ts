@@ -114,6 +114,7 @@ function factsOf(booking: InterviewBooking, interviewerTitle: string | null): In
     dateKey: booking.dateKey,
     interviewerName: booking.interviewerName,
     interviewerTitle,
+    location: booking.location,
     platform: booking.platform,
     startMinutes: booking.startMinutes,
     zoomJoinUrl: booking.zoomJoinUrl,

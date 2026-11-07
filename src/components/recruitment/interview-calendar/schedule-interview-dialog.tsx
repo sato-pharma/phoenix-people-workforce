@@ -49,12 +49,14 @@ import {
   slotStarts,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
+import { MR_ROUND_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 import { cn } from "@/lib/utils";
 
 import { calendarApi, type CalendarApi } from "./calendar-api";
 import { useTopmostEscape } from "./calendar-dialog";
 import { InvitationPanel } from "./invitation-panel";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { InterviewLocationField } from "./location-field";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
@@ -138,6 +140,7 @@ export function ScheduleInterviewDialog({
   const [area, setArea] = useState(existing?.area ?? "");
   const [line, setLine] = useState(existing?.line ?? "");
   const [jobTitle, setJobTitle] = useState(existing?.jobTitle ?? "");
+  const [location, setLocation] = useState(existing?.location ?? "");
 
   // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
   function chooseInterviewer(person: ChosenInterviewer | null) {
@@ -216,9 +219,11 @@ export function ScheduleInterviewDialog({
     try {
       // A requester (timeOnly) sends day/time/place only — the interviewer, panel and area/line are
       // HR's, and the server rejects a requester who sends them.
+      // The place is part of "where", so a requester may set it too; a Zoom interview has none.
+      const place = platform === "in_office" ? location.trim() || null : null;
       const body = timeOnly
-        ? { dateKey, durationMinutes, notes: notes.trim(), platform, startMinutes }
-        : { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, jobTitle: jobTitle.trim() || null, notes: notes.trim(), platform, startMinutes };
+        ? { dateKey, durationMinutes, location: place, notes: notes.trim(), platform, startMinutes }
+        : { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, jobTitle: jobTitle.trim() || null, location: place, notes: notes.trim(), platform, startMinutes };
       const data = existing
         ? await api.patch(`/bookings/${encodeURIComponent(existing.id)}`, body)
         : await api.post(`/bookings`, { ...body, candidateId: candidate.id });
@@ -449,6 +454,14 @@ export function ScheduleInterviewDialog({
                     {platform === "zoom" && !zoomConnected ? (
                       <p className="mt-1.5 text-[11px] text-amber-800">
                         The interview is booked as Zoom; its meeting link is made once Zoom is connected to Phoenix.
+                      </p>
+                    ) : null}
+                    <div className="mt-2">
+                      <InterviewLocationField location={location} onLocation={setLocation} platform={platform} />
+                    </div>
+                    {existing?.interviewRound ? (
+                      <p className="mt-2 text-[11px] text-slate-600">
+                        Medical Rep round: <span className="font-semibold text-slate-800">{MR_ROUND_LABELS[existing.interviewRound]}</span>
                       </p>
                     ) : null}
                   </div>

@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { InterviewLocationField } from "./location-field";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
@@ -170,6 +171,7 @@ export function CellDialog({
   const [area, setArea] = useState("");
   const [line, setLine] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
@@ -255,6 +257,7 @@ export function CellDialog({
         area: area.trim() || null,
         line: line.trim() || null,
         jobTitle: jobTitle.trim() || null,
+        location: platform === "in_office" ? location.trim() || null : null,
         notes: notes.trim(),
         platform,
         startMinutes: start,
@@ -458,6 +461,9 @@ export function CellDialog({
                 {platform === "zoom" && !zoomConnected ? (
                   <p className="mt-1.5 text-[11px] text-amber-800">It is booked as Zoom; the meeting link is made once Zoom is connected to Phoenix.</p>
                 ) : null}
+                <div className="mt-2">
+                  <InterviewLocationField location={location} onLocation={setLocation} platform={platform} />
+                </div>
               </div>
               <div>
                 <FieldLabel>Interviewer (optional)</FieldLabel>

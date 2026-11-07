@@ -2232,6 +2232,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // within 500 m, 1,800 far and counted, 3,802 archived far (= the archive's far rows). Every month Jan–Nov of
   // crm_visits_unified hashed the same as before the conversion. Re-applying touches no row (none is left to lift).
   "20261107064148_phoenix_crm_far_old_visits_within_500m_count.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler) — both MCP
+  // doors decline a file holding `drop constraint/policy/trigger if exists`. md5(pg_proc.prosrc) of
+  // phx_ats_mr_hiring_append_only on staging and production = 01fcf91551552a7a2aabbba5a1966b45, the md5 of this
+  // file's own LF body between the $$ markers; prosecdef true; EXECUTE for postgres and service_role only. Read
+  // back on production: ats_mr_hiring_step_results and ats_mr_hiring_recommendations with RLS on and grants for
+  // postgres and service_role only, the four triggers, both booking constraints, 0 of 104 bookings carrying a
+  // round. Probed on staging inside a rolled-back transaction: an UPDATE and a direct DELETE refused, a
+  // make_offer with no salary refused, a booking's deletion leaving the result with booking_id null. Re-applying
+  // is a no-op (`if not exists`, `drop … if exists` then create, `create or replace`).
+  "20261107123708_ats_mr_hiring_workflow.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), for the
+  // same reason as the file above (`drop constraint if exists`). Read back on both with pg_get_constraintdef:
+  // ats_interview_bookings_round_known and ats_mr_hiring_step_results_step_known each list 'rsm' beside every
+  // value they held before; production had 0 bookings carrying a round and 0 step results, so no row was
+  // re-checked against anything new. Re-applying is a no-op (`drop … if exists`, then the same constraint).
+  "20261107132746_ats_mr_hiring_rsm_round.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

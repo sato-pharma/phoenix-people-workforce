@@ -1052,6 +1052,20 @@ export const MODULES = [
     tables: ["ats_candidate_cv_extractions"],
   },
   {
+    id: "recruitment-mr-hiring",
+    title: "Recruitment — Medical Rep hiring, the 8 November 2026 workflow",
+    scope: "The Medical Rep hiring workflow from the WhatsApp CV to the offer: the derived step, the held CVs, the interview rounds (HR, DSM, RSM, HR Manager, NSM, joint final), step results, the NSM's recommendation and its hidden salary, the final decision, the Medical Rep Hiring page and the managers' \"My Medical Rep interviews\".",
+    globs: [
+      "src/lib/recruitment/mr-hiring/**",
+      "src/components/recruitment/mr-hiring/**",
+      "app/**/mr-hiring/**",
+      "tests/*mr-hiring*",
+      "supabase/migrations/*mr_hiring*",
+    ],
+    keywords: ["medical rep hiring", "mr hiring", "dsm feedback", "rsm interview", "nsm recommendation", "hiring journey", "held cv", "joint final"],
+    tables: ["ats_mr_hiring_step_results", "ats_mr_hiring_recommendations"],
+  },
+  {
     id: "hiring-documents",
     title: "Hiring documents, contracts and company papers",
     scope: "The hiring pack, contracts, HR forms and papers, the Sato document identity on paper, seals and print marks, business cards, the spotlight sheet, PDFs and workbook exports.",

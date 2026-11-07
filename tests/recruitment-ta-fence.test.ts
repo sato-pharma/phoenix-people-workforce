@@ -462,6 +462,12 @@ const BOUNDARIES: Array<[file: string, calls: Record<string, number>]> = [
   ["app/api/recruitment/interview-calendar/requests/route.ts", { assertCandidatesVisible: 1, fenceInterviewRequests: 2 }],
   ["app/api/recruitment/interview-calendar/requests/[id]/route.ts", { assertInterviewRequestVisible: 1, fenceInterviewRequest: 2 }],
   ["app/api/recruitment/interview-calendar/requests/[id]/schedule/route.ts", { assertInterviewRequestItemVisible: 1, fenceInterviewRequest: 1 }],
+  // Medical Rep hiring (the 8 November 2026 workflow) — a Medical Rep candidate is never an HR
+  // applicant, so the fence costs nothing here, and it is asked all the same before anything is read.
+  ["app/api/recruitment/mr-hiring/[candidateId]/result/route.ts", { assertCandidateVisible: 1 }],
+  ["app/api/recruitment/mr-hiring/[candidateId]/recommendation/route.ts", { assertCandidateVisible: 1 }],
+  ["app/api/recruitment/mr-hiring/[candidateId]/book/route.ts", { assertCandidateVisible: 1 }],
+  ["app/api/recruitment/mr-hiring/[candidateId]/journey/route.ts", { assertCandidateVisible: 1 }],
   // The "My Candidates" routes — she holds hiring_interviews, so a CV pushed to her reaches these.
   ["app/api/recruitment/hiring-manager/applications/route.ts", { fenceRowsByCandidate: 1 }],
   ["app/api/recruitment/hiring-manager/applications/[id]/interviews/route.ts", { assertApplicationVisible: 2 }],
@@ -498,7 +504,8 @@ const BOUNDARIES: Array<[file: string, calls: Record<string, number>]> = [
   ["app/print/candidate-record/[id]/page.tsx", { candidateHiddenFrom: 1 }],
   ["app/print/candidate-application/[id]/page.tsx", { candidateHiddenFrom: 1 }],
   ["app/(admin)/recruitment/candidates/page.tsx", { fenceDistrictBoards: 1, fenceRowsByCandidate: 2 }],
-  ["app/employee-portals/recruitment-candidates/page.tsx", { fenceDistrictBoards: 1, fenceRowsByCandidate: 2 }],
+  ["app/employee-portals/recruitment-candidates/page.tsx", { fenceDistrictBoards: 1, fenceRowsByCandidate: 3 }],
+  ["app/(admin)/recruitment/mr-hiring/page.tsx", { fenceRowsByCandidate: 1 }],
   ["app/(admin)/recruitment/returned-cvs/page.tsx", { fenceReturnedCvQueue: 1 }],
   ["app/(admin)/recruitment/contact-review/page.tsx", { fenceRowsByCandidate: 1 }],
   ["app/employee-portals/contact-review/page.tsx", { fenceRowsByCandidate: 1 }],

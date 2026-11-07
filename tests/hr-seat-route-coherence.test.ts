@@ -227,6 +227,12 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "Advisory by the owner's own amendment that day, FALSE for Operations. The report is read-only " +
     "and holds no salary, personnel record or payroll figure" +
     ". Since 2026-10-08 the row also names HR Resourcing, and the predicate is TRUE for her (called, not read)",
+  "/hr/recruitment/mr-hiring":
+    "mrViewer(access).readsAll — a ROLE SET (Super Admin, HR Resourcing, CEO), not a resource, beside " +
+    "the row's recruitment:read. TRUE for HR Resourcing, who works the Medical Rep workflow; FALSE for " +
+    "HR Operations, which the row never names and the page redirects to the portal. Both called, not " +
+    "read, in tests/recruitment-mr-hiring-access.test.ts. The NSM's salary reaches her by the owner's " +
+    "answer of 7 Nov 2026",
   // NO contact-review / intake-health entries. Both were listed here while the rail carried them;
   // the owner cut both rows on 2026-09-01 as intake plumbing that crowded the sidebar, so there
   // is no longer an HR row pointing at either page and nothing for this map to answer for. The

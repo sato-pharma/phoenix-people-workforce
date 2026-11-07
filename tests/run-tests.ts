@@ -2639,6 +2639,9 @@ import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
+import { runRecruitmentMrHiringAccessTests } from "./recruitment-mr-hiring-access.test.ts";
+import { runRecruitmentMrHiringBookingTests } from "./recruitment-mr-hiring-booking.test.ts";
+import { runRecruitmentMrHiringStageTests } from "./recruitment-mr-hiring-stage.test.ts";
 import { runInterviewManagerShareTests } from "./interview-manager-share.test.ts";
 import { runWhatsAppApplicationCvCapTests, runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
@@ -10303,6 +10306,21 @@ await runTest(
 await runTest(
   "the interview calendar's per-person .ics feed emits a valid VCALENDAR (empty for a stale token, one VEVENT per interview with UTC DTSTART/DTEND, escaped text, and the office or Zoom link as the location)",
   runInterviewCalendarIcsTests,
+);
+
+await runTest(
+  "Medical Rep hiring follows the 8 November 2026 workflow step for step: a new CV waits for HR screening, a CV that reached no company WhatsApp after the start is held, each interview reads To book / Booked / Waiting for a named person, HR may decide without the DSM only once the DSM interview has ended, the joint final skips the 3rd interview, then the NSM recommendation, the HR Manager's decision and the offer (expired shown only)",
+  runRecruitmentMrHiringStageTests,
+);
+
+await runTest(
+  "Medical Rep hiring access: HR screens, the DSM on the interview records his own feedback, the NSM on the final writes the recommendation, the final decision is the HR Manager's alone, and the proposed salary is stripped on the server for everyone but the HR Manager, Talent Acquisition and the NSM who wrote it",
+  runRecruitmentMrHiringAccessTests,
+);
+
+await runTest(
+  "Medical Rep hiring bookings: Cairo or Giza makes the 1st interview in person and anywhere else Zoom, every other round names its interviewer, a DSM round sends him the CV and every booking notifies the people on it, and neither notice ever uses email or carries the salary",
+  runRecruitmentMrHiringBookingTests,
 );
 
 await runTest(

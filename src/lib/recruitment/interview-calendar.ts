@@ -71,6 +71,7 @@ import {
   isInterviewCalendarAccessLevel,
   isInterviewCalendarOwner,
   isDistrictManagerOrAbove,
+  mayConductInterview,
   interviewAwaitsOutcome,
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
@@ -117,6 +118,7 @@ import {
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
 import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
+import { isMrInterviewRound, MR_LOCATION_LIMIT, type MrInterviewRound } from "@/lib/recruitment/mr-hiring/vocabulary";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
 import { findWhatsAppApplicationSessionId } from "@/lib/recruitment/whatsapp-applicants-loader";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -566,6 +568,8 @@ type BookingRow = {
   interview_area: string | null;
   interview_line: string | null;
   interview_job_title: string | null;
+  interview_round: string | null;
+  location: string | null;
   interviewer_confirmation: string | null;
   interviewer_confirmation_at: string | null;
   interviewer_confirmation_by_hr_id: string | null;
@@ -603,7 +607,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,shared_with_hr_ids,interview_area,interview_line,interview_job_title,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,shared_with_hr_ids,interview_area,interview_line,interview_job_title,interview_round,location,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -1058,6 +1062,9 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       // The job the interview is FOR — read by everyone the calendar reaches, like the area and the
       // interviewer's name; `candidateJobTitle` above stays what the candidate's own record says.
       jobTitle: row.interview_job_title?.trim() || null,
+      // The Medical Rep workflow's round and the in-person place (owner's email of 8 Nov 2026).
+      interviewRound: isMrInterviewRound(row.interview_round) ? row.interview_round : null,
+      location: row.location?.trim() || null,
       notes: row.notes,
       canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
       // Who may change the day/time/place: the booking tier as always, OR the District Manager who
@@ -1318,6 +1325,8 @@ export type ReminderInterview = {
   durationMinutes: number;
   candidateName: string;
   platform: InterviewPlatform;
+  /** The Medical Rep round, so an HR interviewer of the 1st round is reminded too. Null otherwise. */
+  round?: MrInterviewRound | null;
 };
 
 /**
@@ -1360,6 +1369,7 @@ export async function listInterviewsToRemindAbout(from: Date, to: Date): Promise
       interviewerJobTitle: people.get(canonicalHrIdKey(hrId) ?? "")?.jobTitle ?? null,
       isLead: Boolean(leadKey) && canonicalHrIdKey(hrId) === leadKey,
       platform,
+      round: isMrInterviewRound(row.interview_round) ? row.interview_round : null,
       startsAt: row.starts_at,
     }));
   });
@@ -1829,6 +1839,10 @@ export type InterviewBookingRequest = Parameters<typeof validateInterviewBooking
   line?: unknown;
   /** The job the interview is for — optional, and carried onto a candidate this booking creates. */
   jobTitle?: unknown;
+  /** Which round of the Medical Rep workflow this is — optional; null for every other interview. */
+  interviewRound?: unknown;
+  /** Where an in-person interview is held — optional; blank means the usual venue. */
+  location?: unknown;
 };
 
 export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
@@ -1855,6 +1869,22 @@ export function interviewJobTitleLabel(value: unknown): string | null {
   const text = value.replace(/\s+/g, " ").trim();
   if (!text) return null;
   if (text.length > INTERVIEW_JOB_TITLE_LIMIT) throw new Error(`Keep the job title under ${INTERVIEW_JOB_TITLE_LIMIT} characters.`);
+  return text;
+}
+
+/** The Medical Rep round as stored — one of the five, or null. Anything else is refused, never dropped. */
+export function interviewRoundValue(value: unknown): MrInterviewRound | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (!isMrInterviewRound(value)) throw new Error("Choose the interview round from the list.");
+  return value;
+}
+
+/** Where an in-person interview is held, as stored — trimmed and capped; empty becomes null. */
+export function interviewLocationLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (text.length > MR_LOCATION_LIMIT) throw new Error(`Keep the location under ${MR_LOCATION_LIMIT} characters.`);
   return text;
 }
 
@@ -1894,7 +1924,7 @@ function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly B
  * The interviewer a request names, checked against Employee Master: undefined when the request says
  * nothing (leave it as it is), null when it clears the interviewer, otherwise the employee's HR id.
  */
-async function resolveInterviewer(value: unknown, current: string | null = null): Promise<string | null | undefined> {
+async function resolveInterviewer(value: unknown, current: string | null = null, round: string | null = null): Promise<string | null | undefined> {
   if (value === undefined) return undefined;
   if (value === null || (typeof value === "string" && value.trim() === "")) return null;
   if (typeof value !== "string") throw new Error("Choose the interviewer from the list.");
@@ -1904,8 +1934,13 @@ async function resolveInterviewer(value: unknown, current: string | null = null)
   // District Managers and above only (owner, 2026-09-20). Someone already chosen before the rule stays
   // on their interview — saving the booking again does not fail on it — but nobody new below that is.
   const unchanged = Boolean(current) && canonicalHrIdKey(current) === canonicalHrIdKey(person.hrId);
-  if (!unchanged && !isDistrictManagerOrAbove({ jobTitle: person.jobTitle })) {
-    throw new Error("Interviewers are District Managers and above — choose someone at that level.");
+  // The Medical Rep workflow's first round is HR's own interview, so an HR title also qualifies there.
+  if (!unchanged && !mayConductInterview({ jobTitle: person.jobTitle }, round)) {
+    throw new Error(
+      round === "hr_first"
+        ? "The 1st interview is conducted by HR or a District Manager and above — choose someone at that level."
+        : "Interviewers are District Managers and above — choose someone at that level.",
+    );
   }
   return person.hrId;
 }
@@ -1978,7 +2013,9 @@ export async function createInterviewBooking(
     input = validateInterviewBookingInput(raw);
     assertMayBookInterview(caller, weekStartFor(input.dateKey), raw.interviewerHrId);
   }
-  const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
+  const interviewRound = interviewRoundValue(raw.interviewRound);
+  const location = interviewLocationLabel(raw.location);
+  const interviewerHrId = await resolveInterviewer(raw.interviewerHrId, null, interviewRound);
   const panelistHrIds = await resolvePanelists(raw.panelistHrIds, interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
   // Checked before anything is written, so a job title that is too long refuses the booking rather
@@ -2083,6 +2120,9 @@ export async function createInterviewBooking(
       interview_area: orgLabel(raw.area),
       interview_line: orgLabel(raw.line),
       interview_job_title: jobTitle,
+      interview_round: interviewRound,
+      // A place is kept only for an in-person interview; a Zoom interview's place is its link.
+      location: input.platform === "in_office" && !session ? location : null,
       notes: input.notes,
       platform: input.platform,
       request_id: options.requestLink?.requestId ?? null,
@@ -2144,6 +2184,10 @@ export async function updateInterviewBooking(
     jobTitle?: unknown;
     /** The outside person's own name, phone and e-mail — edited after booking, external only. */
     external?: unknown;
+    /** The Medical Rep round — set to change it, null to clear. HR's, like the interviewer. */
+    interviewRound?: unknown;
+    /** Where an in-person interview is held — part of the place, so a requester may change it too. */
+    location?: unknown;
   },
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
@@ -2170,6 +2214,7 @@ export async function updateInterviewBooking(
       patch.line !== undefined ||
       patch.jobTitle !== undefined ||
       patch.external !== undefined ||
+      patch.interviewRound !== undefined ||
       patch.sessionId !== undefined
     ) {
       throw new Error("You can change your interview's day, time and place — the interviewer, panel and area are HR's to change.");
@@ -2178,7 +2223,8 @@ export async function updateInterviewBooking(
   const at = new Date(row.starts_at);
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
-  const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id);
+  const nextRound = patch.interviewRound === undefined ? row.interview_round : interviewRoundValue(patch.interviewRound);
+  const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id, nextRound);
   // The panel is validated against the EFFECTIVE lead — the new interviewer if one is being set,
   // otherwise the one already on the row — so the lead is never also listed as a panel member.
   const effectiveLead = interviewerHrId === undefined ? row.interviewer_hr_id : interviewerHrId;
@@ -2198,6 +2244,8 @@ export async function updateInterviewBooking(
   if (patch.area !== undefined) orgColumns.interview_area = orgLabel(patch.area);
   if (patch.line !== undefined) orgColumns.interview_line = orgLabel(patch.line);
   if (patch.jobTitle !== undefined) orgColumns.interview_job_title = interviewJobTitleLabel(patch.jobTitle);
+  if (patch.interviewRound !== undefined) orgColumns.interview_round = nextRound;
+  if (patch.location !== undefined) orgColumns.location = interviewLocationLabel(patch.location);
   let update: Record<string, unknown>;
 
   // The change-history line for this edit, recorded after whichever save path runs. Interviewer set

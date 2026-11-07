@@ -12,6 +12,8 @@
 //   viewer     sees the calendar and opens the CVs on it.
 // Everyone who can see it can export it. Nobody but an owner can share it.
 
+import type { MrInterviewRound } from "@/lib/recruitment/mr-hiring/vocabulary";
+
 export type InterviewCalendarAccessLevel = "viewer" | "commenter" | "editor";
 /**
  * `interviewer` is NOT a level the owner grants: it is what a District Manager or above holds for
@@ -84,6 +86,24 @@ export function isDistrictManagerOrAbove(input: { role?: string | null; jobTitle
   const title = (input.jobTitle ?? "").trim();
   if (!title || BELOW_DISTRICT_MANAGER.test(title)) return false;
   return DISTRICT_MANAGER_AND_ABOVE.test(title);
+}
+
+/**
+ * The HR seats that conduct the Medical Rep workflow's FIRST interview (owner's email of 8 Nov 2026,
+ * §3: "HR will conduct the initial screening and first interview"). The District-Manager-and-above
+ * rule above refuses an HR specialist whose title has no "Manager" in it, so the first round alone
+ * also accepts an HR title. Every other round keeps the rule above unchanged.
+ */
+const HR_INTERVIEWER_TITLE = /\b(hr|human resources?|talent acquisition|recruit\w*|personnel)\b/i;
+
+export function isHrInterviewerTitle(jobTitle: string | null | undefined): boolean {
+  return HR_INTERVIEWER_TITLE.test(String(jobTitle ?? ""));
+}
+
+/** Whether this person may conduct an interview of this round (null for an interview with no round). */
+export function mayConductInterview(input: { role?: string | null; jobTitle?: string | null }, round: string | null | undefined): boolean {
+  if (isDistrictManagerOrAbove(input)) return true;
+  return round === "hr_first" && isHrInterviewerTitle(input.jobTitle);
 }
 
 /** What a request needs, in the order the levels grant it. */
@@ -492,6 +512,14 @@ export type InterviewBooking = {
   ended: boolean;
   /** The job the CV applied for, when it names one. */
   candidateJobTitle: string | null;
+  /**
+   * Which round of the Medical Rep workflow this interview is (owner's email of 8 Nov 2026) — HR 1st,
+   * DSM 2nd, the RSM's (Pedia line, if applicable), HR Manager 3rd, NSM final or the joint final. Null
+   * for every other interview.
+   */
+  interviewRound: MrInterviewRound | null;
+  /** Where an in-person interview is held, when the booker named a place; null means the usual venue. */
+  location: string | null;
   /**
    * The job THIS interview is for — chosen when it is booked, free text with the offer catalogue's
    * titles offered as suggestions, and null when nobody named one.
