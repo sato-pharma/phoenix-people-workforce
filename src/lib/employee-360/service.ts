@@ -35,6 +35,7 @@ import {
 import { earlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { addVisitToSplit, emptyVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
@@ -173,7 +174,7 @@ function monthShort(month: string): string {
 const CAMPAIGN_MIX_WORDS: Record<CampaignMixVerdict, string> = {
   all_regular: "all regular, the best case",
   mostly_regular: "mostly regular (100% regular is the best case)",
-  campaign_heavy: "campaign-heavy (more campaign than regular)",
+  campaign_heavy: "unplanned-heavy (more unplanned than regular)",
   no_data: "no data",
 };
 
@@ -182,10 +183,10 @@ function describeCampaignTrend(trend: CampaignMixTrend | null): string {
   const from = `${Math.round(trend.fromCampaignShare * 100)}%`;
   const to = `${Math.round(trend.toCampaignShare * 100)}%`;
   const span = `${monthShort(trend.fromMonth)} to ${monthShort(trend.toMonth)}`;
-  if (trend.direction === "improving") return ` Campaign fell from ${from} to ${to} (${span}) while regular rose — the best direction.`;
-  if (trend.direction === "worsening") return ` Campaign rose from ${from} to ${to} (${span}) while regular fell.`;
+  if (trend.direction === "improving") return ` Unplanned fell from ${from} to ${to} (${span}) while regular rose — the best direction.`;
+  if (trend.direction === "worsening") return ` Unplanned rose from ${from} to ${to} (${span}) while regular fell.`;
   if (trend.toCampaignShare === 0 && trend.fromCampaignShare === 0) return ` Held at all regular from ${span}.`;
-  return ` Campaign steady near ${to} (${span}).`;
+  return ` Unplanned steady near ${to} (${span}).`;
 }
 
 export type LabeledCount = { label: string; count: number; pct: number };
@@ -589,11 +590,16 @@ export function summarizeVisits(
   for (const row of visits) {
     const type = row.visit_type;
     const { label, bucket } = classifyVisit(type, row.comment, row.visit_type_description);
-    const isRegular = bucket === "regular";
-    const isCampaign = bucket === "campaign";
+    // The "campaign" lane is UNPLANNED now (owner, 6 Nov 2026: "replace campaign with unplanned visits"): a Phoenix
+    // visit marked out of list or out of plan, or an archive-day campaign visit (−8). Every Phoenix visit arrives
+    // as type 0, so its own flag is the only way to see one — without it the lane read 0 from 6 Nov.
+    const isFieldCall = bucket === "regular" || bucket === "campaign";
+    const isCampaign = isFieldCall && isUnplannedFieldVisit(row);
+    const isRegular = isFieldCall && !isCampaign;
     const isProductive = isRegular || isCampaign;
 
-    typeMix.set(label, (typeMix.get(label) ?? 0) + 1);
+    const mixLabel = row.visit_kind && row.is_unplanned ? "Unplanned visit" : label;
+    typeMix.set(mixLabel, (typeMix.get(mixLabel) ?? 0) + 1);
 
     if (isRegular) regularVisits += 1;
     else if (isCampaign) campaignVisits += 1;
@@ -724,7 +730,7 @@ export function summarizeVisits(
       ? "No productive visits recorded in this window."
       : `${productiveVisits.toLocaleString()} productive visits over ${activeDays} active days ` +
         `(${visitsPerActiveDay?.toFixed(1)}/day, ${describeVs(visitsPerActiveDay, b.visitsPerActiveDay)}). ` +
-        `Mix is ${Math.round((regularShare ?? 0) * 100)}% regular / ${Math.round((campaignShare ?? 0) * 100)}% campaign — ${CAMPAIGN_MIX_WORDS[campaignMix]}.${describeCampaignTrend(campaignTrend)} ` +
+        `Mix is ${Math.round((regularShare ?? 0) * 100)}% regular / ${Math.round((campaignShare ?? 0) * 100)}% unplanned — ${CAMPAIGN_MIX_WORDS[campaignMix]}.${describeCampaignTrend(campaignTrend)} ` +
         `Reaches ${distinctCustomers} customers (${avgVisitsPerCustomer?.toFixed(1)} visits each); ${repeatCustomers} seen more than once. ` +
         (momentumTrend == null ? "" : `Momentum is ${momentumTrend} (last 30d: ${last30} vs prior 30d: ${prev30}).`);
 
