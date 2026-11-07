@@ -22,6 +22,7 @@ import {
   type RouteCheckin,
   type RouteDestination,
   type RouteMarker,
+  type TripRouteLine,
 } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { CostBreakdownFact, Fact, RouteFact } from "@/components/outstation/approval-detail-primitives";
 import { type ClaimValidationOutcome, ExpenseClaimValidationPanel } from "@/components/outstation/expense-claim-validation-panel";
@@ -37,6 +38,7 @@ import { isWorkedTripDay } from "@/lib/crm/trip-day-meetings";
 import { formatDateTimeValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { isRejectedStatus } from "@/lib/outstation/approval-state";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
+import type { ApproverTripRoute } from "@/lib/outstation/day-route-line";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
@@ -165,7 +167,7 @@ export function TripReview({
         ),
         marker:
           photo.latitude !== null && photo.longitude !== null
-            ? { id: photo.kind, label, lat: photo.latitude, lon: photo.longitude, title: `${photo.label}${when}` }
+            ? { at: photo.capturedAt ?? null, id: photo.kind, label, lat: photo.latitude, lon: photo.longitude, title: `${photo.label}${when}` }
             : null,
       });
     }
@@ -189,6 +191,7 @@ export function TripReview({
         marker:
           typeof stop.latitude === "number" && typeof stop.longitude === "number"
             ? {
+                at: stop.capturedAt,
                 id: `stop-${stop.stopNumber}`,
                 label,
                 lat: stop.latitude,
@@ -201,6 +204,15 @@ export function TripReview({
     return byDay;
   }, [attachments, firstDay, lastDay]);
   const legendFor = (dayKey: string) => legendByDay.get(dayKey) ?? EMPTY_LEGEND;
+  // The trip's road route from home (owner, 2026-11-07: "only a dot appears but not the route"). It is
+  // the way out and the way back, so it is drawn on the first and the last day's map.
+  const tripRoute = attachments?.tripRoute ?? null;
+  const tripRouteLine = useMemo<TripRouteLine | null>(
+    () => (tripRoute ? { encodedPolyline: tripRoute.encodedPolyline } : null),
+    [tripRoute],
+  );
+  const routeFor = (dayKey: string): DayRouteOverlay | null =>
+    tripRoute && tripRouteLine && (dayKey === firstDay || dayKey === lastDay) ? { line: tripRouteLine, route: tripRoute } : null;
   const pinsLoading = validationRequestId !== null && attachments === undefined;
   // Where the employee was when he submitted the request — the same point the claim checks
   // compare against — drawn as a hollow pin on EVERY day's map, so a check-in or photo far from
@@ -460,6 +472,7 @@ export function TripReview({
                   legend={legendFor(day.date)}
                   loading={pinsLoading}
                   submittedAt={submittedAt}
+                  tripRoute={routeFor(day.date)}
                 />
               )}
               tripEndDate={record.toDate || record.date}
@@ -487,6 +500,7 @@ export function TripReview({
                       legend={legendFor(dayKey)}
                       loading={pinsLoading}
                       submittedAt={submittedAt}
+                      tripRoute={routeFor(dayKey)}
                     />
                   </li>
                 ))}
@@ -524,6 +538,9 @@ export function TripReview({
 
 /** One line of a day's legend: the pin's label, where it is on the map (if it has a position), the words. */
 type DayLegendItem = { label: string; line: ReactNode; marker: RouteMarker | null };
+
+/** The trip's road route on one day's map: the line itself (a stable reference) and what the legend says. */
+type DayRouteOverlay = { line: TripRouteLine; route: ApproverTripRoute };
 
 // Shared empties, so a day with nothing hands the map the same reference every render.
 const EMPTY_LEGEND: DayLegendItem[] = [];
@@ -598,6 +615,7 @@ function DayMap({
   legend,
   loading,
   submittedAt,
+  tripRoute = null,
 }: {
   checkins: WorkloadCheckinDetail[];
   dayKey: string;
@@ -605,6 +623,7 @@ function DayMap({
   legend: DayLegendItem[];
   loading: boolean;
   submittedAt: RouteDestination | null;
+  tripRoute?: DayRouteOverlay | null;
 }) {
   const { ref, seen } = useSeenOnce<HTMLDivElement>();
   // Stable references: FieldWorkforceRouteMap re-creates its Google map when these change identity,
@@ -621,7 +640,14 @@ function DayMap({
       })),
     [checkins, dayKey, firstCheckinNumber],
   );
-  const markers = useMemo<RouteMarker[]>(() => legend.flatMap((item) => (item.marker ? [item.marker] : [])), [legend]);
+  const home = tripRoute?.route.home ?? null;
+  const markers = useMemo<RouteMarker[]>(
+    () => [
+      ...(home ? [{ id: "home", label: "H", lat: home.lat, lon: home.lon, title: `Home${home.label ? ` · ${home.label}` : ""}` }] : []),
+      ...legend.flatMap((item) => (item.marker ? [item.marker] : [])),
+    ],
+    [home, legend],
+  );
   const pinned = markers.length + mapped.filter((checkin) => checkin.lat !== null && checkin.lon !== null).length;
   return (
     <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey} data-map-drawn={seen ? "yes" : "no"} ref={ref}>
@@ -640,12 +666,34 @@ function DayMap({
           frame="bare"
           markers={markers}
           route={null}
+          tripRoute={tripRoute?.line ?? null}
         />
       ) : (
         // The map's own box size, so the page does not jump when the map replaces it.
         <div aria-hidden className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" />
       )}
       <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 [&>*]:min-w-0" data-map-legend>
+        {tripRoute ? (
+          <li className="flex items-start gap-2">
+            <span aria-hidden className="mt-1.5 h-1 w-5 shrink-0 bg-orange-500" />
+            <span className="min-w-0 break-words text-slate-700">
+              <span className="font-bold text-slate-900">The trip&rsquo;s route from home</span>
+              {tripRoute.route.distanceKm !== null ? ` · ${formatNumberValue(tripRoute.route.distanceKm)} km` : ""}
+            </span>
+          </li>
+        ) : null}
+        {home ? (
+          <li className="flex items-start gap-2">
+            <PinBadge label="H" tone="photo" />
+            <span className="min-w-0 break-words text-slate-700">
+              <span className="font-bold text-slate-900">Home</span>
+              {home.label ? <span dir="auto"> · {home.label}</span> : null}
+              <span className="font-mono text-slate-500">
+                {" "}· {home.lat.toFixed(5)}, {home.lon.toFixed(5)}
+              </span>
+            </span>
+          </li>
+        ) : null}
         {submittedAt ? (
           <li className="flex items-start gap-2">
             <PinBadge label="○" tone="submitted" />

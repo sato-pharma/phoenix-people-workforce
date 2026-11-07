@@ -17,6 +17,7 @@ import { TripEvidencePhotos } from "@/components/outstation/trip-evidence-photos
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
+import type { ApproverTripRoute } from "@/lib/outstation/day-route-line";
 
 type Ticket = { contentType: string; name: string; url: string };
 /** A chained journey's stops and drives (owner rule, 2026-10-18 — chained-journey.ts). */
@@ -54,6 +55,8 @@ export type AttachmentsData = {
   missedStop?: MissedStopOffer | null;
   photos: ApproverTripPhoto[];
   tickets: Ticket[];
+  /** Optional so a payload from a server built before 2026-11-07 still renders, with no route. */
+  tripRoute?: ApproverTripRoute | null;
 };
 
 function egp(value: number | null): string {
