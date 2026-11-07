@@ -68,6 +68,12 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
+import {
+  NoTicketFareUnavailableError,
+  noTicketFareRecord,
+  readNoTicketFare,
+  resolveNoTicketFare,
+} from "@/lib/outstation/train-fare";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import {
   ADMIN_ADDED_STOP_PHOTO_PATH,
@@ -253,6 +259,7 @@ import type {
   OutstationExpenseRequest,
   OutstationHeatmapData,
   OutstationHeatmapMarker,
+  OutstationNoTicketFare,
   OutstationPolicyRule,
   OutstationRouteAlternative,
   OutstationTerritoryValidationStatus,
@@ -1657,7 +1664,22 @@ export async function calculateOutstationExpense(
   });
   let fuelAmount = 0;
   let ticketAmount = 0;
-  if (input.transportationType === "car") {
+  let noTicketFare: OutstationNoTicketFare | null = null;
+  if (input.transportationType === "no_ticket") {
+    // The fixed train fare (owner, 2026-11-07): the lowest second-class AC fare between the stations
+    // nearest the home and the destination, there and back. The SERVER sets it from the two stored
+    // points — a typed ticket amount or travel cost is never read for this trip.
+    const fare = resolveNoTicketFare({
+      destination: { latitude: result.capturedLatitude, longitude: result.capturedLongitude },
+      home:
+        result.residenceLatitude == null || result.residenceLongitude == null
+          ? null
+          : { latitude: Number(result.residenceLatitude), longitude: Number(result.residenceLongitude) },
+    });
+    if (fare.status !== "priced") throw new NoTicketFareUnavailableError(fare.reason);
+    noTicketFare = noTicketFareRecord(fare);
+    ticketAmount = roundMoney(fare.totalFare);
+  } else if (input.transportationType === "car") {
     const distanceKm = result.distanceFromResidenceKm ?? 0;
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
   } else if (input.transportationType === "train" || input.transportationType === "bus") {
@@ -1682,7 +1704,10 @@ export async function calculateOutstationExpense(
   }
 
   const computedTravelCost = roundMoney(fuelAmount + ticketAmount);
-  const reportTravelCost = optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost;
+  // A "No ticket" trip's travel cost is the fixed fare and nothing else — no typed figure replaces it.
+  const reportTravelCost = noTicketFare
+    ? computedTravelCost
+    : optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost;
   const reportMeetingAmount = positiveMoney(input.meetingAmount);
   const reportOtherAmount = positiveMoney(input.otherAmount);
   const expectedTotalAmount =
@@ -1740,6 +1765,7 @@ export async function calculateOutstationExpense(
     ticketAmount,
     carEvidenceImagePath: null,
     carEvidenceMetadata: input.carEvidenceMetadata,
+    noTicketFare,
     transportationType: input.transportationType,
     tripEndDate,
     tripStartDate,
@@ -2219,7 +2245,7 @@ export async function submitOutstationRequest(
     throw new Error(
       calculation.transportationType === "car"
         ? "Car transport requires the live camera evidence image before submitting the request."
-        : `A ${calculation.transportationType} trip requires the live arrival photo before submitting the request.`,
+        : "This trip requires the arrival photo before submitting the request.",
     );
   }
   if (!nonTravel && !storedCarEvidenceMetadata && !evidencePhotoWaived) {
@@ -2519,8 +2545,10 @@ export async function submitOutstationRequest(
     ...workloadPayload,
     meeting_amount: nonTravel ? calculation.reportMeetingAmount : (input.meetingAmount ?? 0),
     other_amount: nonTravel ? calculation.reportOtherAmount : (input.otherAmount ?? 0),
-    go_ticket_amount: nonTravel ? 0 : (input.goTicketAmount ?? 0),
-    return_ticket_amount: nonTravel ? 0 : (input.returnTicketAmount ?? 0),
+    // A "No ticket" trip stores the fixed fare each way — whatever the phone sent is not read.
+    go_ticket_amount: nonTravel ? 0 : calculation.noTicketFare ? calculation.noTicketFare.oneWayFare : (input.goTicketAmount ?? 0),
+    return_ticket_amount: nonTravel ? 0 : calculation.noTicketFare ? calculation.noTicketFare.oneWayFare : (input.returnTicketAmount ?? 0),
+    no_ticket_fare: calculation.noTicketFare ?? null,
     ticket_amount: calculation.ticketAmount,
     ticket_attachment_metadata: uploadedTicketAttachments,
     ticket_attachment_paths: uploadedTicketAttachments.map((attachment) => attachment.path),
@@ -2726,7 +2754,8 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
   const transportationType: OutstationTransportationType =
     transportationTypeRaw === "bus" ||
     transportationTypeRaw === "other" ||
-    transportationTypeRaw === "train"
+    transportationTypeRaw === "train" ||
+    transportationTypeRaw === "no_ticket"
       ? transportationTypeRaw
       : transportationTypeRaw === "train_bus"
         ? "train"
@@ -2745,6 +2774,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     capturedLatitude: numberValue(row.captured_latitude),
     capturedLongitude: numberValue(row.captured_longitude),
     departureCapturedAt: isoString(row.departure_captured_at) || null,
+    noTicketFare: readNoTicketFare(row.no_ticket_fare),
     departureEvidenceImagePath: text(row.departure_evidence_image_path) || null,
     departureEvidenceMetadata: safeJsonParse<OutstationDepartureEvidenceMetadata | null>(
       row.departure_evidence_metadata,

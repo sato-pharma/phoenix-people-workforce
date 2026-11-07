@@ -1,6 +1,7 @@
 import { Clock } from "lucide-react";
 
 import type { PendingOutstationReviewRequest } from "@/lib/outstation/service";
+import { normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 
 function formatEgp(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -56,7 +57,7 @@ export function PendingReviewRequestsCard({
                 <p className="text-sm font-bold text-slate-900">{request.destination}</p>
                 <p className="mt-0.5 text-xs font-semibold text-slate-500">
                   {formatTripDate(request.tripStartDate)} – {formatTripDate(request.tripEndDate)} ·{" "}
-                  {request.transportationType || "—"}
+                  {normalizeTransportation(request.transportationType, null, null) || request.transportationType || "—"}
                 </p>
               </div>
               <div className="text-right">
