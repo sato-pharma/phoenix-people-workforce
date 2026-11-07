@@ -16,7 +16,7 @@
   and the working tree is LF (like CI). Exit code is the command's; 4 = refused, nothing tested.
 
 .EXAMPLE
-  & ~/.claude/scripts/spare-test.ps1                      # the whole suite as CI's 4 shards, one at a time, on Node 24.15 (never pnpm here, it purges the linked node_modules)
+  & ~/.claude/scripts/spare-test.ps1                      # the whole suite as CI's 4 shards, one at a time (never pnpm here, it purges the linked node_modules)
   & ~/.claude/scripts/spare-test.ps1 'node scripts/check-contracts.mjs'
   & ~/.claude/scripts/spare-test.ps1 -Rev origin/main     # one commit exactly, no local changes
   & ~/.claude/scripts/spare-test.ps1 -Path 'F:\Phoenix Workforce\phoenix-workforce\_wt-foo'
@@ -29,12 +29,20 @@ if (-not $Command) {
   $Command = @'
 $seen = 0; $ran = 0; $red = 0
 foreach ($k in 1..4) {
-  $env:PHX_TEST_SHARD = "$k/4"; "=== spare laptop: shard $k/4"
-  node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts | ForEach-Object {
-    if ($_ -match 'PHX_SHARD_RESULT shard=\S+ seen=(\d+) ran=(\d+)') { $seen = [int]$Matches[1]; $ran += [int]$Matches[2] }
-    if ($_ -notlike 'PHX_TEST_*') { $_ }
+  $env:PHX_TEST_SHARD = "$k/4"
+  # A shard that dies by access violation (-1073741819 = 0xC0000005) is run ONCE more: on the spare node crashes
+  # at the CV worker test in most runs, on any Node 24, and never on CI (2026-11-07). A crashed attempt prints no
+  # PHX_SHARD_RESULT, so only the attempt that finished is counted. Any other exit is red at once.
+  foreach ($try in 1..2) {
+    "=== spare laptop: shard $k/4" + $(if ($try -gt 1) { ' (again: the last attempt crashed)' } else { '' })
+    node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts | ForEach-Object {
+      if ($_ -match 'PHX_SHARD_RESULT shard=\S+ seen=(\d+) ran=(\d+)') { $seen = [int]$Matches[1]; $ran += [int]$Matches[2] }
+      if ($_ -notlike 'PHX_TEST_*') { $_ }
+    }
+    $shardExit = $LASTEXITCODE
+    if ($shardExit -ne -1073741819) { break }
   }
-  if ($LASTEXITCODE) { $red++; "=== shard $k/4 exit $LASTEXITCODE" }
+  if ($shardExit) { $red++; "=== shard $k/4 exit $shardExit" }
 }
 Remove-Item Env:\PHX_TEST_SHARD
 "spare laptop: 4 shards ran $ran of $seen tests, $red shard(s) red"
@@ -98,9 +106,8 @@ try {
   $remote = @"
 `$ErrorActionPreference = 'Continue'
 `$env:PATH = 'C:\Program Files\Git\bin;C:\Program Files\Git\usr\bin;' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + `$env:APPDATA + '\npm'   # Git's bash first: the WSL bash.exe in WindowsApps fails the ci.yml step tests
-# Tests run on a pinned Node 24.15.0 (D:\Phoenix\node-test), never the system 24.22.1 the dev server uses: under
-# 24.22.1 node crashed (0xC0000005) at the CV worker test in every whole and sharded suite run (2026-11-07).
-if (Test-Path 'D:\Phoenix\node-test\node.exe') { `$env:PATH = 'D:\Phoenix\node-test;' + `$env:PATH }
+# Tests run on the system Node, like CI's floating 24.x. A pinned 24.15.0 (D:\Phoenix\node-test, still on disk) was
+# tried 2026-11-07 against the CV worker test's crash (0xC0000005) and did not cure it: it crashed on both versions.
 # The variable is spelled 'Path' here; CI (Linux) and Git Bash spell it 'PATH'. Seven test sites copy the env into a
 # plain object and read env.PATH, which is then undefined, so a fake gh became the WHOLE PATH and findstr vanished
 # (bash-guard C10 read 'allow', 2026-11-07). Re-create it as 'PATH', like the runners.

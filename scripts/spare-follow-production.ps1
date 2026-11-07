@@ -2,16 +2,19 @@
 .SYNOPSIS
   Keeps the spare laptop's dev server (localhost:3000 here, through the "Phoenix Spare Tunnel") on a
   chosen version. Its database is always production (.env.local).
-    -Target main (default; owner, 2026-11-07 03:45: "RUN LOCAL DEV FROM MAIN", chose "Spare runs main")
-        follows the newest origin/main.
-    -Target production (owner, 2026-11-07 01:44: "POINT DEV TO PRODUCTION") follows production's
+  🔴 GOLDEN RULE (owner, 2026-11-07 05:30 Cairo): "local dev is always always always pointing to production
+  never staging" - so -Target production is the default and the scheduled task's argument, and every run
+  checks the spare's .env.local names the production project and never the staging one (logged LOUDLY).
+    -Target production (default; owner, 2026-11-07 01:44: "POINT DEV TO PRODUCTION") follows production's
         /api/healthz revision.
+    -Target main (owner, 03:45 the same night: "RUN LOCAL DEV FROM MAIN"; superseded by the golden rule at
+        05:30) follows the newest origin/main - only when he asks for it again in his own words.
   When the dev server's checkout differs, sends only the missing commits and checks that version out
   in D:\Phoenix\phoenix-workforce. If the package lockfile changed, it reinstalls and restarts the dev
   server. Runs every 10 minutes from the "Phoenix Spare Dev Server Follows" scheduled task; a run with
   nothing to do touches nothing. Log: ~/.claude/logs/spare-follow-production.log
 #>
-param([ValidateSet('main', 'production')][string]$Target = 'main')
+param([ValidateSet('main', 'production')][string]$Target = 'production')
 $ErrorActionPreference = 'Continue'
 $repo = 'F:\Phoenix Workforce\phoenix-workforce'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
