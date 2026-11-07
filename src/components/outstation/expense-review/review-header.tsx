@@ -9,8 +9,13 @@ import { formatNumberValue } from "@/lib/i18n/format";
  * The page's title line, in the Phoenix CRM list identity (Place checks): the orange rail, the
  * kicker, the title, one sentence, and the two actions on the right — the orange "Review one by one"
  * and the export. No dark band: the trips start right under it.
+ *
+ * Owner, 2026-11-07, circling everything above the first trip: "the screen is consumed in irrelevant
+ * place". So the hero is compact and its one sentence is the ADVICE — what is waiting, what it is
+ * worth, what can be done in one go — not a description of the page; the separate advice box is gone.
  */
 export function ReviewHeader({
+  advice,
   canReview,
   exportCount,
   exportHref,
@@ -18,6 +23,8 @@ export function ReviewHeader({
   onReview,
   reviewCount,
 }: {
+  /** The one live sentence: what is waiting and what can be done in one go (reviewAdvice). */
+  advice: string;
   canReview: boolean;
   exportCount: number;
   exportHref: string;
@@ -57,7 +64,8 @@ export function ReviewHeader({
           )}
         </>
       }
-      description="Every outstation trip waiting for a decision, with what the system found on it. Decide here or one by one; nothing is committed until you press Save."
+      compact
+      description={advice}
       eyebrow="Expenses"
       icon={<Wallet aria-hidden className="h-3.5 w-3.5" />}
       title="Expense approvals"

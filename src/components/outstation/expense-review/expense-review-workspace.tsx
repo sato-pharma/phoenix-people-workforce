@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
 
 import { EmployeeRollUp } from "./employee-roll-up";
-import { ReviewAdvice, ReviewBulkResult, ReviewSaveResult } from "./review-banners";
+import { ReviewBulkResult, ReviewSaveResult } from "./review-banners";
 import { ReviewBulkBar } from "./review-bulk-bar";
 import { ExpenseReviewDeck } from "./review-deck/deck";
 import { ReviewFilters, ReviewLoadingLine, ReviewSaveStrip } from "./review-filters";
@@ -55,8 +55,15 @@ export function ExpenseReviewWorkspace({ canDecide, viewerHrId }: { canDecide: b
   const reviewCount = review.tab === "employees" ? review.visible.length : review.rows.length;
 
   return (
-    <div className="min-w-0 space-y-5" data-expense-review>
+    <div className="min-w-0 space-y-3" data-expense-review>
       <ReviewHeader
+        advice={
+          review.loading && review.records.length === 0
+            ? "Reading the trips."
+            : review.loadError
+              ? "The trips could not be read."
+              : reviewAdvice(review.stats, egp)
+        }
         canReview={reviewCount > 0}
         exportCount={review.exportCount}
         exportHref={review.exportHref}
@@ -104,7 +111,6 @@ export function ExpenseReviewWorkspace({ canDecide, viewerHrId }: { canDecide: b
       <ReviewBulkResult bulkMessage={review.bulkMessage} />
 
       {review.loading && review.records.length === 0 ? <ReviewLoadingLine /> : null}
-      {!review.loading && !review.loadError && review.records.length > 0 ? <ReviewAdvice advice={reviewAdvice(review.stats, egp)} /> : null}
 
       {review.tab === "employees" ? (
         <EmployeeRollUp

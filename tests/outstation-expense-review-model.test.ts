@@ -160,6 +160,17 @@ export function runOutstationExpenseReviewModelTests() {
   }
   assert.deepEqual(countOutOf(2, 3), { of: 3, value: 2 }, "HEADLINE: Adjusted reads \"2 of 3\" when narrowed");
   assert.deepEqual(countOutOf(5, 5), { of: null, value: 5 }, "never \"5 of 5\"");
+
+  // The tiles and the tabs count the same trips: imported history is in neither (live tour of
+  // d67cacc read "Approved 453" over a tab of 129, and "Rejected 58" over 39).
+  const pastTrips = [
+    clean("H-1", { date: "2026-05-04", approvedAmount: 900, hrApproved: true, status: APPROVED_STATUS }),
+    clean("H-2", { date: "2026-06-11", approvedAmount: 300, hrApproved: true, status: APPROVED_STATUS, total: 500 }),
+  ];
+  const withHistory = computeReviewStats([...records, ...pastTrips], decisionFor);
+  for (const key of ["pending", "look", "clean", "approved", "approvedValue", "adjusted", "adjustedDelta", "rejected"] as const) {
+    assert.equal(withHistory[key], stats[key], `HEADLINE: imported history is never in the ${key} tile`);
+  }
   assert.deepEqual(countOutOf(5, null), { of: null, value: 5 }, "and nothing when the list is not narrowed");
 
   // ── 3. Moving through the trips ──────────────────────────────────────────────────────────────

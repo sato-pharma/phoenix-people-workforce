@@ -108,13 +108,25 @@ export function runOutstationExpenseApprovalsLayoutTests() {
     "HEADLINE: the route mounts the rebuilt screen inside the Phoenix CRM admin surface",
   );
 
-  // The list page, in the Place checks order: hero, tiles, tabs, filters, save strip, advice, list.
-  const order = ["<ReviewHeader", "<ReviewStatTiles", "<ReviewTabs", "<ReviewFilters", "<ReviewSaveStrip", "<ReviewAdvice", "<ReviewQueueTable", "<ExpenseReviewDeck"];
+  // The list page, in the Place checks order: hero (carrying the advice), the stat strip, tabs,
+  // filters, save strip, list.
+  const order = ["<ReviewHeader", "<ReviewStatTiles", "<ReviewTabs", "<ReviewFilters", "<ReviewSaveStrip", "<ReviewQueueTable", "<ExpenseReviewDeck"];
   const at = order.map((tag) => workspace.indexOf(tag));
   assert.ok(at.every((index, i) => index > 0 && (i === 0 || index > at[i - 1])), `HEADLINE: the list page reads top to bottom ${order.join(" → ")}`);
   assert.match(header, /<AdminPageHero\b/, "the page wears the admin hero, as Place checks does");
   assert.match(header, /Review one by one/, "HEADLINE: one orange button opens the reviewer");
   assert.match(header, /Export XLSX/);
+
+  // Owner, 2026-11-07, circling everything above the first trip: "the screen is consumed in
+  // irrelevant place". The band over the trips is compact, and nothing in it says a thing twice.
+  assert.match(header, /\bcompact\n\s*description=\{advice\}/, "HEADLINE: the hero is compact and its one sentence is the live advice");
+  assert.match(workspace, /reviewAdvice\(review\.stats, egp\)/, "built from the live figures, so it agrees with them");
+  assert.doesNotMatch(workspace, /<ReviewAdvice\b/, "HEADLINE: no separate advice box under the hero");
+  assert.doesNotMatch(stats, /AdminStatCard/, "HEADLINE: the six figures are one slim strip, never six tall cards");
+  assert.match(stats, /data-stat-strip/, "one band, six cells");
+  assert.doesNotMatch(filters, />Filters<\/h2>/, "HEADLINE: the filter bar has no heading row of its own");
+  assert.match(filters, /data-save-strip[\s\S]*?<p className="min-w-0 flex-1 basis-72 /, "HEADLINE: N unsaved · Save N is one line, never a three-line banner");
+  assert.match(workspace, /className="min-w-0 space-y-3" data-expense-review/, "and the parts sit close");
 
   // Six tiles, and EVERY ONE says what a filtered count is out of — Adjusted included.
   for (const key of ["pending", "look", "clean", "approved", "adjusted", "rejected"]) {
@@ -175,6 +187,11 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   );
   assert.match(subject, /className="m-0 min-w-0 break-words text-left text-sm font-semibold text-slate-900" dir="auto"/, "HEADLINE: brick, area and region values are left-aligned (live review: the brick right-aligned)");
   assert.doesNotMatch(screen, /font-mono/, "HEADLINE: no monospace anywhere on the screen — figures are tabular-nums");
+  // The reviewer's field-work view is the shared verified-workload block, so it is held to the same
+  // rules (live tour of d67cacc: "AM 0 · PM 0 · Pharmacies 0" in monospace, a round "No activity").
+  assert.doesNotMatch(workload, /font-mono/, "HEADLINE: the verified-workload counts are tabular-nums, never monospace");
+  assert.match(workload, /<Badge className="rounded-none" variant=\{tone\}>/, "HEADLINE: the workload verdict is square, not the shared round pill");
+  assert.match(subject, /<p className="shrink-0 text-left" data-subject-claimed>/, "HEADLINE: \"Claimed\" starts where its amount starts, even wrapped under a long name");
   assert.match(found, /What the system found/, "HEADLINE: the Place checks reviewer's own section");
   assert.match(found, /data-found-signal=\{one\.key\}/, "each finding is a button");
   assert.match(found, /onClick=\{\(\) => onView\(one\.key\)\}/, "that puts its evidence on the stage");

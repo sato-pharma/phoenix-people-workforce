@@ -156,6 +156,14 @@ function cairoDayOf(value: string | null | undefined): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(parts) ? parts : null;
 }
 
+/** "2026-10-01" → "Thu, Oct 01" — a reviewer reads a day, never an ISO key. */
+function readableDay(day: string | null): string {
+  if (!day) return "an unknown day";
+  const date = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return day;
+  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", timeZone: "UTC", weekday: "short" }).format(date);
+}
+
 function clockLabel(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
@@ -387,7 +395,7 @@ export function checkSubmissionTiming(input: FraudCheckInput): FraudCheckResult 
     return {
       detail:
         "No visit or check-in on this day carries a real time, so the submission cannot be placed against the day's work.",
-      facts: [{ label: "Filed", value: `${clockLabel(submittedMinutes)} on ${submittedDay}` }],
+      facts: [{ label: "Filed", value: `${clockLabel(submittedMinutes)} on ${readableDay(submittedDay)}` }],
       id: "timing",
       title,
       verdict: "unverifiable",

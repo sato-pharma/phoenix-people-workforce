@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, ListChecks } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 
@@ -62,18 +62,5 @@ export function ReviewBulkResult({ bulkMessage }: { bulkMessage: string | null }
       <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="break-words text-sm font-semibold">{bulkMessage}</p>
     </AdminCallout>
-  );
-}
-
-/**
- * One plain sentence over the list — what is waiting and what can be done in one go — on the orange
- * rail Place checks gives its own advice. Built from the live tiles, so it agrees with them.
- */
-export function ReviewAdvice({ advice }: { advice: string }) {
-  return (
-    <div className="flex min-w-0 items-start gap-3 border border-slate-200 border-l-[3px] border-l-orange-500 bg-white px-4 py-3" data-review-advice>
-      <ListChecks aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-      <p className="min-w-0 break-words text-sm font-semibold leading-6 text-slate-700">{advice}</p>
-    </div>
   );
 }

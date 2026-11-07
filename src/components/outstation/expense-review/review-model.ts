@@ -199,7 +199,8 @@ export type ReviewStats = {
 
 /**
  * The six tiles — awaiting, needs a look, clean, approved, adjusted, rejected — over the LIVE
- * decisions. Imported history never awaits a decision, so it is never counted as waiting.
+ * decisions. Imported history (before July) is in NONE of them: it has its own tab, and counting it
+ * read "Approved 453" over a tab of 129 (live tour of d67cacc, 2026-11-07).
  *
  * Called twice by the page: once over the trips the filters leave, once over the whole queue, so
  * every tile can say "95 of 129" when narrowed. On the old page the adjusted figure alone had no
@@ -220,9 +221,8 @@ export function computeReviewStats(records: ReadonlyArray<LoadedRecord>, decisio
   for (const record of records) {
     const decision = decisionFor(record);
     const state = expenseApprovalState(decision);
-    const imported = isImportedHistoryTrip(record.date);
+    if (isImportedHistoryTrip(record.date)) continue;
     if (state === "pending") {
-      if (imported) continue;
       stats.pending += 1;
       stats.pendingValue += decision.approvedAmount;
       const triage = expenseTripTriage(record)?.triage;
@@ -234,7 +234,7 @@ export function computeReviewStats(records: ReadonlyArray<LoadedRecord>, decisio
     } else {
       stats.rejected += 1;
     }
-    if (state !== "rejected" && !imported && isAdjustedAmount(decision.approvedAmount, record.total)) {
+    if (state !== "rejected" && isAdjustedAmount(decision.approvedAmount, record.total)) {
       stats.adjusted += 1;
       stats.adjustedDelta += record.total - decision.approvedAmount;
     }
