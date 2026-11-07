@@ -62,7 +62,7 @@ const LOG_ROWS: DoubleVisitReportRow[] = [
     visitCount: 3,
     visitedHrId: "B-202",
     visitedName: "Karim Sherif",
-    visitKind: "Campaign",
+    visitKind: "Unplanned",
   }),
   logRow({
     activityDate: "2026-06-03",
@@ -95,7 +95,7 @@ function reportData(overrides: Partial<DoubleVisitReportData> = {}): DoubleVisit
     asOfDate: "2026-07-06",
     dateFrom: "2026-06-01",
     dateTo: "2026-06-30",
-    filters: { areas: ["North Cairo", "South Giza"], doubleVisitorRoles: ["District Manager", "Regional Manager"], doubleVisitors: ["Sara.Fahmy", "Mona.Adel"], regions: ["Cairo", "Giza"], visitKinds: ["Regular", "Campaign"] },
+    filters: { areas: ["North Cairo", "South Giza"], doubleVisitorRoles: ["District Manager", "Regional Manager"], doubleVisitors: ["Sara.Fahmy", "Mona.Adel"], regions: ["Cairo", "Giza"], visitKinds: ["Regular", "Unplanned"] },
     neverVisited: NEVER_VISITED_ROWS,
     probation: PROBATION_ROWS,
     roster: [],
@@ -121,7 +121,7 @@ export async function runDoubleVisitReportExportTests() {
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, regionFilter: "Giza" }).length, 1, "regionFilter narrows to matching region");
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, roleFilter: "Regional Manager" }).length, 1, "roleFilter narrows to matching job title");
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, visitorFilter: "Sara.Fahmy" }).length, 2, "visitorFilter narrows to matching double-visitor");
-  assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, visitKindFilter: "Campaign" }).length, 1, "visitKindFilter narrows to matching type");
+  assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, visitKindFilter: "Unplanned" }).length, 1, "visitKindFilter narrows to matching type");
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, periodFilter: "AM" }).length, 1, "periodFilter narrows to matching period");
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, search: "ahmed" }).length, 1, "search is case-insensitive and matches visited name");
   assert.equal(filterLogRows(LOG_ROWS, { ...NO_LOG_FILTERS, search: "B-203" }).length, 1, "search matches visited HR ID");
@@ -197,7 +197,7 @@ export async function runDoubleVisitReportExportTests() {
     "the PM period filter never returns a pharmacy row",
   );
   assert.equal(metricValue("Regular Visits"), 3, "Regular visit sum");
-  assert.equal(metricValue("Campaign Visits"), 3, "Campaign visit sum");
+  assert.equal(metricValue("Unplanned Visits"), 3, "Unplanned visit sum");
   assert.equal(metricValue("Never Visited / At Risk (filtered)"), 2);
   assert.equal(metricValue("Probation Watchlist (filtered)"), 3);
 

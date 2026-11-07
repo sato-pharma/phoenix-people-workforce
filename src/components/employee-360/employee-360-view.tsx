@@ -217,8 +217,8 @@ const KPI_EXPLAIN: Record<string, string> = {
   "Visits / active day": "On the days they actually worked in the field, the average number of customers seen per day.",
   "Active days": "The number of different days they made at least one real customer visit.",
   "Distinct customers": "How many different customers (doctors/pharmacies) they saw — each one counted once, no matter how often visited.",
-  "Regular visits": "Normal day-to-day customer visits, not tied to a special campaign.",
-  "Campaign visits": "Visits made as part of a marketing campaign or special push.",
+  "Regular visits": "Normal day-to-day customer visits, on the customer list and the plan.",
+  "Unplanned visits": "Visits outside the customer list or the plan in Phoenix CRM, and campaign visits on days before Phoenix CRM.",
   "Doubles received": "Visits where a manager came along with them in the field (a joint or double visit), and on how many days.",
   "Admin / non-visit": "Days spent on things other than seeing customers — meetings, training, or leave.",
   "Last 30 days": "Productive visits in the most recent 30 days, with the previous 30 days shown for comparison.",
@@ -402,7 +402,7 @@ const DELTA_EXPLAIN: Record<string, string> = {
   "Productive visits": "Real customer visits this period, and how that compares to the previous period (▲ up / ▼ down).",
   "Visits / day": "Average productive visits per active field day, versus the previous period.",
   Customers: "How many different customers were visited this period, versus the previous period.",
-  "Campaign share": "Share of visits that were campaign visits, versus the previous period (pp = percentage points). A fall is better: 100% regular is the best case.",
+  "Unplanned share": "Share of visits that were unplanned, versus the previous period (pp = percentage points). A fall is better: 100% regular is the best case.",
   "Check-in coverage": "Share of active days that had a GPS check-in, versus the previous period.",
   "Check-ins": "Total GPS check-ins this period, versus the previous period.",
 };
@@ -455,7 +455,7 @@ function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) 
         <DeltaChip label="Productive visits" delta={comparison.productiveVisits} kind="int" />
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
         <DeltaChip label="Customers" delta={comparison.distinctCustomers} kind="int" />
-        <DeltaChip label="Campaign share" delta={comparison.campaignShare} kind="pct" goodUp={false} />
+        <DeltaChip label="Unplanned share" delta={comparison.campaignShare} kind="pct" goodUp={false} />
         <DeltaChip label="Check-in coverage" delta={comparison.checkinCoverage} kind="pct" judged={false} />
         <DeltaChip label="Check-ins" delta={comparison.checkinCount} kind="int" judged={false} />
       </div>
@@ -612,7 +612,7 @@ function MostVisitedCustomers({ top }: { top: TopCustomersByLane }) {
 const campaignMixCopy: Record<Employee360Profile["campaignMix"], { label: string; tone: string }> = {
   all_regular: { label: "All regular · the best case", tone: "text-emerald-600" },
   mostly_regular: { label: "Mostly regular", tone: "text-emerald-600" },
-  campaign_heavy: { label: "Campaign-heavy", tone: "text-amber-600" },
+  campaign_heavy: { label: "Unplanned-heavy", tone: "text-amber-600" },
   no_data: { label: "No data", tone: "text-slate-400" },
 };
 
@@ -621,10 +621,10 @@ function campaignTrendCopy(trend: Employee360Profile["campaignTrend"]): { label:
   const from = `${Math.round(trend.fromCampaignShare * 100)}%`;
   const to = `${Math.round(trend.toCampaignShare * 100)}%`;
   const span = `${monthLabel(trend.fromMonth)} → ${monthLabel(trend.toMonth)}`;
-  if (trend.direction === "improving") return { label: `▼ Campaign falling, regular rising (${from} → ${to} campaign, ${span}) · the best direction`, tone: "text-emerald-600" };
-  if (trend.direction === "worsening") return { label: `▲ Campaign rising, regular falling (${from} → ${to} campaign, ${span})`, tone: "text-amber-600" };
+  if (trend.direction === "improving") return { label: `▼ Unplanned falling, regular rising (${from} → ${to} unplanned, ${span}) · the best direction`, tone: "text-emerald-600" };
+  if (trend.direction === "worsening") return { label: `▲ Unplanned rising, regular falling (${from} → ${to} unplanned, ${span})`, tone: "text-amber-600" };
   if (trend.fromCampaignShare === 0 && trend.toCampaignShare === 0) return { label: `Held at all regular (${span})`, tone: "text-emerald-600" };
-  return { label: `Steady mix (${from} → ${to} campaign, ${span})`, tone: "text-slate-500" };
+  return { label: `Steady mix (${from} → ${to} unplanned, ${span})`, tone: "text-slate-500" };
 }
 
 const zoneStyle: Record<string, { label: string; tone: string }> = {
@@ -1180,8 +1180,8 @@ export function Employee360View({
           tone="sky"
           sub={
             isLeader
-              ? "This manager's OWN field visits — occasional single/campaign calls, not their team's output. Managers coach in the field via double-visits (Leadership Activity above); they don't log GPS check-ins."
-              : "Productive = Regular + Campaign. Admin/non-visit codes excluded."
+              ? "This manager's OWN field visits — occasional single or unplanned calls, not their team's output. Managers coach in the field via double-visits (Leadership Activity above); they don't log GPS check-ins."
+              : "Productive = Regular + Unplanned. Admin/non-visit codes excluded."
           }
         >
           {isLeader ? "Own Field Presence" : "Visits & Coverage"}
@@ -1193,7 +1193,7 @@ export function Employee360View({
           <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={fixedCompanyAvg(b.activeDays)} />
           <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={fixedCompanyAvg(b.distinctCustomers)} />
           <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.regularVisits))} />
-          <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.campaignVisits))} />
+          <KpiTile label="Unplanned visits" value={intFmt.format(summary.campaignVisits)} benchmark={fixedCompanyAvg(intFmt.format(b.campaignVisits))} />
           {plan.showDoublesReceived ? (
             <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={fixedCompanyAvg(b.doublesReceived)} hint={`${onDays(summary.doublesReceivedDays, summary.doublesReceived)}${doublesReceivedHint(summary.doublesReceivedByKind)}`} />
           ) : null}
@@ -1246,12 +1246,12 @@ export function Employee360View({
 
   const campaignPart = showCampaign ? (
       <Card className={PREMIUM_CARD}>
-        <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; campaign falling while regular rises is the best direction. Each month shows the company's SAME-month campaign share beside it.">
-          Campaign vs Regular
+        <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; unplanned falling while regular rises is the best direction. Each month shows the company's SAME-month campaign share beside it, read before Phoenix CRM.">
+          Unplanned vs Regular
         </SectionHeader>
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-600">
           <span>
-            Mix: <span className="font-black tabular-nums text-slate-900">{pct(summary.regularShare)} regular / {pct(summary.campaignShare)} campaign</span>
+            Mix: <span className="font-black tabular-nums text-slate-900">{pct(summary.regularShare)} regular / {pct(summary.campaignShare)} unplanned</span>
           </span>
           <span className={cn("font-bold", campaignMixCopy[summary.campaignMix].tone)}>● {campaignMixCopy[summary.campaignMix].label}</span>
           {trendCopy ? <span className={cn("font-bold", trendCopy.tone)}>{trendCopy.label}</span> : null}
@@ -1263,7 +1263,7 @@ export function Employee360View({
               labels={monthAxisLabels(summary.monthly.map((m) => m.month))}
               series={[
                 { name: "Regular", color: CHART_COLORS.regular, points: summary.monthly.map((m) => m.regular), area: true },
-                { name: "Campaign", color: CHART_COLORS.campaign, points: summary.monthly.map((m) => m.campaign) },
+                { name: "Unplanned", color: CHART_COLORS.campaign, points: summary.monthly.map((m) => m.campaign) },
               ]}
               height={170}
             />
@@ -1279,19 +1279,19 @@ export function Employee360View({
                 <div key={m.month} className={BAR_ROW}>
                   <div className={cn(BAR_LABEL, "font-semibold")}>{monthLabel(m.month)}</div>
                   <div className={BAR_FIGURE}>
-                    {intFmt.format(total)} · {pct(m.campaignShare)} camp
+                    {intFmt.format(total)} · {pct(m.campaignShare)} unplanned
                     {m.companyCampaignShare != null ? <span className="text-slate-400"> (co {Math.round(m.companyCampaignShare * 100)}%)</span> : null}
                   </div>
                   <div className={cn(BAR_TRACK, "flex")}>
                     <div className="h-full bg-sky-500" style={{ width: `${(m.regular / monthlyMax) * 100}%` }} title={`${m.regular} regular`} />
-                    <div className="h-full bg-orange-500" style={{ width: `${(m.campaign / monthlyMax) * 100}%` }} title={`${m.campaign} campaign`} />
+                    <div className="h-full bg-orange-500" style={{ width: `${(m.campaign / monthlyMax) * 100}%` }} title={`${m.campaign} unplanned`} />
                   </div>
                 </div>
               );
             })}
             <div className="mt-2 flex gap-4 text-xs text-slate-400">
               <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-sky-500" /> Regular</span>
-              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-orange-500" /> Campaign</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 bg-orange-500" /> Unplanned</span>
             </div>
           </div>
         )}
@@ -2181,7 +2181,7 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
       goodUp: true,
     },
     {
-      label: "Campaign share",
+      label: "Unplanned share",
       before: pct(set.before.campaignShare),
       after: pct(set.after.campaignShare),
       delta: set.after.campaignShare != null && set.before.campaignShare != null ? (set.after.campaignShare - set.before.campaignShare) * 100 : null,
@@ -2877,7 +2877,7 @@ function ExpensesSection({
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
                   <KpiTile label="Pharmacy visits" value={pharmacyTile.value} hint={pharmacyTile.note ?? undefined} />
                   <KpiTile label="Regular visits" value={intFmt.format(activity.regularVisits)} />
-                  <KpiTile label="Campaign visits" value={intFmt.format(activity.campaignVisits)} />
+                  <KpiTile label="Unplanned visits" value={intFmt.format(activity.campaignVisits)} />
                 </div>
                 <div className="mt-2 text-xs text-slate-400">
                   {/* AM · PM · Pharmacies, three figures apart. A trip stamped before the split carries its

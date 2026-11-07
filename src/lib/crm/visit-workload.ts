@@ -329,7 +329,9 @@ export async function getRepTripVisitWorkload(input: {
     sourceLabel += " The manager's own Phoenix CRM visits could not be read, so they are not counted here.";
   }
   if (crmId == null && data.length === 0 && (ownVisits?.length ?? 0) === 0) {
-    return emptyWorkload(dates, "This person has no CRM id and no visits under their HR ID, so their visits can't be matched.", "unmapped");
+    // A successful own-visit read of nothing is a MEASURED zero; dropping it would read as unmeasured to the cap.
+    const empty = emptyWorkload(dates, "This person has no CRM id and no visits under their HR ID, so their visits can't be matched.", "unmapped");
+    return ownVisits === null ? empty : { ...empty, managerOwnUnplannedVisits: 0, managerOwnVisits: 0 };
   }
 
   const byDate = new Map<string, RepVisitWorkloadDay>();

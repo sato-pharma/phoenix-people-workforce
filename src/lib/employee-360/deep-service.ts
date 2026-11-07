@@ -21,6 +21,7 @@ import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCou
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { isFieldWorkVisit, REGULAR_TYPE } from "@/lib/crm/visit-types";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import { managerDayFigures, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
@@ -637,7 +638,7 @@ export type DoubleVisitEvent = {
    */
   otherNames: (string | null)[];
   isTrainingManager: boolean;
-  kind: "Regular" | "Campaign" | "Other";
+  kind: "Regular" | "Unplanned" | "Other";
   ampm: string | null;
   customerName: string | null;
   /** The Phoenix field set, shaped to THIS reader's tier. Null on a vendor row. */
@@ -698,7 +699,8 @@ export function buildDoubleVisitHistory(
     const isTm = partnerKeys.some((k) => tmIds.has(k));
     const name = nameByHrId.get(key) ?? v.double_name ?? null;
     const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
-    const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
+    // "Campaign" is UNPLANNED now (owner, 6 Nov 2026): Phoenix's own flag, or a campaign visit (−8) on an archive day.
+    const kind = visitBucket === "regular" || visitBucket === "campaign" ? (isUnplannedFieldVisit(v) ? "Unplanned" : "Regular") : "Other";
     events.push({
       date: v.visit_date,
       doubleHrId: resolvedHrId,
@@ -1347,7 +1349,7 @@ export type LeaderRepTouch = {
   lastTouch: string | null;
 };
 export type LeaderCoachingEvent = { date: string; repName: string | null; scorePercent: number | null; zone: string | null };
-export type LeaderDvEvent = { date: string; repName: string | null; kind: "Regular" | "Campaign" | "Other"; customerName: string | null };
+export type LeaderDvEvent = { date: string; repName: string | null; kind: "Regular" | "Unplanned" | "Other"; customerName: string | null };
 export type LeadershipActivity = {
   hasData: boolean;
   coachingDelivered: number;
@@ -1406,6 +1408,8 @@ export type ConductedByKind = { doubles: number; chains: number; productManagerV
 
 type ConductedDvRow = {
   agent_hr_id: string | null;
+  /** Phoenix's own unplanned flag (out of list or out of plan); null on an archive row. */
+  is_unplanned?: boolean | null;
   agent_name: string | null;
   /** Negative on a Phoenix CRM row in the unified door. */
   crm_visit_id?: number | null;
@@ -1692,7 +1696,7 @@ async function getLeadershipActivity(
       // a partner on a Meeting/Training/Vacation row is not one. And collapse burst-duplicate
       // re-saves so the headline count matches the canonical double-visit definition.
       visitTypes: CRM_DOUBLE_VISIT_TYPE_CODES,
-      columns: "agent_hr_id, agent_name, crm_visit_id, double2_hr_id, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source",
+      columns: "agent_hr_id, agent_name, crm_visit_id, double2_hr_id, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name, ampm, speciality, source, is_unplanned",
       limit: 8000,
       collapseDoubleVisits: true,
     }),
@@ -1749,7 +1753,7 @@ async function getLeadershipActivity(
     const cur = touch(key, repName, r.visit_date);
     cur.doubleVisits += 1;
     const bucket = classifyVisit(r.visit_type, r.comment, r.visit_type_description).bucket;
-    const kind = bucket === "regular" ? "Regular" : bucket === "campaign" ? "Campaign" : "Other";
+    const kind = bucket === "regular" || bucket === "campaign" ? (isUnplannedFieldVisit(r) ? "Unplanned" : "Regular") : "Other";
     recentDv.push({ date: r.visit_date, repName, kind, customerName: r.contact_name ?? r.customer_name ?? null });
     const imp = dvByRepForImpact.get(key) ?? { exactIds: new Set<string>(), dates: [] };
     if (rawId) imp.exactIds.add(rawId);

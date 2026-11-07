@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   decideOutstationRequest,
+  OWN_VISITS_UNMEASURED_HOLD_REASON,
   outstationCampaignRuleOutcome,
   outstationDvEvidenceWindowClosed,
   outstationTicketEvidenceRejection,
@@ -351,6 +352,49 @@ export function runOutstationDecisionTests() {
   });
   assert.equal(emptyTrip?.kind, "reject", "a measured empty trip is still rejected once the window has closed");
   assert.match(emptyTrip?.reason ?? "", /no own visit/, "the refusal says both parts were empty");
+
+  // 🔴 AN UNREAD OWN COUNT NEVER PASSES THE CAP (risk review, 7 Nov 2026). 3 planned + 1 unplanned double visits
+  // with 2 unplanned own visits unread read as 1 unplanned — under the cap — and the claim was released to payroll.
+  const ownUnreadUnderCap = outstationCampaignRuleOutcome({
+    campaignVisits: 1,
+    dvEvidenceWindowClosed: true,
+    expenseType: "traveling",
+    ownVisitsUnmeasured: true,
+    role: "District Manager",
+    totalDvVisits: 4,
+  });
+  assert.equal(ownUnreadUnderCap?.kind, "hold", "under the cap with his own visits unread is held, never passed");
+  assert.equal(ownUnreadUnderCap?.reason, OWN_VISITS_UNMEASURED_HOLD_REASON, "and says why");
+  assert.equal(
+    outstationCampaignRuleOutcome({
+      campaignVisits: 1,
+      dvEvidenceWindowClosed: true,
+      expenseType: "traveling",
+      ownVisitsUnmeasured: false,
+      role: "District Manager",
+      totalDvVisits: 4,
+    }),
+    null,
+    "the same trip with his own visits read passes",
+  );
+  assert.equal(
+    outstationCampaignRuleOutcome({
+      campaignVisits: 3,
+      dvEvidenceWindowClosed: true,
+      expenseType: "traveling",
+      ownVisitsUnmeasured: true,
+      role: "District Manager",
+      totalDvVisits: 4,
+    })?.kind,
+    "reject",
+    "over the cap still rejects: an unread part can only add to it",
+  );
+  assert.ok(
+    readFileSync("src/lib/crm/visit-workload.ts", "utf8").includes(
+      "return ownVisits === null ? empty : { ...empty, managerOwnUnplannedVisits: 0, managerOwnVisits: 0 };",
+    ),
+    "a person with no CRM id whose own-visit read found nothing carries a MEASURED zero, never an unread one",
+  );
 
   // The submit path feeds both parts: his own visits join the total and the unplanned count, and an
   // unread own count is passed as unmeasured.

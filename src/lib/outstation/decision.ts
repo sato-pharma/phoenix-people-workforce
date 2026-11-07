@@ -105,6 +105,10 @@ export type OutstationCampaignRuleOutcome =
   | { kind: "reject"; reason: string }
   | null;
 
+/** A manager's own visits could not be read, so an unplanned count at or under the cap is only a lower bound. */
+export const OWN_VISITS_UNMEASURED_HOLD_REASON =
+  "The manager's own Phoenix CRM visits could not be read, so the limit of 2 unplanned visits cannot be confirmed yet. This claim is held for review instead of being passed on a partial count.";
+
 export const DV_EVIDENCE_PENDING_HOLD_REASON =
   "The field visits for this trip are not in Phoenix CRM yet — visits are entered through and after the working day — so this claim is held for review instead of being rejected on evidence that has not been written yet. Re-check the visits once the day's visits are in.";
 
@@ -161,6 +165,10 @@ export function outstationCampaignRuleOutcome(input: {
         }
       : { kind: "hold", reason: DV_EVIDENCE_PENDING_HOLD_REASON };
   }
+
+  // His own visits could not be read: an unplanned count at or under the cap is a lower bound, not the count,
+  // so it HOLDS for a person to review — never passes (risk review, 7 Nov 2026). Over the cap still rejects above.
+  if (input.ownVisitsUnmeasured) return { kind: "hold", reason: OWN_VISITS_UNMEASURED_HOLD_REASON };
 
   return null;
 }

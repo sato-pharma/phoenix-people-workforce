@@ -93,7 +93,7 @@ export async function runEmployee360CampaignMixTests() {
     WINDOW,
   );
   assert.equal(allRegular.campaignMix, "all_regular");
-  assert.match(allRegular.visitsSummaryText, /100% regular \/ 0% campaign — all regular, the best case\./);
+  assert.match(allRegular.visitsSummaryText, /100% regular \/ 0% unplanned — all regular, the best case\./);
   assert.match(allRegular.visitsSummaryText, /Held at all regular from Aug 2026 to Sep 2026\./);
   assert.doesNotMatch(allRegular.visitsSummaryText, /starved|neglect|balanced/i);
 
@@ -106,17 +106,29 @@ export async function runEmployee360CampaignMixTests() {
     ],
     WINDOW,
   );
+  // 🔴 THE LANE IS UNPLANNED NOW (owner, 6 Nov 2026). Every Phoenix visit arrives as type 0, so a lane that read
+  // −8 alone counted none of Phoenix's unplanned visits and called everyone "all regular" from 6 Nov.
+  const phoenixUnplanned = summarizeVisits(
+    [
+      visit({ visit_date: "2026-09-15", visit_kind: "single", is_unplanned: true }),
+      visit({ visit_date: "2026-09-16", visit_kind: "single", is_unplanned: false }),
+    ],
+    WINDOW,
+  );
+  assert.equal(phoenixUnplanned.campaignVisits, 1, "a Phoenix visit marked unplanned counts in the Unplanned lane");
+  assert.equal(phoenixUnplanned.regularVisits, 1, "and a planned one stays regular");
+
   assert.equal(improving.campaignMix, "mostly_regular");
   assert.equal(improving.campaignTrend?.direction, "improving");
-  assert.match(improving.visitsSummaryText, /Campaign fell from 50% to 10% \(Aug 2026 to Sep 2026\) while regular rose — the best direction\./);
+  assert.match(improving.visitsSummaryText, /Unplanned fell from 50% to 10% \(Aug 2026 to Sep 2026\) while regular rose — the best direction\./);
 
   // ── on the page, a FALL in campaign share is the good direction, on both change indicators ──
   const view = readFileSync(new URL("../src/components/employee-360/employee-360-view.tsx", import.meta.url), "utf8");
   assert.match(
     view,
-    /<DeltaChip label="Campaign share" delta=\{comparison\.campaignShare\} kind="pct" goodUp=\{false\} \/>/,
+    /<DeltaChip label="Unplanned share" delta=\{comparison\.campaignShare\} kind="pct" goodUp=\{false\} \/>/,
     "period-over-period: campaign share going down is green",
   );
-  assert.match(view, /label: "Campaign share",[^}]*?goodUp: false,/, "before / after: campaign share going down is green");
+  assert.match(view, /label: "Unplanned share",[^}]*?goodUp: false,/, "before / after: campaign share going down is green");
   assert.doesNotMatch(view, /healthy band/, "no 'healthy band' on the page");
 }

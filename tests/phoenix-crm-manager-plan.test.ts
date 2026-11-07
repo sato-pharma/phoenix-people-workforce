@@ -1664,6 +1664,11 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // from the old CRM — every rep plans in Phoenix — while an earlier week still shows the plan that was filed.
   const retiredOn = vendorSyncRetiredOn({ vendorSyncRetiredAt: "2026-11-06T01:16:00+00:00" });
   assert.equal(retiredOn, "2026-11-06", "the retirement day is the date of the retirement");
+  assert.equal(
+    vendorSyncRetiredOn({ vendorSyncRetiredAt: "2026-11-05T23:30:00+00:00" }),
+    "2026-11-06",
+    "the retirement day is CAIRO's date, as the views read it: 01:30 Cairo on 6 Nov is still 5 Nov in UTC",
+  );
   assert.equal(oldCrmWeekIsArchive("2026-10-31", retiredOn), true, "a week begun before the retirement still shows the old plan");
   assert.equal(oldCrmWeekIsArchive("2026-11-07", retiredOn), false, "HEADLINE: a week after the retirement never reads the old CRM");
   assert.equal(oldCrmWeekIsArchive("2026-11-06", retiredOn), false, "the retirement day's own week is Phoenix's");

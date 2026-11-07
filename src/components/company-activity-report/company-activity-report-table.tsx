@@ -235,7 +235,7 @@ function SortableHeader({
       className="cursor-pointer select-none border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100"
       onClick={() => onSort(sortKey)}
     >
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex flex-wrap items-center gap-1">
         {children}
         {active ? (
           direction === "asc" ? (
@@ -289,7 +289,7 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
           <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.totalCrmVisits}</p>
         </div>
         <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-orange-500">Unplanned</p>
+          <p className="break-words text-phx-2xs font-bold uppercase tracking-[0.08em] text-orange-500">Unplanned</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-orange-700">{row.campaignVisits}</p>
           <p className="text-phx-2xs font-medium text-slate-400">
             {row.campaignVisitDays} {row.campaignVisitDays === 1 ? "day" : "days"}
@@ -712,11 +712,12 @@ export function CompanyActivityReportTable({
                 <div className="hidden md:block">
                   <table className="w-full table-fixed border-collapse text-left text-phx-sm">
                     <colgroup>
-                      <col style={{ width: "27%" }} />
+                      <col style={{ width: "24%" }} />
                       <col style={{ width: "8%" }} />
                       <col style={{ width: "8%" }} />
                       <col style={{ width: "11%" }} />
-                      <col style={{ width: "11%" }} />
+                      {/* "UNPLANNED" is one word that cannot wrap: its column took three points from Employee. */}
+                      <col style={{ width: "14%" }} />
                       <col style={{ width: "10%" }} />
                       <col style={{ width: "8%" }} />
                       <col style={{ width: "8%" }} />

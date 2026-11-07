@@ -2427,7 +2427,7 @@ function runScreensNameTheSourceTests(): void {
     "src/components/field-workforce-compliance/field-workforce-visits-view.tsx": "read live from Phoenix CRM",
     "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": "Always computed live from Phoenix CRM visits",
     "src/components/double-visit-analytics/double-visit-analytics-workspace.tsx": "Phoenix CRM, with the iReports360 archive before each team&apos;s start",
-    "src/components/vacation/company-vacation-report-table.tsx": "CRM (iReports360, before Phoenix CRM)",
+    "src/components/vacation/company-vacation-report-table.tsx": "From 6 Nov 2026 leave is the approved Phoenix requests alone",
     "src/components/crm/crm-master-table.tsx": "up to its retirement on 6 Nov 2026",
   };
   const retired = [/Live iReports360/i, /auto-synced 3x daily/i, /pulled live from iReports360/i, /live iReports360 visit mirror/i, /iReports360 visits mirror/i, /no iReports360 check-in to match/i, /pulled from CRM\)/];
