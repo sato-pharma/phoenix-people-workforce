@@ -41,6 +41,7 @@ function visit(overrides: Partial<VisitRow>): VisitRow {
 }
 
 const WINDOW = { from: "2026-08-01", to: "2026-09-21", label: "Custom" };
+const WINDOW_WITH_NOV = { from: "2026-08-01", to: "2026-11-07", label: "Custom" };
 
 export async function runEmployee360CampaignMixTests() {
   // ── the verdict: the more regular, the better; no floor for campaign ──
@@ -117,6 +118,22 @@ export async function runEmployee360CampaignMixTests() {
   );
   assert.equal(phoenixUnplanned.campaignVisits, 1, "a Phoenix visit marked unplanned counts in the Unplanned lane");
   assert.equal(phoenixUnplanned.regularVisits, 1, "and a planned one stays regular");
+
+  // The activity mix carries ONE row for the lane: an archive-day campaign visit (−8) joins Phoenix's unplanned
+  // visits under "Unplanned visit" — Samah Ashraf's page read "Campaign 138" beside "Unplanned visit 98" on 7 Nov.
+  const mixed = summarizeVisits(
+    [
+      visit({ visit_date: "2026-09-01", visit_type: -8, visit_type_description: "Campaign" }),
+      visit({ visit_date: "2026-09-02", visit_type: -8, visit_type_description: "Campaign" }),
+      visit({ visit_date: "2026-11-07", visit_kind: "single", is_unplanned: true }),
+      visit({ visit_date: "2026-11-07", visit_kind: "single", is_unplanned: false }),
+    ],
+    WINDOW_WITH_NOV,
+  );
+  const mixRow = (label: string) => mixed.activityMix.find((item) => item.label === label);
+  assert.equal(mixRow("Unplanned visit")?.count, 3, "two archive campaign visits and one Phoenix unplanned visit are one row");
+  assert.equal(mixRow("Campaign"), undefined, "no separate Campaign row in the activity mix");
+  assert.equal(mixRow("Regular")?.count, 1);
 
   assert.equal(improving.campaignMix, "mostly_regular");
   assert.equal(improving.campaignTrend?.direction, "improving");
