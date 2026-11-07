@@ -3,7 +3,6 @@
 import { AlertTriangle, ArrowRight, Check, Eye, ShieldCheck, Undo2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-import { AdminTableShell } from "@/components/admin/admin-design-system";
 import {
   CrmButton,
   CrmCard,
@@ -100,7 +99,19 @@ export function ReviewQueueTable({
 
   return (
     <div aria-labelledby={`expense-tab-${tab}`} id={`expense-panel-${tab}`} role="tabpanel">
-      <AdminTableShell description={REVIEW_TAB_DESCRIPTIONS[tab]} title={loading ? REVIEW_TAB_LABELS[tab] : title}>
+      {/* ONE heading line: the tab and its count on the left, the tick-and-approve controls on the
+          right. It was three rows — the title, a sentence restating the tab, and "Tick trips to
+          approve together" on a band of its own — about 170px before the first trip (owner,
+          2026-11-07: "fold the expense table heading into one line"). The sentence is the title's
+          hover now. */}
+      <section className="min-w-0 overflow-hidden border border-slate-200 bg-white" data-queue-section>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-slate-200 px-4 py-2" data-table-heading>
+          <h2 className="min-w-0 break-words text-sm font-black text-slate-950" title={REVIEW_TAB_DESCRIPTIONS[tab]}>
+            <span aria-hidden className="mr-2 inline-block h-2 w-2 bg-orange-500 align-middle" />
+            {loading ? REVIEW_TAB_LABELS[tab] : title}
+          </h2>
+          {!loading && !loadError && rows.length > 0 ? bulkBar : null}
+        </div>
         {loading ? (
           <CrmLoading label="Reading the trips" />
         ) : loadError ? (
@@ -130,7 +141,6 @@ export function ReviewQueueTable({
           />
         ) : (
           <>
-            {bulkBar}
             <CrmCardsOnPhone>
               {page.map((record) => (
                 <QueueCard actions={actions} key={record.tripId} record={record} />
@@ -167,7 +177,7 @@ export function ReviewQueueTable({
             <CrmShowMore left={rows.length - page.length} onMore={() => setShown((current) => current + PAGE_ROWS)} page={PAGE_ROWS} />
           </>
         )}
-      </AdminTableShell>
+      </section>
     </div>
   );
 }

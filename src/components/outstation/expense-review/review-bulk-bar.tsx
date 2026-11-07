@@ -40,9 +40,12 @@ export function ReviewBulkBar({
 }) {
   if (selectableCount === 0) return null;
   return (
-    <div className="min-w-0 space-y-2 border-b border-slate-200 bg-slate-50 px-4 py-3" data-bulk-bar>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+    // Rides at the right end of the table's one heading line, never a band of its own (owner,
+    // 2026-11-07: "fold the expense table heading into one line"). A warning, when there is one,
+    // wraps under the controls.
+    <div className="flex min-w-0 flex-1 basis-80 flex-wrap items-center justify-end gap-x-2 gap-y-1" data-bulk-bar>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
           {selectedCount === 0
             ? `Tick trips to approve together (${formatNumberValue(selectableCount)} here)`
             : `${formatNumberValue(selectedCount)} ticked · ${egp(selectedValue)}`}
@@ -66,12 +69,12 @@ export function ReviewBulkBar({
         ) : null}
       </div>
       {needsReasonCount > 0 ? (
-        <p className="text-xs font-bold text-rose-700">
+        <p className="basis-full text-right text-xs font-bold text-rose-700">
           {formatNumberValue(needsReasonCount)} cannot be approved yet — a changed amount needs a written reason
         </p>
       ) : null}
       {needsPreCutCount > 0 ? (
-        <p className="text-xs font-bold text-orange-700" data-bulk-precut>
+        <p className="basis-full text-right text-xs font-bold text-orange-700" data-bulk-precut>
           {formatNumberValue(needsPreCutCount)} {needsPreCutCount === 1 ? "has" : "have"} days with no visit and no meeting · open each to approve it with
           its pre-cut
         </p>
