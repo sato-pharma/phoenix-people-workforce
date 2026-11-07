@@ -3,7 +3,7 @@ import { assertApplicationVisible } from "@/lib/recruitment/workspace/fence";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { addDays, DEFAULT_OFFER_VALIDITY_DAYS, todayInCairo } from "@/lib/offers/dates";
-import { createOffer, listOfferJobTitles, listOffers } from "@/lib/offers/service";
+import { createOffer, findDraftOfferFor, listOfferJobTitles } from "@/lib/offers/service";
 import { getApplication, recordApplicationOfferLetter } from "@/lib/recruitment/applications";
 import { buildOfferLetterDraft } from "@/lib/recruitment/offer-letter-bridge";
 import { getOffer } from "@/lib/recruitment/offers";
@@ -85,13 +85,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       (row) => row.active && row.title.trim().toLowerCase() === draft.title.trim().toLowerCase(),
     );
 
-    const existing = (await listOffers()).find(
-      (row) =>
-        row.status === "draft"
-        && row.title.trim().toLowerCase() === draft.title.trim().toLowerCase()
-        && row.candidateEmail.trim().toLowerCase() === draft.candidateEmail.trim().toLowerCase()
-        && draft.candidateEmail.trim() !== "",
-    );
+    // Asked of the database for THIS candidate's drafts: the list of offers is only the newest 200, and
+    // a draft older than that used to be missed, so the same candidate got a second letter for the job.
+    const existing = await findDraftOfferFor(draft.title, draft.candidateEmail);
     if (existing) {
       // The link is stored for a REUSED draft exactly as for a new one. An application whose letter
       // was reused is no less linked, and recording only the created case would leave a gap that
