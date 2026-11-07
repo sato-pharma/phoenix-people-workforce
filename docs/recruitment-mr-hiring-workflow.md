@@ -77,8 +77,9 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - **§5 Interview details.** Every interview carries its Zoom link, or its date, time and place. The interview
   calendar's dialogs gained a Location field for in-person interviews, and the candidate's invitation prints it.
 - **§6 DSM feedback is mandatory.** The DSM records it from the manager portal's "My Medical Rep interviews".
-  **HR may decide without it any time after the DSM interview has ended** (owner, 7 Nov 2026 — no deadline);
-  the result is marked "no DSM feedback". The no-feedback path is the DSM step's only.
+  **HR may decide without it at any time** — before the interview's hour, after it, or after the DSM answered
+  (owner, 8 Nov 2026, replacing 7 Nov's "after the interview has ended"); the result is marked "no DSM
+  feedback". The no-feedback mark is the DSM step's only.
 - **RSM section (added 7 Nov 2026).** "Candidates who pass the DSM interview will proceed to an RSM interview
   (Pedia Line). The RSM will receive the interview details through Phoenix and must submit their evaluation in
   the system." See the decision below.
@@ -86,8 +87,8 @@ outcome sync and Mark as hired therefore move it without any second write that c
   and the 3rd interview then shows as skipped.
 - **§8 The NSM's recommendation.** Make an offer or keep as backup, with the proposed salary (EGP net a month)
   and joining date. The HR Manager is notified that a recommendation is ready.
-- **§9 The decision and the offer.** **The final decision is the HR Manager's alone** (owner, 7 Nov 2026 — the
-  Super Admin seat). "Prepare offer" opens the offer composer with the proposed joining date as the start date;
+- **§9 The decision and the offer.** **The final decision is HR's — the HR Manager or Talent Acquisition**
+  (owner, 8 Nov 2026, replacing 7 Nov's "the HR Manager's alone"; see "Everything is open to HR" below). "Prepare offer" opens the offer composer with the proposed joining date as the start date;
   money is never pre-filled, because pay stays fixed by title. An offer still "sent" past its last valid day
   reads as expired — shown only, nothing changes.
 - **§10 One timeline, salary hidden.** Everyone involved reads the candidate's hiring journey. **The proposed
@@ -161,6 +162,22 @@ outcome sync and Mark as hired therefore move it without any second write that c
   when it names how it was written, or when the speaker edited the box while it was away. Only someone who
   reads the candidate's journey and can write on it may call it — the CEO, who records nothing, is refused.
   Nothing is saved until the form's own Save.
+
+## Everything is open to HR (owner, 8 Nov 2026)
+
+His words, after an interview held the day before it was put in the system was refused: "don't block anything
+to me, make everything open to the HR … Everything is open." So the two HR seats (the HR Manager and Talent
+Acquisition) are never held by the clock, the booking or the seat:
+
+- They record every step's result at any time — before the interview's hour, after it, or with no booking at
+  all (an interview held before it was booked). That covers the DSM's step (marked "no DSM feedback"), the
+  RSM's, the 3rd interview, both kinds of final, the NSM's recommendation and the final decision.
+- They book and move an interview on any day and at any time, a past one included: the Medical Rep booking
+  form has no earliest day, the calendar's cell and schedule dialogs no longer refuse a time already gone, and
+  the calendar lets the booking tier move a past interview. A past proposed joining date is taken.
+- What stays: the order of the steps (a result is recorded at the step the candidate is on), the held CVs, a
+  hired candidate, and the managers' own gates — a DSM, RSM or NSM records only his own interview, once it
+  has ended, and never the final decision.
 
 ## Who sees what
 

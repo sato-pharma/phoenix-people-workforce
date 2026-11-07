@@ -11,7 +11,7 @@
 
 import { offerComposerHref } from "@/lib/recruitment/workspace/links";
 import type { MrCandidateRecord } from "@/lib/recruitment/mr-hiring/facts-db";
-import { mayBookMrInterview, mayRecommend, mayRecordStep, redactFactsFor, type MrViewer } from "@/lib/recruitment/mr-hiring/access";
+import { isOnBooking, mayBookMrInterview, mayRecommend, mayRecordStep, redactFactsFor, type MrViewer } from "@/lib/recruitment/mr-hiring/access";
 import { isCairoOrGiza } from "@/lib/recruitment/mr-hiring/inputs";
 import { firstOfficialArrival } from "@/lib/recruitment/mr-hiring/official-line";
 import {
@@ -133,9 +133,11 @@ export function buildMrRow(viewer: MrViewer, record: MrCandidateRecord, now: Dat
   const stage = mrHiringStage(facts, now);
   const step = stage.open ? stage.step : stage.closedAt;
   const resultStep = step ? resultStepForStage(step, stage.jointFinal) : null;
-  const record_ = resultStep && mayRecordStep(viewer, facts, resultStep, { now }).ok ? resultStep : null;
-  const decideWithoutDsm =
-    stage.open && stage.step === "dsm" && stage.hrMayDecideWithoutDsm && mayRecordStep(viewer, facts, "dsm", { decidedWithoutDsm: true, now }).ok;
+  // HR at the DSM step, not on that interview, writes the result in the DSM's place — at any time
+  // (owner, 8 Nov 2026: "everything is open to the HR"), so the button says so.
+  const hrForDsm = viewer.canWork && stage.open && stage.step === "dsm" && !isOnBooking(viewer, stage.booking);
+  const record_ = !hrForDsm && resultStep && mayRecordStep(viewer, facts, resultStep, { now }).ok ? resultStep : null;
+  const decideWithoutDsm = hrForDsm && mayRecordStep(viewer, facts, "dsm", { decidedWithoutDsm: true, now }).ok;
   const recommend = mayRecommend(viewer, facts, now).ok;
   // The first round listed is the one the page's button books.
   const book = mayBookMrInterview(viewer) ? MR_INTERVIEW_ROUNDS.filter((round) => mrBookingRefusal(stage, round) === null) : [];
