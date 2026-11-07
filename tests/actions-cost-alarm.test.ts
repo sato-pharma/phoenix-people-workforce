@@ -17,6 +17,8 @@ import {
   describeReadFailure,
   projectActionsCost,
   usagePath,
+  billingPage,
+  includedMinutesFrom,
 } from "../scripts/check-actions-cost.mjs";
 
 type Row = { date: string; product: string; sku: string; grossAmount: number; discountAmount: number; netAmount: number; pricePerUnit: number };
@@ -39,6 +41,14 @@ export function runActionsCostAlarmTests() {
   // The owner is an organization since 2026-11-06: its usage lives under organizations/, and users/ answers 404.
   assert.equal(usagePath("sato-pharma"), "organizations/sato-pharma", "an organization's billing is read under organizations/");
   assert.equal(usagePath("someone", false), "users/someone", "a personal account's billing stays under users/");
+  // The billing PAGE is not the API path: a personal account's is github.com/settings/billing.
+  assert.equal(billingPage("sato-pharma", true), "github.com/organizations/sato-pharma/settings/billing");
+  assert.equal(billingPage("someone", false), "github.com/settings/billing", "🔴 github.com/users/<login>/settings/billing is a 404");
+  // 🔴 An organization's included minutes depend on its plan, so the Pro 3,000 is never assumed for one.
+  assert.equal(includedMinutesFrom({}, true), null, "an organization with no stated allowance cannot tell");
+  assert.equal(includedMinutesFrom({}, false), 3000, "a personal Pro account keeps its 3,000");
+  assert.equal(includedMinutesFrom({ ACTIONS_INCLUDED_MINUTES: "50000" }, true), 50000);
+  assert.equal(includedMinutesFrom({ ACTIONS_INCLUDED_MINUTES: "lots" }, true), null);
 
   // 1. The projection. Ten days into November at today's CI shape ($13.80 a day), with the 3,000
   //    included minutes ($18) used up on the 1st and 2nd, a partial row for today and a Copilot row
@@ -124,7 +134,10 @@ export function runActionsCostAlarmTests() {
   );
   assert.match(describeReadFailure({ stderr: "gh: Bad credentials (HTTP 401)" }), /expired or was revoked/, "🔴 a dead token was described as a missing permission");
   for (const stderr of ["gh: Resource not accessible by personal access token (HTTP 403)", "gh: Not Found (HTTP 404)"]) {
-    assert.match(describeReadFailure({ stderr }), /Plan: Read-only/, `a refused billing read must name the permission it needs: ${stderr}`);
+    assert.match(describeReadFailure({ stderr }, { isOrg: false }), /Plan: Read-only/, `a refused billing read must name the permission it needs: ${stderr}`);
+    const org = describeReadFailure({ stderr }, { owner: "sato-pharma", isOrg: true });
+    assert.match(org, /resource owner is sato-pharma/, `🔴 an organization's refused read sent the reader to a personal token: ${stderr}`);
+    assert.doesNotMatch(org, /Plan: Read-only/);
   }
   assert.match(describeReadFailure(new Error("socket hang up")), /the billing read failed \(socket hang up\)/);
 
