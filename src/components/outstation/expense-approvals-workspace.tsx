@@ -556,6 +556,7 @@ export function ExpenseApprovalsWorkspace({
             state: expenseApprovalState(decision),
             toDate: record.toDate,
             tripId: record.tripId,
+            workloadMatchStatus: record.workloadMatchStatus,
           };
         }),
       ),
@@ -661,6 +662,7 @@ export function ExpenseApprovalsWorkspace({
         selectedVisible.map((record) => {
           const decision = decisionFor(record);
           return {
+            allowance: record.allowance,
             approvedAmount: decision.approvedAmount,
             claimedTotal: record.total,
             hrApproved: decision.hrApproved,
@@ -710,6 +712,11 @@ export function ExpenseApprovalsWorkspace({
     if (bulkPlan.needsReasonTripIds.length > 0) {
       skipped.push(
         `${formatNumberValue(bulkPlan.needsReasonTripIds.length)} still need a reason for a changed amount`,
+      );
+    }
+    if (bulkPlan.needsPreCutTripIds.length > 0) {
+      skipped.push(
+        `${formatNumberValue(bulkPlan.needsPreCutTripIds.length)} have idle days · open each to apply its pre-cut`,
       );
     }
     if (bulkPlan.notPendingTripIds.length > 0) {
@@ -1089,6 +1096,12 @@ export function ExpenseApprovalsWorkspace({
               <p className="mt-0.5 text-xs font-bold text-rose-600">
                 {formatNumberValue(bulkPlan.needsReasonTripIds.length)} cannot be approved yet — a changed
                 amount needs a written reason
+              </p>
+            ) : null}
+            {bulkPlan.needsPreCutTripIds.length > 0 ? (
+              <p className="mt-0.5 text-xs font-bold text-orange-700" data-bulk-precut>
+                {formatNumberValue(bulkPlan.needsPreCutTripIds.length)} have days with no visit and no meeting · open each
+                to apply its pre-cut
               </p>
             ) : null}
           </div>
