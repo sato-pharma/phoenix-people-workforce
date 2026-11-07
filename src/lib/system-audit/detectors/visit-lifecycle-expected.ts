@@ -19,8 +19,9 @@
  *   · a visit the Super Admin removed is gone (`phoenix_crm_removed_visits`);
  *   · an off-plan visit counts once approved — `out_of_list` always counts — and a recorded visit once
  *     the Administrator approves the recording (`20261023040102_countable_visits_customer_join_is_removable`);
- *   · the door serves a REP seat of a started team, from its start, before its stop
- *     (`phoenix_crm_started_team_seats()`, inner-joined in `crm_visits_unified`);
+ *   · the door serves a REP seat of a started team, from its start, before its stop — and, from the day
+ *     iReports360 was retired, every REP seat whatever its start or stop (`phoenix_crm_counted_seat_windows()`,
+ *     inner-joined in `crm_visits_unified`, 20261106235920);
  *   · a departed agent is invisible on every counting door (`getEffectiveExcludedAgentCrmIds`);
  *   · one rep, one contact, one day is one stop (`collapseDuplicateVisitSubmissions`);
  *   · a partnered visit sits on the Double Visit feed, not the field-visit chip (`fieldVisitActivityKind`);
@@ -97,7 +98,10 @@ export type DoorRow = {
 export const DOOR_COLUMNS =
   "id,source,agent_hr_id,agent_crm_id,exclusion_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,double_hr_id,double_crm_id,crm_save_date,crm_visit_id,ampm,speciality,phoenix_customer_validated";
 
-/** One row of `phoenix_crm_started_team_seats()`: a REP seat of a started team, [startsOn, stopsOn). */
+/**
+ * One row of `phoenix_crm_counted_seat_windows()`: a REP seat counted over [startsOn, stopsOn). `teamSeatId` is the
+ * started team it sits under, or "" for a territory under no started team (counted from the retirement day only).
+ */
 export type StartedSeatWindow = { seatId: string; teamSeatId: string; startsOn: string; stopsOn: string | null };
 
 /** What the employee directory says about the rep. */
@@ -267,7 +271,7 @@ export function teamMoveVerdicts(input: {
     const open = input.history
       .filter((row) => row.seatId === visit.seatId && row.effectiveTo === null && row.managerSeatId)
       .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0];
-    const teamNow = input.windows.find((window) => window.seatId === visit.seatId)?.teamSeatId ?? open?.managerSeatId ?? null;
+    const teamNow = input.windows.find((window) => window.seatId === visit.seatId)?.teamSeatId || open?.managerSeatId || null;
     if (teamNow === then.team) continue;
     const countedNow = seatWindowVerdict(visit.seatId, visit.visitDate, input.windows).covered;
     const countedThen = input.teamStarts.some(

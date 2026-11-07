@@ -24,7 +24,7 @@ import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CrmListType } from "@/lib/crm/list-types";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
-import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
+import { PHOENIX_VISIT_DETAIL_COLUMNS, phoenixDetailViewer, phoenixRowSight, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
 import {
   isCrmDoubleVisitRow,
   queryCheckins,
@@ -394,12 +394,23 @@ async function fetchOwnRecordVisitRows(hrId: string, window: Employee360Window):
   });
 }
 
-export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
+/**
+ * `includePhoenixCheckins` also reads each Phoenix CRM visit's position as that day's check-in. The caller
+ * sets it only for a reader who is not the subject (owner, 2026-10-02: "Never on the rep's own screens");
+ * since 6 Nov 2026 every territory counts from Phoenix CRM, so without it the GPS module reads nothing
+ * after that day.
+ */
+export async function fetchCheckinRows(
+  hrId: string,
+  window: Employee360Window,
+  options: { includePhoenixCheckins?: boolean } = {},
+): Promise<CheckinRow[]> {
   const own = await queryCheckins<CheckinRow>({
     agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
     columns: "check_date,lat,lon",
+    includePhoenixVisits: options.includePhoenixCheckins === true,
   });
   // An earlier record of the person's, before a re-hire (continuous-service.ts) — see fetchVisitRows.
   const earlier = earlierRecordHrIds(hrId);
@@ -869,10 +880,28 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
   };
 }
 
-export async function getEmployee360Summary(hrId: string, window: Employee360Window = defaultWindow()): Promise<Employee360Summary> {
+/**
+ * Whether this reader sees the subject's Phoenix CRM positions as GPS check-ins: never on his own record
+ * (golden rule #1 — phoenixRowSight answers "none" for a reader's own rows), and never for a role whose
+ * tier is "none". No reader named means no positions.
+ */
+export function employee360ReaderSeesPhoenixCheckins(
+  subjectHrId: string,
+  viewer: { role: string | null | undefined; hrId: string | null | undefined } | null,
+): boolean {
+  if (!viewer || !viewer.hrId) return false;
+  return phoenixRowSight(phoenixDetailViewer(viewer.role, viewer.hrId), subjectHrId) !== "none";
+}
+
+export async function getEmployee360Summary(
+  hrId: string,
+  window: Employee360Window = defaultWindow(),
+  /** The reader, so the comparison period reads check-ins the same way the profile does. */
+  viewer: { role: string | null | undefined; hrId: string | null | undefined } | null = null,
+): Promise<Employee360Summary> {
   const [visits, checkins, holidays] = await Promise.all([
     fetchVisitRows(hrId, window),
-    fetchCheckinRows(hrId, window),
+    fetchCheckinRows(hrId, window, { includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, viewer) }),
     loadCallRateHolidays(window.from, window.to),
   ]);
   const visitSummary = summarizeVisits(visits, window, undefined, holidays);

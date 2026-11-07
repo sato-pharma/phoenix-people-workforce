@@ -52,6 +52,7 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { humanizeCode } from "@/lib/format/code-label";
+import { outstationWorkloadSourceLabel } from "@/lib/outstation/workload-source-label";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
   PortalRecordCard,
@@ -414,7 +415,7 @@ function RequestDetailsModal({
                   : String(request.pharmacyWorkload)
               }
             />
-            <Fact label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
+            <Fact label="Workload source" value={outstationWorkloadSourceLabel(request.workloadSource)} />
             {/* Dated on purpose. This verdict is stamped once, when the request is SUBMITTED —
                 the one moment the CRM is guaranteed to be emptiest, because visits are entered
                 through and after the trip and the mirror syncs after that. Nothing re-reads it.

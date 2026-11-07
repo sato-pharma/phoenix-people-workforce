@@ -11,7 +11,9 @@ export function runEmailControlCenterTests() {
   const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
   const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
 
-  assert.equal(notificationRoleKeys.length, 24, "expected 24 role-recipients keys (approval_whatsapp_reminder + 11 of the 12 original — ireports360_sync_notify left with the retired vendor sync, 6 Nov 2026 — + marketing_sla_reminder + resignation_workflow_alert + employee_import_alert + payroll_workflow_alert + marketing_invoice_overdue_alert + distributor_upload_overdue_alert + retention_risk_alert + crm_account_setup_alert + new_hire_mailbox_alert + service_milestone_notice + activity_inactivity_digest + accepted_offer_alert)");
+  assert.equal(notificationRoleKeys.length, 23, "expected 23 role-recipients keys (approval_whatsapp_reminder + 11 of the 12 original — ireports360_sync_notify left with the retired vendor sync, 6 Nov 2026 — + marketing_sla_reminder + resignation_workflow_alert + employee_import_alert + payroll_workflow_alert + marketing_invoice_overdue_alert + distributor_upload_overdue_alert + retention_risk_alert + new_hire_mailbox_alert + service_milestone_notice + activity_inactivity_digest + accepted_offer_alert; crm_account_setup_alert left with the retired iReports360 account notice, 7 Nov 2026)");
+  // The retired iReports360 account-setup audience must not come back to the control center's list.
+  assert.doesNotMatch(aggregatorSource, /crm_account_setup_alert/, "the retired crm_account_setup_alert audience must not be mapped in the control center");
   assert.equal(emailNotificationTypes.length, 9, "expected 9 email-notification policy types (8 original + probation_milestone, added 2026-09-29 so the Day 30/60/75 emails have their own toggle)");
   assert.ok(emailTemplateKeys.length > 0, "expected at least one email template key");
 

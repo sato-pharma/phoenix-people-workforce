@@ -8,6 +8,7 @@ import {
   phoenixRoles,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { buildCompanyActivityChannels } from "../src/lib/company-activity-report/channels.ts";
 import {
   ALL_COMPANY_ACTIVITY_DAY_OUTCOMES,
   OUTCOME_FILL,
@@ -35,6 +36,7 @@ import type {
   CompanyActivityVisitDetail,
 } from "../src/lib/company-activity-report/types.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { buildOrgIndex, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 
 /**
  * Company Activity Report (owner request, 2026-08-28): a day-by-day account of what every employee
@@ -60,6 +62,11 @@ const EXPORT_ROUTE_SOURCE = readFileSync(
   new URL("../app/api/company-activity-report/export/route.ts", import.meta.url),
   "utf8",
 );
+const readSource = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+function seat(seatId: string, tier: string, occupantHrId: string | null, path: string[]): OrgSeat {
+  return { seatId, parentSeatId: path.at(-2) ?? null, tier, path, occupantHrId, lineCode: "CNS", lineName: "CNS", areaName: null, regionName: null, seatLabel: null };
+}
 
 /** scope "company" is what every real non-Super-Admin session carries; "system" is only ever paired
  * with role "Super Admin" (see auth/server.ts's systemAccessContext). */
@@ -218,6 +225,55 @@ export function runCompanyActivityReportTests() {
   const noSignal = reconcileCompanyActivityDay(dayInputs({ hasAttendanceChannel: false, hasCrmChannel: false }));
   assert.equal(noSignal.outcome, "no_signal");
   assert.equal(noSignal.hasNoSignal, true);
+  assert.equal(
+    noSignal.reason,
+    "No attendance device or Phoenix CRM seat on record for this employee.",
+    "the CRM channel is a Phoenix CRM seat now (owner, 2026-11-07) — the reason must say so, never 'CRM identity'",
+  );
+
+  // ── (4b) THE CRM CHANNEL IS A PHOENIX CRM SEAT (owner, 2026-11-07: "ANY SINGLE SOURCE OF FIELD WORK
+  // IS NOW THE PHOENIX CRM"). It used to be an iReports360 username on the employee row, so 23 reps and
+  // 3 district managers hired straight into Phoenix CRM read "No Signal" on every silent day.
+  const org = buildOrgIndex([
+    seat("CEO-1", "CEO", "B-1", ["CEO-1"]),
+    seat("NSM-1", "NSM", "B-20", ["CEO-1", "NSM-1"]),
+    seat("RSM-1", "RSM", "B-30", ["CEO-1", "NSM-1", "RSM-1"]),
+    seat("DM-1", "DM", "B-40", ["CEO-1", "NSM-1", "RSM-1", "DM-1"]),
+    seat("ADM-1", "ACTING_DM", "B-45", ["CEO-1", "NSM-1", "RSM-1", "ADM-1"]),
+    seat("REP-1", "REP", "B-201", ["CEO-1", "NSM-1", "RSM-1", "DM-1", "REP-1"]),
+    seat("REP-2", "REP", null, ["CEO-1", "NSM-1", "RSM-1", "DM-1", "REP-2"]),
+    // A handover seat: the rep serving notice and the new hire both sit on it.
+    seat("REP-3", "REP", "B-202", ["CEO-1", "NSM-1", "RSM-1", "DM-1", "REP-3"]),
+    seat("REP-3", "REP", "B-203", ["CEO-1", "NSM-1", "RSM-1", "DM-1", "REP-3"]),
+  ]);
+  const channels = buildCompanyActivityChannels(["b-900"], org);
+  assert.equal(channels.hasCrmChannel("B-201"), true, "a rep on a territory seat is observable through Phoenix CRM");
+  assert.equal(channels.hasCrmChannel("b-201"), true, "in any casing");
+  assert.equal(channels.hasCrmChannel("B-202"), true, "a handover seat's first occupant keeps his channel");
+  assert.equal(channels.hasCrmChannel("B-203"), true, "and the new hire on the same seat has one too");
+  for (const manager of ["B-20", "B-30", "B-40", "B-45"]) {
+    assert.equal(channels.hasCrmChannel(manager), true, `${manager}: a national, regional, district or acting district manager seat is a CRM channel`);
+  }
+  assert.equal(channels.hasCrmChannel("B-1"), false, "the CEO seat is not a CRM channel — scope.ts never treats it as a district");
+  assert.equal(channels.hasCrmChannel("B-900"), false, "no seat, no CRM channel — whatever iReports360 username the employee row still carries");
+  assert.equal(channels.hasCrmChannel(""), false, "an empty id holds nothing");
+  assert.equal(channels.hasAttendanceChannel("B-900"), true, "the attendance channel is still the active device mapping, matched in any casing");
+  assert.equal(channels.hasAttendanceChannel("B-201"), false, "a seat is never an attendance device");
+  const CHANNELS_SOURCE = readSource("src/lib/company-activity-report/channels.ts");
+  assert.match(CHANNELS_SOURCE, /loadPhoenixCrmOrg()/, "the seats come from the one organogram reader every Phoenix CRM scope decision uses");
+  assert.doesNotMatch(CHANNELS_SOURCE, /loadCrmIdentityMaps|crmUsername|crm_username/, "the CRM channel never reads the iReports360 identity again");
+
+  // ── (4c) Every label the reader sees names a Phoenix CRM seat, and none names iReports360. ──
+  const LABEL_SOURCES = {
+    export: readSource("src/lib/company-activity-report/export.ts"),
+    table: readSource("src/components/company-activity-report/company-activity-report-table.tsx"),
+    dayDetail: readSource("src/components/company-activity-report/employee-day-detail-view.tsx"),
+  };
+  for (const [name, source] of Object.entries(LABEL_SOURCES)) {
+    assert.doesNotMatch(source, /iReports360/, `${name}: no label names iReports360 — field work is Phoenix CRM's now`);
+    assert.doesNotMatch(source, /no CRM id|CRM identity/, `${name}: the missing channel is a Phoenix CRM seat, never a "CRM id"`);
+    assert.match(source, /Phoenix CRM seat/, `${name}: says "Phoenix CRM seat" where the channel is missing`);
+  }
 
   const noEntry = reconcileCompanyActivityDay(dayInputs());
   assert.equal(noEntry.outcome, "no_entry", "a fully-visible employee with nothing recorded is a genuine gap, not no_signal");

@@ -2,7 +2,7 @@
  * New hire mailboxes — opening the task and telling whoever creates mailboxes.
  *
  * The I/O shell around ./messages.ts. ONE entry point for both employee-create paths (the manual
- * add and the confirmed import), mirroring crm/account-setup-notify.ts, so neither can open a task
+ * add and the confirmed import), as the retired crm/account-setup-notify.ts was, so neither can open a task
  * without announcing it.
  *
  * The audience is the admin-editable `new_hire_mailbox_alert` role policy — Super Admin alone by

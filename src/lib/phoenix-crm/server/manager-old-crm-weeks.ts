@@ -10,8 +10,14 @@
  *
  * It reads for the real world only: the test world holds no vendor data, and a test login's reps are
  * Phoenix reps by construction.
+ *
+ * ARCHIVE ONLY since iReports360 was retired (6 Nov 2026): a week starting on or after the retirement day
+ * is never read from the old CRM — nothing is filed there any more, and every rep plans in Phoenix. An
+ * earlier week still shows the plan the rep filed, exactly as it was (owner, 7 Oct: "they find everything
+ * they did as it is").
  */
 
+import { getCrmCutoverSetting, vendorSyncRetiredOn } from "@/lib/crm/cutover";
 import { addDaysIso } from "@/lib/crm/dates";
 import { getAgentsWeekPlanEntries, type AgentWeekPlanEntry } from "@/lib/crm/plan-board";
 import { logWarning } from "@/lib/observability/log";
@@ -73,9 +79,24 @@ async function customersOfContacts(seatIds: ReadonlyArray<string>, contactIds: R
  * iReports360 that week is absent from the answer. A failed read answers an empty map and is logged: the
  * board still opens with his Phoenix reps, and the rep reads "No plan" as he did before this existed.
  */
+/** Pure: whether a week starting `weekStart` began before the old CRM was retired (no retirement: always). */
+export function oldCrmWeekIsArchive(weekStart: string, retiredOn: string | null): boolean {
+  return retiredOn == null || weekStart.slice(0, 10) < retiredOn;
+}
+
+/** The retirement read fails open — the vendor tables hold nothing after it, so an extra read finds nothing. */
+async function isOldCrmArchiveWeek(weekStart: string): Promise<boolean> {
+  try {
+    return oldCrmWeekIsArchive(weekStart, vendorSyncRetiredOn(await getCrmCutoverSetting()));
+  } catch {
+    return true;
+  }
+}
+
 export async function loadOldCrmRepWeeks(input: { reps: ReadonlyArray<OldCrmRep>; weekStart: string; isTest: boolean }): Promise<Map<string, OldCrmRepWeek>> {
   const weeks = new Map<string, OldCrmRepWeek>();
   if (input.isTest || input.reps.length === 0) return weeks;
+  if (!(await isOldCrmArchiveWeek(input.weekStart))) return weeks;
   try {
     const seatOfHr = new Map(input.reps.map((rep) => [rep.hrId.trim().toLowerCase(), rep.seatId]));
     const entries = await getAgentsWeekPlanEntries(

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { MapPinned, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 
 import { CrmMasterTable } from "@/components/crm/crm-master-table";
 import { CrmSyncStatusPanel } from "@/components/crm/crm-sync-status-panel";
@@ -58,9 +58,10 @@ function viewParam(value: string | string[] | undefined): "unmapped" | "recovere
 
 // Deeper, same-data tools over the CRM mirror — one click from the master table. Unmapped-identity
 // resolution and the recovered-chains audit live on this same page now (see the tab bar below), not
-// as separate routes — only the two analyses that need their own dedicated page stay linked out.
+// as separate routes — only the analysis that needs its own dedicated page stays linked out. CRM
+// Integrity (/admin/crm-integrity) left this list on 2026-11-07: it compared iReports360 visits with
+// iReports360 check-ins, and the vendor was retired on 6 Nov 2026.
 const crmTools = [
-  { description: "Visits ↔ GPS check-in correlation, save-lag & impossible-travel flags", href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity" },
   { description: "Data-integrity checks for double-visit records", href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Data Integrity" },
 ] as const;
 
@@ -88,19 +89,26 @@ export default async function CrmHubPage({
   let derivedView: ReactNode = null;
 
   if (view === "account_setup") {
-    // Where the "an employee was added" notice lands (src/lib/crm/account-setup-notify.ts). The
-    // hrId it carries only spotlights a card — it never filters the queue, so arriving from an
+    // Where the "an employee was added" notice landed. That notice and its reminder were retired on
+    // 2026-11-07 with the vendor CRM, so no new task is opened; old notices still link here. The
+    // hrId one carries only spotlights a card — it never filters the queue, so arriving from an
     // old notice still shows everyone else who is waiting.
     activeTab = "account_setup";
     const [queue, syncRuns] = await Promise.all([getCrmAccountSetupQueue(), getLatestVisitsSyncRuns()]);
     latestSyncRuns = syncRuns;
     derivedView = (
-      <CrmAccountSetupPanel
-        pending={queue.pending}
-        recentlyResolved={queue.recentlyResolved}
-        schemaMissing={queue.schemaMissing}
-        spotlightHrId={stringParam(params.hrId)}
-      />
+      <div className="space-y-3">
+        <p className="border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold leading-5 text-sky-800">
+          iReports360 was retired on 6 Nov 2026, so no new hire needs an account there and no new task opens. These
+          are the tasks from before; a new hire&apos;s field work is recorded on a Phoenix CRM seat.
+        </p>
+        <CrmAccountSetupPanel
+          pending={queue.pending}
+          recentlyResolved={queue.recentlyResolved}
+          schemaMissing={queue.schemaMissing}
+          spotlightHrId={stringParam(params.hrId)}
+        />
+      </div>
     );
   } else if (view === "unmapped") {
     activeTab = "unmapped";

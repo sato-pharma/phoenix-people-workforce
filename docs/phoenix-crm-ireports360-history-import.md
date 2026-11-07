@@ -248,6 +248,45 @@ node --env-file-if-exists=.env.production.rls.local --experimental-strip-types s
 - For three reps on different teams, September shows in the Visit Report and on the customer timeline, and
   the List's old-system line no longer counts those visits.
 
+## The after-start copy (2026-11-07)
+
+iReports360 was retired on 6 Nov 2026 (`crm_cutover.vendor_sync_retired_at`). From that day every territory
+counts from Phoenix CRM (`20261106235920`). Before it, some reps went on logging in the old app after their
+team had started on Phoenix. Those days still count, read from the stored iReports360 rows, because the
+combined view keeps a vendor day only when the rep has no Phoenix entry that day. Phoenix CRM's own screens
+(Visit Report, the customer timeline, the calendar) did not show them.
+
+Asked what to do with them, the owner chose "Keep + show in Phoenix" (6 Nov 2026). `--after-start` copies them:
+
+- **What it copies:** a current rep's iReports360 visit dated from his team's start to the day before the
+  retirement, on a day with no Phoenix entry. A day with a Phoenix entry belongs to Phoenix and is never
+  copied.
+- **What is unchanged:** every other rule above, line for line, in the same function
+  (`p_after_start`, `20261107001714`).
+- **Archive note:** an Archive doctor it adds says "Visited in the old system after this team started on
+  Phoenix, on a day with no Phoenix entry".
+- **No count moves.** The copy carries `imported_from_ireports360_at`, so `phoenix_crm_countable_visits` and
+  the entry-days trigger skip it. `crm_visits_unified` therefore keeps serving those days from iReports360,
+  exactly as before.
+- **Where the records go:** `F:\PHX backup\phoenix-crm-ireports360-after-start-20261107\`.
+
+```powershell
+node --env-file-if-exists=.env.production.rls.local --experimental-strip-types scripts/phoenix-crm-import-ireports360-history.ts --after-start
+```
+
+Every row a run writes carries that run's own `imported_from_ireports360_at`, and `applied-<Cairo time>.json`
+names it. To remove only this copy, change the rollback below to
+`imported_from_ireports360_at >= '<that run's start>'`.
+
+**Run on production, 7 Nov 2026 at 00:27 Cairo** (`applied-2026-11-07-00-27-40.json`):
+
+- **Written:** 23 seats, 3,067 visits of 3,067 planned, dated 10 Oct to 4 Nov. Also 15 Archive doctors and
+  1 campaign holder. No seat was stopped.
+- **Unchanged, read before and after:** `crm_visits_unified` for September, October and November (row
+  counts and row hashes), the entry-days cache (1,241 days, same hash), `phoenix_crm_countable_visits`
+  (10,736) and the notification outbox (5,153).
+- **Its rows are** `imported_from_ireports360_at >= '2026-11-06 22:00+00'`.
+
 ## Rollback
 
 Production has no PITR. The copy is removed by its marks, never by a restore:

@@ -168,6 +168,8 @@ export async function getOutstationClaimValidation(
     // whole span: the owner's question is about the day the expense was captured.
     const workload = await getRepTripVisitWorkload({
       hrId: request.employeeHrId,
+      // The Super Admin's claim check (admin route) — Phoenix CRM positions are check-ins here.
+      includePhoenixCheckins: true,
       tripEndDate: tripDay,
       tripStartDate: tripDay,
     });

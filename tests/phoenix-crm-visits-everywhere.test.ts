@@ -674,6 +674,20 @@ function startedSeats(starts: readonly Start[], seats: readonly SeatRow[]) {
   );
 }
 
+/**
+ * phoenix_crm_counted_seat_windows, transcribed (owner, 6 Nov 2026: "ANY SINGLE SOURCE OF FIELD WORK IS NOW
+ * THE PHOENIX CRM", and "Count all teams from 6 Nov"): a started territory's days that fall before the day
+ * iReports360 was retired, and EVERY territory from that day on, open-ended. With no retirement day it is
+ * phoenix_crm_started_team_seats exactly.
+ */
+function countedSeats(starts: readonly Start[], seats: readonly SeatRow[], retiredOn: string | null) {
+  const started = startedSeats(starts, seats)
+    .filter((row) => retiredOn === null || row.startsOn < retiredOn)
+    .map((row) => ({ ...row, stopsOn: retiredOn !== null && (row.stopsOn === null || row.stopsOn > retiredOn) ? retiredOn : row.stopsOn }));
+  const every = retiredOn === null ? [] : seats.filter((row) => row.tier === "REP").map((row) => ({ seatId: row.seatId, startsOn: retiredOn, stopsOn: null }));
+  return [...started, ...every];
+}
+
 type Served = { system: "ireports360" | "phoenix"; who: string; day: string; double?: string | null };
 
 /**
@@ -692,8 +706,11 @@ function serve(input: {
   vendor: ReadonlyArray<{ hrId: string | null; crmId: number | null; day: string }>;
   phoenix: ReadonlyArray<{ seatId: string; rep: string | null; manager: string | null; day: string; isTest?: boolean }>;
   activities: ReadonlyArray<{ seatId: string; rep: string; day: string; type: string; isTest?: boolean }>;
+  /** crm_cutover.vendor_sync_retired_at on its Cairo day; null while iReports360 is still live. */
+  retiredOn?: string | null;
 }): Served[] {
-  const seats = startedSeats(input.starts, input.seats);
+  const retiredOn = input.retiredOn ?? null;
+  const seats = countedSeats(input.starts, input.seats, retiredOn);
   const onSeat = (seatId: string, day: string) => seats.some((row) => row.seatId === seatId && within(day, row.startsOn, row.stopsOn));
   const kinds = ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel", "group_meeting", "rtd", "interviews"];
   const countedVisits = input.phoenix.filter((row) => !row.isTest && onSeat(row.seatId, row.day));
@@ -704,6 +721,8 @@ function serve(input: {
   ];
   const crmIdOf = (hrKey: string): number | null => input.crmIds[hrKey.toUpperCase()] ?? null;
   const vendor = input.vendor
+    // The archive ends the day before iReports360 was retired.
+    .filter((row) => retiredOn === null || row.day < retiredOn)
     .filter((row) => {
       const key = row.hrId?.trim().toLowerCase() ?? "";
       if (key) return !entryDays.some((entry) => entry.hrKey === key && entry.day === row.day);
@@ -748,14 +767,17 @@ function runNoDoubleCountTests(code: string): void {
   const firstDay =
     "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date) from public.phoenix_crm_team_starts t )";
   const cutover = "x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date)";
+  // THE ARCHIVE ENDS THE DAY BEFORE iREPORTS360 WAS RETIRED (owner, 6 Nov 2026), read live on its Cairo day.
+  const retired =
+    "x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date)";
   assert.equal(
     vendor.split("from public.ireports360_visits x").length - 1,
     1,
     "the vendor table is scanned ONCE, not once per side of the split",
   );
   assert.ok(
-    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ( x.visit_date < ${firstDay} or ( not exists`),
-    "one scan, the cutover bound on it, and the first-day bound as the first arm of the choice",
+    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ${retired} and ( x.visit_date < ${firstDay} or ( not exists`),
+    "one scan, the cutover bound and the retirement bound on it, and the first-day bound as the first arm of the choice",
   );
   assert.ok(
     vendor.includes(
@@ -815,28 +837,58 @@ function runNoDoubleCountTests(code: string): void {
   );
   assert.ok(
     flat(visitBranch).includes(
-      "join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)",
+      "join public.phoenix_crm_counted_seat_windows() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)",
     ),
-    "a Phoenix visit is served only on a started team's territory, for the days of its start",
+    "a Phoenix visit is served on a counted territory, for the days it counts",
   );
+  // WHICH TERRITORY COUNTS ON WHICH DAY (owner, 6 Nov 2026: "Count all teams from 6 Nov"): a started team's
+  // territory from its start, cut at the day iReports360 was retired, and EVERY territory from that day on.
+  // The two windows meet at the retirement day and never overlap, so no visit is served twice.
+  const seatWindows = flat(functionSql(VISITS_DOOR, "phoenix_crm_counted_seat_windows"));
+  for (const clause of [
+    "returns table(seat_id text, starts_on date, stops_on date) language sql stable security definer rows 200 set search_path to 'public'",
+    "with retired as ( select (select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id) as on_day )",
+    "select t.seat_id, t.starts_on, least(t.stops_on, r.on_day) from public.phoenix_crm_started_team_seats() t cross join retired r where t.starts_on < coalesce(r.on_day, 'infinity'::date)",
+    "union all select s.seat_id, r.on_day, null::date from au.seats s cross join retired r where r.on_day is not null and s.seat_tier = 'REP'",
+  ]) {
+    assert.ok(seatWindows.includes(clause), `the counted territories hold: ${clause}`);
+  }
+  assert.ok(!seatWindows.includes("day_activities_from"), "a VISIT never counts before the start — only the recorded day activity does");
+  for (const fn of ["phoenix_crm_counted_seat_windows", "phoenix_crm_counted_day_activity_windows"]) {
+    assert.match(VISITS_DOOR, new RegExp(`revoke execute on function public\\.${fn}\\(\\) from public, anon, authenticated;`), `${fn} is not callable with the browser's key`);
+    assert.match(VISITS_DOOR, new RegExp(`grant execute on function public\\.${fn}\\(\\) to postgres, service_role;`), `${fn} is callable by the door's two readers`);
+  }
   assert.ok(
     flat(activityBranch).includes(
-      "join ( select t.seat_id, t.team_seat_id, t.starts_on, t.stops_on from public.phoenix_crm_started_team_seats() t union " +
-        "select s.team_seat_id, s.team_seat_id, s.starts_on, s.stops_on from public.phoenix_crm_team_starts s ) team on team.seat_id = a.seat_id",
+      "join public.phoenix_crm_counted_day_activity_windows() team on team.seat_id = a.seat_id",
     ),
-    "and so is a day activity — on a territory, or on the team's own seat where a district manager's day sits",
+    "and so is a day activity — on a counted territory, or on the team's own seat where a district manager's day sits",
   );
+  const activityWindows = flat(functionSql(VISITS_DOOR, "phoenix_crm_counted_day_activity_windows"));
+  for (const clause of [
+    "returns table(seat_id text, counted_from date, stops_on date) language sql stable security definer rows 240 set search_path to 'public'",
+    "started as ( select t.seat_id, t.team_seat_id, t.starts_on, t.stops_on from public.phoenix_crm_started_team_seats() t union " +
+      "select s.team_seat_id, s.team_seat_id, s.starts_on, s.stops_on from public.phoenix_crm_team_starts s )",
+    "select k.seat_id, k.counted_from, least(k.stops_on, r.on_day) from counted k cross join retired r where k.counted_from < coalesce(r.on_day, 'infinity'::date)",
+    "union all select s.seat_id, r.on_day, null::date from au.seats s cross join retired r where r.on_day is not null and s.seat_tier in ('REP', 'DM', 'ACTING_DM')",
+  ]) {
+    assert.ok(activityWindows.includes(clause), `the counted day-activity seats hold: ${clause}`);
+  }
   // Owner, 2026-10-10: Cairo and Giza's go-live training of 7 Oct counts although their start is 10 Oct.
   // The gate may only move EARLIER than the start (least), never later, and never past the stop.
   assert.ok(
     flat(activityBranch).includes(
-      "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on)) and (team.stops_on is null or a.activity_date < team.stops_on)",
+      "a.activity_date >= team.counted_from and (team.stops_on is null or a.activity_date < team.stops_on)",
     ),
-    "a day activity counts from the team's start, or from its day_activities_from when that is earlier",
+    "a day activity counts from its seat's counted_from, within its window",
   );
   assert.ok(
-    flat(activityBranch).includes(
-      "left join public.phoenix_crm_team_starts run on run.team_seat_id = team.team_seat_id and run.starts_on = team.starts_on and run.stops_on is not distinct from team.stops_on",
+    activityWindows.includes("least(w.starts_on, coalesce(run.day_activities_from, w.starts_on)) as counted_from"),
+    "counted_from is the team's start, or its day_activities_from when that is earlier",
+  );
+  assert.ok(
+    activityWindows.includes(
+      "left join public.phoenix_crm_team_starts run on run.team_seat_id = w.team_seat_id and run.starts_on = w.starts_on and run.stops_on is not distinct from w.stops_on",
     ),
     "the day_activities_from is read from the SAME start run the territory came from",
   );
@@ -869,7 +921,7 @@ function runNoDoubleCountTests(code: string): void {
   // Team T started Saturday 3 Oct, stopped from Saturday 24 Oct. R1: A throughout; R2: B until Tue
   // 6 Oct, then C. D holds the team's own seat (its district manager). E is on a team never started.
   // F sits on R3 from 10 Oct; his vendor rows carry no hr id, only his CRM id.
-  const served = serve({
+  const fixture: Parameters<typeof serve>[0] = {
     starts: [{ teamSeatId: "T", startsOn: "2026-10-03", stopsOn: "2026-10-24" }],
     seats: [
       { seatId: "R1", parentSeatId: "T", tier: "REP" },
@@ -924,7 +976,8 @@ function runNoDoubleCountTests(code: string): void {
       { seatId: "R1", rep: "A-1", day: "2026-10-07", type: "training", isTest: true },
       { seatId: "R1", rep: "A-1", day: "2026-10-08", type: "something_new" },
     ],
-  });
+  };
+  const served = serve(fixture);
   const systemsOn = (who: string, day: string) =>
     served
       .filter((row) => row.who.toLowerCase() === who.toLowerCase() && row.day === day)
@@ -956,6 +1009,34 @@ function runNoDoubleCountTests(code: string): void {
   assert.deepEqual(systemsOn("A-1", "2026-10-06"), ["phoenix"], "a recorded training day is a worked day from Phoenix (and, as an entry, wins that day)");
   assert.deepEqual(systemsOn("A-1", "2026-10-07"), [], "never a test one");
   assert.deepEqual(systemsOn("A-1", "2026-10-08"), [], "and never a kind the view has not been given a worked-day code for");
+
+  // iREPORTS360 RETIRED (owner, 6 Nov 2026): from that day every territory is Phoenix's, whatever its team's
+  // start or stop, and no iReports360 row is served. Every day before it is answered exactly as above.
+  const retiredOn = "2026-11-06";
+  const afterRetirement = serve({
+    ...fixture,
+    retiredOn,
+    vendor: [...fixture.vendor, { hrId: "A-1", crmId: 1001, day: "2026-11-06" }, { hrId: "E-5", crmId: 5005, day: "2026-11-08" }],
+    phoenix: [
+      ...fixture.phoenix,
+      { seatId: "R1", rep: "A-1", manager: null, day: "2026-11-07" },
+      { seatId: "R9", rep: "E-5", manager: null, day: "2026-11-08" },
+    ],
+  });
+  const systemsAfter = (who: string, day: string) =>
+    afterRetirement
+      .filter((row) => row.who.toLowerCase() === who.toLowerCase() && row.day === day)
+      .map((row) => row.system)
+      .sort();
+  const servedKey = (row: Served) => `${row.system}|${row.who}|${row.day}|${row.double ?? ""}`;
+  assert.deepEqual(
+    afterRetirement.filter((row) => row.day < retiredOn).map(servedKey).sort(),
+    served.map(servedKey).sort(),
+    "every day before the retirement is served exactly as it was — the archive is untouched",
+  );
+  assert.deepEqual(systemsAfter("A-1", "2026-11-06"), [], "no iReports360 row is served from the retirement day");
+  assert.deepEqual(systemsAfter("A-1", "2026-11-07"), ["phoenix"], "a Stop no longer hides a territory once iReports360 is retired");
+  assert.deepEqual(systemsAfter("E-5", "2026-11-08"), ["phoenix"], "a team never started counts from the retirement day — and only Phoenix speaks for it");
 
   // One Phoenix row per visit: the people it joins are one row per person, whatever the casing.
   // `partner1` and `partner2` since 2026-10-07 — the door carries BOTH people on a chain visit, and
@@ -1211,9 +1292,10 @@ function runRowShapeTests(code: string): void {
   }
   assert.ok(
     flat(vendorBranch).includes(
-      "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) and ( x.visit_date < (",
+      "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) " +
+        "and x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date) and ( x.visit_date < (",
     ),
-    "the iReports360 branch keeps its source and its cutover clause on its one scan (20261024005000)",
+    "the iReports360 branch keeps its source, its cutover clause and the retirement bound on its one scan",
   );
 
   const expected: Record<string, string> = {
@@ -1277,7 +1359,7 @@ function runRowShapeTests(code: string): void {
   const activity = flat(activityBranch);
   assert.ok(activity.includes("from public.phoenix_crm_day_activities a"), "the recorded day activities — never a planned one");
   assert.ok(activity.endsWith("and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd', 'interviews');"), "real only, of a kind the view names");
-  assert.ok(activity.includes("where not a.is_test and a.activity_date >= least("), "real only — never a test account's day");
+  assert.ok(activity.includes("where not a.is_test and a.activity_date >= team.counted_from"), "real only — never a test account's day");
   assert.ok(
     activity.includes(`case a.activity_type ${ACTIVITY_CODES.map((entry) => `when '${entry.kind}' then ${entry.code}`).join(" ")} end`),
     "each kind under its iReports360 code",
@@ -1669,8 +1751,10 @@ const INTEGRITY_COLUMNS = [
 const CHECKIN_COLUMNS_CARRIED = new Set(["captured_at", "created_at", "customer_id", "id", "is_test", "lat", "lon", "manager_hr_id", "rep_hr_id", "seat_id", "visit_date"]);
 
 /** Readers that may ask for Phoenix check-ins: each is a screen no rep can reach (phoenix-team-starts.ts). */
+// The CRM Integrity page's service (src/lib/crm-integrity/service.ts) was the first reader here; it was
+// deleted with that page on 2026-11-07, once iReports360 was retired and there was no vendor visit left
+// to match against a check-in.
 const PHOENIX_CHECKIN_READERS = [
-  "src/lib/crm-integrity/service.ts",
   "src/lib/crm/brick-coverage.ts",
   "src/lib/crm/master.ts",
   "src/lib/crm/rep-day.ts",
@@ -1681,12 +1765,21 @@ const PHOENIX_CHECKIN_READERS = [
   "src/lib/probation/intelligence/sfe-evidence.ts",
 ];
 
+/**
+ * Readers BOTH a rep and an approver reach: they ask for Phoenix check-ins only through a flag the caller
+ * sets when the viewer is looking at someone else's record, never the person's own (owner, 2026-10-02:
+ * "Never on the rep's own screens"; 6 Nov 2026: every territory counts from Phoenix CRM, so a reader left
+ * on iReports360 check-ins alone shows none at all).
+ */
+const VIEWER_GATED_CHECKIN_READERS: ReadonlyArray<{ expression: string; file: string }> = [
+  { expression: "includePhoenixVisits: input.includePhoenixCheckins === true,", file: "src/lib/crm/visit-workload.ts" },
+  { expression: "includePhoenixVisits: options.includePhoenixCheckins === true,", file: "src/lib/employee-360/service.ts" },
+];
+
 /** Readers a rep CAN reach: they read iReports360 check-ins only. */
 const REP_REACHABLE_CHECKIN_READERS = [
   "src/lib/early-birds/collect.ts",
-  "src/lib/employee-360/service.ts",
   "src/lib/employee-portal/my-crm-visits.ts",
-  "src/lib/crm/visit-workload.ts",
   "src/lib/crm/phoenix-kpi-data.ts",
   "src/lib/pharmacy-search/nearby.ts",
   "src/lib/crm/call-rate-service.ts",
@@ -1733,6 +1826,8 @@ function runCheckinDoorTests(plans: string): void {
   // A check-in before the first day's midnight "UTC" (the vendor's Cairo wall clock) is on a day before
   // it, where no rep has an entry day: that bound is now the first ARM of one scan, not a second run.
   const cutover = "x.check_date < coalesce( (select k.cutover_date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz )";
+  const retired =
+    "x.check_date < coalesce( (select (k.vendor_sync_retired_at at time zone 'Africa/Cairo')::date::timestamp at time zone 'UTC' from public.crm_cutover k where k.id), 'infinity'::timestamptz )";
   const firstDay =
     "( select coalesce(min(least(t.starts_on, coalesce(t.day_activities_from, t.starts_on))), 'infinity'::date)::timestamp at time zone 'UTC' from public.phoenix_crm_team_starts t )";
   assert.equal(
@@ -1741,8 +1836,8 @@ function runCheckinDoorTests(plans: string): void {
     "the vendor table is scanned ONCE, not once per side of the split",
   );
   assert.ok(
-    vendor.includes(`from ( select x.* from public.ireports360_checkins x where ${cutover} and ( x.check_date < ${firstDay} or ( not exists`),
-    "one scan, its cutover clause as it was, and the first-day bound as the first arm of the choice",
+    vendor.includes(`from ( select x.* from public.ireports360_checkins x where ${cutover} and ${retired} and ( x.check_date < ${firstDay} or ( not exists`),
+    "one scan, its cutover clause as it was, the retirement bound, and the first-day bound as the first arm of the choice",
   );
   assert.ok(
     vendor.includes(
@@ -1784,7 +1879,7 @@ function runCheckinDoorTests(plans: string): void {
     assert.equal(item.get(column), expression, `a Phoenix check-in's ${column} is ${expression}`);
   }
   const phoenix = flat(phoenixBranch);
-  assert.ok(phoenix.includes("join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)"), "only a started team's visits, within its start");
+  assert.ok(phoenix.includes("join public.phoenix_crm_counted_seat_windows() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)"), "only a counted territory's visits, within its window — the visit door's own windows");
   assert.ok(phoenix.endsWith("where not p.is_test and p.lat is not null and p.lon is not null;"), "real only, and only a visit whose position was read");
   const columnsRead = new Set([...phoenixBranch.matchAll(/\bp\.([a-z_]+)/g)].map((match) => match[1]));
   for (const column of columnsRead) {
@@ -1809,6 +1904,42 @@ function runCheckinDoorTests(plans: string): void {
   for (const file of REP_REACHABLE_CHECKIN_READERS) {
     assert.doesNotMatch(stripComments(read(file)), /includePhoenixVisits/, `${file} reaches a rep, so it reads iReports360 check-ins only`);
   }
+  for (const { expression, file } of VIEWER_GATED_CHECKIN_READERS) {
+    const source = stripComments(read(file));
+    assert.equal(source.split("includePhoenixVisits").length - 1, 1, `${file} asks for Phoenix check-ins in one place`);
+    assert.ok(source.includes(expression), `${file} asks only when its caller says so, never on its own`);
+  }
+  // The trip workload's callers: the employee's own trip panel stays blind; an approver looking at someone
+  // else's trip, and the Super Admin's claim check, see the positions.
+  const workloadRoute = stripComments(read("app/api/outstation/visit-workload/route.ts"));
+  assert.ok(
+    workloadRoute.includes("const viewingSomeoneElse = Boolean(requestedKey) && !ownKeys.includes(requestedKey as string);") &&
+      workloadRoute.includes("includePhoenixCheckins: viewingSomeoneElse,"),
+    "the trip panel's route gives Phoenix positions only to a viewer looking at someone else's trip",
+  );
+  // Employee 360: the GPS module reads Phoenix positions only for a reader whose row sight on the subject is
+  // not "none" — never the subject himself (phoenixRowSight), never a role with no sight, never no reader.
+  const e360 = stripComments(read("src/lib/employee-360/service.ts"));
+  assert.ok(
+    e360.includes("if (!viewer || !viewer.hrId) return false;") &&
+      e360.includes('return phoenixRowSight(phoenixDetailViewer(viewer.role, viewer.hrId), subjectHrId) !== "none";'),
+    "Employee 360 gives Phoenix positions only to a reader who is not the subject and has sight",
+  );
+  assert.ok(
+    e360.includes("fetchCheckinRows(hrId, window, { includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, viewer) })"),
+    "the comparison period asks the same question",
+  );
+  assert.ok(
+    stripComments(read("src/lib/employee-360/deep-service.ts")).includes(
+      "includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, { hrId: viewerHrId, role: viewerRole }),",
+    ),
+    "and so does the profile, with the reader the page names",
+  );
+  const askingOutright = sourceFiles("src")
+    .concat(sourceFiles("app"))
+    .filter((file) => stripComments(read(file)).includes("includePhoenixCheckins: true"))
+    .sort();
+  assert.deepEqual(askingOutright, ["src/lib/outstation/expense-claim-validation.ts"], "and only the Super Admin's claim check asks for them outright");
   // A reader of the view outside the door reads vendor rows only, except the Super Admin's CRM Master.
   const direct = sourceFiles("src")
     .concat(sourceFiles("app"))
@@ -2278,4 +2409,34 @@ export function runPhoenixCrmVisitsEverywhereTests(): void {
   runHygieneTests(code);
   runContactIdAcrossDoorsTests();
   runPortalKeepsNoneOfTheFieldSetTests();
+  runScreensNameTheSourceTests();
+}
+
+/**
+ * THE SCREENS NAME THE SOURCE THEY READ (7 Nov 2026). iReports360 was retired on 6 Nov and every field-visit
+ * screen reads Phoenix CRM, with the iReports360 archive before each team's start. A screen that still says
+ * "Live iReports360 mirror", "auto-synced 3x daily" or "pulled live from iReports360" tells the reader the
+ * figures come from a system nothing writes any more. Pinned on comment-stripped source.
+ */
+function runScreensNameTheSourceTests(): void {
+  const surfaces: Record<string, string> = {
+    "src/lib/outstation/review-document.ts": "Phoenix CRM visits &mdash; every field visit",
+    "src/lib/private-calendar/field-visits.ts": "Logged field visits from Phoenix CRM",
+    "src/lib/attendance/fingerprint-report-export.ts": "Phoenix CRM (the iReports360 archive before each team's start)",
+    "src/components/field-activity/field-activity-view.tsx": "with no separate GPS check-in to match",
+    "src/components/field-workforce-compliance/field-workforce-visits-view.tsx": "read live from Phoenix CRM",
+    "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": "Always computed live from Phoenix CRM visits",
+    "src/components/double-visit-analytics/double-visit-analytics-workspace.tsx": "Phoenix CRM, with the iReports360 archive before each team&apos;s start",
+    "src/components/vacation/company-vacation-report-table.tsx": "CRM (iReports360, before Phoenix CRM)",
+    "src/components/crm/crm-master-table.tsx": "up to its retirement on 6 Nov 2026",
+  };
+  const retired = [/Live iReports360/i, /auto-synced 3x daily/i, /pulled live from iReports360/i, /live iReports360 visit mirror/i, /iReports360 visits mirror/i, /no iReports360 check-in to match/i, /pulled from CRM\)/];
+  for (const [file, now] of Object.entries(surfaces)) {
+    const text = stripComments(readFileSync(file, "utf8"));
+    assert.ok(text.includes(now), `${file} names Phoenix CRM as its source`);
+    for (const stale of retired) assert.equal(stale.test(text), false, `${file} never says ${stale.source} — iReports360 was retired on 6 Nov 2026`);
+  }
+  const sidebar = readFileSync("src/lib/employee-portal/sidebar-rows.ts", "utf8");
+  assert.equal(sidebar.includes('"iReports 360"'), false, "the portal sidebar has no iReports 360 section");
+  assert.ok(sidebar.includes('section: "Field Work"'), "its rows sit under Field Work");
 }

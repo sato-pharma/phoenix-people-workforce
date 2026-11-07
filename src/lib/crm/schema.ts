@@ -7,7 +7,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 
 /** True when an error is really "the iReports360 mirror tables don't exist yet". */
 export function isCrmSchemaMissingError(error: unknown): boolean {
@@ -22,25 +22,19 @@ export function isCrmSchemaMissingError(error: unknown): boolean {
   );
 }
 
-/** Cheap head probe: is the visits mirror queryable?
+/** Cheap head probe: is the visits door queryable?
+ *
+ * THE DOOR, NOT THE VENDOR TABLE (7 Nov 2026): iReports360 was retired on 6 Nov and every visits read goes
+ * through `crm_visits_unified` — the iReports360 archive before each team's start, Phoenix CRM after it. So
+ * the probe asks the door the readers actually read (one HEAD row, about 1 ms on production), not the
+ * vendor's own table, which answers "ready" even when the door is gone.
  *
  * NO COUNT (2026-10-01, "slow to transfer between page and page"): it used to ask `count: "exact"`,
  * which made every probe a COUNT(*) of the whole mirror — and nothing here reads the number, only
  * whether the request errored. A one-row HEAD errors, or does not, exactly as the counted one did. */
 export async function isCrmVisitsSchemaReady(): Promise<boolean> {
   const { error } = await getSupabaseAdmin()
-    .from(CRM_VISITS_TABLE)
-    .select("id", { head: true })
-    .limit(1);
-  return !isCrmSchemaMissingError(error);
-}
-
-/** Cheap head probe: is the check-ins mirror queryable? (CRM Integrity correlates
- * visits + check-ins, so it gates on the check-ins table specifically.) No COUNT, for the same
- * reason as the visits probe above. */
-export async function isCrmCheckinsSchemaReady(): Promise<boolean> {
-  const { error } = await getSupabaseAdmin()
-    .from(CRM_CHECKINS_TABLE)
+    .from(CRM_VISITS_UNIFIED_VIEW)
     .select("id", { head: true })
     .limit(1);
   return !isCrmSchemaMissingError(error);

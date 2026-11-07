@@ -85,15 +85,9 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
     roles: ["HR Operations", "Super Admin", "SFE Manager"],
     enabled: true,
   },
-  // 20th key, added 2026-09-07. `employees.crm_username` and `employees.crm_id` are how every CRM
-  // read resolves a visit back to a person, both are optional on the employee form, and nothing
-  // used to say so — a new rep saved without them files every day of field work under an unmapped
-  // agent id, with no error anywhere and no empty state. Owner instruction: tell the SFE Manager
-  // by email and in-app when an employee is added, and link him to the screen that asks for the
-  // two values. He named ONE recipient, and one is the point: an audience of two on a per-hire
-  // notice is how both learn to assume the other one did it. Extended 2026-09-29 at the owner's
-  // instruction to copy HR Operations, so the same notice reaches HR alongside the SFE Manager.
-  crm_account_setup_alert: { roles: ["SFE Manager", "HR Operations"], enabled: true },
+  // The 20th key, `crm_account_setup_alert` (added 2026-09-07: tell the SFE Manager and HR Operations
+  // to give each new field hire an iReports360 account), was RETIRED 2026-11-07 with the vendor CRM —
+  // nobody can be given an iReports360 account any more. Asserted gone below.
   // 22nd key, added 2026-09-18. Owner instruction: when an employee is added, their Turbify
   // mailbox is made and its app password lands in Phoenix, so My email works on day one. Turbify
   // has no API for either, so one person does the Turbify half; he named himself as that person.
@@ -117,13 +111,18 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
 
 export function runNotificationRoleRecipientsTests() {
   // 24 since 6 Nov 2026: ireports360_sync_notify left with the retired vendor sync
-  // (20261106043000_notification_role_policies_retire_ireports360_sync_key.sql).
-  assert.equal(notificationRoleKeys.length, 24, "expected exactly the 24 confirmed notification-role keys");
+  // (20261106043000_notification_role_policies_retire_ireports360_sync_key.sql). 23 since 7 Nov 2026:
+  // crm_account_setup_alert left with the retired new-hire iReports360 account notice and its reminder.
+  assert.equal(notificationRoleKeys.length, 23, "expected exactly the 23 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 24 keys",
+    "notificationRoleKeys set does not match the confirmed 23 keys",
   );
+  for (const retired of ["ireports360_sync_notify", "crm_account_setup_alert"]) {
+    assert.ok(!(notificationRoleKeys as readonly string[]).includes(retired), `"${retired}" was retired with the vendor CRM and must not come back`);
+    assert.ok(!(retired in DEFAULT_NOTIFICATION_ROLE_POLICIES), `"${retired}" must have no default policy either`);
+  }
 
   for (const key of notificationRoleKeys) {
     const policy = DEFAULT_NOTIFICATION_ROLE_POLICIES[key];

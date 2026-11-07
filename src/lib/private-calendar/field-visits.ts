@@ -277,10 +277,10 @@ export async function loadFieldVisitPrivateCalendarItems(
           ...customerList,
         ],
         description: isVisit
-          ? "Logged CRM field visits from the live iReports360 visit mirror, AM · PM · PH apart."
+          ? "Logged field visits from Phoenix CRM (the iReports360 archive before the team's start), AM · PM · PH apart."
           : group.kind === "vacation"
-            ? "An annual vacation day the employee logged in CRM, from the live iReports360 visit mirror."
-            : "CRM activity other than a customer visit, from the live iReports360 visit mirror.",
+            ? "An annual vacation day the employee logged in iReports360, before Phoenix CRM."
+            : "Field activity other than a customer visit, from Phoenix CRM (the iReports360 archive before the team's start).",
         // Said once: the kind is the title, the counts are the time, the partners and customers are the chip.
         detailLines: [],
         employeeDepartmentName: null,

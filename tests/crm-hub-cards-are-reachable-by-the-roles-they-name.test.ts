@@ -164,7 +164,10 @@ export function runCrmHubCardReachabilityTests() {
     // href is updated here rather than dropped: dropping it would quietly stop guarding the slot.
     "/admin/reps-list",
     "/admin/plan-verification",
-    "/admin/crm-integrity",
+    // "/admin/crm-integrity" was here until 2026-11-07, when CRM Integrity was retired with iReports360:
+    // it compared vendor visits with vendor check-ins, so it left the hub and the rail together and its
+    // route became a pointer to Phoenix CRM's own integrity screens. It left by retirement, not by
+    // losing a row — tests/crm-switch-off-safety.test.ts pins that it stays off both.
     "/admin/brick-coverage",
     "/admin/double-visit-analytics",
     "/admin/double-visit-data-integrity",

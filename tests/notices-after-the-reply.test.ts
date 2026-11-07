@@ -173,7 +173,8 @@ export const NOTICE_PINS: Array<{ file: string; specs: NoticePinSpec[] }> = [
   },
   {
     file: "../app/api/employees/route.ts",
-    specs: [{ fn: "POST", calls: ["openAndAnnounceCrmAccountSetup", "openAndAnnounceNewHireMailboxes"] }],
+    // openAndAnnounceCrmAccountSetup left this list on 2026-11-07 with the retired iReports360 notice.
+    specs: [{ fn: "POST", calls: ["openAndAnnounceNewHireMailboxes"] }],
   },
   { file: "../src/lib/business-cards/request-service.ts", specs: [{ fn: "notifyBusinessCardRecipients", wraps: "afterResponse" }] },
   {
@@ -347,7 +348,7 @@ export async function runNoticesAfterTheReplyTests() {
       breakCopy(employeesRoute, 'afterResponse("employee_notice:new_hire_followups"', 'Promise.resolve("employee_notice:new_hire_followups"'),
       pinsFor("../app/api/employees/route.ts"),
     ),
-    "POST: openAndAnnounceCrmAccountSetup() runs before the reply",
+    "POST: openAndAnnounceNewHireMailboxes() runs before the reply",
     "adding an employee that waits for the follow-ups again",
   );
   const resignations = read("../src/lib/resignations/service.ts");

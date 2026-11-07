@@ -2,17 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import * as accountSetupWords from "../src/lib/crm/account-setup-messages.ts";
 import {
-  CRM_ACCOUNT_SETUP_AUDIENCE,
-  CRM_ACCOUNT_SETUP_CHANNELS,
-  CRM_ACCOUNT_SETUP_EVENT_TYPE,
-  CRM_ACCOUNT_SETUP_MODULE,
   NOT_RECORDED,
   crmAccountSetupDetails,
-  crmAccountSetupEmailSummary,
-  crmAccountSetupHref,
-  crmAccountSetupMessage,
-  crmAccountSetupTitle,
   formatHireDate,
   type CrmAccountSetupSubject,
 } from "../src/lib/crm/account-setup-messages.ts";
@@ -21,7 +14,6 @@ import {
   DEFAULT_NOTIFICATION_ROLE_POLICIES,
   notificationRoleKeys,
 } from "../src/lib/notifications/role-recipients.ts";
-import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 const ROOT = process.cwd();
@@ -43,20 +35,22 @@ function subject(overrides: Partial<CrmAccountSetupSubject> = {}): CrmAccountSet
 }
 
 /**
- * The notice the owner asked for on 2026-09-07, and the screen it lands on.
+ * The New Hire CRM Setup tab, and the retirement of the notice that used to fill it.
  *
- * The assertions that matter are about CONTENT and ROUTING, not about the database: what the
- * message carries, which channels it may use, that a blank field is stated rather than dropped,
- * and that only the CREATE path fires it. Every one of those is a thing that could regress in a
- * later edit and be completely invisible in production — a notice that reaches nobody, or reaches
- * everybody on every employee edit, looks identical to a working one from inside the code.
+ * The notice the owner asked for on 2026-09-07 — tell the SFE Manager to give each new field hire an
+ * iReports360 account — was RETIRED on 2026-11-07 with the vendor CRM (6 Nov 2026), together with its
+ * daily reminder and its audience; nobody can be given an iReports360 account any more. What stays is
+ * the tab and its queue (history and the 38 tasks still open on 7 Nov 2026), so the assertions about
+ * what a card SHOWS still hold: a blank field is stated rather than dropped, nothing is truncated,
+ * the hiring date keeps its calendar day. The routing assertions now pin that NO create path opens a
+ * task or announces anyone (tests/crm-account-setup-reminder.test.ts pins the rest of the retirement).
  */
 export function runCrmAccountSetupTests() {
   // ── the seven facts he named, plus the two that make them addressable ──────────────────────
   const details = crmAccountSetupDetails(subject());
   const labels = details.map((detail) => detail.label);
   for (const required of ["Line", "Hiring date", "Region", "Area", "Manager", "Work email", "Mobile number"]) {
-    assert.ok(labels.includes(required), `the CRM setup notice must carry "${required}" — the owner named it explicitly`);
+    assert.ok(labels.includes(required), `the CRM setup card must carry "${required}" — the owner named it explicitly`);
   }
   assert.ok(labels.includes("Employee"), "the notice must name who it is about");
   assert.equal(
@@ -83,9 +77,6 @@ export function runCrmAccountSetupTests() {
 
   // ── nothing is ever truncated with an ellipsis (standing owner rule) ───────────────────────
   const everyString = [
-    crmAccountSetupTitle(subject()),
-    crmAccountSetupMessage(subject()),
-    crmAccountSetupEmailSummary(subject()),
     ...details.map((detail) => `${detail.label}${detail.value}`),
     ...sparse.map((detail) => `${detail.label}${detail.value}`),
   ];
@@ -103,54 +94,25 @@ export function runCrmAccountSetupTests() {
   assert.equal(formatHireDate(null), NOT_RECORDED, "a missing hiring date is stated, not blank");
   assert.equal(formatHireDate("not a date"), NOT_RECORDED, "an unparseable hiring date is stated, not rendered as Invalid Date");
 
-  // ── the deep link carries the person and lands on the tab that asks for the two values ─────
+  // ── 🔴 the notice is RETIRED: no words, no channels, no audience (2026-11-07) ─────────────────
+  // The vendor CRM was retired on 6 Nov 2026 and nobody can be given an iReports360 account any more,
+  // so the notice's own words left with its sender. What the tab still needs stays.
+  for (const gone of [
+    "CRM_ACCOUNT_SETUP_AUDIENCE",
+    "CRM_ACCOUNT_SETUP_CHANNELS",
+    "CRM_ACCOUNT_SETUP_CTA_LABEL",
+    "crmAccountSetupHref",
+    "crmAccountSetupTitle",
+    "crmAccountSetupMessage",
+    "crmAccountSetupEmailSummary",
+  ]) {
+    assert.equal(gone in accountSetupWords, false, `${gone} belonged only to the retired iReports360 notice and must not come back`);
+  }
   assert.ok(
-    crmAccountSetupHref("B-999").startsWith("/admin/crm?view=account_setup"),
-    "the notice must link to the New Hire CRM Setup tab",
+    !(notificationRoleKeys as readonly string[]).includes("crm_account_setup_alert"),
+    "the retired notice's audience must not be offered on the recipients screen",
   );
-  assert.ok(crmAccountSetupHref("B-999").includes("hrId=B-999"), "the link must carry the person it is about");
-  assert.equal(crmAccountSetupHref(null), "/admin/crm?view=account_setup", "with no HR ID the link still opens the queue");
-  assert.ok(
-    crmAccountSetupHref("B/9").includes("hrId=B%2F9"),
-    "an HR ID is URL-encoded, so a stray separator cannot break the link",
-  );
-
-  // ── email AND in-app, and NEITHER telegram NOR push ───────────────────────────────────────
-  // The owner asked for both of the first two by name. The other two are excluded on purpose: this
-  // notice carries a named new hire's mobile number and work email, and push is the channel that
-  // puts those on a lock screen.
-  assert.deepEqual(
-    [...CRM_ACCOUNT_SETUP_CHANNELS].sort(),
-    ["email", "in_app"],
-    "the CRM setup notice is email + in-app only",
-  );
-  const policy = resolveNotificationPolicy({
-    eventType: CRM_ACCOUNT_SETUP_EVENT_TYPE,
-    module: CRM_ACCOUNT_SETUP_MODULE,
-  });
-  assert.deepEqual(
-    [...policy.channels].sort(),
-    ["email", "in_app"],
-    "policy.ts must agree with the call site's channel list — two values that must agree are exactly what drifts",
-  );
-  assert.equal(policy.telegramAllowed, false, "the CRM setup notice must never be allowed on Telegram");
-  assert.equal(policy.actionUrlRequired, true, "the whole point of the notice is the link it carries");
-
-  // ── the audience is admin-editable, and defaults to the SFE Manager alone ─────────────────
-  assert.ok(
-    (notificationRoleKeys as readonly string[]).includes(CRM_ACCOUNT_SETUP_AUDIENCE),
-    "the CRM setup audience must be a registered notification role key, or it cannot be retargeted without a deploy",
-  );
-  assert.deepEqual(
-    DEFAULT_NOTIFICATION_ROLE_POLICIES[CRM_ACCOUNT_SETUP_AUDIENCE].roles,
-    ["SFE Manager", "HR Operations"],
-    "the owner named the SFE Manager, then added HR Operations (2026-09-29) so the same notice copies HR",
-  );
-  assert.equal(
-    DEFAULT_NOTIFICATION_ROLE_POLICIES[CRM_ACCOUNT_SETUP_AUDIENCE].enabled,
-    true,
-    "the notice ships switched on",
-  );
+  assert.equal("crm_account_setup_alert" in DEFAULT_NOTIFICATION_ROLE_POLICIES, false, "and it has no default policy");
 
   // ── a missing TABLE degrades; a missing COLUMN does not ───────────────────────────────────
   // A missing table answers PGRST205 through PostgREST and 42P01 through the driver, so a guard
@@ -165,43 +127,29 @@ export function runCrmAccountSetupTests() {
   );
   assert.equal(isCrmAccountSetupSchemaMissing(null), false);
 
-  // ── only the CREATE path fires it ─────────────────────────────────────────────────────────
-  // An employee SAVE and an employee CREATE go through the same route and the same upsert. If the
-  // notice ever moved outside the create branch, every phone-number edit would re-announce that
-  // person as a new hire — and nothing about the code would look wrong.
-  const employeesRoute = readFileSync(join(ROOT, "app/api/employees/route.ts"), "utf8");
+  // ── 🔴 NO create path opens a task or announces anyone any more (retired 2026-11-07) ──────────
+  // Every door that creates an employee used to open a CRM account task and tell the SFE Manager.
+  // With the vendor CRM retired there is no account to create, so a door that still opened a task
+  // would put a new hire on a queue nobody can ever clear — read comment-stripped, so the retirement
+  // note left in each file cannot satisfy or trip this.
+  const employeesRoute = stripComments(readFileSync(join(ROOT, "app/api/employees/route.ts"), "utf8"));
+  const importRoute = stripComments(readFileSync(join(ROOT, "app/api/imports/employees/confirm/route.ts"), "utf8"));
+  const joiningForm = stripComments(readFileSync(join(ROOT, "src/lib/offers/joining-form-service.ts"), "utf8"));
+  for (const [label, source] of [["employees", employeesRoute], ["employee import", importRoute], ["joining form", joiningForm]] as const) {
+    assert.ok(!/openAndAnnounceCrmAccountSetup/.test(source), `the ${label} door must not announce a new hire for an iReports360 account`);
+    assert.ok(!/openCrmAccountSetupTasks\(/.test(source), `the ${label} door must not open a CRM account task on its own either`);
+  }
+  // The create signal itself is unchanged — the new-hire mailbox follow-up still rides it.
   assert.match(
     employeesRoute,
     /const isNewEmployee = !payload\.employee\.originalHrId\?\.trim\(\);/,
     "the create signal must stay the same field upsertEmployee derives its own isUpdate from",
   );
   assert.match(
-    employeesRoute,
-    /if \(isNewEmployee\) \{[\s\S]{0,400}?openAndAnnounceCrmAccountSetup\(/,
-    "opening the task and sending the notice must sit inside the isNewEmployee branch",
-  );
-
-  const importRoute = readFileSync(join(ROOT, "app/api/imports/employees/confirm/route.ts"), "utf8");
-  assert.match(
     importRoute,
-    /openAndAnnounceCrmAccountSetup\(\{[\s\S]{0,300}?dryRunResult\.rowsToInsert\.map\(\(record\) => record\.hrId\)/,
-    "the import must announce the rows it INSERTED, never the rows it updated",
+    /openAndAnnounceNewHireMailboxes\(\{[\s\S]{0,300}?dryRunResult\.rowsToInsert\.map\(\(record\) => record\.hrId\)/,
+    "the import still announces only the rows it INSERTED to the mailbox follow-up",
   );
-  assert.ok(
-    !/rowsToUpdate[\s\S]{0,200}openAndAnnounceCrmAccountSetup/.test(importRoute),
-    "an employee the import merely updated is not a new hire and must never be announced",
-  );
-
-  // ── ONE entry point, so the two create paths cannot drift ────────────────────────────────
-  // Opening a task and sending the notice are two steps that must always happen together: a route
-  // that did the first without the second would leave somebody waiting on a queue nobody was told
-  // to look at, and nothing about the code would look wrong.
-  for (const [label, source] of [["employees", employeesRoute], ["employee import", importRoute]] as const) {
-    assert.ok(
-      !/openCrmAccountSetupTasks\(/.test(source),
-      `the ${label} route must go through openAndAnnounceCrmAccountSetup, never open a task on its own`,
-    );
-  }
 
   // ── FIELD ROLES ONLY (owner, 2026-09-08) ─────────────────────────────────────────────────
   // Every title below is a real one from the production roster on 2026-09-08, with the headcount

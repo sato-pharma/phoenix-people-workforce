@@ -196,10 +196,11 @@ export function runNotificationDeliveryIntegrityTests() {
       `"${category}" must be in the array the SQL category filter reads, not only in the predicate`,
     );
   }
-  // The allowlist entries are only right while these writers still use the category.
+  // The allowlist entries are only right while these writers still use the category. "crm" is the
+  // exception: its writer (the iReports360 account-setup reminder) was retired on 2026-11-07, and the
+  // category stays on the allowlist above so the reminders already in people's bells still open.
   for (const [path, category] of [
     ["src/lib/weekly-planning/drift-check.ts", "weekly_plan"],
-    ["src/lib/crm/account-setup-reminder.ts", "crm"],
     ["src/lib/notifications/settings.ts", "security"],
     ["src/lib/notifications/dead-telegram-link-alert.ts", "system"],
     ["src/lib/market-awareness/notifications.ts", "market_awareness"],

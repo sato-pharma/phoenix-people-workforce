@@ -1,5 +1,6 @@
 /**
- * CRM (iReports360) visit detail for the Company Activity Report — per employee, per day, every
+ * CRM visit detail for the Company Activity Report — Phoenix CRM visits through the unified read doors
+ * (iReports360 rows only from before a team started on Phoenix CRM) — per employee, per day, every
  * visit with its display label and campaign flag, plus the same "regular > CP > AV" field/leave
  * classification the payroll digest engine uses (crmDayVisitTypeStatus), reused rather than
  * re-derived so this report can never disagree with it about what a given visit type means.
@@ -24,7 +25,8 @@ import {
   type PhoenixVisitDetailRow,
 } from "@/lib/crm/phoenix-visit-detail";
 import { isIsoDate } from "@/lib/attendance/working-days";
-import { CAMPAIGN_TYPE, classifyVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { classifyVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import type { CompanyActivityVisitDetail } from "@/lib/company-activity-report/types";
 
 export type CrmDetailRow = {
@@ -79,9 +81,11 @@ export function buildVisitDetail(row: CrmDetailRow, sight: PhoenixDetailSight | 
   const classification = classifyVisit(row.visit_type, row.comment, row.visit_type_description);
   return {
     visitType: row.visit_type,
-    label: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
+    // The door serves every Phoenix visit as type 0, so an unplanned one would read "Regular" beside its
+    // Unplanned highlight; it names itself instead. An archive-day campaign visit keeps its own label.
+    label: row.visit_kind && row.is_unplanned ? "Unplanned visit" : resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
     bucket: classification.bucket,
-    isCampaign: row.visit_type === CAMPAIGN_TYPE,
+    isCampaign: isUnplannedFieldVisit(row),
     session: row.ampm,
     contactName: row.contact_name,
     customerName: row.customer_name,

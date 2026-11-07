@@ -692,7 +692,7 @@ export function CompanyVacationReportTable({
                   <option value="All">All sources</option>
                   {COMPANY_VACATION_SOURCE_SYSTEMS.map((option) => (
                     <option key={option} value={option}>
-                      {option === "Phoenix" ? "Phoenix (submitted here)" : "CRM (pulled from CRM)"}
+                      {option === "Phoenix" ? "Phoenix (submitted here)" : "CRM (iReports360, before Phoenix CRM)"}
                     </option>
                   ))}
                 </select>
@@ -821,7 +821,7 @@ export function CompanyVacationReportTable({
               value={formatDays(totals.phoenixDays)}
             />
             <MetricCard
-              description="Days read out of the field CRM, unverified."
+              description="Days read out of iReports360 before Phoenix CRM, unverified. From 6 Nov 2026 leave is the approved Phoenix requests alone."
               label="CRM Days"
               tone="emerald"
               value={formatDays(totals.crmDays)}

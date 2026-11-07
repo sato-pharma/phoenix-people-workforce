@@ -111,7 +111,7 @@ export function reconcileCompanyActivityDay(input: CompanyActivityDayInputs): Co
       reason = "Company-wide device outage — no punch data available that day.";
     } else if (hasNoSignal) {
       outcome = "no_signal";
-      reason = "No attendance device or CRM identity on record for this employee.";
+      reason = "No attendance device or Phoenix CRM seat on record for this employee.";
     } else {
       outcome = "no_entry";
       reason = "No activity recorded.";

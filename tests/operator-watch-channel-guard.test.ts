@@ -93,11 +93,21 @@ export function runOperatorWatchChannelGuardTests() {
   ]) {
     assert.equal(operatorWatchBlocksTelegramFallback(open), false, `${open} keeps its fallback`);
   }
+  // The three iReports360 sync alarms left with the vendor sync (7 Nov 2026): their sender was deleted, so
+  // a name here would read as a guarded alarm while guarding nothing.
+  for (const retired of ["ireports360_sync_failed", "ireports360_unmapped_agent", "ireports360_unrecognized_visit_type"]) {
+    assert.equal(operatorWatchBlocksTelegramFallback(retired), false, `${retired} left the guard with the retired vendor sync`);
+  }
+  assert.doesNotMatch(
+    stripComments(readFileSync("src/lib/notifications/operator-watch-channel-guard.ts", "utf8")),
+    /["']ireports360_/,
+    "no iReports360 event name is listed: the vendor's events have no sender",
+  );
   assert.equal(operatorWatchBlocksTelegramFallback(null), false, "no event type is not a watch");
   assert.equal(operatorWatchBlocksTelegramFallback(""), false, "an empty event type is not a watch");
 
   // A name two modules share cannot join: the guard reads the event type alone.
-  assert.equal(operatorWatchBlocksTelegramFallback("employee_added"), false, "the CRM account setup task shares this name, and it emails");
+  assert.equal(operatorWatchBlocksTelegramFallback("employee_added"), false, "the new-hire mailbox notice shares this name (as the retired CRM account setup notice did), and it emails");
   const setupKey = stripComments(readFileSync("src/lib/crm/account-setup-messages.ts", "utf8"));
   const mailboxKey = stripComments(readFileSync("src/lib/new-hire-mailbox/messages.ts", "utf8"));
   assert.match(setupKey, /CRM_ACCOUNT_SETUP_EVENT_TYPE = "employee_added"/, "the shared name is still shared");

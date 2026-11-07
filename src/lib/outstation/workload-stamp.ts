@@ -27,8 +27,14 @@ export const WORKLOAD_RESTAMP_WINDOW_DAYS = 45;
 /** One run's cap, so a backlog can never turn the morning job into a CRM flood. */
 export const WORKLOAD_RESTAMP_MAX_ROWS = 200;
 
-/** The `workload_source` the system's own CRM read writes. */
-export const SYSTEM_WORKLOAD_SOURCE = "ireports360";
+/** The `workload_source` the system's own CRM read writes — Phoenix CRM since iReports360 was retired (6 Nov 2026). */
+export const SYSTEM_WORKLOAD_SOURCE = "phoenix_crm";
+
+/**
+ * Every value the system's own read has ever written. A claim stamped before the retirement keeps
+ * 'ireports360' (the record of what was true on the day), and the morning re-stamp still owns it.
+ */
+export const SYSTEM_WORKLOAD_SOURCES: ReadonlyArray<string> = [SYSTEM_WORKLOAD_SOURCE, "ireports360"];
 
 function isoDay(value: unknown): string | null {
   const day = String(value ?? "").slice(0, 10);
@@ -65,7 +71,7 @@ export function isWorkloadRestampCandidate(
 ): boolean {
   if (!isOutstationClaimUndecided(row.status)) return false;
   if (String(row.workloadGateStatus ?? "") !== "complete") return false;
-  if (String(row.workloadSource ?? "") !== SYSTEM_WORKLOAD_SOURCE) return false;
+  if (!SYSTEM_WORKLOAD_SOURCES.includes(String(row.workloadSource ?? ""))) return false;
   if (String(row.workloadMatchStatus ?? "") === "manual_override") return false;
   const tripEnd = isoDay(row.tripEndDate);
   const today = isoDay(todayCairo);

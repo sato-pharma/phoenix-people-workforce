@@ -97,6 +97,8 @@ import {
 } from "../src/lib/phoenix-crm/manager-visit-detail-rules.ts";
 import { isVacantTerritory, managerAreaChoices } from "../src/lib/phoenix-crm/server/manager-customers.ts";
 import { oldCrmHalfOf, oldCrmPlanOf } from "../src/lib/phoenix-crm/old-crm-plan-rules.ts";
+import { oldCrmWeekIsArchive } from "../src/lib/phoenix-crm/server/manager-old-crm-weeks.ts";
+import { vendorSyncRetiredOn } from "../src/lib/crm/cutover.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, personKey, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { accessRegistry } from "../src/lib/security/access-registry.ts";
@@ -1658,6 +1660,15 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(functionBody(boardServer, "async function assertOnTheRepsHalf("), /oldCrmRepsOf\(\[\{ seatId: input\.repSeatId, hrId: input\.repHrId \}\]\)/, "the server's tick check reads the old plan too");
   const oldWeeks = source("src/lib/phoenix-crm/server/manager-old-crm-weeks.ts");
   assert.match(oldWeeks, /if \(input\.isTest \|\| input\.reps\.length === 0\) return weeks;/, "the test world holds no vendor plan");
+  // ARCHIVE ONLY since iReports360 was retired (6 Nov 2026): a week from the retirement day on is never read
+  // from the old CRM — every rep plans in Phoenix — while an earlier week still shows the plan that was filed.
+  const retiredOn = vendorSyncRetiredOn({ vendorSyncRetiredAt: "2026-11-06T01:16:00+00:00" });
+  assert.equal(retiredOn, "2026-11-06", "the retirement day is the date of the retirement");
+  assert.equal(oldCrmWeekIsArchive("2026-10-31", retiredOn), true, "a week begun before the retirement still shows the old plan");
+  assert.equal(oldCrmWeekIsArchive("2026-11-07", retiredOn), false, "HEADLINE: a week after the retirement never reads the old CRM");
+  assert.equal(oldCrmWeekIsArchive("2026-11-06", retiredOn), false, "the retirement day's own week is Phoenix's");
+  assert.equal(oldCrmWeekIsArchive("2026-11-07", null), true, "no retirement on file: the old CRM still answers, as before");
+  assert.match(oldWeeks, /if \(!\(await isOldCrmArchiveWeek\(input\.weekStart\)\)\) return weeks;/, "the loader asks before it reads the vendor");
   assert.match(oldWeeks, /own_contact_crm_id\.in\.\(\$\{list\}\),reference_contact_crm_id\.in\.\(\$\{list\}\)/, "a contact is matched through either id the carry-over kept");
   assert.match(oldWeeks, /\.in\("seat_id", \[\.\.\.seatIds\]\)/, "only on the rep's own seat");
   assert.match(oldWeeks, /customerId: customer \? String\(customer\.id\) : null/, "an unmatched contact shows and cannot be ticked");

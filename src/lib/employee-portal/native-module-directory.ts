@@ -48,7 +48,7 @@ export const NATIVE_MODULE_SECTION_ORDER = [
   "Performance",
   "Forecast & Target",
   "Recruitment",
-  "iReports 360",
+  "Field Work",
   "KPIs",
   "Marketing & ROI",
   "Payroll",
@@ -133,19 +133,19 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/vacancies": { icon: "person-add-outline", section: "Recruitment" },
   "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "Recruitment" },
   "/employee-portals/territory-management": { icon: "map-outline", section: "Recruitment" },
-  // ── iReports 360 ──────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/visits": { icon: "navigate-outline", section: "iReports 360" },
-  "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "iReports 360" },
-  "/employee-portals/ranks": { icon: "star-outline", section: "iReports 360" },
-  "/employee-portals/crm": { icon: "server-outline", section: "iReports 360" },
-  "/employee-portals/reps-list": { icon: "people-outline", section: "iReports 360" },
-  "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "iReports 360" },
-  "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "iReports 360" },
+  // ── Field Work ──────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/visits": { icon: "navigate-outline", section: "Field Work" },
+  "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "Field Work" },
+  "/employee-portals/ranks": { icon: "star-outline", section: "Field Work" },
+  "/employee-portals/crm": { icon: "server-outline", section: "Field Work" },
+  "/employee-portals/reps-list": { icon: "people-outline", section: "Field Work" },
+  "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "Field Work" },
+  "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "Field Work" },
   // Field Activity arrived on main (#4700) after the owner filled in his placement sheet, so the
   // sheet has no answer for it and it keeps the seat main gave it — under the DV rows, here.
-  "/employee-portals/field-activity": { icon: "map-outline", section: "iReports 360" },
-  "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "iReports 360" },
-  "/employee-portals/field-absence": { icon: "calendar-clear-outline", section: "iReports 360" },
+  "/employee-portals/field-activity": { icon: "map-outline", section: "Field Work" },
+  "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "Field Work" },
+  "/employee-portals/field-absence": { icon: "calendar-clear-outline", section: "Field Work" },
   // ── KPIs ──────────────────────────────────────────────────────────────────────────────────────
   // A heading of its own on the sidebar since 2026-10-14; the Summary keeps the pulse glyph it had.
   "/employee-portals/kpis": { icon: "pulse-outline", section: "KPIs" },

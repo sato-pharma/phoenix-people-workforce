@@ -424,6 +424,17 @@ function runCompanyActivityTests(): void {
   // A vendor visit carries no `visit_kind`, so it carries nothing — at EVERY tier, the Super Admin's too.
   const vendor: CrmDetailRow = { ...phoenixRow, ...Object.fromEntries(Object.keys(FULL_ROW).map((key) => [key, null])) };
   assert.equal(buildVisitDetail(vendor, "full").phoenix, null, "a vendor visit prints nothing rather than a row of blanks");
+
+  // 🔴 "CAMPAIGN" IS NOW UNPLANNED (owner, 6 Nov 2026). The report's count read visit type −8 alone, which no
+  // Phoenix visit ever carries (the door serves them all as type 0), so it read 0 for every day from 6 Nov.
+  assert.equal(buildVisitDetail(phoenixRow, null).isCampaign, true, "a Phoenix visit marked unplanned counts as unplanned");
+  assert.equal(buildVisitDetail(phoenixRow, null).label, "Unplanned visit", "and names itself, never \"Regular\" beside the highlight");
+  const planned = buildVisitDetail({ ...phoenixRow, is_unplanned: false }, null);
+  assert.equal(planned.isCampaign, false, "a planned Phoenix visit is not unplanned");
+  assert.notEqual(planned.label, "Unplanned visit", "and keeps its own label");
+  const archiveCampaign = buildVisitDetail({ ...vendor, visit_type: -8, visit_type_description: "Campaign/Prospection" }, null);
+  assert.equal(archiveCampaign.isCampaign, true, "an archive-day campaign visit (−8) is unplanned, the 29 Oct mapping");
+  assert.equal(buildVisitDetail(vendor, null).isCampaign, false, "an archive-day regular visit is not");
 }
 
 export async function runPhoenixFieldSetOnAdminReportsTests(): Promise<void> {

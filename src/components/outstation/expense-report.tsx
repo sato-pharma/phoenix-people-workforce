@@ -820,7 +820,7 @@ export function ExpenseReport({
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
-              Regular {formatNumber(data.regularVisits)} · Campaign {formatNumber(data.campaignVisits)}
+              Planned {formatNumber(data.regularVisits)} · Unplanned {formatNumber(data.campaignVisits)}
             </p>
             {/* Doctor/pharmacy/institution mix of the regular visits — display-only context so the
                 approver can see WHAT kind of fieldwork justified the trip; no rule consumes it. */}
@@ -857,8 +857,8 @@ export function ExpenseReport({
                     { label: "AM", value: formatNumber(day.am) },
                     { label: "PM", value: formatNumber(day.pm) },
                     { label: "Pharmacies", value: pharmacyCellText(day) },
-                    { label: "Regular", value: formatNumber(day.regular) },
-                    { label: "Campaign", value: formatNumber(day.campaign) },
+                    { label: "Planned", value: formatNumber(day.regular) },
+                    { label: "Unplanned", value: formatNumber(day.campaign) },
                   ]}
                 />
               </PortalRecordCard>
@@ -886,8 +886,8 @@ export function ExpenseReport({
                 {/* Pharmacies takes the old Total column's place: Status already prints the day's
                     total ("N field visits"), so the table keeps its seven columns. */}
                 <th className="px-3 py-2 text-right font-semibold">Pharmacies</th>
-                <th className="px-3 py-2 text-right font-semibold">Regular</th>
-                <th className="px-3 py-2 text-right font-semibold">Campaign</th>
+                <th className="px-3 py-2 text-right font-semibold">Planned</th>
+                <th className="px-3 py-2 text-right font-semibold">Unplanned</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
               </tr>
             </thead>

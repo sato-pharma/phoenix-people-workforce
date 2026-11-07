@@ -1,146 +1,17 @@
 import { systemAccessContext } from "@/lib/auth/permissions";
-import { getUnmappedCrmIdentities } from "@/lib/crm/admin";
-import { cairoTodayIso } from "@/lib/crm/dates";
-import { getCrmIdentityResolutions, isSettledUnmappedRow, loadCrmIdentityMaps } from "@/lib/crm/identity";
-import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
-import { addDaysToDateOnly } from "@/lib/date-only";
-import { diffSets, formatCount, formatList, formatMoney, moneyMatches } from "@/lib/reconciliation/compare";
+import { formatCount, formatList, formatMoney, moneyMatches } from "@/lib/reconciliation/compare";
 import { retryOnceIfBreached } from "@/lib/reconciliation/retry";
 import type { ReconciliationCheck, ReconciliationOutcome } from "@/lib/reconciliation/types";
 import { getSosDashboard, type SosCustomerRow } from "@/lib/sales/sos-dashboard";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const RECENT_VISIT_WINDOW_DAYS = 30;
-
-type VisitIdentityScanRow = {
-  agent_crm_id: number | null;
-  agent_hr_id: string | null;
-  agent_name: string | null;
-  double_crm_id: number | null;
-  double_hr_id: string | null;
-  double_name: string | null;
-  visit_date: string | null;
-  visit_type: number | null;
-};
-
-/**
- * A real CRM identity is a finite, non-zero id — and BOTH sides of check 9 must agree on that.
- *
- * `agent_crm_id` is nullable and `double_crm_id` carries 0 as its "no second visitor" placeholder,
- * and the two derivations treated those differently: getUnmappedCrmIdentities skips a null but
- * keeps a 0, while `Number(null)` on the raw-row side is 0. One row of either shape would have made
- * the two sides disagree forever about an identity that is not a person — a breach nobody could
- * ever clear, which is precisely the alarm everyone learns to ignore.
- */
-function isRealCrmIdentity(crmId: number): boolean {
-  return Number.isFinite(crmId) && crmId !== 0;
-}
-
-/**
- * Check 9 — every CRM identity with recent fieldwork resolves to an employee.
- *
- * This is the audit defect: a medical rep's CRM work was unattributed from April and invisible
- * platform-wide for months because a departing employee's CRM account was reused. The sync-time
- * alert only ever sees identities a sync actually touches; this standing check catches the ones a
- * sync never revisits.
- *
- * The exclusion lists are INJECTED from the canonical helpers rather than re-typed as SQL
- * predicates — a second copy of "who is deliberately excluded" is how this bug class starts.
- */
-const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
-  id: "crm-recent-visits-all-resolve-to-an-employee",
-  title: `No CRM identity has visits in the last ${RECENT_VISIT_WINDOW_DAYS} days that resolve to no employee`,
-  domain: "crm-sales",
-  severity: "high",
-  expectation: "holds",
-  // The visits sync runs as often as every few minutes and STAMPS agent_hr_id onto the very rows
-  // both sides are counting. The punch-list scan walks the whole table while the raw read walks the
-  // last 30 days, so a sync landing between them makes the two sides disagree about a row that was
-  // in fact just fixed. That disagreement never survives a fresh read; a real orphan does.
-  run: retryOnceIfBreached(async (): Promise<ReconciliationOutcome> => {
-    const cutoff = addDaysToDateOnly(cairoTodayIso(), -RECENT_VISIT_WINDOW_DAYS) ?? cairoTodayIso();
-
-    const [identities, excludedIds, resolutions, maps, visitRows] = await Promise.all([
-      getUnmappedCrmIdentities(),
-      getEffectiveExcludedAgentCrmIds(),
-      getCrmIdentityResolutions(),
-      loadCrmIdentityMaps(),
-      // Read through crm/reads.ts, never a raw mirror query: the CRM module is the single door
-      // (tests/crm-single-source.test.ts enforces it), and going around it would ALSO make this
-      // check wrong — the door is what applies the effective resigned/excluded-agent exclusion that
-      // the punch-list on the left already applies. Two sides disagreeing about who is excluded
-      // would breach every night over agents the app deliberately hides. Independence here comes
-      // from a different derivation (a window scan re-aggregated below) rather than from bypassing
-      // the door.
-      queryVisits<VisitIdentityScanRow>({
-        columns: "agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, visit_date, visit_type",
-        dateFrom: cutoff,
-      }),
-    ]);
-
-    const ignored = new Set<number>([
-      ...excludedIds,
-      ...resolutions.filter((resolution) => resolution.status === "resigned").map((resolution) => resolution.crmId),
-    ]);
-
-    const leftIds = identities
-      .filter((identity) => identity.lastSeen >= cutoff)
-      .map((identity) => Number(identity.crmId))
-      .filter(isRealCrmIdentity);
-    // Re-aggregated here rather than asked for pre-counted: an unattributed AGENT slot and an
-    // unattributed DOUBLE (ride-along) slot are both work filed under nobody, and a rep can appear
-    // as either. Collecting both from the same window scan is what makes this side an independent
-    // derivation of the punch-list's answer rather than a second call to it.
-    // Settled rows (no-work markers, and rows whose label names a known employee who was not
-    // employed that day) are dropped on BOTH sides by the same shared predicate, isSettledUnmappedRow.
-    const settled = (crmId: number | null, label: string | null, row: VisitIdentityScanRow) =>
-      isSettledUnmappedRow({ crmId, label, visitDate: row.visit_date, visitType: row.visit_type }, maps);
-    // 🔴 SLOT 2 IS DELIBERATELY NOT READ HERE, and must not be added. `getUnmappedCrmIdentities` on
-    // the left derives from `ireports360_visits`, which has ONE partner column and no `double2_*` at
-    // all, so a slot-2 identity on this side could never appear on that one — a breach nobody could
-    // ever clear. It cannot hide anything either: slot 2 exists only on a Phoenix CRM row, whose
-    // partner is an employee seat and so always carries a resolved hr id.
-    const rightIds = visitRows
-      .flatMap((row) => [
-        row.agent_hr_id === null && !settled(row.agent_crm_id, row.agent_name, row) ? Number(row.agent_crm_id) : Number.NaN,
-        row.double_hr_id === null && !settled(row.double_crm_id, row.double_name, row) ? Number(row.double_crm_id) : Number.NaN,
-      ])
-      .filter((crmId) => isRealCrmIdentity(crmId) && !ignored.has(crmId));
-
-    const difference = diffSets(leftIds, rightIds);
-    const names = new Map(identities.map((identity) => [identity.crmId, identity.name]));
-    const describe = (crmId: number) => names.get(crmId)?.trim() || `CRM identity ${crmId}`;
-
-    const problems: string[] = [];
-    if (rightIds.length > 0) {
-      problems.push(
-        `${formatCount(new Set(rightIds).size, "CRM identity", "CRM identities")} filed visits in the last ${RECENT_VISIT_WINDOW_DAYS} days that belong to nobody: ${formatList([...new Set(rightIds)].map(describe))}`,
-      );
-    }
-    if (!difference.identical) {
-      problems.push(
-        `The Unmapped Agents punch-list and the visit mirror disagree — only on the list: ${formatList(difference.onlyInLeft.map(describe))}; only in the mirror: ${formatList(difference.onlyInRight.map(describe))}`,
-      );
-    }
-
-    return {
-      left: {
-        source: `getUnmappedCrmIdentities() with lastSeen >= ${cutoff}`,
-        value: formatCount(new Set(leftIds).size, "unmapped identity", "unmapped identities"),
-      },
-      right: {
-        source: `queryVisits since ${cutoff}, agent/double slots with no hr id, minus the canonical excluded and resigned sets`,
-        value: formatCount(new Set(rightIds).size, "unmapped identity", "unmapped identities"),
-      },
-      holds: problems.length === 0,
-      detail:
-        problems.length === 0
-          ? `All fieldwork filed since ${cutoff} attributes to a named employee.`
-          : formatList(problems),
-    };
-  }),
-};
+// Check 9 — every CRM identity with recent fieldwork resolves to an employee — was retired with the
+// vendor on 7 November 2026. Its left side, the Unmapped Agents punch-list, is derived from
+// ireports360_visits, which nothing has written since iReports360 was retired on 6 November; and a
+// Phoenix CRM visit is filed by an employee seat, so it always carries a resolved hr id. The check
+// could only ever compare a frozen archive with itself. The numbers of the checks after it are left as
+// they were, as check 10's were; the other files refer to them by number.
 
 // Check 10 — the iReports360 visits-sync freshness check — was retired with the vendor on 6 November
 // 2026: nothing pulls from it any more, so its run ledger is history, not a pipeline to watch. The
@@ -345,7 +216,6 @@ const coverageNumeratorInsideMasterDenominator: ReconciliationCheck = {
 };
 
 export const crmSalesReconciliationChecks: ReconciliationCheck[] = [
-  recentVisitsAllResolveToAnEmployee,
   topCustomersListEachCustomerOnce,
   coverageNumeratorInsideMasterDenominator,
 ];

@@ -10,7 +10,8 @@ import {
 //
 // Measured before the rule: of 471 system-health alerts delivered to his Telegram between 21 June
 // and 15 Oct 2026, 207 were routine confirmations that nothing was wrong — 44% of the channel —
-// and `ireports360_sync_success` alone sent 178.
+// and `ireports360_sync_success` alone sent 178. That sender left with the iReports360 sync on
+// 7 Nov 2026, so the weekly background-jobs digest is the one confirmation the guard holds now.
 //
 // Three things have to hold, and the quiet is only as good as the weakest one:
 //   1. a routine SUCCESS loses Telegram
@@ -22,31 +23,26 @@ export function runOpsSuccessTelegramBlockTests() {
   // ── 1. A routine success loses Telegram, and keeps everything else ───────────────
   {
     assert.deepEqual(
-      enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "ireports360_sync_success"),
-      ["in_app", "push"],
-      "the iReports360 sync-complete confirmation must not reach his Telegram — 178 of them did",
-    );
-    assert.deepEqual(
       enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "background_jobs_run_success"),
       ["in_app", "push"],
-      "the weekly background-jobs confirmation is the same class of message",
+      "the weekly background-jobs confirmation must not reach his Telegram — the class of message 178 iReports360 sync confirmations were",
     );
     // in_app is what keeps the confirmation on record and renderable in the bell. A guard that
     // emptied the list would turn "stop telling me on Telegram" into "stop recording it".
     assert.equal(
-      enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "ireports360_sync_success").includes("in_app"),
+      enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "background_jobs_run_success").includes("in_app"),
       true,
       "the confirmation still has to exist somewhere — the owner asked for silence on one channel, not for the record to be dropped",
     );
     assert.deepEqual(
-      enforceOpsSuccessTelegramBlock(["telegram"], "ireports360_sync_success"),
+      enforceOpsSuccessTelegramBlock(["telegram"], "background_jobs_run_success"),
       [],
       "a success asking for Telegram alone is delivered nowhere rather than delivered anyway",
     );
     // Case and padding: these event types are built by string interpolation at two call sites, and
     // an exact-match set would read as handled while letting a differently-cased spelling through.
     assert.deepEqual(
-      enforceOpsSuccessTelegramBlock(["in_app", "telegram"], "  IReports360_Sync_Success  "),
+      enforceOpsSuccessTelegramBlock(["in_app", "telegram"], "  Background_Jobs_Run_Success  "),
       ["in_app"],
       "matching is case-insensitive and trimmed, or one call site's spelling silently escapes the rule",
     );
@@ -55,16 +51,11 @@ export function runOpsSuccessTelegramBlockTests() {
   // ── 2. The FAILURES keep Telegram — this is the half that matters ────────────────
   {
     assert.deepEqual(
-      enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "ireports360_sync_failed"),
-      ["in_app", "telegram", "push"],
-      "a FAILED sync must still reach his Telegram — silencing the failures with the noise is the one outcome worse than the noise",
-    );
-    assert.deepEqual(
       enforceOpsSuccessTelegramBlock(["in_app", "telegram", "push"], "background_jobs_run_failed"),
       ["in_app", "telegram", "push"],
-      "and so must a failed weekly background-jobs run",
+      "a FAILED weekly background-jobs run must still reach his Telegram — silencing the failures with the noise is the one outcome worse than the noise",
     );
-    assert.equal(isRoutineOpsSuccessEvent("ireports360_sync_failed"), false, "a failure is never a routine confirmation");
+    assert.equal(isRoutineOpsSuccessEvent("background_jobs_run_failed"), false, "a failure is never a routine confirmation");
     assert.equal(isRoutineOpsSuccessEvent("scheduled_job_stranded"), false, "a stranded job is not one either");
     assert.equal(
       isRoutineOpsSuccessEvent("reconciliation_breach_detected"),
@@ -113,5 +104,20 @@ export function runOpsSuccessTelegramBlockTests() {
         `${file} must ask for Telegram on a failure and not on a success`,
       );
     }
+  }
+
+  // ── 4. The iReports360 confirmation left with the vendor (7 Nov 2026) ─────────────
+  {
+    // Its sender, the iReports360 sync digest, was deleted with the vendor sync. A name nothing can
+    // raise any more is a dead entry: it reads as a guarded message while guarding nothing.
+    assert.equal(
+      isRoutineOpsSuccessEvent("ireports360_sync_success"),
+      false,
+      "ireports360_sync_success left the routine-success list with the retired vendor sync",
+    );
+    const guard = readFileSync("src/lib/notifications/ops-success-digest-channel-guard.ts", "utf8");
+    const list = /const ROUTINE_SUCCESS_EVENT_TYPES = new Set<string>\(\[([\s\S]*?)\]\);/.exec(guard)?.[1];
+    assert.ok(list !== undefined, "the routine-success list is still one literal Set this test can read");
+    assert.doesNotMatch(list, /ireports360_/, "no iReports360 event name is listed: the vendor's events have no sender");
   }
 }

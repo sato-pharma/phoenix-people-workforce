@@ -112,16 +112,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "birthday.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
-  // New-hire CRM account setup (owner instruction 2026-09-07). Recipients come from the
-  // admin-editable `crm_account_setup_alert` role policy and are passed EXPLICITLY by
-  // account-setup-notify.ts, so the strategy here is "role_based" — a lookup would resolve the
-  // employee who was just HIRED, which is the one person this notice is not for.
-  //
-  // Email and in-app only, both named by the owner. Telegram and push are deliberately absent:
-  // the notice carries a named new hire's mobile number and work email, and push is the channel
-  // that puts those on a lock screen. The call site passes the same two channels, so this row is
-  // the intent and that argument is what actually binds — they must not be allowed to drift.
-  "crm_account_setup.*": { actionUrlRequired: true, channels: ["in_app", "email"], permissionResource: null, priority: "high", recipientStrategy: ["role_based"] },
+  // `crm_account_setup.*` — the new-hire iReports360 account notice and its daily reminder — was
+  // RETIRED 2026-11-07 with the vendor CRM (6 Nov 2026), together with its sender, its reminder and
+  // its `crm_account_setup_alert` audience. Nothing sends under that module any more.
   // New hire mailboxes (owner instruction 2026-09-18). Recipients come from the admin-editable
   // `new_hire_mailbox_alert` role policy and are passed EXPLICITLY by new-hire-mailbox/notify.ts,
   // hence "role_based". In-app and Telegram, NEVER email — the notice is about a mailbox that does

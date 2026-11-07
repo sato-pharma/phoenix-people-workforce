@@ -259,10 +259,21 @@ export type DoubleVisitExpenseWorkloadEvidence = {
    * per-day `pharmacies`: every stored pre-split snapshot must still parse. */
   pharmacyWorkload?: number;
   pmWorkload: number;
-  // Visit-kind counts within the trip window (visitType -8 = campaign, 0 = regular),
-  // summed by visit_count. Used by the outstation campaign-cap rule for DM/TM.
+  // The trip's DOUBLE visits, summed by visit_count: UNPLANNED ones (Phoenix's is_unplanned, or
+  // iReports360's campaign −8 on an archive day — isUnplannedFieldVisit) and planned ones. The key keeps
+  // its old name so every stored snapshot still parses; since 7 Nov 2026 it counts unplanned visits
+  // (owner: "replace campaign with unplanned visits"). Read by the outstation cap for DM/TM.
   campaignVisits: number;
   regularVisits: number;
+  /**
+   * The manager's OWN visits on the trip — the single visits he logged himself in Phoenix CRM
+   * (phoenix_crm_manager_visits), apart from the double visits a rep logged with him on them. Owner,
+   * 6 Nov 2026: both count to him. Optional: absent on a snapshot written before it, and when his own
+   * visits could not be read, which the cap reads as unmeasured rather than zero.
+   */
+  managerOwnVisits?: number;
+  /** Of {@link managerOwnVisits}, the unplanned ones. Counted by the cap with the double visits. */
+  managerOwnUnplannedVisits?: number;
   source: "double_visit_import" | "manual";
   sourceLabel: string;
 };

@@ -87,7 +87,6 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   marketing_invoice_overdue_alert: "Marketing Requests",
   distributor_upload_overdue_alert: "Source of Sales",
   retention_risk_alert: "Retention Risk",
-  crm_account_setup_alert: "CRM",
   new_hire_mailbox_alert: "Employees",
   service_milestone_notice: "Milestones",
   // In-app + Telegram, never email (owner decision, 2026-09-26) — it is listed here

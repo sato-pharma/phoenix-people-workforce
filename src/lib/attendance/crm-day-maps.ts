@@ -53,6 +53,7 @@ import {
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
+import { describeManagerOwnVisitDay, loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 
 /** Leave-day codes (the AV half of the shared table) — Annual Vacation (-4) only. Health Day
  * (-15), Public Holiday (-5) and Casual Leave (-6) are working time. Derived, never hand-listed. */
@@ -336,10 +337,16 @@ export async function getCrmActivityDayMaps(input: {
   // the day logging real visits reads here as a day with no CRM activity, and a fingerprint
   // deduction that his field day should have cancelled stands. Added to `fieldVisitMap` only, which
   // is a universal CANCEL in reconcileDay: this can only ever excuse a day, never flag one.
-  const [byEmployee, phoenixEvidence] = await Promise.all([
+  const datesValid = isIsoDate(input.dateFromIso) && isIsoDate(input.dateToIso);
+  const [byEmployee, phoenixEvidence, managerOwnDays] = await Promise.all([
     scanCompanyVisitsByEmployee(input),
-    isIsoDate(input.dateFromIso) && isIsoDate(input.dateToIso)
-      ? loadPhoenixWorkEvidenceDays({ end: input.dateToIso, start: input.dateFromIso })
+    datesValid ? loadPhoenixWorkEvidenceDays({ end: input.dateToIso, start: input.dateFromIso }) : Promise.resolve([]),
+    // A MANAGER'S OWN SINGLE VISITS (owner, 2026-10-19: "proof he worked the day"). Since 2026-10-16 they
+    // sit in phoenix_crm_manager_visits — outside the CRM door and outside the work-evidence read — so a
+    // district manager who spent the day on his own calls read here as a day with no CRM activity.
+    // proven-worked-days.ts already counts them; this is the same source, for the same cancel.
+    datesValid
+      ? loadManagerOwnVisitDays({ end: input.dateToIso, managerHrIds: input.employeeHrIds, start: input.dateFromIso })
       : Promise.resolve([]),
   ]);
   const leaveMap = new Map<string, Set<string>>();
@@ -380,6 +387,20 @@ export async function getCrmActivityDayMaps(input: {
     // Only where the vendor read named nothing: a real iReports360 entry stays the day's label.
     const dayDetails = detailMap.get(hrId) ?? new Map<string, string>();
     if (!dayDetails.has(day.date)) dayDetails.set(day.date, describePhoenixWorkEvidence(day));
+    detailMap.set(hrId, dayDetails);
+  }
+
+  // His own single visits join `fieldVisitMap` the same way — a cancel only, never a flag — and name
+  // themselves where nothing above named the day.
+  for (const day of managerOwnDays) {
+    if (day.visits <= 0) continue;
+    const hrId = normalizeAttendanceHrId(day.hrId);
+    if (!hrId || !wantedAttendanceKeys.has(hrId)) continue;
+    const fieldDates = fieldVisitMap.get(hrId) ?? new Set<string>();
+    fieldDates.add(day.date);
+    fieldVisitMap.set(hrId, fieldDates);
+    const dayDetails = detailMap.get(hrId) ?? new Map<string, string>();
+    if (!dayDetails.has(day.date)) dayDetails.set(day.date, describeManagerOwnVisitDay(day));
     detailMap.set(hrId, dayDetails);
   }
 

@@ -89,3 +89,17 @@ export const CRM_LEAVE_VISIT_TYPE_CODES: ReadonlySet<number> = new Set<number>(
 export const CRM_WORKING_VISIT_TYPE_CODES: ReadonlySet<number> = new Set<number>(
   [...CRM_VISIT_TYPE_MEANINGS].filter(([, meaning]) => meaning === "CP").map(([code]) => code),
 );
+
+/** iReports360's campaign visit. On an archive day it counts as an UNPLANNED visit — see below. */
+export const CRM_CAMPAIGN_VISIT_TYPE_CODE = -8;
+
+/**
+ * Whether a field visit is UNPLANNED — the word that replaced "campaign" everywhere a rule or a screen
+ * counts them (owner, 6 Nov 2026: "replace campaign with unplanned visits"). A Phoenix CRM visit is unplanned
+ * when Phoenix marked it so (out of list or out of plan: `is_unplanned`); an iReports360 visit of an archive
+ * day is unplanned when it was a campaign visit (−8), the mapping the history copy already uses (29 Oct 2026).
+ * The door serves every Phoenix visit as visit type 0, so `is_unplanned` is the only way to see one.
+ */
+export function isUnplannedFieldVisit(row: { is_unplanned?: boolean | null; visit_type: number | null | undefined }): boolean {
+  return row.visit_type === CRM_CAMPAIGN_VISIT_TYPE_CODE || row.is_unplanned === true;
+}

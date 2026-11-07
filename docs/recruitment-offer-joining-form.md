@@ -50,7 +50,8 @@ The button opens `/join/[token]`, a 100% Sato Pharma page with no login. The tok
 Opening the link changes nothing — a mail scanner follows every link. Only the POST
 (`/api/public/offer-acceptance/[token]`, rate limited) creates the employee, through HR's own Add
 Employee chain in its order (`src/lib/offers/joining-form-service.ts`): `upsertEmployee`,
-`provisionNewHireAccess`, `openAndAnnounceCrmAccountSetup`, `openAndAnnounceNewHireMailboxes`.
+`provisionNewHireAccess`, `openAndAnnounceNewHireMailboxes`. (The iReports360 account-setup notice
+that sat between the last two was retired on 2026-11-07 with the vendor CRM.)
 
 ## Who is told when an offer is accepted
 

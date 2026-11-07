@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -16,8 +16,6 @@ import {
   NO_CV_ON_FILE,
   crmAccountSetupCvHref,
   crmAccountSetupDetails,
-  crmAccountSetupEmailSummary,
-  crmAccountSetupMessage,
   hasCvOnFile,
   type CrmAccountSetupSubject,
 } from "../src/lib/crm/account-setup-messages.ts";
@@ -119,16 +117,14 @@ export function runEmployeeCvTests() {
     "a system-scope caller is the platform itself and reads everything",
   );
 
-  // ── 2. the CV goes on the record BEFORE the notice is composed ────────────────────────────
+  // ── 2. the CV goes on the record at create ─────────────────────────────────────────────────
+  // It used to be pinned to land BEFORE the new-hire iReports360 notice was composed; that notice was
+  // retired on 2026-11-07 with the vendor CRM, so only the attach itself is pinned now — and the
+  // retired notice must not come back on this route.
   const employeesRoute = readFileSync(join(ROOT, "app/api/employees/route.ts"), "utf8");
   const attachAt = employeesRoute.indexOf("attachEmployeeCvOnCreate(");
-  const announceAt = employeesRoute.indexOf("openAndAnnounceCrmAccountSetup(");
   assert.ok(attachAt > 0, "the create route must attach the CV");
-  assert.ok(announceAt > 0, "the create route must still announce the new hire");
-  assert.ok(
-    attachAt < announceAt,
-    "the CV must be attached BEFORE the notice is composed — reversed, the notice says 'Not attached' about somebody whose CV arrived a second later, with no error anywhere",
-  );
+  assert.ok(!employeesRoute.includes("openAndAnnounceCrmAccountSetup("), "the retired iReports360 notice must not come back on the create route");
   assert.match(
     employeesRoute,
     /isNewEmployee[\s\S]{0,200}?attachEmployeeCvOnCreate\(/,
@@ -155,44 +151,13 @@ export function runEmployeeCvTests() {
   assert.equal(hasCvOnFile(subject({ cvFileName: "   " })), false, "whitespace is not a filename");
   assert.equal(hasCvOnFile(subject({ cvFileName: "cv.pdf" })), true);
 
-  // The email's opening paragraph mentions the CV only when there is one — an email that promises
-  // a second button that is not rendered is worse than one that says nothing.
-  assert.ok(
-    crmAccountSetupEmailSummary(subject({ cvFileName: "cv.pdf" })).includes("cv.pdf"),
-    "the summary names the CV when one is attached",
-  );
-  assert.ok(
-    !/CV is attached/i.test(crmAccountSetupEmailSummary(subject())),
-    "the summary must not mention a CV when there is none",
-  );
-
   // Standing owner rule: nothing is ever truncated with an ellipsis.
-  for (const text of [...withCv.map((d) => `${d.label}${d.value}`), crmAccountSetupEmailSummary(subject({ cvFileName: "cv.pdf" })), CRM_ACCOUNT_SETUP_CV_CTA_LABEL]) {
-    assert.ok(!text.includes("…"), `the CV notice must never truncate with an ellipsis: ${text}`);
+  for (const text of [...withCv.map((d) => `${d.label}${d.value}`), CRM_ACCOUNT_SETUP_CV_CTA_LABEL]) {
+    assert.ok(!text.includes("…"), `the CV row must never truncate with an ellipsis: ${text}`);
   }
 
-  // ── 3b. the IN-APP reader learns about the CV, which the detail rows alone cannot tell him ─
-  // notificationDetails() caps a notification at its first EIGHT rows. This notice carries ten, so
-  // the CV row never reaches the bell menu — the sentence in the body is the only thing that does.
-  // Pinned here because the sentence looks like a duplicate of the row and would be "tidied away".
-  const metrics = readFileSync(join(ROOT, "src/lib/communication/metrics.ts"), "utf8");
-  assert.match(
-    metrics,
-    /return rows\.slice\(0, 8\);/,
-    "the in-app detail cap is 8 rows — if this changed, re-check whether the CV row now survives on its own",
-  );
-  assert.ok(
-    crmAccountSetupDetails(subject({ cvFileName: "cv.pdf" })).findIndex((detail) => detail.label === "CV") >= 8,
-    "the CV row sits beyond the in-app cap, which is exactly why the body must name the CV too",
-  );
-  assert.ok(
-    crmAccountSetupMessage(subject({ cvFileName: "Ahmed-CV.pdf" })).includes("Ahmed-CV.pdf"),
-    "the in-app body must name the CV — it is the only place the bell menu can learn there is one",
-  );
-  assert.ok(
-    !crmAccountSetupMessage(subject()).includes("CV"),
-    "with no CV attached the body must not mention one",
-  );
+  // (3b — the in-app body naming the CV because the bell caps a notice at eight detail rows — left
+  // with the retired new-hire iReports360 notice on 2026-11-07; there is no notice body any more.)
 
   // ── 4. the two copies of the download URL agree ───────────────────────────────────────────
   // account-setup-messages.ts deliberately imports nothing, so it spells the route out rather than
@@ -304,16 +269,11 @@ export function runEmployeeCvTests() {
     "the layout must render the secondary action",
   );
 
-  // ── 9. the notice offers the button only when a CV exists ─────────────────────────────────
-  const notify = readFileSync(join(ROOT, "src/lib/crm/account-setup-notify.ts"), "utf8");
-  assert.match(
-    notify,
-    /hasCvOnFile\(subject\) \? crmAccountSetupCvHref\(subject\.hrId\) : null/,
-    "a download button that answers 404 teaches the reader to stop trusting the button",
-  );
-  assert.match(
-    notify,
-    /secondaryCtaLabel: cvHref \? CRM_ACCOUNT_SETUP_CV_CTA_LABEL : null/,
-    "the label follows the link, so the two can never disagree",
-  );
+  // ── 9. the retired notice's CV button left with it ────────────────────────────────────────
+  // The new-hire iReports360 notice offered the CV as its second button; the notice was retired on
+  // 2026-11-07 with the vendor CRM. The New Hire CRM Setup tab still offers the download, and only
+  // when a CV exists (hasCvOnFile, pinned in section 3).
+  assert.equal(existsSync(join(ROOT, "src/lib/crm/account-setup-notify.ts")), false, "the retired new-hire notice must stay deleted");
+  const panel = readFileSync(join(ROOT, "src/components/crm/crm-account-setup-panel.tsx"), "utf8");
+  assert.match(panel, /hasCvOnFile\(/, "the tab still offers the CV only when there is one");
 }
