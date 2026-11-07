@@ -79,7 +79,7 @@ export function MrCvApplication({ candidateId, className }: { candidateId: strin
                 <span className={cn("text-xs font-black uppercase tracking-wide", chip.value === null ? "text-amber-800" : "text-slate-500")}>
                   {chip.label}
                 </span>
-                <AnswerChip canEdit={false} chip={chip} today={today} />
+                <AnswerChip canEdit={false} chip={chip} today={today} withLabel={false} />
               </li>
             ))}
           </ul>

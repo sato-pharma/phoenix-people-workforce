@@ -227,6 +227,7 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.match(sheet, /redactPhones=\{state\.phonesHidden\}/, "the CV masks the phone numbers when the server says so");
   assert.match(sheet, /allowDownload=\{!state\.phonesHidden\}/, "and offers no download");
   assert.match(sheet, /state\.application\.map\(/, "the application lists every question and answer");
+  assert.match(sheet, /<AnswerChip [^>]*withLabel=\{false\}/, "each question said once: the row names it, the chip does not repeat it");
   const drawer = codeOnly("src/components/recruitment/mr-hiring/mr-journey-drawer.tsx");
   assert.match(drawer, /\{wide \? \(\s*<aside aria-label="CV and application"[\s\S]{0,300}<MrCvApplication candidateId=\{candidateId\} \/>/, "a wide screen shows the CV and application beside the journey");
   assert.match(drawer, /\{wide \? null : <MrCvApplication candidateId=\{candidateId\} \/>\}/, "a narrow one under the current step");

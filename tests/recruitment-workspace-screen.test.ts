@@ -133,6 +133,19 @@ function sourcePins(): void {
     assert.match(code(path.join(WORKSPACE_DIR, name)), /dir="auto"/, `${name} sets Arabic answers and names dir="auto"`);
   }
 
+  // The question is said once (owner, 7 Nov 2026: "remove the duplicated question label in both
+  // places"). The opened CV's answer row names it, so the chip in that row does not say it again.
+  const chipSource = code(path.join(WORKSPACE_DIR, "answer-chip.tsx"));
+  const spokenLabels = chipSource.match(/>\{chip\.label\}</g) ?? [];
+  const gatedLabels = chipSource.match(/withLabel \? (?:\(\s*<>\s*)?<span[^>]*>\{chip\.label\}</g) ?? [];
+  assert.equal(spokenLabels.length, 3, "the chip prints its question in three places: at rest, missing, and in the editor");
+  assert.equal(gatedLabels.length, spokenLabels.length, "and every one of them only when withLabel is on");
+  assert.match(
+    code(path.join(WORKSPACE_DIR, "opened-cv.tsx")),
+    /<AnswerChip [^>]*withLabel=\{false\}/,
+    "the opened CV's answer row names the question, so its chip does not repeat it",
+  );
+
   const page = code(PAGE);
   assert.match(page, /workspaceViewer\(access\)/, "the page is gated by the workspace's own named rule");
   assert.match(page, /if \(!viewer\.canRead\) redirect\("\/employee-portals"\)/, "and sends everyone else away");
