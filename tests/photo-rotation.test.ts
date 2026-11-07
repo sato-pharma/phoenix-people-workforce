@@ -93,6 +93,11 @@ function checkViewer() {
   assert.match(viewer, /turns=\{rotatable \? turns : 0\}/);
   assert.match(
     viewer,
+    /aria-label=\{direction === "left" \? "Turn the photo left" : "Turn the photo right"\}\s*className="[^"]*\bborder-slate-300 bg-white text-slate-900\b/,
+    "HEADLINE: the turn buttons are a white square with a dark icon, so they read on a black ticket frame and on a white receipt",
+  );
+  assert.match(
+    viewer,
     /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*turn\(direction\);/,
     "turning a photo opens nothing and fires nothing on the card underneath it",
   );
