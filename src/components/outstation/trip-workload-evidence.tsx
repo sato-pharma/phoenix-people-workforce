@@ -4,12 +4,7 @@ import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
-import {
-  EvidenceTable,
-  evidenceRowClassName,
-  evidenceTdClassName,
-  evidenceTimeTdClassName,
-} from "@/components/outstation/evidence-table";
+import { EvidenceTable } from "@/components/outstation/evidence-table";
 import { Badge } from "@/components/ui/badge";
 import {
   formatPharmacyFigure,
@@ -163,37 +158,30 @@ function DayDetail({
           </>
         ) : (
           <EvidenceTable
-            columns={["5.5rem", null, "4.25rem"]}
-            headers={[
-              { label: "Type" },
-              { label: "Visited" },
+            columns={[
+              { label: "Type", role: "badge", width: "5.5rem" },
+              { label: "Visited", role: "body", width: null },
               // Each timing says what it IS: when the rep SAVED the CRM record is a different clock
               // from the check-in on site.
-              { align: "right", hint: "When the visit was saved in the CRM, not the check-in on site", label: "Saved" },
+              { hint: "When the visit was saved in the CRM, not the check-in on site", label: "Saved", role: "time", width: "4.25rem" },
             ]}
-            title={
-              <>
-                Visits <span className="tabular-nums text-slate-400">· {fmt(visits.length)}</span>
-              </>
-            }
-          >
-            {visits.map((visit, index) => (
-              <tr className={evidenceRowClassName} key={index}>
-                <td className={evidenceTdClassName}>
-                  <span
-                    className={cn(
-                      "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                      visit.kind === "campaign"
-                        ? "bg-violet-100 text-violet-700"
-                        : visit.kind === "meeting"
-                          ? "bg-slate-200 text-slate-700"
-                          : "bg-sky-100 text-sky-700",
-                    )}
-                  >
-                    {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
-                  </span>
-                </td>
-                <td className={evidenceTdClassName}>
+            rows={visits.map((visit, index) => ({
+              badge: (
+                <span
+                  className={cn(
+                    "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                    visit.kind === "campaign"
+                      ? "bg-violet-100 text-violet-700"
+                      : visit.kind === "meeting"
+                        ? "bg-slate-200 text-slate-700"
+                        : "bg-sky-100 text-sky-700",
+                  )}
+                >
+                  {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
+                </span>
+              ),
+              body: (
+                <>
                   <bdi className="font-semibold text-slate-900">{visit.contact || visit.customer || "—"}</bdi>
                   {visit.contact && visit.customer && visit.customer !== visit.contact ? (
                     <span className="text-slate-400">
@@ -222,17 +210,17 @@ function DayDetail({
                       " · own visit"
                     ) : null}
                   </span>
-                </td>
-                <td
-                  className={evidenceTimeTdClassName}
-                  data-label="Saved"
-                  title={visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}
-                >
-                  {formatClock(visit.submittedAt)}
-                </td>
-              </tr>
-            ))}
-          </EvidenceTable>
+                </>
+              ),
+              key: String(index),
+              time: <span title={visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}>{formatClock(visit.submittedAt)}</span>,
+            }))}
+            title={
+              <>
+                Visits <span className="tabular-nums text-slate-400">· {fmt(visits.length)}</span>
+              </>
+            }
+          />
         )}
       </div>
       <div>
@@ -243,26 +231,19 @@ function DayDetail({
           </>
         ) : (
           <EvidenceTable
-            columns={["2.75rem", null, "4.25rem"]}
-            headers={[
-              { hint: "The number its pin wears on the map", label: "Pin" },
-              { label: "Place" },
-              { align: "right", hint: "The time of the GPS check-in itself", label: "Check-in" },
+            columns={[
+              { hint: "The number its pin wears on the map", label: "Pin", role: "badge", width: "2.75rem" },
+              { label: "Place", role: "body", width: null },
+              { hint: "The time of the GPS check-in itself", label: "Check-in", role: "time", width: "4.25rem" },
             ]}
-            title={
-              <>
-                Check-ins <span className="tabular-nums text-slate-400">· {fmt(checkins.length)}</span>
-              </>
-            }
-          >
-            {checkins.map((checkin, index) => (
-              <tr className={evidenceRowClassName} key={index}>
-                <td className={evidenceTdClassName}>
-                  <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
-                    {firstCheckinNumber + index}
-                  </span>
-                </td>
-                <td className={evidenceTdClassName}>
+            rows={checkins.map((checkin, index) => ({
+              badge: (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
+                  {firstCheckinNumber + index}
+                </span>
+              ),
+              body: (
+                <>
                   <bdi className="font-semibold text-slate-900">
                     {checkin.contact ||
                       checkin.address ||
@@ -282,13 +263,17 @@ function DayDetail({
                       {(checkin.taps ?? 1) > 1 ? <>×{fmt(checkin.taps ?? 1)} taps</> : null}
                     </span>
                   ) : null}
-                </td>
-                <td className={evidenceTimeTdClassName} data-label="Check-in">
-                  {formatClock(checkin.at)}
-                </td>
-              </tr>
-            ))}
-          </EvidenceTable>
+                </>
+              ),
+              key: String(index),
+              time: <span>{formatClock(checkin.at)}</span>,
+            }))}
+            title={
+              <>
+                Check-ins <span className="tabular-nums text-slate-400">· {fmt(checkins.length)}</span>
+              </>
+            }
+          />
         )}
         {ownVisitsWithoutGps > 0 ? (
           <p className="mt-1.5 text-xs text-slate-500">

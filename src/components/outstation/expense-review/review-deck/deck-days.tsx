@@ -10,7 +10,7 @@ import {
   type RouteMarker,
   type TripRouteLine,
 } from "@/components/field-workforce-compliance/field-workforce-route-map";
-import { EvidenceTable, evidenceRowClassName, evidenceTdClassName } from "@/components/outstation/evidence-table";
+import { EvidenceTable } from "@/components/outstation/evidence-table";
 import type { AttachmentsData } from "@/components/outstation/trip-attachments";
 import {
   type TripWorkloadEvidence,
@@ -510,18 +510,14 @@ function legendTimeline(legend: DayLegendItem[], checkins: WorkloadCheckinDetail
 
 type LegendTableRow = { badge: ReactNode; body: ReactNode; key: string };
 
+const LEGEND_COLUMNS = [
+  { label: "Pin", role: "badge", width: "3rem" },
+  { label: "On this day's map", role: "body", width: null },
+] as const;
+
 /** One half of a day's map legend: a zebra table of pin and what it marks. */
 function LegendTable({ rows }: { rows: LegendTableRow[] }) {
-  return (
-    <EvidenceTable columns={["3rem", null]} headers={[{ label: "Pin" }, { label: "On this day's map" }]}>
-      {rows.map((row) => (
-        <tr className={evidenceRowClassName} key={row.key}>
-          <td className={evidenceTdClassName}>{row.badge}</td>
-          <td className={evidenceTdClassName}>{row.body}</td>
-        </tr>
-      ))}
-    </EvidenceTable>
-  );
+  return <EvidenceTable columns={LEGEND_COLUMNS} rows={rows} />;
 }
 
 /** The pin's label as it appears on the map, so the legend and the map read the same. */
