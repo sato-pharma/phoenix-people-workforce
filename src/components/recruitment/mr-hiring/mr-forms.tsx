@@ -47,10 +47,6 @@ import { cn } from "@/lib/utils";
 
 const RATING_OPTIONS = [1, 2, 3, 4, 5].map((value) => ({ label: String(value), title: `${value} of 5`, value }));
 
-function cairoTodayKey(): string {
-  return new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
-}
-
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -136,8 +132,8 @@ export function MrResultForm({
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{candidateName}</p>
         {decidedWithoutDsm ? (
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            The DSM interview has ended and the DSM has not written feedback. HR&apos;s evaluation decides this step, and the
-            journey shows it was decided without DSM feedback.
+            HR&apos;s evaluation decides this step in the DSM&apos;s place, at any time, and the journey shows it was decided
+            without DSM feedback.
           </p>
         ) : null}
       </div>
@@ -251,7 +247,6 @@ export function MrRecommendationForm({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [today] = useState(cairoTodayKey);
   const offer = recommendation === "make_offer";
 
   async function submit() {
@@ -312,7 +307,7 @@ export function MrRecommendationForm({
           />
         </FormField>
         <FormField htmlFor="mr-joining" label="Proposed joining date" required={offer}>
-          <input className={phxFieldClassName} id="mr-joining" min={today} onChange={(event) => setJoining(event.target.value)} type="date" value={joining} />
+          <input className={phxFieldClassName} id="mr-joining" onChange={(event) => setJoining(event.target.value)} type="date" value={joining} />
         </FormField>
       </div>
       <FormField htmlFor="mr-note" label="Note">
@@ -458,7 +453,6 @@ export function MrBookingForm({
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [today] = useState(cairoTodayKey);
   const first = round === "hr_first";
   const inPerson = first ? firstWay === "in_office" : platform === "in_office";
   const byPhone = first && firstWay === "phone";
@@ -522,7 +516,7 @@ export function MrBookingForm({
       )}
       <div className={phxFieldGridTwoClassName}>
         <FormField htmlFor="mr-day" label="Day" required>
-          <input className={phxFieldClassName} id="mr-day" min={changing && dateKey && dateKey < today ? dateKey : today} onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
+          <input className={phxFieldClassName} id="mr-day" onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
         </FormField>
         <FormField hint="Cairo time." htmlFor="mr-time" label="Time" required>
           <input className={phxFieldClassName} id="mr-time" onChange={(event) => setTime(event.target.value)} step={60} type="time" value={time} />
