@@ -191,7 +191,10 @@ export function DecisionBar({
           ) : (
             // In the 19rem rail the two buttons share one line as equal halves, and the amount is
             // the row above ("Claimed", or "Approved" once adjusted) rather than in the label.
-            <div className={placement === "rail" ? "grid flex-1 grid-cols-2 gap-2" : "flex flex-wrap gap-2"}>
+            // Owner, 2026-11-07 ("FIX BUTTONS", on "Approv" and "Reject" cut off beside "3 unsaved"):
+            // in the rail the pair takes the WHOLE width, and Save drops to its own line under it.
+            // `flex-1` let the 19rem row squeeze both buttons and Save onto one clipped line.
+            <div className={placement === "rail" ? "grid w-full basis-full grid-cols-2 gap-2" : "flex flex-wrap gap-2"}>
               <button
                 className={cn(phxButtonApproveClassName, "justify-center whitespace-nowrap")}
                 disabled={reasonMissing}
@@ -212,7 +215,7 @@ export function DecisionBar({
             </div>
           )}
           {dirtyCount > 0 ? (
-            <div className="ml-auto">
+            <div className={placement === "rail" ? "flex w-full basis-full justify-end" : "ml-auto"} data-save-cluster>
               <SaveCluster dirtyCount={dirtyCount} onSave={onSave} saving={saving} />
             </div>
           ) : null}
