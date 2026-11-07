@@ -7,6 +7,7 @@ import {
   Camera,
   CheckCircle2,
   ChevronLeft,
+  Network,
   ChevronRight,
   HelpCircle,
   Loader2,
@@ -43,6 +44,7 @@ import { displayPlace } from "@/lib/outstation/place-label";
 import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
+import { type CrmTripSignal, CrmTripSection } from "./crm-trip-section";
 import {
   DISTANCE_TONE_CLASS,
   type Decision,
@@ -65,12 +67,15 @@ import {
  *
  *   1. the header band — who, which trip, where it sits in the list, the claim large;
  *   2. the glance strip — length, dates, distance, transport, type, the cost equation;
- *   3. the verdict strip — three sentences: field work, claim checks, photos — each a link down;
+ *   3. the verdict strip — four sentences: field work, Phoenix CRM, claim checks, photos — each a
+ *      link down;
  *   4. the route, the captured geography and the employee's note;
  *   5. field work, day by day, every day open and EACH DAY ON ITS OWN MAP (owner: "if 3 days then
  *      I should have 3 maps"): the day's GPS check-ins numbered as in its list, the arrival (A)
  *      photo on the first day, the departure (D) photo on the last, each journey stop on the day
  *      it was captured, and a legend naming every pin; every visit and every check-in printed;
+ *   5b. Phoenix CRM on this trip: planned vs visited, where the visits were, the nights, a shared
+ *      car (crm-trip-section.tsx);
  *   6. the claim checks, every check open;
  *   7. the photos with everything they carry, the stops, the tickets.
  *
@@ -109,6 +114,8 @@ export function TripReview({
   const [workload, setWorkload] = useState<TripWorkloadEvidence | null | undefined>(undefined);
   const [attachments, setAttachments] = useState<AttachmentsData | null | undefined>(undefined);
   const [claimOutcome, setClaimOutcome] = useState<ClaimValidationOutcome | undefined>(undefined);
+  // Phoenix CRM on this trip — the plan, where the visits were, the nights (crm-trip-section.tsx).
+  const [crmSignal, setCrmSignal] = useState<CrmTripSignal>({ line: "Reading Phoenix CRM", tone: "loading" });
 
   // The idle-day count the field-work tile states, lifted to the decision box. Not for a rep with no
   // CRM identity mapped: no visits there is not evidence of an idle day.
@@ -421,8 +428,9 @@ export function TripReview({
       ) : null}
 
       {/* ── 3. Verdict strip — the "obvious at a glance" part ─────────────────────────────── */}
-      <div className="grid border-b border-slate-200 sm:grid-cols-3 [&>*]:min-w-0" data-verdict-strip>
+      <div className="grid border-b border-slate-200 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0" data-verdict-strip>
         <SignalTile href="#trip-field-work" icon={Route} signal={fieldWorkSignal} title="Field work" />
+        <SignalTile href="#trip-crm" icon={Network} signal={crmSignal} title="Phoenix CRM" />
         <SignalTile href="#trip-claim-checks" icon={ShieldCheck} signal={claimSignal} title="Claim checks" />
         <SignalTile href="#trip-photos" icon={Camera} signal={photoSignal} title="Photos" />
       </div>
@@ -525,6 +533,18 @@ export function TripReview({
                 ))}
               </ol>
             ) : null}
+          </div>
+        </section>
+
+        {/* ── 5b. Phoenix CRM on this trip — planned vs visited, the nights, the car ─────────── */}
+        <section id="trip-crm">
+          <SectionHead
+            summary={crmSignal.tone === "loading" ? undefined : crmSignal.line}
+            title="Phoenix CRM on this trip"
+            tone={crmSignal.tone === "loading" ? "neutral" : crmSignal.tone}
+          />
+          <div className="border border-t-0 border-slate-200 p-3">
+            <CrmTripSection key={record.tripId} onSignal={setCrmSignal} requestId={validationRequestId} />
           </div>
         </section>
 
@@ -855,7 +875,7 @@ function SignalTile({
   const tone = SIGNAL_TONE[signal.tone];
   return (
     <a
-      className="flex items-stretch gap-3 border-b border-slate-200 px-4 py-2.5 transition-colors hover:bg-slate-50 sm:border-b-0 sm:border-r sm:last:border-r-0"
+      className="flex items-stretch gap-3 border-b border-slate-200 px-4 py-2.5 transition-colors hover:bg-slate-50 sm:border-r sm:even:border-r-0 xl:border-b-0 xl:even:border-r xl:last:border-r-0"
       href={href}
     >
       <span aria-hidden className={cn("w-1 shrink-0", tone.bar)} />

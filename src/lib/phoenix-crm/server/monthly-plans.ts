@@ -80,6 +80,7 @@ import {
   type RepWeekState,
 } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
+import { seatOccupants } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
   assertReviewer,
@@ -103,6 +104,8 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { loadPlanActivities, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 import { loadPlanDayStarts } from "@/lib/phoenix-crm/server/plan-day-starts";
 import { loadSeatDaysOff, loadSeatPendingLeave } from "@/lib/phoenix-crm/server/leave-days";
+import { loadPeopleOutstationTrips } from "@/lib/phoenix-crm/server/outstation-trips";
+import type { PlanOutstationTrip } from "@/lib/phoenix-crm/outstation-trip-banner";
 import { editAcknowledgedAt, loadPlanEditState, repStateOf, type PlanEditRequestView, type PlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
@@ -338,6 +341,12 @@ export type MonthlyPlannerView = {
   canReturn: boolean;
   /** Why the rep cannot plan this month, in one sentence; null when nothing stops it. */
   blockedReason: string | null;
+  /**
+   * The territory person's business trips over the board's days (owner, 2026-11-07: "Trip on the CRM
+   * side") — "On an outstation trip to X" above the weeks. Optional so a saved-board answer and an
+   * older screen keep compiling; empty when there is none or the read failed.
+   */
+  outstationTrips?: PlanOutstationTrip[];
 };
 
 /** The month's four meters — what a save of one of its own weeks moves. */
@@ -624,6 +633,8 @@ export async function loadMonthlyPlanner(
     // places alone, so it follows the customer list inside the wave instead of trailing after it
     // (2026-10-16 speed audit).
     customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
+    // The territory person's business trips over the same days, for the banner. Never fails the board.
+    loadPeopleOutstationTrips(seatOccupants(seat), { from: addDaysIso(monthStart, -14), to: addDaysIso(monthEndOf(monthStart), 14) }),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -638,6 +649,7 @@ export async function loadMonthlyPlanner(
     leave,
     pendingLeave,
     venueNames,
+    outstationTrips,
   ] = await wave;
 
   const settings = viewer.config.settings;
@@ -785,6 +797,7 @@ export async function loadMonthlyPlanner(
     canApprove: (viewerIsReviewer || canOverrideDecision(viewer, isTest)) && status === "submitted",
     canReturn: monthOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
+    outstationTrips,
   };
 }
 

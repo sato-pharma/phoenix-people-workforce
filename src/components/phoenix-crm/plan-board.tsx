@@ -129,6 +129,7 @@ import {
 } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import type { MonthlyPlannerView, MonthlyWeekView, SavedPlan } from "@/lib/phoenix-crm/view-types";
+import { PlanOutstationTrips } from "@/components/phoenix-crm/plan-outstation-trips";
 import { cn } from "@/lib/utils";
 
 /** A refusal that means the week on screen is out of date: the board reads it again, and keeps the ticks. */
@@ -1469,6 +1470,14 @@ export function PlanBoard({
         {/* 🔴 The rep's own plan has ONE path (owner, 2026-10-01): no month to choose and no month to
             send — the title above names the month, and his week is the one open below. A manager
             reviewing from Team keeps his month chooser. */}
+        {/* The rep's own business trips over these weeks (owner, 2026-11-07). A manager reads the
+            week he reviews in its review step (plan-review-steps.tsx), never twice on one screen. */}
+        {repBoard && view.outstationTrips && view.outstationTrips.length > 0 ? (
+          <CrmBlock>
+            <PlanOutstationTrips trips={view.outstationTrips} />
+          </CrmBlock>
+        ) : null}
+
         {repBoard ? (
           view.blockedReason ? (
             <CrmBlock>

@@ -79,13 +79,20 @@ export function isAdjustedAmount(
 }
 
 export type BulkApprovalCandidate = {
+  /** The trip's allowance; a pre-cut is only ever a share of it. */
+  allowance?: number | null;
   approvedAmount: number;
   claimedTotal: number;
   hrApproved: boolean | null | undefined;
   hrComment: string;
   status: string | null | undefined;
   tripId: string;
+  /** The trip's field-work reading — the live day-by-day one once the trip was opened. */
+  workloadMatchStatus?: string | null;
 };
+
+/** Field-work readings that mean at least one trip day had no visit and no meeting. */
+const IDLE_WORKLOAD_STATUSES = new Set(["no_activity", "partial"]);
 
 /**
  * Splits a multi-select into what one bulk approval may actually touch.
@@ -98,17 +105,23 @@ export type BulkApprovalCandidate = {
  *     must be un-rejected deliberately — silently flipping a rejection in a batch is exactly the
  *     kind of thing nobody notices until payroll runs);
  *   - a trip whose amount was reduced needs a written reason first, because a deduction the
- *     employee cannot be given a reason for is not defensible.
+ *     employee cannot be given a reason for is not defensible;
+ *   - an untouched trip with idle days and an allowance carries a PRE-CUT (owner, 2026-11-07:
+ *     "he put trip from 23 to 26 and visits are 23 24 25 only, then don't count 26"). The single
+ *     Approve applies it; a batch cannot see it, so the trip is held back to be opened and
+ *     approved on its own — a batch never pays an idle day in full behind his back.
  *
  * Everything excluded is returned rather than dropped, so the UI can say precisely why a selected
  * trip did not get approved instead of leaving the reviewer to guess.
  */
 export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate>): {
   approvableTripIds: string[];
+  needsPreCutTripIds: string[];
   needsReasonTripIds: string[];
   notPendingTripIds: string[];
 } {
   const approvableTripIds: string[] = [];
+  const needsPreCutTripIds: string[] = [];
   const needsReasonTripIds: string[] = [];
   const notPendingTripIds: string[] = [];
 
@@ -124,10 +137,18 @@ export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate
       needsReasonTripIds.push(candidate.tripId);
       continue;
     }
+    if (
+      !isAdjustedAmount(candidate.approvedAmount, candidate.claimedTotal) &&
+      Number(candidate.allowance) > 0 &&
+      IDLE_WORKLOAD_STATUSES.has(String(candidate.workloadMatchStatus ?? ""))
+    ) {
+      needsPreCutTripIds.push(candidate.tripId);
+      continue;
+    }
     approvableTripIds.push(candidate.tripId);
   }
 
-  return { approvableTripIds, needsReasonTripIds, notPendingTripIds };
+  return { approvableTripIds, needsPreCutTripIds, needsReasonTripIds, notPendingTripIds };
 }
 
 /** One reviewer decision as the Expense Approvals screen holds it. */

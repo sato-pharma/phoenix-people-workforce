@@ -78,6 +78,9 @@ export function DecisionBar({
 }) {
   // Which trip's bar is unfolded (the deduction and the reason box). One row otherwise.
   const [openFor, setOpenFor] = useState<string | null>(null);
+  // Trips whose pre-cut he set aside with "Keep full claim", or by typing his own deduction. UI
+  // state only: nothing is written for a trip until he presses Approve.
+  const [keptFull, setKeptFull] = useState<Record<string, true>>({});
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   // The reason box grows with what is in it — WRAPPED lines too, not only typed line breaks — from
   // three rows to ten, then scrolls inside (owner's review, 2026-11-07: a long system sentence sat
@@ -130,9 +133,12 @@ export function DecisionBar({
   // A changed amount with no reason cannot be approved, so the box is shown whether or not he
   // opened it — the rose hint under it says why.
   const expanded = open || (reasonMissing && !locked);
-  // Owner, 2026-11-07 ~01:50, on how idle days are deducted: "LET ME DECIDE". The box OFFERS the
-  // allowance share for the idle days — per idle day, or the whole allowance — and nothing moves
-  // until he clicks one; the Deduction it fills stays editable and Approve is still his click.
+  // Owner, 2026-11-07 ~01:50, on how idle days are deducted: "LET ME DECIDE"; then, the same night:
+  // "he put trip from 23 to 26 and visits are 23 24 25 only, then don't count 26 — approver sees it
+  // pre-cut". So the box offers the allowance share for the idle days (a day with no visit and no
+  // meeting) — per idle day, or the whole allowance — and the per-idle-day share is PRE-CUT: Approve
+  // applies it, with its reason, unless he presses "Keep full claim" or types his own deduction.
+  // Nothing is written by opening a trip; the cut lands only on his Approve.
   // Only an undecided trip is offered one: a decided trip is reopened with Undo first.
   const undecided = !decision.hrApproved && !isRejected;
   const suggestions =
@@ -153,6 +159,13 @@ export function DecisionBar({
       systemText,
     });
     if (next !== null) onChangeReason(next);
+  };
+  // The pre-cut: the first share (per idle day where it differs from the whole allowance).
+  const preCut = suggestions.length > 0 && !adjusted && !keptFull[record.tripId] ? suggestions[0] : null;
+  const keepFull = () => setKeptFull((current) => ({ ...current, [record.tripId]: true }));
+  const approve = () => {
+    if (preCut) applySuggestion(preCut);
+    onApprove();
   };
   const openPanel = () => {
     setOpenFor(record.tripId);
@@ -227,11 +240,15 @@ export function DecisionBar({
             <div className={placement === "rail" ? "grid w-full basis-full grid-cols-2 gap-2" : "flex flex-wrap gap-2"}>
               <button
                 className={cn(phxButtonApproveClassName, "justify-center whitespace-nowrap")}
+                data-approve-precut={preCut ? preCut.deduction : undefined}
                 disabled={reasonMissing}
-                onClick={onApprove}
+                onClick={approve}
                 type="button"
               >
-                <Check className="h-4 w-4" /> Approve{placement === "bar" ? ` ${egp(decision.approvedAmount)}` : null}
+                <Check className="h-4 w-4" /> Approve
+                {placement === "bar"
+                  ? ` ${egp(preCut ? approvedAmountFromDeduction(record.total, preCut.deduction) : decision.approvedAmount)}`
+                  : null}
               </button>
               {/* A rejection the employee cannot be given a reason for is not defensible: with no
                   reason yet, Reject opens the box and puts the cursor in it instead of refusing. */}
@@ -250,7 +267,18 @@ export function DecisionBar({
             </div>
           ) : null}
         </div>
-        {suggestions.length > 0 && !expanded && !adjusted && idle ? (
+        {preCut && idle ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-orange-500 bg-orange-50/60 px-2.5 py-1.5" data-precut>
+            <p className="min-w-0 flex-1 basis-48 text-phx-xs font-bold text-orange-800">
+              Pre-cut −<span className="font-mono tabular-nums">{egp(preCut.deduction)}</span> · Approve pays{" "}
+              <span className="font-mono tabular-nums">{egp(approvedAmountFromDeduction(record.total, preCut.deduction))}</span> · {preCut.label.toLowerCase()} ·{" "}
+              {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no visit and no meeting
+            </p>
+            <button className={cn(phxButtonGhostClassName, "whitespace-nowrap")} data-keep-full onClick={keepFull} type="button">
+              Keep full claim
+            </button>
+          </div>
+        ) : suggestions.length > 0 && !expanded && !adjusted && idle ? (
           <button
             className="self-start text-left text-phx-xs font-bold text-orange-700 underline-offset-2 hover:underline"
             data-idle-deduction-hint
@@ -298,9 +326,11 @@ export function DecisionBar({
                 inputMode="decimal"
                 max={record.total}
                 min={0}
-                onChange={(event) =>
-                  onChangeAmount(approvedAmountFromDeduction(record.total, Number(event.target.value)))
-                }
+                onChange={(event) => {
+                  // His own figure replaces the pre-cut, whatever he types.
+                  keepFull();
+                  onChangeAmount(approvedAmountFromDeduction(record.total, Number(event.target.value)));
+                }}
                 type="number"
                 value={String(deduction)}
               />
@@ -319,20 +349,24 @@ export function DecisionBar({
                 inputMode="decimal"
                 max={record.total}
                 min={0}
-                onChange={(event) =>
+                onChange={(event) => {
+                  keepFull();
                   onChangeAmount(
                     approvedAmountFromDeduction(
                       record.total,
                       deductionFromApprovedAmount(record.total, Number(event.target.value)),
                     ),
-                  )
-                }
+                  );
+                }}
                 type="number"
                 value={String(decision.approvedAmount)}
               />
             </div>
             {adjusted && !locked ? (
-              <button className={cn(phxButtonGhostClassName, "col-span-3 justify-self-start")} onClick={() => onChangeAmount(record.total)} type="button">
+              <button className={cn(phxButtonGhostClassName, "col-span-3 justify-self-start")} onClick={() => {
+                  keepFull();
+                  onChangeAmount(record.total);
+                }} type="button">
                 <RotateCcw className="h-3.5 w-3.5" /> Clear
               </button>
             ) : null}
@@ -367,8 +401,8 @@ export function DecisionBar({
                 })}
               </div>
               <p className="mt-1 text-phx-2xs text-slate-500">
-                Allowance {egp(record.allowance)} only · travel and tickets are never part of it. Nothing changes until you pick
-                one, and the deduction stays editable.
+                Allowance {egp(record.allowance)} only · travel and tickets are never part of it.{" "}
+                {preCut ? "Approve applies the pre-cut unless you keep the full claim or type your own." : "The deduction stays editable."}
               </p>
             </div>
           ) : null}
