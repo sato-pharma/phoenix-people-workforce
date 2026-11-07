@@ -147,7 +147,7 @@ export function runRecruitmentMrHiringAccessTests() {
     ["hr_manager", "joint_final"],
     "after the DSM, HR may book the 3rd interview or the joint final — no RSM interview unless HR confirmed the Pedia line",
   );
-  const atRsm = facts({ bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1")], results: pediaDsmPassed });
+  const atRsm = facts({ bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1")], pediaAreaUnderRsm: true, results: pediaDsmPassed });
   assert.deepEqual(buildMrRow(talent, record(atRsm), NOW).can.book, ["rsm"], "on the Pedia line, the RSM interview is the only one HR books after the DSM");
   const finalEnded = facts({
     bookings: [firstBooking, booking("dsm", "2026-11-10T08:00:00.000Z", "D-1"), booking("joint_final", "2026-11-11T08:00:00.000Z", "N-1", ["B-10"])],

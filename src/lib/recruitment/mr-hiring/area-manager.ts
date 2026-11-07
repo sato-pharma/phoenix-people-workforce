@@ -18,6 +18,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadWorkspacePlaces } from "@/lib/recruitment/workspace/places";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import type { MrLine } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 export type MrOrgSeat = {
@@ -168,15 +169,17 @@ export async function loadPediaAreasUnderRsm(areaNames: readonly string[]): Prom
   }
   if (nameByCode.size === 0) return under;
   const today = currentCairoDateOnlyIso();
-  const { data, error } = await recruitmentDb()
-    .from("au_v_line_area_map")
-    .select("area_code,dm_seat_id,effective_from,effective_to")
-    .eq("line_code", "pedia")
-    .in("area_code", Array.from(nameByCode.keys()))
-    .limit(1000);
-  if (error) throw new Error(error.message);
+  const mapRows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      recruitmentDb()
+        .from("au_v_line_area_map")
+        .select("area_code,dm_seat_id,effective_from,effective_to")
+        .eq("line_code", "pedia")
+        .in("area_code", Array.from(nameByCode.keys())),
+    "area_code",
+  );
   const seatByCode = new Map<string, string>();
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const row of mapRows) {
     const from = String(row.effective_from ?? "");
     const to = String(row.effective_to ?? "");
     if (from && from > today) continue;
