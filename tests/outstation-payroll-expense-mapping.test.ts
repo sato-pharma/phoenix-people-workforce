@@ -97,11 +97,14 @@ export function runOutstationPayrollExpenseMappingTests() {
     new URL("../src/components/outstation/expense-approvals/trip-review.tsx", import.meta.url),
     "utf8",
   );
+  // Owner, 2026-11-07, on a rail row holding a long note: "comment already written in the right
+  // panel, remove from here". The note is printed once, on the trip under review, never on the rail.
   assert.equal(
-    (rail + review).match(/<EmployeeNote note=\{record\.employeeNote\}/g)?.length,
-    2,
-    "Expense Approvals draws the employee's note on the queue row AND on the trip under review",
+    review.match(/<EmployeeNote note=\{record\.employeeNote\} wide \/>/g)?.length,
+    1,
+    "Expense Approvals draws the employee's note on the trip under review",
   );
+  assert.doesNotMatch(rail, /EmployeeNote|employeeNote/, "the rail row never repeats the employee's note");
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay
