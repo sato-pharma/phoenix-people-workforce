@@ -65,6 +65,25 @@ export function FullNameChecks({ rows }: { rows: HeldFullName[] }) {
       title={`PM full names to check (${shown.length})`}
     >
       {problem ? <p className="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-800">{problem}</p> : null}
+      <CrmCardsOnPhone>
+        {shown.map((row) => (
+          <div className="space-y-2 px-4 py-4" key={row.customerId}>
+            <p className="break-words font-bold text-slate-900" dir="auto">
+              {row.fullName}
+            </p>
+            <p className="break-words text-xs text-slate-500" dir="auto">
+              Now: {row.currentName}
+            </p>
+            <p className="text-xs text-slate-500">
+              {row.repName}, {cairoDateTime(row.heldAt)}
+            </p>
+            <p className="break-words text-sm text-slate-700" dir="auto">
+              Board: {board(row)} · <span className="font-bold">{match(row)}</span>
+            </p>
+            {actions(row)}
+          </div>
+        ))}
+      </CrmCardsOnPhone>
       <CrmTable columns={["30%", "30%", "12%", "28%"]}>
         <thead>
           <tr>
@@ -97,25 +116,6 @@ export function FullNameChecks({ rows }: { rows: HeldFullName[] }) {
           ))}
         </tbody>
       </CrmTable>
-      <CrmCardsOnPhone>
-        {shown.map((row) => (
-          <div className="space-y-2 px-4 py-4" key={row.customerId}>
-            <p className="break-words font-bold text-slate-900" dir="auto">
-              {row.fullName}
-            </p>
-            <p className="break-words text-xs text-slate-500" dir="auto">
-              Now: {row.currentName}
-            </p>
-            <p className="text-xs text-slate-500">
-              {row.repName}, {cairoDateTime(row.heldAt)}
-            </p>
-            <p className="break-words text-sm text-slate-700" dir="auto">
-              Board: {board(row)} · <span className="font-bold">{match(row)}</span>
-            </p>
-            {actions(row)}
-          </div>
-        ))}
-      </CrmCardsOnPhone>
     </AdminTableShell>
   );
 }
