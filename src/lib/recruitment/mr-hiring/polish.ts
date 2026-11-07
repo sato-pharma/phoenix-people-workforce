@@ -67,7 +67,7 @@ export function normalizeSpoken(spoken: string, kind: MrPolishKind): string {
 
 const kindLine: Record<MrPolishKind, string> = {
   booking: "These are HR's notes for the interviewer about an interview being booked with a Medical Representative candidate.",
-  recommendation: "This is the National Sales Manager's note on his recommendation after the final interview of a Medical Representative candidate.",
+  recommendation: "This is the National Sales Manager's note on the recommendation after the final interview of a Medical Representative candidate.",
   result: "This is an interviewer's evaluation of a Medical Representative candidate, kept on the candidate's record.",
 };
 

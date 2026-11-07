@@ -70,7 +70,7 @@ async function readableMrRecord(access: AccessContext, candidateId: string): Pro
  */
 export async function assertMayPolishMrWords(access: AccessContext, candidateId: string): Promise<void> {
   const viewer = mrViewer(access);
-  if (viewer.isCeo && !viewer.canWork) throw forbiddenError("The CEO reads the Medical Rep hiring journey; he records nothing on it.");
+  if (viewer.isCeo && !viewer.canWork) throw forbiddenError("The CEO reads the Medical Rep hiring journey and records nothing on it.");
   await readableMrRecord(access, candidateId);
 }
 
