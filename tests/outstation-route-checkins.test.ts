@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { sharedPlaceKeys } from "../src/lib/crm/visit-workload.ts";
+import { checkinPlace, sharedPlaceKeys } from "../src/lib/crm/visit-workload.ts";
 import { foldRepeatCheckins, routeTripDay, type RouteCheckinRow } from "../src/lib/outstation/route-checkins.ts";
 
 // AN OUTSTATION TRIP'S ROUTE IS THE PLACES, NOT THE PHONE'S TAPS — AND A BORROWED ROUTE IS ONLY THE
@@ -120,7 +120,42 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(zebra, /\{column\.label\}<\/span>\s*<span className="tabular-nums[^"]*">\{row\[column\.role\]\}/, "a card's time keeps its column's label");
   assert.doesNotMatch(zebra, /overflow-x-auto|min-w-\[|w-max|truncate|rounded/, "never a sideways scroll, a cut-off name or a round corner");
   assert.match(panel, /label: "Saved", role: "time", width: "4\.25rem"/, "HEADLINE: the visits are a zebra table, the saved time a column of its own");
-  assert.match(panel, /label: "Check-in", role: "time", width: "4\.25rem"/, "HEADLINE: the check-ins are a zebra table, the check-in time a column of its own");
+  assert.match(panel, /label: "Check-in", role: "time", width: "5\.25rem"/, "HEADLINE: the check-ins are a zebra table, the check-in time a column of its own");
   assert.doesNotMatch(panel, /<(ul|ol) className="mt-1 space-y-1">/, "the old bullet lists are gone");
   assert.match(review, /return <EvidenceTable columns=\{LEGEND_COLUMNS\} rows=\{rows\} \/>;/, "HEADLINE: the map legend is a zebra table");
+
+  // 7. Brick · area · region, and the name opens its place (owner, 2026-11-07: "show me brick area and
+  //    region and make the dr name clickable to location").
+  const match = { areaCode: "FAY", areaName: " Fayoum ", brickId: "B-77", brickName: "إطسا", distanceKm: 1.26, regionCode: "GZ", regionName: "Giza" };
+  assert.deepEqual(checkinPlace(match), { area: "Fayoum", brick: "إطسا", km: 1.3, region: "Giza" }, "HEADLINE: a check-in's GPS reads as its brick, area and region");
+  assert.deepEqual(checkinPlace({ ...match, areaName: null }), { area: "Giza", brick: "إطسا", km: 1.3, region: "Giza" }, "no area: the region one rung up stands in, never a blank");
+  assert.equal(checkinPlace({ ...match, brickName: "" })?.brick, "B-77", "no brick name: its id, never nothing");
+  assert.equal(checkinPlace(null), null, "no position, no brick — nothing is invented");
+  assert.match(reader, /const place = checkinPlace\(resolveBrickForPoint\(checkin\.lat, checkin\.lon, centroids\)\);\s*if \(place\) checkin\.place = place;/, "HEADLINE: every positioned check-in carries its brick from the server");
+  assert.match(panel, /<PlaceLink lat=\{checkin\.lat\} lon=\{checkin\.lon\}>/, "HEADLINE: the check-in's name opens its GPS point on Google Maps");
+  assert.match(panel, /<BrickLine place=\{checkin\.place\} \/>/, "HEADLINE: each check-in prints its brick, area and region");
+  assert.match(panel, /<PlaceLink lat=\{atPlace\?\.lat\} lon=\{atPlace\?\.lon\}>/, "HEADLINE: a visit's name opens the point of its check-in at the same place");
+  assert.match(panel, /<BrickLine place=\{atPlace\?\.place\} \/>/);
+  assert.match(panel, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=\$\{encodeURIComponent\(`\$\{lat\},\$\{lon\}`\)\}/);
+  assert.match(panel, /if \(!hasPoint\(lat, lon\)\) return <bdi className="font-semibold text-slate-900">\{children\}<\/bdi>;/, "no position, no link — nothing pretends to a pin");
+  assert.match(panel, /\{place\.km > 10 \? <span className="font-semibold text-amber-700">nearest brick \{fmt\(place\.km\)\} km away<\/span> : null\}/, "a far brick says so");
+  assert.match(review, /<PlaceLink lat=\{checkins\[row\.index\]\?\.lat\} lon=\{checkins\[row\.index\]\?\.lon\}>/, "and the map legend's check-ins open theirs");
+  assert.match(review, /<CoordinatesLink lat=\{photo\.latitude as number\} lon=\{photo\.longitude as number\} \/>/, "a photo's point is a link on its own line");
+
+  // 8. Two views of a trip day (owner, 2026-11-07: "another view … same concept as field activity but
+  //    the data up and the map down so I have 2 views").
+  const stage = source("../src/components/outstation/expense-review/review-deck/deck-stage.tsx");
+  const deck = source("../src/components/outstation/expense-review/review-deck/deck.tsx");
+  assert.match(panel, /export type DayOrder = "data-first" \| "map-first";/);
+  assert.match(panel, /\{order === "data-first" \? \(\s*<>\s*<DayFacts checkins=\{checkins\} visits=\{visits\} \/>\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}\s*\{map\}/, "HEADLINE: data first — the day's facts and tables, the map at the foot");
+  assert.match(panel, /\) : \(\s*<>\s*\{map\}\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}/, "HEADLINE: map first stays exactly as it was");
+  assert.match(panel, /order=\{dayOrder\}/, "the panel hands the choice to every day");
+  assert.match(panel, /\["GPS window", gpsWindow\]/, "the facts read like Field Activity's");
+  assert.match(panel, /return first === last \? first : `\$\{first\} to \$\{last\}`;/, "a window of one reading is just that reading");
+  assert.match(stage, /\{ hint: "[^"]+", icon: MapPin, key: "map-first", label: "Map first" \}/, "HEADLINE: the switch offers both views");
+  assert.match(stage, /\{ hint: "[^"]+", icon: List, key: "data-first", label: "Data first" \}/);
+  assert.match(stage, /aria-pressed=\{active\}/, "the chosen view is announced");
+  assert.match(stage, /<DeckFieldWork\s+attachments=\{attachments\}\s+dayOrder=\{dayOrder\}/);
+  assert.match(deck, /const \[dayOrder, setDayOrder\] = useState<DayOrder>\("map-first"\);/, "HEADLINE: chosen once, kept from trip to trip while the reviewer is open");
+  assert.doesNotMatch(stage, /localStorage/, "screen state only — nothing new is stored in the browser");
 }
