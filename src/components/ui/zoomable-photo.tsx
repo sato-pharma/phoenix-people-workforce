@@ -424,12 +424,15 @@ export function ZoomablePhoto({
         <span className="absolute inset-0 block overflow-hidden" style={TURNABLE_FRAME_STYLE}>
           {image}
           {/* On a frame narrower than 8rem (a small thumbnail) the two buttons would cover the photo
-              they turn, so they are not drawn there: tapping opens the zoom view, which turns it. */}
+              they turn, so they are not drawn there: tapping opens the zoom view, which turns it.
+              A white square with a dark icon and a grey edge reads on a dark ground AND on a white
+              receipt — the translucent dark button vanished on the approval deck's black ticket frame
+              (owner, 2026-11-07: "make the rotate buttons stand out on dark tickets"). */}
           <span className="absolute right-1 top-1 hidden gap-0.5 @min-[8rem]:flex">
             {(["left", "right"] as const).map((direction) => (
               <button
                 aria-label={direction === "left" ? "Turn the photo left" : "Turn the photo right"}
-                className="inline-flex h-8 w-8 items-center justify-center bg-slate-900/70 text-white transition hover:bg-slate-900"
+                className="inline-flex h-8 w-8 items-center justify-center border border-slate-300 bg-white text-slate-900 transition hover:border-orange-500 hover:text-orange-600"
                 key={direction}
                 onClick={(event) => {
                   // The photo sits in a card and the button sits on the photo: turning opens nothing.
@@ -439,7 +442,7 @@ export function ZoomablePhoto({
                 }}
                 type="button"
               >
-                {direction === "left" ? <RotateCcwSquare aria-hidden className="h-3.5 w-3.5" /> : <RotateCwSquare aria-hidden className="h-3.5 w-3.5" />}
+                {direction === "left" ? <RotateCcwSquare aria-hidden className="h-4 w-4" /> : <RotateCwSquare aria-hidden className="h-4 w-4" />}
               </button>
             ))}
           </span>
