@@ -11,11 +11,11 @@
 export const MR_DICTATE_LABEL = "Speak";
 export const MR_DICTATE_LISTENING = "Listening — speak now. Press Stop when you finish.";
 
-// After Stop, the words said in that turn come back as professional English (owner, 8 Nov 2026: "it fix the
+// After Stop, the words said in that turn come back professionally written, in the language spoken (owner, 8 Nov 2026: "it fix the
 // spelling and the grammar … rephrase it into professional corporate language" — polish.ts). Owner rule
 // 2026-08-04: users never learn a model was involved, so no sentence here names one.
-export const MR_DICTATE_POLISHING = "Putting your words into professional English…";
-export const MR_DICTATE_POLISHED = "Written in professional English.";
+export const MR_DICTATE_POLISHING = "Rewriting your words professionally…";
+export const MR_DICTATE_POLISHED = "Rewritten professionally.";
 export const MR_DICTATE_KEEP_OWN = "Keep my own words";
 export const MR_DICTATE_KEPT = "Your words were kept as you said them.";
 

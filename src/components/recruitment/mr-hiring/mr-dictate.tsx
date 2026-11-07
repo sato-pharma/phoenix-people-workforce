@@ -21,9 +21,9 @@ import { cn } from "@/lib/utils";
 // so I can talk and it is written instead of me typing"). The Phoenix CRM visit form's own engine —
 // `startDictation`: Egyptian Arabic, English words mixed in, each phrase written as it settles.
 //
-// THEN THE WORDS ARE PUT INTO PROFESSIONAL ENGLISH (owner, 8 Nov 2026: "it fix the spelling and the grammar
+// THEN THE WORDS ARE PROFESSIONALLY REWRITTEN, IN THE LANGUAGE SPOKEN (owner, 8 Nov 2026: "it fix the spelling and the grammar
 // … rephrase it into professional corporate language"). When the speaker presses Stop, what he said in that
-// turn goes to `/api/recruitment/mr-hiring/[candidateId]/polish` and comes back as clear corporate English,
+// turn goes to `/api/recruitment/mr-hiring/[candidateId]/polish` and comes back as clear professional wording,
 // in place of the raw words, with "Keep my own words" to put them back. What was typed before he pressed
 // Speak is never sent and never changed. If he edited the box while the words were away, or the rewrite
 // fails, the box keeps exactly what is in it — never worse than the plain microphone.
