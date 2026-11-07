@@ -10,6 +10,7 @@ import { parseLetterDate } from "@/lib/offers/dates";
 import { OFFER_REFERENCE_PREFIX, nextOfferReference, offerTitleCode } from "@/lib/offers/reference";
 import { announceAcceptedOffer } from "@/lib/offers/accepted-offer-alert";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OfferBlock,
@@ -660,6 +661,66 @@ export async function listOffers(limit = 200): Promise<OfferRecord[]> {
 
   assertReadable(error, "offers");
   return (data ?? []).map((row) => toOffer(row as OfferRow));
+}
+
+/**
+ * The newest DRAFT letter already on file for this job title and this candidate email, or null.
+ *
+ * Asked of the database by email, never found in `listOffers`: that list is only the newest 200
+ * letters, so a draft older than that was invisible here and the same candidate was given a second
+ * letter, with a second reference number, for the same job. The email narrows the read in SQL (a
+ * contains-match that tolerates stray spaces and any case, with LIKE's own characters escaped); the
+ * exact comparison of both fields is done here, so the SQL can only ever over-read, never miss one.
+ * Paged to the last row, because the answer must not depend on how many letters one email has.
+ */
+export async function findDraftOfferFor(title: string, candidateEmail: string): Promise<OfferRecord | null> {
+  const wantedEmail = candidateEmail.trim().toLowerCase();
+  if (!wantedEmail || !title.trim()) return null;
+
+  const db = getSupabaseAdmin();
+  let rows: OfferRow[];
+  try {
+    rows = await fetchAllRows<OfferRow>(
+      () =>
+        db
+          .from("offers")
+          .select("*")
+          .eq("status", "draft")
+          .ilike("candidate_email", offerEmailLikePattern(wantedEmail))
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    assertReadable(error as { code?: string; message?: string }, "offers");
+    throw error;
+  }
+
+  const match = pickDraftOfferRow(rows, title, candidateEmail);
+  return match ? toOffer(match) : null;
+}
+
+/**
+ * A contains-match for an email address that ignores case and tolerates stray spaces, with LIKE's own
+ * characters (`\`, `%`, `_`) escaped with its default escape character, so an address with an underscore
+ * in it is read literally. It can only over-read; `pickDraftOfferRow` makes the exact call.
+ */
+export function offerEmailLikePattern(email: string): string {
+  const escaped = email.trim().toLowerCase().replace(/[\\%_]/g, (character) => `\\${character}`);
+  return `%${escaped}%`;
+}
+
+/** The first row, in the order given (newest first), whose title and email both match exactly, ignoring case and edge spaces. */
+export function pickDraftOfferRow<T extends { candidate_email: string; title: string }>(
+  rows: readonly T[],
+  title: string,
+  candidateEmail: string,
+): T | undefined {
+  const wantedEmail = candidateEmail.trim().toLowerCase();
+  const wantedTitle = title.trim().toLowerCase();
+  if (!wantedEmail || !wantedTitle) return undefined;
+  return rows.find(
+    (row) => row.candidate_email.trim().toLowerCase() === wantedEmail && row.title.trim().toLowerCase() === wantedTitle,
+  );
 }
 
 export async function getOffer(id: string): Promise<OfferRecord> {

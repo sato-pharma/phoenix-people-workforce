@@ -2991,6 +2991,7 @@ import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building
 import { runEmployeeNicknameReachesLoginTests } from "./employee-nickname-reaches-login.test.ts";
 import { runOfferEmailViaTurbifyTests } from "./offer-email-via-turbify.test.ts";
 import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
+import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11897,6 +11898,7 @@ await runTest("a rep seats a customer in a polyclinic only while standing in tha
 await runTest("a saved nickname reaches the login's name, every HR id spelling, never a test account, and a failed login write never fails the save", runEmployeeNicknameReachesLoginTests);
 await runTest("job offers through the hr@ Turbify mailbox and no standing admin BCC (6 Nov 2026): set, an offer leaves from hr@ and never Resend, a failure never falls back, a lost Sent copy never resends; unset, Resend as before; no email carries the admin BCC and the Telegram mirror stays", runOfferEmailViaTurbifyTests);
 await runTest("no read stops silently at 1,000 rows (7 Nov 2026): a read cut at the ceiling is reported from its headers, and a new hard 1,000 in src or app is refused", runRowCapRatchetTests);
+await runTest("a recruitment offer letter reuses this candidate's older draft even beyond the newest 200 offers (7 Nov 2026): the route asks the database by email and pages to the last row, the exact title-and-email match is kept, and a blank email never matches", runOfferDraftLookupTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
