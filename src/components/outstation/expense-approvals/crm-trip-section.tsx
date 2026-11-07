@@ -148,7 +148,7 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
     : null;
   const plannedAreas = day.plan ? [...new Set(day.plan.places.map((place) => place.area).filter((area): area is string => Boolean(area)))] : [];
   return (
-    <li className={cn("border border-l-[3px] border-slate-200 bg-white", TONE_BAR[day.nothingInCrm ? "warn" : where.tone])} data-crm-day={day.date}>
+    <li className={cn("border border-l-[3px] border-slate-200 bg-white", TONE_BAR[day.beforePhoenix ? "neutral" : day.nothingInCrm ? "warn" : where.tone])} data-crm-day={day.date}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-50 px-3 py-2">
         {dayCount > 1 ? (
           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">
@@ -156,8 +156,8 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
           </span>
         ) : null}
         <span className="text-sm font-bold text-slate-900">{formatDateValue(day.date, null, { weekday: "short" })}</span>
-        <span className={cn("text-xs font-bold", TONE_TEXT[day.nothingInCrm ? "warn" : where.tone])}>
-          {day.nothingInCrm ? "Nothing in Phoenix CRM" : where.label}
+        <span className={cn("text-xs font-bold", TONE_TEXT[day.beforePhoenix ? "neutral" : day.nothingInCrm ? "warn" : where.tone])}>
+          {day.beforePhoenix ? "Before Phoenix CRM" : day.nothingInCrm ? "Nothing in Phoenix CRM" : where.label}
         </span>
         {day.areas.length > 0 ? (
           <span className="min-w-0 break-words text-xs text-slate-600" dir="auto">
@@ -166,90 +166,96 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
         ) : null}
       </div>
 
-      <div className="grid gap-x-6 gap-y-2 px-3 py-2.5 text-xs sm:grid-cols-2 [&>*]:min-w-0">
-        {/* Planned */}
-        <div className="space-y-1">
-          <Label icon={CalendarCheck2}>Planned</Label>
-          {planLine ? (
-            <p className={cn("break-words", day.planned ? "text-slate-800" : "text-amber-700")} dir="auto">
-              {planLine}
-              {plannedAreas.length > 0 ? ` · ${plannedAreas.join(" · ")}` : ""}
-            </p>
-          ) : day.managerPlan ? null : (
-            <p className="text-amber-700">No week plan for this day</p>
-          )}
-          {day.managerPlan ? (
-            <p className="break-words text-slate-800" dir="auto">
-              {day.managerPlan.sent ? "Manager plan sent" : "Manager plan not sent"}
-              {day.managerPlan.lines.length > 0 ? ` · ${day.managerPlan.lines.join(" · ")}` : ""}
-            </p>
-          ) : null}
-          {day.rideAlongsPlanned.length > 0 ? (
-            <p className="flex items-start gap-1.5 break-words text-slate-800" dir="auto">
-              <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-              Ride-along planned with {day.rideAlongsPlanned.join(", ")}
-            </p>
-          ) : null}
-          {day.activitiesLogged.length > 0 ? (
-            <p className="break-words text-slate-800">Logged: {day.activitiesLogged.join(" · ")}</p>
-          ) : null}
-        </div>
+      {day.beforePhoenix ? (
+        <p className="px-3 py-2.5 text-xs text-slate-600">
+          Phoenix CRM was not yet counted for this team on this day. The old system&apos;s visits are under Field work, day by day.
+        </p>
+      ) : (
+        <div className="grid gap-x-6 gap-y-2 px-3 py-2.5 text-xs sm:grid-cols-2 [&>*]:min-w-0">
+          {/* Planned */}
+          <div className="space-y-1">
+            <Label icon={CalendarCheck2}>Planned</Label>
+            {planLine ? (
+              <p className={cn("break-words", day.planned ? "text-slate-800" : "text-amber-700")} dir="auto">
+                {planLine}
+                {plannedAreas.length > 0 ? ` · ${plannedAreas.join(" · ")}` : ""}
+              </p>
+            ) : day.managerPlan ? null : (
+              <p className="text-amber-700">No week plan for this day</p>
+            )}
+            {day.managerPlan ? (
+              <p className="break-words text-slate-800" dir="auto">
+                {day.managerPlan.sent ? "Manager plan sent" : "Manager plan not sent"}
+                {day.managerPlan.lines.length > 0 ? ` · ${day.managerPlan.lines.join(" · ")}` : ""}
+              </p>
+            ) : null}
+            {day.rideAlongsPlanned.length > 0 ? (
+              <p className="flex items-start gap-1.5 break-words text-slate-800" dir="auto">
+                <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                Ride-along planned with {day.rideAlongsPlanned.join(", ")}
+              </p>
+            ) : null}
+            {day.activitiesLogged.length > 0 ? (
+              <p className="break-words text-slate-800">Logged: {day.activitiesLogged.join(" · ")}</p>
+            ) : null}
+          </div>
 
-        {/* Visited, the Day Start, the night */}
-        <div className="space-y-1">
-          <Label icon={MapPin}>
-            Visited · {formatNumberValue(day.visits.length)}
-          </Label>
-          {day.visits.length === 0 ? <p className="text-slate-500">No visit saved</p> : null}
-          <ul className="space-y-0.5">
-            {day.visits.map((visit, visitIndex) => (
-              <li className="break-words text-slate-800" key={`${visit.savedAt}-${visitIndex}`}>
-                <span className="font-mono tabular-nums text-slate-500">{visit.savedAt ? formatPhoenixTime(visit.savedAt) : "—"}</span>{" "}
-                <bdi dir="auto">{visit.customer ?? visit.place ?? "Visit"}</bdi>
-                {visit.place && visit.customer ? (
-                  <>
-                    {" · "}
-                    <bdi dir="auto">{visit.place}</bdi>
-                  </>
-                ) : null}
-                {visit.kmFromDestination !== null ? <span className="text-slate-500"> · {km(visit.kmFromDestination)} from destination</span> : null}
-                {visit.unplanned ? <Badge className="ml-1" size="sm" tone="warn">Unplanned</Badge> : null}
-                {visit.locationFlag ? <Badge className="ml-1" size="sm" tone="warn">Location: {visit.locationFlag.replace(/_/g, " ")}</Badge> : null}
-              </li>
-            ))}
-          </ul>
-          {day.dayStart ? (
-            <p className="flex items-start gap-1.5 text-slate-700">
-              <Sunrise className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-              Day Start {formatPhoenixTime(day.dayStart.at)}
-              {day.dayStart.kmFromDestination !== null ? ` · ${km(day.dayStart.kmFromDestination)} from destination` : ""}
-            </p>
-          ) : null}
-          {day.night ? (
-            <p
-              className={cn(
-                "flex items-start gap-1.5",
-                day.night.verdict === "home" ? "font-bold text-amber-700" : day.night.verdict === "stayed" ? "text-emerald-700" : "text-slate-600",
-              )}
-              data-crm-night={day.night.verdict}
-            >
-              <Moon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {day.night.verdict === "stayed"
-                ? "Night: the next morning started at the destination"
-                : day.night.verdict === "home"
-                  ? "Night: the next morning started back home"
-                  : "Night: no position the next morning"}
-              {day.night.nextMorningAt ? ` · ${formatPhoenixTime(day.night.nextMorningAt)}` : ""}
-            </p>
-          ) : null}
-          {day.sharedCar.length > 0 ? (
-            <p className="flex items-start gap-1.5 break-words font-bold text-amber-700" data-crm-shared-car>
-              <Car className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              A car also claimed by {day.sharedCar.map((entry) => `${entry.name} (request ${entry.requestId})`).join(", ")}
-            </p>
-          ) : null}
+          {/* Visited, the Day Start, the night */}
+          <div className="space-y-1">
+            <Label icon={MapPin}>
+              Visited · {formatNumberValue(day.visits.length)}
+            </Label>
+            {day.visits.length === 0 ? <p className="text-slate-500">No visit saved</p> : null}
+            <ul className="space-y-0.5">
+              {day.visits.map((visit, visitIndex) => (
+                <li className="break-words text-slate-800" key={`${visit.savedAt}-${visitIndex}`}>
+                  <span className="font-mono tabular-nums text-slate-500">{visit.savedAt ? formatPhoenixTime(visit.savedAt) : "—"}</span>{" "}
+                  <bdi dir="auto">{visit.customer ?? visit.place ?? "Visit"}</bdi>
+                  {visit.place && visit.customer ? (
+                    <>
+                      {" · "}
+                      <bdi dir="auto">{visit.place}</bdi>
+                    </>
+                  ) : null}
+                  {visit.kmFromDestination !== null ? <span className="text-slate-500"> · {km(visit.kmFromDestination)} from destination</span> : null}
+                  {visit.unplanned ? <Badge className="ml-1" size="sm" tone="warn">Unplanned</Badge> : null}
+                  {visit.locationFlag ? <Badge className="ml-1" size="sm" tone="warn">Location: {visit.locationFlag.replace(/_/g, " ")}</Badge> : null}
+                </li>
+              ))}
+            </ul>
+            {day.dayStart ? (
+              <p className="flex items-start gap-1.5 text-slate-700">
+                <Sunrise className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                Day Start {formatPhoenixTime(day.dayStart.at)}
+                {day.dayStart.kmFromDestination !== null ? ` · ${km(day.dayStart.kmFromDestination)} from destination` : ""}
+              </p>
+            ) : null}
+            {day.night ? (
+              <p
+                className={cn(
+                  "flex items-start gap-1.5",
+                  day.night.verdict === "home" ? "font-bold text-amber-700" : day.night.verdict === "stayed" ? "text-emerald-700" : "text-slate-600",
+                )}
+                data-crm-night={day.night.verdict}
+              >
+                <Moon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {day.night.verdict === "stayed"
+                  ? "Night: the next morning started at the destination"
+                  : day.night.verdict === "home"
+                    ? "Night: the next morning started back home"
+                    : "Night: no position the next morning"}
+                {day.night.nextMorningAt ? ` · ${formatPhoenixTime(day.night.nextMorningAt)}` : ""}
+              </p>
+            ) : null}
+            {day.sharedCar.length > 0 ? (
+              <p className="flex items-start gap-1.5 break-words font-bold text-amber-700" data-crm-shared-car>
+                <Car className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                A car also claimed by {day.sharedCar.map((entry) => `${entry.name} (request ${entry.requestId})`).join(", ")}
+              </p>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </li>
   );
 }
