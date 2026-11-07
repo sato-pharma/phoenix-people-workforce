@@ -8,6 +8,7 @@ import {
   resolveNoTicketFare,
   trainFareBetween,
 } from "../src/lib/outstation/train-fare.ts";
+import { mapOutstationRequestRowToPayrollApproval } from "../src/lib/outstation/payroll-expense-mapping.ts";
 
 // "No ticket" trips (owner, 2026-11-07): the Submit Expense trip is chosen as Fuel, Ticket or No
 // ticket. Fuel is priced as a car trip, Ticket carries the read ticket and its typed price, and No
@@ -90,6 +91,15 @@ function record() {
   for (const bad of [null, "x", 7, {}, { oneWayFare: 1, totalFare: 2 }, { fromStation: "A", oneWayFare: "1", toStation: "B", totalFare: 2 }]) {
     assert.equal(readNoTicketFare(bad), null);
   }
+
+  // The approvals deck reads the claim through this mapper: the stations line reaches it, and only on a No-ticket trip.
+  const row = { id: 1, status: "submitted", transportation_type: "no_ticket", trip_start_date: "2026-11-02", trip_end_date: "2026-11-04" };
+  assert.equal(
+    mapOutstationRequestRowToPayrollApproval({ ...row, no_ticket_fare: JSON.parse(JSON.stringify(stored)) }).noTicketFareLine,
+    stored.line,
+    "HEADLINE: the approver sees the stations and the fixed fare",
+  );
+  assert.equal(mapOutstationRequestRowToPayrollApproval({ ...row, no_ticket_fare: null, transportation_type: "train" }).noTicketFareLine, null);
 }
 
 function wiring() {
@@ -130,6 +140,9 @@ function wiring() {
   const panel = wizard.slice(wizard.indexOf("function NoTicketFarePanel"), wizard.indexOf("function NoTicketFarePanel") + 2400);
   assert.ok(panel.length > 100);
   assert.doesNotMatch(panel, /<input|<InputField|onChange/, "the fixed fare is shown, never typed");
+
+  const deck = code("src/components/outstation/expense-review/review-deck/deck-subject.tsx");
+  assert.match(deck, /record\.noTicketFareLine \? \(\s*<SubjectFact className="col-span-2" label="Fixed train fare">/, "the approvals deck prints the stations line");
 }
 
 export function runOutstationNoTicketTrainFareTests() {

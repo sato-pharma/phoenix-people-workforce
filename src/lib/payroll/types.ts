@@ -183,6 +183,8 @@ export type PayrollExpenseApproval = ExpenseTripRecord & {
   hrId: string | null;
   hrApproved: boolean;
   hrComment: string;
+  /** A No-ticket trip's fixed train fare in words (stations and EGP), read from `no_ticket_fare`; absent on every other trip. */
+  noTicketFareLine?: string | null;
   payoutMonth: number;
   payoutYear: number;
   reportId: string | null;

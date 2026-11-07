@@ -46,6 +46,7 @@ export type LoadedRecord = ExpenseTripRecord & {
   approvedAmount?: number | null;
   hrApproved?: boolean;
   hrComment?: string;
+  noTicketFareLine?: string | null;
   reportId?: string | null;
   sourceFileName?: string;
 };
