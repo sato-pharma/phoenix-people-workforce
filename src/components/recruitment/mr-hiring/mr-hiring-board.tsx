@@ -129,8 +129,8 @@ export function MrHiringBoard({
       {visible.length === 0 ? (
         <p className="border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">No candidates here.</p>
       ) : (
-        <div className="@container min-w-0">
-          <table className="hidden w-full table-fixed border-collapse border border-slate-200 @4xl:table">
+        <div className="min-w-0">
+          <table className="hidden w-full table-fixed border-collapse border border-slate-200 md:table">
             <colgroup>
               <col className="w-[24%]" />
               <col className="w-[26%]" />
@@ -181,7 +181,7 @@ export function MrHiringBoard({
             </tbody>
           </table>
 
-          <ul className="grid gap-2 @4xl:hidden">
+          <ul className="grid gap-2 md:hidden">
             {visible.map((row) => {
               const action = nextActionLabel(row);
               return (

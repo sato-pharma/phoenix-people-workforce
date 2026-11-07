@@ -1268,7 +1268,9 @@ function runWiringTests() {
   assert.match(viewSrc, /timeOnly=\{!canBook\}/, "the move dialog is time-only for a requester, full for HR");
   const scheduleDialog = stripComments(read("src/components/recruitment/interview-calendar/schedule-interview-dialog.tsx"));
   assert.match(scheduleDialog, /timeOnly\?: boolean/, "the schedule dialog accepts a timeOnly flag");
-  assert.match(scheduleDialog, /timeOnly\s*\r?\n?\s*\? \{ dateKey, durationMinutes, notes: notes\.trim\(\), platform, startMinutes \}/, "a timeOnly save sends only day, time and place — never the HR-only fields");
+  // The place is the platform and, for an in-person interview, its location (8 Nov 2026 workflow §5) —
+  // updateInterviewBooking lets a requester change both and refuses every HR-only field.
+  assert.match(scheduleDialog, /timeOnly\s*\r?\n?\s*\? \{ dateKey, durationMinutes, location: place, notes: notes\.trim\(\), platform, startMinutes \}/, "a timeOnly save sends only day, time and place — never the HR-only fields");
 
   // "My interviews" on the portal home + a per-person .ics subscription (owner, 2026-09-26: make the
   // calendar relevant to everyone daily). The card travels inside the ONE identity band every role
