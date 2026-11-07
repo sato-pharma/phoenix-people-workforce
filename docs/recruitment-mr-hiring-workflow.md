@@ -152,6 +152,17 @@ outcome sync and Mark as hired therefore move it without any second write that c
   mixed in); each phrase is added to what is already typed, never replacing it. Nothing is recorded. A
   browser with no speech engine (Firefox) shows the plain box.
 
+- **Then the words are put into professional English** (owner, 8 Nov 2026: "it fix the spelling and the
+  grammar … like ChatGPT … rephrase it into professional corporate language"). When the speaker presses Stop,
+  what he said in that turn goes to `POST /api/recruitment/mr-hiring/[candidateId]/polish`
+  (`src/lib/recruitment/mr-hiring/polish.ts`, through the one AI door) and comes back as clear corporate
+  English in place of the raw words, with "Keep my own words" to put them back. What was typed before Speak
+  is never sent or changed, and the candidate's name is never sent. The box keeps the words exactly as
+  spoken when the rewrite fails, when it carries a number that was not said (Arabic digits count as said),
+  when it names how it was written, or when the speaker edited the box while it was away. Only someone who
+  reads the candidate's journey and can write on it may call it — the CEO, who records nothing, is refused.
+  Nothing is saved until the form's own Save.
+
 ## Everything is open to HR (owner, 8 Nov 2026)
 
 His words, after an interview held the day before it was put in the system was refused: "don't block anything
