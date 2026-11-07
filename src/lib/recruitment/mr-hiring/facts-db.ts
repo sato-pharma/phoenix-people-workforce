@@ -23,6 +23,7 @@ import { chunkIds, fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadPeople, personName } from "@/lib/recruitment/interview-calendar";
+import { loadPediaAreasUnderRsm, mrFoldAreaName } from "@/lib/recruitment/mr-hiring/area-manager";
 import type { MrIntakeEventFact } from "@/lib/recruitment/mr-hiring/official-line";
 import { isOfficialWhatsAppEvent, officialLineIds } from "@/lib/recruitment/mr-hiring/official-line";
 import {
@@ -283,6 +284,8 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
           }
         : null,
       onOfficialLine: events.some((event) => isOfficialWhatsAppEvent(event, official)),
+      // Filled in below, from the organogram, once every candidate's confirmed area is known.
+      pediaAreaUnderRsm: false,
       receivedAt: row.created_at,
       recommendations: (recommendationsOf.get(row.id) ?? [])
         .filter((rec) => isMrRecommendation(rec.recommendation))
@@ -340,6 +343,16 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
       source: row.source,
     };
   });
+
+  // The RSM interview is only for a Pedia candidate inside the regional manager's regions (owner,
+  // 7 Nov 2026) — one organogram read for every confirmed Pedia area on the page.
+  const pediaAreas = records.flatMap((record) => (record.line === "pedia" && record.area ? [record.area] : []));
+  if (pediaAreas.length > 0) {
+    const underRsm = await loadPediaAreasUnderRsm(pediaAreas);
+    for (const record of records) {
+      record.facts.pediaAreaUnderRsm = record.line === "pedia" && Boolean(record.area) && underRsm.has(mrFoldAreaName(record.area!));
+    }
+  }
 
   return records.sort((left, right) => right.facts.receivedAt.localeCompare(left.facts.receivedAt));
 }
