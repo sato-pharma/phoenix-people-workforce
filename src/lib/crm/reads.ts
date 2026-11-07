@@ -676,6 +676,15 @@ export type CrmVisitFilter = {
   visitTypes?: readonly number[];
   /** Keep only rows with a real double partner (`double_crm_id` present and ≠ 0). */
   doubleOnly?: boolean;
+  /**
+   * 🔴 Keep only the rows that COUNT in a visit figure (`counts_in_kpi = true`, owner, 7 Nov 2026): never a
+   * campaign visit, an old visit in the visits archive (no check-in location, or far), or an old visit copied
+   * into Phoenix CRM other than the one its counted copy was converted with. Every reader that COUNTS visits
+   * passes it — KPIs, call rate, the reps list, Employee 360, double-visit analytics. A reader that asks "did
+   * he work that day" (deductions, attendance, outstation, compliance, resignation) NEVER passes it: it keeps
+   * every row the door served before (tests/crm-counts-in-kpi-readers.test.ts pins both sides).
+   */
+  kpiOnly?: boolean;
   /** Require a resolved `agent_hr_id` (NOT NULL). */
   requireAgentHrId?: boolean;
   /** Require a resolved `double_hr_id` (NOT NULL). */
@@ -884,6 +893,7 @@ export function applyVisitFilter(
     );
   }
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
+  if (filter.kpiOnly) result = result.eq("counts_in_kpi", true);
   // See REAL_DOUBLE_PARTNER_OR_FILTER for why a stray `double_hr_id` on a vendor row is not a partner.
   //
   // Slot 2 needs NO arm of its own here, and must not be given one: the view fills slot 1 from
@@ -2302,6 +2312,8 @@ export async function queryOwnVisitsOfDepartedAgents<T = CrmVisitRow>(options: {
   hrIds: readonly string[];
   /** Fold iReports360 re-saves, as {@link queryVisits} does for a present agent. */
   collapseDoubleVisits?: boolean;
+  /** Only the rows that count in a visit figure — see {@link CrmVisitFilter.kpiOnly}. */
+  kpiOnly?: boolean;
 }): Promise<T[]> {
   if (options.hrIds.length === 0) return [];
   const judged = departedAgentsAmong((await getEffectiveExclusion()).departed, options.hrIds);
@@ -2313,6 +2325,7 @@ export async function queryOwnVisitsOfDepartedAgents<T = CrmVisitRow>(options: {
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     includeResignedAgents: true,
+    kpiOnly: options.kpiOnly,
   });
   return selectOwnVisitsThroughLastWorkingDate(rows, judged);
 }

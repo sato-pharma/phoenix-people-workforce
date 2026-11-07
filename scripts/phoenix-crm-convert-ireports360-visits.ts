@@ -34,7 +34,8 @@
  * the database wrote exactly the rows sent. Every row it changes is recorded first, with its earlier values,
  * in before-<Cairo time>.jsonl — the rollback. A second --apply sends only rows whose answer changed, so it
  * is safe to repeat; run it again after `--leavers --apply` of scripts/phoenix-crm-import-ireports360-history.ts.
- * --apply takes no value: --apply=false is refused, and so is any flag it does not know.
+ * Step 1's marks are recorded the same way first, in before-step1-<Cairo time>.jsonl.
+ * --apply takes no value: --apply=, --apply=false and --apply=true are refused, and so is any flag it does not know.
  *
  * Usage:
  *   node --env-file-if-exists=.env.production.rls.local --experimental-strip-types \
@@ -76,9 +77,12 @@ for (const entry of process.argv.slice(2)) {
   const name = entry.replace(/^--/, "").split("=")[0];
   if (!entry.startsWith("--") || !known.has(name)) throw new Error(`Unknown flag ${entry} — refused rather than ignored.`);
 }
-if (arg("apply") !== null && arg("apply") !== "") throw new Error(`--apply takes no value (got ${arg("apply")}); leave it out for a dry run.`);
+// --apply is the bare word and nothing else: `--apply=`, `--apply=true` and `--apply=false` are all refused, so
+// a value can never be read as a yes (risk review, 7 Nov 2026 — `--apply=` read as "" and applied).
+const applyFlags = process.argv.slice(2).filter((entry) => entry === "--apply" || entry.startsWith("--apply="));
+if (applyFlags.some((entry) => entry !== "--apply")) throw new Error(`--apply takes no value (got ${applyFlags.join(" ")}); leave it out for a dry run.`);
 if (arg("out") === "") throw new Error("--out needs a value: --out=<folder> — refused rather than guessed.");
-const APPLY = arg("apply") === "";
+const APPLY = applyFlags.length > 0;
 const FOLDER = arg("out") ?? path.join("F:", "PHX backup", `phoenix-crm-ireports360-conversion-${DATE}`);
 const STAMP = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Africa/Cairo",
@@ -135,8 +139,23 @@ async function main(): Promise<void> {
     if (!Number.isFinite(farMeters) || farMeters <= 0) throw new Error("phoenix_crm_settings.visit_far_meters is missing — refused rather than guessed.");
 
     // Step 1: one transaction — the matches, the archive and the archived marks land together or not at all.
+    // Its rollback first, as step 2's: every copied row's archive fields BEFORE the marks, read inside the same
+    // transaction, so the file holds exactly what the marks replace (risk review, 7 Nov 2026). Undo the marks
+    // with it: set archived_at and archive_reason back to these values for these ids. The match and archive
+    // rows step 1 adds carry its own matched_at / archived_at, one moment, so they are found by it.
+    const stepOneBeforeFile = path.join(FOLDER, `before-step1-${STAMP}.jsonl`);
     const prepared = (await sql.begin(async (tx) => {
       await tx.unsafe(TIMEOUT);
+      if (APPLY) {
+        const marks = await tx.unsafe(
+          "select id, archived_at, archive_reason from public.phoenix_crm_visits where imported_from_ireports360_at is not null order by id",
+        );
+        fs.writeFileSync(
+          stepOneBeforeFile,
+          marks.map((row) => JSON.stringify({ visit_id: row.id, archived_at: row.archived_at, archive_reason: row.archive_reason })).join("\n") + "\n",
+          { flag: "wx" },
+        );
+      }
       const [row] = await tx.unsafe("select public.phoenix_crm_prepare_ireports360_conversion($1) as answer", [APPLY]);
       return row.answer;
     })) as Record<string, unknown>;
@@ -239,7 +258,7 @@ async function main(): Promise<void> {
       console.log(`${tally.rows} row(s) read, ${tally.written} written`);
     }
 
-    const record = { applied: APPLY, farMeters, prepared, conversion: tally, stopped, before: APPLY ? beforeFile : null };
+    const record = { applied: APPLY, farMeters, prepared, conversion: tally, stopped, before: APPLY ? beforeFile : null, beforeStepOne: APPLY ? stepOneBeforeFile : null };
     const file = save(APPLY ? "applied" : "dry-run", record);
     console.log(JSON.stringify({ conversion: tally, stopped }));
     if (!APPLY) console.log(`DRY RUN — nothing was written to the database. File ${file}`);

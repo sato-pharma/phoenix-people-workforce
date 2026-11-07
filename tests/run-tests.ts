@@ -619,6 +619,7 @@ import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
 import { runEarlyBirdsCloseSchedulerTests } from "./early-birds-close-scheduler.test.ts";
 import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
+import { runCrmCountsInKpiReadersTests } from "./crm-counts-in-kpi-readers.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
@@ -4388,6 +4389,7 @@ await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicat
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
 await runTest("early birds close scheduler (keeps its host guards; the retired iReports360 poller is never started again)", runEarlyBirdsCloseSchedulerTests);
 await runTest("crm participant visit filter (agent-or-partner door filter fails closed)", runCrmParticipantFilterTests);
+await runTest("crm counts_in_kpi (visit counts filter it; deductions, attendance and outstation never do)", runCrmCountsInKpiReadersTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);

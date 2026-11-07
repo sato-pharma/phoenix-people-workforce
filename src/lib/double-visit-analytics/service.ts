@@ -592,6 +592,8 @@ async function paginateLiveMirrorVisits(
     getDoubleVisitRows<MirrorVisitRow>({
       ...filter,
       includeResignedAgents: options?.includeResignedAgents,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      kpiOnly: true,
       visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
       columns:
         "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +

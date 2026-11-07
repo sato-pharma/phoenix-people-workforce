@@ -136,9 +136,13 @@ function checkRemeasureWindow(): void {
   const service = read("src/lib/phoenix-crm/server/visit-locations.ts");
   assert.match(
     service,
-    /function placesFor\(visit: \{ capturedAt: string \| null \}, places: readonly MeasurablePlace\[\]\): MeasurablePlace\[\]/,
+    /function placesFor\(\s*visit: \{ capturedAt: string \| null; copiedFromOldSystem\?: boolean \},\s*places: readonly MeasurablePlace\[\],\s*\): MeasurablePlace\[\]/,
     "one function decides which places a visit is measured against",
   );
+  // A visit COPIED from iReports360 is the one exception (owner, 7 Nov 2026): the conversion measured it against
+  // every active place today, so a restamp does the same — never the earliest place its old date would pick.
+  assert.match(service, /if \(visit\.copiedFromOldSystem\) return \[\.\.\.places\];/, "a copied visit is measured as the conversion measured it");
+  assert.match(service, /copiedFromOldSystem: visit\.imported_from_ireports360_at != null,/, "and only a copied visit");
   assert.match(
     service,
     /const captured = places\.filter\(\(place\) => place\.capturedAt <= visit\.capturedAt!\);/,
@@ -156,7 +160,7 @@ function checkRemeasureWindow(): void {
   );
   assert.match(service, /places: placesFor\(/, "and the check is given that set, never every active clinic");
   assert.match(service, /select\("id, lat, lon, captured_at"\)/, "so the place's capture time is read");
-  assert.match(service, /"id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag"/, "and the visit's");
+  assert.match(service, /"id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at"/, "and the visit's");
   assert.match(service, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/, "a move is once and for ever, so the restamp is retried once");
 }
 

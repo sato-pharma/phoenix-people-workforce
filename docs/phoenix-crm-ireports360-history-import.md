@@ -321,9 +321,32 @@ The owner's rules, 7 Nov 2026:
 - **Money and alerts keep ignoring every copied row**, converted or not. Work evidence, trip evidence, the
   entry days, the adoption board, prior fixes, the integrity board, the photograph check and the roll-up all
   filter by `imported_from_ireports360_at`.
-- **Nothing is counted twice.** Once `20261107044742` is applied, the iReports360 arm of `crm_visits_unified`
-  serves no campaign visit, no archived visit and no copied visit. The Phoenix arm serves a converted visit
-  that counts, whatever its day. `crm_checkins_unified` serves the old check-in from iReports360 only.
+- **Nothing is counted twice, and no worked day is lost.** See "The two doors" below.
+
+### The two doors (risk review, 7 Nov 2026)
+
+The deductions, the half-day and holiday-bridge rules, attendance, outstation, Field Workforce Compliance
+and the resignation check read `crm_visits_unified` as proof a person WORKED that day. So the door drops no
+old row. It MARKS them instead, in `counts_in_kpi` (`20261107044059`, section 8):
+
+- **Every row is served as before.** A campaign visit, an archived old visit and a copied old visit keep
+  their day, half-day (`ampm`) and `visit_type`. The Phoenix arm of both doors never serves a copied visit,
+  so a converted visit is served once: as its old row.
+- **`counts_in_kpi` is false** for a campaign visit (`visit_type is distinct from -8`, so a NULL type is not
+  one), for an old visit in the visits archive, and for an old visit whose copy was converted. One exception:
+  when the copy counts (`ireports360_kpi_counted`), the ONE old visit it was converted with counts — the
+  lowest-id source whose matched check-in is the copy's. A copy not converted yet leaves its old visits
+  counting as before, so the figures move only as the runner runs. Phoenix visits and day activities are
+  always true.
+- **Every reader that counts visits passes `kpiOnly`:** the KPIs, the call rate, the reps list, Employee 360
+  and double-visit analytics. No worked-day reader may; `tests/crm-counts-in-kpi-readers.test.ts` pins both.
+  Since Employee 360 filters it, its "Unplanned visit" row no longer holds campaign visits.
+- **A reader that does not ask for the column pays nothing for it** — Postgres never computes an unread
+  column of a flattened UNION ALL view (checked with EXPLAIN on production).
+
+**Measured read-only on production, 7 Nov 2026** (a copy of the new door's rows against the live door): 155,503
+rows each, 0 rows in only one of them, 0 of 37,650 (person, day, type, half-day) groups differing, and every
+month equal.
 
 **Measured read-only on production, 7 Nov 2026, before any run:**
 
@@ -340,9 +363,10 @@ The owner's rules, 7 Nov 2026:
 - **Leavers' copies (estimate, per old visit):** of the 30,472, 3,729 will count, 954 will be far and
   archived, and 25,789 will have no place.
 
-What the door serves for regular visits, by month. "Before" counts every iReports360 regular visit served
-today. "After" splits the same month into what iReports360 still serves, the converted copies that count, and
-an estimate of the leavers' copies that will count:
+What COUNTS among regular visits, by month (`counts_in_kpi`). "Before" counts every iReports360 regular visit
+served today. "After" splits the same month into the old visits that still count as they are, the converted
+copies that count, and an estimate of the leavers' copies that will count. The door still serves every one of
+them:
 
 Far visits are archived, so they are in neither "counted" column; they are shown beside them.
 
@@ -360,31 +384,36 @@ Far visits are archived, so they are in neither "counted" column; they are shown
 | Oct | 5,391 | 30 | 1,557 | 477 | 24 | 5 |
 | Nov | 153 | 0 | 0 | 0 | 0 | 0 |
 
-Campaign visits served today, which all leave the door: 1,994, 4,134, 5,319, 3,956, 4,303, 5,063, 3,893, 1,932,
+Campaign visits served today, which all stop counting (and stay served): 1,994, 4,134, 5,319, 3,956, 4,303, 5,063, 3,893, 1,932,
 1,160, 355 and 1. 🔴 **The counted visits fall sharply** — January from 7,191 to about 2,480. The main cause is
 the "no validated place, not counted" rule, and every customer validated later brings his visits back; the
 far rule takes about 15% of the converted visits (re-measured 7 Nov 2026).
 
 **The order on production** (each step is a bulk production change, announced first):
 
-1. Apply `20261107044059` — the columns, the trigger, the two tables, the three functions and importer v4.
-   The new readers select `archived_at` and `ireports360_kpi_counted`, so it goes BEFORE the deploy.
+1. Apply `20261107044059` BEFORE the merge — the columns, the trigger, the two tables, the three functions,
+   importer v4 and the two doors with `counts_in_kpi`. The new readers select `archived_at`,
+   `ireports360_kpi_counted` and `counts_in_kpi`, so it goes before the deploy. It changes no row a door
+   serves; from then on the campaign visits count nowhere.
 2. Deploy.
 3. `scripts/phoenix-crm-convert-ireports360-visits.ts` as a dry run, then with `--apply`. It fills the matches
    and the archive, marks the archived copies, and converts every other copy page by page. Each page is
    refused and rolled back unless the database wrote exactly the rows sent. `before-<Cairo time>.jsonl`
-   keeps each row's earlier values. Records go to `F:\PHX backup\phoenix-crm-ireports360-conversion-20261107\`.
+   keeps each row's earlier values, and `before-step1-<Cairo time>.jsonl` every copied row's archive fields
+   before step 1 marks them. `--apply` is the bare word: `--apply=` with any value, an empty one included, is
+   refused. Records go to `F:\PHX backup\phoenix-crm-ireports360-conversion-20261107\`.
 4. `scripts/phoenix-crm-import-ireports360-history.ts --leavers` as a dry run, then with `--leavers --apply`.
 5. The conversion with `--apply` again, for the leavers' copies.
-6. Apply `20261107044742` — the doors. Only after step 5, or the old visits it stops serving are served by
-   nobody.
+6. Apply `20261107044742` BY HAND, after step 5 — never part of the merge. It admits the converted visits that
+   count to `phoenix_crm_countable_visits` and keeps them out of the entry days and the adoption board. It does
+   not touch the doors: whenever it lands, they serve the same rows.
 
 ```powershell
 node --env-file-if-exists=.env.production.rls.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-convert-ireports360-visits.ts
 ```
 
-**Undo the conversion:** write each row of `before-<Cairo time>.jsonl` back by `visit_id`. Clear `archived_at`
-and `archive_reason` on the copied rows the run marked (`archived_at` equals that run's time). A far row
+**Undo the conversion:** write each row of `before-<Cairo time>.jsonl` back by `visit_id`. Then write each row of
+`before-step1-<Cairo time>.jsonl` back the same way: `archived_at` and `archive_reason` as they were before step 1. A far row
 needs nothing more: written back to its earlier `no_place` values, the trigger lifts its far mark and its far
 archive rows. The archive and
 the match tables are copies of iReports360 rows, which stay; drop them only on the owner's word.

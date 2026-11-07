@@ -775,14 +775,24 @@ function runNoDoubleCountTests(code: string): void {
     1,
     "the vendor table is scanned ONCE, not once per side of the split",
   );
-  // AN OLD VISIT IS SERVED ONLY AS A VISIT WITH A LOCATION, AND ONCE (owner, 7 Nov 2026): never a campaign visit
-  // (retired), never one in the visits archive (no check-in location), never one copied into Phoenix CRM — the
-  // Phoenix arm serves that one when it counts, and nobody when it does not.
-  const servedOnce =
-    "x.visit_type <> -8 and not exists (select 1 from public.phoenix_crm_visit_archive a where a.crm_visit_id = x.crm_visit_id) and not exists (select 1 from public.phoenix_crm_imported_visit_sources s where s.crm_visit_id = x.crm_visit_id)";
   assert.ok(
-    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ${retired} and ${servedOnce} and ( x.visit_date < ${firstDay} or ( not exists`),
-    "one scan, the cutover bound and the retirement bound on it, the served-once rule, and the first-day bound as the first arm of the choice",
+    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ${retired} and ( x.visit_date < ${firstDay} or ( not exists`),
+    "one scan, the cutover bound and the retirement bound on it, and the first-day bound as the first arm of the choice",
+  );
+  // 🔴 A "DID HE WORK" READER KEEPS EVERY ROW (risk review, 7 Nov 2026). The visits archive, the copied visits and
+  // the campaign visits (owner, 7 Nov 2026) never leave the vendor branch: deductions, attendance, outstation and
+  // compliance read this door for worked-day proof. They are MARKED, in counts_in_kpi, and only a reader that
+  // counts visits filters the mark (tests/crm-counts-in-kpi-readers.test.ts).
+  const vendorWhere = vendor.slice(vendor.indexOf("from ( select x.* from public.ireports360_visits x"), vendor.indexOf(") v left join"));
+  assert.doesNotMatch(vendorWhere, /visit_type|phoenix_crm_visit_archive|phoenix_crm_imported_visit_sources/, "no old visit is dropped from the vendor branch for being a campaign, archived or copied visit");
+  assert.ok(
+    vendor.includes(
+      "(v.visit_type is distinct from -8 and not exists (select 1 from public.phoenix_crm_visit_archive a where a.crm_visit_id = v.crm_visit_id) " +
+        "and not exists (select 1 from public.phoenix_crm_imported_visit_sources s join public.phoenix_crm_visits pv on pv.id = s.visit_id where s.crm_visit_id = v.crm_visit_id " +
+        "and not (pv.archived_at is null and pv.ireports360_checkin_id is null) " +
+        "and not (pv.ireports360_kpi_counted and v.crm_visit_id = (select min(s2.crm_visit_id) from public.phoenix_crm_imported_visit_sources s2 join public.phoenix_crm_ireports360_checkin_matches m2 on m2.crm_visit_id = s2.crm_visit_id where s2.visit_id = pv.id and m2.crm_checkin_id = pv.ireports360_checkin_id)))) as counts_in_kpi",
+    ),
+    "counts_in_kpi: never a campaign visit (a NULL type is not one), never an archived old visit, and a copied one only while its copy is unconverted or as the ONE old visit its counted copy was converted with",
   );
   assert.ok(
     vendor.includes(
@@ -846,21 +856,17 @@ function runNoDoubleCountTests(code: string): void {
     ),
     "a Phoenix visit is served on a counted territory, for the days it counts",
   );
-  // A CONVERTED OLD VISIT THAT COUNTS IS SERVED FROM PHOENIX, WHATEVER ITS DAY (owner, 7 Nov 2026): the countable view
-  // admits a copied visit only when ireports360_kpi_counted, and the iReports360 arm no longer serves it — so the
-  // windows join is LEFT, and only a copied visit may pass outside a window.
+  // A CONVERTED OLD VISIT IS SERVED ONCE, AS ITS OLD ROW (owner, 7 Nov 2026; risk review the same day): the Phoenix
+  // branch never serves a copied visit, whatever the countable view admits, so the old row above carries the KPI.
+  assert.doesNotMatch(flat(visitBranch), /left join public\.phoenix_crm_counted_seat_windows\(\)/, "the windows join stays INNER");
   assert.ok(
-    flat(visitBranch).includes("left join public.phoenix_crm_counted_seat_windows() team on team.seat_id = p.seat_id"),
-    "the windows join is LEFT, so a converted old visit dated before its team's start is still served",
-  );
-  assert.ok(
-    flat(visitBranch).endsWith("where not p.is_test and (team.seat_id is not null or p.imported_from_ireports360_at is not null)"),
-    "outside a counted window, only a copied visit — every Phoenix visit still counts only inside its window",
+    flat(visitBranch).endsWith("where not p.is_test and p.imported_from_ireports360_at is null"),
+    "never a copied visit — its old row is served by the iReports360 branch, so it can never count twice",
   );
   // WHICH TERRITORY COUNTS ON WHICH DAY (owner, 6 Nov 2026: "Count all teams from 6 Nov"): a started team's
   // territory from its start, cut at the day iReports360 was retired, and EVERY territory from that day on.
   // The two windows meet at the retirement day and never overlap, so no visit is served twice.
-  // Each window function is read from ITS OWN last definer: the door was redefined without them (20261107044742).
+  // Each window function is read from ITS OWN last definer: the door was redefined without them (20261107044059).
   const windowsSql = (fn: string): string => lastDefinerSql(new RegExp(`create or replace function public\\.${fn}\\(`), fn);
   const seatWindows = flat(functionSql(windowsSql("phoenix_crm_counted_seat_windows"), "phoenix_crm_counted_seat_windows"));
   for (const clause of [
@@ -1137,7 +1143,7 @@ const VISIT_COLUMNS_CARRIED = new Set([
   "captured_at",
   "comment",
   "created_at",
-  // Read in the WHERE only, to serve a converted old visit outside a counted window (owner, 2026-11-07) — no column.
+  // Read in the WHERE only, to leave every copied visit out (owner, 2026-11-07) — no column.
   "imported_from_ireports360_at",
   "customer_id",
   "customer_validated",
@@ -1210,12 +1216,16 @@ function runRowShapeTests(code: string): void {
 
   // COUNTABLE AND REAL ONLY.
   assert.ok(flat(visitBranch).includes("from public.phoenix_crm_countable_visits p"), "the module's own predicate for 'this visit counts', read and never re-typed");
-  // The second clause admits a converted old visit outside a counted window (owner, 7 Nov 2026) — never a test row.
-  assert.ok(
-    flat(visitBranch).endsWith("where not p.is_test and (team.seat_id is not null or p.imported_from_ireports360_at is not null)"),
-    "never a test account's visit",
-  );
-  assert.doesNotMatch(view, /public\.phoenix_crm_visits\b/, "the view never reads the raw visits table, so an unapproved off-plan visit never counts");
+  // The second clause leaves every copied old visit out (owner, 7 Nov 2026) — its old row is served above.
+  assert.ok(flat(visitBranch).endsWith("where not p.is_test and p.imported_from_ireports360_at is null"), "never a test account's visit");
+  // The one exception is the vendor branch's counts_in_kpi: it reads a copied visit's marks (converted, counted,
+  // archived) to decide whether its OLD row counts — it serves no Phoenix row (owner, 7 Nov 2026).
+  const withoutKpiMark = view
+    .split("\n")
+    .filter((line) => !line.trim().endsWith(" as counts_in_kpi"))
+    .join("\n");
+  assert.equal(view.split("\n").length - withoutKpiMark.split("\n").length, 1, "counts_in_kpi is one line of the vendor branch");
+  assert.doesNotMatch(withoutKpiMark, /public\.phoenix_crm_visits\b/, "the view never reads the raw visits table, so an unapproved off-plan visit never counts");
   // 🔴 THE APPROVAL RULE IS STILL THE COUNTABLE VIEW'S, AND THE DOOR STILL NEVER RE-TYPES IT. From
   // 2026-10-07 the door CARRIES `is_unplanned` and `unplanned_kind` for the admin reports to print —
   // an off-plan visit and the reason the rep gave for it. Printing them is not deciding with them: the
@@ -1237,7 +1247,7 @@ function runRowShapeTests(code: string): void {
 
   const vendorItems = itemsOf(vendorBranch, "from (\n");
   const phoenixItems = itemsOf(visitBranch, "from public.phoenix_crm_countable_visits p");
-  assert.equal(vendorItems.length, 64, "the 30 columns, the four appended in #5477, the 29 of the Phoenix field set, and companion_hr_ids (2026-10-27)");
+  assert.equal(vendorItems.length, 65, "the 30 columns, the four appended in #5477, the 29 of the Phoenix field set, companion_hr_ids (2026-10-27) and counts_in_kpi (2026-11-07)");
   assert.equal(phoenixItems.length, vendorItems.length, "both branches carry the same columns, item for item");
   const names = vendorItems.map(outputName);
   const phoenix = new Map(names.map((name, index): [string, string] => [name, phoenixItems[index]]));
@@ -1294,6 +1304,7 @@ function runRowShapeTests(code: string): void {
       "device_skew_minutes",
       "phoenix_synced_at",
       "companion_hr_ids",
+      "counts_in_kpi",
     ],
     "the appended columns, in the order they were added",
   );
@@ -1311,15 +1322,14 @@ function runRowShapeTests(code: string): void {
   // agree on a type. iReports360 recorded none of it: no products, no samples, no GPS, no evidence and
   // no timing. A blank is the honest answer there, and a `0` would have read as "stood at the door for
   // no time at all" on a day the vendor simply never measured.
-  for (const item of vendorItems.slice(34)) {
+  // counts_in_kpi, the last, is the one vendor value among them (pinned in runNoDoubleCountTests).
+  for (const item of vendorItems.slice(34, -1)) {
     assert.match(item, /^null::[a-z ]+(\[\])? as [a-z0-9_]+$/, `the vendor branch's "${item}" is a typed null, not a value`);
   }
   assert.ok(
     flat(vendorBranch).includes(
       "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) " +
-        "and x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date) " +
-        "and x.visit_type <> -8 and not exists (select 1 from public.phoenix_crm_visit_archive a where a.crm_visit_id = x.crm_visit_id) " +
-        "and not exists (select 1 from public.phoenix_crm_imported_visit_sources s where s.crm_visit_id = x.crm_visit_id) and ( x.visit_date < (",
+        "and x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date) and ( x.visit_date < (",
     ),
     "the iReports360 branch keeps its source, its cutover clause and the retirement bound on its one scan",
   );
@@ -1433,6 +1443,11 @@ function runRowShapeTests(code: string): void {
     "nothing else the door serves is called a pharmacy, so nothing can be tidied into the AM/PM/Pharmacies bucket",
   );
   assert.equal(phoenix.get("ampm"), "p.list_type", "the bucket still reads the CUSTOMER'S OWN LIST and nothing the visit says");
+  // A Phoenix visit and a recorded day activity always count (owner, 7 Nov 2026): the copied visits they could
+  // have doubled are never served by the Phoenix branch.
+  assert.equal(phoenix.get("counts_in_kpi"), "true", "a visit entered in Phoenix CRM counts in a KPI");
+  const activityItems = itemsOf(activityBranch, "from public.phoenix_crm_day_activities a");
+  assert.equal(activityItems[activityItems.length - 1], "true", "a recorded day activity's counts_in_kpi is true");
 
   // Golden rule #1: nothing silent leaves Phoenix CRM.
   const columnsRead = new Set([...visitBranch.matchAll(/\bp\.([a-z0-9_]+)/g)].map((match) => match[1]));
@@ -1507,8 +1522,9 @@ function runRowShapeTests(code: string): void {
       // 20261021140001: the second manager and the Phoenix visit detail, APPENDED after the two flags. Frozen
       // at 32 columns until then, which left CRM Master's Regular · No Check-in tabs asking for 32 it lacked.
       // `phoenix_customer_validated` (names[30]) stays out: nothing reads it from this view. Nor does
-      // `companion_hr_ids` (2026-10-27, the door's last column): the flag tabs name no companions.
-      ...names.slice(31, -1).map((name) => `v.${name}`),
+      // `companion_hr_ids` (2026-10-27): the flag tabs name no companions. Nor `counts_in_kpi` (2026-11-07, the
+      // door's last column): the flag tabs list missing check-ins, they count no visit.
+      ...names.slice(31, -2).map((name) => `v.${name}`),
     ],
     "the flag view keeps its first 32 columns in place and APPENDS the second manager and the Phoenix visit detail",
   );

@@ -51,8 +51,18 @@ export type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt
  * BEFORE he is validated, and "his earlier visits then get their distance" from the place the validation
  * captured (owner, 2026-09-29). Such a visit has no place captured before it at all, so it measures
  * against the EARLIEST one — the place he was validated with — and never against a clinic added later.
+ *
+ * 🔴 A VISIT COPIED FROM iREPORTS360 IS MEASURED AGAINST EVERY ACTIVE PLACE (owner, 7 Nov 2026; risk review the
+ * same day). The conversion measured it against the customer's validated places TODAY, all of them
+ * (scripts/phoenix-crm-convert-ireports360-visits.ts through convertOldVisitLocation): its captured_at is the
+ * old visit's, months before any place was captured, so the rule above would hand it the earliest place only
+ * and a restamp could turn a converted visit that counted into a far one. A live Phoenix visit keeps the rule above.
  */
-export function placesFor(visit: { capturedAt: string | null }, places: readonly MeasurablePlace[]): MeasurablePlace[] {
+export function placesFor(
+  visit: { capturedAt: string | null; copiedFromOldSystem?: boolean },
+  places: readonly MeasurablePlace[],
+): MeasurablePlace[] {
+  if (visit.copiedFromOldSystem) return [...places];
   // A visit with no stamp to compare is measured as it always was, rather than silently losing its
   // distance: an absent answer must never read as "no place was there".
   if (!visit.capturedAt) return [...places];
@@ -82,7 +92,7 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
       () => {
         let query = supabase
           .from("phoenix_crm_visits")
-          .select("id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag")
+          .select("id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at")
           .eq("seat_id", input.seatId)
           .eq("is_test", input.isTest)
           .eq("customer_id", input.customerId);
@@ -114,7 +124,13 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
     if (lat === null || lon === null) return [];
     const check = checkVisitLocation({
       fix: { lat, lon, accuracyMeters: numberOrNull(visit.accuracy_meters) },
-      places: placesFor({ capturedAt: typeof visit.captured_at === "string" ? visit.captured_at : null }, places),
+      places: placesFor(
+        {
+          capturedAt: typeof visit.captured_at === "string" ? visit.captured_at : null,
+          copiedFromOldSystem: visit.imported_from_ireports360_at != null,
+        },
+        places,
+      ),
       farMeters: input.settings.visitFarMeters,
       weakGpsMeters: input.settings.weakGpsMeters,
     });

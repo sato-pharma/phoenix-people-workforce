@@ -205,7 +205,6 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/validation-reviews.ts": 1,
     "src/lib/phoenix-crm/server/visit-detail-edit.ts": 1,
     "src/lib/phoenix-crm/server/visit-edit.ts": 1,
-    "src/lib/phoenix-crm/server/visit-locations.ts": 1,
     "src/lib/phoenix-crm/server/visit-recordings.ts": 3,
     // The retry asks "is this id on file?" for ids the phone made. A copied visit never holds one, so there is nothing to skip.
     "src/lib/phoenix-crm/server/visit-resend-log.ts": 1,
@@ -596,7 +595,7 @@ function runOldVisitConversionTests(): void {
   assert.match(prepare, /having not bool_or\(iv\.visit_type = 0 and m\.crm_visit_id is not null\)/, "a copied row is archived only when none of its old visits is a located regular visit");
   assert.match(prepare, /set archived_at = v_now, archive_reason = r\.reason/, "a copied row that is no visit is MARKED");
   assert.match(prepare, /pg_advisory_xact_lock/, "one conversion at a time");
-  for (const sql of [convertSql, stripSqlComments(read("supabase/migrations/20261107044742_crm_doors_count_converted_old_visits.sql"))]) {
+  for (const sql of [convertSql, stripSqlComments(read("supabase/migrations/20261107044742_phoenix_crm_countable_admits_converted_visits.sql"))]) {
     assert.doesNotMatch(sql, /delete from public\.phoenix_crm_visits\b/i, "a copied row is never deleted — production has no PITR");
   }
   assert.match(
@@ -624,8 +623,17 @@ function runOldVisitConversionTests(): void {
 
   // ── The runner: dry run by default, the one distance rule, the count checked ──
   const runner = stripComments(read("scripts/phoenix-crm-convert-ireports360-visits.ts"));
-  assert.match(runner, /const APPLY = arg\("apply"\) === "";/, "--apply is a bare flag; anything else is a dry run");
-  assert.match(runner, /if \(arg\("apply"\) !== null && arg\("apply"\) !== ""\) throw/, "--apply=false is refused");
+  assert.match(runner, /const APPLY = applyFlags\.length > 0;/, "--apply is a bare flag; anything else is a dry run");
+  assert.match(
+    runner,
+    /if \(applyFlags\.some\(\(entry\) => entry !== "--apply"\)\) throw/,
+    "--apply=, --apply=false and --apply=true are all refused — an empty value is never a yes (risk review, 7 Nov 2026)",
+  );
+  assert.doesNotMatch(runner, /arg\("apply"\)/, "and the apply flag is never read through the valued-flag reader");
+  // Step 1's marks have a rollback too, read inside its own transaction before the marks.
+  const stepOne = runner.slice(runner.indexOf("const prepared = (await sql.begin("), runner.indexOf("phoenix_crm_prepare_ireports360_conversion($1)"));
+  assert.match(stepOne, /select id, archived_at, archive_reason from public\.phoenix_crm_visits where imported_from_ireports360_at is not null order by id/, "every copied row's archive fields are kept before step 1 marks them");
+  assert.match(stepOne, /fs\.writeFileSync\(\s*stepOneBeforeFile,/, "in their own before-file");
   assert.match(runner, /Unknown flag \$\{entry\} — refused rather than ignored\./);
   assert.match(runner, /convertOldVisitLocation\(/, "the runner measures with the one rule");
   assert.match(runner, /if \(count !== items\.length\) throw new PageMismatch/, "a page that wrote another number of rows is rolled back");
