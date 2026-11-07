@@ -12,6 +12,8 @@
  *   --hrId <id>      sign in as THAT person; dev-auth refuses (409) a role they do not hold
  *   --width <px>     viewport width (default 1440; 375 for the mobile check)
  *   --out <dir>      where screenshots land (default output/run-skill)
+ *   --timeout <s>    how long one navigation may take (default 180; on the spare laptop /admin
+ *                    took 11.6 minutes to render, so on-spare.ps1 sends 900)
  *
  * Steps run in order in ONE browser context, so the sign-in cookie carries through:
  *   go <path>        navigate, wait for the network to settle, print status + title + url
@@ -39,7 +41,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 const argv = process.argv.slice(2);
-const opts = { base: "http://localhost:3000", role: null, hrId: null, width: 1440, out: "output/run-skill" };
+const opts = { base: "http://localhost:3000", role: null, hrId: null, width: 1440, out: "output/run-skill", timeout: 180 };
 while (argv[0]?.startsWith("--")) {
   const key = argv.shift().slice(2);
   if (!(key in opts)) {
@@ -49,6 +51,7 @@ while (argv[0]?.startsWith("--")) {
   opts[key] = argv.shift();
 }
 opts.width = Number(opts.width);
+const navTimeout = Number(opts.timeout) * 1000;
 if (argv.length === 0) {
   console.error("no steps. e.g.: --role \"Super Admin\" go /admin shot admin");
   process.exit(2);
@@ -169,7 +172,7 @@ const settle = async () => {
 const gotoRetry = async (url) => {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await page.goto(url, { timeout: 180_000 });
+      return await page.goto(url, { timeout: navTimeout });
     } catch (error) {
       if (attempt >= 4 || !/ERR_CONNECTION_(RESET|REFUSED)|ERR_EMPTY_RESPONSE/.test(error.message)) throw error;
       console.log(`  dev server restarting (${error.message.match(/ERR_\w+/)[0]}) — waiting, retry ${attempt}`);
@@ -219,7 +222,7 @@ try {
       await target.click({ timeout: 15_000 });
       if (href?.startsWith("/")) {
         const want = href.split(/[?#]/)[0];
-        await page.waitForURL((u) => u.pathname === want, { timeout: 180_000 });
+        await page.waitForURL((u) => u.pathname === want, { timeout: navTimeout });
       }
       await settle();
       console.log(`click "${text}" -> ${new URL(page.url()).pathname}`);
