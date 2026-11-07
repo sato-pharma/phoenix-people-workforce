@@ -7979,7 +7979,7 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM doctor full name (owner, 2026-11-07): a clinic doctor is written as first, middle and last name, each box a real name; a doctor a rep added with one or two names is blocked from the plan, Suggest, Copy and Add visit until it is written; the full name is held against his signboard — 60% saved, under 40% refused, in between it waits — counted over the words the board shows",
+  "Phoenix CRM doctor full name (owner, 2026-11-07): a clinic doctor is written as first, middle and last name, each box a real name; any doctor on the list with one or two names — rep-added or from iReports360 — is blocked from the plan, Suggest, Copy and Add visit until it is written; the full name is held against his signboard — 60% saved, under 40% refused, in between it waits — counted over the words the board shows",
   runPhoenixCrmDoctorFullNameTests,
 );
 

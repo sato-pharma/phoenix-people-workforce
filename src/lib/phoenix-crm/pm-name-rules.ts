@@ -15,10 +15,12 @@ import {
  * one or two words ("طارق", "احمد", "عمر حردان"), 618 of them already validated. AM accounts, a
  * hospital or a centre on the morning list, and pharmacies keep their one name field.
  *
- * 🔴 A DOCTOR A REP ADDED WITH A SHORT NAME IS BLOCKED — never planned and never visited — until the rep
- * writes the full name (owner's choice, "Rep-added, all statuses"). The SFE's imported list is NOT
- * blocked: its names came from the old system, not from the rep. A full name waiting for the Super
- * Admin's decision unblocks him, so the rep is never held up by the wait.
+ * 🔴 EVERY DOCTOR ON THE LIST WITH A SHORT NAME IS BLOCKED — never planned and never visited — until the
+ * rep writes the full name, whether a rep added him or he came from the iReports360 list (owner,
+ * 2026-11-07: "any dr in the list must be 3 names", widening his first choice, "Rep-added, all
+ * statuses"). Measured that day: 5,751 of the 9,118 iReports360 PM doctors on the list carry one or two
+ * words. A full name waiting for the Super Admin's decision unblocks him, so the rep is never held up
+ * by the wait.
  *
  * 🔴 THE FULL NAME IS HELD AGAINST THE SIGNBOARD OR TIMETABLE ALREADY READ FOR HIM, "DO NOT STRICT
  * REJECTION OR FOOLISH APPROVALS": 60% or more is saved, under 40% is refused, and in between it waits
@@ -187,19 +189,18 @@ export function splitDoctorName(name: string | null | undefined): DoctorNamePart
 }
 
 /**
- * Is this doctor blocked from the plan and Add visit until his full name is written? A PM doctor the
- * rep added himself, still on the list, with fewer than three names and no full name waiting for the
- * Super Admin.
+ * Is this doctor blocked from the plan and Add visit until his full name is written? A PM doctor still
+ * on the list — rep-added or from iReports360 — with fewer than three names and no full name waiting
+ * for the Super Admin.
  */
 export function doctorNeedsFullName(customer: {
   listType: unknown;
-  origin: unknown;
+  origin?: unknown;
   status: unknown;
   name: unknown;
   fullNameHeld?: unknown;
 }): boolean {
   if (String(customer.listType ?? "").toUpperCase() !== "PM") return false;
-  if (customer.origin !== "new") return false;
   if (customer.status === "dropped") return false;
   if (typeof customer.fullNameHeld === "string" && customer.fullNameHeld.trim()) return false;
   return doctorNameWordCount(String(customer.name ?? "")) < 3;

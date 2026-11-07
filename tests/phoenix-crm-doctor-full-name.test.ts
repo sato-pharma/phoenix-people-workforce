@@ -19,7 +19,7 @@ import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 
 /**
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
- * required boxes, each a real name; a doctor a rep added with one or two names is blocked from the plan
+ * required boxes, each a real name; any doctor on the list with one or two names is blocked from the plan
  * and Add visit until the full name is written; the full name is held against his signboard — 60%+
  * saved, under 40% refused, in between it waits for the Super Admin — "do not strict rejection or
  * foolish approvals".
@@ -73,7 +73,7 @@ function checkWhoIsBlocked(): void {
   assert.equal(doctorNeedsFullName({ ...base, status: "pending" }), true, "every status, the owner's choice");
   assert.equal(doctorNeedsFullName({ ...base, name: "Dr. Omar Hardan" }), true, "the title is not a name");
   assert.equal(doctorNeedsFullName({ ...base, name: "عمر علي حردان" }), false);
-  assert.equal(doctorNeedsFullName({ ...base, origin: "reference" }), false, "the SFE's imported list is not blocked");
+  assert.equal(doctorNeedsFullName({ ...base, origin: "reference" }), true, "any doctor on the list, the iReports360 list too");
   assert.equal(doctorNeedsFullName({ ...base, listType: "AM" }), false);
   assert.equal(doctorNeedsFullName({ ...base, status: "dropped" }), false);
   assert.equal(doctorNeedsFullName({ ...base, fullNameHeld: "عمر علي حردان" }), false, "a name waiting for a decision unblocks him");
