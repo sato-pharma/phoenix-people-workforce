@@ -19,6 +19,7 @@ import {
   usagePath,
   billingPage,
   includedMinutesFrom,
+  allowanceIsEstimated,
 } from "../scripts/check-actions-cost.mjs";
 
 type Row = { date: string; product: string; sku: string; grossAmount: number; discountAmount: number; netAmount: number; pricePerUnit: number };
@@ -44,8 +45,12 @@ export function runActionsCostAlarmTests() {
   // The billing PAGE is not the API path: a personal account's is github.com/settings/billing.
   assert.equal(billingPage("sato-pharma", true), "github.com/organizations/sato-pharma/settings/billing");
   assert.equal(billingPage("someone", false), "github.com/settings/billing", "🔴 github.com/users/<login>/settings/billing is a 404");
-  // 🔴 An organization's included minutes depend on its plan, so the Pro 3,000 is never assumed for one.
-  assert.equal(includedMinutesFrom({}, true), null, "an organization with no stated allowance cannot tell");
+  // 🔴 An organization's included minutes depend on its plan, so the Pro 3,000 is never assumed for one —
+  //    and an unset figure must NOT switch the alarm off (exit 2 is only a warning): it counts as 0 and says estimate.
+  assert.equal(includedMinutesFrom({}, true), 0, "🔴 an organization with no stated allowance still projects, on the API's own discount");
+  assert.equal(allowanceIsEstimated({}, true), true, "and the reading is labelled an estimate");
+  assert.equal(allowanceIsEstimated({ ACTIONS_INCLUDED_MINUTES: "50000" }, true), false);
+  assert.equal(allowanceIsEstimated({}, false), false, "a personal account's 3,000 is a stated default, not an estimate");
   assert.equal(includedMinutesFrom({}, false), 3000, "a personal Pro account keeps its 3,000");
   assert.equal(includedMinutesFrom({ ACTIONS_INCLUDED_MINUTES: "50000" }, true), 50000);
   assert.equal(includedMinutesFrom({ ACTIONS_INCLUDED_MINUTES: "lots" }, true), null);
@@ -152,6 +157,7 @@ export function runActionsCostAlarmTests() {
   assert.match(stepText, /timeout-minutes:\s*\d+/);
   assert.match(stepText, /ACTIONS_MONTHLY_BUDGET:\s*\$\{\{\s*vars\.ACTIONS_MONTHLY_BUDGET\s*\}\}/, "🔴 the step lost the budget variable, so every run says CANNOT TELL");
   assert.match(stepText, /GH_TOKEN:\s*\$\{\{\s*secrets\.ACTIONS_BILLING_READ_TOKEN/, "the step must read billing with the billing token first");
+  assert.doesNotMatch(stepText, /GH_TOKEN:[^\n]*PHOENIX_ACTIONS_DISPATCH_TOKEN/, "🔴 the dispatch token is a personal-account token and can never read the organization's billing");
   assert.doesNotMatch(stepText, /secrets\.GITHUB_TOKEN/, "GITHUB_TOKEN cannot read an account's billing; falling back to it only hides why");
   assert.match(stepText, /set \+e/, "under bash -e an exit 2 aborts the step before it is turned into a warning");
   assert.match(stepText, /"\$rc" -eq 2/);

@@ -65,7 +65,6 @@ on:
     paths:
       - .github/workflows/fallback-image.yml
       - scripts/fallback-image-deploy.mjs
-      - scripts/required-check-names.mjs
       - Dockerfile
       - infra/runtime-extras/**
 

@@ -24,10 +24,11 @@ OWNERS="${CODE_BACKUP_OWNERS:-sato-pharma Omar-3-xx}"
 FOLDER="${CODE_BACKUP_DRIVE_FOLDER:-phoenix-code-backup}"
 # Those APKs are in no clone, so a clone alone would lose them. Each is <owner>/<repository>.
 RELEASE_REPOS="${CODE_BACKUP_RELEASE_REPOS:-Omar-3-xx/hmdm-android}"
-# The retired single-owner variable and the old bare release names would otherwise be ignored or misread.
+# The retired single-owner variable is IGNORED, loudly: refusing the night over a leftover variable would cost
+# more than a day of coverage (the alarm only reads Drive after 36 hours). Mapping its one owner onto
+# CODE_BACKUP_OWNERS would drop the other. The old bare release names are refused, since they would misread.
 if [ -n "${CODE_BACKUP_OWNER:-}" ]; then
-  echo "refused: CODE_BACKUP_OWNER is retired; set CODE_BACKUP_OWNERS (space-separated owners) instead" >&2
-  exit 1
+  echo "warning: CODE_BACKUP_OWNER is retired and ignored; the owners backed up are: $OWNERS (set CODE_BACKUP_OWNERS to change them)" >&2
 fi
 for slug in $RELEASE_REPOS; do
   if [[ "$slug" != */* ]]; then

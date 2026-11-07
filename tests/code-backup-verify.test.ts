@@ -64,6 +64,24 @@ export async function runCodeBackupVerifyTests() {
   const pruned = script.indexOf("prune daily");
   assert.ok(uploaded > 0 && uploaded < readBack && readBack < pruned, "prune only after the upload is read back");
 
+  // 🔴 Two owners hold repositories since 2026-11-06: every bundle, release folder and manifest line is OWNER/NAME,
+  //    so same-named repositories never collide and a restore knows which account each goes back to.
+  assert.match(script, /bundle="\$OUT\/bundles\/\$slug\.bundle"/, "a bundle sits under its owner");
+  assert.match(script, /mkdir -p "\$\(dirname "\$bundle"\)"/, "and its owner's folder is made before the bundle");
+  assert.match(script, /OK\\n' "\$slug" "\$refs"/, "the manifest names OWNER/NAME for a bundled repository");
+  assert.match(script, /EMPTY\\n' "\$slug"/, "and for an empty one");
+  assert.match(script, /dir="\$OUT\/releases\/\$slug"/, "release files sit under their owner too");
+  assert.match(script, /"\$slug" "\$tag" "\$asset" "\$bytes" >> "\$RELEASE_MANIFEST"/, "and releases.tsv names OWNER/NAME");
+  assert.doesNotMatch(script, /name="\$\{slug#\*\/\}"/, "🔴 a bare repository name is back in the bundle or manifest layout");
+  assert.doesNotMatch(script, /bundles\/\$name\.bundle/, "🔴 a bundle path without its owner overwrites the other owner's");
+  // An owner the token cannot see is refused, and says what kind of token fixes it.
+  assert.match(script, /refused: the token sees no repository of \$owner[\s\S]*?classic token[\s\S]*?exit 1/, "an unseen owner stops the night");
+  // The retired variable is ignored with a warning (refusing would cost a night's coverage); a bare release name is refused.
+  const retired = /if \[ -n "\$\{CODE_BACKUP_OWNER:-\}" \]; then\r?\n([\s\S]*?)\r?\nfi/.exec(script)?.[1] ?? "";
+  assert.match(retired, /warning: CODE_BACKUP_OWNER is retired and ignored/, "the retired variable is named in the log");
+  assert.doesNotMatch(retired, /exit 1/, "🔴 a leftover CODE_BACKUP_OWNER must not refuse the night");
+  assert.match(script, /\[\[ "\$slug" != \*\/\* \]\][\s\S]*?refused: CODE_BACKUP_RELEASE_REPOS[\s\S]*?exit 1/, "a bare release name is refused, not misread");
+
   // 🔴 With the JSON Accept header a release file downloads as JSON under its .apk name, with no error.
   const assetBody = /github_asset\(\) \{\n([^}]*)\n\}/.exec(script)?.[1] ?? "";
   assert.match(assetBody, /Accept: application\/octet-stream/, "a release file asks for its bytes");

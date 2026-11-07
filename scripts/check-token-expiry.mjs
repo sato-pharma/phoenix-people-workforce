@@ -69,7 +69,7 @@ export function describeToken(reading) {
     case "DEAD":
       return `🔴 ${reading.name}: DEAD — GitHub refuses it now${reading.expires ? ` (it expired ${cairoDate(reading.expires)})` : ""}. Mint a new one and store it under the same secret name.`;
     case "EXPIRING":
-      return `🔴 ${reading.name}: expires ${cairoDate(reading.expires)} Cairo, in ${reading.daysLeft} day(s). Regenerate it on github.com/settings/personal-access-tokens before then and store it under the same name.`;
+      return `🔴 ${reading.name}: expires ${cairoDate(reading.expires)} Cairo, in ${reading.daysLeft} day(s). Regenerate it on github.com/settings/personal-access-tokens before then, with the organization as its resource owner, and store it under the same name.`;
     case "OK":
       return `${reading.name}: live, expires ${cairoDate(reading.expires)} (${reading.daysLeft} days).`;
     case "NO_EXPIRY":

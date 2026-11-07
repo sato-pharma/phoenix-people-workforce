@@ -24,7 +24,7 @@ newest file is over 36 hours old, too small, or Drive cannot be read. A run that
 | `GITHUB_BACKUP_TOKEN` | A CLASSIC GitHub token (`repo` scope) that sees every owner in `CODE_BACKUP_OWNERS`. A fine-grained token reaches one owner only, so with two owners the night is refused |
 | `CODE_BACKUP_AGE_RECIPIENT` | The PUBLIC age key. The private key is never on Railway |
 | `CODE_BACKUP_MIN_REPOS` | Refuses the night if the token sees fewer repositories than this |
-| `CODE_BACKUP_OWNERS` | Optional. The owners backed up, space-separated; default `sato-pharma Omar-3-xx`. The night is refused if the token sees no repository of one of them, and while the retired `CODE_BACKUP_OWNER` is still set |
+| `CODE_BACKUP_OWNERS` | Optional. The owners backed up, space-separated; default `sato-pharma Omar-3-xx`. The night is refused if the token sees no repository of one of them. The retired `CODE_BACKUP_OWNER` is ignored, with a warning in the log |
 | `CODE_BACKUP_RELEASE_REPOS` | Optional. The repositories whose release files are kept, each `OWNER/NAME`; default `Omar-3-xx/hmdm-android`. A bare name is refused |
 | `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` | Railway references to the app's own, so a rotation reaches them |
 

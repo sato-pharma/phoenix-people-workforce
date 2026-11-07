@@ -91,9 +91,10 @@ export async function dispatchSyntheticJourneys(ref = "main"): Promise<Synthetic
   }
 
   // A fine-grained PAT reaches one owner only, and GitHub answers a repository outside it with 404, not 403.
-  // Since the move to the organization (2026-11-06) a token made on the personal account lands here.
+  // Since the move to the organization (2026-11-06) a token made on the personal account lands here. A 404 is
+  // also what a renamed or deleted workflow file or a missing ref answers, so the log names both causes.
   if (response.status === 401 || response.status === 403 || response.status === 404) {
-    logError(`Synthetic journeys dispatch was refused — check the PAT's resource owner (it must be ${OWNER}), scope and expiry`, {
+    logError(`Synthetic journeys dispatch was refused — check the PAT's resource owner (it must be ${OWNER}), scope and expiry; a 404 also means ${WORKFLOW_FILE} or the ref ${ref} no longer exists`, {
       labels: { event: "synthetic_dispatch_forbidden" },
       error: new Error(`GitHub returned ${response.status}`),
     });
