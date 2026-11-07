@@ -6,14 +6,14 @@
 
   It sends THIS checkout's driver.mjs (so a driver fix is tested before it merges) into the spare's
   gitignored output/ folder, where `import "playwright"` still finds the spare's node_modules.
-  Every argument is passed to the driver unchanged; --timeout defaults to 900 s because the spare
-  compiles a page it has not served yet in up to ~10 minutes.
+  Every argument is passed to the driver unchanged; --timeout defaults to 900 s because a signed-in
+  page renders slowly there (/admin took 11.6 minutes on 2026-11-07, almost all of it database reads).
 
   The spare's dev server runs PRODUCTION's exact version on the production database: a run shows
   what is live, never your branch.
 
 .EXAMPLE
-  powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 --role "Super Admin" go /admin shot admin overflow
+  powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 go /login shot login-desktop overflow
 #>
 $ErrorActionPreference = 'Continue'   # PS 5.1 turns remote stderr into a fatal error under 'Stop'
 if ($args.Count -eq 0) { Write-Error 'no steps. e.g.: --role "Super Admin" go /admin shot admin'; exit 2 }

@@ -12,8 +12,8 @@
  *   --hrId <id>      sign in as THAT person; dev-auth refuses (409) a role they do not hold
  *   --width <px>     viewport width (default 1440; 375 for the mobile check)
  *   --out <dir>      where screenshots land (default output/run-skill)
- *   --timeout <s>    how long one navigation may take (default 180; the spare laptop compiles a
- *                    page it has not served yet in up to ~10 minutes, so on-spare.ps1 sends 900)
+ *   --timeout <s>    how long one navigation may take (default 180; on the spare laptop /admin
+ *                    took 11.6 minutes to render, so on-spare.ps1 sends 900)
  *
  * Steps run in order in ONE browser context, so the sign-in cookie carries through:
  *   go <path>        navigate, wait for the network to settle, print status + title + url

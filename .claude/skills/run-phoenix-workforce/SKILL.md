@@ -73,13 +73,13 @@ This laptop starts no browser: the wrapper copies THIS checkout's `driver.mjs` i
 gitignored `output/run-skill-remote/<stamp>/`, runs it there against the spare's own server with
 `--timeout 900`, and copies the PNGs back to `output/run-skill/`. It reads healthz first and
 sends nothing when the server does not answer in 60 s. Every argument goes to the driver unchanged.
+`/admin` takes over 11 minutes on the spare (Gotchas), so the smoke test is the login page:
 
 ```bash
-powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 --role "Super Admin" go /admin shot admin-desktop overflow
+powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 go /login shot login-desktop overflow
 ```
 
-Run it with `run_in_background: true`: a page the spare has not served since its last restart
-compiles for minutes (see Gotchas).
+Run it with `run_in_background: true`: a signed-in admin page can take many minutes there.
 
 ### A local dev server — only when localhost:3000 does NOT answer
 
@@ -178,12 +178,15 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 
 ## Gotchas
 
-- 🔴 **The spare is an 8 GB box and its first compile of a page can take 10+ minutes.** On
-  2026-11-07 (free RAM 500-1,000 MB, a suite from another session running beside it) the first
-  `go /admin` sat on `Compiling /(admin)/admin/page ...` for over 15 minutes: the default 180 s
-  `page.goto` timed out, and for several minutes even `/api/healthz` stopped answering through the
-  tunnel. Hence `--timeout 900` and the healthz read in `on-spare.ps1`. Read the spare's own log
-  for progress, never re-send the request:
+- 🔴 **On the spare, `/admin` takes over 11 minutes — the page's own server work, not the compile.**
+  On 2026-11-07 (free RAM 500-1,000 MB, a suite from another session running beside it) the spare's
+  log read `GET /admin 200 in 11.6min (next.js: 8.2s, … application-code: 11.5min)`: the compile
+  took 8 s, and the Command Center's reads of the production database over the home Wi-Fi took the
+  rest. The driver's `page.goto` timed out at 180 s, then at 900 s too (it waits for the page's
+  `load` event, and the dev server restarted on its heap cap right after). For several minutes
+  `/api/healthz` stopped answering through the tunnel. So on the spare, drive a light page
+  (`go /login`) or the page you actually changed, never `/admin` as a smoke test. Read the
+  spare's own log for progress rather than re-sending the request:
   `& ~/.claude/scripts/spare.ps1 'Get-Content D:Phoenixdev-server.log -Tail 5'`.
 - **A killed run leaves its Edge on the spare.** Stop only the headless ones you started:
   `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'"` filtered on `--headless`, via
@@ -232,5 +235,5 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 | a block reads empty, a console error says an unexpected response came from the server, or `ERR_BLOCKED_BY_CLIENT` | its POST was stopped: look for it under `writes stopped`, and do not read it as a defect |
 | `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
 | `on-spare.ps1`: `the spare's dev server does not answer /api/healthz in 60 s` | it is compiling or out of memory — read its log through `spare.ps1`, wait, never restart it |
-| `FAILED: page.goto: Timeout 180000ms exceeded` | a first compile on a slow server: run through `on-spare.ps1` (900 s) or pass `--timeout 900` |
+| `FAILED: page.goto: Timeout 180000ms exceeded` (or `900000ms` on the spare) | a slow server render: read the spare's log for `application-code: …min`; drive a lighter page, or pass a longer `--timeout` |
 | background launcher task "failed, exit 127" after you stopped it | expected — that is the kill, not a crash |
