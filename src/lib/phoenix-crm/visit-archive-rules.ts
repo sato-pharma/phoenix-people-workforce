@@ -109,14 +109,8 @@ export function decodeVisitArchiveCursor(value: string | null | undefined): Visi
   return { visitDate: match[1], crmVisitId };
 }
 
-/**
- * The PostgREST `or` filter for the rows AFTER the cursor in (visit_date desc, crm_visit_id desc) order:
- * an earlier day, or the same day with a smaller id. Built only from a decoded cursor, whose two parts
- * are digits and dashes, so nothing a reader types reaches the filter.
- */
-export function visitArchiveKeysetFilter(cursor: VisitArchiveCursor): string {
-  return `visit_date.lt.${cursor.visitDate},and(visit_date.eq.${cursor.visitDate},crm_visit_id.lt.${cursor.crmVisitId})`;
-}
+// The keyset filter itself is built in server/visit-archive.ts, through the shared PostgREST quoting helper:
+// these rules stay pure (tests/phoenix-crm-boundary.test.ts).
 
 // ── The other filters ──────────────────────────────────────────────────────────────────────────────
 

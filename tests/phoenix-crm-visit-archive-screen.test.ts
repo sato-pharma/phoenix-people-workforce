@@ -13,7 +13,6 @@ import {
   parseVisitArchiveMonth,
   visitArchiveDateText,
   visitArchiveHref,
-  visitArchiveKeysetFilter,
   visitArchiveMonthBounds,
   visitArchiveMonthLabel,
   visitArchivePersonLeft,
@@ -104,11 +103,13 @@ function checkCursorAndMonths(): void {
   for (const junk of ["", "2026-11-07", "2026-13-01.5", "2026-11-07.-1", "2026-11-07.1,visit_date.gt.2000-01-01", "abc.123", "2026-11-07.12345678901234567890"]) {
     assert.equal(decodeVisitArchiveCursor(junk), null, `"${junk}" is not a cursor`);
   }
-  assert.equal(
-    visitArchiveKeysetFilter(cursor),
-    "visit_date.lt.2026-11-07,and(visit_date.eq.2026-11-07,crm_visit_id.lt.9007199254740993)",
-    "the next page is an earlier day, or the same day with a smaller id",
-  );
+  // The next page is an earlier day, or the same day with a smaller id — built on the server, both parts through
+  // the shared PostgREST quoting helper (tests/postgrest-search-filter.test.ts), so the rules stay pure.
+  {
+    const server = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/visit-archive.ts", import.meta.url), "utf8"));
+    assert.match(server, /const day = quotePostgrestValue\(cursor\.visitDate\);\s*const id = quotePostgrestValue\(cursor\.crmVisitId\);/);
+    assert.ok(server.includes("return `visit_date.lt.${day},and(visit_date.eq.${day},crm_visit_id.lt.${id})`;"), "the keyset filter");
+  }
 
   assert.deepEqual(visitArchiveMonthBounds("2026-11"), { from: "2026-11-01", before: "2026-12-01" });
   assert.deepEqual(visitArchiveMonthBounds("2026-12"), { from: "2026-12-01", before: "2027-01-01" }, "December runs into the next year");

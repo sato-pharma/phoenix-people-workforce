@@ -599,7 +599,6 @@ function runOldVisitConversionTests(): void {
     "src/lib/phoenix-crm/server/team.ts",
     "src/lib/phoenix-crm/server/commitments.ts",
     "src/lib/phoenix-crm/server/list.ts",
-    "src/lib/phoenix-crm/server/reports.ts",
   ]) {
     assert.ok(stripComments(read(path)).includes(ARCHIVED), `${path} must leave out a copied visit in the visits archive`);
   }
@@ -618,9 +617,9 @@ function runOldVisitConversionTests(): void {
     assert.ok(stripComments(read(path)).includes(SKIP_VISIT), `${path}: a converted visit's position judges nobody`);
   }
 
-  // ── The place-vs-actual report admits a converted visit that counts, and no other admin entry ──
+  // ── The place-vs-actual report reads no admin row, so no copied visit at all (the missed-records pin holds its shape) ──
   assert.ok(
-    stripComments(read("src/lib/phoenix-crm/server/reports.ts")).includes('.or("capture_source.neq.admin,ireports360_kpi_counted.is.true")'),
-    "place against actual: a converted old visit that counts is a reading at the door; a hand-keyed entry still is not",
+    !stripComments(read("src/lib/phoenix-crm/server/reports.ts")).includes("ireports360_kpi_counted"),
+    "place against actual: a copied old visit is an admin row, outside the report",
   );
 }

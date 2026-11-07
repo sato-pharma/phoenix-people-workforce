@@ -307,6 +307,15 @@ const REFUSALS: Record<string, Refusal> = {
   // The iReports360 history import (owner, 2026-10-29). Only its one-off script reaches these — the
   // function is service-role only — so the reader is whoever runs it.
   import_needs_a_seat: { status: 400, message: "The history is copied one seat at a time. Name the seat and run it again." },
+  import_one_mode_at_a_time: {
+    status: 400,
+    message: "The after-start copy and the leavers' copy are two separate runs. Run one of them, then the other.",
+  },
+  // The old-visit conversion (owner, 2026-11-07), reached only by its one-off script.
+  conversion_items_invalid: {
+    status: 400,
+    message: "The conversion was sent a page it cannot read: at most 2,000 visits, each with its check-in, place, distance and flag. Nothing was written; run the script again.",
+  },
   import_unresolved_customer: {
     status: 409,
     message: "Some old visits on this seat found no customer, so nothing was written for it. Run the dry run and look at that seat.",

@@ -1122,10 +1122,8 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
           // would read "no place saved" and its missing reading would plot at 0°N 0°E, so it is not a
           // row here. Every visit that remains carries a reading — phoenix_crm_visits_location_source
           // holds it.
-          // The one exception: a converted old visit that counts (owner, 2026-11-07) — its reading is the old
-          // check-in, measured against the validated place like a visit saved today.
-          .or("capture_source.neq.admin,ireports360_kpi_counted.is.true")
-          .is("archived_at", null)
+          // A copied old visit is an admin row too, so this leaves out every one — converted or archived — as well.
+          .neq("capture_source", "admin")
           // Nor the pharmacy visit a doctor's visit filed beside itself (owner, 2026-10-03): nobody stood
           // at the pharmacy with a phone for it, so it has no place reading of its own to report.
           .is("linked_from_visit_id", null);

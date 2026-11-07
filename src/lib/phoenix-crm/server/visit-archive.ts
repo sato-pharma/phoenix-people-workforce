@@ -35,7 +35,6 @@ import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
   VISIT_ARCHIVE_PAGE_SIZE,
   VISIT_ARCHIVE_REASONS,
-  visitArchiveKeysetFilter,
   visitArchiveMonthBounds,
   visitArchiveMonthOf,
   visitArchivePersonLeft,
@@ -44,9 +43,21 @@ import {
   type VisitArchiveReason,
 } from "@/lib/phoenix-crm/visit-archive-rules";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { quotePostgrestValue } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const ARCHIVE_TABLE = "phoenix_crm_visit_archive";
+
+/**
+ * The PostgREST `or` filter for the rows AFTER the cursor in (visit_date desc, crm_visit_id desc) order: an
+ * earlier day, or the same day with a smaller id. The cursor is decoded (digits and dashes only), and both
+ * parts still go through the shared quoting helper.
+ */
+function visitArchiveKeysetFilter(cursor: VisitArchiveCursor): string {
+  const day = quotePostgrestValue(cursor.visitDate);
+  const id = quotePostgrestValue(cursor.crmVisitId);
+  return `visit_date.lt.${day},and(visit_date.eq.${day},crm_visit_id.lt.${id})`;
+}
 const LIST_COLUMNS = "crm_visit_id, visit_date, agent_hr_id, agent_name, customer_name, reason, visit_id, line_code";
 const OPTION_COLUMNS = "crm_visit_id, visit_date, agent_hr_id, agent_name, line_code";
 /** The most rows the filter-list walk reads. Far above the archive's size; past it the lists say so. */
