@@ -429,7 +429,7 @@ export function ScheduleInterviewDialog({
                     <span className={phxLabelClassName}>Another time</span>
                     <TimeOfDayInput
                       ariaLabel="Another time"
-                      className={`${phxFieldClassName} w-auto`}
+                      className={cn(phxFieldClassName, "w-auto")}
                       onChange={(minutes) => setStartMinutes(minutes !== null && isBookableWindow(minutes, durationMinutes) ? minutes : null)}
                       value={startMinutes}
                     />
