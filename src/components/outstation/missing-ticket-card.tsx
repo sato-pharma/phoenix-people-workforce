@@ -6,9 +6,16 @@ import { useState } from "react";
 
 import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { TICKET_FILE_ACCEPT } from "@/components/outstation/ticket-upload-card";
+import {
+  scanTrainTicket,
+  TicketScanNotices,
+  TicketScanReading,
+  type ScannedTrainTicket,
+} from "@/components/outstation/train-ticket-scan";
 import { phxButtonPrimaryClassName } from "@/components/ui/form-tokens";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { checkTicketAttachmentFile } from "@/lib/outstation/ticket-attachment-limits";
+import { judgeTrainTicket, type TicketVerdict } from "@/lib/outstation/ticket-scan-rules";
 import { cn } from "@/lib/utils";
 
 /** One undecided train or bus claim that reached Phoenix with no ticket (missing-ticket.ts). */
@@ -22,6 +29,7 @@ export type MissingTicketRequest = {
 
 type AttachState =
   | { kind: "idle" }
+  | { kind: "reading" }
   | { kind: "saving" }
   | { kind: "done" }
   | { kind: "error"; message: string };
@@ -52,7 +60,8 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
           ? "One train or bus claim reached Phoenix without its ticket."
           : `${requests.length} train or bus claims reached Phoenix without their tickets.`}{" "}
         Attach a photo or PDF of the ticket here. The claim stays held for review until it has one. No amount
-        changes.
+        changes. A train ticket is read when you choose it, and its travel date must match your arrival or
+        departure photo.
       </p>
       <div className="mt-4 space-y-3">
         {requests.map((request) => (
@@ -63,34 +72,72 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
   );
 }
 
+/** A train ticket's verdict: the server's, against this claim's own arrival and departure photos. */
+function verdictOf(ticket: ScannedTrainTicket): TicketVerdict {
+  return ticket.verdict ?? judgeTrainTicket(ticket.scan, { arrivalAt: null, departureAt: null, tripEndDate: "", tripStartDate: "" });
+}
+
 function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
+  // A train ticket is read the moment it is picked (owner, 2026-11-07; ticket-scan-rules.ts): only the
+  // ones whose travel date was read and matches this trip's photos are kept; the rest say why.
+  const [scanned, setScanned] = useState<ScannedTrainTicket[]>([]);
   const [state, setState] = useState<AttachState>({ kind: "idle" });
   const transport = request.transportationType === "bus" ? "bus" : "train";
+  const isTrain = transport === "train";
+  const judged = scanned.map((ticket) => ({ ticket, verdict: verdictOf(ticket) }));
+  const acceptedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [{ ticket: entry.ticket, verdict: entry.verdict }] : []));
+  const refusedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [] : [{ ticket: entry.ticket, verdict: entry.verdict }]));
+  const readyCount = isTrain ? acceptedTickets.length : files.length;
 
-  function pick(list: FileList | null) {
+  async function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
     for (const file of picked) {
       const verdict = checkTicketAttachmentFile(file);
       if (!verdict.ok) {
         setFiles([]);
+        setScanned([]);
         setState({ kind: "error", message: verdict.message });
         return;
       }
     }
     setFiles(picked);
-    setState({ kind: "idle" });
+    setScanned([]);
+    if (!isTrain || picked.length === 0) {
+      setState({ kind: "idle" });
+      return;
+    }
+    setState({ kind: "reading" });
+    try {
+      const prepared = await Promise.all(picked.map(prepareTicketAttachment));
+      const results: ScannedTrainTicket[] = [];
+      for (const ticket of prepared) results.push(await scanTrainTicket(ticket, { requestId: request.id }));
+      setScanned(results);
+      setState({ kind: "idle" });
+    } catch (error) {
+      setFiles([]);
+      setState({ kind: "error", message: error instanceof Error ? error.message : "The ticket could not be read." });
+    }
   }
 
   async function attach() {
-    if (files.length === 0) {
-      setState({ kind: "error", message: `Take a photo of the ${transport} ticket or choose the file first.` });
+    if (readyCount === 0) {
+      setState({
+        kind: "error",
+        message:
+          isTrain && refusedTickets.length > 0
+            ? "None of the chosen tickets could be accepted. Take the photo again as described above."
+            : `Take a photo of the ${transport} ticket or choose the file first.`,
+      });
       return;
     }
     setState({ kind: "saving" });
     try {
-      const tickets = await Promise.all(files.map(prepareTicketAttachment));
+      // A train ticket goes as the exact bytes that were read, with the signed note of that read.
+      const tickets = isTrain
+        ? acceptedTickets.map(({ ticket }) => ({ dataUrl: ticket.dataUrl, name: ticket.name, scanToken: ticket.scanToken ?? undefined }))
+        : await Promise.all(files.map(prepareTicketAttachment));
       const response = await fetch(`/api/outstation/${request.id}/ticket`, {
         body: JSON.stringify({ tickets }),
         headers: { "Content-Type": "application/json" },
@@ -109,7 +156,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
     }
   }
 
-  const saving = state.kind === "saving";
+  const saving = state.kind === "saving" || state.kind === "reading";
 
   return (
     <div className="border border-orange-200 bg-white p-3 sm:p-4">
@@ -138,21 +185,28 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
               className="hidden"
               disabled={saving}
               multiple
-              onChange={(event) => pick(event.target.files)}
+              onChange={(event) => void pick(event.target.files)}
               type="file"
             />
           </label>
           <button
             className={cn(phxButtonPrimaryClassName, "min-h-11 justify-center")}
-            disabled={saving || files.length === 0}
+            disabled={saving || readyCount === 0}
             onClick={() => void attach()}
             type="button"
           >
             {saving ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Ticket aria-hidden className="h-4 w-4" />}
-            {saving ? "Attaching the ticket" : "Attach the ticket"}
+            {state.kind === "reading" ? "Reading the ticket" : state.kind === "saving" ? "Attaching the ticket" : "Attach the ticket"}
           </button>
         </div>
       )}
+
+      {isTrain && state.kind !== "done" ? (
+        <div className="mt-3 grid gap-2">
+          {state.kind === "reading" ? <TicketScanReading count={files.length} /> : null}
+          <TicketScanNotices accepted={acceptedTickets} refused={refusedTickets} />
+        </div>
+      ) : null}
 
       {state.kind === "error" ? (
         <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-rose-700" role="alert">

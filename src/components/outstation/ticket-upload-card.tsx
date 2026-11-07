@@ -50,7 +50,11 @@ export function TicketUploadCard({
         ? required
           ? "Attach go and return tickets as a PDF or a photo — they are kept as proof of travel. Without them the claim still submits, but it is held for review until you attach them from My claims."
           : "Optional for your role. If you have the tickets, attach them as a PDF or a photo — you can take the photo here. The request submits either way."
-        : "Attach any supporting document for this expense request.");
+        : "Attach any supporting document for this expense request.") +
+    // The train ticket is read on pick (owner, 2026-11-07; ticket-scan-rules.ts).
+    (descriptionOverride == null && transportationType === "train"
+      ? " Each train ticket is read when you attach it: its travel date must be your arrival day or your return day."
+      : "");
 
   // A block inside the Evidence step, not a card of its own — the step form already draws the one
   // card on the screen. Square, like every block of the form (the square-edge golden rule).

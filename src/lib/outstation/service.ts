@@ -66,6 +66,8 @@ import {
   uploadOutstationTicketAttachments,
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
+import { checkTrainTicketsOnServer, TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
+import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import {
   ADMIN_ADDED_STOP_PHOTO_PATH,
@@ -2107,7 +2109,7 @@ async function notifyOutstationDecision(input: {
 export async function submitOutstationRequest(
   access: AccessContext,
   input: OutstationCalculationInput,
-  options: { ticketAttachments?: OutstationTicketAttachmentUploadInput[] } = {},
+  options: { dropRefusedTrainTickets?: boolean; ticketAttachments?: OutstationTicketAttachmentUploadInput[] } = {},
 ) {
   const calculation = await calculateOutstationExpense(access, input);
   // Meeting and Other are not trips (non-travel-expense.ts): no arrival photo, no GPS fix, no
@@ -2146,6 +2148,31 @@ export async function submitOutstationRequest(
       toCity: calculation.toCity,
       tripStartDate: calculation.tripStartDate,
     });
+  }
+
+  // A train ticket is read, and its date must be the arrival photo's day (or the day before, a night
+  // train) or the trip's last day (owner, 2026-11-07; ticket-scan-rules.ts). Checked before any photo or
+  // ticket is stored, so a refused ticket leaves nothing behind; the reason names what to do. An offline
+  // replay has no screen to say it on, so there the refused tickets are dropped instead: the claim lands,
+  // is held for its missing ticket, and My claims asks for the ticket again with the reason.
+  let receivedTicketAttachments = options.ticketAttachments ?? [];
+  let trainTicketScans: Awaited<ReturnType<typeof checkTrainTicketsOnServer>> | null = null;
+  if (!nonTravel && ticketScanApplies(calculation.transportationType) && receivedTicketAttachments.length > 0) {
+    try {
+      trainTicketScans = await checkTrainTicketsOnServer({
+        context: {
+          arrivalAt: input.carEvidenceMetadata?.capturedAt ?? null,
+          departureAt: null,
+          tripEndDate: calculation.tripEndDate,
+          tripStartDate: calculation.tripStartDate,
+        },
+        hrId: access.hrId ?? calculation.employeeHrId,
+        tickets: receivedTicketAttachments,
+      });
+    } catch (error) {
+      if (!(options.dropRefusedTrainTickets && error instanceof TrainTicketRefusedError)) throw error;
+      receivedTicketAttachments = [];
+    }
   }
 
   await assertOutstationExpenseWorkflowTransition({
@@ -2239,7 +2266,7 @@ export async function submitOutstationRequest(
   // files are persisted to the request (previously the manager flow discarded them
   // entirely — only a boolean count was sent). Car uses the live photo instead.
   // Evidence is counted from files the SERVER received, never a client-supplied boolean.
-  const ticketAttachmentInputs = options.ticketAttachments ?? [];
+  const ticketAttachmentInputs = receivedTicketAttachments;
   const submitPolicy = await getActivePolicyForRole(calculation.employeeRole);
   const ticketEvidenceRejection = outstationTicketEvidenceRejection({
     hasTicketAttachments: ticketAttachmentInputs.length > 0,
@@ -2395,10 +2422,11 @@ export async function submitOutstationRequest(
   if (ticketAttachmentInputs.length > 0) {
     const ticketRequestDraftId = `outstation-${randomUUID()}`;
     uploadedTicketAttachments = await uploadOutstationTicketAttachments(
-      ticketAttachmentInputs.map((attachment) => ({
+      ticketAttachmentInputs.map((attachment, index) => ({
         ...attachment,
         employeeHrId: calculation.employeeHrId,
         requestDraftId: ticketRequestDraftId,
+        ...(trainTicketScans?.[index] ? { scan: trainTicketScans[index] } : {}),
       })),
     );
   }
@@ -2655,7 +2683,7 @@ export async function syncOfflineOutstationRequest(
       ...input,
       offlineCaptured: true,
     },
-    options,
+    { ...options, dropRefusedTrainTickets: true },
   );
 }
 
@@ -3156,11 +3184,26 @@ export async function attachMissingTicketsToOwnOutstationRequest(
   const tickets = input.tickets ?? [];
   if (tickets.length === 0) throw new Error("Upload the ticket to attach.");
 
+  // A train ticket is read and dated against the arrival and departure photos (ticket-scan-rules.ts).
+  const scans = ticketScanApplies(existing.transportationType)
+    ? await checkTrainTicketsOnServer({
+        context: {
+          arrivalAt: existing.carEvidenceMetadata?.capturedAt ?? null,
+          departureAt: existing.departureCapturedAt ?? null,
+          tripEndDate: String(existing.tripEndDate ?? "").slice(0, 10),
+          tripStartDate: String(existing.tripStartDate ?? "").slice(0, 10),
+        },
+        hrId: callerHrId,
+        tickets,
+      })
+    : null;
+
   const uploaded = await uploadOutstationTicketAttachments(
-    tickets.map((ticket) => ({
+    tickets.map((ticket, index) => ({
       ...ticket,
       employeeHrId: existing.employeeHrId,
       requestDraftId: `outstation-missing-ticket-${randomUUID()}`,
+      ...(scans?.[index] ? { scan: scans[index] } : {}),
     })),
   );
 
