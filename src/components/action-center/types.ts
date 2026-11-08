@@ -35,6 +35,8 @@ export type LeaveDetail = {
 
 export type ResignationDetail = {
   module: "resignation";
+  /** The stored status code (`submitted`, `under_review`…) — the buttons are chosen from this, never from the printed label. */
+  status: string;
   effectiveDate: string;
   submittedDate: string;
   reason: string | null;
