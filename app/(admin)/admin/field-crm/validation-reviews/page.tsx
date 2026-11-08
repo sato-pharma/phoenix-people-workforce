@@ -54,15 +54,32 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // `loadSharedPlaceBoard` narrows by `placeChecksSeatScope`, which answers for exactly the viewers
   // `canDecideValidationReviews` above admits — so it cannot 403 a viewer this page has already
   // admitted, and it needs no second redirect.
-  const [reviews, validatedRead, reopenedRead, sharedRead, heldFullNames] = await Promise.all([
+  // 🔴 THE COMMENTS AND THE EVIDENCE START THE MOMENT THE THREE LISTS THAT NAME THE SUBJECTS ARE IN
+  // (owner, 2026-11-08: "places checks is … slow"). They used to wait for all five reads — the reopened
+  // customers and the held full names too, which name no subject — and only then begin, one wave after
+  // the other. The district manager's page has started them this way since 2026-10-31.
+  const subjectReads = Promise.all([
     // Every decision, so "Decided by" can answer for all of them; the cards and the board's default stay
     // on the recent ones (`recent`).
     loadValidationReviews(viewer, { everyDecision: true }),
     loadValidatedPlaces(viewer),
-    loadReopenedCustomers(viewer),
     loadSharedPlaceBoard(viewer),
+  ]);
+  const [[reviews, validatedRead, sharedRead], reopenedRead, heldFullNames, [notes, integrity]] = await Promise.all([
+    subjectReads,
+    loadReopenedCustomers(viewer),
     // Doctors' full names that matched their board under 60% (owner, 2026-11-07).
     loadHeldFullNames(viewer),
+    // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
+    // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
+    // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
+    subjectReads.then(([reviewRows, validatedRows, sharedRows]) => {
+      const subjects = {
+        placeIds: [...reviewRows.rows.map((row) => row.placeId), ...validatedRows.rows.map((row) => row.placeId)],
+        sharedPlaceIds: sharedRows.rows.map((row) => row.sharedPlaceId),
+      };
+      return Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
+    }),
   ]);
   const validated = validatedRead.rows;
   const reopened = reopenedRead.rows;
@@ -72,14 +89,6 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     reopened: reopenedRead.capped,
     sharedPlaces: sharedRead.capped,
   };
-  const subjects = {
-    placeIds: [...reviews.rows.map((row) => row.placeId), ...validated.map((row) => row.placeId)],
-    sharedPlaceIds: sharedRead.rows.map((row) => row.sharedPlaceId),
-  };
-  // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
-  // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
-  // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
-  const [notes, integrity] = await Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
   const noteIndex = { ...notes, integrity };
   // A comment written with a decision is on the row as a comment too (`tellDecisionComment`), so it is
   // drawn there, under "The rep can read this", and not a second time beside the decision.
