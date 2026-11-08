@@ -22,7 +22,7 @@ import {
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { loadWhoElseIsOff, shouldShowWhoElseIsOff, type WhoElseIsOff } from "@/lib/vacation/who-else-is-off";
-import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
 import { addDaysIso } from "@/lib/crm/dates";
 import {
   getExcuseRequestForActionCenterDeepLink,
@@ -58,7 +58,7 @@ import {
   loadManagerPlanQueue,
   type ManagerQueueItem,
 } from "@/lib/phoenix-crm/server/manager-plan-queue";
-import { managerPlannerTitle } from "@/lib/phoenix-crm/manager-plan-rules";
+import { isManagerWeekEndedUndecided, MANAGER_WEEK_ENDED_LABEL, managerPlannerTitle } from "@/lib/phoenix-crm/manager-plan-rules";
 import {
   isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
@@ -2602,8 +2602,12 @@ async function fetchCrmManagerPlanRequestItems(
       getEmployeeDirectory(),
     ]);
     const rows = kinds === "all" ? feed : feed.filter((row) => (row.plannerKind === "dm") === (kinds === "dm"));
+    const cairoToday = currentCairoDateOnlyIso();
     return rows.map((row) => {
-      const status = CRM_MANAGER_PLAN_STATUS[row.status] ?? { label: humanizeStatus(row.status), tone: "neutral" as const };
+      // A sent week whose Thursday passed undecided waits on nobody: the database refuses every step on it.
+      const status = isManagerWeekEndedUndecided(row.status, row.weekStart, cairoToday)
+        ? { label: MANAGER_WEEK_ENDED_LABEL, tone: "neutral" as const }
+        : (CRM_MANAGER_PLAN_STATUS[row.status] ?? { label: humanizeStatus(row.status), tone: "neutral" as const });
       return {
         id: row.planId,
         href: planApprovalHref(access, row.planId),

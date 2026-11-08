@@ -70,6 +70,9 @@ import {
   managerPlanWeeks,
   managerWeekPassed,
   managerWeekState,
+  isManagerWeekEndedUndecided,
+  managerPlanStatusLabel,
+  MANAGER_WEEK_ENDED_LABEL,
   managerAskStage,
   matchCustomerName,
   sameCustomerName,
@@ -463,6 +466,45 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(managerWeekPassed("2026-10-17", "2026-10-23"), true, "it is the day after");
   assert.ok(source("src/lib/phoenix-crm/server/manager-plans.ts").includes("passed: managerWeekPassed(weekStart, viewer.cairoToday),"), "the board tells the composer a week has passed");
   assert.ok(source("src/lib/phoenix-crm/server/manager-plan-report.ts").includes("passed: managerWeekPassed(weekStart, viewer.cairoToday),"), "so does the report's Last week");
+
+  // 🔴 A SENT WEEK WHOSE THURSDAY PASSED UNDECIDED WAITS ON NOBODY (owner, 2026-11-08). Mohamed Eleiwa's re-sent
+  // week of 31 October ended on Thursday 5 November undecided; on 8 November it still sat in Hany Saad's list as
+  // waiting on him, and its page had no Approve button (the database refuses every step: week_passed) and no reason.
+  assert.equal(isManagerWeekEndedUndecided("submitted", "2026-10-31", "2026-11-05"), false, "not on its own Thursday");
+  assert.equal(isManagerWeekEndedUndecided("submitted", "2026-10-31", "2026-11-06"), true, "a sent week ended undecided the day after");
+  assert.equal(isManagerWeekEndedUndecided("first_approved", "2026-10-31", "2026-11-08"), true, "so does one still at the second step");
+  for (const status of ["approved", "returned", "draft", null]) {
+    assert.equal(isManagerWeekEndedUndecided(status, "2026-10-31", "2026-11-08"), false, `a ${status ?? "missing"} week is not one waiting on a decision`);
+  }
+  assert.equal(isManagerWeekEndedUndecided("submitted", null, "2026-11-08"), false, "a week with no start date is never called ended");
+  assert.equal(managerPlanStatusLabel("submitted", { weekStart: "2026-10-31", cairoToday: "2026-11-08" }), MANAGER_WEEK_ENDED_LABEL, "its label never says Waiting");
+  assert.equal(managerPlanStatusLabel("submitted", { weekStart: "2026-11-07", cairoToday: "2026-11-08" }), "Waiting for approval", "a live week still waits");
+  assert.equal(managerPlanStatusLabel("submitted"), "Waiting for approval", "and a caller with no week keeps the old words");
+  assert.equal(managerPlanStatusLine({ status: "submitted", firstName: "Hany Saad", passed: true }), MANAGER_WEEK_ENDED_LABEL, "his board never says Waiting for Hany Saad either");
+  assert.equal(managerPlanStatusLine({ status: "first_approved", secondName: "Ali Mohamed Ali", passed: true }), MANAGER_WEEK_ENDED_LABEL);
+  assert.equal(managerPlanStatusLine({ status: "submitted", firstName: "Hany Saad" }), "Waiting for Hany Saad to approve");
+  {
+    const queue = source("src/lib/phoenix-crm/server/manager-plan-queue.ts");
+    assert.ok(
+      queue.includes("if (sameKey(plan.managerHrId, me) || isManagerWeekEndedUndecided(plan.status, plan.weekStart, cairoToday)) continue;"),
+      "an ended week is in no approver's queue, so no badge, Needs You or bell counts it",
+    );
+    assert.ok(
+      queue.includes("if (isManagerWeekEndedUndecided(plan.status, plan.weekStart, cairoToday)) continue;\n    const stage = managerPlanStage(plan.status);\n    if (!stage) continue;\n    out.push({\n      kind: \"plan\","),
+      "nor in the Super Admin's open-items list",
+    );
+    const hub = source("src/lib/phoenix-crm/server/manager-plan-hub.ts");
+    assert.ok(hub.includes("endedUndecidedOnText: endedUndecided ? formatPhoenixLongDate(addDaysIso(plan.weekStart, 5)) : null,"), "the week's page is told the day it ended");
+    assert.ok(hub.includes("statusLabel: managerPlanStatusLabel(plan.status, { weekStart: plan.weekStart, cairoToday: viewer.cairoToday }),"), "and labels it ended");
+    assert.ok(
+      source("src/components/approvals-hub/manager-plan-request-detail.tsx").includes(") : detail.endedUndecidedOnText ? ("),
+      "and says why there is no button where the button would be",
+    );
+    assert.ok(
+      source("src/lib/approvals-hub/service.ts").includes("isManagerWeekEndedUndecided(row.status, row.weekStart, cairoToday)"),
+      "the company and second-approver feeds label it ended too",
+    );
+  }
   // The area list a with-manager half reads is the one his own scope reaches.
   assert.ok(source("src/lib/phoenix-crm/server/manager-customers.ts").includes("areaListReach(viewer, writer, raw.scope)"), "the area list is read for the half's scope");
   assert.ok(source("src/components/phoenix-crm/manager-plan-board.tsx").includes("crmUrl(AREA, { area: listArea, scope: view.scope, test })"), "and the board asks for it with that scope");

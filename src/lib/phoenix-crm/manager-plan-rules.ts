@@ -767,6 +767,21 @@ export function managerWeekPassed(weekStart: string, cairoToday: string): boolea
   return addDaysIso(weekStart, 5) < cairoToday;
 }
 
+/**
+ * 🔴 A SENT WEEK NOBODY FINISHED DECIDING BEFORE ITS THURSDAY PASSED HAS ENDED, UNDECIDED (owner, 2026-11-08).
+ * The database refuses every step on it (`phoenix_crm:week_passed`), so it is in nobody's queue, badge or
+ * Needs You, and it never reads "Waiting for …": its page says it ended before it was approved. Hany Saad
+ * opened Mohamed Eleiwa's re-sent week of 31 October five times on 8 November, after it had ended, and
+ * found it listed as waiting on him with no Approve button and no reason.
+ */
+export function isManagerWeekEndedUndecided(status: string | null | undefined, weekStart: string | null | undefined, cairoToday: string): boolean {
+  if (status !== "submitted" && status !== "first_approved") return false;
+  return typeof weekStart === "string" && weekStart.length > 0 && managerWeekPassed(weekStart, cairoToday);
+}
+
+/** The status words of a week that ended undecided, on every surface that names its status. */
+export const MANAGER_WEEK_ENDED_LABEL = "Ended before it was approved";
+
 /** The weeks his board offers: the week he is in while it still has a day ahead, and the coming one. */
 export function managerPlanWeeks(cairoToday: string): string[] {
   const thisWeek = fieldWeekStart(cairoToday);
@@ -1211,7 +1226,8 @@ export function managerPlanWaitingOn(input: {
   return null;
 }
 
-export function managerPlanStatusLabel(status: ManagerPlanStatus | null): string {
+export function managerPlanStatusLabel(status: ManagerPlanStatus | null, week?: { weekStart: string | null; cairoToday: string }): string {
+  if (week && isManagerWeekEndedUndecided(status, week.weekStart, week.cairoToday)) return MANAGER_WEEK_ENDED_LABEL;
   if (status === "submitted") return "Waiting for approval";
   if (status === "first_approved") return "Waiting for the second approval";
   if (status === "approved") return "Approved";
@@ -1247,7 +1263,8 @@ export function managerPlanStatusLine(input: {
   self?: boolean;
   /**
    * Every day of the week has passed. A week with no plan then can no longer be drafted, so it never
-   * says "drafts it" — the rep's weekly plan's own words (the production smoke test, 2026-10-29).
+   * says "drafts it" — the rep's weekly plan's own words (the production smoke test, 2026-10-29) — and a
+   * sent week still undecided ended before it was approved, so it never says "Waiting for …".
    */
   passed?: boolean;
 }): string {
@@ -1256,6 +1273,8 @@ export function managerPlanStatusLine(input: {
   const second = nameOrNull(input.secondName);
   const decider = input.byAdministrator ? "the Administrator" : nameOrNull(input.deciderName);
   if (input.status === "draft") return manager ? `Drafted by ${manager}` : managerPlanStatusLabel("draft");
+  // A sent week whose Thursday passed undecided waits on nobody: the database refuses every step on it.
+  if (input.passed && (input.status === "submitted" || input.status === "first_approved")) return MANAGER_WEEK_ENDED_LABEL;
   if (input.status === "submitted") return first ? `Waiting for ${first} to approve` : managerPlanStatusLabel("submitted");
   if (input.status === "first_approved") return second ? `Waiting for ${second} to approve` : managerPlanStatusLabel("first_approved");
   if (input.status === "returned") return manager ? `Waiting for ${manager} to edit and resend` : managerPlanStatusLabel("returned");

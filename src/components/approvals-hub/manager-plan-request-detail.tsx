@@ -240,6 +240,13 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
               byAdministrator={detail.decideAs === "administrator"}
               backHref={backHref}
             />
+          ) : detail.endedUndecidedOnText ? (
+            // A sent week whose Thursday passed undecided: the database refuses every step on it, so the page says
+            // why there is no button instead of leaving its approver to look for one (owner, 2026-11-08).
+            <p className="border-l-4 border-slate-400 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+              This week ended on {detail.endedUndecidedOnText} before it was approved. A week that has ended can no longer be approved
+              or returned.
+            </p>
           ) : null}
 
           {/* The week's conversation, open at any status once it has been sent (owner, 2026-11-01). The same

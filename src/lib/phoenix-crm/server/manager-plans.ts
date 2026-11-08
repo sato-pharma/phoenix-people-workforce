@@ -679,7 +679,10 @@ async function buildBoard(
   const weekRows = new Map(otherWeekRows);
   view.weeks = view.weeks.map((entry) => ({
     ...entry,
-    statusLabel: managerPlanStatusLabel((entry.weekStart === weekStart ? plan : weekRows.get(entry.weekStart))?.status ?? null),
+    statusLabel: managerPlanStatusLabel((entry.weekStart === weekStart ? plan : weekRows.get(entry.weekStart))?.status ?? null, {
+      weekStart: entry.weekStart,
+      cairoToday: viewer.cairoToday,
+    }),
   }));
   // A sent week carries its own approvers, so they are worked out (an `employees` read for everyone but a
   // district manager) only for a draft or a week not started.
@@ -749,7 +752,7 @@ async function buildBoard(
   view.plan = {
     planId: plan?.planId ?? null,
     status: plan?.status ?? null,
-    statusLabel: managerPlanStatusLabel(plan?.status ?? null),
+    statusLabel: managerPlanStatusLabel(plan?.status ?? null, { weekStart, cairoToday: viewer.cairoToday }),
     statusLine: managerPlanStatusLine({
       status: plan?.status ?? null,
       managerName: nameOf(names, managerHrId),
