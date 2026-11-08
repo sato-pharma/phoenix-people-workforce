@@ -29,11 +29,34 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { useRouter } from "next/navigation";
 
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
+import { errorCodeOf } from "@/components/phoenix-crm/api";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
 
 /** What a saved decision did, in the review's own words. */
-export type PlaceCheckOutcome = "approved" | "rejected" | "refused" | "restored" | "kept" | "settled" | "reopened";
+export type PlaceCheckOutcome = "approved" | "rejected" | "refused" | "restored" | "kept" | "settled" | "reopened" | "already";
+
+/**
+ * 🔴 "ALREADY DECIDED" IS AN ANSWER, NOT AN ERROR (owner, 2026-11-08: "places checks is stale … many
+ * error"). The SFE Manager met "This place was already decided. Reload the page." and "This name was
+ * already decided" three times in one morning, each on a row the database had already settled — his own
+ * earlier press, or another decider's. The decision he wanted is the one that stands, so the control
+ * draws "Already decided" in place of its buttons and the page re-reads itself; nothing turns red.
+ */
+const ALREADY_DECIDED_CODES: ReadonlySet<string> = new Set([
+  "phoenix_crm_review_decided",
+  "phoenix_crm_review_not_found",
+  "phoenix_crm_review_not_rejected",
+  "phoenix_crm_full_name_not_held",
+  "phoenix_crm_place_not_retired",
+  "phoenix_crm_shared_place_not_retired",
+  "phoenix_crm_shared_place_retired",
+]);
+
+export function isAlreadyDecided(error: unknown): boolean {
+  const code = errorCodeOf(error);
+  return code !== null && ALREADY_DECIDED_CODES.has(code);
+}
 
 type DoneScope = {
   /** The item the control below answers: `review:…`, `place:…`, `venue:…`, `seat:…` or `case:…`. */
@@ -89,6 +112,7 @@ const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> =
   reopened: { text: "Reopened", tone: "neutral" },
   restored: { text: "Approved after all", tone: "good" },
   settled: { text: "Settled", tone: "good" },
+  already: { text: "Already decided", tone: "neutral" },
 };
 
 /**
@@ -100,9 +124,37 @@ const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> =
  */
 export function useSavedOutcome(subject: unknown): { saved: PlaceCheckOutcome | null; markSaved: (outcome: PlaceCheckOutcome) => void } {
   const snapshot = JSON.stringify(subject);
-  const [mark, setMark] = useState<{ outcome: PlaceCheckOutcome; snapshot: string } | null>(null);
-  const markSaved = useCallback((outcome: PlaceCheckOutcome) => setMark({ outcome, snapshot }), [snapshot]);
+  const [, redraw] = useState(0);
+  const markSaved = useCallback(
+    (outcome: PlaceCheckOutcome) => {
+      rememberSaved(snapshot, outcome);
+      redraw((count) => count + 1);
+    },
+    [snapshot],
+  );
+  const mark = SAVED_MARKS.get(snapshot) ?? null;
   return { saved: mark !== null && mark.snapshot === snapshot ? mark.outcome : null, markSaved };
+}
+
+/**
+ * 🔴 THE SAVED MARK OUTLIVES THE CONTROL (owner, 2026-11-08: "places checks is stale"). It was component
+ * state, so a list that remounted — a tab change, a filter, Show more, the one-by-one review closing —
+ * forgot it, and the decided row stood there with live buttons until the page's re-read, up to 30 seconds
+ * later: the next press answered "This place was already decided". Kept for the tab, keyed by the row as
+ * it was pressed, every control drawing that same row reads it; the re-read's changed row no longer
+ * matches, so the server's own view takes over exactly as before.
+ */
+const SAVED_MARKS = new Map<string, { outcome: PlaceCheckOutcome; snapshot: string }>();
+const SAVED_MARKS_KEPT = 500;
+
+function rememberSaved(snapshot: string, outcome: PlaceCheckOutcome) {
+  SAVED_MARKS.delete(snapshot);
+  SAVED_MARKS.set(snapshot, { outcome, snapshot });
+  while (SAVED_MARKS.size > SAVED_MARKS_KEPT) {
+    const oldest = SAVED_MARKS.keys().next().value;
+    if (oldest === undefined) break;
+    SAVED_MARKS.delete(oldest);
+  }
 }
 
 /**
@@ -115,7 +167,9 @@ export function PlaceCheckSaved({ outcome }: { outcome: PlaceCheckOutcome }) {
   return (
     <div className="min-w-0 space-y-1" role="status">
       <CrmPill tone={label.tone}>{label.text}</CrmPill>
-      <p className="break-words text-xs text-slate-500">{approval ? `Saved. ${PLACE_APPROVED_NOT_A_LIST_ADD}` : "Saved."}</p>
+      <p className="break-words text-xs text-slate-500">
+        {approval ? `Saved. ${PLACE_APPROVED_NOT_A_LIST_ADD}` : outcome === "already" ? "This was decided already. The page updates itself." : "Saved."}
+      </p>
     </div>
   );
 }

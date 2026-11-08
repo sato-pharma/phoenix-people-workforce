@@ -97,6 +97,7 @@ const OUTCOME_WORDS: Record<PlaceCheckOutcome, string> = {
   kept: "Kept in use",
   settled: "Settled",
   reopened: "Put back to look at again",
+  already: "Already decided",
 };
 
 type DeckOutcome = { item: string; outcome: PlaceCheckOutcome; slideKey: string };

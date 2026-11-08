@@ -331,6 +331,42 @@ export function runPlaceReviewDeckTests(): void {
     const savedHook = functionBody(hook, "useSavedOutcome");
     assert.match(savedHook, /JSON\.stringify\(subject\)/, "the saved outcome is tied to the row as it was when the button was pressed");
     assert.match(savedHook, /mark\.snapshot === snapshot/, "a re-read that changes the row hands it back to the server's own view, undo included");
+    // 4c · Stale rows (owner, 2026-11-08: "places checks is stale … many error"). The saved mark was
+    // component state, so a list that remounted forgot it and the decided row stood with live buttons
+    // until the re-read — the next press answered "This place was already decided".
+    assert.match(savedHook, /SAVED_MARKS\.get\(snapshot\)/, "the saved mark is read from the tab's store, so a remounted list still knows the row was decided");
+    assert.doesNotMatch(savedHook, /useState<\{ outcome/, "never component state again: a tab change or a filter would forget it");
+    assert.match(hook, /^const SAVED_MARKS = new Map</m, "the store lives at module level, outside every control");
+    const already = functionBody(hook, "isAlreadyDecided");
+    assert.match(already, /ALREADY_DECIDED_CODES\.has\(code\)/, "an already-decided refusal is read by its code, never its words");
+    for (const code of ["phoenix_crm_review_decided", "phoenix_crm_full_name_not_held"]) {
+      assert.ok(hook.includes(`"${code}"`), `${code} — the two refusals the SFE Manager met on 8 Nov — settle the row`);
+    }
+  }
+  for (const [path, names] of CONTROLS) {
+    if (path.includes("crm-integrity/")) continue; // useCrmAction answers its own refusals
+    const code = stripComments(read(path));
+    for (const name of names) {
+      assert.match(
+        functionBody(code, name),
+        /if \(isAlreadyDecided\(error\)\) \{\s*markSaved\(done\("already"\)\);\s*setSaving\((?:false|null)\);\s*return;/,
+        `${path} ${name}: a row decided already draws "Already decided", never a red error`,
+      );
+    }
+  }
+  {
+    // The doctors' full names on the same page decided like no other control there.
+    const names = stripComments(read("src/components/phoenix-crm/full-name-checks.tsx"));
+    const body = functionBody(names, "FullNameDecision");
+    assert.match(body, /const \{ saved, markSaved \} = useSavedOutcome\(row\);/, "a decided name draws its outcome at once");
+    assert.match(body, /if \(saved\) return <PlaceCheckSaved outcome=\{saved\} \/>;/, "and no button to press twice");
+    assert.match(body, /placeCheckReread\.ask\(\(\) => router\.refresh\(\)\)/, "one re-read for a run of decisions, never a whole-page rebuild per press");
+    assert.doesNotMatch(names.replace(/placeCheckReread\.ask\(\(\) => router\.refresh\(\)\)/g, ""), /router\.refresh\(\)/, "no bare refresh anywhere in the file");
+    assert.match(body, /if \(isAlreadyDecided\(error\)\) \{/, "an already-decided name settles the row");
+    assert.doesNotMatch(names, /payload\.error/, "the refusal's sentence is shown, never its raw code");
+    // And the page's comments and evidence start with the three lists that name the subjects.
+    const page = stripComments(read("app/(admin)/admin/field-crm/validation-reviews/page.tsx"));
+    assert.match(page, /subjectReads\.then\(\(\[reviewRows, validatedRows, sharedRows\]\) =>/, "the notes and evidence never wait for the reopened customers or the held names");
   }
   for (const [path, names] of CONTROLS) {
     if (path.includes("crm-integrity/")) continue; // useCrmAction already releases its own busy state
