@@ -908,7 +908,7 @@
   "notifications-cron-timeout-chain-2026-07-16": "notifications",
   "notifications-process-cron-504-timeout-fix": "notifications",
   "nsm-outstation-expense-is-never-held": "expenses",
-  "nsm-team-calendar-portal-build": "portal",
+  "nsm-team-calendar-portal-build": "portal-manager-boards",
   "nsm-title-is-held-once-per-line-not-company-wide": "org",
   "nursery-venues-were-saved-as-pharmacies-with-invented-codes": "marketing",
   "offer-chain-was-live-in-the-registry-with-a-hole-past-approval": "recruitment",

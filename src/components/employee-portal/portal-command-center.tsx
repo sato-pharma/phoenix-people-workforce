@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NO_PUBLISHED_MONTH } from "@/lib/employee-portal/unranked-managers";
 import { Suspense } from "react";
 import {
   Activity,
@@ -626,12 +627,18 @@ export function RankingPanel({
   showManager,
   windowLabel,
   footer,
+  unranked = [],
 }: {
   title: string;
   subtitle: string;
   icon: React.ElementType;
   rows: RankRow[];
   showManager?: boolean;
+  /**
+   * People on the team with no row in the window yet — a manager who joined after it (owner, 2026-11-09).
+   * Listed under the ranked rows with no rank and no percentage; `note` says when they joined.
+   */
+  unranked?: ReadonlyArray<{ hrId: string; name: string; note: string }>;
   /** Which published closing month(s) these achievement percentages cover, e.g. "Jul 2026". */
   windowLabel?: string | null;
   /** Rendered inside the card beneath the last row — this is where DepartedFromBoardNote goes. */
@@ -641,7 +648,7 @@ export function RankingPanel({
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead title={title} right={<SectionMeta items={[windowLabel, subtitle]} />} />
-      {ranked.length === 0 ? (
+      {ranked.length === 0 && unranked.length === 0 ? (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
       ) : (
         <div className="bg-white">
@@ -688,6 +695,30 @@ export function RankingPanel({
               </div>
             );
           })}
+          {unranked.map((person) => (
+            <div
+              key={`unranked-${person.hrId}`}
+              className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center border border-slate-200 text-phx-xs font-black text-slate-400">
+                –
+              </span>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-semibold leading-snug text-slate-800">{person.name}</p>
+                  {person.note ? (
+                    <p className="break-words text-phx-2xs font-medium uppercase leading-snug tracking-wide text-slate-400">
+                      {person.note}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <p className="w-24 shrink-0 text-right text-phx-2xs font-bold uppercase leading-snug tracking-wide text-slate-400">
+                {NO_PUBLISHED_MONTH}
+              </p>
+            </div>
+          ))}
         </div>
       )}
       {footer}
