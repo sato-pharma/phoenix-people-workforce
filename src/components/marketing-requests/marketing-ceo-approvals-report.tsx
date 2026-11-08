@@ -10,11 +10,14 @@ import {
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-tokens";
 import {
+  phxButtonAccentClassName,
   phxButtonGhostClassName,
   phxButtonPrimaryClassName,
   phxCheckInputClassName,
   phxFieldClassName,
   phxLabelClassName,
+  phxSelectClassName,
+  phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cairoDate, cairoDateTime, cairoMonthDayTime12h, utcDate } from "@/lib/format/cairo-datetime";
 import {
@@ -23,6 +26,12 @@ import {
   type MarketingCeoApprovalRow,
   type MarketingCeoApprovals,
 } from "@/lib/marketing-requests/ceo-approvals";
+import {
+  APPROVED_REQUESTS_MAX_NOTE_CHARS,
+  APPROVED_REQUESTS_MAX_ROWS,
+  defaultMarkFor,
+  type ApprovedRequestMark,
+} from "@/lib/marketing-requests/ceo-approvals-email";
 
 const money = (value: number): string => Math.round(value).toLocaleString("en-US");
 
@@ -83,6 +92,202 @@ function RequestCodeLink({ row }: { row: MarketingCeoApprovalRow }) {
   );
 }
 
+// ── The email's notes and marks ─────────────────────────────────────────────
+//
+// A note and a mark per request, kept in this browser so a half-written email survives a reload.
+// Only the sender's convenience: the server re-reads every row, and what was SENT is in the audit log.
+
+type RowDraft = { mark?: ApprovedRequestMark; note?: string };
+const DRAFTS_KEY = "phx.marketing.ceoApprovals.emailDrafts.v1";
+
+function readDrafts(): Record<string, RowDraft> {
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, RowDraft>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDrafts(drafts: Record<string, RowDraft>) {
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {
+    // Private window or full storage: the notes still work, they just do not outlive the page.
+  }
+}
+
+const MARK_LABEL: Record<ApprovedRequestMark, string> = {
+  executed: "Executed (shows in red)",
+  hold: "Finance hold",
+  none: "No mark",
+};
+
+/** The colour his own email uses for the rows Finance already executed. */
+const EXECUTED_RED = "text-[#B91C1C]";
+
+function NotesCell({
+  mark,
+  note,
+  onMark,
+  onNote,
+  row,
+}: {
+  mark: ApprovedRequestMark;
+  note: string;
+  onMark: (mark: ApprovedRequestMark) => void;
+  onNote: (note: string) => void;
+  row: MarketingCeoApprovalRow;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <textarea
+        aria-label={`Note for ${row.requestCode}`}
+        className={phxTextareaClassName}
+        dir="auto"
+        maxLength={APPROVED_REQUESTS_MAX_NOTE_CHARS}
+        onChange={(event) => onNote(event.target.value)}
+        placeholder="Note for the email"
+        rows={2}
+        value={note}
+      />
+      <select
+        aria-label={`Mark for ${row.requestCode}`}
+        className={phxSelectClassName}
+        onChange={(event) => onMark(event.target.value as ApprovedRequestMark)}
+        value={mark}
+      >
+        {(["none", "executed", "hold"] as const).map((value) => (
+          <option key={value} value={value}>
+            {MARK_LABEL[value]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+type EmailPerson = { email: string; name: string };
+type EmailPreview = {
+  cc: EmailPerson[];
+  holdNames: string[];
+  redCount: number;
+  rowCount: number;
+  subject: string;
+  to: EmailPerson[];
+  totalValue: number;
+  warnings: string[];
+};
+type EmailResult = EmailPreview & { sent: boolean; sentAtIso: string | null; skippedReason: string | null };
+
+type SendState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "preview"; preview: EmailPreview }
+  | { phase: "sending"; preview: EmailPreview }
+  | { phase: "done"; result: EmailResult }
+  | { phase: "error"; message: string };
+
+function PeopleLine({ label, people }: { label: string; people: EmailPerson[] }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">
+        {label} · {people.length}
+      </dt>
+      <dd className="break-words text-phx-sm text-slate-800">
+        {people.length ? people.map((person) => person.name).join(" · ") : "Nobody"}
+      </dd>
+    </div>
+  );
+}
+
+function SendPanel({ onClose, onSend, state }: { onClose: () => void; onSend: () => void; state: SendState }) {
+  if (state.phase === "idle") return null;
+  if (state.phase === "checking") {
+    return <div className={`${adminSoftPanelClassName} p-4 text-phx-sm text-slate-700`}>Working out who the email reaches</div>;
+  }
+  if (state.phase === "error") {
+    return (
+      <div className={`${adminSoftPanelClassName} flex flex-wrap items-center justify-between gap-3 p-4`}>
+        <p className="min-w-0 break-words text-phx-sm font-bold text-rose-800">{state.message}</p>
+        <button className={phxButtonGhostClassName} onClick={onClose} type="button">
+          Close
+        </button>
+      </div>
+    );
+  }
+  if (state.phase === "done") {
+    const { result } = state;
+    return (
+      <div className={`${adminSoftPanelClassName} flex flex-wrap items-start justify-between gap-3 p-4`}>
+        <div className="min-w-0 space-y-1">
+          {result.sent ? (
+            <>
+              <p className="break-words text-phx-md font-bold text-emerald-800">
+                Sent “{result.subject}” to {result.to.length + result.cc.length} people
+                {result.sentAtIso ? ` at ${cairoDateTime(result.sentAtIso)} Cairo` : ""}
+              </p>
+              <p className="text-phx-sm text-slate-700">
+                {result.rowCount} request{result.rowCount === 1 ? "" : "s"}, EGP {money(result.totalValue)}. Everyone on it
+                also gets the same notice in Phoenix and on Telegram.
+              </p>
+            </>
+          ) : (
+            <p className="break-words text-phx-md font-bold text-rose-800">
+              Not sent: {result.skippedReason ?? "the email service refused it"}
+            </p>
+          )}
+        </div>
+        <button className={phxButtonGhostClassName} onClick={onClose} type="button">
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  const { preview } = state;
+  const sending = state.phase === "sending";
+  return (
+    <section className={`${adminSoftPanelClassName} space-y-3 p-4`}>
+      <div className="min-w-0">
+        <p className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Subject</p>
+        <p className="break-words text-phx-md font-bold text-slate-900">{preview.subject}</p>
+        <p className="break-words text-phx-sm text-slate-600">
+          {preview.rowCount} request{preview.rowCount === 1 ? "" : "s"}, EGP {money(preview.totalValue)}
+          {preview.redCount ? ` · ${preview.redCount} in red` : ""}
+          {preview.holdNames.length ? ` · Finance hold: ${preview.holdNames.join(", ")}` : ""}
+        </p>
+      </div>
+      <dl className="grid grid-cols-1 gap-3">
+        <PeopleLine label="To" people={preview.to} />
+        <PeopleLine label="Cc" people={preview.cc} />
+      </dl>
+      {preview.warnings.length ? (
+        <ul className="space-y-1 border border-amber-300 bg-amber-50 p-3 text-phx-sm text-amber-900">
+          {preview.warnings.map((warning) => (
+            <li className="break-words" key={warning}>
+              {warning}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="text-phx-xs text-slate-500">
+        It goes out in your name through Phoenix, and replies come back to you. Each of them also gets the same notice in
+        Phoenix and on Telegram.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button className={phxButtonAccentClassName} disabled={sending} onClick={onSend} type="button">
+          {sending ? "Sending" : "Send now"}
+        </button>
+        <button className={phxButtonGhostClassName} disabled={sending} onClick={onClose} type="button">
+          Cancel
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function RangeForm({ from, to }: { from: string; to: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -132,11 +337,18 @@ function RangeForm({ from, to }: { from: string; to: string }) {
  * set. Read-only: a request code opens the request, nothing here decides or pays.
  *
  * The parent keys this component by the range, so a new range starts with every row ticked again.
+ *
+ * `canSend` (the Marketing Manager and the Super Admin) adds the Notes column — a note and a mark per
+ * row — and, while at least one row is ticked, the "Send email" button (owner, 2026-11-08). The button
+ * first asks the server who the email would reach, shows that, and sends only on "Send now".
  */
-export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoApprovals }) {
+export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSend?: boolean; report: MarketingCeoApprovals }) {
   const { rows, range } = report;
   const allIds = useMemo(() => rows.map((row) => row.requestId), [rows]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(allIds));
+  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
+  const draftsLoaded = useRef(false);
+  const [sendState, setSendState] = useState<SendState>({ phase: "idle" });
   const headerBox = useRef<HTMLInputElement>(null);
 
   const allTicked = rows.length > 0 && selected.size === rows.length;
@@ -146,7 +358,31 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
     if (headerBox.current) headerBox.current.indeterminate = !allTicked && !noneTicked;
   }, [allTicked, noneTicked]);
 
+  // The browser's copy can only be read after mount; restoring it once is the whole effect.
+  useEffect(() => {
+    if (!canSend || draftsLoaded.current) return;
+    draftsLoaded.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDrafts(readDrafts());
+  }, [canSend]);
+
   const totals = useMemo(() => summarizeCeoApprovals(rows, selected), [rows, selected]);
+
+  const markOf = (row: MarketingCeoApprovalRow): ApprovedRequestMark => drafts[row.requestId]?.mark ?? defaultMarkFor(row);
+  const noteOf = (row: MarketingCeoApprovalRow): string => drafts[row.requestId]?.note ?? "";
+
+  function updateDraft(requestId: string, change: RowDraft) {
+    setDrafts((current) => {
+      const next = { ...current, [requestId]: { ...current[requestId], ...change } };
+      writeDrafts(next);
+      return next;
+    });
+  }
+
+  /** A changed tick changes who the email reaches, so a preview already on screen is dropped. */
+  function dropStalePreview() {
+    setSendState((current) => (current.phase === "sending" || current.phase === "checking" ? current : { phase: "idle" }));
+  }
 
   function toggle(requestId: string) {
     setSelected((current) => {
@@ -155,11 +391,58 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
       else next.add(requestId);
       return next;
     });
+    dropStalePreview();
   }
 
   function toggleAll() {
     setSelected(allTicked ? new Set() : new Set(allIds));
+    dropStalePreview();
   }
+
+  const tooMany = selected.size > APPROVED_REQUESTS_MAX_ROWS;
+
+  async function postEmail(dryRun: boolean): Promise<EmailResult> {
+    const response = await fetch("/api/marketing-requests/ceo-approvals/email", {
+      body: JSON.stringify({
+        dryRun,
+        from: range.from,
+        rows: rows
+          .filter((row) => selected.has(row.requestId))
+          .map((row) => ({ mark: markOf(row), note: noteOf(row), requestId: row.requestId })),
+        to: range.to,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const payload = (await response.json().catch(() => null)) as { message?: string; result?: EmailResult } | null;
+    if (!response.ok || !payload?.result) {
+      throw new Error(payload?.message || "The approved requests email could not be prepared. Try again.");
+    }
+    return payload.result;
+  }
+
+  async function checkEmail() {
+    setSendState({ phase: "checking" });
+    try {
+      setSendState({ phase: "preview", preview: await postEmail(true) });
+    } catch (error) {
+      setSendState({ phase: "error", message: error instanceof Error ? error.message : "The email could not be prepared." });
+    }
+  }
+
+  async function sendEmail() {
+    if (sendState.phase !== "preview") return;
+    setSendState({ phase: "sending", preview: sendState.preview });
+    try {
+      setSendState({ phase: "done", result: await postEmail(false) });
+    } catch (error) {
+      setSendState({ phase: "error", message: error instanceof Error ? error.message : "The email could not be sent." });
+    }
+  }
+
+  const widths = canSend
+    ? ["w-[3%]", "w-[3%]", "w-[11%]", "w-[12%]", "w-[14%]", "w-[8%]", "w-[9%]", "w-[12%]", "w-[8%]", "w-[20%]"]
+    : ["w-[4%]", "w-[3%]", "w-[13%]", "w-[17%]", "w-[18%]", "w-[10%]", "w-[11%]", "w-[14%]", "w-[10%]"];
 
   const rangeLabel = `${utcDate(range.from)} to ${utcDate(range.to)}`;
 
@@ -214,22 +497,36 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
                 <button className={phxButtonGhostClassName} onClick={toggleAll} type="button">
                   {allTicked ? "Clear all" : "Select all"}
                 </button>
+                {canSend && selected.size > 0 ? (
+                  <button
+                    className={phxButtonAccentClassName}
+                    disabled={tooMany || sendState.phase === "checking" || sendState.phase === "sending"}
+                    onClick={checkEmail}
+                    title={tooMany ? `One email carries at most ${APPROVED_REQUESTS_MAX_ROWS} requests` : undefined}
+                    type="button"
+                  >
+                    Send email ({selected.size})
+                  </button>
+                ) : null}
               </div>
             </header>
 
+            {canSend && sendState.phase !== "idle" ? (
+              <div className="border-b border-phx-line p-3">
+                <SendPanel onClose={() => setSendState({ phase: "idle" })} onSend={sendEmail} state={sendState} />
+              </div>
+            ) : null}
+            {canSend && tooMany ? (
+              <p className="border-b border-phx-line bg-amber-50 px-4 py-2 text-phx-sm font-bold text-amber-900">
+                One email carries at most {APPROVED_REQUESTS_MAX_ROWS} requests. Untick some to send.
+              </p>
+            ) : null}
+
             <table className="hidden w-full table-fixed text-left text-sm @min-[1100px]:table">
               <colgroup>
-                <col className="w-[4%]" />
-                <col className="w-[3%]" />
-                <col className="w-[13%]" />
-                <col className="w-[13%]" />
-                <col className="w-[10%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
-                <col className="w-[8%]" />
-                <col className="w-[10%]" />
-                <col className="w-[13%]" />
-                <col className="w-[9%]" />
+                {widths.map((width, index) => (
+                  <col className={width} key={index} />
+                ))}
               </colgroup>
               <thead>
                 <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
@@ -246,18 +543,18 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
                   <th className="px-1 py-2" scope="col">#</th>
                   <th className="px-2 py-2" scope="col">Request code</th>
                   <th className="px-2 py-2" scope="col">Customer</th>
-                  <th className="px-2 py-2" scope="col">Requester</th>
-                  <th className="px-2 py-2" scope="col">Line</th>
-                  <th className="px-2 py-2" scope="col">Type</th>
+                  <th className="px-2 py-2" scope="col">Requester · line · type</th>
                   <th className="px-2 py-2 text-right" scope="col">Value (EGP)</th>
                   <th className="px-2 py-2" scope="col">Dr Anwar approval</th>
                   <th className="px-2 py-2" scope="col">Live report status</th>
                   <th className="px-2 py-2" scope="col">Pay date</th>
+                  {canSend ? <th className="px-2 py-2" scope="col">Notes for the email</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, index) => {
                   const ticked = selected.has(row.requestId);
+                  const red = canSend && markOf(row) === "executed";
                   return (
                     <tr
                       className={`border-b border-[#f1f4f6] align-top hover:bg-orange-50/40 ${ticked ? "" : "opacity-45"}`}
@@ -274,14 +571,30 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
                       </td>
                       <td className="px-1 py-2 text-slate-500">{index + 1}</td>
                       <td className="px-2 py-2"><RequestCodeLink row={row} /></td>
-                      <td className="break-words px-2 py-2 font-semibold text-slate-900" dir="auto">{row.customerName}</td>
-                      <td className="break-words px-2 py-2 text-slate-800">{row.requesterName}</td>
-                      <td className="break-words px-2 py-2 text-slate-700">{row.lineName}</td>
-                      <td className="break-words px-2 py-2 text-slate-700" dir="auto">{row.requestType}</td>
-                      <td className="px-2 py-2 text-right font-bold text-slate-900">{money(row.estimatedCost)}</td>
+                      <td className={`break-words px-2 py-2 font-semibold ${red ? EXECUTED_RED : "text-slate-900"}`} dir="auto">
+                        {row.customerName}
+                      </td>
+                      <td className="px-2 py-2">
+                        <p className={`break-words font-semibold ${red ? EXECUTED_RED : "text-slate-800"}`}>{row.requesterName}</p>
+                        <p className="break-words text-phx-xs text-slate-600">
+                          {row.lineName} · <span dir="auto">{row.requestType}</span>
+                        </p>
+                      </td>
+                      <td className={`px-2 py-2 text-right font-bold ${red ? EXECUTED_RED : "text-slate-900"}`}>{money(row.estimatedCost)}</td>
                       <td className="px-2 py-2"><ApprovalCell row={row} /></td>
                       <td className="px-2 py-2"><StatusCell row={row} /></td>
                       <td className="px-2 py-2"><PayDateCell row={row} /></td>
+                      {canSend ? (
+                        <td className="px-2 py-2">
+                          <NotesCell
+                            mark={markOf(row)}
+                            note={noteOf(row)}
+                            onMark={(mark) => updateDraft(row.requestId, { mark })}
+                            onNote={(note) => updateDraft(row.requestId, { note })}
+                            row={row}
+                          />
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -303,6 +616,7 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
               </label>
               {rows.map((row, index) => {
                 const ticked = selected.has(row.requestId);
+                const red = canSend && markOf(row) === "executed";
                 return (
                   <article className={`border border-phx-line p-3 ${ticked ? "" : "opacity-45"}`} key={row.requestId}>
                     <div className="flex items-start gap-3">
@@ -318,9 +632,9 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
                           <div className="min-w-0">
                             <p className="text-phx-xs text-slate-500">#{index + 1}</p>
                             <RequestCodeLink row={row} />
-                            <p className="break-words font-semibold text-slate-900" dir="auto">{row.customerName}</p>
+                            <p className={`break-words font-semibold ${red ? EXECUTED_RED : "text-slate-900"}`} dir="auto">{row.customerName}</p>
                           </div>
-                          <p className="shrink-0 text-right font-bold text-slate-900">EGP {money(row.estimatedCost)}</p>
+                          <p className={`shrink-0 text-right font-bold ${red ? EXECUTED_RED : "text-slate-900"}`}>EGP {money(row.estimatedCost)}</p>
                         </div>
                         <p className="break-words text-phx-sm text-slate-700">
                           {row.requesterName} · {row.lineName} · <span dir="auto">{row.requestType}</span>
@@ -339,6 +653,18 @@ export function MarketingCeoApprovalsReport({ report }: { report: MarketingCeoAp
                             <dd><PayDateCell row={row} /></dd>
                           </div>
                         </dl>
+                        {canSend ? (
+                          <div className="min-w-0">
+                            <p className="mb-1 text-phx-xs font-bold uppercase tracking-wider text-slate-500">Notes for the email</p>
+                            <NotesCell
+                              mark={markOf(row)}
+                              note={noteOf(row)}
+                              onMark={(mark) => updateDraft(row.requestId, { mark })}
+                              onNote={(note) => updateDraft(row.requestId, { note })}
+                              row={row}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </article>

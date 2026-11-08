@@ -105,6 +105,7 @@ export type CeoApprovalRequestInput = {
   lineName: string;
   payDate: string | null;
   requestCode: string;
+  requesterHrId: string | null;
   requesterName: string;
   requestType: string;
   status: string;
@@ -128,6 +129,8 @@ export type MarketingCeoApprovalRow = {
   payDateOverdue: boolean;
   requestCode: string;
   requestId: string;
+  /** Who the "Approved requests" email copies; never shown on screen. */
+  requesterHrId: string | null;
   requesterName: string;
   requestType: string;
   /** The Key Data tab's column N, word for word. */
@@ -210,6 +213,7 @@ export function buildCeoApprovalRows(input: {
         !executed && finance.state !== "closed_out" && Boolean(request.payDate) && String(request.payDate).slice(0, 10) < input.todayCairo,
       requestCode: request.requestCode,
       requestId,
+      requesterHrId: request.requesterHrId,
       requesterName: request.requesterName,
       requestType: request.requestType,
       statusLabel: humanize(request.status) ?? request.status,

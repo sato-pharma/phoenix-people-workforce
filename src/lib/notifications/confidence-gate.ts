@@ -392,6 +392,12 @@ export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
   // copies; the send refuses more than that itself, so this ceiling can never be the thing that stops
   // one. Pinned to OFFER_COPY_MAX by tests/offer-copy-recipients.test.ts.
   "offers/offer_letter": { appliesTo: "always", ceiling: 11 },
+  // The Marketing Manager's "Approved requests" email (owner, 2026-11-08): To Finance (2), Cc every
+  // requester in it, each one's managers up to the National Sales Manager, Dr Anwar, Omar Anwar, three
+  // marketing and SFE managers and the sender — about 20 people for a week, by design. A brand-new pair would otherwise be capped at 10 and
+  // his first send would sit in a review queue. 60 is APPROVED_REQUESTS_MAX_RECIPIENTS: the send refuses
+  // more than that itself, so this ceiling is never the thing that stops one.
+  "marketing_requests/approved_requests_sent": { appliesTo: "always", ceiling: 60 },
 };
 
 /**

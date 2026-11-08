@@ -160,6 +160,7 @@ export async function getMarketingCeoApprovals(access: AccessContext, range: Ceo
         lineName: cleanText(row.line?.name) || "No line",
         payDate: row.pay_date,
         requestCode: row.request_code,
+        requesterHrId: row.requester_hr_id,
         requesterName: names.get(row.requester_hr_id) ?? "Name not on file",
         requestType: marketingRequestActivity(typeName.get(String(row.request_type_id)), row.other_request_type),
         status: row.status,

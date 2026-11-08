@@ -90,6 +90,13 @@ export function runEmailNotificationTests() {
     "src/lib/ceo-email/service.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
+    // The Marketing Manager's "Approved requests" email from CEO Approvals, added 2026-11-08. It
+    // replaces the email he wrote by hand each week: sent only on his own press of "Send now", in his
+    // name with his reply-to, its table built from the rows and notes he ticked — no fixed wording for
+    // the template catalogue and no preference to resolve. It passes an origin so the confidence gate
+    // still reviews it (ceiling in CEILING_OVERRIDES), and writes the audit log. See
+    // tests/marketing-ceo-approvals-email.test.ts.
+    "src/lib/marketing-requests/ceo-approvals-email-service.ts",
     // A Super Admin's manual approval of a held item re-sends the EXACT held content,
     // bypassing the gate for that one already-reviewed send. See approveHeldNotification
     // in src/lib/notifications/confidence-gate.ts.
