@@ -65,6 +65,9 @@ shows the week as it stands, a draft included, with its status said (the owner's
 - Targets are per WORKING day: 10 PM and 2 AM, so a full week is exactly 50 and 10. Approved leave and national
   holidays come out of the target, as on Call Rate. If the holiday calendar or leave cannot be read, the page says
   a target may be a day too high.
+- It opens on the last finished Saturday-to-Wednesday week; Next week moves on.
+- A seat nobody sits on has no target and reads "No target · seat is vacant", never "Below"
+  (`weeklySheetResult`, shared by the screen and the Excel).
 - Account depth is **read from the AM visit comments** (`comment` + `detail_comment`, the week combined), because a
   visit to an account records the account, not the doctors met. The owner's answer when asked: "check from their
   comments if you find good, if not pull the data you can". On 8 November 2026, 1,288 of 2,362 AM visits in 28 days

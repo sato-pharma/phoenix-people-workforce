@@ -3,7 +3,7 @@ import Link from "next/link";
 import { KpiSection } from "@/components/crm/kpis-chrome";
 import { DOCTOR_FAMILY_LABEL, DOCTORS_PER_SPECIALITY } from "@/lib/crm/account-doctor-notes";
 import { addDaysIso } from "@/lib/crm/dates";
-import type { WeeklySheet, WeeklySheetAccount, WeeklySheetRep } from "@/lib/crm/weekly-sheet";
+import { weeklySheetResult, type WeeklySheet, type WeeklySheetAccount, type WeeklySheetRep } from "@/lib/crm/weekly-sheet";
 
 /**
  * The Weekly Sheet, the Regional Sales Manager's screen. Server-rendered; each rep's accounts open under the rep
@@ -19,13 +19,22 @@ function Result({ met }: { met: boolean }) {
   );
 }
 
-function Figure({ value, target }: { value: number; target: number }) {
+function Figure({ value, target, vacant }: { value: number; target: number; vacant: boolean }) {
+  const result = weeklySheetResult(value, target, vacant);
+  if (result === "Seat is vacant") {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <span className="text-phx-xs font-black tabular-nums text-slate-900">{value}</span>
+        <span className="text-phx-3xs font-semibold text-slate-500">No target · seat is vacant</span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <span className="text-phx-xs font-black tabular-nums text-slate-900">
         {value} of {target}
       </span>
-      <Result met={value >= target} />
+      <Result met={result === "Met"} />
     </span>
   );
 }
@@ -129,11 +138,11 @@ function RepBlock({ rep }: { rep: WeeklySheetRep }) {
         </div>
         <div className="min-w-0">
           <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">PM</p>
-          <Figure target={rep.pmTarget} value={rep.pm} />
+          <Figure target={rep.pmTarget} vacant={rep.vacant} value={rep.pm} />
         </div>
         <div className="min-w-0">
           <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">AM</p>
-          <Figure target={rep.amTarget} value={rep.am} />
+          <Figure target={rep.amTarget} vacant={rep.vacant} value={rep.am} />
         </div>
         <div className="min-w-0">
           <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Pharmacies</p>

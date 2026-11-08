@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { accountDoctorDepth, doctorMentionsIn, familyOfWord } from "../src/lib/crm/account-doctor-notes.ts";
-import { weeklySheetTargets, weeklySheetWindow } from "../src/lib/crm/weekly-sheet.ts";
+import { weeklySheetResult, weeklySheetTargets, weeklySheetWindow } from "../src/lib/crm/weekly-sheet.ts";
 import { previousMonthKey, regionalTeamReportLinks } from "../src/lib/employee-portal/regional-team-reports.ts";
 import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib/marketing-requests/roi-report-scope.ts";
 import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
@@ -154,6 +154,10 @@ function weeklySheet() {
   const window = weeklySheetWindow("2026-11-08", "2026-11-03");
   assert.equal(window.from, "2026-10-31", "the week opens on the Saturday");
   assert.equal(window.to, "2026-11-04", "and closes on the Wednesday");
+  // A vacant seat has no rep to measure: never "Below" against a target nobody holds.
+  assert.equal(weeklySheetResult(0, 50, true), "Seat is vacant");
+  assert.equal(weeklySheetResult(27, 40, false), "Below");
+  assert.equal(weeklySheetResult(50, 50, false), "Met");
 }
 
 function roiRegionRoute() {

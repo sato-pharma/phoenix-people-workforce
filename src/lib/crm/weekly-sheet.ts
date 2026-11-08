@@ -57,6 +57,8 @@ export type WeeklySheetRep = {
   accounts: WeeklySheetAccount[];
   /** Accounts with 3 of each of the three specialities. */
   accountsMet: number;
+  /** Nobody sits on the seat this week: no target, never graded "Below". */
+  vacant: boolean;
 };
 
 export type WeeklySheetDistrict = { managerName: string; districtName: string; reps: WeeklySheetRep[] };
@@ -74,6 +76,14 @@ export type WeeklySheet = {
 /** The target for a number of working days. Pure. */
 export function weeklySheetTargets(workingDays: number): { pm: number; am: number } {
   return { am: AM_PER_WORKING_DAY * workingDays, pm: PM_PER_WORKING_DAY * workingDays };
+}
+
+export type WeeklySheetResult = "Met" | "Below" | "Seat is vacant";
+
+/** One grading rule for the screen and the Excel: an empty seat has no rep to measure, so it is never "Below". */
+export function weeklySheetResult(value: number, target: number, vacant: boolean): WeeklySheetResult {
+  if (vacant) return "Seat is vacant";
+  return value >= target ? "Met" : "Below";
 }
 
 /** The Saturday-to-Wednesday week holding this day; the last full one when no day is named. */
@@ -209,18 +219,20 @@ export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string |
       .map(([customerId, entry]) => ({ customerId, depth: accountDoctorDepth(entry.comments), name: customerNames.get(customerId) ?? "Customer", visits: entry.visits }))
       .sort((left, right) => left.name.localeCompare(right.name));
     const people = seatOccupants(seat);
+    const vacant = people.length === 0;
     const rep: WeeklySheetRep = {
       accounts,
       accountsMet: accounts.filter((account) => account.depth.met).length,
       am,
-      amTarget: targets.am,
+      amTarget: vacant ? 0 : targets.am,
       leaveDays,
       person: people.length ? people.map((hrId) => nameOf(names, hrId)).join(" · ") : "Seat is vacant",
       pharmacies: [...pharmaciesByDay.values()].reduce((sum, set) => sum + set.size, 0),
       pm,
-      pmTarget: targets.pm,
+      pmTarget: vacant ? 0 : targets.pm,
       seatId: seat.seatId,
       territory: territoryName(seat),
+      vacant,
       waiting,
       workingDays,
     };

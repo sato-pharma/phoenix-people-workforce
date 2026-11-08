@@ -8,7 +8,7 @@
 import ExcelJS from "exceljs";
 
 import { DOCTOR_FAMILY_LABEL } from "@/lib/crm/account-doctor-notes";
-import type { WeeklySheet } from "@/lib/crm/weekly-sheet";
+import { weeklySheetResult, type WeeklySheet } from "@/lib/crm/weekly-sheet";
 import { buildHouseCoverSheet, writeHouseTable, type CellValue } from "@/lib/export/house-table-workbook";
 import { houseGeneratedAt, writeHouseMasthead } from "@/lib/export/house-xlsx-identity";
 
@@ -45,11 +45,11 @@ export async function buildWeeklySheetWorkbook(sheet: WeeklySheet, generatedAtIs
       rep.territory,
       rep.workingDays,
       rep.pm,
-      rep.pmTarget,
-      result(rep.pm >= rep.pmTarget),
+      rep.vacant ? "" : rep.pmTarget,
+      weeklySheetResult(rep.pm, rep.pmTarget, rep.vacant),
       rep.am,
-      rep.amTarget,
-      result(rep.am >= rep.amTarget),
+      rep.vacant ? "" : rep.amTarget,
+      weeklySheetResult(rep.am, rep.amTarget, rep.vacant),
       rep.pharmacies,
     ]),
   );
