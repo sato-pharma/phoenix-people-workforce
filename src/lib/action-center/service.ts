@@ -311,6 +311,7 @@ function mapResignationItem(
     urgency: "high",
     detail: {
       module: "resignation",
+      status: record.status,
       effectiveDate: record.effectiveDate,
       submittedDate: record.submittedDate,
       reason: record.reason,

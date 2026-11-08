@@ -22,6 +22,7 @@ import type {
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
 import { isEmployeeContext, type EmployeeContext } from "@/lib/action-center/employee-context";
+import { resolveResignationActions } from "@/lib/action-center/resignation-actions";
 import { OUTSTATION_CLAIM_CHANGED_CODE } from "@/lib/outstation/claim-revision";
 import {
   buildMarketingDecisionConfirmPrompt,
@@ -479,22 +480,6 @@ function resolveLeaveActions(detail: LeaveDetail): Array<{ key: string; label: s
   if (av.reject) actions.push({ key: "reject", label: "Reject", variant: "reject" });
   if (av.acknowledge) actions.push({ key: "acknowledge", label: "Acknowledge (HR)", variant: "neutral" });
   return actions;
-}
-
-function resolveResignationActions(status: string): Array<{ key: string; label: string; variant: "approve" | "reject" | "neutral" }> {
-  if (status === "submitted") {
-    return [
-      { key: "mark_review", label: "Mark Under Review", variant: "neutral" },
-      { key: "reject", label: "Reject", variant: "reject" },
-    ];
-  }
-  if (status === "under_review") {
-    return [
-      { key: "approve", label: "Approve", variant: "approve" },
-      { key: "reject", label: "Reject", variant: "reject" },
-    ];
-  }
-  return [];
 }
 
 export function ActionCenterHub({ initialData, initialModule, initialId, callerRole, embedded }: Props) {
@@ -1352,8 +1337,8 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                   : <p className="text-sm text-slate-400">No actions available for you on this request.</p>;
                               })()}
 
-                              {selected.module === "resignation" && (() => {
-                                const actions = resolveResignationActions(selected.statusLabel.replace(/ /g, "_"));
+                              {selected.module === "resignation" && selected.detail.module === "resignation" && (() => {
+                                const actions = resolveResignationActions(selected.detail.status);
                                 return actions.length > 0
                                   ? actions.map((action) => (
                                     <button
