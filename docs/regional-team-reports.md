@@ -27,6 +27,9 @@ the CEO's login included, is sent back to the portal home, and the export answer
 The landing tiles are `src/lib/employee-portal/regional-team-reports.ts`, drawn by `RmCommandCenter` under
 "My Team's Reports".
 
+Every shortcut on his landing to "his plans" opens his Phoenix CRM board (`RSM_PLAN_BOARD_HREF`), the older
+Dashboards row's "Region Plans" included. `/employee-portals/plans` is the old form's read-only history.
+
 ## Visits — Yesterday and Today
 
 - Every rep under his district managers, grouped by district manager.
@@ -66,7 +69,7 @@ shows the week as it stands, a draft included, with its status said (the owner's
   holidays come out of the target, as on Call Rate. If the holiday calendar or leave cannot be read, the page says
   a target may be a day too high.
 - It opens on the last finished Saturday-to-Wednesday week; Next week moves on.
-- A seat nobody sits on has no target and reads "No target · seat is vacant", never "Below"
+- A seat nobody sits on has no target and no working days, and reads "No target · seat is vacant", never "Below"
   (`weeklySheetResult`, shared by the screen and the Excel).
 - Account depth is **read from the AM visit comments** (`comment` + `detail_comment`, the week combined), because a
   visit to an account records the account, not the doctors met. The owner's answer when asked: "check from their

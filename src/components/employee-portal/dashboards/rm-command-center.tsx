@@ -61,7 +61,7 @@ import {
 } from "@/lib/employee-portal/published-window";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { regionalTeamReportLinks, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
+import { regionalTeamReportLinks, RSM_PLAN_BOARD_HREF, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ── Region performance keycards ───────────────────────────────────── */
@@ -230,7 +230,8 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales" },
   { href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Territory" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
-  { href: "/employee-portals/plans", icon: CalendarDays, label: "Region Plans" },
+  // His board in Phoenix CRM, never the read-only plan history at /employee-portals/plans (owner, 2026-11-09).
+  { href: RSM_PLAN_BOARD_HREF, icon: CalendarDays, label: "Region Plans" },
   { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expenses" },
   // The Team Coaching Skills Survey (owner, 2026-10-31) — read only, across the whole region.
   { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },

@@ -132,8 +132,14 @@ function RepBlock({ rep }: { rep: WeeklySheetRep }) {
         <div className="min-w-0">
           <p className="break-words text-phx-xs font-black text-slate-900">{rep.person}</p>
           <p className="break-words text-phx-2xs text-slate-500">
-            {rep.territory} · {rep.workingDays} working {rep.workingDays === 1 ? "day" : "days"}
-            {rep.leaveDays > 0 ? ` · ${rep.leaveDays} on leave` : ""}
+            {rep.vacant ? (
+              rep.territory
+            ) : (
+              <>
+                {rep.territory} · {rep.workingDays} working {rep.workingDays === 1 ? "day" : "days"}
+                {rep.leaveDays > 0 ? ` · ${rep.leaveDays} on leave` : ""}
+              </>
+            )}
           </p>
         </div>
         <div className="min-w-0">
