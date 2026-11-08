@@ -94,6 +94,7 @@ import {
   LifeBuoy,
   Plus,
   Map as MapIcon,
+  BadgeCheck,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -350,6 +351,7 @@ function buildEmployeePortalSections({
   showMarketingValidationTab = false,
   showMarketingInboxTab = false,
   showMarketingAllRequestsTab = false,
+  showMarketingCeoApprovalsTab = false,
   showMarketingCustomerDatabaseTab = false,
   showMarketingControlTab = false,
   showMarketingCoverageReportTab = false,
@@ -670,6 +672,8 @@ function buildEmployeePortalSections({
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         // Company-wide register — every request and where it is stopped.
         ...(showMarketingAllRequestsTab ? [{ href: "/employee-portals/marketing-requests/all", label: "All Marketing Requests", icon: ClipboardList }] : []),
+        // What the CEO approved between two dates, and the "Approved requests" email (owner, 2026-11-08).
+        ...(showMarketingCeoApprovalsTab ? [{ href: "/employee-portals/marketing-requests/ceo-approvals", label: "CEO Approvals", icon: BadgeCheck }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
       ],
     },

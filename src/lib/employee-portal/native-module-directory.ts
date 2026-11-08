@@ -158,6 +158,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/marketing-requests": { icon: "send-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/control": { icon: "options-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/all": { icon: "list-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests/ceo-approvals": { icon: "checkmark-done-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/customer-database": { icon: "library-outline", section: "Marketing & ROI" },
   "/employee-portals/roi": { icon: "trending-up-outline", section: "Marketing & ROI" },
   "/employee-portals/roi-tracker": { icon: "flag-outline", section: "Marketing & ROI" },
