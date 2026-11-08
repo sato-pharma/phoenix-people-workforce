@@ -43,8 +43,9 @@ export function regionalTeamReportLinks(cairoTodayIso: string): RegionalTeamRepo
     { href: `/employee-portals/kpis/frequency?month=${lastMonth}`, key: "frequency-last-month", label: "Frequency · Last month" },
     // 5 — the district managers' plans, with who else is with each rep.
     { href: "/employee-portals/district-manager-plans", key: "district-manager-plans", label: "District Managers' Plans" },
-    // 6 — his own plan board, where picking a district manager shows that manager's day.
-    { href: "/employee-portals/plans", key: "region-plans", label: "Region Plans" },
+    // 6 — his own plan board in Phoenix CRM, where picking a district manager shows that manager's day. Never the
+    // old "Weekly / Monthly Plans" form: it is read-only history now. The words are that page's own link to the board.
+    { href: "/employee-portals/field-crm?tab=plan", key: "region-plans", label: "Plan your week in Phoenix CRM" },
     // 7 — the weekly sheet.
     { href: "/employee-portals/weekly-sheet", key: "weekly-sheet", label: "Weekly Sheet" },
     // 8 — the ROI of the requests in his region.

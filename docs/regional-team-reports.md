@@ -20,7 +20,7 @@ the CEO's login included, is sent back to the portal home, and the export answer
 | 3 | Plan coverage | KPIs → Coverage | already built |
 | 4 | Last month's coverage, who was not covered, visit frequency | KPIs → Coverage and Frequency, previous month | already built |
 | 5 | The district managers' plans: is anyone else with the rep that day | District Managers' Plans (`/employee-portals/district-manager-plans`) | `server/manager-plan-bookings.ts` |
-| 6 | When planning with a district manager, whom that manager goes with and visits | Region Plans: his own board | `buildBoard` in `server/manager-plans.ts` |
+| 6 | When planning with a district manager, whom that manager goes with and visits | Plan your week in Phoenix CRM: his own board (`/employee-portals/field-crm?tab=plan`) | `buildBoard` in `server/manager-plans.ts` |
 | 7 | A weekly sheet: 50 PM and 10 AM a week, 3 doctors of each speciality in every account | Weekly Sheet (`/employee-portals/weekly-sheet`) + Excel | `src/lib/crm/weekly-sheet.ts` |
 | 8 | The ROI of the requests in his region | ROI Tracking | `resolveRegionRouteScope` in `roi-report-scope.ts` |
 

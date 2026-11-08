@@ -194,12 +194,14 @@ function landingShortcuts() {
       "Coverage · Last month",
       "Frequency · Last month",
       "District Managers' Plans",
-      "Region Plans",
+      "Plan your week in Phoenix CRM",
       "Weekly Sheet",
       "ROI Tracking",
     ],
   );
   assert.equal(links.find((link) => link.key === "coverage-last-month")?.href, "/employee-portals/kpis/coverage?month=2026-10");
+  // Need 6 is his own plan board in Phoenix CRM, never the read-only Weekly / Monthly Plans history.
+  assert.equal(links.find((link) => link.key === "region-plans")?.href, "/employee-portals/field-crm?tab=plan");
   // Every shortcut opens a page that exists.
   for (const link of links) {
     const path = link.href.split("?")[0].replace("/employee-portals", "app/employee-portals");
