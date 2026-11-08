@@ -15,8 +15,9 @@ import {
  * one or two words ("طارق", "احمد", "عمر حردان"), 618 of them already validated. AM accounts, a
  * hospital or a centre on the morning list, and pharmacies keep their one name field.
  *
- * 🔴 EVERY DOCTOR ON THE LIST WITH A SHORT NAME IS BLOCKED — never planned and never visited — until the
- * rep writes the full name, whether a rep added him or he came from the iReports360 list (owner,
+ * 🔴 EVERY DOCTOR ON THE LIST WITH A SHORT NAME IS NEVER VISITED until the rep writes the full name — but
+ * he IS planned as normal (owner, 2026-11-08: "make the missing full name not touch plan but only cannot
+ * log visit"; reps could not save an edited plan holding one), whether a rep added him or he came from the iReports360 list (owner,
  * 2026-11-07: "any dr in the list must be 3 names", widening his first choice, "Rep-added, all
  * statuses"). Measured that day: 5,751 of the 9,118 iReports360 PM doctors on the list carry one or two
  * words. A full name waiting for the Super Admin's decision unblocks him, so the rep is never held up
@@ -47,7 +48,7 @@ export const DOCTOR_NAME_FIELDS: ReadonlyArray<{ key: keyof DoctorNameParts; lab
 /** A full name saved at once; anything less waits for the Super Admin or the SFE Manager. */
 export const FULL_NAME_APPROVE_AT = 60;
 
-/** What the plan and Add visit say about a blocked doctor: the way out, in his own words. */
+/** What Add visit and the visit save say about a blocked doctor: the way out, in his own words. */
 export function fullNameNeededSentence(name: string): string {
   return `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
 }

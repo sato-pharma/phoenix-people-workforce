@@ -23,8 +23,8 @@ import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 
 /**
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
- * required boxes, each a real name; any doctor on the list with one or two names is blocked from the plan
- * and Add visit until the full name is written; the full name is held against his signboard — 60%+
+ * required boxes, each a real name; any doctor on the list with one or two names is planned as normal
+ * (owner, 2026-11-08) but never visited until the full name is written; the full name is held against his signboard — 60%+
  * saved, anything less waits for the Super Admin, never refused — "do not strict rejection or foolish
  * approvals", and "let a refused full name wait for my decision instead of blocking the rep".
  */
@@ -128,7 +128,9 @@ function checkTheRenameNeverRefusesABoardMismatch(): void {
   assert.match(body, /if \(ruling === "hold"\) return \{ name: String\(current\.name\), hold:/, "a low match keeps the old name and waits");
 }
 
-function checkACopyNeverPlacesABlockedDoctor(): void {
+function checkAShortNamedDoctorIsPlannedButNotVisited(): void {
+  // Owner, 2026-11-08: reps could not save an edited plan because of a short-named doctor on it — the
+  // plan works as it did before, and only the VISIT waits for the full name.
   const doctor = (customerId: string, needsFullName: boolean): PlannerCustomer => ({
     customerId,
     name: customerId,
@@ -148,8 +150,23 @@ function checkACopyNeverPlacesABlockedDoctor(): void {
   );
   assert.deepEqual(
     drafts.map((draft) => draft.customerId),
-    ["named"],
+    ["blocked", "named"],
+    "a copy places a short-named doctor like any other",
   );
+  const rules = readFileSync("src/lib/phoenix-crm/plan-rules.ts", "utf8");
+  assert.ok(!rules.includes("fullNameNeededSentence"), "the plan save never refuses a short name");
+  const panel = readFileSync("src/components/phoenix-crm/plan-day-panel.tsx", "utf8");
+  assert.ok(panel.includes("return locked || (!row.placed && room[row.listType] <= 0);"), "the plan day ticks him on");
+  for (const path of ["src/lib/phoenix-crm/plan-suggest.ts", "src/lib/phoenix-crm/suggestions.ts"]) {
+    assert.ok(!readFileSync(path, "utf8").includes("if (customer.needsFullName) continue;"), `${path} suggests him`);
+  }
+  // The visit is still refused, at the server and on both of the rep's visit screens.
+  const visits = readFileSync("src/lib/phoenix-crm/server/visits.ts", "utf8");
+  assert.ok(visits.includes("throw validationError(fullNameNeededSentence(String(customer.name)));"), "the visit save refuses him");
+  const picker = readFileSync("src/components/phoenix-crm/visit-customer-picker.tsx", "utf8");
+  assert.ok(picker.includes("customer.needsFullName === true}"), "Add visit cannot pick him");
+  const tab = readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8");
+  assert.ok(tab.includes("if (customer.needsFullName) return fullNameFirst(customer);"), "a planned visit asks for the full name first");
 }
 
 /** One function body out of a source file, from its signature to the next top-level close. */
@@ -249,5 +266,5 @@ export function runPhoenixCrmDoctorFullNameTests(): void {
   checkWhoIsBlocked();
   checkTheBoardMatch();
   checkTheRenameNeverRefusesABoardMismatch();
-  checkACopyNeverPlacesABlockedDoctor();
+  checkAShortNamedDoctorIsPlannedButNotVisited();
 }
