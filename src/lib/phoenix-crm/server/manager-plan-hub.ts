@@ -22,6 +22,7 @@ import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   freeSingleVisitHalves,
   isManagerAskLive,
+  isManagerWeekEndedUndecided,
   isSingleVisitDayAskLive,
   managerAskStage,
   managerPlanConversationOpen,
@@ -89,6 +90,11 @@ export type ManagerHubPlanDetail = {
   sentLate: boolean;
   decisionNote: string | null;
   returnedDayText: string | null;
+  /**
+   * The week was sent but its Thursday passed before it was decided: the day it ended, which the page says in
+   * place of a button nobody can press (owner, 2026-11-08). Null on every other week.
+   */
+  endedUndecidedOnText: string | null;
   steps: ManagerHubStep[];
   board: ManagerPlanBoardView;
   /** The viewer decides the week now (approve, return the week, return one day). */
@@ -327,6 +333,7 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
       : null;
   // A week already approved is returned only by its last approver, and only before it has ended.
   const weekOpen = addDaysIso(plan.weekStart, 5) >= viewer.cairoToday;
+  const endedUndecided = isManagerWeekEndedUndecided(plan.status, plan.weekStart, viewer.cairoToday);
   return {
     kind: "plan",
     isTest: plan.isTest,
@@ -335,11 +342,12 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
     managerTitle: managerPlannerTitle(plan.plannerKind, managerPlanWriterFor(viewer, plan.managerHrId)?.jobTitle),
     weekText: `Week of ${formatPhoenixLongDate(plan.weekStart)}`,
     status: plan.status,
-    statusLabel: managerPlanStatusLabel(plan.status),
+    statusLabel: managerPlanStatusLabel(plan.status, { weekStart: plan.weekStart, cairoToday: viewer.cairoToday }),
     sentAt: at(plan.submittedAt),
     sentLate: plan.submittedLate === true,
     decisionNote: plan.decisionNote ?? plan.firstDecisionNote,
     returnedDayText: plan.returnedDay ? formatPhoenixLongDate(plan.returnedDay) : null,
+    endedUndecidedOnText: endedUndecided ? formatPhoenixLongDate(addDaysIso(plan.weekStart, 5)) : null,
     steps: planSteps(plan, names),
     board,
     decideAs: weekOpen ? decideAs : null,
