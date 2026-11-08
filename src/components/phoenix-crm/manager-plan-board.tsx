@@ -1619,16 +1619,16 @@ function DistrictManagerDayPanel({ dmDay, dmName, unread }: { dmDay: DistrictMan
               ) : null}
               {entry.customers.length > 0 ? (
                 <ul className="grid min-w-0 gap-1 sm:grid-cols-2">
-                  {entry.customers.map((doctor) => (
-                    <li className={`break-words text-xs font-semibold leading-5 ${doctor.gone ? "text-slate-400 line-through" : "text-slate-700"}`} key={doctor.key}>
-                      <bdi>{doctor.name}</bdi>
-                      {doctor.speciality ? ` · ${doctor.speciality}` : ""}
-                      {doctor.grade ? ` · Grade ${doctor.grade}` : ""}
+                  {entry.customers.map((customer) => (
+                    <li className={`break-words text-xs font-semibold leading-5 ${customer.gone ? "text-slate-400 line-through" : "text-slate-700"}`} key={customer.key}>
+                      <bdi>{customer.name}</bdi>
+                      {customer.speciality ? ` · ${customer.speciality}` : ""}
+                      {customer.grade ? ` · Grade ${customer.grade}` : ""}
                     </li>
                   ))}
                 </ul>
               ) : entry.kindLabel !== "Admin" ? (
-                <p className="break-words text-xs font-semibold text-slate-500">No doctors chosen for this half.</p>
+                <p className="break-words text-xs font-semibold text-slate-500">No customers chosen for this half.</p>
               ) : null}
             </li>
           ))}

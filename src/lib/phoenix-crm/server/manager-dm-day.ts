@@ -76,7 +76,7 @@ function joinedAreas(areas: ReadonlyArray<{ areaName: string }> | undefined): st
 
 /** One half-day of his week, in the words the senior manager reads. */
 export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyArray<ManagerSlotCustomerRow>, names: PeopleNames, seatOf: SeatLookup): DistrictManagerDayHalf {
-  const doctors = [...customers]
+  const planned = [...customers]
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((row) => ({
       key: row.customerId ?? row.managerCustomerId ?? `${row.slotId}:${row.name}`,
@@ -93,11 +93,11 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
       repName: slot.repHrId ? nameOf(names, slot.repHrId) : "No rep in this territory",
       areaName: repSeat ? (repSeat.areaName ?? territoryName(repSeat)) : null,
       detail: null,
-      customers: doctors,
+      customers: planned,
     };
   }
   if (slot.kind === "single_visit") {
-    return { half: slot.half, kindLabel: "Single visit", repName: null, areaName: slot.areaName, detail: null, customers: doctors };
+    return { half: slot.half, kindLabel: "Single visit", repName: null, areaName: slot.areaName, detail: null, customers: planned };
   }
   if (slot.kind === "with_senior") {
     const senior = slot.seniorVisit;
@@ -108,7 +108,7 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
       repName: null,
       areaName: joinedAreas(senior?.areas) ?? slot.areaName,
       detail: who ? (senior?.title ? `${who} · ${senior.title}` : who) : null,
-      customers: doctors,
+      customers: planned,
     };
   }
   // Admin, and any kind a district manager's week cannot hold today, read as what it is.
@@ -118,7 +118,7 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
     repName: null,
     areaName: null,
     detail: slot.kind === "admin" ? managerAdminActivityLabel(slot.activityType) : null,
-    customers: doctors,
+    customers: planned,
   };
 }
 
