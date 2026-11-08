@@ -50,7 +50,7 @@ function mapResignation(record: ResignationRecord): ActionHubItem {
     id: record.id, module: "resignation", employeeName: record.employeeName, employeeHrId: record.employeeHrId,
     title: `Resignation · ${record.effectiveDate}`, statusLabel: record.status.replace(/_/g, " "),
     submittedAt: record.createdAt, urgency: "high",
-    detail: { module: "resignation", effectiveDate: record.effectiveDate, submittedDate: record.submittedDate, reason: record.reason, workflowNotes: record.workflowNotes, rejectedReason: record.rejectedReason, jobTitle: record.jobTitle, lineName: record.lineName },
+    detail: { module: "resignation", status: record.status, effectiveDate: record.effectiveDate, submittedDate: record.submittedDate, reason: record.reason, workflowNotes: record.workflowNotes, rejectedReason: record.rejectedReason, jobTitle: record.jobTitle, lineName: record.lineName },
   };
 }
 

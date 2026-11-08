@@ -1327,6 +1327,7 @@ import { runApprovalsHubRowCapTests } from "./approvals-hub-row-cap.test.ts";
 import { runApprovalsBadgeEmptySeatTests } from "./approvals-badge-empty-seat.test.ts";
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
+import { runResignationInboxActionsTests } from "./resignation-inbox-actions.test.ts";
 import { runApprovalHistoryFinalStateTests } from "./approval-history-final-state.test.ts";
 import { runApprovePlansPageSpeedTests } from "./approve-plans-page-speed.test.ts";
 import { runAiOneDoorTests } from "./ai-one-door.test.ts";
@@ -5775,6 +5776,7 @@ await runTest("approvals hub feeds are paged, never capped (a hidden request is 
 await runTest("Approvals Hub badge: an empty seat is nobody to count for, never an error; a timeout still is (APP-FEAFFD50)", runApprovalsBadgeEmptySeatTests);
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
+await runTest("Other Approvals offers Approve, Reject and Mark Under Review from the stored resignation status, never the printed label", runResignationInboxActionsTests);
 await runTest("approval history shows the request's FINAL outcome, every product, names only and readable formats", runApprovalHistoryFinalStateTests);
 await runTest("the approve-plans page reads only the plan module, own plan headers and one role batch (6-13 s on production)", runApprovePlansPageSpeedTests);
 await runTest("every AI call goes through the one door that reaches OpenAI and both Anthropic accounts", runAiOneDoorTests);
