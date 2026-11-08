@@ -3,6 +3,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
 import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
+import { canViewMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { isNamedProductionPlanningPerson } from "@/lib/production-planning/access";
@@ -37,6 +38,11 @@ export type EmployeePortalNavVisibility = {
    */
   showMarketingValidationTab?: boolean;
   showMarketingAllRequestsTab?: boolean;
+  /**
+   * CEO Approvals (owner, 2026-11-08) — the report's own readers, canViewMarketingCeoApprovals. Its row in
+   * employeePortalNavigationSectionSeeds is a seed only; THIS flag is what draws it in the portal.
+   */
+  showMarketingCeoApprovalsTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
   showMarketingRoiTrackingTab?: boolean;
@@ -723,6 +729,7 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketAwarenessInboxTab = MARKET_AWARENESS_DECIDER_ROLES.includes(resolvedRole);
   const showMarketingInboxTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingAllRequestsTab = canUseEmployeePortalMarketingAllRequests(resolvedRole);
+  const showMarketingCeoApprovalsTab = canViewMarketingCeoApprovals(resolvedRole);
   const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
@@ -795,6 +802,7 @@ export function resolveEmployeePortalNavVisibility(
     showExpenseSubmissionsTab: isA3Account ? false : showExpenseSubmissionsTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
     showMarketingAllRequestsTab,
+    showMarketingCeoApprovalsTab,
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingInboxTab,

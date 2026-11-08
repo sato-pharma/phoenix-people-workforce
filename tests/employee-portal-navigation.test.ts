@@ -703,12 +703,17 @@ export function runEmployeePortalNavigationTests() {
       showFieldActivityTab: groupProductManagerDefault.showFieldActivityTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
       showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
+      showMarketingCeoApprovalsTab: groupProductManagerDefault.showMarketingCeoApprovalsTab,
       showCrmMasterTab: groupProductManagerDefault.showCrmMasterTab,
     },
     groupProductManagerDefault,
     "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report and Field Activity tabs, Direct Orders submit/report, the company-wide All Marketing Requests register, and the line-scoped Phoenix CRM grid)",
   );
   assert.equal(marketingManagerDefault.showMarketingAllRequestsTab, true, "Marketing Manager sees the company-wide request register");
+  // CEO Approvals (owner, 2026-11-08): until this flag existed the page had no portal menu row at all
+  // — its seed row in system-navigation.ts draws nothing — so the Marketing Manager reached it only by link.
+  assert.equal(marketingManagerDefault.showMarketingCeoApprovalsTab, true, "Marketing Manager has CEO Approvals in her portal sidebar");
+  assert.equal(groupProductManagerDefault.showMarketingCeoApprovalsTab, false, "Group Product Manager is not one of CEO Approvals' three readers");
   assert.equal(groupProductManagerDefault.showCrmMasterTab, true, "Group Product Manager reads his own line in the portal CRM grid");
   assert.equal(marketingManagerDefault.showCrmMasterTab, false, "Marketing Manager holds no one line, so the line-scoped portal CRM grid is not offered to her");
   assert.equal(groupProductManagerDefault.showMarketingAllRequestsTab, false, "Group Product Manager stays scoped to its own subtree — no company-wide register");
