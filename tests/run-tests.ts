@@ -8170,7 +8170,7 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM lets the Super Admin correct a PM customer's held full name, and never the SFE Manager (owner, 2026-11-08: \"the admin only, not the SFE, to edit the name by the reps to correct it, or add the third name\"): canCorrectHeldFullName is the Super Admin with update and never a test account; a corrected name from anybody else, with Reject, or breaking the three-box rules is refused before the database is called; the service refuses it from anyone without update before the database is called; the screen draws Edit name only under the server's answer and sends the three boxes; and the database honours the name on approve only, keeping the rep's spelling in the history",
+  "Phoenix CRM lets the Super Admin and the SFE Manager correct a PM customer's held full name (owner, 2026-11-08: \"to edit the name by the reps to correct it, or add the third name\", then \"make the edit names appear to sfe manager\"): canCorrectHeldFullName is canDecideValidationReviews, never a district manager or a test account; a corrected name from anybody else, with Reject, or breaking the three-box rules is refused before the database is called; the service refuses it from anyone without update before the database is called; the screen draws Edit name only under the server's answer and sends the three boxes; and the database honours the name on approve only, keeping the rep's spelling in the history",
   runPhoenixCrmFullNameCorrectionTests,
 );
 

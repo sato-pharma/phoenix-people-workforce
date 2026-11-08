@@ -92,15 +92,14 @@ function readingOf(lat: unknown, lon: unknown, accuracy: unknown): HeldFullNameB
 }
 
 /**
- * 🔴 ONLY THE SUPER ADMIN CORRECTS A HELD NAME — NEVER THE SFE MANAGER (owner, 2026-11-08: "make an option to
- * the admin only, not the SFE, to edit the name by the reps to correct it, or add the third name"). The SFE
- * Manager still approves and rejects the name as the rep wrote it (`canDecideValidationReviews`); writing a
- * different name is the Super Admin's alone. `canUpdate` is the verb the SFE Manager does not hold. The route
- * asks `approve` (one permission per route, the module's rule) and this is the gate for a correction, checked
- * before the database is called. Never a test account.
+ * 🔴 THE SUPER ADMIN AND THE SFE MANAGER CORRECT A HELD NAME — WHOEVER DECIDES IT (owner, 2026-11-08, widening his own "the admin only, not the SFE" of the same evening: "make the edit names appear to sfe manager").
+ * It was the Super Admin's alone for its first hour. Now it is exactly `canDecideValidationReviews`: the Super
+ * Admin on `update`, the SFE Manager on `approve` — never `update` handed to him, never a test account, never
+ * a district manager. The route asks `approve` (one permission per route, the module's rule) and this is the gate
+ * for a correction, checked before the database is called.
  */
 export function canCorrectHeldFullName(viewer: PhoenixCrmViewer): boolean {
-  return !viewer.isTestPersona && viewer.isSuperAdmin && viewer.canUpdate;
+  return canDecideValidationReviews(viewer);
 }
 
 /** Whether a request carries a corrected name, which only `canCorrectHeldFullName` may send. */
@@ -119,12 +118,12 @@ export async function decideHeldFullName(
   if (!decision) throw validationError("Choose approve or reject.");
   const customerId = String(body.customerId).toLowerCase();
 
-  // A corrected name: the Super Admin's alone, on approve only, and held to the same three-name rules a rep's
+  // A corrected name: the deciders' (the Super Admin and the SFE Manager), on approve only, and held to the same three-name rules a rep's
   // own boxes are (no title, no place word, one name a box). The board match is not asked again — he is the
   // one deciding that the board was misread.
   let name: string | null = null;
   if (correctsHeldFullName(body)) {
-    if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin corrects a name.");
+    if (!canCorrectHeldFullName(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager correct a name.");
     if (decision !== "approve") throw validationError("A corrected name is saved with Approve.");
     const parsed = parseDoctorFullName(body.nameParts, null);
     if (!parsed.ok) throw validationError(parsed.error);
