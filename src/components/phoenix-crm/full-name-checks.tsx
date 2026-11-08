@@ -30,10 +30,10 @@ import { doctorFullNameProblem, splitDoctorName, type DoctorNameParts, type Held
  * its raw code. Now the row draws its saved outcome the moment the server says yes, one re-read follows a
  * run of decisions (`placeCheckReread`), each row is busy on its own, and "already decided" settles it.
  *
- * 🔴 EDIT NAME IS THE SUPER ADMIN'S ALONE, NEVER THE SFE MANAGER'S (owner, 2026-11-08: "make an option to the
- * admin only, not the SFE, to edit the name by the reps to correct it, or add the third name"). `canCorrect`
- * comes from `canCorrectHeldFullName` on the server, and the route refuses a corrected name from anybody
- * else whatever this screen draws. It opens the rep's own three boxes on what the rep wrote, and Save and
+ * 🔴 EDIT NAME IS THE SUPER ADMIN'S AND THE SFE MANAGER'S (owner, 2026-11-08: "make an option to the admin … to
+ * edit the name by the reps to correct it, or add the third name", then "make the edit names appear to sfe
+ * manager"). `canCorrect` comes from `canCorrectHeldFullName` on the server, and the route refuses a corrected
+ * name from anybody else whatever this screen draws. It opens the rep's own three boxes on what the rep wrote, and Save and
  * approve renames the customer to the corrected name.
  *
  * 🔴 EVERY ROW OPENS ON ITS SIGNBOARD AND CLOSES AGAIN (owner, 2026-11-08: "to be able to accurate validate i
