@@ -7,10 +7,11 @@ import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { isAlreadyDecided, PlaceCheckSaved, useSavedOutcome, type PlaceCheckOutcome } from "@/components/phoenix-crm/place-check-done";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
+import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { CrmCardsOnPhone, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
-import { phxButtonApproveClassName, phxButtonDangerClassName } from "@/components/ui/form-tokens";
+import { phxButtonApproveClassName, phxButtonDangerClassName, phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
-import type { HeldFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { doctorFullNameProblem, splitDoctorName, type DoctorNameParts, type HeldFullName } from "@/lib/phoenix-crm/pm-name-rules";
 
 /**
  * PM customers' full names waiting for a decision (owner, 2026-11-07, pm-name-rules.ts): the name a rep
@@ -24,13 +25,19 @@ import type { HeldFullName } from "@/lib/phoenix-crm/pm-name-rules";
  * name was already decided" (the SFE Manager, 10:27 and 11:13 Cairo that morning), and the refusal showed
  * its raw code. Now the row draws its saved outcome the moment the server says yes, one re-read follows a
  * run of decisions (`placeCheckReread`), each row is busy on its own, and "already decided" settles it.
+ *
+ * 🔴 EDIT NAME IS THE SUPER ADMIN'S ALONE, NEVER THE SFE MANAGER'S (owner, 2026-11-08: "make an option to the
+ * admin only, not the SFE, to edit the name by the reps to correct it, or add the third name"). `canCorrect`
+ * comes from `canCorrectHeldFullName` on the server, and the route refuses a corrected name from anybody
+ * else whatever this screen draws. It opens the rep's own three boxes on what the rep wrote, and Save and
+ * approve renames the customer to the corrected name.
  */
-export function FullNameChecks({ rows }: { rows: HeldFullName[] }) {
+export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: boolean; rows: HeldFullName[] }) {
   const shown = rows.filter((row) => !row.isTest);
 
   if (shown.length === 0) return null;
 
-  const actions = (row: HeldFullName) => <FullNameDecision row={row} />;
+  const actions = (row: HeldFullName) => <FullNameDecision canCorrect={canCorrect} row={row} />;
   const match = (row: HeldFullName) => (row.percent === null ? "No board read" : `${row.percent}%`);
   const board = (row: HeldFullName) => (row.boardNames.length ? row.boardNames.join(" · ") : "Nothing was read off the board");
 
@@ -94,11 +101,13 @@ export function FullNameChecks({ rows }: { rows: HeldFullName[] }) {
   );
 }
 
-function FullNameDecision({ row }: { row: HeldFullName }) {
+function FullNameDecision({ canCorrect, row }: { canCorrect: boolean; row: HeldFullName }) {
   const router = useRouter();
   const { saved, markSaved } = useSavedOutcome(row);
-  const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
+  const [saving, setSaving] = useState<"approve" | "reject" | "correct" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // The corrected name, open only while the Super Admin edits it; null is the row's plain buttons.
+  const [editing, setEditing] = useState<DoctorNameParts | null>(null);
 
   if (saved) return <PlaceCheckSaved outcome={saved} />;
 
@@ -107,12 +116,23 @@ function FullNameDecision({ row }: { row: HeldFullName }) {
     placeCheckReread.ask(() => router.refresh());
   };
 
-  async function decide(decision: "approve" | "reject") {
+  async function decide(decision: "approve" | "reject", nameParts?: DoctorNameParts) {
     if (saving) return;
-    setSaving(decision);
+    if (nameParts) {
+      const wrong = doctorFullNameProblem(nameParts);
+      if (wrong) {
+        setProblem(wrong);
+        return;
+      }
+    }
+    setSaving(nameParts ? "correct" : decision);
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/full-names", { customerId: row.customerId, decision }, "decided");
+      await crmPost<unknown>(
+        "/api/phoenix-crm/full-names",
+        nameParts ? { customerId: row.customerId, decision, nameParts } : { customerId: row.customerId, decision },
+        "decided",
+      );
       settle(decision === "approve" ? "approved" : "rejected");
       setSaving(null);
     } catch (error) {
@@ -126,6 +146,43 @@ function FullNameDecision({ row }: { row: HeldFullName }) {
     }
   }
 
+  const problemLine = problem ? (
+    <p className="break-words text-xs font-semibold text-rose-700" role="alert">
+      {problem}
+    </p>
+  ) : null;
+
+  if (editing) {
+    return (
+      <form
+        className="min-w-0 space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void decide("approve", editing);
+        }}
+      >
+        <DoctorNameFields disabled={saving !== null} idPrefix={`full-name-${row.customerId}`} onChange={setEditing} stacked value={editing} />
+        <div className="flex flex-wrap gap-2">
+          <button className={phxButtonApproveClassName} disabled={saving !== null} type="submit">
+            {saving === "correct" ? "Saving…" : "Save and approve"}
+          </button>
+          <button
+            className={phxButtonGhostClassName}
+            disabled={saving !== null}
+            onClick={() => {
+              setEditing(null);
+              setProblem(null);
+            }}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+        {problemLine}
+      </form>
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap gap-2">
@@ -135,12 +192,21 @@ function FullNameDecision({ row }: { row: HeldFullName }) {
         <button className={phxButtonDangerClassName} disabled={saving !== null} onClick={() => void decide("reject")} type="button">
           {saving === "reject" ? "Rejecting…" : "Reject"}
         </button>
+        {canCorrect ? (
+          <button
+            className={phxButtonGhostClassName}
+            disabled={saving !== null}
+            onClick={() => {
+              setEditing(splitDoctorName(row.fullName));
+              setProblem(null);
+            }}
+            type="button"
+          >
+            Edit name
+          </button>
+        ) : null}
       </div>
-      {problem ? (
-        <p className="break-words text-xs font-semibold text-rose-700" role="alert">
-          {problem}
-        </p>
-      ) : null}
+      {problemLine}
     </div>
   );
 }

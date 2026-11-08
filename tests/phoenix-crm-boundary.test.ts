@@ -1080,6 +1080,9 @@ const LATER_MIGRATIONS = [
   // Place checks in few requests (owner, 8 Nov 2026: "hilarious slow"): one NEW read-only function that answers the
   // validated places' four lookups in one call; nothing replaced.
   "supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql",
+  // The Super Admin's corrected full name (owner, 8 Nov 2026): REPLACES phoenix_crm_decide_full_name with the same
+  // body plus an optional name honoured on approve only. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261108204731_phoenix_crm_full_name_corrected.sql",
 ];
 
 /**
