@@ -46,6 +46,8 @@ const PLACE_CHECKS = new Set([
   "src/components/phoenix-crm/shared-place-customers.tsx",
   "src/components/phoenix-crm/place-match-board.tsx",
   "src/components/phoenix-crm/customer-match-board.tsx",
+  // PM full names to check, the row opened on its signboard (owner, 2026-11-08) — a Place checks section.
+  "src/components/phoenix-crm/full-name-checks.tsx",
   // The one-by-one review IS Place checks, shown one photo at a time (owner, 2026-10-18).
   "src/components/place-review-deck/deck-parts.tsx",
   // Expense approvals: every ticket and trip photo the approver reads (owner, 2026-11-07, claim 338's

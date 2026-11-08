@@ -1,3 +1,4 @@
+import type { ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import {
   COMPOUND_HEADS,
@@ -274,6 +275,35 @@ export type HeldFullName = {
   repName: string;
   heldAt: string;
   isTest: boolean;
+  /**
+   * The customer's validated places in use — the signboard (or, seated in a polyclinic, the timetable)
+   * photo and what the system read off it (owner, 2026-11-08: "to be able to accurate validate i need the
+   * collapse and expand on every row … if expanded the sign board photo with its validation data appear").
+   */
+  boards: HeldFullNameBoard[];
+};
+
+/** One validated place of a held customer, as the expanded row draws it. */
+export type HeldFullNameBoard = {
+  placeId: string;
+  /** Seated in a polyclinic: the evidence that names him is the venue's timetable, not a signboard. */
+  seated: boolean;
+  /** The place's own photo: the signboard, or for a seated customer the building he sits in. */
+  photoPath: string | null;
+  /** Seated in a polyclinic: the venue's timetable photo, which is what names him. */
+  schedulePhotoPath: string | null;
+  venueName: string | null;
+  placeLabel: string | null;
+  address: string | null;
+  brickName: string | null;
+  areaName: string | null;
+  validatedAt: string;
+  validatedBy: string;
+  photo: ValidatedPlaceRow["photo"];
+  pin: ValidatedPlaceRow["pin"];
+  mapsLink: string | null;
+  signboard: ValidatedPlaceRow["signboard"];
+  schedule: ValidatedPlaceRow["schedule"];
 };
 
 // ── Validating a doctor already on the list, and Place checks (owner, 2026-11-07) ─────────────────

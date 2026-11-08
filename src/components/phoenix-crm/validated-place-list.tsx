@@ -602,4 +602,12 @@ export function ValidatedPlaceList({
  * — the same evidence and the same two controls, never a copy. `scope` keeps the review's field ids
  * apart from this list's own.
  */
-export { Approve as PlaceInUseApprove, Place as PlaceInUseEvidence, Refuse as PlaceInUseRefuse, photoAlt as placeInUsePhotoAlt };
+export {
+  Approve as PlaceInUseApprove,
+  Place as PlaceInUseEvidence,
+  Refuse as PlaceInUseRefuse,
+  photoAlt as placeInUsePhotoAlt,
+  readingText as placeReadingText,
+  SCHEDULE_TEXT as PLACE_SCHEDULE_TEXT,
+  signboardText as placeSignboardText,
+};

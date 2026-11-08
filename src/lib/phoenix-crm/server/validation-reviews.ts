@@ -1075,7 +1075,7 @@ function newestValidatedFirst(left: Row, right: Row): number {
 }
 
 /** The stored timetable verdict, read as defensively as the signboard's: unrecognised is "not read". */
-function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
+export function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
   if (!value || typeof value !== "object") return null;
   const check = value as Row;
   const verdict = check.verdict;
@@ -1092,7 +1092,7 @@ function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
 }
 
 /** The stored signboard verdict, read defensively: anything unrecognised is "not read yet". */
-function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
+export function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
   if (!value || typeof value !== "object") return null;
   const check = value as Row;
   const verdict = check.verdict;
