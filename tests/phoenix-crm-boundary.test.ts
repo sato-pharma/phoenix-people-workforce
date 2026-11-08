@@ -1077,6 +1077,9 @@ const LATER_MIGRATIONS = [
   // A PM customer's full name (owner, 7 Nov 2026): seven columns on the customer and two NEW functions, one that
   // holds a name for a decision and one that decides it; nothing replaced.
   "supabase/migrations/20261107045402_phoenix_crm_doctor_full_name.sql",
+  // Place checks in few requests (owner, 8 Nov 2026: "hilarious slow"): one NEW read-only function that answers the
+  // validated places' four lookups in one call; nothing replaced.
+  "supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql",
 ];
 
 /**

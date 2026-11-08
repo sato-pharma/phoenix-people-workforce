@@ -97,7 +97,7 @@ import {
   type StoredSignboardVerdict,
 } from "@/lib/phoenix-crm/location-integrity";
 import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { selectByIds, selectByIdsFewestRequests, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -1631,11 +1631,14 @@ export async function loadPlaceCheckIntegrity(
   const ids = [...new Set([...input.placeIds, ...input.sharedPlaceIds].filter((id) => isUuid(id)))];
   if (ids.length === 0) return {};
 
-  const rows = await selectByIds<Row>(
+  // Only the two kinds this board judges are asked for (the loop below drops a visit case anyway), and
+  // the fewest-requests read takes the table whole when that is cheaper than 42 id chunks (2026-11-08).
+  const rows = await selectByIdsFewestRequests<Row>(
     "phoenix_crm_location_integrity",
     "id, subject_kind, subject_id, seat_id, source, flags, strong, device_mocked, accuracy_meters, created_at, settled_at, settled_by, settled_note, settled_flags",
     "subject_id",
     ids,
+    (query) => query.in("subject_kind", ["place", "shared_place"]),
   );
   const people = await loadPeopleNames(rows.map((row) => (typeof row.settled_by === "string" ? row.settled_by : null)));
   const allowed = seats === null ? null : new Set(seats);

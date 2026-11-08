@@ -493,6 +493,51 @@ export async function selectByIds<T extends Record<string, unknown> = Record<str
   return pages.flat();
 }
 
+/**
+ * `selectByIds` for a LONG id list against a table that may be small: whichever costs fewer requests.
+ *
+ * 🔴 WHY (owner, 2026-11-08: "enhance more the performance of this page, hilarious slow"). Place checks
+ * asks for the notes, recommendations and device evidence of every place on the page — about 7,000 ids —
+ * and `selectByIds` sends 150 ids per request, so the notes alone were 83 requests and the evidence 42,
+ * against tables of 114, 310 and 1,251 rows. Reading such a table whole is one or two pages.
+ *
+ * So for a list longer than two chunks it first COUNTS the rows that could match (one head request, with
+ * `tune` applied), and reads the whole filtered table, keyset-paged, only when that takes fewer pages than
+ * the chunks would; the rows are then kept by id in memory. A table that has grown large, a failed count,
+ * or a short list goes the `selectByIds` way exactly as before — the answer is the same rows either way,
+ * only the number of requests differs. `columns` must include `id` (the keyset seeks on it).
+ */
+export async function selectByIdsFewestRequests<T extends Record<string, unknown> = Record<string, unknown>>(
+  table: string,
+  columns: string,
+  idColumn: string,
+  ids: ReadonlyArray<string | null | undefined>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tune?: (query: any) => any,
+): Promise<T[]> {
+  const unique = dedupeIds(ids);
+  const chunks = Math.ceil(unique.length / IN_ID_CHUNK);
+  if (chunks <= 2) return selectByIds<T>(table, columns, idColumn, unique, tune);
+  const filtered = (query: unknown) => {
+    const base = (query as { not: (column: string, operator: string, value: null) => unknown }).not(idColumn, "is", null);
+    return tune ? tune(base) : base;
+  };
+  const counted = (await filtered(getSupabaseAdmin().from(table).select("id", { count: "exact", head: true }))) as {
+    count: number | null;
+    error: unknown;
+  };
+  // One page per 1,000 rows, plus the count already spent; the chunks cost at least one request each.
+  if (counted.error || counted.count === null || Math.ceil(counted.count / 1_000) + 1 >= chunks) {
+    return selectByIds<T>(table, columns, idColumn, unique, tune);
+  }
+  const wanted = new Set(unique);
+  const rows = await fetchAllRowsKeyset<T>(() => filtered(getSupabaseAdmin().from(table).select(columns)), {
+    cursorColumn: "id",
+    cursorOf: (row) => (row.id == null ? null : String(row.id)),
+  });
+  return rows.filter((row) => wanted.has(String(row[idColumn])));
+}
+
 export function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);

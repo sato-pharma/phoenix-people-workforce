@@ -508,7 +508,12 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.equal(byKhaled.get("venue-delta")?.[0]?.decidedAtText, "19 Oct 2026, 14:44", "and the time");
 
   const reviewsSource = read("src/lib/phoenix-crm/server/validation-reviews.ts");
-  assert.ok(reviewsSource.includes('"id, place_id, status, decided_by_hr_id, decided_at"'), "🔴 the in-use read asks each place's review who decided it and when");
+  // Since 2026-11-08 the in-use read's review rows come from phoenix_crm_validated_place_facts in one call.
+  assert.ok(reviewsSource.includes('rpc("phoenix_crm_validated_place_facts"'), "the in-use read takes its reviews from the one function");
+  assert.ok(
+    read("supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql").includes("'status', r.status, 'decided_by_hr_id', r.decided_by_hr_id, 'decided_at', r.decided_at"),
+    "🔴 the in-use read asks each place's review who decided it and when",
+  );
   assert.ok(reviewsSource.includes("refusedByName: decides ? deciderLabel("), "🔴 the reopened read names who refused, to the deciders");
   assert.ok(serverPlaces.includes("refusal_reason, decided_by_hr_id, decided_at"), "and a rejected building's own decider, for the customers it reopened");
   assert.match(read("src/components/phoenix-crm/validated-place-list.tsx"), /mode === "team" \? null : decisionStamp\("Approved"/, "🔴 only the company board says who approved a place in use");

@@ -69,6 +69,13 @@ export type PagedReadOptions<T> = {
   /** A row's identity. A row the walk meets a second time is kept once. */
   uniqueBy?: (row: T) => string;
   pageSize?: number;
+  /**
+   * Ask for this many pages at once, in waves, instead of one after another (2026-11-08, Place checks:
+   * six pages of active places one by one were four of its seconds). The rows, their order, the empty-page
+   * end and the ceiling are exactly the sequential walk's — see `readEveryPage`. Leave it unset for a
+   * read whose rows are mostly past the first page anyway, or that runs on a table being written in bulk.
+   */
+  concurrentPages?: number;
 };
 
 export async function readEveryPage<T>(
@@ -82,7 +89,56 @@ export async function readEveryPage<T>(
   const rows: T[] = [];
   const seen = new Set<string>();
 
-  for (let offset = 0; ; ) {
+  let offset = 0;
+  // 🔴 WAVES, WHEN ASKED FOR — AND ONLY FULL PAGES ARE TRUSTED IN THEM. A wave asks for the next N pages at
+  // their page-size offsets at once. While every page comes back full, those offsets were right. The first
+  // short or empty page ends the waves: if every later page of that wave is empty, the walk carries on
+  // ONE PAGE AT A TIME from the rows actually received (the loop below), so the end is still proven by an
+  // empty page; if a later page holds rows, the server's ceiling is below the page size and the offsets
+  // were wrong, so everything is thrown away and the walk starts again one page at a time.
+  const waves = Math.max(1, Math.floor(options.concurrentPages ?? 1));
+  const received: T[] = [];
+  let ended = false;
+  if (waves > 1) {
+    wave: for (;;) {
+      const offsets: number[] = [];
+      for (let index = 0; index < waves && offset + index * pageSize <= maxRows; index += 1) offsets.push(offset + index * pageSize);
+      if (offsets.length === 0) break;
+      const answers = (await Promise.all(
+        offsets.map((from) => buildQuery().range(from, Math.min(from + pageSize - 1, maxRows))),
+      )) as { data: unknown; error: unknown }[];
+      for (let index = 0; index < answers.length; index += 1) {
+        const { data, error } = answers[index];
+        if (error) return { rows: [], error, capped: false };
+        const page = (Array.isArray(data) ? data : []) as T[];
+        const asked = Math.min(offsets[index] + pageSize - 1, maxRows) - offsets[index] + 1;
+        received.push(...page);
+        offset = offsets[index] + page.length;
+        if (page.length < asked) {
+          const later = answers.slice(index + 1);
+          if (later.some((answer) => answer.error || (Array.isArray(answer.data) && answer.data.length > 0))) {
+            received.length = 0;
+            offset = 0;
+          } else if (page.length === 0) {
+            ended = true;
+          }
+          break wave;
+        }
+      }
+    }
+    for (const row of received) {
+      if (options.uniqueBy) {
+        const key = options.uniqueBy(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      rows.push(row);
+    }
+    // The waves alone reached the ceiling: the same two answers the loop below gives.
+    if (offset > maxRows) return pastCeiling(rows, maxRows, options);
+  }
+
+  for (; !ended && offset <= maxRows; ) {
     // Never further than one row past the ceiling: that row answers "is there more?", and a page of
     // rows beyond it would only be read to be thrown away.
     const last = Math.min(offset + pageSize - 1, maxRows);
@@ -105,17 +161,17 @@ export async function readEveryPage<T>(
       rows.push(row);
     }
 
-    if (offset > maxRows) {
-      if (options.whenFull === "stop") return { rows: rows.slice(0, maxRows), error: null, capped: true };
-      return {
-        rows: [],
-        error: new Error(
-          `${options.what} came to more than ${maxRows.toLocaleString("en-US")} rows; refusing to answer with part of them.`,
-        ),
-        capped: true,
-      };
-    }
+    if (offset > maxRows) return pastCeiling(rows, maxRows, options);
   }
 
   return { rows, error: null, capped: false };
+}
+
+function pastCeiling<T>(rows: T[], maxRows: number, options: PagedReadOptions<T>): PagedRead<T> {
+  if (options.whenFull === "stop") return { rows: rows.slice(0, maxRows), error: null, capped: true };
+  return {
+    rows: [],
+    error: new Error(`${options.what} came to more than ${maxRows.toLocaleString("en-US")} rows; refusing to answer with part of them.`),
+    capped: true,
+  };
 }
