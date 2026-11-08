@@ -17,7 +17,7 @@ while ($true) {
     Where-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName -ne 'ssh' }
   if ($held) { Start-Sleep 60; continue }
   & ssh -N -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 `
-    -o ExitOnForwardFailure=yes -o LogLevel=ERROR -i $key -L 127.0.0.1:3000:127.0.0.1:3000 TransferUser@192.168.1.60
+    -o ExitOnForwardFailure=yes -o LogLevel=ERROR -i $key -L 127.0.0.1:3000:127.0.0.1:3000 TransferUser@192.168.1.53
   Log "ssh ended (exit $LASTEXITCODE); reconnecting in 15 s"
   Start-Sleep 15
 }

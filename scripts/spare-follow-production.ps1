@@ -18,7 +18,7 @@ param([ValidateSet('main', 'production')][string]$Target = 'production')
 $ErrorActionPreference = 'Continue'
 $repo = 'F:\Phoenix Workforce\phoenix-workforce'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-$spare = 'TransferUser@192.168.1.60'
+$spare = 'TransferUser@192.168.1.53'
 $sshExe = "$env:SystemRoot\System32\OpenSSH\ssh.exe"; $scpExe = "$env:SystemRoot\System32\OpenSSH\scp.exe"   # Windows OpenSSH even when called from Git Bash
 $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR', '-i', $key)
 $log = Join-Path $env:USERPROFILE '.claude\logs\spare-follow-production.log'

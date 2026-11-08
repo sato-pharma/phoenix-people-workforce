@@ -57,7 +57,7 @@ cmd /c exit $red
 }
 $ErrorActionPreference = 'Continue'   # PS 5.1 turns any git warning on stderr into a fatal error under 'Stop'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-$spare = 'TransferUser@192.168.1.60'
+$spare = 'TransferUser@192.168.1.53'
 $sshExe = "$env:SystemRoot\System32\OpenSSH\ssh.exe"; $scpExe = "$env:SystemRoot\System32\OpenSSH\scp.exe"   # Windows OpenSSH even when called from Git Bash
 $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR', '-i', $key)
 $id = '{0}-{1}' -f (Get-Date -Format 'MMdd-HHmmss'), $PID
