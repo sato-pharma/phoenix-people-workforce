@@ -2125,6 +2125,7 @@ import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
+import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -8171,6 +8172,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets the Super Admin correct a PM customer's held full name, and never the SFE Manager (owner, 2026-11-08: \"the admin only, not the SFE, to edit the name by the reps to correct it, or add the third name\"): canCorrectHeldFullName is the Super Admin with update and never a test account; a corrected name from anybody else, with Reject, or breaking the three-box rules is refused before the database is called; the service refuses it from anyone without update before the database is called; the screen draws Edit name only under the server's answer and sends the three boxes; and the database honours the name on approve only, keeping the rep's spelling in the history",
   runPhoenixCrmFullNameCorrectionTests,
+);
+
+await runTest(
+  "Phoenix CRM opens every row of PM full names to check on the customer's signboard and closes it again (owner, 2026-11-08: \"to be able to accurate validate i need the collapse and expand on every row carrying a dr name; if expanded the sign board photo with its validation data appear and if collapsed collapsed\"): the loader reads each held customer's active places through selectByIds with the photo, where the rep stood, who validated it and when, and the stored signboard and timetable readings in the validated list's own readers, plus a seated customer's venue timetable; every row starts closed and the board is drawn only while it is open, on phone cards and the desktop table, where the panel is the joined TableRowDetail its toggle names",
+  runPhoenixCrmFullNameBoardTests,
 );
 
 await runTest(
