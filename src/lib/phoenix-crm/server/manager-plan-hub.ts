@@ -17,6 +17,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { addDaysIso } from "@/lib/crm/dates";
+import { logError } from "@/lib/observability/log";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
@@ -38,7 +39,8 @@ import {
   type ManagerPlanStatus,
   type SingleVisitDayAskStatus,
 } from "@/lib/phoenix-crm/manager-plan-rules";
-import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadWeekHalfNotes } from "@/lib/phoenix-crm/server/manager-plan-bookings";
 import { loadManagerCustomerRow } from "@/lib/phoenix-crm/server/manager-customers";
 import {
   managerAskDeciderRole,
@@ -78,6 +80,11 @@ export type ManagerHubAsk = {
 
 export type ManagerHubPlanDetail = {
   kind: "plan";
+  /**
+   * A regional sales manager reading a district manager's week only (owner, 2026-11-08, Dr. Hany Saad): the neutral
+   * Chain visit and leave lines under each with-a-rep half, keyed "<date>|<half>". Absent for every other reader.
+   */
+  halfNotes?: Record<string, string[]>;
   isTest: boolean;
   planId: string;
   managerName: string;
@@ -323,6 +330,28 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
       ask?.decidedByHrId,
     ]),
   ]);
+  // A regional sales manager reading a district manager's week sees who else is with each rep that day
+  // (owner, 2026-11-08). Information only; a failed read leaves the page as it was.
+  const halfNotes =
+    plan.plannerKind === "dm" && readsRegionalTeamReports(viewer)
+      ? await loadWeekHalfNotes({
+          halves: board.days.flatMap((day) =>
+            day.slots.flatMap((slot) =>
+              slot.kind === "with_rep" && slot.repSeatId ? [{ date: day.date, half: slot.half, repName: slot.repName ?? "the rep", repSeatId: slot.repSeatId }] : [],
+            ),
+          ),
+          isTest: plan.isTest,
+          plannerHrId: plan.managerHrId,
+          viewer,
+          weekStart: plan.weekStart,
+        }).catch((error: unknown) => {
+          logError("Phoenix CRM: the chain visit lines of a district manager's week could not be read", {
+            error,
+            labels: { event: "phoenix_crm_week_half_notes_unread" },
+          });
+          return undefined;
+        })
+      : undefined;
   // A decision is offered only on an ask whose week is still a sent one: Reopen on any other would only fail.
   const askStage = ask && isManagerAskLive(ask.status, plan.status) ? managerAskStage(ask.status) : null;
   const hasSecond = plan.secondApproverHrId !== null;
@@ -336,6 +365,7 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
   const endedUndecided = isManagerWeekEndedUndecided(plan.status, plan.weekStart, viewer.cairoToday);
   return {
     kind: "plan",
+    ...(halfNotes ? { halfNotes } : {}),
     isTest: plan.isTest,
     planId: plan.planId,
     managerName: nameOf(names, plan.managerHrId),

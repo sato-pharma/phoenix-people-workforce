@@ -1150,6 +1150,16 @@ function HalfStep({
           )}
         </div>
       ) : null}
+      {/* A regional sales manager's board (owner, 2026-11-08, Dr. Hany Saad: "when planning with the manager, know who
+          he goes with and whom he will visit"): the district manager picked for the day, his own plan for the day.
+          The "With a district manager" half shows the same panel itself, so it is not drawn twice. */}
+      {view.writer?.kind === "rsm" && dayScope?.startsWith("dm:") && dayScope === view.scope && draft.kind !== "with_dm" ? (
+        <DistrictManagerDayPanel
+          dmDay={day.districtManagerDays.find((entry) => entry.dmSeatId === dayScope.slice("dm:".length)) ?? null}
+          dmName={view.scopes.find((scope) => scope.key === dayScope)?.dmName ?? null}
+          unread={view.districtManagerPlanUnread}
+        />
+      ) : null}
       {day.halves.length > 1 ? <CrmChoice columns={2} label="Half-day" onChange={onHalf} options={halfOptions} value={half} /> : null}
       {canEdit && view.customersOptional && day.halves.length > 1 ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-500">AM and PM are each optional. Plan one of them or both.</p>
@@ -1271,6 +1281,12 @@ function WithRepPart({
           <span>
             <CrmPill tone={state.tone}>{state.label}</CrmPill>
           </span>
+          {/* A regional sales manager's board only: who else is with this rep today, and leave — information, never a block. */}
+          {(day.repNotes?.[rep.seatId] ?? []).map((line) => (
+            <span className="break-words font-semibold text-sky-800" key={line}>
+              {line}
+            </span>
+          ))}
         </span>
       ),
     };

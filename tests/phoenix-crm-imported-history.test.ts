@@ -179,6 +179,9 @@ export function runPhoenixCrmImportedHistoryTests() {
   // each read. phoenix_crm_countable_visits is not counted: since 20261031160000 it skips the copy itself.
   const unmarkedReadsToday: Record<string, number> = {
     "src/lib/crm/phoenix-work-evidence.ts": 1,
+    // The Weekly Sheet (owner, 2026-11-08) counts the history on purpose: a copied visit is work the rep did, and it
+    // counts toward the week as it does on the team calendar. The second read fetches those visits' detail comments by id.
+    "src/lib/crm/weekly-sheet.ts": 2,
     "src/lib/customer-identity/server/reads.ts": 2,
     "src/lib/phoenix-crm/server/behaviour.ts": 1,
     "src/lib/phoenix-crm/server/commitments.ts": 1,

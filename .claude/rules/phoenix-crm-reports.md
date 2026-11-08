@@ -5,6 +5,13 @@ paths:
   - "src/components/phoenix-crm/calendar-tab.tsx"
   - "app/api/phoenix-crm/reports/**"
   - "tests/phoenix-crm-{brick-coverage-report,daily-digest,daily-plan-report,exceptions,insight-reports,report-comparison,reports-export,wave2-reports}*"
+  - "src/lib/phoenix-crm/server/team-visits.ts"
+  - "src/lib/crm/{weekly-sheet,weekly-sheet-workbook,account-doctor-notes}.ts"
+  - "src/lib/employee-portal/regional-team-reports.ts"
+  - "src/components/crm/regional/**"
+  - "app/employee-portals/{team-visits,district-manager-plans,weekly-sheet}/**"
+  - "app/api/crm/weekly-sheet/**"
+  - "tests/regional-team-reports*"
 ---
 
 # Module memory — Phoenix CRM — the reports, the boards and how every figure is counted
@@ -22,6 +29,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **THE REGIONAL SALES MANAGER'S TEAM REPORTS OPEN FOR THE `RSM` SEAT ALONE — `readsRegionalTeamReports`, on the page and the export before any read; every other seat, the CEO included, is sent to the portal home and the export answers 403** (owner, 2026-11-08, Dr. Hany Saad's needs). Visits count AM · PM · Pharmacies apart with each Saved-at time and select NO location column; the Weekly Sheet is 10 PM and 2 AM per working day and reads the doctors from the AM comments ("No doctors written in the comment", never 0). Account: `docs/regional-team-reports.md`.
+- 🔴 **WHO ELSE IS WITH A REP THAT DAY IS A CHAIN VISIT, SHOWN NEUTRALLY, INFORMATION ONLY** (owner, 2026-11-08) — `server/manager-plan-bookings.ts`, SENT `with_rep` halves of every planner kind, words from `chainVisitLine`, never a clash or a block; an unsent week reads "Not sent yet". Account: `docs/regional-team-reports.md`.
 - 🔴 **A READING OF A VISIT COMMENT IS NEVER A COUNTED FIGURE** (owner, 2026-11-03, "build 3"). `src/lib/phoenix-crm/comment-reading.ts` reads comments hourly, riding the visit roll-up, into `phoenix_crm_visit_comment_readings` (service role only). Stock and price show under their own "read from comments" heading on Missing stock and What the field heard, screen and workbook, and join no total there. A follow-up shows on the rep's own Commitments, behind the seat gate, in the rep's words, with no count and no mention of how it was read. No KPI, rank, payroll, incentive, coaching or integrity code may import it (`tests/phoenix-crm-comment-reading.test.ts`). A quote not inside the comment is dropped, a product not on the visit reads as not named, and a changed comment loses its reading to a trigger. Sample of 3 Nov 2026 by hand, 220 comments on Haiku at low effort: stock 26 of 26, follow-ups 36 of 38, price 2 of 2. A word search for "غالي" also matches "شغالين": real price complaints are about 8 in 8,680.
 ### Moved out of `phoenix-crm` on 2026-10-09 (the pointer split — see `scripts/module-memory/modules.mjs`)
 

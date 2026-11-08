@@ -22,6 +22,7 @@
  * Every read and write is in ONE world: `is_test` on every query, the test world being the test accounts'.
  */
 
+import { logError } from "@/lib/observability/log";
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -396,6 +397,8 @@ export type ManagerBoardDay = {
    * manager's and the Training Manager's board.
    */
   districtManagerDays: DistrictManagerDay[];
+  /** A regional sales manager's board only (owner, 2026-11-08, Dr. Hany Saad): each rep seat's neutral Chain visit and "On leave" lines. Never a block. */
+  repNotes?: Record<string, string[]>;
 };
 
 export type ManagerBoardPlan = {
@@ -857,6 +860,21 @@ async function buildBoard(
     customersBySlot.set(row.slotId, list);
   }
   const slotByKey = new Map(slots.map((slot) => [`${slot.date}|${slot.half}`, slot]));
+  // The regional sales manager's board says, beside each rep, who else is with that rep that day and whether the
+  // rep is on leave (owner, 2026-11-08). Loaded here, not at the top: the reader imports this file. A failed read is
+  // logged and the board carries on without it — it is information, never a reason he cannot plan.
+  const regionalNotes =
+    writer.kind === "rsm" && team.length > 0
+      ? await import("@/lib/phoenix-crm/server/manager-plan-bookings")
+          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }))
+          .catch((error: unknown) => {
+            logError("Phoenix CRM: the regional board's rep notes could not be read", {
+              error,
+              labels: { event: "phoenix_crm_regional_board_notes_unread" },
+            });
+            return null;
+          })
+      : null;
 
   view.days = managerWeekDays(weekStart, writer.kind).map((date): ManagerBoardDay => {
     const holiday = holidays.get(date) ?? null;
@@ -970,7 +988,19 @@ async function buildBoard(
     }
     const seatOf = (seatId: string) => viewer.org.seats.get(seatId);
     const districtManagerDays = dmWeeks.map((week) => districtManagerDayOn(week, date, seatOf));
-    return { date, dateText: formatPhoenixLongDate(date), holiday, halves, editable, passed: date < viewer.cairoToday, slots: daySlots, repHalves, districtManagerDays };
+    const repNotes = regionalNotes?.get(date)?.repNotes;
+    return {
+      date,
+      dateText: formatPhoenixLongDate(date),
+      holiday,
+      halves,
+      editable,
+      passed: date < viewer.cairoToday,
+      slots: daySlots,
+      repHalves,
+      districtManagerDays,
+      ...(repNotes ? { repNotes } : {}),
+    };
   });
 
   return view;

@@ -141,6 +141,12 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                       ))}
                     </ul>
                   ) : null}
+                  {/* A regional sales manager's view only: a neutral chain visit or leave line — never a warning (owner, 2026-10-24). */}
+                  {(detail.halfNotes?.[`${day.date}|${slot.half}`] ?? []).map((line) => (
+                    <p className="mt-1 break-words text-xs font-semibold text-sky-800" key={line}>
+                      {line}
+                    </p>
+                  ))}
                   {slot.kind === "admin" && slot.note ? <p className="mt-1 break-words text-xs text-slate-600">{slot.note}</p> : null}
                   {slot.kind !== "admin" && slot.note ? <p className="mt-1 break-words text-xs text-slate-600">Note: {slot.note}</p> : null}
                   {slot.customers.length > 0 ? (

@@ -1157,6 +1157,32 @@ export function canReadVisitReport(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin || viewer.isSfeManager || readsTeamVisitReport(viewer);
 }
 
+// ── The Regional Sales Manager's team reports (owner, 2026-11-08) ───────────────────────────────
+
+/** The one seat tier whose holder reads the regional team reports. */
+const REGIONAL_TEAM_REPORT_TIERS = new Set(["RSM"]);
+
+/**
+ * Who opens the Regional Sales Manager's team reports — Visits — Yesterday and Today, District Managers'
+ * Plans and the Weekly Sheet (owner, 2026-11-08, for Dr. Hany Saad's list: "we are talking here in the
+ * regional sales manager account only"). A viewer holding a Regional Sales Manager SEAT, and nobody else:
+ * not a District Manager, not the National Sales Manager, not the CEO, not a rep. His test account mirrors
+ * his seat, so the owner checks the pages through it.
+ *
+ * 🔴 ITS OWN PREDICATE, AND NONE OF THESE REPORTS CARRIES A LOCATION. The far-visit and place-vs-actual
+ * evidence is not an RSM's (`readsPlaceVsActual`, owner 2026-10-02), so every loader behind this gate
+ * selects no coordinate, distance or location flag. The Visit report generator keeps its own audience.
+ */
+export function readsRegionalTeamReports(viewer: PhoenixCrmViewer): boolean {
+  return viewer.managerSeats.some((seat) => REGIONAL_TEAM_REPORT_TIERS.has(seat.tier));
+}
+
+/** The rep seats under the Regional Sales Manager — his scope, reps only, never a blind seat. */
+export function regionalTeamRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
+  if (!readsRegionalTeamReports(viewer)) return [];
+  return viewer.scopeTerritories.filter((seat) => seat.tier === "REP" && !isLocationBlind(viewer, seat));
+}
+
 /**
  * Who opens My map (owner, 2026-10-27): a rep on his own territory, a district, regional or national sales manager
  * across what he reads, and the Super Admin, the CEO and the SFE Manager across the company.
