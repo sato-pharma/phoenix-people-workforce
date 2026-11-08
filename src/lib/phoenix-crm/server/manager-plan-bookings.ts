@@ -294,43 +294,30 @@ export async function loadWeekHalfNotes(input: {
 // ── The Regional Sales Manager's own plan board ─────────────────────────────────────────────────
 
 export type RegionalBoardDayNotes = {
-  /** The chosen district manager's plan for the day; null when the board shows no district manager. */
-  districtManagerDay: { managerName: string; sent: boolean; halves: Array<{ half: ManagerHalf; text: string; customers: string[] }> } | null;
   /** Each rep seat's neutral notes for the day: Chain visit lines and "On leave". Information only — never a block. */
   repNotes: Record<string, string[]>;
 };
 
 /**
- * What the Regional Sales Manager's board adds to each day (owner, 2026-11-08, Dr. Hany Saad's sixth need): the
- * plan of the district manager he picked, and beside every rep in his picker who else is with that rep that day
- * and whether the rep is on leave. The board asks for it for a regional sales manager only, and a failed read
- * leaves the board as it was — it never stops him planning.
+ * What the Regional Sales Manager's board adds beside every rep in his picker (owner, 2026-11-08, Dr. Hany Saad's
+ * sixth need): who else is with that rep that day, and whether the rep is on leave. The district manager's own
+ * plan for the day is the board's `districtManagerDays` (`server/manager-dm-day.ts`), never read twice. The board
+ * asks for this for a regional sales manager only, and a failed read leaves the board as it was.
  */
 export async function loadRegionalBoardNotes(input: {
   viewer: Pick<PhoenixCrmViewer, "org">;
   plannerHrId: string;
-  dmSeatId: string | null;
   repSeats: ReadonlyArray<OrgSeat>;
   weekStart: string;
   isTest: boolean;
 }): Promise<Map<string, RegionalBoardDayNotes>> {
   const weekEnd = addDaysIso(input.weekStart, 6);
-  const dmHrId = input.dmSeatId ? (input.viewer.org.seats.get(input.dmSeatId)?.occupantHrId ?? null) : null;
   const repSeats = input.repSeats.filter((seat) => Boolean(personKey(seat.occupantHrId)));
-  const [district, bookings, leave] = await Promise.all([
-    readDistrictWeeks(dmHrId ? [dmHrId] : [], input.weekStart, input.isTest),
+  const [bookings, leave] = await Promise.all([
     loadRepDayBookings({ from: input.weekStart, isTest: input.isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }),
     loadSeatLeaveDays(repSeats, { from: input.weekStart, to: weekEnd }),
   ]);
-  const names = await loadPeopleNames([
-    dmHrId,
-    ...bookings.map((booking) => booking.managerHrId),
-    ...district.slots.map((slot) => slot.repHrId),
-    ...district.slots.map((slot) => slot.seniorVisit?.seniorHrId ?? null),
-    ...repSeats.map((seat) => seat.occupantHrId),
-  ]);
-  const plan = district.planOf(dmHrId);
-  const sent = Boolean(plan && isManagerPlanSent(plan.status));
+  const names = await loadPeopleNames([...bookings.map((booking) => booking.managerHrId), ...repSeats.map((seat) => seat.occupantHrId)]);
   const out = new Map<string, RegionalBoardDayNotes>();
   for (let offset = 0; offset < 7; offset += 1) {
     const date = addDaysIso(input.weekStart, offset);
@@ -343,17 +330,7 @@ export async function loadRegionalBoardNotes(input: {
       if (!leave.unread && leave.days.has(leaveDayKey(seat.seatId, date))) notes.push("On leave");
       if (notes.length) repNotes[seat.seatId] = notes;
     }
-    const halves =
-      sent && plan
-        ? district.slots
-            .filter((slot) => slot.planId === plan.planId && slot.date === date)
-            .sort((left, right) => left.half.localeCompare(right.half))
-            .map((slot) => {
-              const holder = slot.repHrId ?? (slot.repSeatId ? (input.viewer.org.seats.get(slot.repSeatId)?.occupantHrId ?? null) : null);
-              return { customers: district.customersBySlot.get(slot.slotId) ?? [], half: slot.half, text: halfText(slot, holder ? nameOf(names, holder) : null, names) };
-            })
-        : [];
-    out.set(date, { districtManagerDay: dmHrId ? { halves, managerName: nameOf(names, dmHrId), sent } : null, repNotes });
+    out.set(date, { repNotes });
   }
   return out;
 }

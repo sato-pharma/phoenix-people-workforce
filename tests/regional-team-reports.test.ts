@@ -83,11 +83,11 @@ function visitsYesterdayAndToday() {
 
 function chainVisits() {
   const bookings: RepDayBooking[] = [
-    { date: "2026-11-10", half: "am", managerHrId: "DM-1", plannerKind: "dm", repSeatId: "R1" },
-    { date: "2026-11-10", half: "pm", managerHrId: "PM-7", plannerKind: "pm", repSeatId: "R1" },
-    { date: "2026-11-10", half: "pm", managerHrId: "PM-7", plannerKind: "pm", repSeatId: "R1" },
-    { date: "2026-11-11", half: "am", managerHrId: "TM-2", plannerKind: "tm", repSeatId: "R1" },
-    { date: "2026-11-10", half: "am", managerHrId: "TM-2", plannerKind: "tm", repSeatId: "R2" },
+    { date: "2026-11-10", half: "AM", managerHrId: "DM-1", plannerKind: "dm", repSeatId: "R1" },
+    { date: "2026-11-10", half: "PM", managerHrId: "PM-7", plannerKind: "pm", repSeatId: "R1" },
+    { date: "2026-11-10", half: "PM", managerHrId: "PM-7", plannerKind: "pm", repSeatId: "R1" },
+    { date: "2026-11-11", half: "AM", managerHrId: "TM-2", plannerKind: "tm", repSeatId: "R1" },
+    { date: "2026-11-10", half: "AM", managerHrId: "TM-2", plannerKind: "tm", repSeatId: "R2" },
   ];
   // The other managers with this rep this day — each once, never the manager asked about.
   assert.deepEqual(

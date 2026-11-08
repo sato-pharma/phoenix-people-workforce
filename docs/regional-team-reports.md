@@ -8,8 +8,8 @@ report on his overview landing page, in words Phoenix already uses.
 ## Who opens them
 
 `readsRegionalTeamReports` (`src/lib/phoenix-crm/server/access.ts`) is true only for a viewer holding a manager seat
-of tier `RSM`. Every new page and the Weekly Sheet export check it on the server before any read; any other seat,
-the CEO's login included, gets a 404. His reach is `regionalTeamRepSeats`: the REP seats in his `scopeTerritories`.
+of tier `RSM`. Every new page and the Weekly Sheet export check it on the server before any read: any other seat,
+the CEO's login included, is sent back to the portal home, and the export answers 403. The loaders ask it again. His reach is `regionalTeamRepSeats`: the REP seats in his `scopeTerritories`.
 
 ## The eight needs and where each lives
 
@@ -47,11 +47,17 @@ half-day as a problem. The words are `chainVisitLine`: "Chain visit — <name> (
 
 - Read from every planner kind's SENT `with_rep` halves (`isManagerPlanSent`). A draft is nobody's booking.
 - The old weekly plan form is not read: its last plan was written on 24 October 2026.
-- Shown on District Managers' Plans, on his own board when he picks a district manager for a day
-  (`ManagerBoardDay.districtManagerDay` and `repNotes`, loaded only when `writer.kind === "rsm"`; a failed read is
-  logged and the block is left out), and under each half of a district manager's week in the approvals view
-  (`halfNotes`, for a Regional Sales Manager viewer only).
-- A week the district manager has not sent reads "Not sent yet"; the draft is never shown.
+- Shown on District Managers' Plans, beside each rep in his own board's picker (`ManagerBoardDay.repNotes`, loaded
+  only when `writer.kind === "rsm"`; a failed read is logged and the lines are left out), and under each half of a
+  district manager's week in the approvals view (`halfNotes`, for a Regional Sales Manager viewer only).
+- On District Managers' Plans a week the district manager has not sent reads "Not sent yet"; the draft is not shown.
+
+## The district manager's own day on his board
+
+When he picks a district manager for a day, his board shows that district manager's own plan for the day. It is the
+panel #155 built for the "With a district manager" half (`districtManagerDays`, `server/manager-dm-day.ts`), drawn
+under the day's district manager picker too, and not twice when the half is "With a district manager". That panel
+shows the week as it stands, a draft included, with its status said (the owner's rule for #155).
 
 ## The Weekly Sheet
 
@@ -76,14 +82,19 @@ half-day as a problem. The words are `chainVisitLine`: "Chain visit — <name> (
 
 ## ROI of the requests in his region
 
-The Medical Rep's territory route, widened to his whole team. `resolveRegionRouteScope` takes:
+The Medical Rep's territory route, widened to his whole team. Only the login role "Regional Manager" runs it (on
+8 November 2026, one login: Dr. Hany). `resolveRegionRouteScope` takes:
 
 - the `area_id` of every ACTIVE employee his chain reaches (never his own seat, never a leaver's old patch), and
 - his own seat line.
 
 It feeds the same `visibleAreaIds` + `visibleAreaLineNames` pair that `territoryRouteAdmitsRequest` reads, so the
 report, View Sales, the export and the filter options all agree. **Both halves or nothing**: an area is shared by
-every line (`public.areas.line_id` is NULL), so the line half is what keeps another line's spend out. On
-8 November 2026 his 16 areas held 29 requests: 12 on Pedia (shown) and 17 on other lines (kept out).
+every line (`public.areas.line_id` is NULL), so the line half is what keeps another line's spend out.
+
+On 8 November 2026 every Pedia request on his 16 areas was already raised by his own team, so the route added no
+row that day. It matters the day someone outside his chain, a product manager for example, spends on Pedia in his
+areas. The same scope also feeds the Manager Scorecard, the ROI Business Report and the live tracker, which only
+regroup rows ROI Tracking already admits; the Case File keeps its stricter `canSeeMarketingRequest` check.
 
 Pinned by `tests/regional-team-reports.test.ts`.

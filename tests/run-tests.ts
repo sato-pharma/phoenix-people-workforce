@@ -2142,6 +2142,7 @@ import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-cu
 import { runPhoenixCrmVisitTimesTests } from "./phoenix-crm-visit-times.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerPlanSourceTests } from "./phoenix-crm-manager-plan-source.test.ts";
+import { runPhoenixCrmManagerPlanDmDayTests } from "./phoenix-crm-manager-plan-dm-day.test.ts";
 import { runPhoenixCrmTrainingManagerPlanTests } from "./phoenix-crm-training-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
@@ -8258,6 +8259,11 @@ await runTest(
 await runTest(
   "the CRM manager-plan source scans: no file in src or app reads a manager-plan table outside src/lib/phoenix-crm/server/manager-*.ts, no migration names his own visits table except the ones that only widen it, tune its storage or delete one row, the weekly-planning, calendar, Hub and report readers reach his week only through manager-plan-readers.ts and never name the table, and the two quiet readers import no notice sender - the half of the manager-plan test any branch can trip, split out so scripts/check-contracts.mjs runs it before a push (18-25 Oct 2026 it reddened branches that never touched Phoenix CRM)",
   runPhoenixCrmManagerPlanSourceTests,
+);
+
+await runTest(
+  "Phoenix CRM's With a district manager half-day shows that district manager's own day (owner, 2026-11-08): each half he planned — a double visit and its rep, a single visit, Admin — with its area and the doctors he ticked, only that date, AM first, a draft marked not sent; a district manager's and the Training Manager's board read no other week, and a failed read is said",
+  runPhoenixCrmManagerPlanDmDayTests,
 );
 
 await runTest(

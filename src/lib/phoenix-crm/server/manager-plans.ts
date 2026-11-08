@@ -104,6 +104,7 @@ import {
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { assertSingleVisitPlanFits, loadLoggedSingleVisitHalves, plannedSingleVisitHalves } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { managerApproversFor, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
+import { districtManagerDayOn, loadDistrictManagerWeeks, type DistrictManagerDay, type DistrictManagerWeek } from "@/lib/phoenix-crm/server/manager-dm-day";
 import { loadApprovedSingleVisitDates } from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import {
   EDIT_ASK_COLUMNS,
@@ -391,11 +392,12 @@ export type ManagerBoardDay = {
   /** Each rep's own customers for each half of the day; a rep with nothing that half is absent. */
   repHalves: ManagerBoardRepHalf[];
   /**
-   * A regional sales manager's board only (owner, 2026-11-08, Dr. Hany Saad): the plan of the district manager
-   * on show for this day — "Not sent yet" until that week is sent. Absent on every other board.
+   * With a district manager (owner, 2026-11-08): the district manager's own plan for this date — the one the
+   * chosen scope names, and every one a saved With a district manager half-day names. Empty for a district
+   * manager's and the Training Manager's board.
    */
-  districtManagerDay?: { managerName: string; sent: boolean; halves: Array<{ half: ManagerHalf; text: string; customers: string[] }> } | null;
-  /** A regional sales manager's board only: each rep seat's neutral Chain visit and "On leave" lines. Never a block. */
+  districtManagerDays: DistrictManagerDay[];
+  /** A regional sales manager's board only (owner, 2026-11-08, Dr. Hany Saad): each rep seat's neutral Chain visit and "On leave" lines. Never a block. */
   repNotes?: Record<string, string[]>;
 };
 
@@ -476,6 +478,8 @@ export type ManagerPlanBoardView = {
   singleVisitHalvesUsed: number | null;
   /** The dates of this week his managers approved as another day of single visits (owner, 2026-10-20). */
   singleVisitDaysApproved: string[] | null;
+  /** The district managers' own weeks could not be read, so `districtManagerDays` is empty for a reason that is not theirs. */
+  districtManagerPlanUnread: boolean;
 };
 
 export { managerPlace };
@@ -592,6 +596,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     days: [],
     singleVisitHalvesUsed: null,
     singleVisitDaysApproved: null,
+    districtManagerPlanUnread: false,
   };
 }
 
@@ -699,6 +704,22 @@ async function buildBoard(
     plan ? loadEditAsks([plan.planId]) : Promise.resolve([] as ManagerEditAskRow[]),
     !plan || plan.status === "draft" ? managerApproversFor(viewer.org, writer) : Promise.resolve({ firstHrId: null, secondHrId: null }),
   ]);
+  // The district managers a senior manager goes with (owner, 2026-11-08): the chosen district's and every one a
+  // saved With a district manager half-day names, read beside the reps' weeks. A failed read is said on the
+  // board (`districtManagerPlanUnread`), never shown as "nothing planned".
+  const dmWeekSeats = writer.kind === "dm" || writer.kind === "tm" ? [] : [chosen?.dmSeatId ?? null, ...slots.filter((slot) => slot.kind === "with_dm").map((slot) => slot.scopeDmSeatId)];
+  const dmWeeksRead = loadDistrictManagerWeeks({ org: viewer.org, dmSeatIds: dmWeekSeats, weekStart, cairoToday: viewer.cairoToday, isTest }).then(
+    (weeks) => weeks,
+    (error: unknown) => {
+      view.districtManagerPlanUnread = true;
+      logWarning("Phoenix CRM could not read the district managers' own weeks for a senior manager's board", {
+        labels: { event: "phoenix_crm_manager_plan_dm_day_unread" },
+        error,
+        context: { managerHrId, weekStart },
+      });
+      return [] as DistrictManagerWeek[];
+    },
+  );
   // The reps' own weeks: the chosen scope's, and every rep a saved half-day already names — so a ticked
   // customer is still flagged when the board shows another district.
   const repSeatIds = dedupeIds([...team.map((entry) => entry.seatId), ...slots.map((slot) => slot.repSeatId)]);
@@ -708,6 +729,7 @@ async function buildBoard(
     writer.kind === "dm" ? loadLoggedSingleVisitHalves({ managerHrId, weekStart, isTest }) : Promise.resolve(null),
     writer.kind === "dm" ? loadApprovedSingleVisitDates({ managerHrId, weekStart, isTest }) : Promise.resolve(null),
   ]);
+  const dmWeeks = await dmWeeksRead;
   const scopeSeatOccupants = [...scopes, ...slots.map((slot) => ({ dmSeatId: slot.scopeDmSeatId }))].map((scope) =>
     scope.dmSeatId ? viewer.org.seats.get(scope.dmSeatId)?.occupantHrId : null,
   );
@@ -838,18 +860,15 @@ async function buildBoard(
     customersBySlot.set(row.slotId, list);
   }
   const slotByKey = new Map(slots.map((slot) => [`${slot.date}|${slot.half}`, slot]));
-  // The regional sales manager's board reads the district manager's own day and who else is with each rep
-  // (owner, 2026-11-08). Loaded here, not at the top: the reader imports this file. A failed read is logged and
-  // the board carries on without it — it is information, never a reason he cannot plan.
-  const regionalDmSeatId = writer.kind === "rsm" ? (chosen?.dmSeatId ?? null) : null;
+  // The regional sales manager's board says, beside each rep, who else is with that rep that day and whether the
+  // rep is on leave (owner, 2026-11-08). Loaded here, not at the top: the reader imports this file. A failed read is
+  // logged and the board carries on without it — it is information, never a reason he cannot plan.
   const regionalNotes =
-    regionalDmSeatId
+    writer.kind === "rsm" && team.length > 0
       ? await import("@/lib/phoenix-crm/server/manager-plan-bookings")
-          .then(({ loadRegionalBoardNotes }) =>
-            loadRegionalBoardNotes({ dmSeatId: regionalDmSeatId, isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }),
-          )
+          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }))
           .catch((error: unknown) => {
-            logError("Phoenix CRM: the regional board's district manager day could not be read", {
+            logError("Phoenix CRM: the regional board's rep notes could not be read", {
               error,
               labels: { event: "phoenix_crm_regional_board_notes_unread" },
             });
@@ -967,7 +986,9 @@ async function buildBoard(
         repHalves.push({ seatId: rep.seatId, half, weekState: week.state, bricks: bricksOf(customers), customers });
       }
     }
-    const notes = regionalNotes?.get(date);
+    const seatOf = (seatId: string) => viewer.org.seats.get(seatId);
+    const districtManagerDays = dmWeeks.map((week) => districtManagerDayOn(week, date, seatOf));
+    const repNotes = regionalNotes?.get(date)?.repNotes;
     return {
       date,
       dateText: formatPhoenixLongDate(date),
@@ -977,7 +998,8 @@ async function buildBoard(
       passed: date < viewer.cairoToday,
       slots: daySlots,
       repHalves,
-      ...(notes ? { districtManagerDay: notes.districtManagerDay, repNotes: notes.repNotes } : {}),
+      districtManagerDays,
+      ...(repNotes ? { repNotes } : {}),
     };
   });
 
