@@ -204,6 +204,33 @@ export async function runOfferEmailViaTurbifyTests() {
       assert.equal(transport.recorded[0]?.status, "failed", "the failure is recorded under turbify");
       assert.equal(transport.recorded[0]?.provider, JOB_OFFER_SMTP_PROVIDER);
 
+      // Turbify's own reason is RECORDED (owner, 8 Nov 2026: "record Turbify's reason") — the reply
+      // line with every address masked, and the step it failed at — while HR's sentence stays code-only.
+      {
+        const refusedAtData = fakeTransport({
+          sendError: Object.assign(new Error("Message failed: 550 Request failed; Mailbox unavailable for hr@satopharma.com"), {
+            code: "EMESSAGE",
+            command: "DATA",
+            response: "550 Request failed;\r\n Mailbox unavailable for <hr@satopharma.com> to nadeen.test@example.com",
+            responseCode: 550,
+          }),
+        });
+        await assert.rejects(
+          sendPhoenixEmail(offerEmail("offer-letter:turbify-reason", { dispatch: jobOfferSmtpDispatch(refusedAtData) })),
+          (error: unknown) => {
+            assert.ok(error instanceof JobOfferSmtpError);
+            assert.match(error.message, /refused the email \(reply 550\)/);
+            assert.doesNotMatch(error.message, /Mailbox unavailable/, "HR's sentence never carries the server's text");
+            return true;
+          },
+        );
+        const raw = refusedAtData.recorded[0]?.raw_event as Record<string, unknown> | undefined;
+        assert.equal(raw?.reply, "550 Request failed; Mailbox unavailable for <address> to <address>", "Turbify's reply line is kept, addresses masked");
+        assert.equal(raw?.command, "DATA", "the SMTP step it was refused at is kept");
+        assert.equal(raw?.responseCode, 550);
+        assert.doesNotMatch(JSON.stringify(raw), /@/, "no email address survives in the recorded reason");
+      }
+
       // Retrying after a failure really tries again.
       await assert.rejects(sendPhoenixEmail(offerEmail("offer-letter:turbify-2", { dispatch: jobOfferSmtpDispatch(transport) })));
       assert.equal(transport.sent.length, 2, "a failed key is forgotten, so Send tries again");
