@@ -27,7 +27,7 @@
 import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
-import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -228,6 +228,11 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       markSaved(done("rejected"));
       setSaving(false);
     } catch (error) {
+      if (isAlreadyDecided(error)) {
+        markSaved(done("already"));
+        setSaving(false);
+        return;
+      }
       setProblem(messageOf(error));
       setSaving(false);
       setArmed(false);
@@ -331,6 +336,11 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
       markSaved(done(decision === "approve" ? "approved" : "rejected"));
       setSaving(null);
     } catch (error) {
+      if (isAlreadyDecided(error)) {
+        markSaved(done("already"));
+        setSaving(null);
+        return;
+      }
       setProblem(messageOf(error));
       setSaving(null);
     }
@@ -388,6 +398,11 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
       markSaved(done("restored"));
       setSaving(false);
     } catch (error) {
+      if (isAlreadyDecided(error)) {
+        markSaved(done("already"));
+        setSaving(false);
+        return;
+      }
       setProblem(messageOf(error));
       setSaving(false);
     }

@@ -28,7 +28,7 @@ import { useId, useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
@@ -265,6 +265,11 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
       markSaved(done("refused"));
       setSaving(false);
     } catch (error) {
+      if (isAlreadyDecided(error)) {
+        markSaved(done("already"));
+        setSaving(false);
+        return;
+      }
       setProblem(messageOf(error));
       setSaving(false);
       setArmed(false);
@@ -366,6 +371,11 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
       markSaved(done("approved"));
       setSaving(false);
     } catch (error) {
+      if (isAlreadyDecided(error)) {
+        markSaved(done("already"));
+        setSaving(false);
+        return;
+      }
       setProblem(messageOf(error));
       setSaving(false);
     }
