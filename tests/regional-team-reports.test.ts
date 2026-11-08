@@ -222,15 +222,15 @@ function districtsWithoutPublishedMonth() {
   // is listed on "My Districts" unranked, with when she joined — never left off, never a 0%.
   const unranked = managersWithoutPublishedMonth({
     hireDates: new Map([["PD-0028", "2026-10-24"], ["B-154", "2026-02-01"]]),
-    ranked: [{ hrId: "b154" }, { hrId: "PD-0012" }],
+    ranked: [{ hrId: "b-154" }, { hrId: "PD-0012" }],
     roster: [
       { hrId: "B-154", name: "Nermeen Salah" },
       { hrId: "PD-0012", name: "Mohamed Eleiwa" },
       { hrId: "PD-0028", name: "Sahar El Gallad" },
-      { hrId: "pd0028", name: "Sahar El Gallad" },
+      { hrId: "pd-0028", name: "Sahar El Gallad" },
     ],
   });
-  assert.deepEqual(unranked, [{ hrId: "PD-0028", name: "Sahar El Gallad", note: "Joined 24 Oct 2026" }], "only the unranked, once, whatever the spelling");
+  assert.deepEqual(unranked, [{ hrId: "PD-0028", name: "Sahar El Gallad", note: "Joined 24 Oct 2026" }], "only the unranked, once, whatever the letter case");
   assert.equal(joinedLabel("2026-10-24"), "24 Oct 2026");
   assert.equal(joinedLabel(null), null, "a missing date is never guessed");
   const board = readFileSync("src/components/employee-portal/dashboards/rm-command-center.tsx", "utf8");

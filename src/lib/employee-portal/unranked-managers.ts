@@ -8,14 +8,11 @@
  * Pure, so the rule is pinned without a database.
  */
 
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 export type UnrankedManager = { hrId: string; name: string; note: string };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** The same key the departed-roster split uses: case and punctuation never decide a match. */
-function hrKey(value?: string | null): string {
-  return (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
 
 /** "2026-10-24" → "24 Oct 2026"; anything else → null (a date is never guessed). */
 export function joinedLabel(hireDate: string | null | undefined): string | null {
@@ -36,13 +33,16 @@ export function managersWithoutPublishedMonth(input: {
   /** hr id → hire date, from the employee directory. */
   hireDates: ReadonlyMap<string, string | null>;
 }): UnrankedManager[] {
-  const ranked = new Set(input.ranked.map((row) => hrKey(row.hrId)).filter(Boolean));
+  const ranked = new Set(input.ranked.map((row) => canonicalHrIdKey(row.hrId)).filter(Boolean));
   const hire = new Map<string, string | null>();
-  for (const [hrId, date] of input.hireDates) hire.set(hrKey(hrId), date);
+  for (const [hrId, date] of input.hireDates) {
+    const key = canonicalHrIdKey(hrId);
+    if (key) hire.set(key, date);
+  }
   const seen = new Set<string>();
   const out: UnrankedManager[] = [];
   for (const person of input.roster) {
-    const key = hrKey(person.hrId);
+    const key = canonicalHrIdKey(person.hrId);
     if (!key || ranked.has(key) || seen.has(key)) continue;
     seen.add(key);
     const joined = joinedLabel(hire.get(key));
