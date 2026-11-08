@@ -883,6 +883,9 @@ export const accessRegistry = [
   // The KPIs board as XLSX (owner, 2026-10-25). The KPIs pages' own gate — canSeeDoctorCoverage plus
   // crm_visits:read — and getKpisBoard's scope decides whose rows the file holds.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/kpis-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
+  // The Weekly Sheet as XLSX (owner, 2026-11-08) — the Regional Sales Manager's alone: phoenix_crm:read, then
+  // readsRegionalTeamReports (an RSM seat) before any read. Rate-limited and audited.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/weekly-sheet/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // Doctor Coverage visit norms (visits per month, per contact kind and grade). `crm_visits:update`
   // is held ONLY by Super Admin and SFE Manager — it exists for this policy singleton alone; the
   // CRM visit mirror stays read-only for everyone. The CEO account is deliberately excluded, being

@@ -45,6 +45,53 @@ export type ResolveMarketingRoiScopeOptions = {
   lineScopeOverride?: Iterable<string | null | undefined> | null;
 };
 
+/**
+ * The one role that runs the REGION route (owner, 2026-11-08, Dr. Hany Saad's eighth need: "tracking the ROI of
+ * the requests related to his region"). It is the Medical Rep's territory route, widened from the rep's own area
+ * to every area an ACTIVE employee under him stands on, and held to his own line exactly as the rep's is.
+ */
+export const REGION_ROUTE_ROLE = "Regional Manager" as const;
+
+function isActiveDirectoryRow(row: EmployeeDirectoryRow): boolean {
+  const status = String(row.employmentStatus ?? "").trim().toLowerCase();
+  return status === "active" || status === "on_leave";
+}
+
+/**
+ * The region route's two halves for a Regional Manager — pure, so the rule is pinned without a database.
+ *
+ * Areas: every `employees.area_id` of an ACTIVE employee his chain reaches (`visibleHrIds`, the requester
+ * route's own walk), never his own seat and never a leaver's old patch. Line: his own seat line only.
+ * 🔴 BOTH HALVES OR NEITHER — an area is shared by the Pedia, CNS and Anti Infective reps standing on it
+ * (live `public.areas` rows carry `line_id` NULL), so the area alone would show him another line's spend:
+ * the 2026-09-30 leak the rep's route was narrowed for. Every other role gets two empty sets.
+ */
+export function resolveRegionRouteScope(
+  access: Pick<AccessContext, "role">,
+  employeeRows: EmployeeDirectoryRow[],
+  viewerHrId: string | null,
+  visibleHrIds: ReadonlySet<string>,
+): { areaIds: Set<number>; lineNames: Set<string> } {
+  const areaIds = new Set<number>();
+  const lineNames = new Set<string>();
+  if (access.role !== REGION_ROUTE_ROLE || !viewerHrId) return { areaIds, lineNames };
+  for (const row of employeeRows) {
+    const hrId = normalizeHrId(row.hrId);
+    if (!hrId) continue;
+    if (hrId === viewerHrId) {
+      const lineName = normalizeRouteLineName(row.lineName);
+      if (lineName) lineNames.add(lineName);
+      continue;
+    }
+    if (!visibleHrIds.has(hrId) || !isActiveDirectoryRow(row)) continue;
+    if (row.areaId === null || row.areaId === undefined) continue;
+    const areaId = Number(row.areaId);
+    if (Number.isFinite(areaId)) areaIds.add(areaId);
+  }
+  if (areaIds.size === 0 || lineNames.size === 0) return { areaIds: new Set<number>(), lineNames: new Set<string>() };
+  return { areaIds, lineNames };
+}
+
 /** The one role that runs the line route (owner, 2026-10-20). */
 export const LINE_ROUTE_ROLE = "National Sales Manager" as const;
 
@@ -313,7 +360,13 @@ export function resolveMarketingRoiScope(
     }
   }
 
-  const territory = viewerAreaScope(access, employeeRows, viewerHrId);
+  // The Medical Rep's territory route, or — for a Regional Manager — the same route over his region (owner,
+  // 2026-11-08). One pair of fields, one decision (`territoryRouteAdmitsRequest`), so the report, View Sales,
+  // the export and the filter options admit exactly the same rows for him as they do for a rep.
+  const territory =
+    role === REGION_ROUTE_ROLE
+      ? resolveRegionRouteScope(access, employeeRows, viewerHrId, visibleRequesterHrIds)
+      : viewerAreaScope(access, employeeRows, viewerHrId);
   const lineRoute = resolveViewerLineRouteNames(access, employeeRows, viewerHrId, opts.lineScopeOverride);
 
   return emptyScope(access, {

@@ -1149,6 +1149,7 @@ function HalfStep({
           )}
         </div>
       ) : null}
+      {day.districtManagerDay && dayScope && dayScope === view.scope ? <DistrictManagerDayPanel dateText={day.dateText} plan={day.districtManagerDay} /> : null}
       {day.halves.length > 1 ? <CrmChoice columns={2} label="Half-day" onChange={onHalf} options={halfOptions} value={half} /> : null}
       {canEdit && view.customersOptional && day.halves.length > 1 ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-500">AM and PM are each optional. Plan one of them or both.</p>
@@ -1204,6 +1205,32 @@ function HalfStep({
         </div>
       ) : null}
       {nextHoldMessage ? <CrmNote tone="warn">{nextHoldMessage}</CrmNote> : null}
+    </div>
+  );
+}
+
+/**
+ * The district manager's own plan for the day, on a regional sales manager's board (owner, 2026-11-08, Dr. Hany
+ * Saad: "when planning with the manager, know who he goes with and whom he will visit"). Read from his SENT week;
+ * a week not sent reads "Not sent yet" and his draft is never shown.
+ */
+function DistrictManagerDayPanel({ dateText, plan }: { dateText: string; plan: NonNullable<ManagerBoardDay["districtManagerDay"]> }) {
+  return (
+    <div className="grid min-w-0 gap-2 border border-slate-200 bg-slate-50 p-3">
+      <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${dateText} · District manager's plan for this day`}</p>
+      <p className="break-words text-sm font-bold text-slate-900">{plan.managerName}</p>
+      {!plan.sent ? (
+        <p className="text-xs font-semibold text-slate-600">Not sent yet</p>
+      ) : plan.halves.length === 0 ? (
+        <p className="text-xs font-semibold text-slate-600">Nothing planned</p>
+      ) : (
+        plan.halves.map((entry) => (
+          <div className="grid min-w-0 gap-0.5" key={entry.half}>
+            <p className="break-words text-xs font-bold text-slate-900">{`${entry.half}: ${entry.text}`}</p>
+            {entry.customers.length > 0 ? <p className="break-words text-xs text-slate-600">{entry.customers.join(" · ")}</p> : null}
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -1270,6 +1297,12 @@ function WithRepPart({
           <span>
             <CrmPill tone={state.tone}>{state.label}</CrmPill>
           </span>
+          {/* A regional sales manager's board only: who else is with this rep today, and leave — information, never a block. */}
+          {(day.repNotes?.[rep.seatId] ?? []).map((line) => (
+            <span className="break-words font-semibold text-sky-800" key={line}>
+              {line}
+            </span>
+          ))}
         </span>
       ),
     };

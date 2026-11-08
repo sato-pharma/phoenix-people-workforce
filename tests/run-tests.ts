@@ -1097,6 +1097,7 @@ import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-use
 import { runEmployeePortalBottomNavBadgesTests } from "./employee-portal-bottom-nav-badges.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
+import { runRegionalTeamReportsTests } from "./regional-team-reports.test.ts";
 import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-portal-nav-permission-matches-page.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
@@ -12017,6 +12018,7 @@ await runTest("job offers through the hr@ Turbify mailbox and no standing admin 
 await runTest("no read stops silently at 1,000 rows (7 Nov 2026): a read cut at the ceiling is reported from its headers, and a new hard 1,000 in src or app is refused", runRowCapRatchetTests);
 await runTest("a recruitment offer letter reuses this candidate's older draft even beyond the newest 200 offers (7 Nov 2026): the route asks the database by email and pages to the last row, the exact title-and-email match is kept, and a blank email never matches", runOfferDraftLookupTests);
 await runTest("the Phoenix CRM visits archive screen (owner, 7 Nov 2026): only the Super Admin and the SFE Manager read it, reasons read as words, the page cursor survives the address bar, a plain date is never shifted, and the screen reads only the archive by keyset", runPhoenixCrmVisitArchiveScreenTests);
+await runTest("Dr. Hany Saad's team reports (owner, 8 Nov 2026): only the Regional Sales Manager opens them, visits counted AM · PM · Pharmacies apart with each Saved-at time and no location read, a chain visit in neutral words, the doctors read from the AM comments, 50 PM and 10 AM a week less leave, the ROI region route needs his area AND his line, and one landing shortcut per report", runRegionalTeamReportsTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

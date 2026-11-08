@@ -563,10 +563,10 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
 
 export type DashboardLink = { href: string; icon: React.ElementType; label: string };
 
-export function DashboardsGrid({ items }: { items: readonly DashboardLink[] }) {
+export function DashboardsGrid({ items, title = "Dashboards" }: { items: readonly DashboardLink[]; title?: string }) {
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead title="Dashboards" />
+      <SectionHead title={title} />
       <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-4 sm:gap-2.5 sm:p-2.5">
         {items.map((d) => (
           <Link

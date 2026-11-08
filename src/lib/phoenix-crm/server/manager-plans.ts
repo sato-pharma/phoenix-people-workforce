@@ -22,6 +22,7 @@
  * Every read and write is in ONE world: `is_test` on every query, the test world being the test accounts'.
  */
 
+import { logError } from "@/lib/observability/log";
 import { addDaysIso } from "@/lib/crm/dates";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -389,6 +390,13 @@ export type ManagerBoardDay = {
   slots: ManagerBoardSlot[];
   /** Each rep's own customers for each half of the day; a rep with nothing that half is absent. */
   repHalves: ManagerBoardRepHalf[];
+  /**
+   * A regional sales manager's board only (owner, 2026-11-08, Dr. Hany Saad): the plan of the district manager
+   * on show for this day — "Not sent yet" until that week is sent. Absent on every other board.
+   */
+  districtManagerDay?: { managerName: string; sent: boolean; halves: Array<{ half: ManagerHalf; text: string; customers: string[] }> } | null;
+  /** A regional sales manager's board only: each rep seat's neutral Chain visit and "On leave" lines. Never a block. */
+  repNotes?: Record<string, string[]>;
 };
 
 export type ManagerBoardPlan = {
@@ -830,6 +838,24 @@ async function buildBoard(
     customersBySlot.set(row.slotId, list);
   }
   const slotByKey = new Map(slots.map((slot) => [`${slot.date}|${slot.half}`, slot]));
+  // The regional sales manager's board reads the district manager's own day and who else is with each rep
+  // (owner, 2026-11-08). Loaded here, not at the top: the reader imports this file. A failed read is logged and
+  // the board carries on without it — it is information, never a reason he cannot plan.
+  const regionalDmSeatId = writer.kind === "rsm" ? (chosen?.dmSeatId ?? null) : null;
+  const regionalNotes =
+    regionalDmSeatId
+      ? await import("@/lib/phoenix-crm/server/manager-plan-bookings")
+          .then(({ loadRegionalBoardNotes }) =>
+            loadRegionalBoardNotes({ dmSeatId: regionalDmSeatId, isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }),
+          )
+          .catch((error: unknown) => {
+            logError("Phoenix CRM: the regional board's district manager day could not be read", {
+              error,
+              labels: { event: "phoenix_crm_regional_board_notes_unread" },
+            });
+            return null;
+          })
+      : null;
 
   view.days = managerWeekDays(weekStart, writer.kind).map((date): ManagerBoardDay => {
     const holiday = holidays.get(date) ?? null;
@@ -941,7 +967,18 @@ async function buildBoard(
         repHalves.push({ seatId: rep.seatId, half, weekState: week.state, bricks: bricksOf(customers), customers });
       }
     }
-    return { date, dateText: formatPhoenixLongDate(date), holiday, halves, editable, passed: date < viewer.cairoToday, slots: daySlots, repHalves };
+    const notes = regionalNotes?.get(date);
+    return {
+      date,
+      dateText: formatPhoenixLongDate(date),
+      holiday,
+      halves,
+      editable,
+      passed: date < viewer.cairoToday,
+      slots: daySlots,
+      repHalves,
+      ...(notes ? { districtManagerDay: notes.districtManagerDay, repNotes: notes.repNotes } : {}),
+    };
   });
 
   return view;
