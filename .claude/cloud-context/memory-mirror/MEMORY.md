@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [the repo is PUBLIC since 2026-11-07, his word, for free Actions](the-repo-is-public-since-2026-11-07.md) - every push is world-readable; never commit data files or names; private again is his word only.
 
 
 

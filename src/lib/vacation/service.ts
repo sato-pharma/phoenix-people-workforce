@@ -72,6 +72,8 @@ import {
   evaluateAdminOverride,
   evaluateStepAction,
   genericStepName,
+  isHrApproverDirectReport,
+  isHrOnlyChain,
   isSequentialWorkflowType,
   resolveActionAvailability,
   resolveActiveStep,
@@ -1991,6 +1993,11 @@ async function resolveVacationParallelApprovalRecipients(
   });
 
   const hrApprovers = await resolveVacationPilotHrApprovers(directory);
+  // Owner rule (2026-11-08): the HR team — whoever reports straight to the HR approver — has ONE
+  // approval, his, first and final. Without this their chain was HR Manager -> CEO -> HR Manager.
+  if (isHrApproverDirectReport({ directManagerHrId: manager.hrId, hrApproverHrIds: hrApprovers.map((row) => row.hrId) })) {
+    return hrApprovers;
+  }
   return [
     {
       email: manager.workEmail,
@@ -2311,9 +2318,11 @@ async function notifyVacationSubmittedByGovernance(input: {
   const absoluteReviewUrl = toAbsoluteAppUrl(actionCenterUrl);
 
   // Role/stage-specific copy for the sequential workflow; legacy keeps the generic submit message.
+  const hrOnly = isHrOnlyChain(input.approvalRecipients);
   const recipientCopy = (stepKey: VacationApprovalStepKey): { message: string; status: string } => {
     if (!sequential) return { message: input.message, status: "Pending your approval" };
-    if (stepKey === "direct_manager") {
+    // An HR-team request: the HR step is the one and final approval, so it is action now, not FYI.
+    if (stepKey === "direct_manager" || hrOnly) {
       return { message: "Action required: a vacation request is waiting for your approval.", status: "Action required" };
     }
     if (stepKey === "manager_of_manager") {
@@ -3559,7 +3568,17 @@ export async function getVacationRequestPageData(access: AccessContext) {
   // local/UTC clock.
   const today = currentCairoDateOnlyIso();
   const { manager, managerOfManager, thirdManager } = managerChain(directory, employee);
-  const previewIncludesManagerOfManager = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
+  // Same gate as resolveVacationParallelApprovalRecipients: an HR-team member's one approval is the
+  // HR step. Preview only, so an unreadable approver list shows the ordinary chain rather than failing
+  // the page; submit reads it again and fails there with its own error.
+  const previewHrOnlyApproval = manager?.hrId
+    ? isHrApproverDirectReport({
+        directManagerHrId: manager.hrId,
+        hrApproverHrIds: (await resolveVacationPilotHrApprovers(directory).catch(() => [])).map((row) => row.hrId),
+      })
+    : false;
+  const previewIncludesManagerOfManager = !previewHrOnlyApproval
+    && shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
   const previewIncludesThirdManager = shouldIncludeThirdManagementStep({
     includesManagerOfManagerStep: previewIncludesManagerOfManager,
     managerOfManager,
@@ -3621,6 +3640,7 @@ export async function getVacationRequestPageData(access: AccessContext) {
     dayPartOptions: VACATION_DAY_PARTS,
     pendingPaidDaysByType,
     employee: summarizeEmployee(employee),
+    hrOnlyApproval: previewHrOnlyApproval,
     manager: manager ? summarizeEmployee(manager) : null,
     // Same gate as the chain that will actually be created on submit, so the preview can never
     // promise (or hide) a second approver the request will not (or will) get.
@@ -3678,12 +3698,18 @@ export async function createVacationRequest(access: AccessContext, input: Create
   // reports, e.g. direct reports to the CEO, have no manager above their manager).
   // A District Manager's chain drops the CEO but always keeps the National Sales Manager
   // (owner rule, 2026-08-15 corrected 2026-08-19) — see shouldIncludeManagerOfManagerStep.
-  const includesManagerOfManagerStep = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
+  let includesManagerOfManagerStep = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
   const usesSequentialWorkflow = isSequentialWorkflowType(resolvedVacationType);
   let approvalRecipients: VacationApprovalRecipient[];
   let initialRequestStatus: VacationRequestStatus = "pending_manager";
   if (manager?.hrId) {
     approvalRecipients = await resolveVacationParallelApprovalRecipients(directory, employee, access.role);
+    // An HR-team request (owner rule, 2026-11-08): the HR step is its one and final approval, so a
+    // sequential type starts at HR. Sick keeps `pending_manager` for its whole life, as it always has.
+    if (isHrOnlyChain(approvalRecipients)) {
+      includesManagerOfManagerStep = false;
+      if (usesSequentialWorkflow) initialRequestStatus = "pending_hr";
+    }
   } else if (usesSequentialWorkflow) {
     // Broken reporting line on a sequential-workflow type (Annual/Other/Compensatory): create
     // only the HR step and park the request in `needs_assignment` so HR can assign the first
@@ -5230,8 +5256,11 @@ export async function resubmitVacationRequest(
   // Where the request goes back to. Changed dates start the whole chain again. Otherwise it resumes
   // at the stage it was returned from: the first management step still pending, else HR. Sick leave
   // runs its approvers in parallel and keeps `pending_manager` for its whole life.
+  // An HR-team request has only the HR step, so the whole chain starts again at HR.
   let nextStatus: VacationRequestStatus = "pending_manager";
-  if (!datesChanged && isSequentialWorkflowType(request.vacationType)) {
+  if (isSequentialWorkflowType(request.vacationType) && isHrOnlyChain(steps)) {
+    nextStatus = "pending_hr";
+  } else if (!datesChanged && isSequentialWorkflowType(request.vacationType)) {
     const managementPending = steps.some((step) => step.stepKey !== "hr" && step.status === "pending");
     const hrPending = steps.some((step) => step.stepKey === "hr" && step.status === "pending");
     if (!managementPending && hrPending) nextStatus = "pending_hr";

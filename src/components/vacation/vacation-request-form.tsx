@@ -64,6 +64,8 @@ type VacationRequestFormProps = {
     balances?: Partial<Record<VacationType, VacationBalanceSnapshot | null>>;
     dayPartOptions: ReadonlyArray<{ label: string; value: VacationDayPart }>;
     employee: VacationEmployeeSummary;
+    /** The HR team's one approval: the HR Manager, first and final (owner, 2026-11-08). */
+    hrOnlyApproval?: boolean;
     manager: VacationEmployeeSummary | null;
     managerOfManager: VacationEmployeeSummary | null;
     thirdManager?: VacationEmployeeSummary | null;
@@ -1666,10 +1668,14 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                     label="Direct manager"
                     name={initialData?.manager?.displayName ?? "Not assigned"}
                   />
-                  <VacationSummaryPerson
-                    label="Manager of manager"
-                    name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
-                  />
+                  {initialData?.hrOnlyApproval ? (
+                    <VacationSummaryPerson label="Approval" name="Direct manager only — first and final" />
+                  ) : (
+                    <VacationSummaryPerson
+                      label="Manager of manager"
+                      name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
+                    />
+                  )}
                   {initialData?.thirdManager ? (
                     <VacationSummaryPerson label="Third approver" name={initialData.thirdManager.displayName} />
                   ) : null}
