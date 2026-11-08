@@ -8,6 +8,7 @@ import {
 } from "@/lib/marketing-requests/admin-page-access";
 import { canViewMarketingCoverageReportInAdminShell } from "@/lib/marketing-requests/coverage-report-access";
 import { canReadListCheckBoard } from "@/lib/marketing-requests/crm-list-check-rules";
+import { canViewMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals";
 import { canViewMarketingFinanceAgeing } from "@/lib/marketing-requests/finance-ageing";
 
 /**
@@ -68,6 +69,15 @@ export async function assertMarketingListCheckAdminPageAccess() {
 export async function assertMarketingFinanceAgeingAdminPageAccess() {
   const access = await resolveAccessContextFromPage();
   if (!canViewMarketingFinanceAgeing(access.role)) {
+    redirect("/employee-portals/marketing-requests");
+  }
+  return access;
+}
+
+/** CEO Approvals admits exactly its own three readers (`canViewMarketingCeoApprovals`). */
+export async function assertMarketingCeoApprovalsAdminPageAccess() {
+  const access = await resolveAccessContextFromPage();
+  if (!canViewMarketingCeoApprovals(access.role)) {
     redirect("/employee-portals/marketing-requests");
   }
   return access;
