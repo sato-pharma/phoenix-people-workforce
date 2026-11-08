@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   evaluateStepAction,
   genericStepName,
+  isHrApproverDirectReport,
+  isHrOnlyChain,
   isSequentialWorkflowType,
   resolveActionAvailability,
   resolveActiveStep,
@@ -347,6 +349,57 @@ export function runVacationApprovalFlowTests() {
     false,
     "no third step without a second step",
   );
+
+  // ---- The HR team has ONE approval: the HR Manager, first and final (owner, 2026-11-08) ----
+  // Their chain was HR Manager -> CEO -> HR Manager again (Yasmeena Elsafory's request of 8 Nov 2026).
+  assert.equal(
+    isHrApproverDirectReport({ directManagerHrId: "b-10", hrApproverHrIds: ["B-10", null] }),
+    true,
+    "someone who reports straight to the HR approver is on the HR team, whatever the id's casing",
+  );
+  assert.equal(
+    isHrApproverDirectReport({ directManagerHrId: "D-1", hrApproverHrIds: ["B-10"] }),
+    false,
+    "everyone else keeps the ordinary management chain",
+  );
+  assert.equal(
+    isHrApproverDirectReport({ directManagerHrId: null, hrApproverHrIds: ["B-10", null] }),
+    false,
+    "no direct manager is the needs-assignment path, never an HR-only chain",
+  );
+  const hrOnlyChain = [step("hr", "pending")];
+  assert.equal(isHrOnlyChain(hrOnlyChain), true);
+  assert.equal(isHrOnlyChain([step("direct_manager", "pending"), step("hr", "pending")]), false);
+  assert.equal(isHrOnlyChain([]), false, "an empty chain is not an HR-only chain");
+  const hrOnlyApprove = evaluateStepAction({
+    steps: hrOnlyChain,
+    actorStep: { stepKey: "hr", order: stepOrderForStepKey("hr") },
+    decision: "approve",
+  });
+  assert.equal(hrOnlyApprove.allowed, true, "the HR Manager may approve at once — nobody comes first");
+  assert.equal(hrOnlyApprove.nextStatus, "approved");
+  assert.equal(hrOnlyApprove.isFinal, true, "his approval is the final one");
+  assert.equal(
+    resolveStageLabel({ status: "pending_hr", vacationType: "annual", steps: hrOnlyChain }),
+    "Waiting for HR Manager Approval",
+    "an HR-team request never claims management already approved it",
+  );
+  assert.equal(
+    resolveStageLabel({ status: "pending_manager", vacationType: "sick", steps: hrOnlyChain }),
+    "Waiting for HR Manager Approval",
+  );
+  const hrTeamServiceSource = readFileSync(new URL("../src/lib/vacation/service.ts", import.meta.url), "utf8");
+  assert.match(
+    hrTeamServiceSource,
+    /if \(isHrApproverDirectReport\(\{ directManagerHrId: manager\.hrId, hrApproverHrIds: hrApprovers\.map\(\(row\) => row\.hrId\) \}\)\) \{\s*return hrApprovers;/,
+    "the submit chain for the HR team is the HR step alone",
+  );
+  assert.match(
+    hrTeamServiceSource,
+    /if \(isHrOnlyChain\(approvalRecipients\)\) \{\s*includesManagerOfManagerStep = false;\s*if \(usesSequentialWorkflow\) initialRequestStatus = "pending_hr";/,
+    "an HR-team request starts at HR, not at a management stage nobody holds",
+  );
+
   const threeLevelChain = [
     step("direct_manager", "pending"),
     step("manager_of_manager", "pending"),

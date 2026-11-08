@@ -76,6 +76,31 @@ export function shouldIncludeManagerOfManagerStep(input: {
 }
 
 /**
+ * Whether the request has ONE approval only: the HR step (owner rule, 2026-11-08 — "all the HR team
+ * leave, vacations and excuses have one only approval, me first and final").
+ *
+ * True when the requester's direct manager is himself an HR-step approver (the Super Admin). The HR
+ * team reports to the HR Manager, so their chain was HR Manager -> CEO -> HR Manager again; it is now
+ * the HR step alone, first and final, every leave type. Derived from the reporting line, never from a
+ * list of HR ids, so a new HR hire who reports to him gets it with no code change. Excuses already
+ * have one step, the direct manager, so they need nothing here.
+ */
+export function isHrApproverDirectReport(input: {
+  directManagerHrId: string | null | undefined;
+  hrApproverHrIds: Array<string | null | undefined>;
+}): boolean {
+  const key = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
+  const manager = key(input.directManagerHrId);
+  if (!manager) return false;
+  return input.hrApproverHrIds.some((hrId) => key(hrId) === manager);
+}
+
+/** A chain with no management step at all — the HR step is the one and final approval. */
+export function isHrOnlyChain(steps: Array<{ stepKey: VacationWorkflowStepKey }>): boolean {
+  return steps.length > 0 && steps.every((step) => step.stepKey === "hr");
+}
+
+/**
  * Whether the request gets a THIRD management approval step (owner rule, 2026-10-08).
  *
  * The field ladder is Medical Rep -> District Manager -> Regional Manager (when there is one) ->
@@ -350,10 +375,13 @@ export function resolveStageLabel(input: {
   if (input.status === "approved") return sequential ? "Recorded by HR" : "Approved";
 
   if (input.status === "pending_hr") {
+    // An HR-team request has no management step to have approved it — the HR step is its one approval.
+    if (input.steps && isHrOnlyChain(input.steps)) return "Waiting for HR Manager Approval";
     return sequential ? "Approved by Management - Pending HR Acknowledgement" : "Pending HR";
   }
 
   // pending_manager
+  if (input.steps && isHrOnlyChain(input.steps)) return "Waiting for HR Manager Approval";
   if (sequential && input.steps && input.steps.length > 0) {
     const active = resolveActiveStep(input.steps);
     if (active && active.stepKey !== "hr") {
