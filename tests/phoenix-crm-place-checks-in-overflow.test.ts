@@ -101,17 +101,21 @@ function checkLoadersGoThroughSelectByIds(): void {
 
   for (const name of ["loadValidatedPlaces", "loadValidationReviews"]) {
     const body = functionBody(service, name);
-    assert.match(body, /selectByIds</, `${name} reads its id-keyed tables through selectByIds`);
+    // loadValidatedPlaces sends its ids in an RPC's POST body since 2026-11-08 — no URL, so no header to overflow.
+    if (name === "loadValidationReviews") assert.match(body, /selectByIds</, `${name} reads its id-keyed tables through selectByIds`);
+    else assert.match(body, /\.rpc\("phoenix_crm_validated_place_facts"/, `${name} sends its ids in one function call's body`);
     // The overflow path is a bare `.in(` on a derived id list — it must be gone from both loaders.
     assert.doesNotMatch(body, /\.in\(/, `${name} no longer issues a bare .in() that could overflow the request headers`);
   }
 
   // The two reads that return many rows per id must select `id`, or the keyset pager cannot seek.
   const validated = functionBody(service, "loadValidatedPlaces");
-  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_visits",\s*"id, place_id"/, "the visits read carries id for the keyset walk");
-  // Since 2026-10-08 it reads EVERY review of the customer (status tells held from merely reviewed),
-  // so the select carries status beside the id the pager seeks on.
-  assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status(?:, decided_by_hr_id, decided_at)?"/, "the review read carries id too");
+  // Since 2026-11-08 the many-rows-per-id reads are inside phoenix_crm_validated_place_facts: the visits are COUNTED
+  // in the database (one number per place, so no row cap can shorten them) and every review of the customer comes
+  // back in one jsonb value, status included (it tells held from merely reviewed).
+  const facts = read("supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql");
+  assert.match(facts, /from public\.phoenix_crm_visits\s+where place_id = any\(p_place_ids\)\s+group by place_id/, "the visits are counted per place in the database");
+  assert.match(facts, /from public\.phoenix_crm_validation_reviews r\s+where r\.customer_id = any\(p_customer_ids\)/, "and every review of these customers is read, whatever its status");
 
   // Production read audit, 28 Oct 2026: there is no index on `created_at`, so ordering the pages by it
   // made every page scan and sort the whole table. The pages walk the primary key; the board's

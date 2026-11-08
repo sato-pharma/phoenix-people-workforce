@@ -17,13 +17,15 @@
 
 begin;
 
+set local lock_timeout = '5s';
+
 create or replace function public.phoenix_crm_validated_place_facts(p_place_ids uuid[], p_customer_ids uuid[])
 returns jsonb
 language sql
 stable
 security definer
-set search_path to 'public'
 set statement_timeout to '60s'
+set search_path to 'public'
 as $$
   select jsonb_build_object(
     'customers', coalesce((
@@ -59,5 +61,7 @@ $$;
 
 revoke execute on function public.phoenix_crm_validated_place_facts(uuid[], uuid[]) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_validated_place_facts(uuid[], uuid[]) to service_role;
+
+notify pgrst, 'reload schema';
 
 commit;
