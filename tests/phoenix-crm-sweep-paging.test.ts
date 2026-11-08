@@ -358,5 +358,56 @@ export async function runPhoenixCrmSweepPagingTests(): Promise<void> {
     assert.equal(/fix: \{ lat: place\.lat/.test(judge), false, "the pin is not the fixed point");
   }
 
+  // ── 13 · 🔴 PAGES IN WAVES ARE THE SAME ROWS AS PAGES ONE BY ONE, AND THE PLACE CHECKS READS ARE FEW ──
+  //
+  // Owner, 2026-11-08: "enhance more the performance of this page, hilarious slow". The Place checks page
+  // read ~5,400 active places six pages one after another, then enriched them in 179 requests of 150 ids,
+  // then read notes and evidence in 125 more. `concurrentPages` asks for pages in waves — and must answer
+  // with exactly the rows, the order and the ceiling the sequential walk does, or it is a faster wrong answer.
+  {
+    const rows = Array.from({ length: 5_429 }, (_unused, index) => ({ id: `p-${String(index).padStart(5, "0")}` }));
+    const one = fakeClient({ rows });
+    const sequential = await readEveryPage<Row>(() => one.client.from("t"), { maxRows: 10_000, whenFull: "stop", what: "places" });
+    const many = fakeClient({ rows });
+    const waved = await readEveryPage<Row>(() => many.client.from("t"), { maxRows: 10_000, whenFull: "stop", what: "places", concurrentPages: 4 });
+    assert.equal(waved.rows.length, 5_429, "RED every active place, waves or not");
+    assert.deepEqual(waved.rows, sequential.rows, "and in exactly the order the one-by-one walk gives");
+    assert.equal(waved.capped, false);
+    assert.equal(many.state.calls, 9, "two waves of four pages (six hold rows, the sixth short), then ONE more page that comes back empty to prove the end — three round trips where the one-by-one walk took seven");
+
+    // A server whose own ceiling is BELOW the page size: the wave's offsets were wrong, so a later page of
+    // the wave holds rows the short page skipped — the walk must start again one page at a time.
+    const low = fakeClient({ rows: Array.from({ length: 100 }, (_unused, index) => ({ id: index })), rowsPerRequest: 10 });
+    const lowRead = await readEveryPage<Row>(() => low.client.from("t"), { maxRows: 1_000, whenFull: "refuse", what: "places", pageSize: 25, concurrentPages: 4 });
+    assert.equal(lowRead.rows.length, 100, "RED a server ceiling below the page size must not lose the rows between its pages");
+    assert.deepEqual(lowRead.rows.map((row) => row.id), Array.from({ length: 100 }, (_unused, index) => index), "each once, in order");
+
+    // The ceiling reached inside the waves gives the sequential walk's two answers.
+    const stop = await readEveryPage<Row>(() => fakeClient({ rows: Array.from({ length: 40 }, (_u, i) => ({ id: i })), rowsPerRequest: 10 }).client.from("t"), {
+      maxRows: 20, whenFull: "stop", what: "places", pageSize: 10, concurrentPages: 4,
+    });
+    assert.equal(stop.rows.length, 20, "RED a stop inside the waves answers with exactly the ceiling");
+    assert.equal(stop.capped, true, "and says it was capped");
+    const refuse = await readEveryPage<Row>(() => fakeClient({ rows: Array.from({ length: 40 }, (_u, i) => ({ id: i })), rowsPerRequest: 10 }).client.from("t"), {
+      maxRows: 20, whenFull: "refuse", what: "places", pageSize: 10, concurrentPages: 4,
+    });
+    assert.equal(refuse.rows.length, 0, "RED a refusal inside the waves answers with no rows");
+    assert.ok(refuse.error instanceof Error);
+
+    const reviews = source("src/lib/phoenix-crm/server/validation-reviews.ts");
+    const validated = reviews.slice(reviews.indexOf("export async function loadValidatedPlaces"), reviews.indexOf("function newestValidatedFirst"));
+    assert.ok(validated.includes('rpc("phoenix_crm_validated_place_facts"'), "RED the four lookups behind the validated places are one database call");
+    assert.equal(validated.includes('selectByIds<Row>("phoenix_crm_visits"'), false, "and the visit count is not read in 150-id chunks again");
+    assert.ok(validated.includes("concurrentPages: 4"), "the active places are read four pages at a time");
+    const facts = sql("supabase/migrations/20261108200549_phoenix_crm_validated_place_facts.sql");
+    assert.ok(facts.includes("revoke execute on function public.phoenix_crm_validated_place_facts(uuid[], uuid[]) from public, anon, authenticated"), "and its function is the service role's alone");
+    const notes = source("src/lib/phoenix-crm/server/place-notes.ts");
+    const noteIndex = notes.slice(notes.indexOf("export async function loadPlaceNoteIndex"), notes.indexOf("function subjectKeyOf"));
+    assert.equal(noteIndex.split("selectByIdsFewestRequests<Row>(").length - 1, 4, "RED the notes and recommendations take the fewest-requests read");
+    const integrity = source("src/lib/phoenix-crm/server/integrity-board.ts");
+    const placeCases = integrity.slice(integrity.indexOf("export async function loadPlaceCheckIntegrity"), integrity.indexOf("export type VisitReportCaseFacts"));
+    assert.ok(placeCases.includes("selectByIdsFewestRequests<Row>("), "RED and so does the device evidence");
+  }
+
   console.log("phoenix-crm sweep paging: OK");
 }

@@ -58,7 +58,7 @@ import {
   teamPlaceChecksSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
-import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { selectByIds, selectByIdsFewestRequests, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -122,7 +122,7 @@ export const EMPTY_PLACE_NOTE_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}
  * The comments and recommendations on a set of places and venues, newest comment first and the
  * recommendations newest first with them.
  *
- * It reads by id through `selectByIds`, never a bare `.in()`: the validated-in-use section alone goes
+ * It reads by id through `selectByIdsFewestRequests` (one page of a small table, or `selectByIds` chunks), never a bare `.in()`: the validated-in-use section alone goes
  * past 600 rows on production, and a 400-id `.in()` has already overflowed the response headers on
  * this very page (`UND_ERR_HEADERS_OVERFLOW`, 2026-10-07).
  *
@@ -147,10 +147,10 @@ export async function loadPlaceNoteIndex(
   const columnsToRead = options.managerBoard ? noteColumns.replace(", advice", "") : noteColumns;
   const recColumns = "id, place_id, shared_place_id, manager_hr_id, recommendation, updated_at";
   const [placeNotes, venueNotes, placeRecs, venueRecs] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_place_notes", columnsToRead, "place_id", placeIds),
-    selectByIds<Row>("phoenix_crm_place_notes", columnsToRead, "shared_place_id", sharedPlaceIds),
-    selectByIds<Row>("phoenix_crm_place_recommendations", recColumns, "place_id", placeIds),
-    selectByIds<Row>("phoenix_crm_place_recommendations", recColumns, "shared_place_id", sharedPlaceIds),
+    selectByIdsFewestRequests<Row>("phoenix_crm_place_notes", columnsToRead, "place_id", placeIds),
+    selectByIdsFewestRequests<Row>("phoenix_crm_place_notes", columnsToRead, "shared_place_id", sharedPlaceIds),
+    selectByIdsFewestRequests<Row>("phoenix_crm_place_recommendations", recColumns, "place_id", placeIds),
+    selectByIdsFewestRequests<Row>("phoenix_crm_place_recommendations", recColumns, "shared_place_id", sharedPlaceIds),
   ]);
 
   const noteRows = [...placeNotes, ...venueNotes].filter((row) => !options.managerBoard || placeNoteReachesManager(row.author_source, row.rep_visible));
