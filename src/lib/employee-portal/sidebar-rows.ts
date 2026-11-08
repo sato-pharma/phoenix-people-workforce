@@ -106,6 +106,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/roi", label: "ROI Dashboard", section: "Marketing & ROI" },
   { href: "/employee-portals/marketing-requests/control", label: "Marketing Control", section: "Marketing & ROI" },
   { href: "/employee-portals/marketing-requests/all", label: "All Marketing Requests", section: "Marketing & ROI" },
+  { href: "/employee-portals/marketing-requests/ceo-approvals", label: "CEO Approvals", section: "Marketing & ROI" },
   { href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", section: "Marketing & ROI" },
 
   { href: "/employee-portals/payslips", label: "Payslips", section: "Payroll" },

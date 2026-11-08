@@ -1,5 +1,6 @@
 import {
   Award,
+  BadgeCheck,
   BookUser,
   BriefcaseBusiness,
   Building2,
@@ -239,6 +240,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
   { label: "Inbox", fullLabel: "Marketing Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"], navBadge: "marketing-approvals-pending" },
   { label: "All", fullLabel: "All Marketing Requests", href: "/employee-portals/marketing-requests/all", icon: ClipboardList, flags: ["showMarketingAllRequestsTab"] },
+  { label: "CEO Appr", fullLabel: "CEO Approvals", href: "/employee-portals/marketing-requests/ceo-approvals", icon: BadgeCheck, flags: ["showMarketingCeoApprovalsTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },
   // "Coverage" was its own entry until 2026-09-22, when the Coverage Report became the Coverage tab
