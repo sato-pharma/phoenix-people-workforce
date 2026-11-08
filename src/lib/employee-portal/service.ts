@@ -2172,8 +2172,10 @@ export type MedicalRepPortalData = {
       /** 0 means no Sato target loaded for the window — read it before rendering the percentage,
        * exactly as `incentiveSemesterTarget` is read for the total. */
       satoTarget: number;
-      /** One month of basic at the Sato achievement. */
+      /** One month of basic at the Sato achievement — 0 when the total is under 80%. */
       satoHalfAmount: number;
+      /** The Sato curve would have paid but the total under 80% withheld it (owner, 2026-11-08). */
+      satoHalfWithheld: boolean;
       /** One month of basic at the total achievement. */
       totalHalfAmount: number;
       /** The two halves added — what the rep is paid, and the same number as `payroll.incentive`. */
@@ -4241,6 +4243,7 @@ export async function getMedicalRepPortalData(
             satoSales: pediaAchievement.satoSales,
             satoTarget: pediaAchievement.satoTarget,
             satoHalfAmount: pediaSplitCalc.satoHalfAmount,
+            satoHalfWithheld: pediaSplitCalc.satoHalfWithheld,
             totalHalfAmount: pediaSplitCalc.totalHalfAmount,
             payoutAmount: pediaSplitCalc.payoutAmount,
             payoutPercentage: pediaSplitCalc.payoutPercentage,

@@ -89,6 +89,7 @@ import {
   type PlanScenario,
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
+import { PEDIA_SATO_HALF_MIN_TOTAL_PERCENT } from "@/lib/incentives/pedia-split";
 import { cn } from "@/lib/utils";
 import {
   phxFieldClassName,
@@ -1200,11 +1201,19 @@ function PediaHalvesPanel({
       <p className="text-sm font-black text-slate-900">Pedia is paid on two halves, and Phoenix plans both</p>
       <p className="mt-0.5 break-words text-phx-xs text-slate-500">
         One month of basic on the Sato products against their own target, one month on the whole line. Other products lift only the
-        total half, so Phoenix plans the Sato products to your {goalPct}% goal first. Below 90% a half pays nothing.
+        total half, so Phoenix plans the Sato products to your {goalPct}% goal first. Below 90% a half pays nothing, and the
+        Sato half also needs the whole line at {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}% or more.
       </p>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {halves.map((half) => {
           const belowFloor = half.achievement != null && half.achievement < INCENTIVE_FLOOR;
+          // Owner, 2026-11-08: the Sato half needs the whole line at 80% (src/lib/incentives/pedia-split.ts).
+          const lineAchievement = halves.find((other) => other.key === "pedia")?.achievement ?? null;
+          const satoHeldByLine =
+            half.key === "sato" &&
+            !belowFloor &&
+            lineAchievement != null &&
+            lineAchievement * 100 < PEDIA_SATO_HALF_MIN_TOTAL_PERCENT;
           return (
             <div key={half.key} className="min-w-0 border border-slate-200 bg-white px-3.5 py-3">
               <p className="break-words text-xs font-black text-slate-900">{half.label}</p>
@@ -1239,6 +1248,13 @@ function PediaHalvesPanel({
                   {semester
                     ? "Below 90%, this half of the incentive pays nothing."
                     : "Below 90%, the floor this half of the semester incentive pays from."}
+                </p>
+              ) : null}
+              {satoHeldByLine ? (
+                <p className="mt-1 break-words text-phx-xs font-bold text-red-700">
+                  {semester
+                    ? `The whole line is under ${PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}%, so this half pays nothing.`
+                    : `The whole line is under ${PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}%, which this half needs before it pays.`}
                 </p>
               ) : null}
             </div>
