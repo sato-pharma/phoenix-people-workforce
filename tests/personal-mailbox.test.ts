@@ -36,6 +36,15 @@ function walk(relative: string): string[] {
 export async function runPersonalMailboxTests() {
   const rules = await import("../src/lib/personal-mailbox/rules.ts");
 
+  // 0. THE OUTGOING SERVER. A Turbify business mailbox sends through smtp.bizmail.yahoo.com. Yahoo's
+  //    consumer server (smtp.mail.yahoo.com) accepts the login and then refuses every @satopharma.com
+  //    message with reply 550 — both hr@ job offers on 8 Nov 2026 died that way.
+  assert.deepEqual(
+    { ...rules.TURBIFY_SMTP },
+    { host: "smtp.bizmail.yahoo.com", port: 465, secure: true },
+    "Turbify business mail must be sent through smtp.bizmail.yahoo.com:465 — the consumer Yahoo server refuses it with 550",
+  );
+
   // 1. WHOSE MAILBOX. The key comes from the session only — HR id first, upper case; the login id
   //    for the one kind of account with no HR id. A mismatch here would split one person across
   //    two rows, or (worse) merge two people into one.

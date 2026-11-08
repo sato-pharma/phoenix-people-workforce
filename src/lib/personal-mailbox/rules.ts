@@ -17,8 +17,14 @@ export const PERSONAL_MAILBOX_SECRET_CONTEXT = "personal-mailbox";
 
 /** Turbify business mail runs on Yahoo's servers. IMAP matches the monitor's working setting. */
 export const TURBIFY_IMAP = { host: "imap.mail.yahoo.com", port: 993, secure: true } as const;
-/** Yahoo's submission server, implicit TLS. Only ever used with the owner's own app password. */
-export const TURBIFY_SMTP = { host: "smtp.mail.yahoo.com", port: 465, secure: true } as const;
+/**
+ * Turbify's BUSINESS submission server, implicit TLS — the outgoing server Turbify's own help names
+ * for a business mailbox. Never `smtp.mail.yahoo.com`, Yahoo's consumer server: it accepts the
+ * business mailbox's login and then refuses every message sent as `@satopharma.com` with reply 550
+ * at the message stage — both job offers sent as hr@ on 8 Nov 2026 were refused that way, and no
+ * message ever left through it. Used by the personal mailbox and by job offers (job-offer-smtp.ts).
+ */
+export const TURBIFY_SMTP = { host: "smtp.bizmail.yahoo.com", port: 465, secure: true } as const;
 
 export const PERSONAL_MAILBOX_PAGE_SIZE = 30;
 export const MAX_RECIPIENTS = 50;
