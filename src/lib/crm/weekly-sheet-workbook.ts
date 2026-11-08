@@ -43,7 +43,7 @@ export async function buildWeeklySheetWorkbook(sheet: WeeklySheet, generatedAtIs
       district.managerName,
       rep.person,
       rep.territory,
-      rep.workingDays,
+      rep.vacant ? "" : rep.workingDays,
       rep.pm,
       rep.vacant ? "" : rep.pmTarget,
       weeklySheetResult(rep.pm, rep.pmTarget, rep.vacant),
