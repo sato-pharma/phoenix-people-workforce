@@ -177,6 +177,9 @@ outcome sync and Mark as hired therefore move it without any second write that c
   with the English work terms the speaker mixed in (attitude, language, accent, communication) in English
   letters, even when the speech engine wrote them in Arabic letters (الاتيتيود, اللانجوج). English speech comes
   back as professional English. It never translates the whole comment into the other language.
+- **A glued word is never a name** (owner, 8 Nov 2026). The speech engine sometimes joins short words into one
+  made-up word («هي بنت» came out as «نهيبنت») and the rewrite kept it as if it were the candidate's name. The
+  instructions now split such a word and never carry it into the text.
 
 ## Everything is open to HR (owner, 8 Nov 2026)
 
