@@ -26,7 +26,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * ── What it never does ──
  * It never falls back to Resend. A refused login, an unreachable server or a refused candidate address
  * throws `JobOfferSmtpError` with a sentence HR can read (built from the reply CODE only, never the
- * server's text, which can quote an address), and the offer stays a draft. The Sent copy is a
+ * server's text, which can quote an address), and the offer stays a draft. The failure ROW and the log
+ * do keep Turbify's reply line, every address masked (`smtpErrorContext`, 8 Nov 2026). The Sent copy is a
  * courtesy: a failure there is logged and the offer still counts as sent — it is never sent twice.
  */
 
@@ -136,11 +137,42 @@ function lowerUnique(addresses: Array<string | undefined>): string[] {
   return [...new Set(addresses.map((address) => String(address ?? "").trim().toLowerCase()).filter(Boolean))];
 }
 
-/** The reply code and error class only — never the server's text, which can quote an address. */
-function smtpErrorContext(error: unknown) {
-  const e = (error && typeof error === "object" ? error : {}) as { code?: unknown; responseCode?: unknown };
+/** Longest reply line kept. Turbify's refusals are one line; anything longer is clipped, never dropped. */
+const MAX_REPLY_LENGTH = 300;
+
+/**
+ * Turbify's own reply line, with every email address in it replaced by `<address>`.
+ *
+ * WHY IT IS KEPT (owner, 8 Nov 2026: "record Turbify's reason"). Every offer sent through hr@ on 8 Nov
+ * was refused with reply 550 after the login succeeded, and the code alone could not say why — the
+ * first guess (the server address, #140) was wrong. The reply line is the only place the reason lives.
+ * It never reaches HR's screen: `jobOfferSmtpFailureMessage` stays built from the code alone.
+ */
+export function maskedSmtpReply(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const masked = value
+    .replace(/<?[^\s<>()[\]"',;:]+@[^\s<>()[\]"',;:]+>?/g, "<address>")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!masked) return null;
+  return masked.length > MAX_REPLY_LENGTH ? masked.slice(0, MAX_REPLY_LENGTH) : masked;
+}
+
+/**
+ * The reply code, the error class, the SMTP step it failed at (`DATA`, `MAIL FROM`, …) and Turbify's
+ * reply line with every address masked — for the failure row and the log, never for HR's sentence.
+ */
+export function smtpErrorContext(error: unknown) {
+  const e = (error && typeof error === "object" ? error : {}) as {
+    code?: unknown;
+    command?: unknown;
+    response?: unknown;
+    responseCode?: unknown;
+  };
   return {
     code: typeof e.code === "string" ? e.code : null,
+    command: maskedSmtpReply(e.command)?.slice(0, 40) ?? null,
+    reply: maskedSmtpReply(e.response),
     responseCode: typeof e.responseCode === "number" ? e.responseCode : null,
   };
 }
