@@ -24,13 +24,25 @@
 // against him: 95/91 pays 13,650 under this rule and 5,775 under the gate, and a rep over 90% on
 // Sato with the line under 90% pays 5,250 rather than the gate's full amount.
 //
+// 🔴 THE SATO HALF NEEDS THE TOTAL AT 80% OR MORE (owner, 2026-11-08, on Dr Anwar's instruction,
+// Semester 2 2026 onward, Pedia only — "others as they are"). The Sato targets are small (12.7% of
+// Pedia's target value, Jul–Sep 2026) and the half they unlock is a whole month of basic, so teams
+// were steered to hit Guamusin and Ivyronc and leave Lacto Advanced. From this rule on: total under
+// 80% and the Sato half pays NOTHING, however high Sato is. The total half is unchanged (its own 90%
+// floor on the curve). 80% exactly passes — his words were "less than 80%" gets nothing. This is a
+// condition on the Sato half alone, not the 2x2 gate above that he refused: it never pays the total
+// half off Sato, and it never touches the curve. On the July–September closing it withheld the Sato
+// half from two reps (Sato 224.4% / total 79.5%, Sato 126.6% / total 65.2%) and one District Manager
+// (Sato 90.2% / total 49.4%). `satoHalfWithheld` tells the tab to say why the half reads zero.
+//
 // 🔒 THE OWNER-LOCKED CURVE IS NOT TOUCHED. src/lib/incentives/scheme-2026.ts stays byte-identical:
 // this module CALLS it twice and halves each answer. That is deliberate and it must stay that way —
 // the curve, the 90% floor, the 150% achievement cap and the 220% payout ceiling are all still the
 // single implementation, so a future change to the scheme reaches Pedia for free and no second copy
 // of the payout arithmetic can drift from it.
 //
-// IT REDUCES EXACTLY TO TODAY'S RULE. When the two achievements are equal — which is every rep on
+// IT REDUCES EXACTLY TO TODAY'S RULE. (The 80% condition cannot break this: equal achievements
+// only pay at 90% or more, which is already over 80%.) When the two achievements are equal — which is every rep on
 // every other line, and every Pedia rep whose groups happen to track — half + half is the identical
 // figure the single calculation produced. So this is not a new scheme sitting beside the old one;
 // it is the old one with the numerator split in two. `tests/pedia-split-incentive.test.ts` pins that
@@ -71,6 +83,21 @@ export const PEDIA_OUTSOURCE_PRODUCT_CODES = ["LA001", "LA002"] as const;
  * `2027-S1`), which is why the key is formatted the way it is.
  */
 export const PEDIA_SPLIT_FIRST_SEMESTER: SemesterKey = "2026-S2";
+
+/**
+ * The total achievement the Sato half needs before it can pay anything (owner, 2026-11-08, on
+ * Dr Anwar's instruction). Under it, the Sato half is withheld whatever the Sato achievement.
+ *
+ * It starts in the same semester the split does (Semester 2 2026, his choice), so it rides on
+ * `pediaSplitApplies` and needs no date of its own: every call of `calculatePediaSplitIncentive`
+ * is already a Pedia seat in a split semester. Other lines never reach this module's payout.
+ */
+export const PEDIA_SATO_HALF_MIN_TOTAL_PERCENT = 80;
+
+/** True when the total achievement lets the Sato half pay — 80% exactly passes. */
+export function pediaSatoHalfUnlocked(totalAchievementPercent: number): boolean {
+  return Number.isFinite(totalAchievementPercent) && totalAchievementPercent >= PEDIA_SATO_HALF_MIN_TOTAL_PERCENT;
+}
 
 const satoCodeSet = new Set<string>(PEDIA_SATO_PRODUCT_CODES);
 
@@ -131,8 +158,12 @@ export type PediaSplitIncentive = {
   sato: IncentiveCalculation;
   /** The same, scored on TOTAL achievement. */
   total: IncentiveCalculation;
-  /** One month of basic x the curve at Sato achievement. Half of `sato.payoutAmount`. */
+  /** One month of basic x the curve at Sato achievement — half of `sato.payoutAmount` — or 0 when
+   * the total is under `PEDIA_SATO_HALF_MIN_TOTAL_PERCENT`. */
   satoHalfAmount: number;
+  /** True when the Sato curve would have paid but the total under 80% withheld it — the one case
+   * the tab must explain, because the Sato percentage on screen looks like it earned money. */
+  satoHalfWithheld: boolean;
   /** One month of basic x the curve at Total achievement. Half of `total.payoutAmount`. */
   totalHalfAmount: number;
   /** What the rep is paid: the two halves added. */
@@ -172,7 +203,11 @@ export function calculatePediaSplitIncentive(
   const sato = calculateIncentive2026({ ...salaryBasis, achievementPercent: satoAchievementPercent });
   const total = calculateIncentive2026({ ...salaryBasis, achievementPercent: totalAchievementPercent });
 
-  const satoHalfAmount = roundMoney(sato.payoutAmount / 2);
+  // The Sato half pays only with the total at 80% or more (owner, 2026-11-08). The curve is still
+  // read as it is, so `sato` keeps what the Sato achievement alone would earn.
+  const satoUnlocked = pediaSatoHalfUnlocked(totalAchievementPercent);
+  const satoHalfAmount = satoUnlocked ? roundMoney(sato.payoutAmount / 2) : 0;
+  const satoHalfWithheld = !satoUnlocked && sato.payoutAmount > 0;
   const totalHalfAmount = roundMoney(total.payoutAmount / 2);
   const payoutAmount = roundMoney(satoHalfAmount + totalHalfAmount);
 
@@ -188,6 +223,7 @@ export function calculatePediaSplitIncentive(
       semesterTargetIncentive > 0 ? roundMoney((payoutAmount / semesterTargetIncentive) * 100) : 0,
     sato,
     satoHalfAmount,
+    satoHalfWithheld,
     semesterTargetIncentive,
     total,
     totalHalfAmount,

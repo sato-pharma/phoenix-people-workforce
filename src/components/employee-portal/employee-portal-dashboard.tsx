@@ -55,7 +55,7 @@ import {
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { formatDateOnly } from "@/lib/date-only";
-import { calculatePediaSplitIncentive } from "@/lib/incentives/pedia-split";
+import { PEDIA_SATO_HALF_MIN_TOTAL_PERCENT, calculatePediaSplitIncentive } from "@/lib/incentives/pedia-split";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
@@ -1400,6 +1400,11 @@ function PediaSplitIncentiveCard({
       percentText: satoPercentText,
       amount: split.satoHalfAmount,
       accent: "border-l-orange-400 bg-orange-50/30",
+      // Owner, 2026-11-08: the Sato half needs the total at 80%. Said in words, because a Sato
+      // percentage over 90 beside a zero reads as a mistake otherwise.
+      withheldNote: split.satoHalfWithheld
+        ? `Not paid: your total achievement is under ${PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}%.`
+        : null,
     },
     {
       key: "total",
@@ -1408,6 +1413,7 @@ function PediaSplitIncentiveCard({
       percentText: totalPercentText,
       amount: split.totalHalfAmount,
       accent: "border-l-sky-400 bg-sky-50/30",
+      withheldNote: null,
     },
   ];
 
@@ -1423,7 +1429,8 @@ function PediaSplitIncentiveCard({
         <p className="mt-1 text-sm font-bold text-slate-800">Two halves, scored separately</p>
         <p className="mt-0.5 text-phx-xs leading-relaxed text-slate-500">
           One month of basic salary is paid on your Sato achievement and one month on your total
-          achievement. Each half is scored on the same policy below, then the two are added.
+          achievement. Each half is scored on the same policy below, then the two are added. The Sato
+          half is paid only when your total achievement is {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}% or more.
         </p>
       </div>
 
@@ -1446,6 +1453,9 @@ function PediaSplitIncentiveCard({
               {/* On a phone the achievement column is folded in here rather than squeezed into a
                   third column — merging beats shrinking, and beats a sideways scroll. */}
               <p className="text-phx-2xs font-semibold text-slate-600 sm:hidden">{half.percentText}</p>
+              {half.withheldNote ? (
+                <p className="break-words text-phx-2xs font-bold leading-snug text-red-700">{half.withheldNote}</p>
+              ) : null}
             </div>
             <p className="hidden text-phx-sm font-bold tabular-nums text-slate-700 sm:block">{half.percentText}</p>
             <p className="text-right font-mono text-phx-sm font-black tabular-nums text-slate-900">
@@ -1612,7 +1622,8 @@ function PediaIncentiveSimulatorCard({
       amount: simulated.satoHalfAmount,
       key: "sato",
       panel: "border-orange-200 bg-orange-50/50",
-      rate: simulated.sato.payoutPercentage,
+      // A withheld half pays 0% of its month, whatever the curve reads at the Sato achievement.
+      rate: simulated.satoHalfWithheld ? 0 : simulated.sato.payoutPercentage,
       title: "Sato half",
     },
     {
@@ -1641,7 +1652,8 @@ function PediaIncentiveSimulatorCard({
       <div className="space-y-4 p-4 sm:p-5">
         <p className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2 text-phx-xs leading-relaxed text-slate-500">
           Your two halves are scored separately, so move both. One month of basic salary is paid on
-          your Sato achievement and one month on your total achievement.
+          your Sato achievement and one month on your total achievement. The Sato half is paid only
+          when your total achievement is {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}% or more.
         </p>
 
         <PediaAchievementSlider
@@ -1674,6 +1686,11 @@ function PediaIncentiveSimulatorCard({
               <p className="mt-1 break-words font-mono text-phx-sm font-black tabular-nums text-slate-900">
                 {money(half.amount)}
               </p>
+              {half.key === "sato" && simulated.satoHalfWithheld ? (
+                <p className="mt-1 break-words text-phx-2xs font-bold leading-snug text-red-700">
+                  Not paid: total under {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}%.
+                </p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -1729,7 +1746,8 @@ function PediaIncentivePolicyCard() {
         <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary x 2 months</p>
         <p className="mt-0.5 text-phx-xs leading-relaxed text-slate-500">
           Paid as two halves of one month each - one scored on Sato, one on your total. The bands
-          below are read once per half.
+          below are read once per half. The Sato half is paid only when your total achievement is{" "}
+          {PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}% or more.
         </p>
       </div>
 
@@ -1791,7 +1809,11 @@ function PediaIncentiveKpiCards({
     {
       accent: hasSatoTarget ? accentFor(split.satoAchievementPercent) : "blue",
       label: "Sato Achievement",
-      note: hasSatoTarget ? `Guamusin · Ivyronc - ${noteFor(split.satoAchievementPercent)}` : `${semesterLabelText} Sato target not uploaded yet`,
+      note: !hasSatoTarget
+        ? `${semesterLabelText} Sato target not uploaded yet`
+        : split.satoHalfWithheld
+          ? `Guamusin · Ivyronc - not paid until total reaches ${PEDIA_SATO_HALF_MIN_TOTAL_PERCENT}%`
+          : `Guamusin · Ivyronc - ${noteFor(split.satoAchievementPercent)}`,
       value: hasSatoTarget ? `${split.satoAchievementPercent.toFixed(1)}%` : "No target yet",
     },
     {
