@@ -10,12 +10,23 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 import { todayInCairo } from "@/lib/date-only";
-import { MARKETING_CEO_APPROVALS_PORTAL_PATH, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 
 import { assertMarketingCeoApprovalsAdminPageAccess } from "../admin-access";
 
 export const dynamic = "force-dynamic";
+
+/** The two dates travel with a portal viewer, so the portal page opens on the same range. */
+function preservedQuery(params: Record<string, string | string[] | undefined>) {
+  const query = new URLSearchParams();
+  for (const key of ["from", "to"]) {
+    const value = params[key];
+    if (typeof value === "string" && value.trim()) query.set(key, value);
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
 
 /**
  * CEO Approvals: every marketing request the CEO approved between two Cairo dates, with where its
@@ -31,12 +42,7 @@ export default async function AdminMarketingCeoApprovalsPage({
   const params = await searchParams;
   // The Marketing Manager works in the portal, and reads the same report on its own page there.
   if (isPortalShellRole(access.role)) {
-    const query = new URLSearchParams();
-    for (const key of ["from", "to"] as const) {
-      const value = params[key];
-      if (typeof value === "string" && value) query.set(key, value);
-    }
-    redirect(query.size ? `${MARKETING_CEO_APPROVALS_PORTAL_PATH}?${query.toString()}` : MARKETING_CEO_APPROVALS_PORTAL_PATH);
+    redirect(`/employee-portals/marketing-requests/ceo-approvals${preservedQuery(params)}`);
   }
   const range = resolveCeoApprovalsRange(params, todayInCairo());
   const report = await getMarketingCeoApprovals(access, range);
