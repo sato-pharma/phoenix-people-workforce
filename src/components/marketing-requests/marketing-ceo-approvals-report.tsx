@@ -21,8 +21,10 @@ import {
 } from "@/components/ui/form-tokens";
 import { cairoDate, cairoDateTime, cairoMonthDayTime12h, utcDate } from "@/lib/format/cairo-datetime";
 import {
+  CEO_APPROVAL_LISTED_AS_LABEL,
   summarizeCeoApprovals,
   type CeoApprovalFinanceState,
+  type CeoApprovalsRange,
   type MarketingCeoApprovalRow,
   type MarketingCeoApprovals,
 } from "@/lib/marketing-requests/ceo-approvals";
@@ -80,6 +82,28 @@ function ApprovalCell({ row }: { row: MarketingCeoApprovalRow }) {
       <p className="font-semibold text-slate-800">{cairoDate(row.approvedAtIso)}</p>
       <p className="text-phx-xs text-slate-500">{cairoTime12h(row.approvedAtIso)}</p>
       {row.approvedOnBehalfBy ? <p className="break-words text-phx-xs text-slate-500">pressed by {row.approvedOnBehalfBy}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Why the row is in this period (owner, 2026-11-08): approved inside the dates, or approved earlier and
+ * still waiting for Finance — the difference his manual email never showed.
+ */
+const LISTED_AS_TONE = {
+  approved_in_period: "bg-slate-900 text-white",
+  carried_over: "bg-amber-100 text-amber-900",
+} as const;
+
+function ListedAsCell({ range, row }: { range: CeoApprovalsRange; row: MarketingCeoApprovalRow }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <span className={`inline-block px-1.5 py-0.5 text-phx-xs font-black ${LISTED_AS_TONE[row.listedAs]}`}>
+        {CEO_APPROVAL_LISTED_AS_LABEL[row.listedAs]}
+      </span>
+      {row.listedAs === "carried_over" ? (
+        <p className="break-words text-phx-xs text-slate-600">Approved before {utcDate(range.from)}</p>
+      ) : null}
     </div>
   );
 }
@@ -332,7 +356,8 @@ function RangeForm({ from, to }: { from: string; to: string }) {
 }
 
 /**
- * Every request the CEO approved between two Cairo dates. Every row starts ticked; unticking one
+ * Every request the CEO approved between two Cairo dates, plus every earlier approval Finance has not
+ * paid yet, each labelled in the "Listed as" column (owner, 2026-11-08). Every row starts ticked; unticking one
  * takes it out of the tiles and the total, which both read `summarizeCeoApprovals` over the ticked
  * set. Read-only: a request code opens the request, nothing here decides or pays.
  *
@@ -441,13 +466,17 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
   }
 
   const widths = canSend
-    ? ["w-[3%]", "w-[3%]", "w-[11%]", "w-[12%]", "w-[14%]", "w-[8%]", "w-[9%]", "w-[12%]", "w-[8%]", "w-[20%]"]
-    : ["w-[4%]", "w-[3%]", "w-[13%]", "w-[17%]", "w-[18%]", "w-[10%]", "w-[11%]", "w-[14%]", "w-[10%]"];
+    ? ["w-[3%]", "w-[3%]", "w-[10%]", "w-[11%]", "w-[12%]", "w-[7%]", "w-[8%]", "w-[9%]", "w-[11%]", "w-[8%]", "w-[18%]"]
+    : ["w-[4%]", "w-[3%]", "w-[12%]", "w-[15%]", "w-[16%]", "w-[8%]", "w-[10%]", "w-[10%]", "w-[13%]", "w-[9%]"];
 
   const rangeLabel = `${utcDate(range.from)} to ${utcDate(range.to)}`;
 
   const tiles = [
-    { hint: `of ${rows.length} approved`, label: "Selected", value: String(totals.count) },
+    {
+      hint: `of ${rows.length} listed${totals.carriedOverCount ? ` · ${totals.carriedOverCount} carried over` : ""}`,
+      label: "Selected",
+      value: String(totals.count),
+    },
     { hint: "requested value of the selected", label: "Total value (EGP)", value: money(totals.totalValue) },
     {
       hint: `${totals.executedCount} request${totals.executedCount === 1 ? "" : "s"} paid out`,
@@ -467,7 +496,9 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
 
       {rows.length === 0 ? (
         <div className={`${adminSoftPanelClassName} p-6`}>
-          <p className="text-phx-md font-bold text-slate-900">The CEO approved no marketing request from {rangeLabel}</p>
+          <p className="text-phx-md font-bold text-slate-900">
+            The CEO approved no marketing request from {rangeLabel}, and nothing approved earlier is waiting for Finance
+          </p>
           <p className="mt-1 text-phx-sm text-slate-600">Pick other dates above. Read {cairoDateTime(report.generatedAtIso)} Cairo.</p>
         </div>
       ) : (
@@ -488,6 +519,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
             <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}>
               <div className="min-w-0">
                 <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-white">Approved by the CEO · {rangeLabel}</p>
+                <p className="mt-0.5 text-phx-xs text-slate-300">With every earlier approval Finance has not paid yet</p>
                 <p className="mt-0.5 text-phx-xs text-slate-300">Read {cairoDateTime(report.generatedAtIso)} Cairo</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -546,6 +578,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                   <th className="px-2 py-2" scope="col">Requester · line · type</th>
                   <th className="px-2 py-2 text-right" scope="col">Value (EGP)</th>
                   <th className="px-2 py-2" scope="col">Dr Anwar approval</th>
+                  <th className="px-2 py-2" scope="col">Listed as</th>
                   <th className="px-2 py-2" scope="col">Live report status</th>
                   <th className="px-2 py-2" scope="col">Pay date</th>
                   {canSend ? <th className="px-2 py-2" scope="col">Notes for the email</th> : null}
@@ -582,6 +615,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                       </td>
                       <td className={`px-2 py-2 text-right font-bold ${red ? EXECUTED_RED : "text-slate-900"}`}>{money(row.estimatedCost)}</td>
                       <td className="px-2 py-2"><ApprovalCell row={row} /></td>
+                      <td className="px-2 py-2"><ListedAsCell range={range} row={row} /></td>
                       <td className="px-2 py-2"><StatusCell row={row} /></td>
                       <td className="px-2 py-2"><PayDateCell row={row} /></td>
                       {canSend ? (
@@ -639,10 +673,14 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                         <p className="break-words text-phx-sm text-slate-700">
                           {row.requesterName} · {row.lineName} · <span dir="auto">{row.requestType}</span>
                         </p>
-                        <dl className="grid grid-cols-1 gap-2 text-phx-sm @min-[420px]:grid-cols-3">
+                        <dl className="grid grid-cols-1 gap-2 text-phx-sm @min-[420px]:grid-cols-2 @min-[700px]:grid-cols-4">
                           <div className="min-w-0">
                             <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Dr Anwar approval</dt>
                             <dd><ApprovalCell row={row} /></dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Listed as</dt>
+                            <dd><ListedAsCell range={range} row={row} /></dd>
                           </div>
                           <div className="min-w-0">
                             <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Live report status</dt>
