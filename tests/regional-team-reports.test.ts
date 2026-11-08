@@ -211,6 +211,9 @@ function landingShortcuts() {
   const landing = readFileSync("src/components/employee-portal/dashboards/rm-command-center.tsx", "utf8");
   assert.ok(landing.includes('title="My Team\'s Reports"'));
   assert.ok(landing.includes("regionalTeamReportLinks("));
+  // The older Dashboards row's "Region Plans" opens the same board, never the read-only plan history.
+  assert.ok(landing.includes("{ href: RSM_PLAN_BOARD_HREF, icon: CalendarDays, label: \"Region Plans\" }"));
+  assert.ok(!landing.includes('href: "/employee-portals/plans"'), "no tile on his landing opens the read-only plan history");
 }
 
 export function runRegionalTeamReportsTests() {

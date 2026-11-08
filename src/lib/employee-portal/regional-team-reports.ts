@@ -18,6 +18,12 @@ export type RegionalTeamReportKey =
   | "weekly-sheet"
   | "roi-tracking";
 
+/**
+ * His own plan board in Phoenix CRM. Every Regional Sales Manager shortcut to "his plans" opens this, never
+ * `/employee-portals/plans`: that is the old form's read-only history since the week moved to Phoenix CRM.
+ */
+export const RSM_PLAN_BOARD_HREF = "/employee-portals/field-crm?tab=plan";
+
 export type RegionalTeamReportLink = { key: RegionalTeamReportKey; href: string; label: string };
 
 /** "2026-11" → "2026-10"; "2026-01" → "2025-12". */
@@ -45,7 +51,7 @@ export function regionalTeamReportLinks(cairoTodayIso: string): RegionalTeamRepo
     { href: "/employee-portals/district-manager-plans", key: "district-manager-plans", label: "District Managers' Plans" },
     // 6 — his own plan board in Phoenix CRM, where picking a district manager shows that manager's day. Never the
     // old "Weekly / Monthly Plans" form: it is read-only history now. The words are that page's own link to the board.
-    { href: "/employee-portals/field-crm?tab=plan", key: "region-plans", label: "Plan your week in Phoenix CRM" },
+    { href: RSM_PLAN_BOARD_HREF, key: "region-plans", label: "Plan your week in Phoenix CRM" },
     // 7 — the weekly sheet.
     { href: "/employee-portals/weekly-sheet", key: "weekly-sheet", label: "Weekly Sheet" },
     // 8 — the ROI of the requests in his region.
