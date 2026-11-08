@@ -967,46 +967,42 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         .eq("status", "active");
       return seatScoped(query, seats).order("id", { ascending: false });
     },
-    { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id) },
+    // Four pages at once (2026-11-08): ~5,400 active places are six pages, and one after another they
+    // were four seconds of the page on their own.
+    { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id), concurrentPages: 4 },
   );
   throwIfError(read.error);
   const places = [...read.rows].sort(newestValidatedFirst);
   if (places.length === 0) return { rows: [], capped: false };
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
-  // selectByIds, never a bare `.in()`: with the field grown past ~395 active places (482 on
-  // production, 2026-10-07), a 400-id `.in()` overflowed the response headers and threw
-  // UND_ERR_HEADERS_OVERFLOW ("fetch failed"), which the admin error boundary showed as "Admin
-  // workspace unavailable". It also pages each chunk, so the visit count cannot be cut at 1,000 rows.
-  // Every review of these customers, whatever its status: the pending ones are held above and left out
-  // here, and ANY one at all means somebody has looked at that place.
-  const [customers, reviewRows, visits, activePlaces] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
-    selectByIds<Row>("phoenix_crm_validation_reviews", "id, place_id, status, decided_by_hr_id, decided_at", "customer_id", customerIds),
-    selectByIds<Row>(
-      "phoenix_crm_visits",
-      "id, place_id",
-      "place_id",
-      places.map((row) => String(row.id)),
-    ),
-    selectByIds<Row>("phoenix_crm_places", "id, customer_id", "customer_id", customerIds, (query) => query.eq("status", "active")),
-  ]);
+  // 🔴 ONE CALL, NOT 179 (owner, 2026-11-08: "enhance more the performance of this page, hilarious slow").
+  // The four lookups below went 150 ids at a time — 61 requests for the visit count alone, 179 in all, the
+  // biggest share of the page. `phoenix_crm_validated_place_facts` takes the ids in the request BODY (an
+  // RPC is a POST, so none of the ~395-id `.in()` header overflow that once took this page down, 2026-10-07) and answers in one jsonb value, which
+  // PostgREST's row cap never cuts. Every review of these customers, whatever its status: the pending ones
+  // are held above and left out here, and ANY one at all means somebody has looked at that place.
+  const facts = await getSupabaseAdmin().rpc("phoenix_crm_validated_place_facts", {
+    p_place_ids: places.map((row) => String(row.id)),
+    p_customer_ids: customerIds,
+  });
+  throwIfError(facts.error);
+  const factValue = (facts.data ?? {}) as {
+    customers?: Row[];
+    reviews?: Row[];
+    visit_counts?: Record<string, number>;
+    active_places?: Record<string, number>;
+  };
+  const customers = factValue.customers ?? [];
+  const reviewRows = factValue.reviews ?? [];
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
   const held = new Set(reviewRows.filter((row) => row.status === "pending").map((row) => String(row.place_id)));
   const reviewed = new Set(reviewRows.map((row) => String(row.place_id)));
   // One review row per place, for all time (the UNIQUE index), so the approval that let a place stand is
   // this row and no other; a pending or rejected one says nothing about who approved it.
   const approvals = new Map(reviewRows.filter((row) => row.status === "approved").map((row) => [String(row.place_id), row] as const));
-  const visitsByPlace = new Map<string, number>();
-  for (const row of visits) {
-    const placeId = String(row.place_id ?? "");
-    if (placeId) visitsByPlace.set(placeId, (visitsByPlace.get(placeId) ?? 0) + 1);
-  }
-  const placesByCustomer = new Map<string, number>();
-  for (const row of activePlaces) {
-    const customerId = String(row.customer_id);
-    placesByCustomer.set(customerId, (placesByCustomer.get(customerId) ?? 0) + 1);
-  }
+  const visitsByPlace = new Map<string, number>(Object.entries(factValue.visit_counts ?? {}).map(([placeId, count]) => [placeId, Number(count)]));
+  const placesByCustomer = new Map<string, number>(Object.entries(factValue.active_places ?? {}).map(([customerId, count]) => [customerId, Number(count)]));
   const [names, venues] = await Promise.all([
     loadPeopleNames([
       ...places.map((row) => text(row.created_by_hr_id)),

@@ -203,7 +203,6 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/team-calendar.ts": 4,
     "src/lib/phoenix-crm/server/team.ts": 1,
     "src/lib/phoenix-crm/server/unplanned.ts": 2,
-    "src/lib/phoenix-crm/server/validation-reviews.ts": 1,
     "src/lib/phoenix-crm/server/visit-detail-edit.ts": 1,
     "src/lib/phoenix-crm/server/visit-edit.ts": 1,
     "src/lib/phoenix-crm/server/visit-recordings.ts": 3,

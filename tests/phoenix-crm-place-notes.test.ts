@@ -390,7 +390,7 @@ function checkPrivateAdminNotesStayOffAManagersScreen(): void {
   assert.ok(filtered > -1, "the manager's board filters the note rows through the one rule");
   assert.ok(filtered < load.indexOf("loadPeopleNames("), "before any writer's name is looked up");
   assert.match(load, /const columnsToRead = options\.managerBoard \? noteColumns\.replace\(", advice", ""\) : noteColumns;/, "and the administrator's advice verdict is not even read for that board");
-  assert.equal([...load.matchAll(/selectByIds<Row>\("phoenix_crm_place_notes", columnsToRead,/g)].length, 2, "on either of the two note reads");
+  assert.equal([...load.matchAll(/selectByIdsFewestRequests<Row>\("phoenix_crm_place_notes", columnsToRead,/g)].length, 2, "on either of the two note reads");
 
   // The option defaults to the company view, so WHO CALLS IT is the safety. Exactly two pages do.
   const callers = [...sourceFilesUnder("app"), ...sourceFilesUnder("src")]
