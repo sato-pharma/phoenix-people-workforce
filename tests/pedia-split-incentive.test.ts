@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 
 import { measurePediaAchievement } from "../src/lib/incentives/pedia-achievement.ts";
 import {
+  PEDIA_SATO_HALF_MIN_TOTAL_PERCENT,
   PEDIA_SPLIT_FIRST_SEMESTER,
   calculatePediaSplitIncentive,
+  pediaSatoHalfUnlocked,
   isPediaLine,
   isPediaSatoProductCode,
   isPediaSplitSemester,
@@ -132,7 +134,8 @@ export function runPediaSplitIncentiveTests() {
     );
   }
 
-  // The split is SYMMETRIC: which half is the strong one cannot change the money.
+  // The split is SYMMETRIC while the total is at 80% or more: which half is the strong one cannot
+  // change the money. Under 80% it is not, by design — section 10 below.
   {
     const forward = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 130, totalAchievementPercent: 92 });
     const reversed = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 92, totalAchievementPercent: 130 });
@@ -277,5 +280,58 @@ export function runPediaSplitIncentiveTests() {
     assert.equal(semesterLabel("2026-S2"), "Semester 2 2026");
     assert.equal(semesterLabel("2026-S1"), "Semester 1 2026");
     assert.doesNotMatch(semesterLabel("2026-S2"), /\bH2\b/, "never 'H2 2026'");
+  }
+
+  // ── 10. THE SATO HALF NEEDS THE TOTAL AT 80% (owner, 2026-11-08, Dr Anwar's rule) ─────────────
+  // "no incentive for any one achieve on sato products and his or her total achievement less than
+  // 80% either MR or DM". Semester 2 2026 onward, Pedia only. The three seats it caught on the
+  // July–September 2026 closing are the first three cases, with their real achievements.
+  {
+    assert.equal(PEDIA_SATO_HALF_MIN_TOTAL_PERCENT, 80);
+    assert.equal(pediaSatoHalfUnlocked(80), true, "80% exactly passes — 'less than 80%' gets nothing");
+    assert.equal(pediaSatoHalfUnlocked(79.99), false);
+    assert.equal(pediaSatoHalfUnlocked(Number.NaN), false, "an unreadable total never unlocks money");
+
+    // A rep at Sato 224.4% / total 79.5% — the case the rule was written for.
+    const capped = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 224.4, totalAchievementPercent: 79.5 });
+    assert.equal(capped.satoHalfAmount, 0, "Sato over 200% pays nothing with the total under 80%");
+    assert.equal(capped.satoHalfWithheld, true, "and the tab is told why");
+    assert.equal(capped.totalHalfAmount, 0);
+    assert.equal(capped.payoutAmount, 0);
+    assert.equal(capped.sato.payoutAmount, 46_200, "the locked curve still reads 220% — only the half is withheld");
+
+    // A rep at Sato 126.6% / total 65.2%, and a District Manager at Sato 90.2% / total 49.4%.
+    for (const [sato, total] of [[126.6, 65.2], [90.2, 49.4]] as const) {
+      const split = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: sato, totalAchievementPercent: total });
+      assert.equal(split.satoHalfAmount, 0, `Sato ${sato}% with total ${total}% pays nothing`);
+      assert.equal(split.satoHalfWithheld, true);
+      assert.equal(split.payoutAmount, 0);
+    }
+
+    // The boundary, from both sides.
+    const atFloor = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 100, totalAchievementPercent: 80 });
+    assert.equal(atFloor.satoHalfAmount, 10_500, "total exactly 80%: the Sato half pays its full month at 100%");
+    assert.equal(atFloor.satoHalfWithheld, false);
+    const underFloor = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 100, totalAchievementPercent: 79.99 });
+    assert.equal(underFloor.satoHalfAmount, 0);
+
+    // Total between 80 and 90: Sato half only. Total over 90 with Sato under: total half only.
+    const satoOnly = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 100, totalAchievementPercent: 85 });
+    assert.equal(satoOnly.payoutAmount, 10_500, "Sato half paid, total half under its own 90% floor");
+    const totalOnly = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 60, totalAchievementPercent: 95 });
+    assert.equal(totalOnly.satoHalfAmount, 0);
+    assert.equal(totalOnly.satoHalfWithheld, false, "the curve paid nothing here, so nothing was withheld");
+    assert.equal(totalOnly.totalHalfAmount, 7_875, "the total half is untouched by the new rule");
+
+    // His own correction: 75% Sato and 85% total pays nothing — neither half reaches 90%.
+    const neither = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 75, totalAchievementPercent: 85 });
+    assert.equal(neither.payoutAmount, 0);
+    assert.equal(neither.satoHalfWithheld, false);
+
+    // Not symmetric under 80%, by design: the strong Sato cannot carry a weak line.
+    const strongSato = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 130, totalAchievementPercent: 70 });
+    const strongTotal = calculatePediaSplitIncentive({ ...BASE, satoAchievementPercent: 70, totalAchievementPercent: 130 });
+    assert.equal(strongSato.payoutAmount, 0);
+    assert.ok(strongTotal.payoutAmount > 0, "a strong line still pays its own half");
   }
 }
