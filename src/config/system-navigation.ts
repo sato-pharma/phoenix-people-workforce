@@ -2,6 +2,7 @@ import {
   Activity,
   Archive,
   Award,
+  BadgeCheck,
   Banknote,
   BellRing,
   BookUser,
@@ -2097,6 +2098,13 @@ const employeePortalNavigationSectionSeeds = [
         label: "Doctor-List Check",
         roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
       },
+      // Exactly the report's own three readers (canViewMarketingCeoApprovals), owner 2026-11-08.
+      {
+        href: "/employee-portals/marketing-requests/ceo-approvals",
+        icon: BadgeCheck,
+        label: "CEO Approvals",
+        roles: ["Marketing Manager", "CEO", "Super Admin"],
+      },
       {
         href: "/employee-portals/marketing-requests/control",
         icon: Settings2,
@@ -3888,6 +3896,15 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     description: "Every validated marketing customer against the rep's own doctor list, with the approved money and the visits that followed.",
     roles: ["Super Admin", "CEO", "SFE Manager", "Marketing Manager"],
   },
+  // Exactly the report's own three readers (canViewMarketingCeoApprovals). The Marketing Manager
+  // follows it to the portal twin.
+  {
+    href: "/admin/marketing-requests/ceo-approvals",
+    icon: BadgeCheck,
+    label: "CEO Approvals",
+    description: "Every request the CEO approved between two dates, its value, and whether Finance has executed it.",
+    roles: ["Super Admin", "CEO", "Marketing Manager"],
+  },
   // Exactly the page's own three readers (canViewMarketingFinanceAgeing): this is the rare marketing
   // card where the discoverability list and the door are the same list.
   {
@@ -5540,6 +5557,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/marketing-requests/bulk-upload",
           // A queue of requests, not an ROI figure, so it sits with the requests.
           "/admin/marketing-requests/finance-ageing",
+          // What the CEO approved in a date range, and whether Finance has paid it.
+          "/admin/marketing-requests/ceo-approvals",
           // A check on the customers behind the requests.
           "/admin/marketing-requests/list-check",
           // Market Awareness is a REQUEST module — a product manager raises a conference or round
