@@ -86,6 +86,7 @@ import { PLAN_AUTOSAVE_DELAY_MS } from "@/lib/phoenix-crm/plan-week-draft";
 import type {
   AreaCustomersView,
   CustomerMatch,
+  DistrictManagerDay,
   ManagerBoardDay,
   ManagerBoardRepHalf,
   ManagerBoardScope,
@@ -1185,7 +1186,7 @@ function HalfStep({
           )))
         : null}
       {draft.kind === "with_area" ? (districtGate ?? <WithAreaPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
-      {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} draft={draft} onDraft={onDraft} view={view} />) : null}
+      {draft.kind === "with_dm" ? (districtGate ?? <WithDmPart canEdit={canEdit} day={day} draft={draft} onDraft={onDraft} view={view} />) : null}
       {draft.kind === "with_senior"
         ? (districtGate ?? <WithSeniorPart canEdit={canEdit} draft={draft} idPrefix={idPrefix} onDraft={onDraft} slot={slot} test={test} view={view} />)
         : null}
@@ -1510,11 +1511,13 @@ function WithAreaPart({
  */
 function WithDmPart({
   canEdit,
+  day,
   draft,
   onDraft,
   view,
 }: {
   canEdit: boolean;
+  day: ManagerBoardDay;
   draft: HalfDraft;
   onDraft: (next: HalfDraft) => void;
   view: ManagerPlanBoardView;
@@ -1522,39 +1525,115 @@ function WithDmPart({
   if (!draft.scope?.startsWith("dm:")) {
     return <CrmEmpty message="Choose a district manager above. Any rep in the line has no district manager to go with." title="Choose the district manager" />;
   }
-  if (view.areas.length === 0) return <CrmEmpty message="This district manager has no area right now." title="No areas" />;
+  const dmSeatId = draft.scope.slice("dm:".length);
+  const dmDay = (
+    <DistrictManagerDayPanel
+      dmDay={day.districtManagerDays.find((entry) => entry.dmSeatId === dmSeatId) ?? null}
+      dmName={view.scopes.find((scope) => scope.key === draft.scope)?.dmName ?? null}
+      unread={view.districtManagerPlanUnread}
+    />
+  );
+  if (view.areas.length === 0) {
+    return (
+      <div className="grid min-w-0 gap-3">
+        {dmDay}
+        <CrmEmpty message="This district manager has no area right now." title="No areas" />
+      </div>
+    );
+  }
   const ticked = new Set(draft.areaSeatIds);
   const toggleArea = (seatId: string, on: boolean) => {
     const without = draft.areaSeatIds.filter((id) => id !== seatId);
     onDraft({ ...draft, areaSeatIds: on ? [...without, seatId] : without });
   };
   return (
-    <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+    <div className="grid min-w-0 gap-3">
+      {dmDay}
+      <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
+          {canEdit ? (
+            <div className="flex flex-wrap gap-2">
+              <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
+                Mark all
+              </CrmButton>
+              <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [] })} size="sm">
+                Clear
+              </CrmButton>
+            </div>
+          ) : null}
+        </div>
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          {view.areas.map((area) => (
+            <CrmCheck checked={ticked.has(area.seatId)} disabled={!canEdit} key={area.seatId} onChange={(on) => toggleArea(area.seatId, on)}>
+              <span className="block break-words" dir="auto">
+                {area.areaName}
+              </span>
+              <span className={`block break-words text-xs font-semibold ${area.vacant ? "text-amber-700" : "text-slate-500"}`}>
+                {area.vacant ? "Vacant" : (area.repName ?? area.territoryName)}
+              </span>
+            </CrmCheck>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The district manager's own plan for the day (owner, 2026-11-08: "they must see this district manager plan is
+ * planning what today — with a rep, a single, double, area — and see the doctors also"). Read only: each half he
+ * planned, the rep on a double visit, the area, and the doctors he ticked. His week is shown as it stands, a draft
+ * included, with its status said; a read that failed is said, never shown as nothing planned.
+ */
+function DistrictManagerDayPanel({ dmDay, dmName, unread }: { dmDay: DistrictManagerDay | null; dmName: string | null; unread: boolean }) {
+  const who = dmDay?.dmName ?? dmName ?? "The district manager";
+  if (unread) {
+    return <CrmNote tone="warn" title={`${who}'s own plan for this day`}>It could not be read just now. Reload the page to try again.</CrmNote>;
+  }
+  if (!dmDay) {
+    return <CrmNote tone="neutral" title="The district manager's own plan for this day">Nobody holds this district manager seat, so there is no plan to show.</CrmNote>;
+  }
+  return (
+    <div className="grid min-w-0 gap-2 border border-slate-200 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
-        {canEdit ? (
-          <div className="flex flex-wrap gap-2">
-            <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
-              Mark all
-            </CrmButton>
-            <CrmButton disabled={draft.areaSeatIds.length === 0} onClick={() => onDraft({ ...draft, areaSeatIds: [] })} size="sm">
-              Clear
-            </CrmButton>
-          </div>
-        ) : null}
+        <p className="break-words text-sm font-black text-slate-900">{`${who}'s own plan for this day`}</p>
+        <CrmPill tone={dmDay.sent ? "info" : "warn"}>{dmDay.sent ? dmDay.statusLabel : `${dmDay.statusLabel} · not sent yet`}</CrmPill>
       </div>
-      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-        {view.areas.map((area) => (
-          <CrmCheck checked={ticked.has(area.seatId)} disabled={!canEdit} key={area.seatId} onChange={(on) => toggleArea(area.seatId, on)}>
-            <span className="block break-words" dir="auto">
-              {area.areaName}
-            </span>
-            <span className={`block break-words text-xs font-semibold ${area.vacant ? "text-amber-700" : "text-slate-500"}`}>
-              {area.vacant ? "Vacant" : (area.repName ?? area.territoryName)}
-            </span>
-          </CrmCheck>
-        ))}
-      </div>
+      {dmDay.halves.length === 0 ? (
+        <p className="break-words text-sm font-semibold leading-6 text-slate-500">Nothing is planned for this day yet.</p>
+      ) : (
+        <ul className="grid min-w-0 gap-2">
+          {dmDay.halves.map((entry) => (
+            <li className="grid min-w-0 gap-1 border-t border-slate-100 pt-2 first:border-t-0 first:pt-0" key={entry.half}>
+              <p className="break-words text-sm font-bold leading-6 text-slate-900">
+                <span className="font-black">{entry.half}</span>
+                {` · ${entry.kindLabel}`}
+                {entry.repName ? <> · with <bdi>{entry.repName}</bdi></> : null}
+                {entry.detail ? <> · <bdi>{entry.detail}</bdi></> : null}
+              </p>
+              {entry.areaName ? (
+                <p className="break-words text-xs font-semibold text-slate-500">
+                  Area · <bdi>{entry.areaName}</bdi>
+                </p>
+              ) : null}
+              {entry.customers.length > 0 ? (
+                <ul className="grid min-w-0 gap-1 sm:grid-cols-2">
+                  {entry.customers.map((doctor) => (
+                    <li className={`break-words text-xs font-semibold leading-5 ${doctor.gone ? "text-slate-400 line-through" : "text-slate-700"}`} key={doctor.key}>
+                      <bdi>{doctor.name}</bdi>
+                      {doctor.speciality ? ` · ${doctor.speciality}` : ""}
+                      {doctor.grade ? ` · Grade ${doctor.grade}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : entry.kindLabel !== "Admin" ? (
+                <p className="break-words text-xs font-semibold text-slate-500">No doctors chosen for this half.</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

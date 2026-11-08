@@ -148,6 +148,8 @@ export type {
   ManagerPlanTransitionResult,
   RepDayCustomer,
 } from "@/lib/phoenix-crm/server/manager-plans";
+/** The district manager's own day, shown on a senior manager's With a district manager half-day (owner, 2026-11-08). */
+export type { DistrictManagerDay, DistrictManagerDayHalf } from "@/lib/phoenix-crm/server/manager-dm-day";
 export type {
   AreaCustomer,
   AreaCustomersView,
