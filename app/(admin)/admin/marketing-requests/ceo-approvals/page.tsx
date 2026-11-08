@@ -57,8 +57,8 @@ export default async function AdminMarketingCeoApprovalsPage({
           <p className={pageHeaderKickerClassName}>Marketing</p>
           <h1 className={pageHeaderTitleClassName}>CEO Approvals</h1>
           <p className={pageHeaderDescriptionClassName}>
-            Every marketing request the CEO approved between two dates, with its value and where its money stands
-            now. Untick a row to leave it out of the totals.
+            Every marketing request the CEO approved between two dates, plus every earlier approval Finance has not
+            paid yet, with its value and where its money stands now. Untick a row to leave it out of the totals.
           </p>
         </div>
       </div>

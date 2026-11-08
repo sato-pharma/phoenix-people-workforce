@@ -3902,7 +3902,7 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/marketing-requests/ceo-approvals",
     icon: BadgeCheck,
     label: "CEO Approvals",
-    description: "Every request the CEO approved between two dates, its value, and whether Finance has executed it.",
+    description: "Every request the CEO approved between two dates, plus earlier ones Finance has not paid yet, its value, and whether Finance has executed it.",
     roles: ["Super Admin", "CEO", "Marketing Manager"],
   },
   // Exactly the page's own three readers (canViewMarketingFinanceAgeing): this is the rare marketing

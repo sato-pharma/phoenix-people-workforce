@@ -180,6 +180,7 @@ export async function runMarketingCeoApprovalsTests() {
   // ── The totals follow the ticks ─────────────────────────────────────────────────────────────────
   const all = summarizeCeoApprovals(rows);
   assert.deepEqual(all, {
+    carriedOverCount: 0,
     count: 6,
     executedCount: 1,
     executedValue: 10000,
@@ -194,6 +195,86 @@ export async function runMarketingCeoApprovalsTests() {
   assert.equal(someTicked.totalValue, 30000, "an unticked row leaves the total");
   assert.equal(someTicked.waitingValue, 20000);
   assert.equal(summarizeCeoApprovals(rows, new Set()).totalValue, 0);
+
+  assert.ok(rows.every((row) => row.listedAs === "approved_in_period"), "without a period every row is the period's own");
+
+  // ── Hossam's week (owner, 2026-11-08) ──────────────────────────────────────────────────────────
+  // "Approved requests 8th Nov to 15th Nov" listed 12 requests; Dr Anwar approved 3 in those dates and
+  // the other 9 earlier, all still waiting for Finance. A period lists both, each saying which.
+  const week = ceoApprovalsWindow({ from: "2026-11-08", to: "2026-11-15" });
+  const weekRows = buildCeoApprovalRows({
+    ceoApprovals: [
+      ceoApproved("in-week", "2026-11-08T08:54:00.000Z"),
+      ceoApproved("carried", "2026-11-03T10:20:00.000Z"),
+      ceoApproved("carried-hold", "2026-10-27T07:18:00.000Z"),
+      ceoApproved("carried-paid", "2026-11-01T09:05:00.000Z"),
+      ceoApproved("carried-rejected", "2026-11-02T09:05:00.000Z"),
+      ceoApproved("carried-back-in-chain", "2026-11-02T09:05:00.000Z"),
+      // Approved before the week AND again inside it: the week's own approval wins.
+      ceoApproved("re-approved", "2026-11-01T09:00:00.000Z"),
+      ceoApproved("re-approved", "2026-11-09T09:00:00.000Z"),
+      // An approval after the week has ended is not this week's.
+      ceoApproved("after-week", "2026-11-15T22:00:00.000Z"),
+      // Cairo midnight of 8 Nov is 22:00 UTC on 7 Nov: one minute before is carried over, the minute itself is in the week.
+      ceoApproved("edge-before", "2026-11-07T21:59:00.000Z"),
+      ceoApproved("edge-start", "2026-11-07T22:00:00.000Z"),
+    ],
+    deciders,
+    period: week,
+    requestsById: new Map(
+      [
+        request("in-week", { estimatedCost: 1500 }),
+        request("carried", { estimatedCost: 1000 }),
+        request("carried-hold", { estimatedCost: 5000, status: "finance_hold" }),
+        request("carried-paid", { estimatedCost: 3000, status: "active" }),
+        request("carried-rejected", { estimatedCost: 700, status: "rejected" }),
+        request("carried-back-in-chain", { estimatedCost: 900 }),
+        request("re-approved", { estimatedCost: 2000 }),
+        request("after-week", { estimatedCost: 800 }),
+        request("edge-before", { estimatedCost: 100 }),
+        request("edge-start", { estimatedCost: 200 }),
+      ].map((row) => [row.id, row]),
+    ),
+    steps: [
+      financeStep("in-week"),
+      financeStep("carried"),
+      financeStep("carried-hold", { status: "pending" }),
+      financeStep("carried-paid", { decisionAt: "2026-11-03T10:33:00.000Z", decisionByHrId: "B-185", status: "approved" }),
+      financeStep("carried-rejected", { status: "skipped" }),
+      step("carried-back-in-chain", { sequence: 4, status: "current", stepCode: "marketing_review", stepName: "Marketing Review" }),
+      financeStep("re-approved"),
+      financeStep("after-week"),
+      financeStep("edge-before"),
+      financeStep("edge-start"),
+    ],
+    todayCairo: TODAY,
+  });
+  const listed = Object.fromEntries(weekRows.map((row) => [row.requestId, row.listedAs]));
+  assert.deepEqual(
+    listed,
+    {
+      carried: "carried_over",
+      "carried-hold": "carried_over",
+      "edge-before": "carried_over",
+      "edge-start": "approved_in_period",
+      "in-week": "approved_in_period",
+      "re-approved": "approved_in_period",
+    },
+    "the week's approvals plus every earlier one Finance still owes (waiting or on hold); paid, rejected, back-in-chain and after-the-week ones are left out",
+  );
+  assert.deepEqual(
+    weekRows.map((row) => row.requestId),
+    ["carried-hold", "carried", "edge-before", "edge-start", "in-week", "re-approved"],
+    "carried-over rows sit with the rest, oldest approval first",
+  );
+  assert.equal(summarizeCeoApprovals(weekRows).carriedOverCount, 3);
+  assert.equal(summarizeCeoApprovals(weekRows, new Set(["in-week", "carried"])).carriedOverCount, 1, "the count follows the ticks");
+
+  const reportSource = readFileSync(new URL("../src/components/marketing-requests/marketing-ceo-approvals-report.tsx", import.meta.url), "utf8");
+  assert.match(reportSource, /scope="col">Listed as<\/th>/, "the desktop table has the Listed as column");
+  assert.equal((reportSource.match(/<ListedAsCell /g) ?? []).length, 2, "the Listed as cell is on the desktop row AND the mobile card");
+  const serviceSource = readFileSync(new URL("../src/lib/marketing-requests/ceo-approvals-service.ts", import.meta.url), "utf8");
+  assert.match(serviceSource, /period: window,/, "the service hands the period to the row builder, or nothing is ever carried over");
 
   // ── Reachable: the portal row, the admin card, the twin, and rows ticked by default ─────────────
   const card = marketingRoiPageItems.find((item) => item.href === "/admin/marketing-requests/ceo-approvals");

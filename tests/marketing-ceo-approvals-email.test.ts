@@ -82,6 +82,7 @@ function row(requestId: string, overrides: Partial<MarketingCeoApprovalRow> = {}
     financeState: "waiting_finance",
     href: `/marketing-requests/${requestId}`,
     lineName: "Pedia",
+    listedAs: "approved_in_period",
     payDate: "2026-11-20",
     payDateOverdue: false,
     requestCode: `MKT-REQ-${requestId}`,

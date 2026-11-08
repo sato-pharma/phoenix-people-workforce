@@ -74,8 +74,16 @@ function toStep(row: StepRow): CeoApprovalStepInput {
 }
 
 /**
- * Every marketing request whose CEO rung was approved between two Cairo dates, with where its money
- * stands now. The gate is here as well as on the page, before a single row is read. A failed read
+ * The request statuses a carried-over row can have: still in the chain (waiting for Finance) or on
+ * Finance hold. Executed requests are "active"; rejected, returned and cancelled ones owe nothing.
+ * `buildCeoApprovalRows` makes the final call from the steps; this only keeps the read small.
+ */
+const CARRY_OVER_REQUEST_STATUSES = ["pending_approval", "finance_hold"];
+
+/**
+ * Every marketing request whose CEO rung was approved between two Cairo dates, plus every earlier CEO
+ * approval Finance has not paid yet (owner, 2026-11-08 — Hossam's weekly email lists both), with where
+ * its money stands now. The gate is here as well as on the page, before a single row is read. A failed read
  * THROWS rather than degrading: a missing part would read as nothing approved.
  */
 export async function getMarketingCeoApprovals(access: AccessContext, range: CeoApprovalsRange): Promise<MarketingCeoApprovals> {
@@ -95,7 +103,23 @@ export async function getMarketingCeoApprovals(access: AccessContext, range: Ceo
     .gte("decision_at", window.startIso)
     .lt("decision_at", window.endIso);
   if (approvalResult.error) throw approvalResult.error;
-  const ceoApprovals = ((approvalResult.data ?? []) as StepRow[]).map(toStep);
+  const inPeriod = ((approvalResult.data ?? []) as StepRow[]).map(toStep);
+
+  // Carried over: requests still owed money, whose CEO rung was approved before the period began.
+  const openResult = await supabase.from("marketing_requests").select("id").in("status", CARRY_OVER_REQUEST_STATUSES);
+  if (openResult.error) throw openResult.error;
+  const openIds = distinct(((openResult.data ?? []) as Array<{ id: string }>).map((row) => row.id));
+  const earlier = await readByIn<StepRow>(openIds, (batch) =>
+    supabase
+      .from("marketing_request_approval_steps")
+      .select(STEP_COLUMNS)
+      .in("request_id", batch)
+      .eq("step_code", CEO_APPROVAL_STEP_CODE)
+      .eq("status", "approved")
+      .lt("decision_at", window.startIso),
+  );
+
+  const ceoApprovals = [...inPeriod, ...earlier.map(toStep)];
   if (ceoApprovals.length === 0) return { generatedAtIso, range, rows: [] };
 
   const requestIds = distinct(ceoApprovals.map((step) => step.requestId));
@@ -171,6 +195,7 @@ export async function getMarketingCeoApprovals(access: AccessContext, range: Ceo
   const rows = buildCeoApprovalRows({
     ceoApprovals,
     deciders,
+    period: window,
     requestsById,
     steps,
     todayCairo: todayInCairo(),

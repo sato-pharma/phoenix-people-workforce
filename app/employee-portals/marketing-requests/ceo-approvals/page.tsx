@@ -24,7 +24,7 @@ export default async function EmployeePortalMarketingCeoApprovalsPage({
   return (
     <EmployeePortalPageShell
       badge="Marketing"
-      description="Every marketing request the CEO approved between two dates, with its value and where its money stands now. Untick a row to leave it out of the totals."
+      description="Every marketing request the CEO approved between two dates, plus every earlier approval Finance has not paid yet, with its value and where its money stands now. Untick a row to leave it out of the totals."
       title="CEO Approvals"
     >
       <MarketingCeoApprovalsReport

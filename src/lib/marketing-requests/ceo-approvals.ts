@@ -13,6 +13,12 @@ import { EXECUTION_STEP_CODE } from "@/lib/marketing-requests/request-status-lab
 // "Approved by the CEO" is the `ceo_approval` rung reaching `approved` — the rung, not the person,
 // so an approval the Super Admin recorded on that rung is listed too and says who pressed it.
 //
+// The period is HIS week's email, not a filter on the approval date alone (owner, 2026-11-08): Hossam
+// Reda's "Approved requests 8th Nov to 15th Nov" listed 12 requests, and only 3 were approved in those
+// dates — the other 9 were approved earlier and still waiting for Finance's transfer. So a period lists
+// what the CEO approved in it PLUS every earlier approval Finance has not paid yet ("carried over"), and
+// the "Listed as" column says which, so the two are never confused again.
+//
 // The status column repeats the Key Data tab's column N word for word (`humanize(status)`), so the
 // page and the live sheet can never name the same request two ways.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +117,20 @@ export type CeoApprovalRequestInput = {
   status: string;
 };
 
+/**
+ * Why a row is in the period: the CEO approved it inside the dates, or approved it before them and
+ * Finance has still not paid it (waiting for Finance, or on Finance hold).
+ */
+export type CeoApprovalListedAs = "approved_in_period" | "carried_over";
+
+export const CEO_APPROVAL_LISTED_AS_LABEL: Record<CeoApprovalListedAs, string> = {
+  approved_in_period: "Approved in this period",
+  carried_over: "Carried over, not paid yet",
+};
+
+/** The finance states a carried-over row may have: money the CEO approved that Finance still owes. */
+const CARRY_OVER_STATES = new Set<CeoApprovalFinanceState>(["waiting_finance", "held"]);
+
 export type MarketingCeoApprovalRow = {
   approvedAtIso: string;
   /** Set only when someone other than the CEO pressed approve on the CEO's rung. */
@@ -124,6 +144,7 @@ export type MarketingCeoApprovalRow = {
   financeState: CeoApprovalFinanceState;
   href: string;
   lineName: string;
+  listedAs: CeoApprovalListedAs;
   payDate: string | null;
   /** The pay date has passed (Cairo) and Finance has not executed the request. */
   payDateOverdue: boolean;
@@ -158,20 +179,29 @@ function financeStateOf(
 }
 
 /**
- * One row per request, newest CEO approval last within the window wins (a resubmitted request can be
- * approved twice), ordered by that approval, oldest first.
+ * One row per request, its newest CEO approval wins (a resubmitted request can be approved twice),
+ * ordered by that approval, oldest first.
+ *
+ * With `period`, an approval at or after `endIso` is ignored; a newest approval at or after
+ * `startIso` is "approved in this period"; one before it is listed only while Finance still owes the
+ * money (waiting for Finance, or Finance hold) and reads "carried over". Without `period` every row is
+ * "approved in this period" — the caller already read only the window.
  */
 export function buildCeoApprovalRows(input: {
   ceoApprovals: readonly CeoApprovalStepInput[];
   /** Keyed by `canonicalHrIdKey`; `isCeo` false marks someone pressing on the CEO's behalf. */
   deciders: ReadonlyMap<string, { isCeo: boolean; name: string }>;
   requestsById: ReadonlyMap<string, CeoApprovalRequestInput>;
+  /** The period's half-open UTC window; see the function's comment. */
+  period?: { endIso: string; startIso: string };
   steps: readonly CeoApprovalStepInput[];
   todayCairo: string;
 }): MarketingCeoApprovalRow[] {
+  const period = input.period;
   const latestApproval = new Map<string, CeoApprovalStepInput>();
   for (const step of input.ceoApprovals) {
     if (step.isCc || step.stepCode !== CEO_APPROVAL_STEP_CODE || step.status !== "approved" || !step.decisionAt) continue;
+    if (period && Date.parse(step.decisionAt) >= Date.parse(period.endIso)) continue;
     const previous = latestApproval.get(step.requestId);
     if (!previous || String(previous.decisionAt) < step.decisionAt) latestApproval.set(step.requestId, step);
   }
@@ -192,6 +222,9 @@ export function buildCeoApprovalRows(input: {
     const financeStep = steps.filter((step) => step.stepCode === EXECUTION_STEP_CODE).at(-1);
     const openStep = steps.find((step) => step.status === "current");
     const finance = financeStateOf(request, financeStep, openStep);
+    const listedAs: CeoApprovalListedAs =
+      period && Date.parse(approval.decisionAt as string) < Date.parse(period.startIso) ? "carried_over" : "approved_in_period";
+    if (listedAs === "carried_over" && !CARRY_OVER_STATES.has(finance.state)) continue;
     const executed = finance.state === "executed";
     const decider = input.deciders.get(canonicalHrIdKey(approval.decisionByHrId) ?? "");
     const executor = executed ? input.deciders.get(canonicalHrIdKey(financeStep?.decisionByHrId) ?? "") : undefined;
@@ -208,6 +241,7 @@ export function buildCeoApprovalRows(input: {
       financeState: finance.state,
       href: request.href,
       lineName: request.lineName,
+      listedAs,
       payDate: request.payDate,
       payDateOverdue:
         !executed && finance.state !== "closed_out" && Boolean(request.payDate) && String(request.payDate).slice(0, 10) < input.todayCairo,
@@ -226,6 +260,7 @@ export function buildCeoApprovalRows(input: {
 // ── The totals of what is ticked ────────────────────────────────────────────
 
 export type CeoApprovalsTotals = {
+  carriedOverCount: number;
   count: number;
   executedCount: number;
   executedValue: number;
@@ -241,6 +276,7 @@ export function summarizeCeoApprovals(
   selected?: ReadonlySet<string>,
 ): CeoApprovalsTotals {
   const totals: CeoApprovalsTotals = {
+    carriedOverCount: 0,
     count: 0,
     executedCount: 0,
     executedValue: 0,
@@ -252,6 +288,7 @@ export function summarizeCeoApprovals(
   for (const row of rows) {
     if (selected && !selected.has(row.requestId)) continue;
     totals.count += 1;
+    if (row.listedAs === "carried_over") totals.carriedOverCount += 1;
     totals.totalValue += row.estimatedCost;
     if (row.financeState === "executed") {
       totals.executedCount += 1;
