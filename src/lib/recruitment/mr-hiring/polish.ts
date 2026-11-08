@@ -154,6 +154,7 @@ const instructions = [
     "THE INPUT:",
     "- It is speech-to-text, without punctuation. The speaker talks Egyptian Arabic and mixes English work terms into it, and the speech engine writes those English terms in Arabic letters: الاتيتيود is attitude, اللانجوج is language, الاكسنت is accent, الكومينكيشن is communication, البريزنتيشن is presentation, الكونفيدنس is confidence, الانترفيو is interview, الفيدباك is feedback.",
     "- The speech engine mishears: words may be misspelt, split, merged or replaced by a similar-sounding word. Work out what the speaker meant.",
+    "- It often glues short spoken words into one made-up word: نهيبنت is \"هي بنت\" (she is a girl), هوولد is \"هو ولد\", هيكويسة is \"هي كويسة\", دهكويس is \"ده كويس\". A word that is not a real Arabic word is glued words, never a name: split it and write what was meant, and never carry it into the text. Use a name only when it is clearly a real person's or company's name.",
   ].join("\n"),
   [
     "THE LANGUAGE — the speaker's own:",

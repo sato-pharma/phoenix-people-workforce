@@ -109,6 +109,9 @@ export function runRecruitmentMrHiringDictationTests() {
   assert.match(polish, /English work term the speaker used in English letters/, "attitude, language, accent stay in English letters");
   assert.match(polish, /Never translate the whole comment into the other language\./, "never translated into the other language");
   assert.doesNotMatch(polish, /Always English|leave no Arabic word/, "the old English-only rule is gone");
+  // GLUED WORDS ARE NEVER A NAME (owner, 8 Nov 2026: "fix the glued هي بنت mishearing"): the speech engine
+  // wrote «هي بنت» as «نهيبنت» and the rewrite kept it as the candidate's name.
+  assert.match(polish, /نهيبنت is \\"هي بنت\\"[^\n]*never a name/, "a made-up glued word is split, never kept as a name");
   assert.equal(sanitizeMrPolished('"**The candidate** communicates clearly."', "result"), "The candidate communicates clearly.");
   const long = sanitizeMrPolished("The candidate is confident. ".repeat(60), "booking");
   assert.ok(long.length <= mrPolishLimit("booking") && long.endsWith("confident.") && !long.includes("…"), "cut at a whole sentence inside the box's cap, never an ellipsis");
