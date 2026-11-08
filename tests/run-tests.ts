@@ -960,6 +960,7 @@ import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
 import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
+import { runMarketingCeoApprovalsTests } from "./marketing-ceo-approvals.test.ts";
 import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
 import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
@@ -8764,6 +8765,10 @@ await runTest(
 await runTest(
   "marketing finance ageing (the waiting filter, the step clock, the bands, three readers, no execute control)",
   runMarketingFinanceAgeingTests,
+);
+await runTest(
+  "marketing CEO approvals (three readers, the two Cairo dates, one row per request, column N word for word, executed vs waiting, a passed pay date, totals that follow the ticks)",
+  runMarketingCeoApprovalsTests,
 );
 await runTest(
   "marketing doctor-list check (one letter and the twin names, 500 m, a pick never overwritten, the flag wording, the board sums, the sheet layout)",

@@ -114,6 +114,8 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/admin/market-awareness/inbox", to: "/employee-portals/market-awareness/inbox" },
   // The Doctor-List Check's card is shared, and the Marketing Manager reads it in the portal.
   { from: "/admin/marketing-requests/list-check", to: "/employee-portals/marketing-requests/list-check" },
+  // CEO Approvals is the Marketing Manager's report (owner, 2026-11-08), and she reads it in the portal.
+  { from: "/admin/marketing-requests/ceo-approvals", to: "/employee-portals/marketing-requests/ceo-approvals", carryQuery: ["from", "to"] },
   { from: "/admin/approvals-hub", to: "/employee-portals/approvals-hub", carryQuery: ["module", "id", "tab"] },
   // An admin-only view of the same queue; the portal has no `stuck` page, so the page's
   // own source sends the viewer to the hub instead.
