@@ -52,6 +52,7 @@ function request(id: string, overrides: Partial<CeoApprovalRequestInput> = {}): 
     lineName: "Pedia",
     payDate: "2026-11-20",
     requestCode: `MKT-REQ-${id}`,
+    requesterHrId: "B-154",
     requesterName: "Nermeen Salah",
     requestType: "Deal",
     status: "pending_approval",

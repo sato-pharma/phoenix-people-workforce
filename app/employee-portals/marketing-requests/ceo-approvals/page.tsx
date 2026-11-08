@@ -5,6 +5,7 @@ import { MarketingCeoApprovalsReport } from "@/components/marketing-requests/mar
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { todayInCairo } from "@/lib/date-only";
 import { canViewMarketingCeoApprovals, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { canSendMarketingCeoApprovalsEmail } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,11 @@ export default async function EmployeePortalMarketingCeoApprovalsPage({
       description="Every marketing request the CEO approved between two dates, with its value and where its money stands now. Untick a row to leave it out of the totals."
       title="CEO Approvals"
     >
-      <MarketingCeoApprovalsReport key={`${range.from}:${range.to}`} report={report} />
+      <MarketingCeoApprovalsReport
+        canSend={canSendMarketingCeoApprovalsEmail(access.role)}
+        key={`${range.from}:${range.to}`}
+        report={report}
+      />
     </EmployeePortalPageShell>
   );
 }
