@@ -222,6 +222,7 @@ export type AuditEntityType =
   | "crm_master_export"
   // The KPIs board downloaded as a workbook: every rep in the viewer's scope with his hire date.
   | "crm_kpis_export"
+  | "crm_weekly_sheet_export"
   // Pulling the mobile numbers behind the organogram export. The only route in the module
   // that hands back personal contact details in bulk, so who took the list is recorded.
   | "organogram_contact_export"

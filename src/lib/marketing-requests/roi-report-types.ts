@@ -227,7 +227,7 @@ export type MarketingRoiScope = {
    * Area ids whose requests the viewer may see whatever seat raised them — a TERRITORY route
    * beside the requester route above, matched against the target customer's `area_id`.
    *
-   * Empty for every seat but the Medical Rep. Owner instruction 2026-09-18: a rep keeps the ROI
+   * Empty for every seat but the Medical Rep and the Regional Manager (his region route, owner 2026-11-08: the areas of the active employees under him — `resolveRegionRouteScope`). Owner instruction 2026-09-18: a rep keeps the ROI
    * Tracker "to be able to track roi of requests his manager did in his area". A rep raises no
    * requests of their own any more, so the requester route alone leaves the page blank; this is
    * what puts their District Manager's spend on their own patch in front of them, and nothing
@@ -258,7 +258,7 @@ export type MarketingRoiScope = {
    * established at all is NOT admitted here; the requester route is untouched, so nothing the
    * hierarchy already granted him is lost.
    *
-   * Empty for every seat but the Medical Rep, exactly like `visibleAreaIds`.
+   * Empty for every seat but the Medical Rep and the Regional Manager (his own line), exactly like `visibleAreaIds`.
    */
   visibleAreaLineNames: Set<string>;
   /**

@@ -1,14 +1,20 @@
 import {
   AlertTriangle,
+  BookUser,
   CalendarDays,
   CalendarX2,
+  ChartColumnBig,
   CheckCircle2,
   ClipboardCheck,
+  Clock,
+  FileSpreadsheet,
   Flag,
   ListChecks,
   Map as MapIcon,
   Network,
+  Radar,
   ReceiptText,
+  Repeat2,
   Target,
   TrendingUp,
   Trophy,
@@ -54,6 +60,8 @@ import {
   publishedFigure,
 } from "@/lib/employee-portal/published-window";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { regionalTeamReportLinks, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 /* ── Region performance keycards ───────────────────────────────────── */
@@ -228,6 +236,22 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },
 ];
 
+const TEAM_REPORT_ICONS: Record<RegionalTeamReportKey, DashboardLink["icon"]> = {
+  "reps-plans": BookUser,
+  "team-visits": Clock,
+  coverage: Radar,
+  "coverage-last-month": Radar,
+  "frequency-last-month": Repeat2,
+  "district-manager-plans": Users,
+  "region-plans": CalendarDays,
+  "weekly-sheet": FileSpreadsheet,
+  "roi-tracking": ChartColumnBig,
+};
+
+function teamReportTiles(today: string): DashboardLink[] {
+  return regionalTeamReportLinks(today).map((link) => ({ href: link.href, icon: TEAM_REPORT_ICONS[link.key], label: link.label }));
+}
+
 const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approve" },
   { href: "/employee-portals/vacation-request", icon: CalendarX2, label: "Leave" },
@@ -282,6 +306,9 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
+
+      {/* Dr. Hany Saad's team reports (owner, 2026-11-08) — one shortcut per report, in his order. */}
+      <DashboardsGrid items={teamReportTiles(cairoTodayIso())} title="My Team's Reports" />
 
       {access ? (
         <Suspense fallback={<MmSectionSkeleton title="My map" />}>
