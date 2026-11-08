@@ -5,7 +5,8 @@
  * the bell's `plan` domain and Needs You all read this file beside the legacy `employee_plan_headers`.
  * Four things wait on a person here: a sent week (first or second stage), his ask to edit a sent week,
  * his ask to take a customer off his own list, and his ask for another day of single visits (owner,
- * 2026-10-20) — live only until its day passes.
+ * 2026-10-20) — live only until its day passes. A sent week is live only until its Thursday passes
+ * (owner, 2026-11-08): after that the database refuses every step on it.
  *
  * 🔴 NO NOTICE SENDER IS IMPORTED HERE, AND NONE MAY BE. `notifications/in-app.ts` imports the Hub's
  * reader to decide whether a notice is still actionable, so a sender reached from here closes the
@@ -21,6 +22,7 @@
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import {
   isManagerAskLive,
+  isManagerWeekEndedUndecided,
   isSingleVisitDayAskLive,
   isManagerPlanStatus,
   managerAskStage,
@@ -170,7 +172,9 @@ export async function loadManagerPlanQueue(hrId: string | null | undefined, isTe
     else if (place === "upcoming") upcoming.push(item);
   };
   for (const plan of plans) {
-    if (sameKey(plan.managerHrId, me)) continue;
+    // 🔴 A week whose Thursday passed undecided decides nothing — the database refuses every step on it — so
+    // it waits on nobody: no bucket, no badge, no Needs You, no bell (owner, 2026-11-08).
+    if (sameKey(plan.managerHrId, me) || isManagerWeekEndedUndecided(plan.status, plan.weekStart, cairoToday)) continue;
     const stage = managerPlanStage(plan.status);
     const place = managerQueuePlace(me, stage, plan.firstApproverHrId, plan.secondApproverHrId);
     file(place, {
@@ -264,6 +268,8 @@ export async function loadOpenManagerPlanItems(isTest: boolean): Promise<OpenMan
   const cairoToday = currentCairoDateOnlyIso();
   const out: OpenManagerPlanItem[] = [];
   for (const plan of plans) {
+    // A week that ended undecided decides nothing, exactly as in the queue above.
+    if (isManagerWeekEndedUndecided(plan.status, plan.weekStart, cairoToday)) continue;
     const stage = managerPlanStage(plan.status);
     if (!stage) continue;
     out.push({
