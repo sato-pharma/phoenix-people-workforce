@@ -48,6 +48,9 @@ const directory = [
   person("B-185", "Ahmed El Maraghy", "Finance Manager", "AA"),
   person("OF-0002", "Adel El Sayed", "Accountant", "B-185"),
   person("A-9", "Hossam Reda", "Marketing Manager", "AA"),
+  person("A-2", "Khaled Bedair", "SFE Manager", "AA"),
+  person("A-8", "Rasha Sabry", "Group Product Manager", "AA"),
+  person("B-155", "Ahmed Sharaf", "Product Manager", "A-8"),
   // Pedia: DSM → RSM → NSM → CEO.
   // A director above the National Sales Manager proves the walk stops AT the NSM, not at the CEO.
   person("SD", "Sales Director", "Commercial Director", "AA"),
@@ -58,7 +61,7 @@ const directory = [
   person("AI-NSM", "Magdy El Senosey", "Anti Infective National Sales Manager", "AA"),
   person("AI-DSM", "Amir El Khouly", "Anti Infective District Sales Manager", "AI-NSM"),
   // Someone reporting straight to the CEO: the walk stops without adding him.
-  person("PM-1", "Rasha Sabry", "Group Product Manager", "AA"),
+  person("PM-1", "Mona Fathy", "Brand Manager", "AA"),
   // A requester whose manager has left, and one with no email.
   person("GONE", "Left Manager", "District Sales Manager", "AI-NSM", { isActive: false }),
   person("R-ORPHAN", "Nour Adel", "Medical Rep", "GONE"),
@@ -150,8 +153,8 @@ export function runMarketingCeoApprovalsEmailTests() {
   assert.deepEqual(recipients.to.map((entry) => entry.name), ["Ahmed El Maraghy", "Adel El Sayed"]);
   assert.deepEqual(
     recipients.cc.map((entry) => entry.name),
-    ["Akram Khamis", "Hany Saad", "Ali Mohamed", "Amir El Khouly", "Magdy El Senosey", "Nour Adel", "Dr Anwar Gaweesh", "Omar Anwar", "Hossam Reda"],
-    "requesters with their chains, then Dr Anwar and Omar Anwar, then the sender — nobody twice, To wins over Cc",
+    ["Akram Khamis", "Hany Saad", "Ali Mohamed", "Amir El Khouly", "Magdy El Senosey", "Nour Adel", "Dr Anwar Gaweesh", "Omar Anwar", "Khaled Bedair", "Rasha Sabry", "Ahmed Sharaf", "Hossam Reda"],
+    "requesters with their chains, then Dr Anwar, Omar Anwar, Khaled Bedair, Rasha Sabry and Ahmed Sharaf, then the sender — nobody twice, To wins over Cc",
   );
   assert.ok(!recipients.cc.some((entry) => entry.hrId === "B-185"), "a Finance person who also requested stays on To only");
   assert.ok(recipients.warnings.some((line) => line.includes("Left Manager") && line.includes("no longer active")));

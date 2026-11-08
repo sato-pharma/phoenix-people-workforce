@@ -13,7 +13,7 @@ import type { CeoApprovalsRange, MarketingCeoApprovalRow } from "@/lib/marketing
 //   To   — Finance: Ahmed El Maraghy and Adel El Sayed.
 //   Cc   — every requester in the email, each one's managers up to and including the National
 //          Sales Manager (a Pedia District Manager: the Regional AND the National Sales Manager),
-//          Dr Anwar, Omar Anwar, and the sender himself.
+//          Dr Anwar, Omar Anwar, Khaled Bedair, Rasha Sabry, Ahmed Sharaf, and the sender himself.
 //   Body — "Dear all", the table (Customer · Requester · Line · Type · Requested value · Notes) as a
 //          zebra table in the weekly-plan email's palette, red rows, the thank-you to Finance for
 //          the red items, the Finance Hold line, and the sender's signature.
@@ -32,8 +32,12 @@ export function canSendMarketingCeoApprovalsEmail(role: string | null | undefine
 
 /** The owner's own words, by person: Finance on the To line. Ahmed El Maraghy, Adel El Sayed. */
 export const APPROVED_REQUESTS_TO_HR_IDS = ["B-185", "OF-0002"] as const;
-/** Always copied: Dr Anwar (CEO) and Omar Anwar. */
-export const APPROVED_REQUESTS_FIXED_CC_HR_IDS = ["AA", "B-10"] as const;
+/**
+ * Always copied: Dr Anwar (CEO) and Omar Anwar, by the owner's words; and Khaled Bedair (SFE Manager),
+ * Rasha Sabry (Group Product Manager) and Ahmed Sharaf (Product Manager), who were on the hand-written
+ * email of 8 Nov — the owner chose to keep all three (2026-11-08).
+ */
+export const APPROVED_REQUESTS_FIXED_CC_HR_IDS = ["AA", "B-10", "A-2", "A-8", "B-155"] as const;
 /** The person whose name the red-row thank-you and the Finance Hold line carry. */
 export const APPROVED_REQUESTS_FINANCE_CONTACT_HR_ID = "B-185";
 
