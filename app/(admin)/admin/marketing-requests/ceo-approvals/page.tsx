@@ -11,6 +11,7 @@ import {
 import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 import { todayInCairo } from "@/lib/date-only";
 import { resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { canSendMarketingCeoApprovalsEmail } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 
 import { assertMarketingCeoApprovalsAdminPageAccess } from "../admin-access";
@@ -61,7 +62,11 @@ export default async function AdminMarketingCeoApprovalsPage({
           </p>
         </div>
       </div>
-      <MarketingCeoApprovalsReport key={`${range.from}:${range.to}`} report={report} />
+      <MarketingCeoApprovalsReport
+        canSend={canSendMarketingCeoApprovalsEmail(access.role)}
+        key={`${range.from}:${range.to}`}
+        report={report}
+      />
     </div>
   );
 }

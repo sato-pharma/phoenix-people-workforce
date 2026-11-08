@@ -33,6 +33,7 @@ import {
   enforcePhoenixCrmPushBlock,
   phoenixCrmBlocksTelegramFallback,
 } from "@/lib/notifications/phoenix-crm-channel-guard";
+import { approvedRequestsBlocksTelegramFallback } from "@/lib/notifications/approved-requests-channel-guard";
 import { closingPublishBlocksTelegramFallback } from "@/lib/notifications/closing-publish-channel-guard";
 import { operatorWatchBlocksTelegramFallback } from "@/lib/notifications/operator-watch-channel-guard";
 import { enforceNeedsYouOwnerOnlyEmail } from "@/lib/notifications/needs-you-recipient-guard";
@@ -1915,6 +1916,8 @@ async function triggerTelegramRetryExhaustionFallback(input: {
   if (phoenixCrmBlocksTelegramFallback(input.telegram.module, input.telegram.eventType)) return;
   // The closing-published notice is already emailed to the whole line as one shared message.
   if (closingPublishBlocksTelegramFallback(input.telegram.module, input.telegram.eventType)) return;
+  // The approved-requests notice is already emailed to all of them as one shared message.
+  if (approvedRequestsBlocksTelegramFallback(input.telegram.module, input.telegram.eventType)) return;
   // The watches built for the owner add no outbound email, on any path.
   if (operatorWatchBlocksTelegramFallback(input.telegram.eventType)) return;
   try {
@@ -2383,7 +2386,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
           // Both of the channels this re-send adds are banned for some notices (the Phoenix CRM 06:55
           // digest), so for those it can only duplicate the in-app copy already delivered — skip it.
-          if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType) && !closingPublishBlocksTelegramFallback(input.module, input.eventType) && !operatorWatchBlocksTelegramFallback(input.eventType)) {
+          if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType) && !closingPublishBlocksTelegramFallback(input.module, input.eventType) && !approvedRequestsBlocksTelegramFallback(input.module, input.eventType) && !operatorWatchBlocksTelegramFallback(input.eventType)) {
             const fallback = await createSystemNotification({
               ...input,
               channels: ["email", "in_app", "push"],
@@ -2426,7 +2429,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         deliveries.push({ channel, error: message, idempotencyKey, status: "failed" });
 
         // Same skip as the permanent-failure branch above: nothing for this re-send to add.
-        if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType) && !closingPublishBlocksTelegramFallback(input.module, input.eventType) && !operatorWatchBlocksTelegramFallback(input.eventType)) {
+        if (!emailAttempted && preferences.email_enabled && !phoenixCrmBlocksTelegramFallback(input.module, input.eventType) && !closingPublishBlocksTelegramFallback(input.module, input.eventType) && !approvedRequestsBlocksTelegramFallback(input.module, input.eventType) && !operatorWatchBlocksTelegramFallback(input.eventType)) {
           const fallback = await createSystemNotification({
             ...input,
             channels: ["email", "in_app", "push"],
