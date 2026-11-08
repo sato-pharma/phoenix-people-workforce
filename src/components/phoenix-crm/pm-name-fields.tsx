@@ -14,15 +14,18 @@ export function DoctorNameFields({
   disabled,
   idPrefix,
   onChange,
+  stacked = false,
   value,
 }: {
   disabled?: boolean;
   idPrefix: string;
   onChange: (next: DoctorNameParts) => void;
+  /** One box under another — for a narrow place such as a table's decision cell, where three side by side would not fit. */
+  stacked?: boolean;
   value: DoctorNameParts;
 }) {
   return (
-    <div className="grid min-w-0 gap-3 sm:col-span-2 sm:grid-cols-3">
+    <div className={stacked ? "grid min-w-0 gap-3" : "grid min-w-0 gap-3 sm:col-span-2 sm:grid-cols-3"}>
       {DOCTOR_NAME_FIELDS.map((field) => (
         <CrmField htmlFor={`${idPrefix}-${field.key}`} key={field.key} label={field.label}>
           <input
@@ -38,7 +41,7 @@ export function DoctorNameFields({
           />
         </CrmField>
       ))}
-      <p className="text-xs font-medium leading-5 text-slate-500 sm:col-span-3">
+      <p className={stacked ? "text-xs font-medium leading-5 text-slate-500" : "text-xs font-medium leading-5 text-slate-500 sm:col-span-3"}>
         The customer&apos;s own three names, as the signboard shows them. No Dr or د.
       </p>
     </div>

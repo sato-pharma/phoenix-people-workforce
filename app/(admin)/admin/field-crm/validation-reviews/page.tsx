@@ -9,7 +9,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
+import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
@@ -172,7 +172,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
         />
       </div>
 
-      <FullNameChecks rows={heldFullNames} />
+      <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} rows={heldFullNames} />
 
       <PlaceChecksWithDeck
         capped={capped}

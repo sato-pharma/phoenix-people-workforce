@@ -2124,6 +2124,7 @@ import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
+import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -8165,6 +8166,11 @@ await runTest(
 await runTest(
   "Phoenix CRM gives every district manager his own Place checks tab, his team and nobody else's (owner, 2026-10-13): all four section reads narrow to his seats in the QUERY through placeChecksSeatScope, which THROWS rather than returning an empty list a PostgREST .in() would answer with zero rows and no error; he comments and recommends, and neither decides anything — canDecideValidationReviews still gates all three decision services, his board renders no decision control, and no sentence on it says who decides or that anything is waiting; rep_visible is NOT NULL with no default in the table and a required boolean on the wire, so the two buttons are the only way to save; the subject's seat is re-read from its own row, never taken from the request; and a visible comment reaches the rep attributed by ROLE and never by name, filtered in the query so one he may not read never leaves the server, with no bell, no Telegram and no email",
   runPhoenixCrmPlaceNotesTests,
+);
+
+await runTest(
+  "Phoenix CRM lets the Super Admin correct a PM customer's held full name, and never the SFE Manager (owner, 2026-11-08: \"the admin only, not the SFE, to edit the name by the reps to correct it, or add the third name\"): canCorrectHeldFullName is the Super Admin with update and never a test account; a corrected name from anybody else, with Reject, or breaking the three-box rules is refused before the database is called; the service refuses it from anyone without update before the database is called; the screen draws Edit name only under the server's answer and sends the three boxes; and the database honours the name on approve only, keeping the rep's spelling in the history",
+  runPhoenixCrmFullNameCorrectionTests,
 );
 
 await runTest(
