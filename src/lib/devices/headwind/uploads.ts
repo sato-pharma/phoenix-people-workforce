@@ -35,7 +35,40 @@ export class HeadwindUploadError extends Error {
 /** 300 MB — above any APK this fleet carries, and below what the route's 300-second budget can move. */
 export const HEADWIND_MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 
-type FileUploadResult = { serverPath?: string; [field: string]: unknown };
+type FileUploadResult = { serverPath?: string; fileDetails?: unknown; [field: string]: unknown };
+
+/**
+ * The body that registers an uploaded APK as an application.
+ *
+ * 🔴 THE NAME, PACKAGE AND VERSION COME FROM THE SERVER'S OWN READING OF THE FILE, AND LEAVING THEM
+ * OUT FAILS AS A 200. `POST /rest/private/web-ui-files` answers `{ serverPath, fileDetails }`, where
+ * `fileDetails` is what the server read out of the APK — `pkg`, `name` (the label), `version`,
+ * `versionCode`, `arch`. The Headwind console copies those onto the application before it calls
+ * `PUT /rest/private/applications/android` (`applications.controller.js`). Sending only `filePath`
+ * makes the insert hit `null value in column "name" of relation "applications"` and the server answers
+ * `{"status":"ERROR","message":"error.internal.server"}` under an HTTP 200 — measured on production,
+ * 9 Nov 2026, uploading the Sato Anti-Infective line app. A label the server could not read falls back
+ * to the package name, so the NOT NULL column is never sent empty.
+ */
+export function applicationRegisterBody(
+  serverPath: string,
+  fileDetails: unknown,
+  showIcon: boolean,
+): Record<string, unknown> {
+  const details = fileDetails && typeof fileDetails === "object" ? (fileDetails as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const pkg = text(details.pkg);
+  const body: Record<string, unknown> = { filePath: serverPath, showIcon, type: "app" };
+  if (pkg) body.pkg = pkg;
+  const name = text(details.name) ?? pkg;
+  if (name) body.name = name;
+  const version = text(details.version);
+  if (version) body.version = version;
+  if (typeof details.versionCode === "number") body.versionCode = details.versionCode;
+  const arch = text(details.arch);
+  if (arch) body.arch = arch;
+  return body;
+}
 
 /**
  * Step 1 — send the bytes up.
@@ -49,7 +82,7 @@ async function uploadBytes(
   file: File,
   fetchImpl: typeof fetch,
   env: NodeJS.ProcessEnv,
-): Promise<string> {
+): Promise<{ serverPath: string; fileDetails: unknown }> {
   const form = new FormData();
   form.append("file", file, file.name);
   const result = await callHeadwind<FileUploadResult>(
@@ -65,7 +98,7 @@ async function uploadBytes(
         "Nothing reached any tablet. Check the server has disk space left and try again.",
     );
   }
-  return serverPath;
+  return { fileDetails: result?.fileDetails ?? null, serverPath };
 }
 
 function checkFile(file: unknown, what: string): File {
@@ -111,7 +144,7 @@ export async function uploadHeadwindApp(
     );
   }
 
-  const serverPath = await uploadBytes(file, fetchImpl, env);
+  const { fileDetails, serverPath } = await uploadBytes(file, fetchImpl, env);
 
   // 🔴 `type: "app"` IS NOT OPTIONAL, AND LEAVING IT OUT FAILS AS A 200. Headwind's `applications`
   // table has NOT NULL on `type`, so without it the insert throws and the server answers
@@ -128,7 +161,7 @@ export async function uploadHeadwindApp(
   const application = await callHeadwind<Record<string, unknown>>(
     "/rest/private/applications/android",
     {
-      body: JSON.stringify({ filePath: serverPath, showIcon: input.showIcon !== false, type: "app" }),
+      body: JSON.stringify(applicationRegisterBody(serverPath, fileDetails, input.showIcon !== false)),
       method: "PUT",
     },
     fetchImpl,
@@ -202,7 +235,7 @@ export async function uploadHeadwindFile(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<HeadwindFileUploadResult> {
   const file = checkFile(input.file, "a file");
-  const serverPath = await uploadBytes(file, fetchImpl, env);
+  const { serverPath } = await uploadBytes(file, fetchImpl, env);
 
   const saved = await callHeadwind<Record<string, unknown>>(
     "/rest/private/web-ui-files",

@@ -91,6 +91,7 @@ import {
   RECORDING_UPLOAD_MAX_REQUEST_BYTES,
 } from "../src/lib/devices/headwind/recordings.ts";
 import {
+  applicationRegisterBody,
   uploadHeadwindApp,
   HEADWIND_MAX_UPLOAD_BYTES,
   HeadwindUploadError,
@@ -1312,6 +1313,20 @@ async function runUploadTests() {
   assert.doesNotMatch(uploads, /multipart\/form-data/, "the content type is never written by hand — the boundary would be lost");
   assert.match(uploads, /"\/rest\/private\/applications\/android"/, "then the APK is registered as an application");
   assert.match(uploads, /filePath/, "by the serverPath the upload handed back");
+  // 🔴 THE REGISTER CARRIES THE SERVER'S OWN READING OF THE APK. With only filePath the insert hit
+  // NOT NULL on applications.name and came back as error.internal.server under an HTTP 200 (production,
+  // 9 Nov 2026, the Sato Anti-Infective line app). The console copies fileDetails onto the app; so do we.
+  assert.deepEqual(
+    applicationRegisterBody("/tmp/x.apk.temp", { arch: null, name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", version: "1.0.18", versionCode: 19 }, true),
+    { filePath: "/tmp/x.apk.temp", name: "Sato Anti-Infective", pkg: "com.satopharma.antiinfective", showIcon: true, type: "app", version: "1.0.18", versionCode: 19 },
+    "the package, label and version the server read from the file go into the register",
+  );
+  assert.equal(
+    applicationRegisterBody("/tmp/x.apk.temp", { pkg: "com.example.app", name: "  " }, false).name,
+    "com.example.app",
+    "a label the server could not read falls back to the package, so the NOT NULL name is never sent empty",
+  );
+  assert.match(uploads, /applicationRegisterBody\(serverPath, fileDetails,/, "and uploadHeadwindApp sends exactly that body");
 
   const route = stripComments(source("app/api/devices/headwind/upload/route.ts"));
   assert.match(route, /export const maxDuration = 300/, "a multipart route gets its own ceiling, like the ManageEngine one");
