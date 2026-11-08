@@ -59,9 +59,9 @@ function capFor(listType: PhoenixCrmDoctorListType, caps: Caps): number {
   return listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
 }
 
-/** The customers a copy may place: a doctor waiting for his full name never is (owner, 2026-11-07). */
+/** The customers a copy may place — a doctor waiting for his full name too; only his visit waits (owner, 2026-11-08). */
 function plannableById(customers: ReadonlyArray<PlannerCustomer>): Map<string, PlannerCustomer> {
-  return new Map(customers.filter((customer) => !customer.needsFullName).map((customer) => [customer.customerId, customer]));
+  return new Map(customers.map((customer) => [customer.customerId, customer]));
 }
 
 /**

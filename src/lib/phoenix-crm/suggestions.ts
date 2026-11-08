@@ -191,7 +191,6 @@ export function suggestForDay(input: {
 
   const suggestions: DaySuggestion[] = [];
   for (const customer of input.customers) {
-    if (customer.needsFullName) continue;
     const target = gradeTarget(input.settings, customer.listType, customer.grade);
     const tier = coverageTier(customer.visitsThisMonth, target);
     // A customer who is not validated yet has no place and no days and hours, so there is nothing to

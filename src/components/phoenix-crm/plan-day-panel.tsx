@@ -941,9 +941,8 @@ function SameAddressKey({ shown }: { shown: boolean }) {
 }
 
 function tickDisabled(row: TickRow, room: Record<PhoenixCrmDoctorListType, number>, locked: boolean): boolean {
-  // Owner, 2026-11-07: a doctor waiting for his full name is never ticked on; one already on the day
-  // can still be taken off.
-  return locked || (!row.placed && (row.needsFullName || room[row.listType] <= 0));
+  // Owner, 2026-11-08: a doctor waiting for his full name is planned as normal — only his visit waits.
+  return locked || (!row.placed && room[row.listType] <= 0);
 }
 
 /**
@@ -985,8 +984,8 @@ function RowPills({ row }: { row: TickRow }) {
   if (!row.noRamadanTime && !row.followUp && !row.needsFullName) return null;
   return (
     <span className="mt-1 flex max-w-full flex-wrap gap-1">
-      {/* The way out, in his words: Change the details on his list (pm-name-rules.ts). */}
-      {row.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
+      {/* A heads-up, never a block on the plan: his visit waits for the full name (owner, 2026-11-08). */}
+      {row.needsFullName ? <CrmPill tone="warn">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
       {/* His own commitment from his latest visit, due this week — the one thing on the row that asks him to act. */}
       {row.followUp ? <CrmPill tone="info">{row.followUp}</CrmPill> : null}
       {row.noRamadanTime ? <CrmPill tone="warn">No Ramadan hours</CrmPill> : null}
