@@ -677,7 +677,6 @@ export function runReact418HydrationSafeTextTests() {
     "src/components/layout/in-app-notifications-bell.tsx": 1,
     "src/components/layout/internal-messages-menu.tsx": 1,
     "src/components/phoenix-signature-card/PhoenixIdentityNotices.tsx": 1,
-    "src/components/sales/portal/portal-sos-dashboard-impl.tsx": 1,
   };
   const twelveHourCalls = new Map<string, number>();
   const callArguments = (source: string, from: number): string | null => {

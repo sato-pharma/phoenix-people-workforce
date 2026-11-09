@@ -21,6 +21,7 @@ import {
 } from "@/lib/sales/portal-sos-dashboard";
 import type { DistributorUploadStatus } from "@/lib/sales/monthly-distributor-import";
 import type { SosDashboardData, SosDashboardFilters } from "@/lib/sales/sos-dashboard";
+import { DASHBOARD_UNAVAILABLE } from "@/lib/sales/sos-portal-words";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,7 +59,7 @@ async function PortalSosContent({
   let scope: PortalSosScopeView | null = null;
   let comparison: PortalSosComparison | null = null;
   let uploadStatus: DistributorUploadStatus | null = null;
-  let loadError: string | null = null;
+  let failed = false;
   try {
     const result = await getPortalSosDashboard(filters, access);
     data = result.data;
@@ -66,7 +67,10 @@ async function PortalSosContent({
     comparison = result.comparison;
     uploadStatus = result.uploadStatus;
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Failed to load Source of Sales.";
+    // The reason goes to the server log; the viewer gets the page's own sentence, never a raw
+    // database or network message.
+    console.error("[source-of-sales] the portal distributor dashboard failed to load", error);
+    failed = true;
   }
 
   if (data && scope) {
@@ -82,7 +86,7 @@ async function PortalSosContent({
 
   return (
     <EmployeePortalEmptyState
-      message={loadError ?? "No Source of Sales data is available for your scope yet."}
+      message={failed ? DASHBOARD_UNAVAILABLE : "No Source of Sales data is available for your scope yet."}
       title="Source of Sales unavailable"
     />
   );

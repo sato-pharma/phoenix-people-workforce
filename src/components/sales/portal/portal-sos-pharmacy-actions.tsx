@@ -17,6 +17,7 @@ import {
 import type { MonthPaceResult, MonthPaceRow } from "@/lib/sales/sos-month-pace";
 import type { PortalPharmacyActionsPayload } from "@/lib/sales/sos-pharmacy-actions-loader";
 import type { BrickUniverseEntry, CrossSellItem, PharmacyActionItem, PharmacyAreaSummary } from "@/lib/sales/sos-pharmacy-actions";
+import { closingIntro, earlierClosings, paceWords, wholePercentText } from "@/lib/sales/sos-portal-words";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -41,11 +42,6 @@ type ApiResponse = {
 };
 
 type TabKey = "stopped" | "dropping" | "newPharmacies" | "top" | "crossSell" | "untappedBricks";
-
-/** "the 3 closings before the latest" / "the closing before the latest" — the window really compared. */
-function earlierClosings(count: number): string {
-  return count === 1 ? "the closing before the latest" : `the ${count} closings before the latest`;
-}
 
 const TABS: { key: TabKey; label: string; hint: (earlier: number) => string }[] = [
   {
@@ -92,10 +88,9 @@ const BAND_KICKER = "Sales Operations";
 const BAND_TITLE = "Source of Sales";
 
 // Money and months come from the shared sales formatters (target-visuals.tsx), so this page prints
-// them exactly as Sales vs Target and Targets do. The percentage stays whole here on purpose.
-function formatPct(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
+// them exactly as Sales vs Target and Targets do. The percentage stays whole, and it is cut toward
+// zero (sos-portal-words.ts): 99.6% of target never reads "100%", a 29.6% drop never reads "30%".
+const formatPct = wholePercentText;
 
 // A phone tap target is at least 40px; the compact 32px control returns from `md` up.
 const SELECT_CLASS = cn(phxSelectClassName, "min-w-0 max-w-full px-2 text-xs hover:border-orange-300 md:h-8");
@@ -133,13 +128,13 @@ function Tile({
       <span aria-hidden className="absolute inset-x-0 top-0 h-[3px]" style={{ backgroundColor: accent }} />
       <div className="p-3.5 pt-4 sm:p-4 sm:pt-5">
         <div className="flex items-start justify-between gap-2">
-          <p className="min-w-0 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+          <p className="min-w-0 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
           <span className="flex h-7 w-7 shrink-0 items-center justify-center" style={{ backgroundColor: `${accent}14`, color: accent }}>
             <Icon className="h-3.5 w-3.5" />
           </span>
         </div>
         <p className="mt-1 text-3xl font-black tabular-nums leading-none tracking-tight text-slate-900">{value}</p>
-        <p className="mt-2 text-phx-2xs font-semibold text-slate-500">{sub}</p>
+        <p className="mt-2 text-phx-xs font-semibold text-slate-500">{sub}</p>
       </div>
     </button>
   );
@@ -152,13 +147,13 @@ function PharmacyName({ item }: { item: PharmacyActionItem }) {
       <p className="break-words text-sm font-bold text-slate-900">
         {item.name}
         {item.isDirect ? (
-          <span className="ml-2 inline-block border border-orange-300 bg-orange-50/60 px-1.5 py-px align-middle text-phx-2xs font-black uppercase tracking-[0.1em] text-orange-700">
+          <span className="ml-2 inline-block border border-orange-300 bg-orange-50/60 px-1.5 py-px align-middle text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700">
             Direct order
           </span>
         ) : null}
       </p>
-      {place ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-500">{place}</p> : null}
-      {item.address ? <p className="break-words text-phx-2xs text-slate-400">{item.address}</p> : null}
+      {place ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-slate-500">{place}</p> : null}
+      {item.address ? <p className="break-words text-phx-xs text-slate-400">{item.address}</p> : null}
     </div>
   );
 }
@@ -168,7 +163,7 @@ function ChangePill({ change }: { change: number | null }) {
   const down = change < 0;
   return (
     <span
-      className={`inline-flex px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ring-1 ring-inset ${
+      className={`inline-flex px-1.5 py-0.5 text-phx-xs font-black tabular-nums ring-1 ring-inset ${
         down ? "bg-red-50 text-red-600 ring-red-100" : "bg-emerald-50 text-emerald-600 ring-emerald-100"
       }`}
     >
@@ -240,7 +235,7 @@ function ResponsiveTable<T extends { key: string }>({
             <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-2.5">
               {columns.map((column) => (
                 <div key={column.label} className="min-w-0">
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</dt>
+                  <dt className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</dt>
                   <dd className="break-words text-sm font-bold tabular-nums text-slate-900">{column.render(item)}</dd>
                 </div>
               ))}
@@ -264,7 +259,7 @@ function ShowMore({ shown, total, full, onMore }: { shown: number; total: number
   if (shown >= total && !truncated) return null;
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-      <p className="text-phx-2xs font-semibold text-slate-500">
+      <p className="text-phx-xs font-semibold text-slate-500">
         {shown >= total
           ? `Showing the first ${count(total)} of ${count(full)} — the list stops here; narrow it by area to see the rest.`
           : truncated
@@ -283,27 +278,26 @@ function ShowMore({ shown, total, full, onMore }: { shown: number; total: number
 const pharmacyLead: Column<PharmacyActionItem> = { label: "Pharmacy", width: "46%", render: (item) => <PharmacyName item={item} /> };
 
 function PaceBar({ row }: { row: MonthPaceRow }) {
-  if (row.progress == null) return <span className="text-phx-2xs font-semibold text-slate-400">No target</span>;
+  if (row.progress == null) return <span className="text-phx-xs font-semibold text-slate-400">No target</span>;
+  const words = paceWords(row);
   const width = Math.min(100, Math.max(0, row.progress * 100));
   const expected = row.targetValue ? Math.min(100, ((row.expectedByToday ?? 0) / row.targetValue) * 100) : 0;
   return (
     <div className="min-w-0 pt-1">
       <div className="relative h-2.5 w-full bg-slate-100">
         <span className={`absolute inset-y-0 left-0 ${row.onPace ? "bg-emerald-500" : "bg-orange-500"}`} style={{ width: `${width}%` }} />
-        <span
-          className="absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 bg-slate-900"
-          style={{ left: `${expected}%` }}
-          title="Expected by today"
-        />
+        <span aria-hidden className="absolute -bottom-1 -top-1 w-0.5 -translate-x-1/2 bg-slate-900" style={{ left: `${expected}%` }} />
       </div>
-      <p className="mt-1.5 text-phx-2xs font-bold tabular-nums text-slate-600">{`${formatPct(row.progress)} of target`}</p>
+      {/* The mark's meaning is printed, not a hover title: a phone has no hover. */}
+      <p className="mt-1.5 break-words text-phx-xs font-bold tabular-nums text-slate-600">{words.progressText}</p>
+      {words.expectedText ? <p className="break-words text-phx-xs font-semibold tabular-nums text-slate-500">{words.expectedText}</p> : null}
     </div>
   );
 }
 
 function ExpectedLegend() {
   return (
-    <span className="inline-flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+    <span className="inline-flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
       <span aria-hidden className="h-3.5 w-0.5 bg-slate-900" />
       Expected by today
     </span>
@@ -333,7 +327,7 @@ function MonthPace({ pace, area }: { pace: MonthPaceResult; area: string }) {
             {row.targetValue == null ? formatEgp(row.soFarValue) : `${formatEgp(row.soFarValue)} of ${formatEgp(row.targetValue)}`}
           </p>
           {showDirect ? (
-            <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-500">
+            <p className="mt-0.5 break-words text-phx-xs font-semibold text-slate-500">
               {`weekly ${formatEgp(row.weeklyValue)} + direct ${formatEgp(row.directValue)}`}
             </p>
           ) : null}
@@ -344,18 +338,24 @@ function MonthPace({ pace, area }: { pace: MonthPaceResult; area: string }) {
     {
       label: "Pace",
       width: "14%",
-      render: (row) =>
-        row.onPace == null ? (
-          <span className="text-slate-400">—</span>
-        ) : (
-          <span
-            className={`inline-block border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${
-              row.onPace ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-orange-200 bg-orange-50 text-orange-700"
-            }`}
-          >
-            {row.onPace ? "On pace" : "Behind"}
-          </span>
-        ),
+      render: (row) => {
+        const words = paceWords(row);
+        if (words.badge == null) return <span className="text-slate-400">—</span>;
+        return (
+          <div className="min-w-0">
+            <span
+              className={`inline-block border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${
+                row.onPace ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-orange-200 bg-orange-50 text-orange-700"
+              }`}
+            >
+              {words.badge}
+            </span>
+            {words.shortBy != null ? (
+              <p className="mt-1 break-words text-phx-xs font-semibold tabular-nums text-orange-700">{`${formatEgp(words.shortBy)} short of today's mark`}</p>
+            ) : null}
+          </div>
+        );
+      },
     },
   ];
   return (
@@ -416,7 +416,7 @@ function LoadingState({ subtitle }: { subtitle: string }) {
               <div key={index} className="h-10 animate-pulse bg-slate-100" />
             ))}
           </div>
-          <p className="mt-3 text-phx-2xs font-semibold text-slate-500">Reading your published closings…</p>
+          <p className="mt-3 text-phx-xs font-semibold text-slate-500">Reading your published closings…</p>
         </div>
       </SectionCard>
     </div>
@@ -497,7 +497,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
         ) : null}
         {areaOptions.length > 1 ? (
           <label className="flex min-w-0 max-w-full items-center gap-2">
-            <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Area</span>
+            <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.18em] text-slate-500">Area</span>
             <select aria-label="Area" className={SELECT_CLASS} onChange={(event) => selectArea(event.target.value)} value={area}>
               <option value="">All my areas</option>
               {areaOptions.map((option) => (
@@ -542,7 +542,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
           render: (item) => (
             <div className="flex flex-wrap gap-1">
               {item.missingProducts.map((product) => (
-                <span key={product.code} className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-2xs font-bold text-orange-700">
+                <span key={product.code} className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-xs font-bold text-orange-700">
                   {product.name}
                 </span>
               ))}
@@ -652,16 +652,12 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
           ) : (
             <>
               <p className="mb-4 text-sm leading-6 text-slate-600">
-                {actions.priorPeriods.length > 0
-                  ? `${data.line ?? ""} closing for ${formatPeriod(actions.latestPeriod)}, compared with ${actions.priorPeriods
-                      .slice()
-                      .reverse()
-                      .map(formatPeriod)
-                      .join(", ")}. Published closings only.`
-                  : `${data.line ?? ""} closing for ${formatPeriod(actions.latestPeriod)} — the first published month, so nothing to compare with yet.`}
-                {!actions.historyComplete && actions.priorPeriods.length > 0
-                  ? ` Only ${actions.priorPeriods.length} earlier closing${actions.priorPeriods.length === 1 ? " is" : "s are"} published, so "New" may include pharmacies that bought before them.`
-                  : ""}
+                {closingIntro({
+                  line: data.line,
+                  latestPeriod: actions.latestPeriod,
+                  priorPeriods: actions.priorPeriods,
+                  historyComplete: actions.historyComplete,
+                })}
               </p>
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -704,7 +700,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
               </div>
 
               {totals && totals.total > 0 ? (
-                <p className="mt-4 border-l-2 border-orange-200 pl-3 text-phx-2xs font-semibold leading-5 text-slate-500">
+                <p className="mt-4 border-l-2 border-orange-200 pl-3 text-phx-xs font-semibold leading-5 text-slate-500">
                   {`Your ${formatPeriod(actions.latestPeriod)} closing: ${formatEgp(totals.total)} = ${tieBack.join(" + ")}. Only pharmacies are listed — Main Stores and wholesaler shares are split across areas and have no single pharmacy to visit.`}
                 </p>
               ) : null}
@@ -728,7 +724,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   );
                 })}
               </div>
-              <p className="mb-3 mt-3 text-phx-2xs font-semibold text-slate-500">{activeTab.hint(actions.priorPeriods.length)}</p>
+              <p className="mb-3 mt-3 text-phx-xs font-semibold text-slate-500">{activeTab.hint(actions.priorPeriods.length)}</p>
               {renderList()}
             </>
           )}
