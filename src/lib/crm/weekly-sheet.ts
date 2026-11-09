@@ -68,6 +68,8 @@ export type WeeklySheetDistrict = { regionName: string; managerName: string; dis
 export type WeeklySheet = {
   weekStart: string;
   weekEnd: string;
+  /** The viewer's Cairo day: whether the week is over, still running or ahead (`weeklySheetPosition`). */
+  cairoToday: string;
   /** "Sat 1 Nov – Wed 5 Nov". */
   label: string;
   districts: WeeklySheetDistrict[];
@@ -256,5 +258,5 @@ export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string |
       vacantSeats: reps.filter((rep) => rep.vacant).length,
     };
   });
-  return { districts, label: window.label, targetsUncertain: !holidays.complete || leave.unread, weekEnd: window.to, weekStart: window.from };
+  return { cairoToday: viewer.cairoToday, districts, label: window.label, targetsUncertain: !holidays.complete || leave.unread, weekEnd: window.to, weekStart: window.from };
 }

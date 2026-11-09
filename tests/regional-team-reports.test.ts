@@ -427,7 +427,7 @@ function groupedByRegionAndManager() {
     assert.ok(source.includes("title={regionManagerTitle("), `${view} heads each group with its region and manager`);
   }
   const workbook = readFileSync("src/lib/crm/weekly-sheet-workbook.ts", "utf8");
-  assert.equal(workbook.match(/\{ label: "Region", width: 14 \}/g)?.length, 2, "both export sheets carry the region column");
+  assert.equal(workbook.match(/\{ label: "Region", width: 14 \}/g)?.length, 4, "Districts, Reps, Accounts and To look at each carry the region column");
 }
 
 function vacantSeatsKeyCard() {

@@ -441,6 +441,7 @@ function theScreen() {
     "src/components/crm/regional/district-manager-plans-view.tsx",
     "src/components/crm/regional/district-manager-plans-panels.tsx",
     "src/components/crm/regional/weekly-sheet-view.tsx",
+    "src/components/crm/regional/weekly-sheet-panels.tsx",
     "src/components/crm/kpis-chrome.tsx",
     "src/components/employee-portal/dashboards/rm-command-center.tsx",
   ];
