@@ -63,6 +63,10 @@ const SYSTEM_DISTRIBUTORS = [
   // (20261013012846_sos_ibn_sina_lacto_channel_seed.sql) — so without this line the next master import
   // plus a data reset would drop it out of the Upload Sales dropdown.
   { distributor_code: "IS-L", distributor_name: "Ibn Sina-Lacto", normalized_distributor_name: "ibn sina-lacto" },
+  // "EZB" — El Ezaby, the pharmacy chain (owner, 2026-11-10: "add El Ezaby as a distributor"). Not in
+  // the owner's distributor-master file, so it lives here and in its seed migration
+  // (20261109232133_sos_el_ezaby_distributor_seed.sql). Never "EZ": that is the EZ warehouse customer.
+  { distributor_code: "EZB", distributor_name: "El Ezaby", normalized_distributor_name: "el ezaby" },
 ] as const;
 
 // Re-ensure the code-defined system channels exist + are active. Non-fatal: a failure here must never

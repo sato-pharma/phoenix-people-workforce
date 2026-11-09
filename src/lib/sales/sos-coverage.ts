@@ -121,6 +121,11 @@ export const SOURCE_ONBOARDINGS: readonly SourceOnboarding[] = [
     from: "2026-08",
     reason: "El Qema's first month as a source is August 2026 — it supplied nothing before that.",
   },
+  {
+    code: "EZB",
+    from: "2026-10",
+    reason: "El Ezaby was added as a distributor on 2026-11-10 for its October 2026 book — nothing before that.",
+  },
 ];
 
 /** The declared onboarding for this source, or null. Codes are compared folded. */
