@@ -104,8 +104,10 @@ function testSurfaceSourceGuards() {
   assert.doesNotMatch(drafts, /roiPreview\.roiStatus\.replace/, "preview must not print the raw roi_status verbatim");
 
   const engine = readFileSync("src/components/marketing-requests/roi-filter-engine.tsx", "utf8");
-  assert.match(engine, /Actual coverage/, "filter engine must label the coverage column as Actual coverage");
-  assert.match(engine, /Expected \(forecast\)/, "filter engine must surface the forecast (expected) figure");
+  // The report half lives in roi-report-panels.tsx since the premium pass (9 Nov 2026).
+  const panels = readFileSync("src/components/marketing-requests/roi-report-panels.tsx", "utf8");
+  assert.match(panels, /Actual coverage/, "the report must label the coverage column as Actual coverage");
+  assert.match(panels, /<Figure label="Forecast" value=\{roiMoney\(row\.expectedRoiValue\)\} \/>/, "the report must surface the forecast (expected) figure");
   // filter contract intact: the four result-status VALUES must remain referenced (labels only changed)
   for (const value of ["on_track", "behind", "awaiting_data", "no_data"]) {
     assert.match(engine, new RegExp(`\\b${value}\\b`), `filter engine must keep the ${value} status value`);

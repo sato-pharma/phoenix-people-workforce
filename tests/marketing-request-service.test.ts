@@ -1298,6 +1298,9 @@ export async function runMarketingRequestServiceTests() {
   // The ROI workspace was rebuilt as the filter-engine; attribution is now surfaced via the
   // per-row result status + attribution-gap reason rather than a standalone badge.
   const roiWorkspaceSource = source("src/components/marketing-requests/roi-filter-engine.tsx");
+  // The report half moved to its own file in the premium pass (9 Nov 2026); the engine mounts it.
+  const roiPanelsSource = source("src/components/marketing-requests/roi-report-panels.tsx");
+  const roiSummarySource = source("src/lib/marketing-requests/roi-tracking-summary.ts");
   assert.match(roiMigration, /r\.client_code/, "ROI actuals must match Source-of-Sales rows by exact client_code");
   assert.match(roiMigration, /mpdc\.normalized_pharmacy_code/, "ROI actuals must use the request pharmacy distributor code as the customer key");
   assert.doesNotMatch(roiMigration, /fallback_hits/, "ROI actuals must NOT match sales by brick fallback (customer-code-only)");
@@ -1311,7 +1314,8 @@ export async function runMarketingRequestServiceTests() {
   const roiReportServiceSource = source("src/lib/marketing-requests/roi-report-service.ts");
   assert.match(roiReportServiceSource, /attributionQuality/, "ROI report service must return attribution quality");
   assert.match(roiReportServiceSource, /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/, "ROI report must resolve historical (terminated) requesters so region/name/line never go unassigned");
-  assert.match(roiWorkspaceSource, /attributionGapReason|resultStatus/, "ROI tracking UI must surface attribution status");
+  assert.match(roiPanelsSource, /attributionGapReason|resultStatus/, "ROI tracking UI must surface attribution status");
+  assert.match(roiWorkspaceSource, /<RoiReportView /, "the Filter Engine mounts the report panels");
   assert.match(roiReportServiceSource, /ROI_INDEX_CACHE_TTL_MS/, "ROI tracking must cache the scoped index briefly to avoid duplicate rebuilds");
   assert.match(roiReportServiceSource, /function getCachedRoiIndex/, "ROI tracking must centralize scoped index cache access");
   assert.match(
@@ -1325,10 +1329,11 @@ export async function runMarketingRequestServiceTests() {
     "ROI reports must reuse the cached scoped index when visibility allows it",
   );
   assert.match(roiWorkspaceSource, /Promise\.all\(\[filterOptionsPromise, presetsPromise\]\)/, "ROI tracking must fetch filter options and presets in parallel");
-  assert.match(roiWorkspaceSource, /ROI_ROWS_PER_PAGE/, "ROI tracking must paginate the browser row render");
-  assert.match(roiWorkspaceSource, /visibleRows\.map/, "ROI tracking must render visible rows instead of every report row at once");
-  assert.match(roiWorkspaceSource, /React\.memo\(function ReportRow/, "ROI desktop report rows must be memoized");
-  assert.match(roiWorkspaceSource, /React\.memo\(function ReportCard/, "ROI mobile report cards must be memoized");
+  assert.match(roiSummarySource, /export const ROI_ROWS_PER_PAGE = 10;/, "ROI tracking must paginate the browser row render");
+  assert.match(roiPanelsSource, /const visible = sorted\.slice\(page\.start, page\.end\);/, "ROI tracking slices one page of rows");
+  assert.match(roiPanelsSource, /visible\.map/, "ROI tracking must render visible rows instead of every report row at once");
+  assert.match(roiPanelsSource, /React\.memo\(function ReportRow/, "ROI desktop report rows must be memoized");
+  assert.match(roiPanelsSource, /React\.memo\(function ReportCard/, "ROI mobile report cards must be memoized");
 
   // New API routes exist.
   assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");
