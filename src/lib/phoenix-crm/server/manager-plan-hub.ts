@@ -39,7 +39,7 @@ import {
   type ManagerPlanStatus,
   type SingleVisitDayAskStatus,
 } from "@/lib/phoenix-crm/manager-plan-rules";
-import { readsRegionalTeamReports, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, regionalReportWorlds, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadWeekHalfNotes } from "@/lib/phoenix-crm/server/manager-plan-bookings";
 import { loadManagerCustomerRow } from "@/lib/phoenix-crm/server/manager-customers";
 import {
@@ -340,10 +340,11 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
               slot.kind === "with_rep" && slot.repSeatId ? [{ date: day.date, half: slot.half, repName: slot.repName ?? "the rep", repSeatId: slot.repSeatId }] : [],
             ),
           ),
-          isTest: plan.isTest,
           plannerHrId: plan.managerHrId,
           viewer,
           weekStart: plan.weekStart,
+          // The real reps' bookings, and a test week's own beside them (owner, 2026-11-09).
+          worlds: regionalReportWorlds({ isTestPersona: plan.isTest }),
         }).catch((error: unknown) => {
           logError("Phoenix CRM: the chain visit lines of a district manager's week could not be read", {
             error,
