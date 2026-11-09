@@ -257,8 +257,10 @@ function repRow(overrides: Partial<RepHeadwindRow>): RepHeadwindRow {
     agentVersion: null,
     assetTag: null,
     assignmentId: null,
+    awaitingHardwareReport: false,
     batteryCharging: null,
     batteryLevel: null,
+    canAddToCustody: false,
     configurationName: null,
     deviceNumber: "PHX-TAB-0002",
     enrollmentStatus: "Enrolled",
@@ -283,6 +285,7 @@ function repRow(overrides: Partial<RepHeadwindRow>): RepHeadwindRow {
     rustDeskId: null,
     serialNumber: null,
     simNumber: null,
+    tagWarning: null,
     unregistered: false,
     ...overrides,
   };
@@ -2119,7 +2122,7 @@ async function runDeviceActorNameTests() {
   // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE — otherwise every tablet offers "Add to custody",
   // a duplicate custody row one click away.
   const fleetModule = stripComments(source("src/lib/devices/headwind/fleet.ts"));
-  assert.match(fleetModule, /unregistered: !registerError && entry === null,/, "with the register unread, no tablet is called unregistered");
+  assert.match(fleetModule, /const unregistered = !registerError && entry === null;/, "with the register unread, no tablet is called unregistered");
   const fleetUi = stripComments(source("src/components/devices/headwind-fleet.tsx"));
   assert.match(fleetUi, /Custody not readable/, "and the row says the register could not be read");
   // …and so does the opened tablet's custody panel, which used to point at an Add button the row no
@@ -3739,6 +3742,8 @@ function runDashboardTests() {
     latitude: 30.0,
     launcherVersion: "6.48",
     longitude: 31.2,
+    // Matched in the register — a row read while the register was down carries no id and no custody fact.
+    registerDeviceId: "reg-full",
     rustDeskId: "scr-1",
     simNumber: "8801700000001",
   });
