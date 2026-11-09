@@ -416,6 +416,7 @@ function buildEmployeePortalSections({
   showAreaDirectOrdersTab = false,
   showMilestonesTab = false,
   showProductionPlanningTab = false,
+  showPvTrainingEvidenceTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
@@ -517,6 +518,9 @@ function buildEmployeePortalSections({
         // by HR id rather than by role (the R&D Manager and the R&D Supervisor are the two who sit
         // in this shell). The flag carries the named list in; the page re-asks the database.
         ...(showProductionPlanningTab ? [{ href: "/employee-portals/production-planning", label: "Production Planner", icon: FlaskConical }] : []),
+        // PV Training Evidence — the signed PV training sheets, for the QPPV alone (owner, 2026-11-09). The flag
+        // carries her HR id in; the page asks the same helper again.
+        ...(showPvTrainingEvidenceTab ? [{ href: "/employee-portals/pv-training-evidence", label: "PV Training Evidence", icon: FileText }] : []),
       ],
     },
     {

@@ -137,6 +137,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // `showProductionPlanningTab` carrying `isNamedProductionPlanningPerson` in, and the page itself
   // re-asks the database. A matrix permission here would answer "yes" for the whole company.
   { label: "Production", fullLabel: "Production Planner", href: "/employee-portals/production-planning", icon: FlaskConical, flags: ["showProductionPlanningTab"] },
+  // PV Training Evidence — the signed PV training sheets (owner, 2026-11-09: "only in Dr. Sama account").
+  // No `permission`: the door is the QPPV's HR id (canOpenPvTrainingEvidence), carried in by the flag.
+  { label: "PV training", fullLabel: "PV Training Evidence", href: "/employee-portals/pv-training-evidence", icon: FileText, flags: ["showPvTrainingEvidenceTab"] },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"], permission: { resource: "attendance", action: "read" } },
   // Sales Intelligence (Product / Group Product Managers)
   // Sales vs Target leads the sales group: it is the field force's daily dashboard and the only
