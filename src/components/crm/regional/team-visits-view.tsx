@@ -11,6 +11,15 @@ import type { TeamVisitDay, TeamVisitsReport } from "@/lib/phoenix-crm/server/te
  * side by side; on a phone each rep is a card. AM · PM · Pharmacies are always three figures apart.
  */
 
+/**
+ * A district manager's own row wears a colour of its own so he never reads as one of the reps (owner, 2026-11-09:
+ * "highlight managers different color than reps") — a flat blue ground and a 3px blue rule on its left edge. The
+ * reps' rows stay white.
+ */
+const MANAGER_ROW = "border-l-[3px] border-l-sky-700 bg-sky-50";
+const MANAGER_NAME = "text-phx-xs font-black text-sky-900";
+const MANAGER_NOTE = "text-phx-2xs font-semibold text-sky-800";
+
 function dayLabel(iso: string): string {
   return cairoDate(`${iso}T12:00:00Z`);
 }
@@ -91,10 +100,10 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
               </thead>
               <tbody>
                 {district.managerOwn ? (
-                  <tr className="border-b border-slate-100 bg-orange-50/40 align-top">
+                  <tr className={`border-b border-slate-100 align-top ${MANAGER_ROW}`}>
                     <td className="break-words px-4 py-3">
-                      <p className="text-phx-xs font-black text-slate-900">{district.managerName}</p>
-                      <p className="text-phx-2xs text-slate-500">District manager · own visits, counted in no rep&apos;s figure</p>
+                      <p className={MANAGER_NAME}>{district.managerName}</p>
+                      <p className={MANAGER_NOTE}>District manager · own visits, counted in no rep&apos;s figure</p>
                     </td>
                     <td className="px-4 py-3"><DayCell day={district.managerOwn.yesterday} href={null} /></td>
                     <td className="px-4 py-3"><DayCell day={district.managerOwn.today} href={null} /></td>
@@ -114,10 +123,10 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
             </table>
             <div className="grid divide-y divide-slate-100 md:hidden">
               {district.managerOwn ? (
-                <div className="grid gap-2 bg-orange-50/40 p-4">
+                <div className={`grid gap-2 p-4 ${MANAGER_ROW}`}>
                   <div>
-                    <p className="text-phx-xs font-black text-slate-900">{district.managerName}</p>
-                    <p className="text-phx-2xs text-slate-500">District manager · own visits, counted in no rep&apos;s figure</p>
+                    <p className={MANAGER_NAME}>{district.managerName}</p>
+                    <p className={MANAGER_NOTE}>District manager · own visits, counted in no rep&apos;s figure</p>
                   </div>
                   <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Yesterday · {yesterday}</p>
                   <DayCell day={district.managerOwn.yesterday} href={null} />

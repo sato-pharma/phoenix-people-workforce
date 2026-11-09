@@ -5,8 +5,9 @@ import { accountDoctorDepth, doctorMentionsIn, familyOfWord } from "../src/lib/c
 import { weeklySheetResult, weeklySheetTargets, weeklySheetWindow } from "../src/lib/crm/weekly-sheet.ts";
 import { previousMonthKey, regionalTeamReportLinks } from "../src/lib/employee-portal/regional-team-reports.ts";
 import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib/marketing-requests/roi-report-scope.ts";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
-import { chainVisitLine, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
+import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
+import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
+import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
 import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
@@ -82,6 +83,42 @@ function visitsYesterdayAndToday() {
   for (const banned of ["lat", "lon", "distance", "location", "far"]) {
     assert.ok(!select.split(/,\s*/).some((column) => column.includes(banned)), `team visits must not read ${banned}`);
   }
+}
+
+/**
+ * A test account reads the real team beside its own test work (docs/test-accounts.md, "Reports"). Read in the test
+ * world alone, the TEST- login mirroring the Regional Sales Manager showed every rep at zero on Visits — Yesterday and
+ * Today and every district manager's week empty on District Managers' Plans (owner, 2026-11-09); the Weekly Sheet had
+ * the same read.
+ * The district manager's own row wears its own colour, never the reps' white.
+ */
+function teamVisitsTestAccountAndColours() {
+  assert.deepEqual(regionalReportWorlds({ isTestPersona: false }), [false], "a real viewer reads the real world only");
+  assert.deepEqual(regionalReportWorlds({ isTestPersona: true }), [false, true], "a test account reads the real team AND its own test work");
+  const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
+  assert.ok(source.includes("const worlds = regionalReportWorlds(viewer);"), "team visits asks the shared rule");
+  assert.ok(source.includes('.in("is_test", worlds)'), "the visit read takes every world the viewer reads");
+  assert.ok(!source.includes('.eq("is_test", isTest)'), "never the test world alone");
+  assert.ok(source.includes("worlds.map((isTest) => loadManagerOwnVisitRows"), "the managers' own visits read every world too");
+  const sheet = readFileSync("src/lib/crm/weekly-sheet.ts", "utf8");
+  assert.ok(sheet.includes("const worlds = regionalReportWorlds(viewer);") && sheet.includes('.in("is_test", worlds)'), "the Weekly Sheet reads every world");
+  assert.ok(!sheet.includes("viewer.isTestPersona"), "the Weekly Sheet never narrows to the test world alone");
+  const plans = readFileSync("src/lib/phoenix-crm/server/manager-plan-bookings.ts", "utf8");
+  const loader = plans.slice(plans.indexOf("export async function loadDistrictManagersPlans"));
+  assert.ok(loader.includes("const worlds = regionalReportWorlds(viewer);"), "District Managers' Plans asks the shared rule");
+  assert.ok(!loader.slice(0, loader.indexOf("const repSeatById")).includes("viewer.isTestPersona"), "and never reads the test world alone");
+  assert.ok(loader.includes("readDistrictWeeks(managerHrIds, weekStart, worlds)"), "the district managers' weeks read every world");
+  // A seat's real week wins; a test week fills in only where the real one is "No plan".
+  type Week = { state: RepWeekState };
+  const merged = mergeRepWeeks<Week>([
+    new Map<string, Week>([["R1", { state: "sent" }], ["R2", { state: "no_plan" }]]),
+    new Map<string, Week>([["R1", { state: "not_sent" }], ["R2", { state: "sent" }], ["R3", { state: "old_crm" }]]),
+  ]);
+  assert.deepEqual([...merged].map(([seat, week]) => `${seat}:${week.state}`), ["R1:sent", "R2:sent", "R3:old_crm"]);
+  const view = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
+  const managerRow = /const MANAGER_ROW = "([^"]+)"/.exec(view)?.[1] ?? "";
+  assert.ok(managerRow.includes("bg-sky-50") && managerRow.includes("border-l-sky-700"), "a manager's row has a colour of its own");
+  assert.equal(view.split("${MANAGER_ROW}").length - 1, 2, "both the desktop row and the phone card wear it");
 }
 
 function chainVisits() {
@@ -316,6 +353,7 @@ export function runRegionalTeamReportsTests() {
   districtsWithoutPublishedMonth();
   gate();
   visitsYesterdayAndToday();
+  teamVisitsTestAccountAndColours();
   chainVisits();
   commentDoctors();
   weeklySheet();
