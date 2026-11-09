@@ -1,123 +1,171 @@
-import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { KpiSection } from "@/components/crm/kpis-chrome";
-import { DOCTOR_FAMILY_LABEL, DOCTORS_PER_SPECIALITY } from "@/lib/crm/account-doctor-notes";
-import { addDaysIso } from "@/lib/crm/dates";
-import { weeklySheetResult, type WeeklySheet, type WeeklySheetAccount, type WeeklySheetRep } from "@/lib/crm/weekly-sheet";
+import {
+  WeeklySheetAccountsPanel,
+  WeeklySheetAttentionPanel,
+  WeeklySheetStandPanel,
+  WeeklySheetTiles,
+  WeeklySheetToolbar,
+} from "@/components/crm/regional/weekly-sheet-panels";
+import { DOCTOR_FAMILY_LABEL } from "@/lib/crm/account-doctor-notes";
+import type { WeeklySheet, WeeklySheetAccount, WeeklySheetRep } from "@/lib/crm/weekly-sheet";
+import {
+  WEEKLY_SHEET_ACCOUNT_STATE_LABEL,
+  WEEKLY_SHEET_FAMILIES,
+  WEEKLY_SHEET_NO_DOCTORS,
+  WEEKLY_SHEET_VERDICT_TONE,
+  filterWeeklySheetDistricts,
+  weeklySheetAccountShortLine,
+  weeklySheetAccountState,
+  weeklySheetAccountsInOrder,
+  weeklySheetAccountsWord,
+  weeklySheetDepthMet,
+  weeklySheetDistrictKey,
+  weeklySheetDistrictLine,
+  weeklySheetGapWords,
+  weeklySheetPosition,
+  weeklySheetRepAnchor,
+  weeklySheetRepDaysLine,
+  weeklySheetRepVerdicts,
+  weeklySheetShowEmptyLine,
+  weeklySheetTotals,
+  weeklySheetVerdict,
+  weeklySheetVisitsWord,
+  weeklySheetWaitingLine,
+  type WeeklySheetAccountState,
+  type WeeklySheetFamily,
+  type WeeklySheetPosition,
+  type WeeklySheetShow,
+  type WeeklySheetVerdict,
+} from "@/lib/crm/weekly-sheet-summary";
 import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 
 /**
- * The Weekly Sheet, the Regional Sales Manager's screen. Server-rendered; each rep's accounts open under the rep
- * (a plain disclosure, no client state). Desktop shows tables, a phone shows cards. "Met" and "Below" are words,
- * never a colour alone; a comment naming no doctor says so instead of a zero.
+ * The Weekly Sheet, the Regional Sales Manager's screen (owner, 2026-11-08; the premium pass, 9 Nov 2026).
+ * Server-rendered. The panels on top read the whole team; then one section per region and district manager, a row
+ * per rep, and each rep's AM accounts opening under the row (a plain disclosure, no client state). Desktop shows
+ * tables, a phone shows cards.
+ *
+ * Every figure and every word of a grade comes from `weekly-sheet-summary.ts`. "Met" and "Below" are words, never a
+ * colour alone; a week still running says "So far", never "Below"; a comment naming no doctor says so instead of a
+ * zero; a rep with no AM account offers nothing to open.
  */
 
-function Result({ met }: { met: boolean }) {
-  return met ? (
-    <span className="border border-emerald-300 bg-emerald-50 px-1.5 py-px text-phx-xs font-black uppercase tracking-wide text-emerald-800">Met</span>
-  ) : (
-    <span className="border border-amber-300 bg-amber-50 px-1.5 py-px text-phx-xs font-black uppercase tracking-wide text-amber-800">Below</span>
-  );
+function Verdict({ verdict }: { verdict: WeeklySheetVerdict }) {
+  return <span className={`border px-1.5 py-px text-phx-xs font-black uppercase tracking-wide ${WEEKLY_SHEET_VERDICT_TONE[verdict]}`}>{verdict}</span>;
 }
 
-function Figure({ value, target, vacant }: { value: number; target: number; vacant: boolean }) {
-  const result = weeklySheetResult(value, target, vacant);
-  if (result === "Seat is vacant") {
-    return (
-      <span className="inline-flex flex-wrap items-center gap-1.5">
-        <span className="text-phx-md font-black tabular-nums text-slate-900">{value}</span>
-        <span className="text-phx-xs font-semibold text-slate-500">No target · seat is vacant</span>
-      </span>
-    );
-  }
+const ACCOUNT_STATE_TONE: Record<WeeklySheetAccountState, string> = {
+  met: "border-emerald-300 bg-emerald-50 text-emerald-800",
+  no_doctors: "border-slate-200 bg-slate-50 text-slate-500",
+  short: "border-amber-300 bg-amber-50 text-amber-800",
+};
+
+function AccountState({ account }: { account: WeeklySheetAccount }) {
+  const state = weeklySheetAccountState(account.depth);
+  return <span className={`border px-1.5 py-px text-phx-xs font-black uppercase tracking-wide ${ACCOUNT_STATE_TONE[state]}`}>{WEEKLY_SHEET_ACCOUNT_STATE_LABEL[state]}</span>;
+}
+
+/** One figure against its target: the count, the grade in words, and the gap when there is one. */
+function Figure({ position, target, vacant, value }: { position: WeeklySheetPosition; target: number; vacant: boolean; value: number }) {
+  const verdict = weeklySheetVerdict(value, target, vacant, position);
+  const gap = weeklySheetGapWords(value, target, verdict);
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span className="text-phx-md font-black tabular-nums text-slate-900">
-        {value} of {target}
+    <span className="grid gap-0.5">
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <span className="text-phx-md font-black tabular-nums text-slate-900">{vacant || target <= 0 ? value : `${value} of ${target}`}</span>
+        <Verdict verdict={verdict} />
       </span>
-      <Result met={result === "Met"} />
+      {gap ? <span className={`text-phx-xs font-semibold ${verdict === "Below" ? "text-amber-800" : "text-slate-500"}`}>{gap}</span> : null}
     </span>
   );
 }
 
-function Depth({ account, family }: { account: WeeklySheetAccount; family: "pediatrics" | "internal" | "ent" }) {
+function Depth({ account, family }: { account: WeeklySheetAccount; family: WeeklySheetFamily }) {
   const value = account.depth[family];
-  return <span className={`tabular-nums ${value >= DOCTORS_PER_SPECIALITY ? "font-black text-slate-900" : "font-semibold text-amber-800"}`}>{value}</span>;
+  return <span className={`tabular-nums ${weeklySheetDepthMet(value) ? "font-black text-slate-900" : "font-semibold text-amber-800"}`}>{value}</span>;
 }
 
 function Accounts({ rep }: { rep: WeeklySheetRep }) {
-  if (rep.accounts.length === 0) return <p className="px-4 py-3 text-phx-sm text-slate-500">No AM accounts visited this week.</p>;
+  const accounts = weeklySheetAccountsInOrder(rep.accounts);
   return (
     <>
       <table className="hidden w-full table-fixed text-left md:table">
         <colgroup>
-          <col className="w-[34%]" />
+          <col className="w-[30%]" />
           <col className="w-[8%]" />
-          <col className="w-[13%]" />
+          <col className="w-[12%]" />
           <col className="w-[17%]" />
-          <col className="w-[10%]" />
-          <col className="w-[18%]" />
+          <col className="w-[8%]" />
+          <col className="w-[25%]" />
         </colgroup>
         <thead>
           <tr className="border-y border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
             <th className="px-4 py-2">Account</th>
             <th className="px-2 py-2">Visits</th>
-            <th className="px-2 py-2">{DOCTOR_FAMILY_LABEL.pediatrics}</th>
-            <th className="px-2 py-2">{DOCTOR_FAMILY_LABEL.internal}</th>
-            <th className="px-2 py-2">{DOCTOR_FAMILY_LABEL.ent}</th>
+            {WEEKLY_SHEET_FAMILIES.map((family) => (
+              <th className="px-2 py-2" key={family}>
+                {DOCTOR_FAMILY_LABEL[family]}
+              </th>
+            ))}
             <th className="px-4 py-2">3 of each</th>
           </tr>
         </thead>
         <tbody>
-          {rep.accounts.map((account) => (
+          {accounts.map((account) => (
             <tr className="border-b border-slate-100 align-top text-phx-md last:border-b-0" key={account.customerId}>
               <td className="break-words px-4 py-2 font-semibold text-slate-900" dir="auto">
                 {account.name}
               </td>
               <td className="px-2 py-2 tabular-nums">{account.visits}</td>
               {account.depth.noDoctorsWritten ? (
-                <td className="px-2 py-2 text-phx-sm font-semibold text-slate-500" colSpan={3}>
-                  No doctors written in the comment
+                <td className="px-2 py-2 text-phx-sm font-semibold text-slate-500" colSpan={4}>
+                  {WEEKLY_SHEET_NO_DOCTORS}
                 </td>
               ) : (
                 <>
-                  <td className="px-2 py-2">
-                    <Depth account={account} family="pediatrics" />
-                  </td>
-                  <td className="px-2 py-2">
-                    <Depth account={account} family="internal" />
-                  </td>
-                  <td className="px-2 py-2">
-                    <Depth account={account} family="ent" />
+                  {WEEKLY_SHEET_FAMILIES.map((family) => (
+                    <td className="px-2 py-2" key={family}>
+                      <Depth account={account} family={family} />
+                    </td>
+                  ))}
+                  <td className="grid gap-1 px-4 py-2">
+                    <span>
+                      <AccountState account={account} />
+                    </span>
+                    {weeklySheetAccountShortLine(account.depth) ? <span className="break-words text-phx-sm text-slate-600">{weeklySheetAccountShortLine(account.depth)}</span> : null}
                   </td>
                 </>
               )}
-              <td className="px-4 py-2">
-                <Result met={account.depth.met} />
-              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="grid divide-y divide-slate-100 border-t border-slate-200 md:hidden">
-        {rep.accounts.map((account) => (
+        {accounts.map((account) => (
           <div className="grid gap-1 px-4 py-3" key={account.customerId}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="min-w-0 break-words text-phx-md font-black text-slate-900" dir="auto">
                 {account.name}
               </p>
-              <Result met={account.depth.met} />
+              <AccountState account={account} />
             </div>
-            <p className="text-phx-sm text-slate-600">
-              {account.visits} {account.visits === 1 ? "visit" : "visits"}
-            </p>
+            <p className="text-phx-sm text-slate-600">{weeklySheetVisitsWord(account.visits)}</p>
             {account.depth.noDoctorsWritten ? (
-              <p className="text-phx-sm font-semibold text-slate-500">No doctors written in the comment</p>
+              <p className="text-phx-sm font-semibold text-slate-500">{WEEKLY_SHEET_NO_DOCTORS}</p>
             ) : (
-              <p className="text-phx-sm text-slate-700">
-                {DOCTOR_FAMILY_LABEL.pediatrics} <Depth account={account} family="pediatrics" /> · {DOCTOR_FAMILY_LABEL.internal}{" "}
-                <Depth account={account} family="internal" /> · {DOCTOR_FAMILY_LABEL.ent} <Depth account={account} family="ent" />
-              </p>
+              <>
+                <p className="text-phx-sm text-slate-700">
+                  {WEEKLY_SHEET_FAMILIES.map((family, index) => (
+                    <span key={family}>
+                      {index > 0 ? " · " : ""}
+                      {DOCTOR_FAMILY_LABEL[family]} <Depth account={account} family={family} />
+                    </span>
+                  ))}
+                </p>
+                {weeklySheetAccountShortLine(account.depth) ? <p className="break-words text-phx-sm text-slate-600">{weeklySheetAccountShortLine(account.depth)}</p> : null}
+              </>
             )}
           </div>
         ))}
@@ -126,95 +174,122 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
   );
 }
 
-function RepBlock({ rep }: { rep: WeeklySheetRep }) {
+const REP_GRID = "md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)]";
+
+function MobileLabel({ children }: { children: ReactNode }) {
+  return <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">{children}</p>;
+}
+
+/** The five cells of a rep's row — the same on a row that opens and on one with nothing to open. */
+function RepCells({ position, rep, toggle }: { position: WeeklySheetPosition; rep: WeeklySheetRep; toggle: ReactNode }) {
+  const verdicts = weeklySheetRepVerdicts(rep, position);
+  const waiting = weeklySheetWaitingLine(rep.waiting);
   return (
-    <details className="group border-b border-slate-100 last:border-b-0">
-      <summary className="grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] md:items-start md:gap-3">
-        <div className="min-w-0">
-          <p className="break-words text-phx-md font-black text-slate-900">{rep.person}</p>
-          <p className="break-words text-phx-sm text-slate-500">
-            {rep.vacant ? (
-              rep.territory
-            ) : (
-              <>
-                {rep.territory} · {rep.workingDays} working {rep.workingDays === 1 ? "day" : "days"}
-                {rep.leaveDays > 0 ? ` · ${rep.leaveDays} on leave` : ""}
-              </>
-            )}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">PM</p>
-          <Figure target={rep.pmTarget} vacant={rep.vacant} value={rep.pm} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">AM</p>
-          <Figure target={rep.amTarget} vacant={rep.vacant} value={rep.am} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Pharmacies</p>
-          <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
-          {rep.waiting > 0 ? <p className="text-phx-xs font-semibold text-amber-700">{rep.waiting} waiting for validation</p> : null}
-        </div>
-        <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Accounts with 3 of each</p>
-          <p className="text-phx-md font-black tabular-nums text-slate-900">
-            {rep.accountsMet} of {rep.accounts.length}
-          </p>
-          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show accounts</p>
-          <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
-        </div>
+    <>
+      <div className="min-w-0">
+        <p className={`break-words text-phx-md font-black ${rep.vacant ? "text-slate-500" : "text-slate-900"}`}>{rep.person}</p>
+        <p className="break-words text-phx-sm text-slate-500">{weeklySheetRepDaysLine(rep)}</p>
+        {!rep.vacant && verdicts.pm === "No working day" ? <p className="text-phx-sm font-semibold text-slate-500">No working day this week, so nothing is graded</p> : null}
+      </div>
+      <div className="min-w-0">
+        <MobileLabel>PM</MobileLabel>
+        <Figure position={position} target={rep.pmTarget} vacant={rep.vacant} value={rep.pm} />
+      </div>
+      <div className="min-w-0">
+        <MobileLabel>AM</MobileLabel>
+        <Figure position={position} target={rep.amTarget} vacant={rep.vacant} value={rep.am} />
+      </div>
+      <div className="min-w-0">
+        <MobileLabel>Pharmacies</MobileLabel>
+        <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
+        {waiting ? <p className="text-phx-xs font-semibold text-amber-700">{waiting}</p> : null}
+      </div>
+      <div className="min-w-0">
+        <MobileLabel>Accounts with 3 of each</MobileLabel>
+        <p className="text-phx-md font-black tabular-nums text-slate-900">
+          {rep.accountsMet} of {rep.accounts.length}
+        </p>
+        {toggle}
+      </div>
+    </>
+  );
+}
+
+function RepBlock({ position, rep }: { position: WeeklySheetPosition; rep: WeeklySheetRep }) {
+  const anchor = weeklySheetRepAnchor(rep);
+  if (rep.accounts.length === 0) {
+    return (
+      <div className={`grid scroll-mt-4 gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0 md:items-start md:gap-3 ${REP_GRID} ${rep.vacant ? "bg-slate-50" : ""}`} id={anchor}>
+        <RepCells position={position} rep={rep} toggle={<p className="text-phx-xs font-semibold text-slate-500">No AM account this week</p>} />
+      </div>
+    );
+  }
+  return (
+    <details className="group scroll-mt-4 border-b border-slate-100 last:border-b-0" id={anchor}>
+      <summary className={`grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50 md:items-start md:gap-3 ${REP_GRID}`}>
+        <RepCells
+          position={position}
+          rep={rep}
+          toggle={
+            <>
+              <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show {weeklySheetAccountsWord(rep.accounts.length)}</p>
+              <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
+            </>
+          }
+        />
       </summary>
       <Accounts rep={rep} />
     </details>
   );
 }
 
-export function WeeklySheetView({ sheet }: { sheet: WeeklySheet }) {
-  const linkClass = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
+export function WeeklySheetView({ sheet, show = "all" }: { sheet: WeeklySheet; show?: WeeklySheetShow }) {
+  const position = weeklySheetPosition(sheet);
+  const districts = filterWeeklySheetDistricts(sheet, show);
+  // A heading's caption and figures are the whole district's, whatever the filter lists under it.
+  const wholeDistrict = new Map(sheet.districts.map((district) => [weeklySheetDistrictKey(district), district]));
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-4 py-3">
-        <div>
-          <p className="text-phx-md font-black text-slate-900">Week · {sheet.label}</p>
-          <p className="text-phx-sm text-slate-500">
-            Target per working day: 10 PM and 2 AM — 50 PM and 10 AM in a full week. Leave and national holidays come out of the target.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link className={linkClass} href={`/employee-portals/weekly-sheet?week=${addDaysIso(sheet.weekStart, -7)}`}>
-            Previous week
-          </Link>
-          <Link className={linkClass} href={`/employee-portals/weekly-sheet?week=${addDaysIso(sheet.weekStart, 7)}`}>
-            Next week
-          </Link>
-          <a className={linkClass} href={`/api/crm/weekly-sheet/export?week=${sheet.weekStart}`}>
-            Download Excel
-          </a>
-        </div>
-      </div>
+      <WeeklySheetToolbar sheet={sheet} show={show} />
       {sheet.targetsUncertain ? (
         <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
           The holiday calendar or approved leave could not be read just now, so a target may be one day too high.
         </p>
       ) : null}
-      {sheet.districts.length === 0 ? <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No reps under your district managers yet.</p> : null}
-      {sheet.districts.map((district) => (
-        <div className="border border-slate-200" key={`${district.regionName}|${district.districtName}|${district.managerName}`}>
-          <KpiSection description={regionGroupCaption(district.reps.length, district.vacantSeats)} title={regionManagerTitle(district.regionName, district.managerName)}>
-            <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid">
-              <span>Rep</span>
-              <span>PM</span>
-              <span>AM</span>
-              <span>Pharmacies</span>
-              <span>Accounts with 3 of each</span>
-            </div>
-            {district.reps.map((rep) => (
-              <RepBlock key={rep.seatId} rep={rep} />
-            ))}
-          </KpiSection>
-        </div>
-      ))}
+      {sheet.districts.length === 0 ? (
+        <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">{weeklySheetShowEmptyLine("all", position)}</p>
+      ) : (
+        <>
+          <WeeklySheetTiles sheet={sheet} />
+          <WeeklySheetStandPanel sheet={sheet} />
+          <WeeklySheetAttentionPanel sheet={sheet} show={show} />
+          <WeeklySheetAccountsPanel sheet={sheet} />
+          {districts.length === 0 ? <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">{weeklySheetShowEmptyLine(show, position)}</p> : null}
+        </>
+      )}
+      {districts.map((district) => {
+        const whole = wholeDistrict.get(weeklySheetDistrictKey(district)) ?? district;
+        const totals = weeklySheetTotals(whole.reps, position);
+        return (
+          <div className="border border-slate-200" key={weeklySheetDistrictKey(district)}>
+            <KpiSection
+              description={`${regionGroupCaption(whole.reps.length, whole.vacantSeats)} · ${weeklySheetDistrictLine(totals, position)}`}
+              title={regionManagerTitle(district.regionName, district.managerName)}
+            >
+              <div className={`hidden gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid ${REP_GRID}`}>
+                <span>Rep</span>
+                <span>PM</span>
+                <span>AM</span>
+                <span>Pharmacies</span>
+                <span>Accounts with 3 of each</span>
+              </div>
+              {district.reps.map((rep) => (
+                <RepBlock key={rep.seatId} position={position} rep={rep} />
+              ))}
+            </KpiSection>
+          </div>
+        );
+      })}
     </div>
   );
 }

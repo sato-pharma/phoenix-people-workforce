@@ -6,7 +6,7 @@ paths:
   - "app/api/phoenix-crm/reports/**"
   - "tests/phoenix-crm-{brick-coverage-report,daily-digest,daily-plan-report,exceptions,insight-reports,report-comparison,reports-export,wave2-reports}*"
   - "src/lib/phoenix-crm/server/team-visits.ts"
-  - "src/lib/crm/{weekly-sheet,weekly-sheet-workbook,account-doctor-notes}.ts"
+  - "src/lib/crm/{weekly-sheet,weekly-sheet-summary,weekly-sheet-workbook,account-doctor-notes}.ts"
   - "src/lib/employee-portal/regional-team-reports.ts"
   - "src/components/crm/regional/**"
   - "src/lib/phoenix-crm/region-manager-groups.ts"
@@ -19,6 +19,7 @@ paths:
   - "src/lib/phoenix-crm/server/{district-plans-summary,district-plans-workbook}.ts"
   - "app/api/crm/district-manager-plans/**"
   - "tests/district-manager-plans-premium*"
+  - "tests/weekly-sheet-premium*"
 ---
 
 # Module memory — Phoenix CRM — the reports, the boards and how every figure is counted
@@ -60,6 +61,7 @@ This file is loaded because this session opened a file of this module (or the mo
 - 🔴 **EVERY PAGE A REP OPENS ON STARTS WITH "BACK", TO THE PAGE HE WAS PRESSED ON** (owner, 2026-11-09: "when I press on a rep I need a back button to be able to return back to the previous page"). `BackToPreviousPage` (`src/components/crm/back-to-previous-page.tsx`) goes back in the browser's history when the entry before is a page of this app (`previousEntryIsThisApp`, the Navigation API — never `document.referrer`, which stays the first page loaded), and otherwise opens a fixed in-app fallback. On the rep's day, the manager's day, a rep's call-rate visits, Employee 360 and Coverage / Frequency with a rep open; the Reps List boards keep "Back to all reps". Pinned in `tests/regional-team-reports.test.ts` (`backToThePreviousPage`).
 - 🔴 **VISITS — YESTERDAY AND TODAY READS ITS FIGURES FROM `team-visits-summary.ts` ALONE, ON THE 02:00 VISIT DAY** (premium pass, owner, 2026-11-09). The panels, the rows and the Excel file (`team-visits-workbook.ts`, `/api/crm/team-visits/export`, RSM gate + rate limit + audit, always every rep) read one arithmetic: doctor visits are AM + PM, pharmacies and waiting visits apart; a vacant seat is a light-coloured row that says it is vacant, never a rep "with no visits" or a row of zeros; the hours are visit-day hours, so 01:30 is the evening's; "today against yesterday" cuts yesterday at the same visit-day minute and only inside its own visit day, and is not printed once the day has closed; the `show`/`day`/`sort` filter narrows and orders rows, never a figure; a Thursday or Friday on the screen prints the not-a-field-day notice (`isCallRateWorkingDay`), never a silent row of zeros. Account: `docs/team-visits-report.md`. Pinned by `tests/team-visits-premium.test.ts`.
 - 🔴 **DISTRICT MANAGERS' PLANS READS ITS FIGURES FROM `district-plans-summary.ts` ALONE, AND A SENT WEEK WHOSE THURSDAY PASSED UNDECIDED IS ENDED** (premium pass, owner, 2026-11-09). The loader asks `managerPlanStatusLabel(plan.status, { cairoToday, weekStart })` — never the bare status, which read a re-sent week of 31 October as "Waiting for approval" on 9 November — and the panels count it as ended, never waiting. The tiles, bars, week at a glance, weeks to look at, reps no manager is with and the Excel file (`district-plans-workbook.ts`, `/api/crm/district-manager-plans/export`, RSM gate + rate limit + audit `crm_district_plans_export`, always every seat) read one arithmetic: a vacant district manager seat is in neither sent nor not sent and wears the lightest colour; a draft is never shown; a chain visit is a neutral list, never a reason to look; every manager kind's bookings count for "a manager is with the rep"; the district managers' own approved leave reads "On leave" on the day; the `show` filter narrows sections, never a figure. Account: `docs/district-manager-plans-report.md`. Pinned by `tests/district-manager-plans-premium.test.ts`.
+- 🔴 **THE WEEKLY SHEET READS ITS FIGURES FROM `weekly-sheet-summary.ts` ALONE, AND A WEEK STILL RUNNING IS NEVER "BELOW"** (premium pass, owner, 2026-11-09). The toolbar, tiles, bars, reps to look at, the district headings, the rows and the Excel file (`weekly-sheet-workbook.ts`, five sheets, always every seat) read one arithmetic: a finished week grades Met or Below, a running week reads "So far", a week not started "Not started", a week of leave "No working day" (never 0 of 0 Met), a vacant seat is counted apart and in no grade; the targets are said once, built from the rule's constants; Next week opens only once it has begun; short accounts come first with what each needs; the `show` filter narrows rows, never a figure or a district heading. Account: `docs/weekly-sheet-report.md`. Pinned by `tests/weekly-sheet-premium.test.ts`.
 
 <!-- module-memory:rules:end -->
 
