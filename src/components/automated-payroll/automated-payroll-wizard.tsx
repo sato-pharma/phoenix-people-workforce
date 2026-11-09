@@ -1535,7 +1535,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <div className="flex flex-col gap-4">
                 {activeStep === "p1_held_release" || activeStep === "p2_held_release" ? (
                   <HeldEnteredPanel
-                    key={`${run.id}-held-entered`}
+                    key={`${run.id}-held-entered-${heldEnteredVersion}`}
                     runId={run.id}
                     locked={stepLocked(activeStep)}
                     stepDirty={activeStepDirty}
@@ -1550,6 +1550,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                   locked={stepLocked(activeStep)}
                   onConfirmed={() => void onStepConfirmed(activeStep)}
                   onDirtyChange={setActiveStepDirty}
+                  onHeldEntered={() => setHeldEnteredVersion((version) => version + 1)}
                 />
               </div>
             ) : (
