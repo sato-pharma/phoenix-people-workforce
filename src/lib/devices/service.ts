@@ -28,6 +28,7 @@ import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 import {
   DeviceIdentityCorrectionError,
   describeIdentityChange,
+  findRegistrationClash,
   planIdentityCorrection,
   type IdentityEntry,
 } from "@/lib/devices/device-identity";
@@ -36,6 +37,7 @@ import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { DEVICE_STATUS_LABEL } from "./types";
 import type {
   AssignableEmployee,
   AssignmentStatus,
@@ -316,11 +318,15 @@ async function resolveHolders(hrIds: string[]): Promise<Map<string, HolderFacts>
    */
   const missed = wanted.filter((id) => !holders.has(id));
   for (const hrId of missed) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("employees")
       .select("hr_id,full_name,nickname,job_title,employment_status,last_working_date")
       .ilike("hr_id", hrId)
       .limit(1);
+    // RAISED, never skipped. A holder this pass fails to read is left with no directory row, and a
+    // holder with no row counts as a LEAVER (`computeDeviceHolderFlags`) — so a failed read used to
+    // put a current employee on the leavers list, value and all, on the one screen built to find them.
+    if (error) throw new Error(deviceErrorMessage(error));
     const row = (data ?? [])[0] as
       | {
           hr_id: string;
@@ -850,14 +856,96 @@ function trimmed(value: string | null | undefined): string | null {
 }
 
 /**
+ * Whether a NEW custody may name this person — the refusal sentence, or null when it may.
+ *
+ * `phx_device_issue` checks only that the hr_id exists, and the register's person picker leaves
+ * leavers out, so the page could not choose one — but the route takes any hr_id it is sent, and
+ * `phx_device_reconcile` took a leaver too. A new signed receipt for somebody who has already left
+ * is a handover that cannot have happened. The ONE door that may name a leaver is the bulk import,
+ * which records custody that already exists (a device still out with somebody who has gone — the
+ * exposure the register is built to show), so it passes `allowLeaver`. A person with no directory row
+ * is left to the database, which refuses them with its own "No employee matches" sentence.
+ */
+export function holderRefusal(
+  holder: Pick<HolderFacts, "state" | "name" | "employmentStatus"> | undefined,
+  action: "issue" | "reconcile",
+): string | null {
+  if (!holder || holder.state !== "left") return null;
+  const who = holder.name ?? "This employee";
+  const status = String(holder.employmentStatus ?? "left").trim().toLowerCase() || "left";
+  return action === "issue"
+    ? `Issuing a device to ${who} is refused: they have left the company (${status}). A new handover goes to a current employee. A device a leaver still holds is recorded through the bulk import, which flags it at once.`
+    : `Reconciling a reservation to ${who} is refused: they have left the company (${status}). Revoke the reservation, or reconcile it to the person who actually started.`;
+}
+
+/**
+ * Why a device may not be marked from its current state — or null when it may.
+ *
+ * A RESERVED device carries a live reservation row (`device_assignments.status = 'reserved'`), and
+ * `phx_device_mark` never looked at it: "Back in stock" left the reservation live on an in-stock
+ * device, which then could be neither issued (the one-live-claim index refuses it) nor revoked
+ * (`phx_device_revoke` only resets a device still `reserved`); "Lost" or "In repair" left a reservation
+ * that `phx_device_reconcile` would later turn into a signed custody for a machine nobody could hand
+ * over. A reservation is ended first — revoked, or reconciled — and only then is the device's state
+ * changed.
+ */
+export function markRefusal(device: { status: DeviceStatus; assetTag: string }): string | null {
+  if (device.status !== "reserved") return null;
+  return `Marking ${device.assetTag} is refused while it is reserved for somebody. Revoke the reservation (or reconcile it on day one) from the tablet's custody panel first, then change its state.`;
+}
+
+/**
+ * Why a reservation may not be reconciled into a signed custody — or null when it may.
+ *
+ * `phx_device_reconcile` moved the device to `assigned` whatever state it was in. A reserved tablet
+ * marked lost, stolen, retired or in repair in the meantime would come out of reconcile as a signed
+ * custody, with its value frozen under البند (9), for a machine that was never handed over.
+ */
+export function reconcileRefusal(device: { status: DeviceStatus; assetTag: string } | null): string | null {
+  if (!device) return "Reconciling this reservation is refused: its device is no longer in the custody register.";
+  if (device.status === "reserved") return null;
+  return `Reconciling ${device.assetTag} is refused: the device is ${DEVICE_STATUS_LABEL[device.status].toLowerCase()} now, not reserved, so it cannot be handed over. Revoke the reservation and deal with the device first.`;
+}
+
+/**
+ * The HTTP status a register error answers with: 400 when it is a custody rule refusing the caller,
+ * 500 otherwise.
+ *
+ * Every custody rule raises rather than returns — one holder per device, a settlement capped at
+ * البند (10)'s agreed value, a damaged return that must say what was damaged — and each sentence is
+ * written for the person who pressed the button. "That custody record is closed" (pricing a closed
+ * handover) and "That custody record no longer exists" were missing here, so a caller's own mistake
+ * answered 500 and read as the server failing.
+ */
+export function deviceRegisterErrorStatus(message: string): 400 | 500 {
+  return /^(Device|No employee|A device|A return|A write-off|This custody|That custody record|Unknown device|Issuing|Marking|A settlement|Reserving|A reservation|Only a reservation|Revoking|Reconciling)\b/.test(
+    message,
+  )
+    ? 400
+    : 500;
+}
+
+/**
+ * The year a declaration number is counted in: the HANDOVER's year when the handover carries a date,
+ * otherwise this year in Cairo.
+ *
+ * The test was once written `/^d{4}/` — a literal "dddd" — so it never matched a date, and a handover
+ * recorded on 30 December and saved on 2 January was numbered in the new year's series. A signed
+ * receipt then carried a number from a year it was not signed in.
+ */
+export function declarationYear(issuedOn: string | null | undefined, now: Date = new Date()): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(String(issuedOn ?? "").trim())
+    ? String(issuedOn).trim().slice(0, 4)
+    : new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric" }).format(now);
+}
+
+/**
  * The next declaration number (رقم الإقرار) when the handover form leaves it blank — owner, 2026-10-11:
  * "automate adding the declaration number, I have none". Format `DEC-<year>-<4 digits>`, counting up
  * per year from the highest one already issued. A number typed by hand is always kept as typed.
  */
 async function nextDeclarationNo(issuedOn: string | null | undefined): Promise<string> {
-  const year = /^d{4}/.test(issuedOn ?? "")
-    ? String(issuedOn).slice(0, 4)
-    : new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
+  const year = declarationYear(issuedOn);
   const prefix = `DEC-${year}-`;
   const { data, error } = await getSupabaseAdmin()
     .from("device_assignments")
@@ -885,6 +973,14 @@ export async function createDevice(input: CreateDeviceInput, actor: string): Pro
     );
   }
 
+  // Compared on letters and digits, not on the text the unique indexes see — see
+  // `findRegistrationClash`. Read whole, page by page, every time: a first page would miss a repeat.
+  const clash = findRegistrationClash(
+    { assetTag: input.assetTag, serialNumber: serial, imei },
+    await readRegisterIdentities(),
+  );
+  if (clash) throw new Error(clash);
+
   const { data, error } = await supabase
     .from("company_devices")
     .insert({
@@ -909,7 +1005,16 @@ export async function createDevice(input: CreateDeviceInput, actor: string): Pro
     })
     .select("id")
     .single();
-  if (error) throw new Error(deviceErrorMessage(error));
+  if (error) {
+    // Another writer saved the same tag, serial or IMEI between the check above and this insert.
+    // Said as a sentence (and answered 400), never as the constraint's own name.
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error(
+        "A device with this asset tag, serial number or IMEI was added to the register a moment ago by somebody else. Reload the register and check before adding it again.",
+      );
+    }
+    throw new Error(deviceErrorMessage(error));
+  }
 
   const deviceId = String((data as { id: string }).id);
   await writeRequiredAuditLog({
@@ -922,8 +1027,22 @@ export async function createDevice(input: CreateDeviceInput, actor: string): Pro
   return deviceId;
 }
 
-export async function issueDevice(input: IssueDeviceInput, actor: string): Promise<string> {
+/**
+ * `allowLeaver` is for the bulk import ALONE, which records custody that already exists — see
+ * `holderRefusal`. Every other caller issues to a current employee or is refused before anything is
+ * written.
+ */
+export async function issueDevice(
+  input: IssueDeviceInput,
+  actor: string,
+  options: { allowLeaver?: boolean } = {},
+): Promise<string> {
   const supabase = getSupabaseAdmin();
+  if (!options.allowLeaver) {
+    const key = String(input.employeeHrId ?? "").trim().toLowerCase();
+    const refusal = holderRefusal((await resolveHolders([key])).get(key), "issue");
+    if (refusal) throw new Error(refusal);
+  }
   const declarationNo = trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn));
 
   const { data, error } = await supabase.rpc("phx_device_issue", {
@@ -1049,11 +1168,19 @@ export async function returnDevice(input: ReturnDeviceInput, actor: string): Pro
 export async function markDevice(input: MarkDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
 
-  const { data: before } = await supabase
+  const { data: before, error: readError } = await supabase
     .from("company_devices")
     .select(DEVICE_COLUMNS)
     .eq("id", input.deviceId)
     .maybeSingle();
+  // Read first and refused on failure: the refusal below needs the device's real state, and an
+  // unreadable one must not be waved through as "not reserved".
+  if (readError) throw new Error(deviceErrorMessage(readError));
+  if (before) {
+    const row = before as DeviceRow;
+    const refusal = markRefusal({ status: row.status, assetTag: row.asset_tag });
+    if (refusal) throw new Error(refusal);
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
@@ -1178,13 +1305,33 @@ export async function revokeReservation(
  */
 export async function reconcileDevice(input: ReconcileDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
-  const declarationNo = trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn));
-
-  const { data: before } = await supabase
+  const { data: before, error: readError } = await supabase
     .from("device_assignments")
     .select(ASSIGNMENT_COLUMNS)
     .eq("id", input.assignmentId)
     .maybeSingle();
+  if (readError) throw new Error(deviceErrorMessage(readError));
+
+  // The device must still be RESERVED, and the person must not have left — both refused before
+  // anything is written (`reconcileRefusal`, `holderRefusal`). The database refuses both as well
+  // (20261109030915_device_custody_state_guards.sql); this is the readable half. The device read is
+  // only for a live reservation — anything else is refused by the database's own "Only a reservation".
+  if (before && (before as AssignmentRow).status === "reserved") {
+    const { data: deviceRow, error: deviceError } = await supabase
+      .from("company_devices")
+      .select("asset_tag,status")
+      .eq("id", (before as AssignmentRow).device_id)
+      .maybeSingle();
+    if (deviceError) throw new Error(deviceErrorMessage(deviceError));
+    const device = deviceRow as { asset_tag: string; status: DeviceStatus } | null;
+    const deviceRefusal = reconcileRefusal(device ? { status: device.status, assetTag: device.asset_tag } : null);
+    if (deviceRefusal) throw new Error(deviceRefusal);
+  }
+  const holderKey = String(input.employeeHrId ?? "").trim().toLowerCase();
+  const leaverRefusal = holderRefusal((await resolveHolders([holderKey])).get(holderKey), "reconcile");
+  if (leaverRefusal) throw new Error(leaverRefusal);
+
+  const declarationNo = trimmed(input.declarationNo) ?? (await nextDeclarationNo(input.issuedOn));
 
   await writeRequiredAuditLog({
     actorLoginId: actor,

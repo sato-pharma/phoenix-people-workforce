@@ -1,4 +1,3 @@
-import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -13,6 +12,7 @@ import {
 } from "@/lib/devices/action1";
 import { buildDeviceImportPreview, DEVICE_IMPORT_MAX_ROWS } from "@/lib/devices/bulk-import";
 import {
+  importActor,
   recordDeviceImportAttempt,
   recordDeviceImportGateRejection,
 } from "@/lib/devices/import-attempt-log";
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     // Same canonicalisation as both spreadsheet routes. HR ids are stored mixed-case, so a
     // different expression here would file one person's presses under two actors.
-    const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? access.role;
+    const actor = importActor(access);
     logAttempt = (fields) =>
       recordDeviceImportAttempt({
         stage: "check",

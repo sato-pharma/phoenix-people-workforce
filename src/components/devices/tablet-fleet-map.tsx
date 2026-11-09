@@ -31,12 +31,18 @@ import {
 const FRAME = "border border-slate-200 bg-white px-4 py-3";
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 
-/** A trail stop's tooltip carries its Cairo time; a fleet marker's carries the holder as given. */
+/**
+ * A trail stop's tooltip carries its Cairo time; a fleet marker's carries the holder AND when the
+ * position was taken. 🔴 A fleet pin with no time used to read as "this tablet is here now".
+ */
 function markerTitle(point: MapPoint, kind: "fleet" | "trail"): string {
-  const second =
-    kind === "trail" && point.sublabel ? cairoDateTime(point.sublabel) : point.sublabel ?? null;
-  const head = kind === "trail" ? `${point.order ?? point.label}. ${point.label}` : point.label;
-  return second ? `${head} — ${second}` : head;
+  if (kind === "trail") {
+    const head = `${point.order ?? point.label}. ${point.label}`;
+    return point.sublabel ? `${head} — ${cairoDateTime(point.sublabel)}` : head;
+  }
+  const when = point.recordedAt ? `position taken ${cairoDateTime(point.recordedAt)}` : "time of fix not reported";
+  const parts = [point.label, point.sublabel, point.stale ? `OLD POSITION — ${when}` : when];
+  return parts.filter((part): part is string => Boolean(part)).join(" — ");
 }
 
 export function TabletFleetMap({
@@ -124,6 +130,8 @@ export function TabletFleetMap({
               new MarkerCtor({
                 // A trail numbers its stops on the pin; the fleet leans on the tooltip so the pins stay legible.
                 ...(kind === "trail" ? { label: String(point.order ?? point.label) } : {}),
+                // An old or undated fleet position is drawn faded, so it is never read as where the tablet is now.
+                ...(kind === "fleet" && point.stale ? { opacity: 0.45 } : {}),
                 map,
                 position: { lat: point.latitude, lng: point.longitude },
                 title: markerTitle(point, kind),

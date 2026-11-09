@@ -1,7 +1,6 @@
-import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   Action1NotConfiguredError,
@@ -12,6 +11,7 @@ import {
 } from "@/lib/devices/action1";
 import { DEVICE_IMPORT_MAX_ROWS, executeDeviceImport } from "@/lib/devices/bulk-import";
 import {
+  importActor,
   recordDeviceImportAttempt,
   recordDeviceImportGateRejection,
 } from "@/lib/devices/import-attempt-log";
@@ -61,8 +61,7 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "import");
 
-    const actor =
-      hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+    const actor = importActor(access);
     logAttempt = (fields) =>
       recordDeviceImportAttempt({
         stage: "import",

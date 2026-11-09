@@ -9,6 +9,7 @@ import {
   SIGNUP_URL_NAME_COOKIE,
 } from "@/lib/devices/android-enterprise-signup";
 import { androidManagementTokenProvider } from "@/lib/devices/android-management-auth";
+import { ENTERPRISE_ALREADY_BOUND_MESSAGE, isAndroidManagementConfigured } from "@/lib/devices/android-web-app";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -40,6 +41,13 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
+
+    // Refused once Phoenix is bound, the same as the signup that leads here — a callback must never
+    // create a second enterprise beside the company's own.
+    if (isAndroidManagementConfigured()) {
+      pageUrl.searchParams.set("signupError", ENTERPRISE_ALREADY_BOUND_MESSAGE);
+      return NextResponse.redirect(pageUrl);
+    }
 
     const requestUrl = new URL(request.url);
     const enterpriseToken = requestUrl.searchParams.get("enterpriseToken")?.trim() ?? "";
