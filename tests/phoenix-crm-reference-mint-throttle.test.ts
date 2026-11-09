@@ -190,15 +190,21 @@ export async function runPhoenixCrmReferenceMintThrottleTests(): Promise<void> {
     const move = functionBody(list, "export async function moveCustomerToSeat(");
     assertBeforeText(move, 'callPhoenixCrm<Row>("phoenix_crm_move_customer"', "forgetReferenceMints([seat.seatId, toSeatId]);", "a move forgets both seats' stamps once it has landed");
 
-    for (const [file, declaration] of [
-      ["src/lib/phoenix-crm/server/plans.ts", "export async function loadPlanner("],
-      ["src/lib/phoenix-crm/server/monthly-plans.ts", "export async function loadMonthlyPlanner("],
+    // The read-side wrapper (2026-11-09, a test login reads the real field force): the same throttle,
+    // and nothing minted when a test login reads a real territory — it writes nothing real.
+    const forView = functionBody(list, "export function ensureReferenceCustomersForView(");
+    assert.match(forView, /if \(viewer\.isTestPersona && !isTest\) return Promise\.resolve\(\);/, "a test login's read of a real territory mints nothing");
+    assert.match(forView, /return ensureReferenceCustomersRecently\(seat, isTest\);/, "everyone else's read mints through the throttle, as before");
+
+    for (const [file, declaration, mint] of [
+      ["src/lib/phoenix-crm/server/plans.ts", "export async function loadPlanner(", "ensureReferenceCustomersForView(viewer, seat, isTest)"],
+      ["src/lib/phoenix-crm/server/monthly-plans.ts", "export async function loadMonthlyPlanner(", "ensureReferenceCustomersForView(viewer, seat, isTest)"],
       // 1 Nov 2026 (the speed root cause): the List and Add Visit too — the two screens a rep opens most.
-      ["src/lib/phoenix-crm/server/list.ts", "export async function loadTerritoryList("],
-      ["src/lib/phoenix-crm/server/visits.ts", "export async function loadVisitForm("],
+      ["src/lib/phoenix-crm/server/list.ts", "export async function loadTerritoryList(", "ensureReferenceCustomersForView(viewer, seat, isTest)"],
+      ["src/lib/phoenix-crm/server/visits.ts", "export async function loadVisitForm(", "ensureReferenceCustomersRecently(seat, isTest)"],
     ] as const) {
       const body = functionBody(source(file), declaration);
-      assert.match(body, /const ensured = ensureReferenceCustomersRecently\(seat, isTest\);/, `${declaration} mints through the throttle`);
+      assert.ok(body.includes(`const ensured = ${mint};`), `${declaration} mints through the throttle`);
       assert.doesNotMatch(body, /ensureReferenceCustomers\(seat/, `${declaration} never runs the every-time mint`);
       assert.match(body, /ensured\.then\(\(\) => loadTerritoryCustomers\(/, `${declaration} still reads its customers only after the mint, when there is one`);
     }

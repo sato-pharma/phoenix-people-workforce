@@ -78,6 +78,7 @@ import {
   readTestFlag,
   territoryForRead,
   territoryForRepWrite,
+  territoryForView,
   testModeFor,
   testReadSeats,
   type PhoenixCrmViewer,
@@ -403,7 +404,7 @@ export async function loadVisitAskCustomerView(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; customerId: unknown; test: unknown },
 ): Promise<VisitAskCustomerView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const customerId = typeof raw.customerId === "string" ? raw.customerId.trim().toLowerCase() : "";
   if (!isUuid(customerId)) throw validationError("Choose a customer.");
   const customer = await loadAskCustomer(seat.seatId, customerId, isTest);

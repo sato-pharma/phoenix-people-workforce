@@ -1,7 +1,7 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, parseDayActivityDraft, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { isActivityEnteredForRep } from "@/lib/phoenix-crm/missed-records";
-import { readTestFlag, territoryForDayWrite, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForDayWrite, territoryForRead, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { dropDayInterviews, interviewsForDaySave, snapshotBookedInterviews } from "@/lib/phoenix-crm/server/interview-cvs";
 import { validationError } from "@/lib/http/api-errors";
@@ -120,7 +120,7 @@ export async function loadDayActivities(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; from?: unknown; to?: unknown },
 ): Promise<{ rows: DayActivityRow[] }> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const to = isIsoDay(raw.to) ? raw.to : viewer.visitDay;
   const from = isIsoDay(raw.from) ? raw.from : to;
 

@@ -12,6 +12,8 @@ import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
+import { previousEntryIsThisApp } from "../src/lib/navigation/back-to-previous.ts";
+import { mergeDistrictManagerWeeks, type DistrictManagerWeek } from "../src/lib/phoenix-crm/server/manager-dm-day.ts";
 
 /**
  * Dr. Hany Saad's team reports (owner, 2026-11-08) — the Regional Sales Manager's eight needs. Names in the
@@ -341,12 +343,56 @@ function backToAllReps() {
   }
   const day = readFileSync("app/employee-portals/field-crm/day/[seatId]/[date]/page.tsx", "utf8");
   assert.ok(day.includes('const BACK_TO: Record<string, string> = { "team-visits": "/employee-portals/team-visits" };'), "the day page goes back by a fixed key, never a free address");
-  assert.ok(day.includes("<BackToAllReps href={BACK_TO[query.from]} />"), "the day page draws the back bar");
+  assert.ok(day.includes("<BackToPreviousPage fallbackHref={(typeof query.from === \"string\" && BACK_TO[query.from]) || BACK_TO_DEFAULT} />"), "the day page always draws Back");
   const visits = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
   assert.ok(visits.includes("?from=team-visits`"), "Visits opens the day with its way back");
 }
 
+function backToThePreviousPage() {
+  // Owner, 2026-11-09: "when I press on a rep I need a back button to be able to return back to the previous page".
+  const pages: Array<[string, string]> = [
+    ["app/employee-portals/field-crm/day/[seatId]/[date]/page.tsx", "<BackToPreviousPage fallbackHref="],
+    ["app/employee-portals/field-crm/manager-day/[seatId]/[date]/page.tsx", '<BackToPreviousPage fallbackHref="/employee-portals/team-calendar" />'],
+    ["app/employee-portals/kpis/call-rate/[rep]/page.tsx", "<BackToPreviousPage fallbackHref={PORTAL_KPIS_PATH} />"],
+    ["app/employee-portals/employee-360/[hrId]/page.tsx", "<BackToPreviousPage fallbackHref={PORTAL_BASE_PATH} />"],
+    ["src/components/crm/portal-kpi-report-page.tsx", '{report !== "call-rate" && one(params?.rep) ? <BackToPreviousPage fallbackHref={PORTAL_KPI_REPORT_PATH[report]} /> : null}'],
+  ];
+  for (const [path, marker] of pages) assert.ok(readFileSync(path, "utf8").includes(marker), `${path} draws Back`);
+  const button = readFileSync("src/components/crm/back-to-previous-page.tsx", "utf8");
+  assert.ok(button.includes("router.back();") && button.includes("if (!canGoBackInApp()) return;"), "Back goes back in history, and only to a page of this app");
+  assert.ok(!button.includes("document.referrer"), "never the referrer, which stays the first page loaded");
+  // The page before is ours → back; opened in a new tab or from another site → the fallback address.
+  const origin = "https://phoenix-hr.satopharma.com";
+  assert.equal(previousEntryIsThisApp({ hasNavigationApi: true, historyLength: 4, origin, previousUrl: `${origin}/employee-portals/team-visits` }), true);
+  assert.equal(previousEntryIsThisApp({ hasNavigationApi: true, historyLength: 4, origin, previousUrl: null }), false, "first page of ours in this tab");
+  assert.equal(previousEntryIsThisApp({ hasNavigationApi: true, historyLength: 4, origin, previousUrl: "https://mail.google.com/x" }), false);
+  assert.equal(previousEntryIsThisApp({ hasNavigationApi: false, historyLength: 1, origin, previousUrl: null }), false, "a new tab");
+  assert.equal(previousEntryIsThisApp({ hasNavigationApi: false, historyLength: 3, origin, previousUrl: null }), true);
+}
+
+function boardAndApprovalReadTheRealTeam() {
+  // Owner, 2026-11-09 ("populate all production data to the test account of Hany — everything"): his own plan board
+  // and his approval view read the real team too, not only the three report pages.
+  const board = readFileSync("src/lib/phoenix-crm/server/manager-plans.ts", "utf8");
+  assert.ok(board.includes('const dmWorlds = writer.kind === "rsm" ? regionalReportWorlds({ isTestPersona: isTest }) : [isTest];'), "his board reads his district managers' real weeks");
+  assert.ok(board.includes("dmWorlds.map((world) => loadDistrictManagerWeeks("), "every world it reads is asked");
+  assert.ok(board.includes("worlds: regionalReportWorlds({ isTestPersona: isTest })"), "the notes beside each rep read the real team");
+  const hub = readFileSync("src/lib/phoenix-crm/server/manager-plan-hub.ts", "utf8");
+  assert.ok(hub.includes("worlds: regionalReportWorlds({ isTestPersona: plan.isTest })"), "the approval view's Also with lines read the real team");
+  const bookings = readFileSync("src/lib/phoenix-crm/server/manager-plan-bookings.ts", "utf8");
+  assert.ok(!bookings.includes("isTest: input.isTest, repSeatIds"), "no notes loader reads one world alone");
+  // A district manager's real week wins; a test week fills in only where the real one holds no plan.
+  const week = (dmSeatId: string, status: DistrictManagerWeek["status"]) => ({ dmSeatId, status }) as DistrictManagerWeek;
+  const merged = mergeDistrictManagerWeeks([
+    [week("D1", "approved"), week("D2", null)],
+    [week("D1", "draft"), week("D2", "submitted"), week("D3", null)],
+  ]);
+  assert.deepEqual(merged.map((entry) => `${entry.dmSeatId}:${entry.status}`), ["D1:approved", "D2:submitted", "D3:null"]);
+}
+
 export function runRegionalTeamReportsTests() {
+  backToThePreviousPage();
+  boardAndApprovalReadTheRealTeam();
   backToAllReps();
   groupedByRegionAndManager();
   vacantSeatsKeyCard();

@@ -1,5 +1,5 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { readTestFlag, territoryForDayWrite, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForDayWrite, territoryForRead, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { listInterviewsConductedBy, type ConductedInterview } from "@/lib/recruitment/interview-calendar";
@@ -138,7 +138,7 @@ export async function loadDayInterviews(
   raw: { seatId: unknown; test: unknown; date?: unknown },
 ): Promise<{ date: string; booked: DayInterview[]; added: DayInterview[]; saved: DayInterview[] }> {
   if (isIsoDay(raw.date)) {
-    const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+    const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
     return { date: raw.date, booked: [], added: [], saved: await storedOn(seat.seatId, isTest, raw.date) };
   }
   const { seat, isTest } = territoryForDayWrite(viewer, raw.seatId, readTestFlag(raw.test));
@@ -254,7 +254,9 @@ export async function signedDayInterviewCvUrl(viewer: PhoenixCrmViewer, raw: { i
   const path = textOrNull(row?.cv_path);
   if (!row || !path) throw notFoundError("That CV is not on record.");
   // The row's own world must be the one asked for; territoryForRead then decides the territory.
-  if ((row.is_test === true) !== readTestFlag(raw.test)) throw notFoundError("That CV is not on record.");
+  // A test account also opens a real day's CV, the days it now reads (owner, 2026-11-09).
+  const rowIsTest = row.is_test === true;
+  if (rowIsTest !== readTestFlag(raw.test) && !(viewer.isTestPersona && !rowIsTest)) throw notFoundError("That CV is not on record.");
   territoryForRead(viewer, row.seat_id, row.is_test === true);
   const { data: signed, error: signError } = await getSupabaseAdmin()
     .storage.from(PHOENIX_CRM_INTERVIEW_CV_BUCKET)

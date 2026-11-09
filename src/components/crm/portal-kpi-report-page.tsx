@@ -13,6 +13,7 @@
 // and a Medical Rep only himself, whichever of these pages he arrives at.
 import { redirect } from "next/navigation";
 
+import { BackToPreviousPage } from "@/components/crm/back-to-previous-page";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { KpisBoardView } from "@/components/crm/kpis-board-view";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
@@ -103,6 +104,8 @@ export async function PortalKpiReportPage({
 
   return (
     <EmployeePortalPageShell badge="CRM" title={title}>
+      {/* A rep opened on Coverage or Frequency gets "Back" to the page he was pressed on (owner, 2026-11-09). */}
+      {report !== "call-rate" && one(params?.rep) ? <BackToPreviousPage fallbackHref={PORTAL_KPI_REPORT_PATH[report]} /> : null}
       <KpisBoardView
         basePath={basePath}
         board={board}

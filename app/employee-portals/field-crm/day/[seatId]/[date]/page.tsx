@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { BackToAllReps } from "@/components/crm/reps-list-chrome";
+import { BackToPreviousPage } from "@/components/crm/back-to-previous-page";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DayDetailView } from "@/components/phoenix-crm/day-detail-view";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
@@ -36,10 +36,13 @@ export const dynamic = "force-dynamic";
  * would be a second answer to a settled question.
  */
 /**
- * Where "Back to all reps" returns to, by a fixed key the opening screen puts in `?from=` — never a free address,
- * so the link can only ever point inside the app (owner, 2026-11-09: "when I press a rep there is no back button").
+ * Where "Back" goes when there is no page of ours behind this one (opened from a bookmark or a new tab), by a fixed
+ * key the opening screen puts in `?from=` — never a free address, so it can only ever point inside the app (owner,
+ * 2026-11-09: "when I press on a rep I need a back button to return to the previous page"). Otherwise "Back" returns
+ * to the page he pressed the rep on.
  */
 const BACK_TO: Record<string, string> = { "team-visits": "/employee-portals/team-visits" };
+const BACK_TO_DEFAULT = "/employee-portals/team-calendar";
 
 export default async function PhoenixCrmDayPage({
   params,
@@ -65,11 +68,7 @@ export default async function PhoenixCrmDayPage({
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description="Phoenix CRM · the day in full" title="The day in full">
-        {typeof query.from === "string" && BACK_TO[query.from] ? (
-          <div className="mb-3 border border-slate-200">
-            <BackToAllReps href={BACK_TO[query.from]} />
-          </div>
-        ) : null}
+        <BackToPreviousPage fallbackHref={(typeof query.from === "string" && BACK_TO[query.from]) || BACK_TO_DEFAULT} />
         <DayDetailView view={load.view} />
       </EmployeePortalPageShell>
     );

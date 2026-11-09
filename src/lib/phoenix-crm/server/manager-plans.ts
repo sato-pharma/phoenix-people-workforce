@@ -87,7 +87,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canEnterMissedRecords, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, regionalReportWorlds, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -104,7 +104,7 @@ import {
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { assertSingleVisitPlanFits, loadLoggedSingleVisitHalves, plannedSingleVisitHalves } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { managerApproversFor, managerWriterScopes } from "@/lib/phoenix-crm/server/manager-plan-writers";
-import { districtManagerDayOn, loadDistrictManagerWeeks, type DistrictManagerDay, type DistrictManagerWeek } from "@/lib/phoenix-crm/server/manager-dm-day";
+import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay, type DistrictManagerWeek } from "@/lib/phoenix-crm/server/manager-dm-day";
 import { loadApprovedSingleVisitDates } from "@/lib/phoenix-crm/server/manager-single-visit-day-rows";
 import {
   EDIT_ASK_COLUMNS,
@@ -708,8 +708,13 @@ async function buildBoard(
   // saved With a district manager half-day names, read beside the reps' weeks. A failed read is said on the
   // board (`districtManagerPlanUnread`), never shown as "nothing planned".
   const dmWeekSeats = writer.kind === "dm" || writer.kind === "tm" ? [] : [chosen?.dmSeatId ?? null, ...slots.filter((slot) => slot.kind === "with_dm").map((slot) => slot.scopeDmSeatId)];
-  const dmWeeksRead = loadDistrictManagerWeeks({ org: viewer.org, dmSeatIds: dmWeekSeats, weekStart, cairoToday: viewer.cairoToday, isTest }).then(
-    (weeks) => weeks,
+  // A regional sales manager's test board reads his district managers' REAL weeks and its own test ones beside them
+  // (owner, 2026-11-09, `regionalReportWorlds`); every other board reads its own world.
+  const dmWorlds = writer.kind === "rsm" ? regionalReportWorlds({ isTestPersona: isTest }) : [isTest];
+  const dmWeeksRead = Promise.all(
+    dmWorlds.map((world) => loadDistrictManagerWeeks({ org: viewer.org, dmSeatIds: dmWeekSeats, weekStart, cairoToday: viewer.cairoToday, isTest: world })),
+  ).then(
+    (parts) => mergeDistrictManagerWeeks(parts),
     (error: unknown) => {
       view.districtManagerPlanUnread = true;
       logWarning("Phoenix CRM could not read the district managers' own weeks for a senior manager's board", {
@@ -866,7 +871,7 @@ async function buildBoard(
   const regionalNotes =
     writer.kind === "rsm" && team.length > 0
       ? await import("@/lib/phoenix-crm/server/manager-plan-bookings")
-          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }))
+          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ plannerHrId: managerHrId, repSeats: team, viewer, weekStart, worlds: regionalReportWorlds({ isTestPersona: isTest }) }))
           .catch((error: unknown) => {
             logError("Phoenix CRM: the regional board's rep notes could not be read", {
               error,
