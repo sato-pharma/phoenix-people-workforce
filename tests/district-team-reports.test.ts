@@ -138,6 +138,22 @@ function homeShortcuts() {
   assert.ok(home.includes('{ href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Sales Drilldown" }'));
   assert.ok(home.includes('{ href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "My Expenses" }'), "the existing tiles stay");
   assert.ok(!home.includes('href: "/employee-portals/plans"'), "no tile opens the read-only plan history");
+
+  // The overview's Med Rep Performance tile opens the page over the district instead of sending them home (owner,
+  // 2026-11-09: "open Med Rep Performance to District Managers over their own district").
+  assert.ok(home.includes('{ href: "/employee-portals/med-reps-performance", icon: Target, label: "Med Rep Performance" }'));
+  const performance = readFileSync("app/employee-portals/med-reps-performance/page.tsx", "utf8");
+  assert.ok(
+    performance.includes('const PERFORMANCE_ROLLUP_ROLES = new Set(["National Sales Manager", "Regional Manager", "District Manager"]);'),
+    "the page admits a District Manager",
+  );
+  assert.ok(performance.includes('const scopeWord = isDistrictView ? "District" : isRegionView ? "Region" : "Line";'), "the page says District");
+  assert.ok(performance.includes('"District Sales": "border-l-emerald-400"'));
+  const service = readFileSync("src/lib/employee-portal/service.ts", "utf8");
+  const loaderAt = service.indexOf("export async function getMedRepsPerformance(");
+  const loader = service.slice(loaderAt, service.indexOf("\n}\n", loaderAt));
+  assert.ok(loader.includes('currentRole !== "District Manager"'), "the loader admits a District Manager");
+  assert.ok(loader.includes("buildDsmTeamPerformanceFromSos(access,"), "the same builder, so the area bound is their district");
 }
 
 function pagesAndExports() {

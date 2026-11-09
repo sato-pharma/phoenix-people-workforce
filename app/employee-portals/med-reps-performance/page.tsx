@@ -62,14 +62,19 @@ const statBorders: Record<string, string> = {
   "Line Sales": "border-l-emerald-400",
   "Region Target": "border-l-orange-400",
   "Region Sales": "border-l-emerald-400",
+  "District Target": "border-l-orange-400",
+  "District Sales": "border-l-emerald-400",
   Achievement: "border-l-amber-400",
   "Eligible Reps": "border-l-sky-400",
 };
 
-// The National Sales Manager reads his line here; the Regional Manager, since 2026-10-20 (owner),
-// reads his own region — the same builder, bounded to his seat's areas. The nav flag
-// (showMedRepsPerformanceTab) offers the page to exactly these two roles.
-const PERFORMANCE_ROLLUP_ROLES = new Set(["National Sales Manager", "Regional Manager"]);
+// The National Sales Manager reads the line here; the Regional Manager, since 2026-10-20 (owner),
+// reads the region — the same builder, bounded to the seat's areas. The nav flag
+// (showMedRepsPerformanceTab) offers the page to exactly these two roles. A District Manager opens it
+// from the overview's Med Rep Performance tile over their own district (owner, 2026-11-09: "open Med
+// Rep Performance to District Managers over their own district") — the same builder and the same area
+// bound as their Team Performance page, so the two agree to the pound.
+const PERFORMANCE_ROLLUP_ROLES = new Set(["National Sales Manager", "Regional Manager", "District Manager"]);
 
 // Print stylesheet + dir="auto" + page-level error boundary are now
 // provided automatically by EmployeePortalPageShell.
@@ -94,8 +99,9 @@ export default async function MedRepsPerformancePage({
   await assertPermission(access, "sales", "read");
 
   const isRegionView = access.role === "Regional Manager";
-  const scopeWord = isRegionView ? "Region" : "Line";
-  const inScope = isRegionView ? "in your region" : "in line";
+  const isDistrictView = access.role === "District Manager";
+  const scopeWord = isDistrictView ? "District" : isRegionView ? "Region" : "Line";
+  const inScope = isDistrictView ? "in your district" : isRegionView ? "in your region" : "in line";
 
   const resolvedParams = await searchParams;
   const requestedPeriod = resolvedParams.period?.trim() ?? null;
@@ -104,7 +110,7 @@ export default async function MedRepsPerformancePage({
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message={`Unable to load medical reps performance data for your ${isRegionView ? "region" : "line"}.`}
+        message={`Unable to load medical reps performance data for your ${scopeWord.toLowerCase()}.`}
         title="Performance Data Unavailable"
       />
     );
