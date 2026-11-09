@@ -19,8 +19,10 @@
  *     the write is refused by name (`superAdminHasNoFieldWrite`) — the earlier rule, that his every
  *     entry was a test entry (owner, 2026-09-16), is history and not guidance;
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
- *     that person's own territories, scope and authority — but every read and every save it makes is in
- *     the test world, always, whatever flag the screen sends. It never DECIDES an approval: since
+ *     that person's own territories, scope and authority. It READS the real field force, exactly as that
+ *     person does (owner, 2026-11-09, "Real data everywhere": `territoryForView`, `readWorldFor`), and
+ *     every SAVE it makes is in the test world, always, whatever flag the screen sends, so its own new
+ *     entries sit apart from what it reads. It never DECIDES an approval: since
  *     2026-10-22 every step a test entry waits at — the manager's, SFE's, HR's — is the Super Admin's,
  *     taken step by step from his own "Test accounts" tab (`assertTestWorldDecider`). A test person
  *     still answers a double-visit request or a visit ask addressed to him.
@@ -269,6 +271,25 @@ export function worldFor(viewer: PhoenixCrmViewer, flag: unknown, read?: TestWor
   return testModeFor(viewer, flag);
 }
 
+/**
+ * 🔴 THE WORLD A READ RUNS IN — THE REAL ONE, FOR A TEST ACCOUNT TOO (owner, 2026-11-09). Signed in as
+ * a test account, every Phoenix CRM report read empty ("ALL THE … REPORTS ARE NO READING DATA"),
+ * because each read was forced into the test world, which holds next to nothing. Asked what a test
+ * account should read, he picked "Real data everywhere": it reads what the person it mirrors reads.
+ *
+ * Only a READ takes this. A save, and a decision, keep `testModeFor` / `worldFor`: a test account
+ * still writes nothing but test entries, so a test rep's own new saves sit apart from what he reads.
+ * The "Test accounts" tab's explicit request for the test world is still honoured for its decider alone.
+ */
+export function readWorldFor(viewer: PhoenixCrmViewer, flag: unknown, read?: TestWorldRead): boolean {
+  if (read?.testWorld === true) {
+    assertTestWorldDecider(viewer);
+    return true;
+  }
+  void readTestFlag(flag);
+  return false;
+}
+
 /** The opening day of a seat's line: "Phoenix CRM opens for Pedia on 19 September 2026." */
 export function lineOpeningText(viewer: PhoenixCrmViewer, seat: Pick<OrgSeat, "lineCode" | "lineName">): string {
   const opensOn = viewer.config.lineRollout.find((entry) => entry.lineCode === seat.lineCode)?.opensOn ?? null;
@@ -301,6 +322,16 @@ export function territoryForRead(viewer: PhoenixCrmViewer, seatId: unknown, test
   if (viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId)) return { seat, isTest: false };
   if (viewer.waitingTerritories.some((entry) => entry.seatId === seat.seatId)) throw lineNotOpen(viewer, seat);
   throw forbiddenError("This territory is outside your scope.");
+}
+
+/**
+ * READING a territory on a screen — the same reach and the same refusals as {@link territoryForRead},
+ * in the REAL world for everybody, a test account included (`readWorldFor`, owner 2026-11-09). A pure
+ * read takes this one; anything that goes on to save or decide keeps `territoryForRead`, whose test
+ * account stays in the test world, so a test login can never write onto a real row through it.
+ */
+export function territoryForView(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
+  return { seat: territoryForRead(viewer, seatId, test).seat, isTest: false };
 }
 
 /** Changing a territory's list or plan: its own rep, and nobody else since test mode was retired. */
@@ -702,7 +733,7 @@ export function readTestFlag(value: unknown): boolean {
 }
 
 /**
- * The mode a read across territories runs in: a TEST- login's own world, and the real entries for
+ * The mode a SAVE or a DECISION across territories runs in (a read takes `readWorldFor`): a TEST- login's own world, and the real entries for
  * everybody else. The Super Admin's choice of world is retired (see `superAdminHasNoFieldWrite`), and
  * the flag a screen still sends is read and dropped rather than refused, for the reason
  * `territoryForRead` records.

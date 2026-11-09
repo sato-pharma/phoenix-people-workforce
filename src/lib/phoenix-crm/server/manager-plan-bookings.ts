@@ -12,7 +12,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, readWorldFor, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, type ManagerSlotRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
@@ -180,7 +180,7 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
   if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
   const weekStart = fieldWeekStart(anyDayOfWeek);
   const weekEnd = addDaysIso(weekStart, 6);
-  const isTest = viewer.isTestPersona;
+  const isTest = readWorldFor(viewer, null);
   const districts = regionalDistrictSeats(viewer);
   const managerHrIds = districts.flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []));
   const repSeats = regionalTeamRepSeats(viewer);

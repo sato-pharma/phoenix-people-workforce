@@ -216,7 +216,8 @@ export function runPhoenixCrmBoardReadsTests(): void {
   {
     const list = code("src/lib/phoenix-crm/server/list.ts");
     const territoryList = functionBody(list, "export async function loadTerritoryList(");
-    assert.match(territoryList, /const ensured = ensureReferenceCustomersRecently\(seat, isTest\);/, "the List mints through the planners' throttle");
+    // Through the read-side wrapper (2026-11-09): a test login reading a real territory mints nothing.
+    assert.match(territoryList, /const ensured = ensureReferenceCustomersForView\(viewer, seat, isTest\);/, "the List mints through the planners' throttle");
     assert.doesNotMatch(territoryList, /ensureReferenceCustomers\(seat/, "and never the every-time mint");
     assert.match(territoryList, /const customersRead = ensured\.then\(\(\) => loadTerritoryCustomers\(seat\.seatId, isTest\)\);/, "its customers still wait for the mint, when there is one");
     const visits = code("src/lib/phoenix-crm/server/visits.ts");

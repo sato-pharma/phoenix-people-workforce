@@ -33,7 +33,7 @@ import {
   canReviewTerritory,
   isLocationBlind,
   locationSight,
-  testModeFor,
+  readWorldFor,
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
@@ -386,7 +386,7 @@ async function visitAskSummaryOrNull(viewer: PhoenixCrmViewer, isTest: boolean):
 }
 
 export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<TeamView> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 

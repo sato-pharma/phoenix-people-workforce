@@ -415,9 +415,18 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
   };
 }
 
+/**
+ * Whether the viewer opens a row of this world: a real person the real rows only; a test account its
+ * own test rows AND the real rows it now reads (owner, 2026-11-09, "Real data everywhere") — read
+ * only, since `managerPlanDeciderRole` gives a test account no step on a real row.
+ */
+function opensWorld(viewer: PhoenixCrmViewer, isTest: boolean): boolean {
+  return viewer.isTestPersona || !isTest;
+}
+
 async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<ManagerHubDetail> {
   const row = await loadManagerCustomerRow(id);
-  if (!row || row.isTest !== viewer.isTestPersona) return NOT_FOUND;
+  if (!row || !opensWorld(viewer, row.isTest)) return NOT_FOUND;
   if (!mayOpenManagerRecord(viewer, row.managerHrId, [row.approverHrId, row.secondApproverHrId])) return NOT_FOUND;
   const names = await loadPeopleNames([row.managerHrId, row.approverHrId, row.secondApproverHrId, row.firstDecidedByHrId, row.decidedByHrId]);
   // A refusal puts the customer back to active; its decision stamp tells it from one never asked.
@@ -492,7 +501,7 @@ async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<Mana
 async function singleVisitDayDetail(viewer: PhoenixCrmViewer, id: string): Promise<ManagerHubDetail | null> {
   const ask = await loadSingleVisitDayAskRow(id);
   if (!ask) return null;
-  if (ask.isTest !== viewer.isTestPersona) return NOT_FOUND;
+  if (!opensWorld(viewer, ask.isTest)) return NOT_FOUND;
   if (!mayOpenManagerRecord(viewer, ask.managerHrId, [ask.approverHrId, ask.secondApproverHrId])) return NOT_FOUND;
   const input = { managerHrId: ask.managerHrId, weekStart: ask.weekStart, isTest: ask.isTest };
   const [names, used, approvedDates] = await Promise.all([
@@ -569,10 +578,10 @@ export async function loadManagerPlanHubDetail(access: AccessContext, id: string
   } catch {
     return NOT_FOUND;
   }
-  const plan = await loadManagerPlanRow(id, viewer.isTestPersona);
+  const plan = await loadManagerPlanRow(id, viewer.isTestPersona ? null : false);
   if (plan) return planDetail(viewer, plan, null);
   const ask = await loadEditAskRow(id);
-  if (ask && ask.isTest === viewer.isTestPersona) {
+  if (ask && opensWorld(viewer, ask.isTest)) {
     const askPlan = await loadManagerPlanRow(ask.planId, ask.isTest);
     return askPlan ? planDetail(viewer, askPlan, ask.requestId) : NOT_FOUND;
   }

@@ -3,7 +3,7 @@ import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { describeDayWindows } from "@/lib/phoenix-crm/plan-rules";
-import { canWriteAsRep, locationSight, readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canWriteAsRep, locationSight, readTestFlag, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPlannedActivitiesOn, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
@@ -74,7 +74,7 @@ export async function loadPhoenixCrmToday(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown },
 ): Promise<TodayView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const date = viewer.visitDay;
   const ramadan = isRamadanDay(date, viewer.config.ramadanOverrides);
   const weekday = weekdayOfIsoDay(date);

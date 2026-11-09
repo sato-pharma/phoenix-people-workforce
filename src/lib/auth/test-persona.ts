@@ -16,8 +16,9 @@
  *   - Nothing it does may write as her. `resolveAccessContext` refuses every non-read request from a
  *     test account outside the two writable prefixes below, before the route runs; server actions
  *     are refused the same way. Phoenix CRM is the one module with a test world of its own
- *     (`is_test` rows), and a test account's every CRM read and save is forced into it
- *     (src/lib/phoenix-crm/server/access.ts).
+ *     (`is_test` rows), and a test account's every CRM SAVE is forced into it; since 2026-11-09 its
+ *     every CRM READ is the real field force, as the mirrored person reads it (owner: "Real data
+ *     everywhere"; `readWorldFor` / `territoryForView`, src/lib/phoenix-crm/server/access.ts).
  *   - Only a portal-shell role can be mirrored (`canBeMirrored`), so a test account is always in the
  *     employee portal and can never carry an admin-shell role, the Super Admin's least of all.
  *

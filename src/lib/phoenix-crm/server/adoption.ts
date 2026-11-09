@@ -32,7 +32,7 @@ import {
   type AdoptionReport,
 } from "@/lib/phoenix-crm/adoption-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, readWorldFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { sharedReadiness } from "@/lib/phoenix-crm/server/exceptions";
 import type { SeatReadiness } from "@/lib/phoenix-crm/server/list";
@@ -154,7 +154,7 @@ export async function gatherAdoption(input: {
  */
 export async function loadAdoptionReport(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<AdoptionView> {
   if (!readsTeamReports(viewer)) throw forbiddenError("The adoption report is for managers.");
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
 
   const seen = new Set<string>();
   const seats = testReadSeats(viewer, isTest, [...viewer.scopeTerritories, ...viewer.waitingScopeTerritories]).filter((seat) => {

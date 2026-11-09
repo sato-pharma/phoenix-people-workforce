@@ -7,7 +7,7 @@ import type { ManagerDayPlan } from "@/lib/phoenix-crm/manager-day-plan";
 import { isManagerPlanSent } from "@/lib/phoenix-crm/manager-plan-rules";
 import { isMissedRecordDay } from "@/lib/phoenix-crm/missed-records";
 import { managerChain, managersInScope, personKey, territoryName } from "@/lib/phoenix-crm/scope";
-import { canEnterMissedRecords, readsCalendar, resolvePhoenixCrmViewer, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, readsCalendar, readWorldFor, resolvePhoenixCrmViewer, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dayRouteVisitOf, loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
 import { computeManagerReports } from "@/lib/phoenix-crm/server/manager-plan-report";
 import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
@@ -92,7 +92,7 @@ export async function loadPhoenixCrmManagerDayDetail(
   if (!DATE.test(date)) throw validationError("That is not a calendar day.");
   if (!readsCalendar(viewer)) throw forbiddenError("This calendar is for a territory you hold or manage.");
 
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   // The calendar draws no manager row in test mode, so there is no page to open either.
   if (isTest) throw forbiddenError(REFUSED);
 
