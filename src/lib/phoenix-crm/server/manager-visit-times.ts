@@ -20,7 +20,7 @@
 import { addDaysIso } from "@/lib/crm/dates";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { isRamadanDay } from "@/lib/phoenix-crm/calendar";
-import { readWorldFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { mapTimings } from "@/lib/phoenix-crm/server/list";
 import { parseSeatList } from "@/lib/phoenix-crm/server/manager-customer-marks";
@@ -76,7 +76,7 @@ export async function loadManagerCustomerVisitTimes(
   raw: { seats: unknown; own: unknown; date: unknown; test: unknown },
 ): Promise<CustomerVisitTimesView> {
   const writer = assertManagerPlanWriter(viewer);
-  const isTest = readWorldFor(viewer, raw.test);
+  const isTest = testModeFor(viewer, raw.test);
   const seatIds = parseSeatList(raw.seats);
   const date = raw.date === null || raw.date === undefined || raw.date === "" ? viewer.cairoToday : raw.date;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw validationError("The day must be a date.");
