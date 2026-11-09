@@ -24,6 +24,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import type { DayActivityRow, EnteredManagerMissedVisit, ManagerMissedRecordCustomer, ManagerMissedRecordForm } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -70,10 +71,8 @@ function CustomerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return needle ? customers.filter((customer) => customer.name.toLowerCase().includes(needle)) : customers;
-  }, [customers, query]);
+  // Arabic spelling folded on both sides, exactly as the rep's twin (owner, 2026-11-10).
+  const matches = useMemo(() => customers.filter((customer) => foldedWordsMatch(query, [customer.name])), [customers, query]);
   const visible = matches.slice(0, shown);
   const keyOf = (customer: ManagerMissedRecordCustomer) => customer.customerId ?? customer.managerCustomerId ?? customer.name;
 

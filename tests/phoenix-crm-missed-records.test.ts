@@ -433,6 +433,13 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
       "a visit, a day activity, and clearing one (taking a visit back is the Super Admin delete since 2026-10-23)",
     );
     assert.match(panel, /setPlanned\(next\.onSentPlan \? "planned" : "unplanned"\);/, "it starts from the plan, and he turns it either way");
+    // Owner, 2026-11-10: typing مستشفي الصدر (ي) found nothing, because the hospital is spelt مستشفى (ى).
+    // Both customer pickers search through the shared Arabic fold, never a bare includes().
+    const managerPanel = source("src/components/phoenix-crm/manager-missed-record-panel.tsx");
+    for (const [label, text] of [["the rep's panel", panel], ["the manager's panel", managerPanel]] as const) {
+      assert.match(text, /foldedWordsMatch\(query, \[customer\.name\]\)/, `${label} searches with the Arabic spelling folded`);
+      assert.doesNotMatch(text, /customer\.name\.toLowerCase\(\)\.includes\(/, `${label} has no unfolded name search left`);
+    }
   }
 
   // ── 10 · Taking back a visit he entered by mistake (owner, 2026-10-01) ─────────────────────────
