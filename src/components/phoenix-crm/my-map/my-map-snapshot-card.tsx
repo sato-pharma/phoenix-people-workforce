@@ -51,7 +51,7 @@ function Shell({ children, frame }: { children: ReactNode; frame: MyMapCardFrame
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="flex items-center gap-2 text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
+        <h2 className="flex items-center gap-2 text-phx-sm font-bold uppercase tracking-widest text-slate-300">
           <MapIcon className="h-3.5 w-3.5 text-orange-400" />
           My map
         </h2>

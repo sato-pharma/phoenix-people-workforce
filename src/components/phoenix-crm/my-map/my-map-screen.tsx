@@ -103,7 +103,7 @@ function Swatch({ colour, hollow = false, mark, ring }: { colour: string; hollow
     return (
       <span
         aria-hidden
-        className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-phx-2xs font-black leading-none text-white"
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-phx-sm font-black leading-none text-white"
         style={{ backgroundColor: colour, outline: "1px solid #cbd5e1" }}
       >
         {mark}

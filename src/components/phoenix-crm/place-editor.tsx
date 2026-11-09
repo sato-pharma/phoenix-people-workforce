@@ -119,7 +119,7 @@ export function ramadanHoursNote(ramadan: { startsOn: string; endsOn: string } |
 function LocationFact({ children, label }: { children: string; label: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="break-words text-sm font-semibold text-slate-800">{children}</p>
     </div>
   );

@@ -259,7 +259,7 @@ export function CaseMapPanel({ map }: { map: CaseMap | null }) {
         {map.markers.map((marker) => (
           // Square, like everything else on this platform (the square-edge golden rule).
           <span
-            className="absolute -ml-3 -mt-3 flex h-6 w-6 items-center justify-center border-2 border-white bg-rose-600 text-phx-2xs font-black text-white"
+            className="absolute -ml-3 -mt-3 flex h-6 w-6 items-center justify-center border-2 border-white bg-rose-600 text-phx-sm font-black text-white"
             key={`${marker.index}-${marker.lat}-${marker.lon}`}
             style={{ left: marker.left, top: marker.top }}
           >
@@ -267,7 +267,7 @@ export function CaseMapPanel({ map }: { map: CaseMap | null }) {
           </span>
         ))}
       </div>
-      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
+      <p className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">
         {map.attribution} — if the streets are missing the tiles did not load, and every number below is unaffected
       </p>
       <ul className="space-y-1">
@@ -379,11 +379,11 @@ function CasePanel({ canSettle, joined = false, row }: { canSettle: boolean; joi
       {/* 3. The map and the photograph, side by side — the two things he reads without words. */}
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <div className="min-w-0 space-y-2">
-          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The two locations on the map</div>
+          <div className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">The two locations on the map</div>
           <CaseMapPanel map={row.map} />
         </div>
         <div className="min-w-0 space-y-2">
-          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{photo.heading}</div>
+          <div className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{photo.heading}</div>
           {entry.photoPath !== null ? (
             <CrmPhotoThumb alt={photo.alt} caption={photo.caption} className="h-40 w-40" lazy path={entry.photoPath} />
           ) : (
@@ -396,7 +396,7 @@ function CasePanel({ canSettle, joined = false, row }: { canSettle: boolean; joi
           measurements and the history used to sit open beside the photograph, and together they were
           longer than the story itself — which is how the panel stopped being readable. */}
       <details className="min-w-0 border border-slate-200 bg-slate-50 px-3 py-2">
-        <summary className="cursor-pointer text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+        <summary className="cursor-pointer text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
           The measurements behind this
         </summary>
         <div className="min-w-0 space-y-2 pt-3">
@@ -410,7 +410,7 @@ function CasePanel({ canSettle, joined = false, row }: { canSettle: boolean; joi
               </li>
             ))}
           </ul>
-          <div className="pt-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">What has happened here</div>
+          <div className="pt-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">What has happened here</div>
           <CaseTimeline entry={entry} />
           <Reasons entry={entry} />
         </div>
@@ -443,7 +443,7 @@ export function CaseComparisonPanel({ comparison }: { comparison: CaseComparison
   }
   const side = (label: string, value: CaseComparisonSide) => (
     <div className="min-w-0 border border-slate-200 bg-white px-3 py-2">
-      <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
       <div className="break-words pt-1 text-sm font-bold leading-6 text-slate-800" dir="auto">
         {value.label}
       </div>
@@ -457,7 +457,7 @@ export function CaseComparisonPanel({ comparison }: { comparison: CaseComparison
       <div className="grid min-w-0 items-stretch gap-2 md:grid-cols-[1fr_auto_1fr]">
         {side("Where this says it happened", comparison.capture)}
         <div className="flex min-w-0 flex-col items-center justify-center px-2 py-1 text-center">
-          <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">apart</div>
+          <div className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">apart</div>
           <div className="break-words text-lg font-black leading-7 text-slate-900">{comparison.apart}</div>
         </div>
         {side("The validation location", comparison.validation)}

@@ -55,7 +55,7 @@ export function IntegrityCaseStage({ row }: { row: IntegrityBoardRow }) {
   }
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-y-auto">
-      <p className="px-4 pt-3 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">No photograph was kept — the readings on the map</p>
+      <p className="px-4 pt-3 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">No photograph was kept — the readings on the map</p>
       <div className="m-4 min-w-0 bg-white p-4">
         <CaseMapPanel map={row.map} />
       </div>
@@ -108,7 +108,7 @@ export function IntegrityCaseColumn({ row }: { row: IntegrityBoardRow }) {
       ) : null}
       <div className="px-5 py-4">
         <details className="min-w-0 border border-slate-200 bg-slate-50 px-3 py-2">
-          <summary className="cursor-pointer text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">The measurements behind this</summary>
+          <summary className="cursor-pointer text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">The measurements behind this</summary>
           <div className="min-w-0 space-y-2 pt-3">
             <ul className="space-y-1">
               {story.evidence.map((fact) => (
@@ -120,7 +120,7 @@ export function IntegrityCaseColumn({ row }: { row: IntegrityBoardRow }) {
                 </li>
               ))}
             </ul>
-            <div className="pt-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">What has happened here</div>
+            <div className="pt-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">What has happened here</div>
             <CaseTimeline entry={entry} />
           </div>
         </details>

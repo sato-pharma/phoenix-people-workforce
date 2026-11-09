@@ -669,7 +669,7 @@ export function PlanDayPanel({
             <div className="mt-4 grid min-w-0 gap-5">
               <DayStartsEditor dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} morning={morning} onChange={onStarts} starts={starts} />
               <div className="min-w-0">
-                <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Other activities</p>
+                <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Other activities</p>
                 <ActivityEditor activities={activities} dayName={dayName} idPrefix={`${idPrefix}-${day.date}`} locked={locked} onChange={onActivity} />
               </div>
             </div>
@@ -906,7 +906,7 @@ function BrickTick({ dayName, label, onPress, state }: { dayName: string; label:
         }}
         type="checkbox"
       />
-      <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-700">{label}</span>
+      <span className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.16em] text-slate-700">{label}</span>
     </label>
   );
 }
@@ -953,7 +953,7 @@ function tickDisabled(row: TickRow, room: Record<PhoenixCrmDoctorListType, numbe
 function OrderChip({ listType, position }: { listType: PhoenixCrmDoctorListType; position: number | null }) {
   if (position === null) return null;
   return (
-    <span className="mr-1.5 inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px align-[0.1em] text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-800">
+    <span className="mr-1.5 inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px align-[0.1em] text-phx-sm font-black uppercase tracking-[0.08em] text-orange-800">
       {position} {listType}
     </span>
   );
@@ -1130,7 +1130,7 @@ function PlannedDayView({
                 return (
                   <div className="min-w-0 border border-slate-200" key={group.key}>
                     <div className={cn("flex min-w-0 flex-wrap items-center justify-between gap-2 border-l-[3px] px-3 py-2", tint.bar, tint.fill)}>
-                      <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-700">{group.label}</p>
+                      <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.16em] text-slate-700">{group.label}</p>
                       <span className="text-xs font-bold text-slate-600">{countText(group.rows.length)} planned</span>
                     </div>
                     <CrmCardsOnPhone>

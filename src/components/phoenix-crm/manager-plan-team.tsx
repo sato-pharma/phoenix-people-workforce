@@ -140,11 +140,11 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
             <div className="mt-3 grid min-w-0 gap-2">
               {current.days.map((day) => (
                 <div className="min-w-0 border border-slate-200" key={day.date}>
-                  <p className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">{day.dateText}</p>
+                  <p className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-600">{day.dateText}</p>
                   {day.halves.map((half) => (
                     <div className="min-w-0 border-b border-slate-100 px-3 py-2 last:border-b-0" key={half.half}>
                       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half.half}</span>
+                        <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{half.half}</span>
                         <span className="min-w-0 break-words text-sm font-bold text-slate-900">{half.title}</span>
                       </div>
                       {half.note ? <p className="mt-1 break-words text-xs font-semibold text-slate-600">{half.note}</p> : null}
@@ -171,7 +171,7 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
           )}
           {current.unplanned.length > 0 ? (
             <div className="mt-4 grid min-w-0 gap-2">
-              <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Visited without a plan</p>
+              <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Visited without a plan</p>
               <ul className="grid min-w-0 gap-1">
                 {current.unplanned.map((visit, index) => (
                   <li className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm" key={`${visit.date}-${visit.name}-${index}`}>
@@ -203,7 +203,7 @@ function ManagerPlanReportBody({ view }: { view: ManagerPlanReportView }) {
 function ReportVisitPlace({ place }: { place: string }) {
   return (
     <span className="basis-full break-words text-xs font-semibold leading-5 text-slate-600">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Vacant area · where the customer is </span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Vacant area · where the customer is </span>
       <span dir="auto">{place}</span>
     </span>
   );
@@ -340,7 +340,7 @@ export function ManagerOwnListSection({ test }: { test: boolean }) {
                   {removing === customer.id ? (
                     <div className="mt-3 grid min-w-0 gap-2">
                       <label className="grid min-w-0 gap-1.5" htmlFor={`${idPrefix}-${customer.id}-reason`}>
-                        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Why should this customer come off your list? *</span>
+                        <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Why should this customer come off your list? *</span>
                         <textarea
                           className={crmTextareaClassName}
                           dir="auto"
