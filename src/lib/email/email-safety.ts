@@ -124,9 +124,17 @@ function configuredAllowedDomains() {
  * validator). Matches the parsed hostname against loopback, RFC1918 private ranges,
  * link-local (incl. the 169.254.169.254 cloud-metadata endpoint), and IPv6
  * loopback/ULA/link-local. The naive original only matched `localhost`/`127.0.0.1`.
+ *
+ * Also (owner, 2026-11-09): an IPv4-mapped IPv6 address is judged as the IPv4 host inside it —
+ * `https://[::ffff:127.0.0.1]/` reaches loopback, and the URL parser writes it `::ffff:7f00:1`, which
+ * no IPv4 pattern below would match — and Railway's private network (`*.railway.internal`), where
+ * the app's own services answer, is internal. A trailing dot (`host.railway.internal.`) is the same host.
  */
 export function isBlockedImageHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  const h = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "").replace(/\.$/, "");
+  const mapped = ipv4InsideMappedIpv6(h);
+  if (mapped) return isBlockedImageHost(mapped);
+  if (h === "railway.internal" || h.endsWith(".railway.internal")) return true; // Railway private network
   if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1" || h === "::") return true;
   if (/^127\./.test(h)) return true; // IPv4 loopback
   if (/^10\./.test(h)) return true; // RFC1918
@@ -136,6 +144,22 @@ export function isBlockedImageHost(hostname: string): boolean {
   if (/^(fc|fd)[0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
   if (/^fe80:/i.test(h)) return true; // IPv6 link-local
   return false;
+}
+
+/**
+ * The IPv4 address inside an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`), in either spelling the
+ * parser can hand over — dotted (`::ffff:127.0.0.1`) or two hex groups (`::ffff:7f00:1`), with the
+ * leading zero groups compressed or written out. Null for anything else.
+ */
+function ipv4InsideMappedIpv6(h: string): string | null {
+  const rest = /^(?:::|(?:0{1,4}:){5})ffff:(.+)$/.exec(h)?.[1];
+  if (!rest) return null;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(rest)) return rest;
+  const groups = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(rest);
+  if (!groups) return null;
+  const high = parseInt(groups[1], 16);
+  const low = parseInt(groups[2], 16);
+  return [high >> 8, high & 255, low >> 8, low & 255].join(".");
 }
 
 /**

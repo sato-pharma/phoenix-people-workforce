@@ -54,6 +54,24 @@ export async function runEmailSendHardeningTests() {
   for (const ok of ["mail.satopharma.com", "futuretalents.satopharma.com", "8.8.8.8", "171.16.0.1"]) {
     assert.equal(isBlockedImageHost(ok), false, `${ok} must be allowed`);
   }
+  // An IPv4-mapped IPv6 host is judged as the IPv4 host inside it, and Railway's private network is
+  // internal (owner, 2026-11-09). Each URL goes through the real parser, which rewrites the address.
+  for (const url of [
+    "https://[::ffff:127.0.0.1]/signature.png",
+    "https://[::ffff:a9fe:a9fe]/signature.png",
+    "https://[0:0:0:0:0:ffff:0a00:0001]/signature.png",
+    "https://postgres.railway.internal/signature.png",
+    "https://phoenix-people-workforce.railway.internal./signature.png",
+  ]) {
+    assert.equal(isBlockedImageHost(new URL(url).hostname), true, `${url} must be blocked`);
+  }
+  for (const url of [
+    "https://[::ffff:808:808]/signature.png",
+    "https://phoenix-people-workforce-staging.up.railway.app/signature.png",
+    "https://phoenix-hr.satopharma.com/assets/branding/phoenix-hr-signature-small.png",
+  ]) {
+    assert.equal(isBlockedImageHost(new URL(url).hostname), false, `${url} must be allowed`);
+  }
 
   // --- Non-deliverable / synthetic recipient guard ---------------------------------
   // The Supabase-auth identity address is a login key, never a mailbox: it must be rejected
