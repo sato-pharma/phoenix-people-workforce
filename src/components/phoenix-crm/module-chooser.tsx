@@ -113,7 +113,7 @@ export function PhoenixCrmModuleChooser({
                     {/* A pulsing mark for what is NEW (an unread notice), beside the static count of what is WAITING. */}
                     <PhoenixCrmNewBadge count={unread?.[module.key]?.count ?? 0} />
                     {badge === null ? null : (
-                      <span className="inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-800">
+                      <span className="inline-flex shrink-0 items-center border border-orange-300 bg-orange-100 px-1.5 py-px text-phx-sm font-black uppercase tracking-[0.08em] text-orange-800">
                         {badge} waiting
                       </span>
                     )}

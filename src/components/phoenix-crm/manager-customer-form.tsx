@@ -198,7 +198,7 @@ export function ManagerCustomerForm({
 
   return (
     <div className="grid min-w-0 gap-4 border border-slate-200 bg-slate-50/60 p-4">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Add a customer to Manager&apos;s own list</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Add a customer to Manager&apos;s own list</p>
       <CrmField htmlFor={`${idPrefix}-name`} label="Name *">
         <input
           autoComplete="off"
@@ -275,7 +275,7 @@ export function ManagerCustomerForm({
 
       <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4">
         {/* The area is required and the rest is not (owner walk, 2026-10-28: "optional" sat over "Area *"). */}
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Where the customer is · the area is required</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Where the customer is · the area is required</p>
         <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. Or fill them in below." label="Location">
           <CaptureLocation disabled={saving || locating} onChange={(next) => void capture(next)} value={pin} />
         </CrmField>

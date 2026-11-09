@@ -954,7 +954,7 @@ function BoardSection({
     const customer = byContact.get(row.contactCrmId);
     if (!customer) {
       return (
-        <p className="text-phx-2xs font-semibold text-slate-400">
+        <p className="text-phx-sm font-semibold text-slate-400">
           {row.listType === "Pharmacy" ? "Pharmacy · not on the CRM list" : "Not on the CRM list yet"}
         </p>
       );
@@ -972,7 +972,7 @@ function BoardSection({
       {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES — the same sentence the board prints, for
           the same reason: on the 2nd of a month almost every contact is legitimately unvisited, and
           "Not visited 84" with no window under it reads as a collapse in coverage. */}
-      <p className="px-4 pt-4 text-phx-2xs font-semibold text-slate-500 sm:px-5">
+      <p className="px-4 pt-4 text-phx-sm font-semibold text-slate-500 sm:px-5">
         {board.activityAvailable
           ? `Visits and plan counted from ${dayLabel(`${board.activityMonth}-01`)} to ${dayLabelWithYear(board.activityAsOf)} Cairo.`
           : "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that."}

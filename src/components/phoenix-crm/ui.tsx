@@ -57,7 +57,7 @@ export function CrmPanel({
       {hasHeader ? (
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
           <div className="min-w-0">
-            {eyebrow ? <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">{eyebrow}</p> : null}
+            {eyebrow ? <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">{eyebrow}</p> : null}
             {title ? <h2 className="mt-1 break-words text-lg font-black tracking-tight text-slate-950 sm:text-xl">{title}</h2> : null}
             {description ? <div className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">{description}</div> : null}
           </div>
@@ -87,7 +87,7 @@ export function CrmBlock({
     <div className={cn("min-w-0 px-4 py-4 sm:px-5", className)}>
       {shownTitle || actions ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {shownTitle ? <h3 className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{shownTitle}</h3> : <span />}
+          {shownTitle ? <h3 className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{shownTitle}</h3> : <span />}
           {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         </div>
       ) : null}
@@ -186,7 +186,7 @@ export function CrmField({
 }) {
   return (
     <div className={cn("grid min-w-0 gap-1.5", className)}>
-      <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={htmlFor}>
+      <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={htmlFor}>
         {label}
       </label>
       {children}
@@ -211,7 +211,7 @@ export function CrmPill({ children, className, tone = "neutral" }: { children: R
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-none border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
+        "inline-flex max-w-full items-center gap-1 rounded-none border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em]",
         PILL_TONES[tone],
         className,
       )}
@@ -314,7 +314,7 @@ const STAT_VALUES: Record<Tone, string> = {
 export function CrmStat({ label, note, tone = "neutral", value }: { label: ReactNode; note?: ReactNode; tone?: Tone; value: ReactNode }) {
   return (
     <div className={cn("min-w-0 rounded-none border border-l-[3px] border-slate-200/80 bg-white px-3.5 py-3", STAT_BARS[tone])}>
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       {/* `leading-tight`, not `leading-none`: a value such as "3 AM · 12 PM" wraps on a phone, and its
           two lines must not touch. */}
       <p className={cn("mt-2 break-words text-2xl font-black leading-tight", STAT_VALUES[tone])}>{value}</p>
@@ -613,7 +613,7 @@ export function CrmFacts({ facts }: { facts: ReadonlyArray<{ label: ReactNode; v
     <dl className="grid grid-cols-2 gap-2">
       {facts.map((fact, index) => (
         <div className="min-w-0 rounded-none border border-slate-100 bg-slate-50 px-2.5 py-2" key={index}>
-          <dt className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{fact.label}</dt>
+          <dt className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{fact.label}</dt>
           <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">{fact.value}</dd>
         </div>
       ))}
@@ -652,7 +652,7 @@ export function CrmTable({
 }
 
 export const crmThClassName =
-  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 export const crmTdClassName = "border-b border-slate-100 px-3 py-2.5 align-top break-words text-sm font-semibold text-slate-700";
 

@@ -182,7 +182,7 @@ export function CrmPhotoThumb({
   return (
     <span aria-label="No photo" className={cn(box, "flex flex-col items-center justify-center gap-1 text-slate-400")} role="img">
       <ImageOff aria-hidden className="h-5 w-5" />
-      <span className="text-phx-2xs font-black uppercase tracking-[0.1em]">No photo</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.1em]">No photo</span>
     </span>
   );
 }

@@ -137,7 +137,7 @@ function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
 
 /** A photograph's own heading — drawn on the phone, where no table header names the column. */
 function PhotoHeading({ children }: { children: string }) {
-  return <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{children}</p>;
+  return <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{children}</p>;
 }
 
 /** The sign on the building's own door, large, with what the reader saw on it. */
