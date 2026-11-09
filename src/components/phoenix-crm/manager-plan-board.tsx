@@ -49,6 +49,7 @@ import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-f
 import { CustomerCard, CustomerGroupBar, CustomerMarks, groupLook, useCustomerInsight } from "@/components/phoenix-crm/manager-customer-marks";
 import { CustomerVisitTimesLines, useCustomerVisitTimes, useShowVisitTimes, VisitTimesToggle } from "@/components/phoenix-crm/visit-times";
 import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
+import { ManagerWeekGlancePanel } from "@/components/phoenix-crm/manager-week-glance";
 import { CrmStepFooter, CrmStepForm, CrmStepNext, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
   CrmBlock,
@@ -81,6 +82,7 @@ import {
   type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { customerGroups, customerPriority, ownInsightKey, suggestedCustomers, type GroupableCustomer } from "@/lib/phoenix-crm/manager-customer-marks-rules";
+import { districtManagerDayCustomerTail, districtManagerDayPill, managerAreasTickedLine, managerDayIsPlanned, managerDayNote, managerSendTally } from "@/lib/phoenix-crm/manager-week-glance";
 import { compareFoldedNames, foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { PLAN_AUTOSAVE_DELAY_MS } from "@/lib/phoenix-crm/plan-week-draft";
 import type {
@@ -756,6 +758,15 @@ export function ManagerPlanBoard({
         </CrmBlock>
       ) : null}
 
+      {step !== 3 ? (
+        <ManagerWeekGlancePanel
+          canOpen={view.canWrite}
+          exportHref={crmUrl(`${BOARD}/export`, { week: view.weekStart, manager: view.mode === "pick" ? (view.manager?.hrId ?? null) : null, test })}
+          onOpenHalf={openHalf}
+          view={view}
+        />
+      ) : null}
+
       <div className="min-w-0 border-t border-slate-100">
         <CrmStepForm
           aside={
@@ -866,23 +877,12 @@ function WeekStep({ onWeek, view }: { onWeek: (week: string) => void; view: Mana
 
 // ── Step 2 · the day ────────────────────────────────────────────────────────────────────────────
 
+/** The day's note, as `managerDayNote` words it, with the halves typed here and not saved yet. */
 function dayNote(day: ManagerBoardDay, drafts: Record<string, HalfDraft>, problemOf: (waiting: HalfDraft) => string | null): string {
-  if (day.holiday) return `${day.holiday} · no plan`;
-  if (day.halves.length === 0) return "No field day";
-  return day.halves
-    .map((half) => {
-      const waiting = drafts[halfKey(day.date, half)];
-      const problem = waiting ? problemOf(waiting) : null;
-      const summary = problem ? `Not saved: ${problem}` : waiting ? "Not saved yet" : (day.slots.find((slot) => slot.half === half)?.summary ?? "Nothing planned");
-      return `${half}: ${summary}`;
-    })
-    .join(" · ");
-}
-
-/** Whether a day reads as finished on the day list: both its halves, or one where AM and PM are each optional. */
-function dayIsPlanned(day: ManagerBoardDay, anyHalfIsEnough: boolean): boolean {
-  const planned = (half: ManagerHalf) => day.slots.some((slot) => slot.half === half && slot.kind);
-  return day.halves.length > 0 && (anyHalfIsEnough ? day.halves.some(planned) : day.halves.every(planned));
+  return managerDayNote(day, (half) => {
+    const waiting = drafts[halfKey(day.date, half)];
+    return waiting ? { problem: problemOf(waiting) } : null;
+  });
 }
 
 function DayStep({
@@ -909,7 +909,7 @@ function DayStep({
     label: day.passed && day.date !== selected ? <span className="text-slate-400">{day.dateText}</span> : day.dateText,
     note: day.passed ? `Passed · ${dayNote(day, drafts, problemOf)}` : dayNote(day, drafts, problemOf),
     disabled: day.halves.length === 0,
-    tone: dayIsPlanned(day, anyHalfIsEnough) ? "good" : undefined,
+    tone: managerDayIsPlanned(day, anyHalfIsEnough) ? "good" : undefined,
   }));
   return <CrmChoice columns={2} label="Day" onChange={onDay} options={options} value={selected} />;
 }
@@ -1567,7 +1567,7 @@ function WithDmPart({
       {dmDay}
       <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
+          <p className="text-sm font-black text-slate-900">{managerAreasTickedLine(draft.areaSeatIds.length, view.areas.length)}</p>
           {canEdit ? (
             <div className="flex flex-wrap gap-2">
               <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
@@ -1614,7 +1614,7 @@ function DistrictManagerDayPanel({ dmDay, dmName, unread }: { dmDay: DistrictMan
     <div className="grid min-w-0 gap-2 border border-slate-200 p-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <p className="break-words text-sm font-black text-slate-900">{`${who}'s own plan for this day`}</p>
-        <CrmPill tone={dmDay.sent ? "info" : "warn"}>{dmDay.sent ? dmDay.statusLabel : `${dmDay.statusLabel} · not sent yet`}</CrmPill>
+        <CrmPill tone={districtManagerDayPill(dmDay).tone}>{districtManagerDayPill(dmDay).text}</CrmPill>
       </div>
       {dmDay.halves.length === 0 ? (
         <p className="break-words text-sm font-semibold leading-6 text-slate-500">Nothing is planned for this day yet.</p>
@@ -1636,14 +1636,13 @@ function DistrictManagerDayPanel({ dmDay, dmName, unread }: { dmDay: DistrictMan
               {entry.customers.length > 0 ? (
                 <ul className="grid min-w-0 gap-1 sm:grid-cols-2">
                   {entry.customers.map((customer) => (
-                    <li className={`break-words text-xs font-semibold leading-5 ${customer.gone ? "text-slate-400 line-through" : "text-slate-700"}`} key={customer.key}>
-                      <bdi>{customer.name}</bdi>
-                      {customer.speciality ? ` · ${customer.speciality}` : ""}
-                      {customer.grade ? ` · Grade ${customer.grade}` : ""}
+                    <li className={`break-words text-xs font-semibold leading-5 ${customer.gone ? "text-slate-400" : "text-slate-700"}`} key={customer.key}>
+                      <bdi className={customer.gone ? "line-through" : undefined}>{customer.name}</bdi>
+                      {districtManagerDayCustomerTail(customer)}
                     </li>
                   ))}
                 </ul>
-              ) : entry.kindLabel !== "Admin" ? (
+              ) : !entry.admin ? (
                 <p className="break-words text-xs font-semibold text-slate-500">No customers chosen for this half.</p>
               ) : null}
             </li>
@@ -1760,7 +1759,7 @@ function WithSeniorPart({
       ) : (
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-black text-slate-900">{`${countText(draft.areaSeatIds.length)} of ${plural(view.areas.length, "area", "areas")} ticked`}</p>
+            <p className="text-sm font-black text-slate-900">{managerAreasTickedLine(draft.areaSeatIds.length, view.areas.length)}</p>
             {canEdit ? (
               <div className="flex flex-wrap gap-2">
                 <CrmButton onClick={() => onDraft({ ...draft, areaSeatIds: view.areas.map((area) => area.seatId) })} size="sm" variant="primary">
@@ -2236,19 +2235,11 @@ function SendStep({
   const [asked, setAsked] = useState(false);
   const plan = view.plan;
   const sendWord = sendWordOf(view);
-  // A passed day is history, never a gap to fill: the count is of the days still to come (owner walk,
-  // 2026-10-28: "2 of 11 planned" on a Tuesday counted Saturday to Monday against him).
-  const comingDays = days.filter((day) => !day.passed);
-  // A half-day on the page counts once it can be saved: a choice still missing something goes nowhere.
-  const isPlanned = (day: ManagerBoardDay, half: ManagerHalf) => {
-    const waiting = drafts[halfKey(day.date, half)];
-    if (waiting) return waiting.kind !== null && !problemOf(waiting);
-    return day.slots.some((slot) => slot.half === half && slot.kind);
-  };
-  const planned = comingDays.reduce((sum, day) => sum + day.halves.filter((half) => isPlanned(day, half)).length, 0);
-  const fieldHalves = comingDays.reduce((sum, day) => sum + day.halves.length, 0);
-  const emptyHalves = comingDays.flatMap((day) => (day.editable ? day.halves.filter((half) => !isPlanned(day, half)).map((half) => `${day.dateText} ${half}`) : []));
-  const offRepDay = days.flatMap((day) => day.slots.flatMap((slot) => slot.customers.filter((customer) => customer.flag))).length;
+  // The days still to come, the halves typed here counted once they can save (`managerSendTally`).
+  const { emptyHalves, fieldHalves, offRepDay, planned } = managerSendTally(days, (date, half) => {
+    const waiting = drafts[halfKey(date, half)];
+    return waiting ? { kind: waiting.kind, problem: problemOf(waiting) } : null;
+  });
   // Who decides it, in order — and, for everyone but a district manager, HR's own acknowledgement after.
   const route = [plan?.firstApproverName, plan?.secondApproverName].filter(Boolean).join(", then ");
   const hrAcknowledges = choosesADistrict(view);

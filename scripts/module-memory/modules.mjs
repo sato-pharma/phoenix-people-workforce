@@ -523,6 +523,26 @@ export const MODULES = [
     keywords: ["training manager plan", "training manager's plan", "training manager week", "with an area", "region scope"],
     tables: [],
   },
+  // 🔴 SPLIT, 2026-11-09, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN A FOURTH TIME: the week at a
+  // glance and its Excel file (the premium pass of Plan your week in Phoenix CRM) measured the injected pointer at
+  // 4,076 bytes against the 4,000 margin. The glance is its own pure module, panel, workbook and route; the board
+  // still matches `phoenix-crm-manager-plan`'s globs, so a file here loads the pair.
+  {
+    id: "phoenix-crm-manager-week-glance",
+    title: "Phoenix CRM — a manager's week at a glance and its Excel file",
+    scope: "The week at a glance above a manager's plan board — half-days planned and still to plan, the kind bar, the week grid, the districts, people and customers of the week — the district manager's day pill, and the week downloaded as Excel through the board's own door.",
+    globs: [
+      "src/lib/phoenix-crm/manager-week-glance.ts",
+      "src/components/phoenix-crm/manager-week-glance.tsx",
+      "src/components/approvals-hub/manager-plan-request-detail.tsx",
+      "src/lib/phoenix-crm/server/manager-week-workbook.ts",
+      "app/api/phoenix-crm/manager-plans/export/**",
+      "src/components/phoenix-crm/manager-plan-board.tsx",
+      "tests/phoenix-crm-manager-week-glance*",
+    ],
+    keywords: ["week at a glance", "plan your week", "manager week export", "district manager day pill"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-08, BEFORE `phoenix-crm` OR `phoenix-crm-boards` COULD CROSS THE POINTER MARGIN: the
   // photo-validation audit taught seven rules at once (the signboard check, the closed refusal reasons, the
   // "Validate again" notice, the validate-first order, the Place checks reader, the same-seat merge and the

@@ -2154,6 +2154,7 @@ import { runPhoenixCrmVisitTimesTests } from "./phoenix-crm-visit-times.test.ts"
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerPlanSourceTests } from "./phoenix-crm-manager-plan-source.test.ts";
 import { runPhoenixCrmManagerPlanDmDayTests } from "./phoenix-crm-manager-plan-dm-day.test.ts";
+import { runPhoenixCrmManagerWeekGlanceTests } from "./phoenix-crm-manager-week-glance.test.ts";
 import { runPhoenixCrmTrainingManagerPlanTests } from "./phoenix-crm-training-manager-plan.test.ts";
 import { runPhoenixCrmManagerVisitDetailTests } from "./phoenix-crm-manager-visit-details.test.ts";
 import { runPhoenixCrmVisitAsksTests } from "./phoenix-crm-visit-asks.test.ts";
@@ -8302,6 +8303,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's With a district manager half-day shows that district manager's own day (owner, 2026-11-08): each half he planned — a double visit and its rep, a single visit, Admin — with its area and the doctors he ticked, only that date, AM first, a draft marked not sent; a district manager's and the Training Manager's board read no other week, and a failed read is said",
   runPhoenixCrmManagerPlanDmDayTests,
+);
+
+await runTest(
+  "Plan your week in Phoenix CRM, the premium pass (owner, 2026-11-09): the week at a glance counts every field half-day once — planned, still to plan, passed with nothing planned — leaves a holiday out, counts a customer once however many half-days tick it, a bar that adds up to 100, the districts the week goes to and the ones it does not; the district manager's day says where that week stands without saying it twice, a returned week is not sent; the Excel file reads the screen's arithmetic through the board's own door, audited",
+  runPhoenixCrmManagerWeekGlanceTests,
 );
 
 await runTest(
