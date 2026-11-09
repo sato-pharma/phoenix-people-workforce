@@ -101,7 +101,7 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
           the panel keeps only what the row cannot: the decision's own words. */}
       {inTable && !row.waitingFor && row.finalStepName ? (
         <div className="px-4 py-3">
-          <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Decision comment</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Decision comment</p>
           {row.finalDecisionNote ? (
             <p className="mt-1.5 border-l-2 border-slate-200 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700">
               &ldquo;{row.finalDecisionNote}&rdquo;
@@ -112,7 +112,7 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
         </div>
       ) : inTable && row.waitingFor ? null : (
       <div className="px-4 py-3">
-        <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
           {row.waitingFor ? "Where it is now" : "Final response"}
         </p>
         {row.waitingFor ? (
@@ -152,7 +152,7 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
       {/* ------ What THIS viewer did, when they were part of it ----------------------------------- */}
       {row.myDecision ? (
         <div className="bg-slate-900/[0.03] px-4 py-2.5">
-          <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
           <p className="mt-0.5 text-phx-sm font-bold text-slate-800">
             {row.myDecision.stepName}
             {myDecidedAt ? ` · ${myDecidedAt}` : ""}
@@ -178,24 +178,24 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
       <div className={`grid gap-3 px-4 py-3 ${inTable ? "sm:grid-cols-2" : "sm:grid-cols-4"}`}>
         {inTable ? null : (
           <div className="flex flex-col">
-            <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
+            <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
             <span className="text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</span>
           </div>
         )}
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
           <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
             <CalendarDays className="h-3 w-3 text-slate-400" />
             {formatDate(row.payDate)}
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
           <span className="text-phx-md font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
         </div>
         {inTable ? null : (
           <div className="flex flex-col">
-            <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
+            <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
             <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
           </div>
         )}
@@ -227,7 +227,7 @@ function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
         className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${OUTCOME_ACCENT[row.outcome]}`}
       >
         <div className="min-w-0">
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
+          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
               second line" and only the first half is the owner's rule — AGENTS.md §4 says that where
               the no-ellipsis rule meets the no-horizontal-scroll rule, WRAPPING WINS. The measurement
@@ -674,7 +674,7 @@ export function MarketingRequestHistory() {
                     {["Request", "Activity · Requester", "Outcome", "Final response", "Value", "Decided", ""].map(
                       (heading, index) => (
                         <th
-                          className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                          className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
                           key={`${heading}-${index}`}
                           scope="col"
                         >

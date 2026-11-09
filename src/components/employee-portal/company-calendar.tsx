@@ -282,7 +282,7 @@ export function CompanyCalendar({
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
           {WEEKDAYS.map((day) => (
-            <div className="px-1 py-2 text-center text-phx-2xs font-black uppercase tracking-wide text-slate-400" key={day}>
+            <div className="px-1 py-2 text-center text-phx-sm font-black uppercase tracking-wide text-slate-400" key={day}>
               {day}
             </div>
           ))}
@@ -311,21 +311,21 @@ export function CompanyCalendar({
                     {day.date ? Number(day.date.slice(8, 10)) : ""}
                   </span>
                   {dayItems.length > 0 ? (
-                    <span className="text-phx-3xs font-black text-slate-400 sm:hidden">{dayItems.length}</span>
+                    <span className="text-phx-xs font-black text-slate-400 sm:hidden">{dayItems.length}</span>
                   ) : null}
                 </div>
                 {/* Mobile: dots. Desktop: labels. */}
                 <div className="mt-1 hidden space-y-0.5 sm:block">
                   {dayItems.slice(0, 3).map((item) => (
                     <div
-                      className={`whitespace-nowrap rounded border px-1 py-0.5 text-phx-3xs font-bold ${toneFor(item).chip}`}
+                      className={`whitespace-nowrap rounded border px-1 py-0.5 text-phx-xs font-bold ${toneFor(item).chip}`}
                       key={item.id}
                     >
                       {item.title}
                     </div>
                   ))}
                   {dayItems.length > 3 ? (
-                    <div className="px-1 text-phx-3xs font-bold text-slate-400">+{dayItems.length - 3} more</div>
+                    <div className="px-1 text-phx-xs font-bold text-slate-400">+{dayItems.length - 3} more</div>
                   ) : null}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-0.5 sm:hidden">

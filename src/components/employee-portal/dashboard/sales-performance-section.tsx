@@ -140,7 +140,7 @@ function sectionTitle(kicker: string, title: string) {
     <div className="mb-2 flex items-center gap-3">
       <div className="h-8 w-[3px] rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
       <div>
-        <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
+        <p className="text-phx-sm font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
         <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
       </div>
     </div>
@@ -156,7 +156,7 @@ function EmptyStateCard({
 }) {
   return (
     <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-      <p className="mt-4 text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+      <p className="mt-4 text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
   );
@@ -176,7 +176,7 @@ function MetricCard({
       className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
       title={tooltip}
     >
-      <div className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+      <div className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
         <span>{label}</span>
       </div>
       <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
@@ -251,7 +251,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
                     </span>
                     <p className="text-sm font-black tracking-tight text-slate-900">Sales Trend</p>
                   </div>
-                  <span className="rounded bg-slate-100 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
+                  <span className="rounded bg-slate-100 px-2.5 py-1 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">Monthly</span>
                 </div>
                 {trendData.length > 0 ? (
                   <StableChartFrame
@@ -290,7 +290,7 @@ export function SalesPerformanceSection({ data }: { data: MedicalRepPortalData }
               <Card className="rounded border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/70">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <p className="text-sm font-black tracking-tight text-slate-900">Sales vs Target</p>
-                  <span className="rounded bg-slate-100 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
+                  <span className="rounded bg-slate-100 px-2.5 py-1 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">Variance</span>
                 </div>
                 {trendData.length > 0 ? (
                   <StableChartFrame

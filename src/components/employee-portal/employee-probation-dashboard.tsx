@@ -453,7 +453,7 @@ export function EmployeeProbationDashboard({
             </>
           ) : (
             <div className="flex h-4 w-full items-center justify-center rounded bg-slate-100">
-              <span className="text-phx-2xs text-slate-400">No data</span>
+              <span className="text-phx-sm text-slate-400">No data</span>
             </div>
           )}
         </Card>
@@ -829,10 +829,10 @@ export function EmployeeProbationDashboard({
 
                   {/* Metadata pills */}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-sm text-slate-500">
                       {row.line_name}
                     </span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-sm text-slate-500">
                       {row.area_name}
                     </span>
                   </div>
@@ -865,7 +865,7 @@ export function EmployeeProbationDashboard({
                   {/* Review + actions */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                     <span
-                      className={`inline-flex items-center rounded px-2 py-0.5 text-phx-2xs font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
+                      className={`inline-flex items-center rounded px-2 py-0.5 text-phx-sm font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
                     >
                       {workflowStatusLabel(row.workflow?.status)}
                     </span>
@@ -873,7 +873,7 @@ export function EmployeeProbationDashboard({
                       <>
                         {allowed.map((action) => (
                           <button
-                            className={`rounded px-2 py-1 text-phx-2xs font-semibold transition disabled:opacity-50 ${
+                            className={`rounded px-2 py-1 text-phx-sm font-semibold transition disabled:opacity-50 ${
                               action === "terminate"
                                 ? "border border-rose-200 bg-rose-50 text-rose-700"
                                 : action === "pass"

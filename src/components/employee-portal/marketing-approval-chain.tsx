@@ -96,7 +96,7 @@ export function ApprovalHistory({
   if (rungs.length === 0) return null;
   return (
     <div className="border-b border-slate-100 px-4 py-3">
-      <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
       <ol className="mt-2 space-y-1.5">
         {rungs.map((rung) => {
           const decidedAt = formatDateTime(rung.decisionAt);
@@ -113,9 +113,9 @@ export function ApprovalHistory({
                 {rung.approverName ? (
                   <span className="text-phx-xs font-medium">by {rung.approverName}</span>
                 ) : null}
-                {decidedAt ? <span className="text-phx-2xs font-semibold opacity-80">{decidedAt}</span> : null}
+                {decidedAt ? <span className="text-phx-sm font-semibold opacity-80">{decidedAt}</span> : null}
                 {rung.isMine ? (
-                  <span className="rounded-sm bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] text-white">
+                  <span className="rounded-sm bg-slate-900 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] text-white">
                     Yours
                   </span>
                 ) : null}
@@ -132,7 +132,7 @@ export function ApprovalHistory({
                   &ldquo;{rung.decisionNote}&rdquo;
                 </p>
               ) : rung.status === "approved" ? (
-                <p className="mt-1 text-phx-2xs font-medium italic opacity-70">No comment left</p>
+                <p className="mt-1 text-phx-sm font-medium italic opacity-70">No comment left</p>
               ) : null}
             </li>
           );

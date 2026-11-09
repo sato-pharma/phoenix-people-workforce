@@ -142,7 +142,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
         ))}
       </div>
       <span className="h-9 w-px bg-slate-200" />
-      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
         From
         <input
           className={phxFieldClassName}
@@ -152,7 +152,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
           value={from}
         />
       </label>
-      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
         To
         <input
           className={phxFieldClassName}
@@ -224,7 +224,7 @@ function RoleBreakdown({ visits }: { visits: DoubleVisitReportRow[] }) {
   const multipleRoles = roles.length > 1;
   return (
     <div className="border-b border-slate-200 bg-white px-4 py-2.5">
-      <p className="mb-1.5 text-phx-2xs font-black uppercase tracking-wider text-slate-400">
+      <p className="mb-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-400">
         Visited by {multipleRoles ? `${roles.length} different roles` : "1 role only"}
       </p>
       <div className="space-y-1">
@@ -284,7 +284,7 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   if (!result) return null;
   if (result.status === "future") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-phx-2xs font-bold uppercase text-blue-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-phx-sm font-bold uppercase text-blue-700">
         <Clock className="h-3 w-3" />
         Planned — not due yet
       </span>
@@ -292,7 +292,7 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "confirmed") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold text-emerald-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-sm font-bold text-emerald-700">
         <CheckCircle2 className="h-3 w-3" />
         Confirmed{result.visitorNames.length > 0 ? ` · with ${result.visitorNames.map(displayPersonName).join(", ")}` : ""}
       </span>
@@ -300,14 +300,14 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "outside-range") {
     return (
-      <span className={`inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-bold uppercase text-slate-500 ${adminChipDepthClassName}`}>
+      <span className={`inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-phx-sm font-bold uppercase text-slate-500 ${adminChipDepthClassName}`}>
         <CalendarSearch className="h-3 w-3" />
         Widen date range above
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-phx-2xs font-bold uppercase text-rose-700">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-phx-sm font-bold uppercase text-rose-700">
       <XCircle className="h-3 w-3" />
       Not recorded that day
     </span>
@@ -359,7 +359,7 @@ function RosterRow({
 
         <div>
           {entry.onProbation ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-orange-200 bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase text-orange-700">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-orange-200 bg-orange-50 px-2 py-1 text-phx-sm font-bold uppercase text-orange-700">
               <Hourglass className="h-3 w-3" />
               Probation
               {entry.probationDaysRemaining != null && entry.probationDaysRemaining > 0
@@ -373,14 +373,14 @@ function RosterRow({
 
         <div>
           {entry.visited ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold text-emerald-700">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-sm font-bold text-emerald-700">
               <CheckCircle2 className="h-3 w-3" />
               {entry.visitCount} DV{entry.visitCount === 1 ? "" : "s"} / {dayCount} day{dayCount === 1 ? "" : "s"} · last {formatDate(entry.lastVisitDate)}
             </span>
           ) : entry.lastVisitDateEver ? (
             // Not visited in the selected window, but HAS an older DV — the "getting stale" signal.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-sm font-bold ${
                 entry.cadenceBand === "critical"
                   ? "border-rose-200 bg-rose-50 text-rose-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -394,7 +394,7 @@ function RosterRow({
             // cadence band, which for a never-visited rep runs from the hire date (30/60): a rep who
             // started two days ago is not overdue, so the badge stays neutral until day 31.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-sm font-bold ${
                 entry.cadenceBand === "critical"
                   ? "border-rose-200 bg-rose-50 text-rose-700"
                   : entry.cadenceBand === "warning"
@@ -510,7 +510,7 @@ function GroupCoverage({ summary, tone }: { summary: DvCoverageSummary; tone: "d
   const neutral = tone === "dark" ? "text-slate-300" : "text-slate-500";
   const track = tone === "dark" ? "bg-white/20" : "bg-slate-200";
   return (
-    <span className="flex shrink-0 items-center gap-2 text-phx-2xs font-bold uppercase tracking-wider">
+    <span className="flex shrink-0 items-center gap-2 text-phx-sm font-bold uppercase tracking-wider">
       <span className={`hidden h-1.5 w-16 overflow-hidden sm:flex ${track}`}>
         <span className="bg-emerald-500" style={{ width: `${summary.coveragePct}%` }} />
       </span>
@@ -617,7 +617,7 @@ export function DvPlannerWorkspace({
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="text-2xl font-black tabular-nums text-slate-950">{overall.coveragePct}%</span>
-              <span className="text-phx-2xs font-bold uppercase tracking-wider text-slate-400">Coverage</span>
+              <span className="text-phx-sm font-bold uppercase tracking-wider text-slate-400">Coverage</span>
             </div>
             <div className="flex h-8 w-40 overflow-hidden bg-slate-200">
               <span className="bg-emerald-500" style={{ width: `${overall.coveragePct}%` }} />

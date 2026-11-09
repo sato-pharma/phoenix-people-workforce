@@ -421,7 +421,7 @@ export function runPhoenixCrmTodayTests(): void {
       // other still fails here.
       ["the panel shell", 'className={`min-w-0 border border-slate-200 bg-white ${adminSoftDepthClassName}`}'],
       ["the panel title", 'className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600"'],
-      ["the header chip", "border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums"],
+      ["the header chip", "border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums"],
       ["the row rail", 'className={`w-1 self-stretch'],
     ] as const) {
       assert.ok(panel.includes(shape), `the panel must wear the overview's own ${what}: ${shape}`);

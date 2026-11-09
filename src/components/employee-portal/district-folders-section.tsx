@@ -258,7 +258,7 @@ function FoldersBanner() {
         <div className="mt-0.5 h-8 w-[3px] shrink-0 rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
         <div className="space-y-2">
           <div>
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-500">
+            <p className="text-phx-sm font-bold uppercase tracking-[0.18em] text-orange-500">
               Your candidate folders
             </p>
             <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">

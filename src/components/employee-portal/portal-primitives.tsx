@@ -38,7 +38,7 @@ export function PortalSection({
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
           <div className="min-w-0">
             {eyebrow ? (
-              <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+              <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">
                 {eyebrow}
               </p>
             ) : null}
@@ -95,7 +95,7 @@ export function PortalFilterBar({
     <PortalSection className="shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
       <div className="p-4 sm:p-5">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded border border-orange-100 bg-orange-50 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-700">
+          <span className="inline-flex items-center rounded border border-orange-100 bg-orange-50 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.14em] text-orange-700">
             {title}
           </span>
           {countLabel ? <span className="text-xs font-bold text-slate-500">{countLabel}</span> : null}
@@ -138,7 +138,7 @@ export function PortalMetricCard({
         ) : null}
         {/* Wraps, never clips (fits-the-screen rule): two cards to a 375px row leave a label
             about 110px, and "SHORT / ABSENT" in tracked capitals needs more than that. */}
-        <p className="min-w-0 break-words text-phx-2xs font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
+        <p className="min-w-0 break-words text-phx-sm font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
           {label}
         </p>
       </div>
@@ -254,7 +254,7 @@ export function PortalRecordFields({
     <dl className="grid grid-cols-2 gap-2">
       {fields.map((field, index) => (
         <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2" key={index}>
-          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
             {field.label}
           </dt>
           <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">
@@ -373,7 +373,7 @@ export function PortalStackingCell({
 }) {
   return (
     <td className={cn("block px-4 py-1.5 md:table-cell md:py-3", className)} colSpan={colSpan}>
-      <span className="mb-0.5 block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400 md:hidden">
+      <span className="mb-0.5 block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-400 md:hidden">
         {label}
       </span>
       {children}

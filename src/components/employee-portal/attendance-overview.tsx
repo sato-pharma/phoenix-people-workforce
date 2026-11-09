@@ -163,15 +163,15 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                     </div>
                     <dl className="mt-2.5 grid grid-cols-3 gap-2">
                       <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
                         <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
                       </div>
                       <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
                         <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
                       </div>
                       <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
+                        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
                         <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.timeLong || "—"}</dd>
                       </div>
                     </dl>

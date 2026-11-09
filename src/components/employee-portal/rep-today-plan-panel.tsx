@@ -66,7 +66,7 @@ function CountChip({ done, label, planned }: { done: number; label: string; plan
   const complete = planned !== undefined && done >= planned;
   return (
     <span
-      className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${
+      className={`border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums ${
         complete ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"
       }`}
     >
@@ -111,7 +111,7 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
       }`}
     >
       <span aria-hidden="true" className={`w-1 self-stretch ${stop.done ? "bg-emerald-500" : "bg-slate-200"}`} />
-      <span className="w-6 shrink-0 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-400">
+      <span className="w-6 shrink-0 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-400">
         {stop.listType}
       </span>
       {/* 🔴 ONE DIRECTION FOR THE WHOLE BLOCK, TAKEN FROM THE NAME. `dir="auto"` sits here and on no
@@ -164,7 +164,7 @@ function StopRow({ canAdd, stop }: { canAdd: boolean; stop: RepTodayStop }) {
 function BrickHeading({ brick }: { brick: RepTodayBrick }) {
   return (
     <li className="border-b border-slate-200 bg-slate-50 px-3 py-1" dir="auto">
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">{brick.label}</span>
+      <span className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-500">{brick.label}</span>
     </li>
   );
 }
@@ -182,7 +182,7 @@ function FootLine({ label, parts }: { label: string; parts: readonly string[] })
   if (parts.length === 0) return null;
   return (
     <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50 px-3 py-2">
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">{label}</span>
+      <span className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-500">{label}</span>
       {parts.map((part) => (
         <span className="break-words text-phx-xs font-semibold tabular-nums text-slate-600" key={part}>
           {part}
@@ -213,7 +213,7 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
       */}
       <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">Your day</h2>
-        <span className="min-w-0 break-words text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400" dir="auto">
+        <span className="min-w-0 break-words text-phx-sm font-semibold uppercase tracking-[0.08em] text-slate-400" dir="auto">
           {plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}
         </span>
         <span className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">

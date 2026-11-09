@@ -49,7 +49,7 @@ const TIME_FORMAT = stableEnGbFormatter({
   timeZone: "Africa/Cairo",
 });
 
-const labelClassName = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const labelClassName = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 function dayLabel(isoDay: string | null) {
   return isoDay ? DAY_FORMAT.format(new Date(`${isoDay.slice(0, 10)}T12:00:00Z`)) : "Unknown";
