@@ -101,7 +101,7 @@ function withRep(halfOf: "AM" | "PM", seatId: string, name: string, over: Partia
 }
 
 /** Saturday to Thursday, every day present as the loader builds it, plus Friday only when it holds a half. */
-function weekDays(weekStart: string, plan: Record<number, DistrictPlanHalf[]>, leaveOffsets: number[] = []): DistrictPlanDay[] {
+function weekDays(weekStart: string, plan: Partial<Record<number, DistrictPlanHalf[]>>, leaveOffsets: number[] = []): DistrictPlanDay[] {
   const days: DistrictPlanDay[] = [];
   for (let offset = 0; offset < 7; offset += 1) {
     const halves = plan[offset] ?? [];
