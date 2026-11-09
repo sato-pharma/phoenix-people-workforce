@@ -318,6 +318,10 @@ const nextConfig: NextConfig = {
   // matches nothing is exactly how the first attempt shipped green, so tests/pdf-canvas-trace.test.ts
   // asserts these globs resolve to real files rather than merely being present.
   outputFileTracingIncludes: {
+    // The signed PV training sheets (src/lib/pv-training/server.ts), read by the QPPV's page alone.
+    // Deliberately NOT in `public/`: every scan carries real signatures. Server-read only, so it ships
+    // only if it is traced — and this page is not under /api, hence its own key.
+    "/employee-portals/pv-training-evidence": ["./assets/pv-training-sheets/*.jpg"],
     "/api/**/*": [
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       "./assets/tessdata/*.traineddata.gz",

@@ -44,6 +44,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/plans", label: "Weekly / Monthly Plan", section: "My Workspace" },
   { href: "/employee-portals/plans/calendar", label: "Planning Calendar", section: "My Workspace" },
   { href: "/employee-portals/production-planning", label: "Production Planner", section: "My Workspace" },
+  { href: "/employee-portals/pv-training-evidence", label: "PV Training Evidence", section: "My Workspace" },
 
   { href: "/employee-portals/business-cards", label: "Business Cards", section: "Social" },
   { href: "/employee-portals/email-signature", label: "Email Signature", section: "Social" },
