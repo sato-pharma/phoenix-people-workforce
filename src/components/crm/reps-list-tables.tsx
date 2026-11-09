@@ -40,6 +40,7 @@ import {
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import { brickCoverage } from "@/lib/crm/reps-list-groups";
 import { brickSpreadLine, REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
@@ -59,7 +60,7 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // a filter is active, minus any group the filter empties.
 
 const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500";
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
 
@@ -327,9 +328,31 @@ function GroupCaret({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * The brick's month as one flat bar under its heading — visited in emerald, not visited in amber, not due yet in the
+ * pale slate of the empty track — with the figures said in words beside it, so nothing is told only in colour. A
+ * manager reads down the bricks and sees where the month went before he reads a single row.
+ */
+function BrickCoverageBar({ coverage, monthLabel }: { coverage: ReturnType<typeof brickCoverage>; monthLabel: string }) {
+  if (coverage.scored === 0) return null;
+  const width = (value: number) => `${(value / coverage.scored) * 100}%`;
+  return (
+    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
+      <div aria-hidden className="flex h-1.5 min-w-0 flex-1 basis-40 bg-slate-200">
+        <span className="h-full bg-emerald-600" style={{ width: width(coverage.visited) }} />
+        <span className="h-full bg-amber-500" style={{ width: width(coverage.unvisited) }} />
+      </div>
+      <span className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 tabular-nums">
+        {`${coverage.visited} visited · ${coverage.unvisited} not visited${coverage.notDue > 0 ? ` · ${coverage.notDue} not due yet` : ""} in ${monthLabel}`}
+      </span>
+    </div>
+  );
+}
+
 function GroupHeading({
   collapsed = false,
   collapsible = false,
+  coverage,
   group,
   onToggle,
   shown,
@@ -339,6 +362,8 @@ function GroupHeading({
   /** Phoenix CRM only. When true, the heading is a button that opens and shuts its own block. */
   collapsible?: boolean;
   collapsed?: boolean;
+  /** The manager Reps List only, when the month was read: the brick's month as a bar under the heading. */
+  coverage?: { bar: ReturnType<typeof brickCoverage>; monthLabel: string };
   group: RepsListGroup;
   onToggle?: () => void;
   shown: number;
@@ -388,6 +413,7 @@ function GroupHeading({
         {shown === group.rows.length ? describeMix(group.rows) : `${shown} of ${group.rows.length} shown`}
         {validated ? ` · ${validated}` : ""}
       </span>
+      {coverage ? <BrickCoverageBar coverage={coverage.bar} monthLabel={coverage.monthLabel} /> : null}
     </>
   );
   // A button only where it does something — everywhere else the heading is the exact div it always
@@ -571,7 +597,7 @@ function DialogShell({
           long explanation inside the viewport — the golden rule bans a SIDEWAYS scroll, and this
           never has one: every line wraps. The bottom padding clears a phone's home indicator. */}
       <div
-        className="max-h-[85svh] w-full max-w-lg overflow-y-auto rounded-none border border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl"
+        className="max-h-[85svh] w-full max-w-lg overflow-y-auto rounded-none border border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3">
@@ -1305,6 +1331,7 @@ export function RepsListContacts({
   activityAvailable,
   activityMonthLabel,
   brickColor = false,
+  brickCoverage: showBrickCoverage = false,
   collapsible = false,
   exportTitle = "Reps List",
   groups,
@@ -1324,6 +1351,11 @@ export function RepsListContacts({
    * Reps List and the Weekly Plans tab are untouched by it.
    */
   brickColor?: boolean;
+  /**
+   * The manager Reps List only: each brick heading carries the month's visited and not-visited bar, so the month is
+   * read brick by brick before a row is. Off everywhere else — My List and Phoenix CRM keep their headings as they were.
+   */
+  brickCoverage?: boolean;
   /**
    * Phoenix CRM only — the rep's field surface. Each brick block opens and shuts on its heading
    * (owner, 2026-09-25); on a phone the filter row folds behind one "Filters" toggle, so the first
@@ -1535,6 +1567,16 @@ export function RepsListContacts({
   // utilities wins is the stylesheet's order, not the class list's.
   const filterRowClass =
     collapsible && !filtersOpen ? "hidden flex-wrap items-end gap-3 md:flex" : "flex flex-wrap items-end gap-3";
+  // One press puts every filter back, the same as the cascade's own Clear filters above the board.
+  const clearFilters = () => {
+    setBrick("");
+    setListType("");
+    setActivity("");
+    setValidation("");
+    setGrade("");
+    setSpeciality("");
+    setQuery("");
+  };
 
   return (
     <div className={collapsible ? "space-y-3 px-4 py-5 sm:px-5" : "space-y-3 p-5"}>
@@ -1555,7 +1597,7 @@ export function RepsListContacts({
           return (
             <button
               aria-selected={active}
-              className={`-mb-px border-b-2 px-3 py-2 text-left ${
+              className={`-mb-px ${brickColor ? "border-b-2" : "min-h-11 border-b-[3px]"} px-3 py-2 text-left ${
                 active ? activeTone : "border-transparent text-slate-400 hover:border-slate-300 hover:text-slate-600"
               }`}
               key={entry.key}
@@ -1715,6 +1757,15 @@ export function RepsListContacts({
               value={query}
             />
           )}
+          {filtersOn > 0 ? (
+            <button
+              className="min-h-11 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              onClick={clearFilters}
+              type="button"
+            >
+              {`Clear filters · ${filtersOn} on`}
+            </button>
+          ) : null}
         </div>
         <ExportXlsxButton
           columns={[
@@ -1767,7 +1818,7 @@ export function RepsListContacts({
         />
       </div>
 
-      <p className="text-phx-2xs font-semibold text-slate-400">
+      <p className="text-phx-2xs font-semibold text-slate-500">
         {totalCount === 0
           ? held
           : shownCount === totalCount
@@ -1786,13 +1837,33 @@ export function RepsListContacts({
           carries no pharmacies there is no filter to clear, and following that advice ends in the
           same empty table with no idea why. State which of the two it is. */}
       {visible.length === 0 ? (
-        <p className="px-3 py-6 text-center text-xs text-slate-400">
-          {totalCount === 0
-            ? tab === "pharmacies"
-              ? "This rep carries no pharmacies. The CRM gives some reps a pharmacy list and some none, so an empty tab here is an answer, not a fault."
-              : "This rep carries no contacts in the CRM at all."
-            : "Nothing matches this filter."}
-        </p>
+        // The board's one empty-state shape: a short title and its detail inside a dashed rule, a note in the margin
+        // rather than a broken table. The filter case carries its own way out.
+        <div className="border border-dashed border-slate-300 bg-white px-5 py-5">
+          <p className="text-sm font-black text-slate-800">
+            {totalCount === 0
+              ? tab === "pharmacies"
+                ? "This rep carries no pharmacies."
+                : "This rep carries no contacts in the CRM at all."
+              : "Nothing matches this filter."}
+          </p>
+          <p className="mt-1 max-w-[90ch] text-phx-xs leading-relaxed text-slate-500">
+            {totalCount === 0
+              ? tab === "pharmacies"
+                ? "The CRM gives some reps a pharmacy list and some none, so an empty tab here is an answer, not a fault."
+                : "The daily sync fills this list from the CRM's own contact list."
+              : `${totalCount} ${tab === "pharmacies" ? "pharmacies are" : "rows are"} on this tab; the filters above hide every one of them.`}
+          </p>
+          {totalCount > 0 && filtersOn > 0 ? (
+            <button
+              className="mt-3 min-h-11 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              onClick={clearFilters}
+              type="button"
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </div>
       ) : (
         // The rows below read whether they are on the field surface (the insights chip's size).
         <FieldSurface.Provider value={collapsible}>
@@ -1805,6 +1876,11 @@ export function RepsListContacts({
                   <GroupHeading
                     collapsed={isCollapsed}
                     collapsible={collapsible}
+                    coverage={
+                      showBrickCoverage && activityAvailable
+                        ? { bar: brickCoverage(entry.rows), monthLabel: activityMonthLabel }
+                        : undefined
+                    }
                     group={entry.group}
                     onToggle={collapsible ? () => toggleGroup(key) : undefined}
                     shown={entry.rows.length}
@@ -1890,6 +1966,24 @@ function VerdictChip({ verdict }: { verdict: PlanRowVerdict }) {
   );
 }
 
+/**
+ * How an ended day went, as one flat bar across the foot of its heading: kept on the day in emerald, kept another day
+ * in amber, not seen in rose. The words beside the heading carry every figure, so the bar is decorative to a screen
+ * reader. Nothing is drawn for a day still ahead or a day whose visits could not be read.
+ */
+function PlanDayKeptBar({ actual }: { actual: NonNullable<PlanDoctorDay["actual"]> }) {
+  const total = actual.visited + actual.moved + actual.missed;
+  if (actual.upcoming || total === 0) return null;
+  const width = (value: number) => `${(value / total) * 100}%`;
+  return (
+    <div aria-hidden className="flex h-1.5 w-full bg-slate-200">
+      <span className="h-full bg-emerald-600" style={{ width: width(actual.visited) }} />
+      <span className="h-full bg-amber-500" style={{ width: width(actual.moved) }} />
+      <span className="h-full bg-rose-600" style={{ width: width(actual.missed) }} />
+    </div>
+  );
+}
+
 function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
   const dated = day.date != null;
   const doctors = new Set(day.rows.map((row) => row.entry.contactCrmId ?? row.entry.contactName)).size;
@@ -1937,6 +2031,7 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
           </span>
         ) : null}
       </span>
+      {day.actual ? <PlanDayKeptBar actual={day.actual} /> : null}
     </div>
   );
 }
@@ -2176,7 +2271,9 @@ export function PlanDoctorsTable({ days }: { days: PlanDoctorDay[] }) {
     <div>
       <div className="border border-slate-200">
         {days.map((day) => (
-          <div key={day.date ?? "undated"}>
+          // The id is the Day strip's jump target on the Reps Weekly Plans panel; scroll-mt keeps the day's heading
+          // clear of the sticky page header when the browser lands on it.
+          <div className="scroll-mt-24" id={day.date ? `plan-day-${day.date}` : undefined} key={day.date ?? "undated"}>
             <PlanDayHeading day={day} />
             <PlanDayTable day={day} onOpenConfidence={openConfidence} onOpenInsights={openInsights} />
           </div>

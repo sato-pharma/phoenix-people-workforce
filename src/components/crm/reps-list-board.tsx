@@ -2,14 +2,40 @@ import Link from "next/link";
 
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
-import { BackToAllReps, cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
+import {
+  BackToAllReps,
+  cairoStamp,
+  CardMeter,
+  countOf,
+  EmptyNote,
+  ExportRowBar,
+  GroupedCardGrid,
+  RankedBars,
+  RepCardFrame,
+  RepProfileBand,
+  Section,
+  ShareBar,
+  StatusMark,
+  Swatch,
+  TeamRollup,
+  TeamTable,
+  TeamTableName,
+  Tile,
+  tileColumns,
+  TileRow,
+  type TeamColumn,
+} from "@/components/crm/reps-list-chrome";
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
 import { awaitingBrickSub } from "@/lib/crm/reps-list-labels";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
+import { groupRepsByTeam, listMix, listMonthMix, listValidationMix, teamHeading } from "@/lib/crm/reps-list-groups";
+import type { RepsListActivityStatus } from "@/lib/crm/reps-list-activity";
 
-// Server half of Reps List. The Section/Tile vocabulary is copied verbatim from
-// doctor-list-board.tsx, the board this one replaces — flat borders, slate-900 header bar, KPI
-// tiles, orange accent. Never a one-off look (owner's standing rule).
+// Server half of Reps List. The Section/Tile vocabulary comes from reps-list-chrome.tsx, shared by all
+// three tabs — flat borders, slate-900 header bar with its orange keyline, KPI tiles with a tone rule,
+// orange accent. Never a one-off look (owner's standing rule). The rep cards are grouped by region and
+// district manager (owner, 2026-11-09: "group reps by district manager").
 //
 // THE BOARD HAS TWO STATES AND THEY ARE DELIBERATELY DIFFERENT SCREENS: choose a rep, then read that
 // rep's list. The owner described it that way ("...he has appearing the area, the medical rep. When he
@@ -45,31 +71,70 @@ export function listLabel(contactCount: number, pharmacyCount: number): string {
   return `${contacts} · ${pharmacyCount} ${pharmacyCount === 1 ? "pharmacy" : "pharmacies"}`;
 }
 
-function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
+function RepCard({ href, largest, rep }: { href: string; largest: number; rep: RepsListRep }) {
   // Pharmacies count towards HAVING a list even though they are not contacts: a rep holding only
   // pharmacies does have a list, and calling that "no list" would be a false finding.
   // NOT gated on a CRM account. A rep hired after the cutover has none, and his list is found by his
   // HR id — requiring `agentCrmId` here labelled every such rep "no list" whatever he held.
   const hasList = rep.contactCount + rep.pharmacyCount > 0;
   return (
-    <Link
-      className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"
+    <RepCardFrame
       href={href}
+      monogramMuted={!hasList}
+      name={rep.name}
+      // The area is the second thing the owner asked to see beside the rep. A seat spanning several
+      // areas prints all of them rather than the first, which would be a quiet untruth.
+      places={rep.areaNames.length > 0 ? rep.areaNames.join(" · ") : "No area on the seat"}
+      tone={hasList ? "slate" : "amber"}
     >
-      <p className="text-sm font-black text-slate-900">{rep.name}</p>
-      {/* The area is the second thing the owner asked to see beside the rep. A seat spanning several
-          areas prints all of them rather than the first, which would be a quiet untruth. */}
-      <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">
-        {rep.areaNames.length > 0 ? rep.areaNames.join(" · ") : "No area on the seat"}
-      </p>
       {/* "No list in the CRM" and "an empty list" are the same on screen only if you let them be.
           Saying it in words is the finding — this rep exists in the organogram and the CRM mirror
           holds nothing for them, which is a sync or account problem, not a rep with no doctors. */}
-      <p className={`mt-1 text-phx-2xs font-black uppercase tracking-[0.1em] ${hasList ? "text-slate-400" : "text-amber-700"}`}>
-        {hasList ? listLabel(rep.contactCount, rep.pharmacyCount) : "No list mirrored from the CRM"}
-      </p>
-    </Link>
+      {hasList ? (
+        <>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">
+            {listLabel(rep.contactCount, rep.pharmacyCount)}
+          </p>
+          {/* The list's size against the largest list in view — contacts only, a pharmacy is not a contact. */}
+          <CardMeter max={largest} value={rep.contactCount} />
+        </>
+      ) : (
+        <StatusMark text="No list mirrored from the CRM" tone="amber" />
+      )}
+    </RepCardFrame>
   );
+}
+
+/**
+ * A team's lists beside its heading: the typical list its reps hold, and how many reps the CRM mirrors no list for.
+ * Counted from the cards in the group, so the heading and its line never disagree.
+ */
+function TeamListLine({ reps }: { reps: readonly RepsListRep[] }) {
+  const withList = reps.filter((rep) => rep.contactCount + rep.pharmacyCount > 0);
+  const missing = reps.length - withList.length;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="inline-flex items-center gap-1.5">
+        <Swatch tone="slate" />
+        <span className="font-black text-slate-900 tabular-nums">{median(withList.map((rep) => rep.contactCount))}</span>{" "}
+        contacts a rep
+      </span>
+      {missing > 0 ? (
+        <span className="inline-flex items-center gap-1.5">
+          <Swatch tone="amber" />
+          <span className="font-black text-slate-900 tabular-nums">{missing}</span> with no list
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The median of a list of counts, or 0 for none — the typical list, which one very long list cannot drag. */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle]! : Math.round((sorted[middle - 1]! + sorted[middle]!) / 2);
 }
 
 /**
@@ -82,6 +147,190 @@ function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
 function shareOf(count: number, contacts: number): string {
   if (contacts <= 0) return "no contacts";
   return `${Math.round((count / contacts) * 100)}% of contacts`;
+}
+
+/** The same share as a number, 0–100, for the tile's meter. */
+function sharePercent(count: number, contacts: number): number {
+  return contacts > 0 ? Math.round((count / contacts) * 100) : 0;
+}
+
+/**
+ * Where the list sits: each brick's CONTACTS as a bar, largest first, so a manager sees in one look whether a rep's
+ * list is spread over the bricks or piled into two of them. Contacts only — a pharmacy is not a contact (owner,
+ * 2026-09-01). A locality nobody has mapped to a brick yet is kept, in amber and said in words, because it is part of
+ * the list and the mapping backlog is a finding.
+ */
+function BrickBars({ list }: { list: RepsListForRep }) {
+  const bricks = list.groups
+    .map((group) => ({
+      key: group.brickId ?? `region:${group.heading}`,
+      label: group.heading,
+      mapped: group.mapped,
+      value: group.rows.filter((row) => row.listType !== "Pharmacy").length,
+    }))
+    .filter((brick) => brick.value > 0)
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
+  if (bricks.length < 2) return null;
+  return (
+    <RankedBars
+      caption="Contacts by brick"
+      items={bricks.map((brick) => ({
+        key: brick.key,
+        label: brick.label,
+        note: brick.mapped ? undefined : "not yet mapped",
+        tone: brick.mapped ? "slate" : "amber",
+        value: brick.value,
+      }))}
+      total={`${countOf(list.counts.contacts, "contact")} over ${countOf(bricks.length, "place")}`}
+    />
+  );
+}
+
+/**
+ * What the list is made of (`listMix`): its contacts by grade as one bar, and its largest specialties as ranked bars
+ * with the rest folded into one line, so each chart adds up to the Contacts tile. Contacts only — a pharmacy is not a
+ * contact. A chart with a single entry says nothing a tile does not, so it is not drawn.
+ */
+function ListMixCharts({ list }: { list: RepsListForRep }) {
+  const mix = listMix(list.groups.flatMap((group) => group.rows));
+  const gradeTone = (grade: string): "emerald" | "sky" | "slate" | "amber" =>
+    grade === "A" ? "emerald" : grade === "B" ? "sky" : grade === "No grade" ? "amber" : "slate";
+  return (
+    <>
+      {mix.grades.length > 1 ? (
+        <ShareBar
+          caption="Contacts by grade"
+          segments={mix.grades.map((entry) => ({
+            key: entry.grade,
+            label: entry.grade === "No grade" ? "No grade" : `Grade ${entry.grade}`,
+            tone: gradeTone(entry.grade),
+            value: entry.count,
+          }))}
+        />
+      ) : null}
+      {mix.specialties.length > 1 ? (
+        <RankedBars
+          caption="Contacts by specialty"
+          items={mix.specialties.map((entry) => ({
+            key: entry.label,
+            label: entry.label,
+            tone: entry.other ? "sky" : "slate",
+            value: entry.count,
+          }))}
+          total={countOf(list.counts.contacts, "contact")}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The tone each activity status reads in on the month bar — action in warm tones, a visit in green. */
+const MONTH_TONE: Record<RepsListActivityStatus, "amber" | "emerald" | "rose" | "sky" | "slate"> = {
+  missed: "rose",
+  not_due: "slate",
+  off_plan: "slate",
+  on_plan: "emerald",
+  over: "emerald",
+  under: "sky",
+  untouched: "amber",
+};
+
+/**
+ * The list's month and its validation, as two bars under the PM and AM split: every contact in its activity status
+ * (`listMonthMix`, in the chips' own words), and validated against not yet (`listValidationMix`). Each is drawn only
+ * when its source was read — a bar built on a failed read would score every doctor as neglected or unvalidated.
+ */
+function ListMonthCharts({
+  activityAvailable,
+  list,
+  monthLabel,
+}: {
+  activityAvailable: boolean;
+  list: RepsListForRep;
+  monthLabel: string;
+}) {
+  const rows = list.groups.flatMap((group) => group.rows);
+  const month = activityAvailable ? listMonthMix(rows) : [];
+  const validation = list.validationRead ? listValidationMix(rows) : null;
+  return (
+    <>
+      {month.some((entry) => entry.count > 0) ? (
+        <ShareBar
+          caption={`The contacts' month · ${monthLabel}`}
+          segments={month.map((entry) => ({
+            key: entry.status,
+            label: entry.label,
+            tone: MONTH_TONE[entry.status],
+            value: entry.count,
+          }))}
+        />
+      ) : null}
+      {validation && validation.validated + validation.notYet > 0 ? (
+        <ShareBar
+          caption="Contacts validated in Phoenix CRM"
+          segments={[
+            { key: "validated", label: "Validated", tone: "emerald", value: validation.validated },
+            { key: "not-yet", label: "Not validated yet", tone: "slate", value: validation.notYet },
+          ]}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Whether the CRM mirrors a list for the rep — pharmacies count towards HAVING one, as on the card. */
+function hasListOf(rep: RepsListRep): boolean {
+  return rep.contactCount + rep.pharmacyCount > 0;
+}
+
+/** The team table's columns on the Contact list tab — the same facts the cards print, one column each. */
+function contactColumns(basePath: string, board: RepsListBoard, largest: number): TeamColumn<RepsListRep>[] {
+  return [
+    {
+      cell: (rep) => (
+        <TeamTableName href={hrefWithRep(basePath, board, rep.repKey)} muted={!hasListOf(rep)} name={rep.name} />
+      ),
+      key: "rep",
+      label: "Medical rep",
+      width: "w-[30%]",
+    },
+    {
+      cell: (rep) => (
+        <span className="text-phx-xs font-semibold text-slate-600 [overflow-wrap:anywhere]">
+          {rep.areaNames.length > 0 ? rep.areaNames.join(" · ") : "No area on the seat"}
+        </span>
+      ),
+      key: "area",
+      label: "Area",
+      width: "w-[22%]",
+    },
+    {
+      align: "right",
+      cell: (rep) => (
+        <>
+          <span className="font-black text-slate-900 tabular-nums">{rep.contactCount}</span>
+          <CardMeter max={largest} value={rep.contactCount} />
+        </>
+      ),
+      key: "contacts",
+      label: "Contacts",
+      width: "w-[16%]",
+    },
+    {
+      align: "right",
+      cell: (rep) => <span className="font-black text-slate-900 tabular-nums">{rep.pharmacyCount}</span>,
+      key: "pharmacies",
+      label: "Pharmacies",
+      width: "w-[12%]",
+    },
+    {
+      cell: (rep) =>
+        hasListOf(rep) ? <StatusMark text="Mirrored" tone="emerald" /> : <StatusMark text="No list in the CRM" tone="amber" />,
+      key: "list",
+      label: "List",
+      width: "w-[20%]",
+    },
+  ];
 }
 
 /**
@@ -129,14 +378,14 @@ export function RepsListListBody({
 
           The contact list itself is NOT scoped by it and never becomes so. Changing the month
           re-scores the annotation beside each name and can never add or remove a contact. */}
-      <div className="flex flex-wrap items-end gap-3 px-5 pt-5">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-slate-100 px-5 py-4">
         <RepsListMonthPicker
           basePath={basePath}
           month={board.activityMonth}
           options={board.monthOptions}
           preserve={monthPreserve}
         />
-        <p className="pb-2 text-phx-2xs font-semibold text-slate-500">
+        <p className="max-w-[80ch] pb-2 text-phx-2xs font-semibold leading-relaxed text-slate-500">
           {board.activityAvailable
             ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
             : (activityUnavailableNote ??
@@ -144,9 +393,25 @@ export function RepsListListBody({
         </p>
       </div>
       <RepsListTiles board={board} list={list} />
+      {/* The two halves of the contact list as one bar — PM against AM, which add to 100%. Pharmacies are NOT on it:
+          a pharmacy is not a contact (owner, 2026-09-01), and a bar is a share of one whole. */}
+      {list.counts.contacts > 0 ? (
+        <ShareBar
+          caption="Contacts by list"
+          segments={[
+            { key: "pm", label: "PM list", tone: "sky", value: list.counts.pm },
+            { key: "am", label: "AM list", tone: "emerald", value: list.counts.am },
+          ]}
+        />
+      ) : null}
+      <ListMonthCharts activityAvailable={board.activityAvailable} list={list} monthLabel={board.activityMonthLabel} />
+      <BrickBars list={list} />
+      <ListMixCharts list={list} />
+      <div aria-hidden className="h-5" />
       <RepsListContacts
         activityAvailable={board.activityAvailable}
         activityMonthLabel={board.activityMonthLabel}
+        brickCoverage
         exportTitle={exportTitle}
         groups={list.groups}
         repName={listName}
@@ -179,10 +444,11 @@ export function RepsListTiles({
   gutter?: string;
   list: RepsListForRep;
 }) {
-  // Six a row from `md`: a tablet (768–1023px) has more room than a 1024px screen with the sidebar
-  // open, so it gets the same row rather than three narrower ones.
+  // Sized by how many tiles there are, so Not visited joins the row as a seventh rather than sitting
+  // alone under six.
+  const count = board.activityAvailable ? 7 : 6;
   return (
-    <div className={`grid grid-cols-2 gap-2 pt-3 sm:grid-cols-3 md:grid-cols-6 ${gutter}`}>
+    <div className={`grid gap-2 pt-5 ${tileColumns(count)} ${gutter}`}>
       {/* The list names are the CRM's own and the owner's own — PM list, AM list,
           Pharmacist. The sub-line carries each one's share rather than a description,
           because naming what a list "is" invents a meaning the CRM never stated.
@@ -193,8 +459,20 @@ export function RepsListTiles({
           are its halves and add to 100%, and Pharmacies stands apart with its own count
           and no share — a share would only re-imply the total he separated them out of. */}
       <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
-      <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
-      <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
+      <Tile
+        label="PM list"
+        share={sharePercent(list.counts.pm, list.counts.contacts)}
+        sub={shareOf(list.counts.pm, list.counts.contacts)}
+        tone="sky"
+        value={String(list.counts.pm)}
+      />
+      <Tile
+        label="AM list"
+        share={sharePercent(list.counts.am, list.counts.contacts)}
+        sub={shareOf(list.counts.am, list.counts.contacts)}
+        tone="emerald"
+        value={String(list.counts.am)}
+      />
       <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
       {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
           too would have this tile report bricks that do not exist — on a rep whose whole
@@ -218,9 +496,8 @@ export function RepsListTiles({
           for next Tuesday has not been neglected, and counting him here would put a manager on
           the phone about nothing.
 
-          It wraps onto a second row rather than squeezing the six above it. The golden rule
-          forbids buying width from a neighbour, and a lone tile under the others reads as the
-          summary line it is. */}
+          It takes a seventh column when the screen has room for one and wraps on a narrower
+          one — the golden rule forbids buying width from a neighbour. */}
       {board.activityAvailable ? (
         <Tile
           label="Not visited"
@@ -245,14 +522,10 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
     return (
       <div className="border border-slate-200">
         <Section description="No reps are in your reach." title="Reps List">
-          <div className="px-5 py-6">
-            <p className="text-sm font-semibold text-slate-700">{scopeReason}</p>
-            <p className="mt-1 text-phx-xs text-slate-500">
-              This board shows the CRM contact list of the reps who report to you, grouped by brick. Until the
-              organogram places reps under your seat there is nothing here — which is not the same as the CRM
-              holding no lists.
-            </p>
-          </div>
+          <EmptyNote
+            detail="This board shows the CRM contact list of the reps who report to you, grouped by brick. Until the organogram places reps under your seat there is nothing here — which is not the same as the CRM holding no lists."
+            title={scopeReason}
+          />
         </Section>
       </div>
     );
@@ -264,6 +537,12 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
     `your reach: ${scopeLabel}`,
     syncedAt ? `last refreshed ${cairoStamp(syncedAt)} Cairo` : "never refreshed",
   ].join(" · ");
+
+  // The grid's figures, counted from the same reps the cards draw — so the tiles and the grid can never disagree.
+  const withList = reps.filter(hasListOf);
+  const missingLists = reps.length - withList.length;
+  const largest = reps.reduce((most, rep) => Math.max(most, rep.contactCount), 0);
+  const groups = groupRepsByTeam(reps);
 
   return (
     <div className="border border-slate-200">
@@ -289,16 +568,23 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
           }
           title={`Reps List — ${selected.name}`}
         >
+          <RepProfileBand
+            facts={[
+              { label: "Contacts", value: String(selected.contactCount) },
+              { label: "Pharmacies", value: String(selected.pharmacyCount) },
+              list == null
+                ? { label: "List", tone: "amber", value: "Not in the CRM" }
+                : { label: "Bricks", value: String(list.groups.length - list.unmappedRegionCount) },
+            ]}
+            name={selected.name}
+            places={selected.areaNames.length > 0 ? selected.areaNames.join(" · ") : "No area on the seat"}
+            team={teamHeading(selected.team)}
+          />
           {list == null ? (
-            <div className="px-5 py-6">
-              <p className="text-sm font-semibold text-slate-700">
-                The CRM holds no contact list for {selected.name}.
-              </p>
-              <p className="mt-1 text-phx-xs text-slate-500">
-                They are seated in the organogram, so this is a CRM account or sync gap rather than a rep with no
-                doctors. The daily sync fills this board from the CRM&apos;s own contact list.
-              </p>
-            </div>
+            <EmptyNote
+              detail="They are seated in the organogram, so this is a CRM account or sync gap rather than a rep with no doctors. The daily sync fills this board from the CRM's own contact list."
+              title={`The CRM holds no contact list for ${selected.name}.`}
+            />
           ) : (
             <RepsListListBody
               basePath={basePath}
@@ -316,23 +602,101 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
         </Section>
       ) : (
         <Section
-          description="Pick a rep to open their contact list. Narrow with the filters above first if the list is long."
+          description="Pick a rep to open their contact list. The reps are grouped by region and district manager; narrow with the filters above first if the list is long."
+          meta={countOf(reps.length, "rep")}
           title={`Medical reps — ${reps.length}`}
         >
+          <TileRow count={4}>
+            {/* The team's lists in four figures. No contact total: two reps can share a customer, and adding
+                their lists would count that doctor twice. */}
+            <Tile label="Reps" sub="in these filters" value={String(reps.length)} />
+            <Tile
+              label="Lists mirrored"
+              share={reps.length > 0 ? Math.round((withList.length / reps.length) * 100) : 0}
+              sub="a list in the CRM"
+              tone="emerald"
+              value={String(withList.length)}
+            />
+            <Tile
+              label="No list mirrored"
+              sub={missingLists > 0 ? "a CRM account or sync gap" : "every rep has a list"}
+              tone={missingLists > 0 ? "amber" : "emerald"}
+              value={String(missingLists)}
+            />
+            <Tile
+              label="Typical list"
+              sub="contacts a rep, the median"
+              value={String(median(withList.map((rep) => rep.contactCount)))}
+            />
+          </TileRow>
+          {/* Every team on one screen: who has lists mirrored and who has none, team against team. */}
+          <TeamRollup
+            caption="The teams at a glance"
+            groups={groups}
+            noun="rep"
+            segments={(members) => [
+              { key: "list", label: "With a list", tone: "emerald", value: members.filter(hasListOf).length },
+              { key: "none", label: "No list mirrored", tone: "amber", value: members.filter((rep) => !hasListOf(rep)).length },
+            ]}
+          />
+          {reps.length > 0 ? (
+            <ExportRowBar note="The reps in these filters, by region and district manager, with the size of each list.">
+              <ExportXlsxButton
+                columns={[
+                  { key: "region", label: "Region" },
+                  { key: "manager", label: "District manager" },
+                  { key: "rep", label: "Medical rep" },
+                  { key: "area", label: "Area" },
+                  // Never summed: two reps can share a doctor, so a total would count that doctor twice.
+                  { excludeFromTotal: true, key: "contacts", label: "Contacts", numeric: true },
+                  { excludeFromTotal: true, key: "pharmacies", label: "Pharmacies", numeric: true },
+                  { key: "list", label: "List" },
+                ]}
+                label="Download the team"
+                rows={groups.flatMap((group) =>
+                  group.reps.map((rep) => ({
+                    area: rep.areaNames.join(" · "),
+                    contacts: rep.contactCount,
+                    list: hasListOf(rep) ? "Mirrored" : "No list in the CRM",
+                    manager: rep.team.managerName ?? "",
+                    pharmacies: rep.pharmacyCount,
+                    region: rep.team.regionName,
+                    rep: rep.name,
+                  })),
+                )}
+                sheetName="Reps List"
+                subtitle={`Your reach: ${scopeLabel}`}
+                title="Reps List — the team"
+              />
+            </ExportRowBar>
+          ) : null}
           {reps.length === 0 ? (
-            <div className="px-5 py-6">
-              <p className="text-sm font-semibold text-slate-700">No reps match these filters.</p>
-              <p className="mt-1 text-phx-xs text-slate-500">
-                Clear a level of the cascade to widen it. An empty result here means no seated rep works that
-                combination — not that the CRM is missing data.
-              </p>
-            </div>
+            <EmptyNote
+              detail="Clear a level of the cascade to widen it. An empty result here means no seated rep works that combination — not that the CRM is missing data."
+              title="No reps match these filters."
+            />
           ) : (
-            <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">
-              {reps.map((rep) => (
-                <RepCard href={hrefWithRep(basePath, board, rep.repKey)} key={rep.repKey} rep={rep} />
-              ))}
-            </div>
+            // Grouped by region and district manager (owner, 2026-11-09: "group reps by district manager").
+            <>
+              <GroupedCardGrid
+                groups={groups}
+                noun="rep"
+                phoneOnly
+                renderCard={(rep) => (
+                  <RepCard href={hrefWithRep(basePath, board, rep.repKey)} key={rep.repKey} largest={largest} rep={rep} />
+                )}
+                renderGroupMeta={(members) => <TeamListLine reps={members} />}
+              />
+              {/* A desktop reads the team as a table, a phone as cards (owner's standing rule). */}
+              <TeamTable
+                caption="The medical reps in these filters, by region and district manager"
+                columns={contactColumns(basePath, board, largest)}
+                groups={groups}
+                noun="rep"
+                renderGroupMeta={(members) => <TeamListLine reps={members} />}
+                rowKey={(rep) => rep.repKey}
+              />
+            </>
           )}
         </Section>
       )}

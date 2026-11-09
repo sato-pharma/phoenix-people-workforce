@@ -96,8 +96,8 @@ export function RepsListTabs({
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? "border-b-2 border-orange-500 px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900"
-                : "border-b-2 border-transparent px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400 transition-colors hover:text-slate-700"
+                ? "inline-flex min-h-11 items-center border-b-[3px] border-orange-500 bg-orange-50 px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                : "inline-flex min-h-11 items-center border-b-[3px] border-transparent px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
             }
             href={tabHref({ basePath, selection, tab: tab.key, week })}
             key={tab.key}

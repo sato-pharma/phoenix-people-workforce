@@ -80,10 +80,14 @@ import { foldAreaCodeForLine, getMergedAreaName } from "@/lib/sales/closing-area
 import {
   allowedHrIdsFor,
   buildRepsCascade,
+  NO_TEAM,
   pruneLineFirst,
   regionsForLine,
+  repTeamsFor,
+  type RepTeam,
   withActivity,
 } from "@/lib/crm/reps-list-board";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -111,6 +115,8 @@ export type VacantAreaHolder = {
 export type VacantArea = CoverageFilterVacancy & {
   holder: VacantAreaHolder | null;
   status: VacantAreaStatus;
+  /** The region and district manager the empty seat sits under — the same grouping the rep cards wear. */
+  team: RepTeam;
 };
 
 export type VacantAreasBoard = {
@@ -522,7 +528,19 @@ export async function getVacantAreasBoard(input: {
     vacanciesMatching(tree, { area: selection.area, line: selection.line, region: selection.region }),
   );
 
+  // Grouping only: a failed organogram read files each empty seat under its own region with no manager. Started
+  // before the holders are read so the two reads overlap.
+  const regionBySeat = new Map(inView.map((vacancy) => [vacancy.seatId, vacancy.regionName]));
+  const teamsRead = loadPhoenixCrmOrg()
+    .catch(() => null)
+    .then((org) =>
+      repTeamsFor(inView, org, (seatId) => {
+        const name = regionBySeat.get(seatId);
+        return name ? [name] : [];
+      }),
+    );
   const { lastBySeat, names } = await loadLastHolders(inView);
+  const teams = await teamsRead;
 
   // Seated anywhere in the COMPANY, not just in this viewer's reach: a holder reseated outside a
   // manager's team is still working, and his list is still somebody's current territory.
@@ -554,6 +572,7 @@ export async function getVacantAreasBoard(input: {
           }
         : null,
       status,
+      team: teams.get(vacancy.seatId) ?? NO_TEAM,
     };
   });
 

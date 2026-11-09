@@ -735,7 +735,8 @@ async function runPlanStatusFilterTests() {
       assert.ok(view.includes(`String(${key})`), `the tiles read ${key} from the board`);
     }
     assert.ok(
-      view.indexOf("<div className=\"grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-4\">") <
+      view.indexOf("<TileRow count={5}>") > 0 &&
+        view.indexOf("<TileRow count={5}>") <
         view.indexOf("{reps.length === 0 ? ("),
       "the tiles are rendered OUTSIDE the empty branch: they are the filter as well as the count, so hiding them on an empty slice removes the only control that widens it again",
     );
