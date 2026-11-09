@@ -59,28 +59,28 @@ function Half({ half }: { half: DistrictPlanHalf }) {
   const repWeekMissing = half.kind === "with_rep" && !half.repOnLeave && isRepWeekMissing(half.repWeekState);
   return (
     <div className={`grid min-w-0 gap-1 border-l-2 pl-3 ${DISTRICT_PLAN_KIND_EDGE[half.kind]}`}>
-      <p className="break-words text-phx-xs font-black text-slate-900">
-        <span className="mr-1.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">{half.half}</span>
+      <p className="break-words text-phx-md font-black text-slate-900">
+        <span className="mr-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">{half.half}</span>
         {half.text}
       </p>
-      <p className="break-words text-phx-3xs font-semibold uppercase tracking-[0.1em] text-slate-400">{managerSlotKindLabel(half.kind)}</p>
+      <p className="break-words text-phx-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{managerSlotKindLabel(half.kind)}</p>
       {half.repDay ? (
-        <p className={`break-words text-phx-2xs font-semibold ${half.repOnLeave ? "text-amber-800" : repWeekMissing ? "text-amber-800" : "text-slate-500"}`}>
+        <p className={`break-words text-phx-sm font-semibold ${half.repOnLeave ? "text-amber-800" : repWeekMissing ? "text-amber-800" : "text-slate-500"}`}>
           Rep&apos;s day: {half.repDay}
         </p>
       ) : null}
       {half.customers.length > 0 ? (
-        <p className="break-words text-phx-2xs text-slate-600">
+        <p className="break-words text-phx-sm text-slate-600">
           <span className="font-semibold text-slate-700">{customersWord(half.customers.length)}:</span> {half.customers.join(" · ")}
         </p>
       ) : null}
       {half.goneCustomers > 0 ? (
-        <p className="break-words text-phx-2xs font-semibold text-slate-500">
+        <p className="break-words text-phx-sm font-semibold text-slate-500">
           {customersWord(half.goneCustomers)} no longer on file
         </p>
       ) : null}
       {half.chainVisits.map((line) => (
-        <p className="flex items-start gap-1.5 break-words text-phx-2xs font-semibold text-sky-800" key={line}>
+        <p className="flex items-start gap-1.5 break-words text-phx-sm font-semibold text-sky-800" key={line}>
           <Users aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>{line}</span>
         </p>
@@ -108,7 +108,7 @@ function TeamReps({ week, weekStart }: { week: DistrictManagerWeek; weekStart: s
               <col className="w-[12%]" />
             </colgroup>
             <thead>
-              <tr className="border-y border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <tr className="border-y border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                 <th className="px-4 py-2" scope="col">Rep</th>
                 <th className="px-4 py-2" scope="col">Own week</th>
                 <th className="px-4 py-2" scope="col">Leave</th>
@@ -120,13 +120,13 @@ function TeamReps({ week, weekStart }: { week: DistrictManagerWeek; weekStart: s
               {occupied.map((rep) => (
                 <tr className="border-b border-slate-100 align-top last:border-b-0" key={rep.seatId}>
                   <th className="break-words px-4 py-2 text-left font-normal" scope="row">
-                    <span className="block text-phx-2xs font-black text-slate-900">{rep.name}</span>
-                    <span className="block text-phx-3xs text-slate-500">{rep.territory}</span>
+                    <span className="block text-phx-sm font-black text-slate-900">{rep.name}</span>
+                    <span className="block text-phx-xs text-slate-500">{rep.territory}</span>
                   </th>
-                  <td className={`px-4 py-2 text-phx-2xs font-semibold ${REP_WEEK_TONE[rep.weekState]}`}>{DISTRICT_PLAN_REP_WEEK_LABEL[rep.weekState]}</td>
-                  <td className="break-words px-4 py-2 text-phx-2xs text-slate-600">{districtRepLeaveLine(rep, weekStart) ?? "None"}</td>
-                  <td className={`break-words px-4 py-2 text-phx-2xs ${rep.managers.length ? "text-slate-700" : "font-semibold text-slate-500"}`}>{districtRepManagersLine(rep)}</td>
-                  <td className="px-4 py-2 text-right text-phx-2xs font-semibold tabular-nums text-slate-900">{rep.managerHalves}</td>
+                  <td className={`px-4 py-2 text-phx-sm font-semibold ${REP_WEEK_TONE[rep.weekState]}`}>{DISTRICT_PLAN_REP_WEEK_LABEL[rep.weekState]}</td>
+                  <td className="break-words px-4 py-2 text-phx-sm text-slate-600">{districtRepLeaveLine(rep, weekStart) ?? "None"}</td>
+                  <td className={`break-words px-4 py-2 text-phx-sm ${rep.managers.length ? "text-slate-700" : "font-semibold text-slate-500"}`}>{districtRepManagersLine(rep)}</td>
+                  <td className="px-4 py-2 text-right text-phx-sm font-semibold tabular-nums text-slate-900">{rep.managerHalves}</td>
                 </tr>
               ))}
             </tbody>
@@ -134,13 +134,13 @@ function TeamReps({ week, weekStart }: { week: DistrictManagerWeek; weekStart: s
           <ul className="mt-2 grid divide-y divide-slate-100 md:hidden">
             {occupied.map((rep) => (
               <li className="grid gap-0.5 px-4 py-2" key={rep.seatId}>
-                <p className="break-words text-phx-2xs font-black text-slate-900">{rep.name}</p>
-                <p className="break-words text-phx-3xs text-slate-500">{rep.territory}</p>
-                <p className="break-words text-phx-2xs">
+                <p className="break-words text-phx-sm font-black text-slate-900">{rep.name}</p>
+                <p className="break-words text-phx-xs text-slate-500">{rep.territory}</p>
+                <p className="break-words text-phx-sm">
                   <span className={`font-semibold ${REP_WEEK_TONE[rep.weekState]}`}>Own week: {DISTRICT_PLAN_REP_WEEK_LABEL[rep.weekState]}</span>
                   {districtRepLeaveLine(rep, weekStart) ? <span className="text-slate-600"> · {districtRepLeaveLine(rep, weekStart)}</span> : null}
                 </p>
-                <p className="break-words text-phx-2xs text-slate-700">
+                <p className="break-words text-phx-sm text-slate-700">
                   {districtRepManagersLine(rep)}
                   {rep.managerHalves > 0 ? ` · ${halfDaysWord(rep.managerHalves)}` : ""}
                 </p>
@@ -150,7 +150,7 @@ function TeamReps({ week, weekStart }: { week: DistrictManagerWeek; weekStart: s
         </>
       ) : null}
       {vacant.length > 0 ? (
-        <p className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-phx-2xs text-slate-500">
+        <p className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-phx-sm text-slate-500">
           {vacant.length === 1 ? "Vacant seat" : `${vacant.length} vacant seats`}: {vacant.map((rep) => rep.territory).join(" · ")}
         </p>
       ) : (
@@ -168,7 +168,7 @@ function ManagerSection({ week, weekStart }: { week: DistrictManagerWeek; weekSt
       <KpiSection
         action={
           open ? (
-            <Link className="border border-slate-500 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800" href={open}>
+            <Link className="border border-slate-500 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800" href={open}>
               Open the week
             </Link>
           ) : null
@@ -177,9 +177,9 @@ function ManagerSection({ week, weekStart }: { week: DistrictManagerWeek; weekSt
         title={regionManagerTitle(week.regionName, week.managerName)}
       >
         <div className={`grid gap-1 border-b border-slate-100 px-4 py-3 ${figures.state === "vacant" ? "bg-slate-50" : "bg-white"}`}>
-          <p className="break-words text-phx-2xs font-semibold text-slate-700">{districtPlanSentLine(week, cairoDateTime)}</p>
+          <p className="break-words text-phx-sm font-semibold text-slate-700">{districtPlanSentLine(week, cairoDateTime)}</p>
           {figures.sent ? (
-            <p className="break-words text-phx-2xs tabular-nums text-slate-600">
+            <p className="break-words text-phx-sm tabular-nums text-slate-600">
               {halfDaysWord(figures.halves)} · {districtPlanKindsLine(figures.byKind)}
               {figures.openHalves > 0 ? ` · ${halfDaysWord(figures.openHalves)} with nothing planned` : ""}
               {` · with ${figures.repsWith} of ${districtRepsWord(figures.repsInTeam)}`}
@@ -187,28 +187,28 @@ function ManagerSection({ week, weekStart }: { week: DistrictManagerWeek; weekSt
             </p>
           ) : null}
           {week.managerLeaveDays.length > 0 ? (
-            <p className="text-phx-2xs font-semibold text-sky-800">
+            <p className="text-phx-sm font-semibold text-sky-800">
               On approved leave {week.managerLeaveDays.length === 1 ? "one day" : `${week.managerLeaveDays.length} days`} this week
             </p>
           ) : null}
         </div>
         {figures.state === "vacant" ? (
-          <p className="bg-slate-50 px-4 py-3 text-phx-xs font-semibold text-slate-500">Nobody is in this seat, so there is no week to show.</p>
+          <p className="bg-slate-50 px-4 py-3 text-phx-md font-semibold text-slate-500">Nobody is in this seat, so there is no week to show.</p>
         ) : !figures.sent ? (
-          <p className="px-4 py-3 text-phx-xs font-semibold text-slate-600">Not sent yet</p>
+          <p className="px-4 py-3 text-phx-md font-semibold text-slate-600">Not sent yet</p>
         ) : (
           <div className="grid gap-px bg-slate-100 sm:grid-cols-2 xl:grid-cols-3">
             {week.days.map((day) => (
               <div className="grid content-start gap-2 bg-white p-4" key={day.date}>
-                <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">{day.dateText}</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">{day.dateText}</p>
                 {day.halves.length === 0 ? (
                   day.managerOnLeave ? (
-                    <p className="text-phx-2xs font-black uppercase tracking-[0.1em] text-sky-800">On leave</p>
+                    <p className="text-phx-sm font-black uppercase tracking-[0.1em] text-sky-800">On leave</p>
                   ) : (
-                    <p className="text-phx-2xs text-slate-400">Nothing planned</p>
+                    <p className="text-phx-sm text-slate-400">Nothing planned</p>
                   )
                 ) : null}
-                {day.halves.length > 0 && day.managerOnLeave ? <p className="text-phx-2xs font-semibold text-sky-800">The district manager is on approved leave this day</p> : null}
+                {day.halves.length > 0 && day.managerOnLeave ? <p className="text-phx-sm font-semibold text-sky-800">The district manager is on approved leave this day</p> : null}
                 {day.halves.map((half) => (
                   <Half half={half} key={`${day.date}|${half.half}`} />
                 ))}
@@ -228,12 +228,12 @@ export function DistrictManagerPlansView({ report, show = "all" }: { report: Dis
     <div className="grid gap-4">
       <DistrictPlansToolbar report={report} show={show} />
       {report.leaveUnread ? (
-        <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-2xs font-semibold text-amber-900">
+        <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
           Approved leave could not be read just now, so &quot;On leave&quot; is not shown this time.
         </p>
       ) : null}
       {report.weeks.length === 0 ? (
-        <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No district managers under you yet.</p>
+        <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No district managers under you yet.</p>
       ) : (
         <>
           <DistrictPlansTiles report={report} />
@@ -246,7 +246,7 @@ export function DistrictManagerPlansView({ report, show = "all" }: { report: Dis
         </>
       )}
       {show !== "all" && report.weeks.length > 0 ? (
-        <p className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-4 py-2 text-phx-2xs text-slate-600">
+        <p className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-4 py-2 text-phx-sm text-slate-600">
           <span>
             Listing {listed.length} of {report.weeks.length} district manager seats. The figures above are the whole team&apos;s.
           </span>
@@ -256,7 +256,7 @@ export function DistrictManagerPlansView({ report, show = "all" }: { report: Dis
         </p>
       ) : null}
       {show !== "all" && listed.length === 0 && report.weeks.length > 0 ? (
-        <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No district manager seat matches this filter this week.</p>
+        <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No district manager seat matches this filter this week.</p>
       ) : null}
       {listed.map((week) => (
         <ManagerSection key={`${week.regionName}|${week.districtName}|${week.managerName}|${week.districtSeatId}`} week={week} weekStart={report.weekStart} />

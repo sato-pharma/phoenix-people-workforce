@@ -53,9 +53,9 @@ import {
 /** The Excel file's address. It always holds every rep, whatever the screen's filter. */
 export const TEAM_VISITS_EXPORT_HREF = "/api/crm/team-visits/export";
 
-const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
-const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-white";
-const LABEL = "text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
+const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
+const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white";
+const LABEL = "text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 function dayLabel(iso: string): string {
   return cairoDate(`${iso}T12:00:00Z`);
@@ -76,16 +76,16 @@ export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { d
     <div className="grid gap-3 border border-slate-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-phx-xs font-black text-slate-900">
+          <p className="text-phx-md font-black text-slate-900">
             {dayLabel(report.yesterday)} and {dayLabel(report.today)}
           </p>
-          <p className="text-phx-2xs text-slate-500">
+          <p className="text-phx-sm text-slate-500">
             Today is the visit day still running, so its figures grow until it closes. The times are when each visit was saved, Cairo time. Beside each
             customer, the metres from where the visit was logged to the place&apos;s validated live photo.
           </p>
           <ul aria-label="Visit colours" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
             {TEAM_VISIT_ORIGINS.map((origin) => (
-              <li className="flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-700" key={origin}>
+              <li className="flex items-center gap-1.5 text-phx-sm font-semibold text-slate-700" key={origin}>
                 <span aria-hidden className={`inline-block h-3 w-[3px] ${TEAM_VISIT_ORIGIN_SWATCH[origin]}`} />
                 {TEAM_VISIT_ORIGIN_LABEL[origin]}
               </li>
@@ -132,16 +132,16 @@ function RollupDay({ rollup }: { rollup: TeamVisitDayRollup }) {
   const timeline = teamVisitTimelineLine(rollup.timeline);
   return (
     <div className="grid gap-0.5">
-      <p className="text-phx-sm font-black tabular-nums text-slate-900">
-        {rollup.doctorVisits} <span className="text-phx-2xs font-semibold text-slate-500">doctor visits</span>
+      <p className="text-phx-lg font-black tabular-nums text-slate-900">
+        {rollup.doctorVisits} <span className="text-phx-sm font-semibold text-slate-500">doctor visits</span>
       </p>
-      <p className="text-phx-2xs font-semibold tabular-nums text-slate-700">{teamVisitFiguresLine(rollup)}</p>
-      <p className="text-phx-2xs tabular-nums text-slate-600">
+      <p className="text-phx-sm font-semibold tabular-nums text-slate-700">{teamVisitFiguresLine(rollup)}</p>
+      <p className="text-phx-sm tabular-nums text-slate-600">
         {rollup.reps === 0 ? "No rep in a seat" : `${rollup.repsWithVisits} of ${repsWord(rollup.reps)} saved a visit`}
         {rollup.doctorVisitsPerActiveRep != null ? ` · ${rollup.doctorVisitsPerActiveRep} doctor visits each` : ""}
       </p>
-      {waiting ? <p className="text-phx-2xs font-semibold text-amber-800">{waiting}</p> : null}
-      {timeline ? <p className="text-phx-2xs tabular-nums text-slate-500">{timeline}</p> : null}
+      {waiting ? <p className="text-phx-sm font-semibold text-amber-800">{waiting}</p> : null}
+      {timeline ? <p className="text-phx-sm tabular-nums text-slate-500">{timeline}</p> : null}
     </div>
   );
 }
@@ -165,7 +165,7 @@ export function TeamVisitsRollupPanel({ report }: { report: TeamVisitsReport }) 
             <col className="w-[35%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <th className="px-4 py-2" scope="col">Team</th>
               <th className="px-4 py-2" scope="col">Yesterday · {yesterday}</th>
               <th className="px-4 py-2" scope="col">Today so far · {today}</th>
@@ -175,10 +175,10 @@ export function TeamVisitsRollupPanel({ report }: { report: TeamVisitsReport }) 
             {rollups.map((rollup, index) => (
               <tr className="border-b border-slate-100 align-top last:border-b-0" key={rollup.key}>
                 <th className="break-words px-4 py-3 text-left font-normal" scope="row">
-                  <a className="text-phx-xs font-black text-slate-900 hover:underline" href={`#${teamVisitDistrictAnchor(report.districts[index])}`}>
+                  <a className="text-phx-md font-black text-slate-900 hover:underline" href={`#${teamVisitDistrictAnchor(report.districts[index])}`}>
                     {regionManagerTitle(rollup.regionName, rollup.managerName)}
                   </a>
-                  <p className="text-phx-2xs text-slate-500">
+                  <p className="text-phx-sm text-slate-500">
                     {repsWord(rollup.yesterday.reps)}
                     {rollup.vacantSeats > 0 ? ` · ${rollup.vacantSeats} vacant ${rollup.vacantSeats === 1 ? "seat" : "seats"}` : ""}
                   </p>
@@ -197,10 +197,10 @@ export function TeamVisitsRollupPanel({ report }: { report: TeamVisitsReport }) 
           {rollups.map((rollup, index) => (
             <div className="grid gap-2 p-4" key={rollup.key}>
               <div>
-                <a className="text-phx-xs font-black text-slate-900 hover:underline" href={`#${teamVisitDistrictAnchor(report.districts[index])}`}>
+                <a className="text-phx-md font-black text-slate-900 hover:underline" href={`#${teamVisitDistrictAnchor(report.districts[index])}`}>
                   {regionManagerTitle(rollup.regionName, rollup.managerName)}
                 </a>
-                <p className="text-phx-2xs text-slate-500">
+                <p className="text-phx-sm text-slate-500">
                   {repsWord(rollup.yesterday.reps)}
                   {rollup.vacantSeats > 0 ? ` · ${rollup.vacantSeats} vacant ${rollup.vacantSeats === 1 ? "seat" : "seats"}` : ""}
                 </p>
@@ -238,17 +238,17 @@ export function TeamVisitsHoursPanel({ report }: { report: TeamVisitsReport }) {
               </p>
               <ul className="grid gap-1.5">
                 {spread.blocks.map(({ block, visits }) => (
-                  <li className="grid grid-cols-[7.5rem_minmax(0,1fr)_2.5rem] items-center gap-2" key={block.key}>
-                    <span className="text-phx-2xs font-semibold text-slate-600">{block.label}</span>
+                  <li className="grid grid-cols-[8.75rem_minmax(0,1fr)_3rem] items-center gap-2" key={block.key}>
+                    <span className="text-phx-sm font-semibold text-slate-600">{block.label}</span>
                     <span aria-hidden className="block h-2.5 bg-slate-100">
                       <span className="block h-full bg-sky-700" style={{ width: `${teamVisitBarWidth(visits, peak)}%` }} />
                     </span>
-                    <span className="text-right text-phx-2xs font-black tabular-nums text-slate-900">{visits}</span>
+                    <span className="text-right text-phx-sm font-black tabular-nums text-slate-900">{visits}</span>
                   </li>
                 ))}
               </ul>
               {spread.untimed > 0 ? (
-                <p className="text-phx-2xs text-slate-500">
+                <p className="text-phx-sm text-slate-500">
                   {spread.untimed} copied from the old CRM · {TEAM_VISITS_NO_TIME.toLowerCase()}
                 </p>
               ) : null}
@@ -289,13 +289,13 @@ export function TeamVisitsAttentionPanel({ day, report, show = "all" }: { day: T
                 {group.title} · {group.reps.length}
               </p>
               {group.reps.length === 0 ? (
-                <p className="text-phx-2xs text-slate-400">Nobody</p>
+                <p className="text-phx-sm text-slate-400">Nobody</p>
               ) : (
                 <ul className="grid gap-1">
                   {group.reps.map((rep) => (
                     <li className="border border-slate-200 bg-slate-50 px-2 py-1" key={`${group.key}-${rep.seatId}`}>
                       {listed.has(rep.seatId) ? (
-                        <p className="break-words text-phx-2xs font-black text-slate-900">
+                        <p className="break-words text-phx-sm font-black text-slate-900">
                           <a className="hidden hover:underline md:inline" href={`#${teamVisitRepAnchor(rep.seatId, "row")}`}>
                             {rep.person}
                           </a>
@@ -304,9 +304,9 @@ export function TeamVisitsAttentionPanel({ day, report, show = "all" }: { day: T
                           </a>
                         </p>
                       ) : (
-                        <p className="break-words text-phx-2xs font-black text-slate-900">{rep.person}</p>
+                        <p className="break-words text-phx-sm font-black text-slate-900">{rep.person}</p>
                       )}
-                      <p className="break-words text-phx-3xs text-slate-500">
+                      <p className="break-words text-phx-xs text-slate-500">
                         {rep.territory} · {rep.managerName}
                         {rep.note ? ` · ${rep.note}` : ""}
                       </p>
@@ -327,8 +327,8 @@ function PaceSide({ label, side, reps }: { label: string; side: { saved: number;
     <div className="grid content-start gap-0.5 bg-white p-4">
       <p className={LABEL}>{label}</p>
       <p className="text-[1.7rem] font-black leading-none tabular-nums text-slate-900">{side.saved}</p>
-      <p className="text-phx-2xs font-semibold tabular-nums text-slate-700">visits saved · {side.doctorVisits} doctor visits</p>
-      <p className="text-phx-2xs tabular-nums text-slate-500">
+      <p className="text-phx-sm font-semibold tabular-nums text-slate-700">visits saved · {side.doctorVisits} doctor visits</p>
+      <p className="text-phx-sm tabular-nums text-slate-500">
         {side.reps} of {repsWord(reps)} had saved a visit
       </p>
     </div>
@@ -353,7 +353,7 @@ export function TeamVisitsPacePanel({ nowIso, report }: { nowIso: string; report
           <div className="grid content-start gap-0.5 bg-white p-4">
             <p className={LABEL}>The difference</p>
             <p className={`text-[1.7rem] font-black leading-none tabular-nums ${tone}`}>{teamVisitSignedDifference(pace.difference)}</p>
-            <p className="text-phx-2xs font-semibold text-slate-700">{teamVisitPaceLine(pace.difference)}</p>
+            <p className="text-phx-sm font-semibold text-slate-700">{teamVisitPaceLine(pace.difference)}</p>
           </div>
         </div>
         <TeamPaceTable nowIso={nowIso} report={report} />
@@ -369,8 +369,8 @@ function paceTone(difference: number): string {
 function PaceCount({ side }: { side: { saved: number; doctorVisits: number; reps: number } }) {
   return (
     <div className="grid gap-0.5">
-      <p className="text-phx-xs font-black tabular-nums text-slate-900">{side.saved} saved</p>
-      <p className="text-phx-2xs tabular-nums text-slate-500">
+      <p className="text-phx-md font-black tabular-nums text-slate-900">{side.saved} saved</p>
+      <p className="text-phx-sm tabular-nums text-slate-500">
         {side.doctorVisits} doctor visits · {side.reps} {side.reps === 1 ? "rep" : "reps"}
       </p>
     </div>
@@ -395,7 +395,7 @@ function TeamPaceTable({ nowIso, report }: { nowIso: string; report: TeamVisitsR
           <col className="w-[22%]" />
         </colgroup>
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
             <th className="px-4 py-2" scope="col">Team</th>
             <th className="px-4 py-2" scope="col">Yesterday by {pace.cutoffLabel}</th>
             <th className="px-4 py-2" scope="col">Today by {pace.cutoffLabel}</th>
@@ -406,18 +406,18 @@ function TeamPaceTable({ nowIso, report }: { nowIso: string; report: TeamVisitsR
           {pace.teams.map((team) => (
             <tr className="border-b border-slate-100 align-top last:border-b-0" key={team.key}>
               <th className="break-words px-4 py-3 text-left font-normal" scope="row">
-                <a className="text-phx-xs font-black text-slate-900 hover:underline" href={`#${team.anchor}`}>
+                <a className="text-phx-md font-black text-slate-900 hover:underline" href={`#${team.anchor}`}>
                   {regionManagerTitle(team.regionName, team.managerName)}
                 </a>
-                <p className="text-phx-2xs text-slate-500">{team.repsInSeats === 0 ? "Every seat is vacant" : repsWord(team.repsInSeats)}</p>
+                <p className="text-phx-sm text-slate-500">{team.repsInSeats === 0 ? "Every seat is vacant" : repsWord(team.repsInSeats)}</p>
               </th>
               <td className="px-4 py-3">{team.repsInSeats === 0 ? null : <PaceCount side={team.yesterdayBy} />}</td>
               <td className="px-4 py-3">{team.repsInSeats === 0 ? null : <PaceCount side={team.today} />}</td>
               <td className="px-4 py-3">
                 {team.repsInSeats === 0 ? null : (
                   <>
-                    <p className={`text-phx-xs font-black tabular-nums ${paceTone(team.difference)}`}>{teamVisitSignedDifference(team.difference)}</p>
-                    <p className="text-phx-2xs text-slate-500">{teamVisitPaceLine(team.difference)}</p>
+                    <p className={`text-phx-md font-black tabular-nums ${paceTone(team.difference)}`}>{teamVisitSignedDifference(team.difference)}</p>
+                    <p className="text-phx-sm text-slate-500">{teamVisitPaceLine(team.difference)}</p>
                   </>
                 )}
               </td>
@@ -428,17 +428,17 @@ function TeamPaceTable({ nowIso, report }: { nowIso: string; report: TeamVisitsR
       <div className="mt-2 grid divide-y divide-slate-100 border border-slate-200 md:hidden">
         {pace.teams.map((team) => (
           <div className="grid gap-1.5 p-3" key={team.key}>
-            <a className="text-phx-xs font-black text-slate-900 hover:underline" href={`#${team.anchor}`}>
+            <a className="text-phx-md font-black text-slate-900 hover:underline" href={`#${team.anchor}`}>
               {regionManagerTitle(team.regionName, team.managerName)}
             </a>
             {team.repsInSeats === 0 ? (
-              <p className="text-phx-2xs text-slate-500">Every seat is vacant</p>
+              <p className="text-phx-sm text-slate-500">Every seat is vacant</p>
             ) : (
               <>
-                <p className="text-phx-2xs tabular-nums text-slate-700">
+                <p className="text-phx-sm tabular-nums text-slate-700">
                   Yesterday by {pace.cutoffLabel}: {team.yesterdayBy.saved} saved · Today: {team.today.saved} saved
                 </p>
-                <p className={`text-phx-2xs font-black tabular-nums ${paceTone(team.difference)}`}>
+                <p className={`text-phx-sm font-black tabular-nums ${paceTone(team.difference)}`}>
                   {teamVisitSignedDifference(team.difference)} · {teamVisitPaceLine(team.difference)}
                 </p>
               </>
@@ -451,12 +451,12 @@ function TeamPaceTable({ nowIso, report }: { nowIso: string; report: TeamVisitsR
 }
 
 function ManagerFieldDay({ day }: { day: TeamVisitManagerDay | null }) {
-  if (!day || day.saved === 0) return <p className="text-phx-2xs text-slate-400">None saved</p>;
+  if (!day || day.saved === 0) return <p className="text-phx-sm text-slate-400">None saved</p>;
   const timeline = teamVisitTimelineLine(day.timeline);
   return (
     <div className="grid gap-0.5">
-      <p className="text-phx-xs font-black tabular-nums text-slate-900">{teamVisitFiguresLine(day)}</p>
-      {timeline ? <p className="text-phx-2xs tabular-nums text-slate-500">{timeline}</p> : null}
+      <p className="text-phx-md font-black tabular-nums text-slate-900">{teamVisitFiguresLine(day)}</p>
+      {timeline ? <p className="text-phx-sm tabular-nums text-slate-500">{timeline}</p> : null}
     </div>
   );
 }
@@ -480,7 +480,7 @@ export function TeamVisitsManagersPanel({ report }: { report: TeamVisitsReport }
             <col className="w-[35%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <th className="px-4 py-2" scope="col">District manager</th>
               <th className="px-4 py-2" scope="col">Yesterday · {yesterday}</th>
               <th className="px-4 py-2" scope="col">Today so far · {today}</th>
@@ -490,10 +490,10 @@ export function TeamVisitsManagersPanel({ report }: { report: TeamVisitsReport }
             {rows.map((row) => (
               <tr className="border-b border-slate-100 align-top last:border-b-0" key={row.key}>
                 <th className="break-words px-4 py-3 text-left font-normal" scope="row">
-                  <a className="text-phx-xs font-black text-sky-900 hover:underline" href={`#${row.anchor}`}>
+                  <a className="text-phx-md font-black text-sky-900 hover:underline" href={`#${row.anchor}`}>
                     {row.managerName}
                   </a>
-                  <p className="text-phx-2xs text-slate-500">{row.noManager ? `${row.regionName} · nobody in the district manager's seat` : row.regionName}</p>
+                  <p className="text-phx-sm text-slate-500">{row.noManager ? `${row.regionName} · nobody in the district manager's seat` : row.regionName}</p>
                 </th>
                 <td className="px-4 py-3">{row.noManager ? null : <ManagerFieldDay day={row.yesterday} />}</td>
                 <td className="px-4 py-3">{row.noManager ? null : <ManagerFieldDay day={row.today} />}</td>
@@ -505,10 +505,10 @@ export function TeamVisitsManagersPanel({ report }: { report: TeamVisitsReport }
           {rows.map((row) => (
             <div className="grid gap-2 p-4" key={row.key}>
               <div>
-                <a className="text-phx-xs font-black text-sky-900 hover:underline" href={`#${row.anchor}`}>
+                <a className="text-phx-md font-black text-sky-900 hover:underline" href={`#${row.anchor}`}>
                   {row.managerName}
                 </a>
-                <p className="text-phx-2xs text-slate-500">{row.noManager ? `${row.regionName} · nobody in the district manager's seat` : row.regionName}</p>
+                <p className="text-phx-sm text-slate-500">{row.noManager ? `${row.regionName} · nobody in the district manager's seat` : row.regionName}</p>
               </div>
               {row.noManager ? null : (
                 <>

@@ -14,9 +14,9 @@ import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region
 
 function Result({ met }: { met: boolean }) {
   return met ? (
-    <span className="border border-emerald-300 bg-emerald-50 px-1.5 py-px text-phx-3xs font-black uppercase tracking-wide text-emerald-800">Met</span>
+    <span className="border border-emerald-300 bg-emerald-50 px-1.5 py-px text-phx-xs font-black uppercase tracking-wide text-emerald-800">Met</span>
   ) : (
-    <span className="border border-amber-300 bg-amber-50 px-1.5 py-px text-phx-3xs font-black uppercase tracking-wide text-amber-800">Below</span>
+    <span className="border border-amber-300 bg-amber-50 px-1.5 py-px text-phx-xs font-black uppercase tracking-wide text-amber-800">Below</span>
   );
 }
 
@@ -25,14 +25,14 @@ function Figure({ value, target, vacant }: { value: number; target: number; vaca
   if (result === "Seat is vacant") {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
-        <span className="text-phx-xs font-black tabular-nums text-slate-900">{value}</span>
-        <span className="text-phx-3xs font-semibold text-slate-500">No target · seat is vacant</span>
+        <span className="text-phx-md font-black tabular-nums text-slate-900">{value}</span>
+        <span className="text-phx-xs font-semibold text-slate-500">No target · seat is vacant</span>
       </span>
     );
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span className="text-phx-xs font-black tabular-nums text-slate-900">
+      <span className="text-phx-md font-black tabular-nums text-slate-900">
         {value} of {target}
       </span>
       <Result met={result === "Met"} />
@@ -46,7 +46,7 @@ function Depth({ account, family }: { account: WeeklySheetAccount; family: "pedi
 }
 
 function Accounts({ rep }: { rep: WeeklySheetRep }) {
-  if (rep.accounts.length === 0) return <p className="px-4 py-3 text-phx-2xs text-slate-500">No AM accounts visited this week.</p>;
+  if (rep.accounts.length === 0) return <p className="px-4 py-3 text-phx-sm text-slate-500">No AM accounts visited this week.</p>;
   return (
     <>
       <table className="hidden w-full table-fixed text-left md:table">
@@ -59,7 +59,7 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
           <col className="w-[18%]" />
         </colgroup>
         <thead>
-          <tr className="border-y border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <tr className="border-y border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
             <th className="px-4 py-2">Account</th>
             <th className="px-2 py-2">Visits</th>
             <th className="px-2 py-2">{DOCTOR_FAMILY_LABEL.pediatrics}</th>
@@ -70,13 +70,13 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
         </thead>
         <tbody>
           {rep.accounts.map((account) => (
-            <tr className="border-b border-slate-100 align-top text-phx-xs last:border-b-0" key={account.customerId}>
+            <tr className="border-b border-slate-100 align-top text-phx-md last:border-b-0" key={account.customerId}>
               <td className="break-words px-4 py-2 font-semibold text-slate-900" dir="auto">
                 {account.name}
               </td>
               <td className="px-2 py-2 tabular-nums">{account.visits}</td>
               {account.depth.noDoctorsWritten ? (
-                <td className="px-2 py-2 text-phx-2xs font-semibold text-slate-500" colSpan={3}>
+                <td className="px-2 py-2 text-phx-sm font-semibold text-slate-500" colSpan={3}>
                   No doctors written in the comment
                 </td>
               ) : (
@@ -103,18 +103,18 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
         {rep.accounts.map((account) => (
           <div className="grid gap-1 px-4 py-3" key={account.customerId}>
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="min-w-0 break-words text-phx-xs font-black text-slate-900" dir="auto">
+              <p className="min-w-0 break-words text-phx-md font-black text-slate-900" dir="auto">
                 {account.name}
               </p>
               <Result met={account.depth.met} />
             </div>
-            <p className="text-phx-2xs text-slate-600">
+            <p className="text-phx-sm text-slate-600">
               {account.visits} {account.visits === 1 ? "visit" : "visits"}
             </p>
             {account.depth.noDoctorsWritten ? (
-              <p className="text-phx-2xs font-semibold text-slate-500">No doctors written in the comment</p>
+              <p className="text-phx-sm font-semibold text-slate-500">No doctors written in the comment</p>
             ) : (
-              <p className="text-phx-2xs text-slate-700">
+              <p className="text-phx-sm text-slate-700">
                 {DOCTOR_FAMILY_LABEL.pediatrics} <Depth account={account} family="pediatrics" /> · {DOCTOR_FAMILY_LABEL.internal}{" "}
                 <Depth account={account} family="internal" /> · {DOCTOR_FAMILY_LABEL.ent} <Depth account={account} family="ent" />
               </p>
@@ -131,8 +131,8 @@ function RepBlock({ rep }: { rep: WeeklySheetRep }) {
     <details className="group border-b border-slate-100 last:border-b-0">
       <summary className="grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] md:items-start md:gap-3">
         <div className="min-w-0">
-          <p className="break-words text-phx-xs font-black text-slate-900">{rep.person}</p>
-          <p className="break-words text-phx-2xs text-slate-500">
+          <p className="break-words text-phx-md font-black text-slate-900">{rep.person}</p>
+          <p className="break-words text-phx-sm text-slate-500">
             {rep.vacant ? (
               rep.territory
             ) : (
@@ -144,25 +144,25 @@ function RepBlock({ rep }: { rep: WeeklySheetRep }) {
           </p>
         </div>
         <div className="min-w-0">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">PM</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">PM</p>
           <Figure target={rep.pmTarget} vacant={rep.vacant} value={rep.pm} />
         </div>
         <div className="min-w-0">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">AM</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">AM</p>
           <Figure target={rep.amTarget} vacant={rep.vacant} value={rep.am} />
         </div>
         <div className="min-w-0">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Pharmacies</p>
-          <p className="text-phx-xs font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
-          {rep.waiting > 0 ? <p className="text-phx-3xs font-semibold text-amber-700">{rep.waiting} waiting for validation</p> : null}
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Pharmacies</p>
+          <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
+          {rep.waiting > 0 ? <p className="text-phx-xs font-semibold text-amber-700">{rep.waiting} waiting for validation</p> : null}
         </div>
         <div className="min-w-0">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Accounts with 3 of each</p>
-          <p className="text-phx-xs font-black tabular-nums text-slate-900">
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">Accounts with 3 of each</p>
+          <p className="text-phx-md font-black tabular-nums text-slate-900">
             {rep.accountsMet} of {rep.accounts.length}
           </p>
-          <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show accounts</p>
-          <p className="hidden text-phx-3xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show accounts</p>
+          <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
         </div>
       </summary>
       <Accounts rep={rep} />
@@ -171,13 +171,13 @@ function RepBlock({ rep }: { rep: WeeklySheetRep }) {
 }
 
 export function WeeklySheetView({ sheet }: { sheet: WeeklySheet }) {
-  const linkClass = "border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
+  const linkClass = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-4 py-3">
         <div>
-          <p className="text-phx-xs font-black text-slate-900">Week · {sheet.label}</p>
-          <p className="text-phx-2xs text-slate-500">
+          <p className="text-phx-md font-black text-slate-900">Week · {sheet.label}</p>
+          <p className="text-phx-sm text-slate-500">
             Target per working day: 10 PM and 2 AM — 50 PM and 10 AM in a full week. Leave and national holidays come out of the target.
           </p>
         </div>
@@ -194,15 +194,15 @@ export function WeeklySheetView({ sheet }: { sheet: WeeklySheet }) {
         </div>
       </div>
       {sheet.targetsUncertain ? (
-        <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-2xs font-semibold text-amber-900">
+        <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
           The holiday calendar or approved leave could not be read just now, so a target may be one day too high.
         </p>
       ) : null}
-      {sheet.districts.length === 0 ? <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No reps under your district managers yet.</p> : null}
+      {sheet.districts.length === 0 ? <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No reps under your district managers yet.</p> : null}
       {sheet.districts.map((district) => (
         <div className="border border-slate-200" key={`${district.regionName}|${district.districtName}|${district.managerName}`}>
           <KpiSection description={regionGroupCaption(district.reps.length, district.vacantSeats)} title={regionManagerTitle(district.regionName, district.managerName)}>
-            <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid">
               <span>Rep</span>
               <span>PM</span>
               <span>AM</span>
