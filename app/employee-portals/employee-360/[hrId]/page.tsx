@@ -1,7 +1,6 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { BackToPreviousPage } from "@/components/crm/back-to-previous-page";
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
 import { Employee360IncentiveSection } from "@/components/employee-360/incentive-section";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
@@ -63,13 +62,8 @@ function Shell({
 }) {
   return (
     <EmployeePortalPageShell badge="Employee 360" description={description} title={title}>
-      <Link
-        href={PORTAL_BASE_PATH}
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition hover:text-orange-600"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        All employees
-      </Link>
+      {/* "Back" to the page the person was pressed on (owner, 2026-11-09); with nothing of ours behind it, All employees. */}
+      <BackToPreviousPage fallbackHref={PORTAL_BASE_PATH} />
       {children}
     </EmployeePortalPageShell>
   );

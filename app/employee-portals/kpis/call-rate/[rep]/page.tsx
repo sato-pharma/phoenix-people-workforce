@@ -15,6 +15,7 @@
 // rep a key belongs to.
 import { redirect } from "next/navigation";
 
+import { BackToPreviousPage } from "@/components/crm/back-to-previous-page";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { PortalEmptyState, PortalSection } from "@/components/employee-portal/portal-primitives";
 import { RepVisitsPageBody, type RepVisitsPageQuery } from "@/components/crm/rep-visits-page";
@@ -60,6 +61,8 @@ export default async function PortalKpiRepVisitsPage({ params, searchParams }: P
       description="Every call this rep recorded in the window the board was read on, classified by the same rule the rate uses."
       title="KPIs"
     >
+      {/* "Back" to the page the rep was pressed on (owner, 2026-11-09). */}
+      <BackToPreviousPage fallbackHref={PORTAL_KPIS_PATH} />
       <RepVisitsPageBody access={access} basePath={PORTAL_KPIS_PATH} query={query} repParam={repParam} surface="portal" />
     </EmployeePortalPageShell>
   );
