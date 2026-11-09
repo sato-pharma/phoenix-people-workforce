@@ -63,7 +63,7 @@ export function CrmSyncStatusPanel({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Sync Status</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Sync Status</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
 

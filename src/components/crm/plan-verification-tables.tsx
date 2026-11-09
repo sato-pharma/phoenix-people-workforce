@@ -36,9 +36,9 @@ import { cn } from "@/lib/utils";
 // sibling's rule and the reason is stronger here: this board carries a button that approves a plan
 // in Phoenix CRM, so what a viewer may act on has to be a server decision every time.
 
-const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 function gradeClass(grade: string | null): string {
   if (grade === "A" || grade === "A+") return "text-rose-700";
@@ -234,7 +234,7 @@ export function PlanListTable({
             accent={plan.status === PLAN_STATUS_NEW ? "amber" : "slate"}
             meta={`${planPeriodText(plan)} · ${plan.contacts} doctors`}
             status={
-              <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
+              <span className={`text-phx-sm font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
                 {planStatusLabel(plan.status)}
               </span>
             }
@@ -247,7 +247,7 @@ export function PlanListTable({
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
-                className="h-8 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400"
+                className="h-8 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400"
                 onClick={() => open(plan)}
                 type="button"
               >
@@ -319,7 +319,7 @@ export function PlanListTable({
                         {/* The same button the mobile card has always carried. Desktop had none, so the
                             only way in was to guess that the rep's name was pressable. */}
                         <button
-                          className={`h-8 border px-3 text-phx-2xs font-black uppercase tracking-[0.1em] ${
+                          className={`h-8 border px-3 text-phx-sm font-black uppercase tracking-[0.1em] ${
                             showing
                               ? "border-orange-400 bg-orange-500 text-white"
                               : "border-slate-300 bg-white text-slate-700 hover:border-orange-400"
@@ -431,7 +431,7 @@ export function PlanMissingRepsTable({
             accent="rose"
             meta={`${rep.pmCount} doctors on their list`}
             status={
-              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-rose-700">No plan filed</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-rose-700">No plan filed</span>
             }
             title={rep.name}
           >
@@ -479,7 +479,7 @@ export function PlanMissingRepsTable({
       {/* Said out loud because the alternative is a manager reading this as a complete census. It is
           built from the reps whose doctor list the CRM has mirrored, and the CRM plans for more reps
           than that — so this is a floor. Nobody here is falsely accused; some may be absent. */}
-      <p className="text-phx-2xs text-slate-400">
+      <p className="text-phx-sm text-slate-400">
         Built from the reps whose doctor list the CRM has mirrored. A rep the mirror does not hold yet cannot
         appear here, so treat this as the reps it can prove, not as every rep alive.
       </p>
@@ -623,7 +623,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
             accent="slate"
             meta={`${row.speciality ?? "Unspecified"} · ${row.region ?? "No locality"}`}
             status={
-              <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${gradeClass(row.grade)}`}>
+              <span className={`text-phx-sm font-black uppercase tracking-[0.1em] ${gradeClass(row.grade)}`}>
                 {row.grade ?? "No grade"}
               </span>
             }

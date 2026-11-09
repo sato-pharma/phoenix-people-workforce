@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 // slate-500, not slate-400: the label is the only name a control has, and 400 on white read as disabled (premium
 // pass, 2026-11-09). The same string in all three Reps List control files, so a row of them never mixes two greys.
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500";
+const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
 /**
  * `text-sm`, and DO NOT shrink it to make a long rep name fit on a phone. That was tried here on
  * 2026-09-01 and is wrong twice over.
@@ -118,12 +118,12 @@ export function RepsListFilters({
       {/* The cascade's own heading line: what it is, how much of it is narrowed, and the one way to undo every pick
           at once. A pick in progress says so in words, because the selects disable while the page re-enters. */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           {pending ? "Applying the filter" : narrowed > 0 ? `Filtered · ${narrowed} of ${levels.length} levels` : "Filters · showing everything in your reach"}
         </p>
         {narrowed > 0 ? (
           <button
-            className="inline-flex min-h-11 items-center border border-slate-300 bg-white px-3 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:text-slate-400 md:min-h-0"
+            className="inline-flex min-h-11 items-center border border-slate-300 bg-white px-3 py-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:text-slate-400 md:min-h-0"
             disabled={pending}
             onClick={clearAll}
             type="button"
