@@ -219,11 +219,12 @@ export function composerHtmlToText(html: string) {
     .replace(/<\/(p|div|li|tr|blockquote|h[1-6])>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    // LAST, so `&amp;lt;` reads as the text `&lt;`, never as a second decode.
+    .replace(/&amp;/gi, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")

@@ -150,7 +150,13 @@ export function parsePharmacyLicenseDataUrl(dataUrl: unknown): ParsedPharmacyLic
   // that is not really base64 still decodes — to different bytes than anyone intended. The old
   // pattern rejected those by charset; comparing a re-encode restores that check without putting a
   // quantifier back over the payload. Trailing padding is normalised because a sender may omit it.
-  const withoutPadding = (value: string) => value.replace(/=+$/, "");
+  // Trimmed by a backward walk, not `/=+$/`: that pattern restarts at every `=` in a long run that
+  // is not at the end, so a payload of millions of `=` followed by one other character is quadratic.
+  const withoutPadding = (value: string) => {
+    let end = value.length;
+    while (end > 0 && value.charCodeAt(end - 1) === 61 /* "=" */) end -= 1;
+    return value.slice(0, end);
+  };
   if (withoutPadding(bytes.toString("base64")) !== withoutPadding(payload)) {
     refuse("The pharmacy licence must be a photo or a PDF attached inside the app.");
   }

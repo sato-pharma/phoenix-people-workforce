@@ -222,8 +222,10 @@ export async function resolveSheetParts(zip: JSZip): Promise<Map<string, string>
     if (!name || !rid) continue;
     const path = target.get(rid);
     if (!path) continue;
+    // `&amp;` is decoded LAST: first, a name that literally reads `&quot;` (stored `&amp;quot;`)
+    // would be decoded twice into a bare `"`.
     parts.set(
-      name.replace(/&amp;/g, "&").replace(/&apos;/g, "'").replace(/&quot;/g, '"'),
+      name.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"),
       path.startsWith("xl/") ? path : `xl/${path}`,
     );
   }

@@ -215,13 +215,18 @@ function waitForCode(port) {
       }
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
+      // The error is whatever the query string says, so it is escaped before it reaches the page.
+      const shownError = String(error ?? "no code returned").replace(
+        /[&<>"']/g,
+        (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch],
+      );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
         `<!doctype html><meta charset="utf-8"><title>Phoenix</title>` +
           `<body style="font:16px system-ui;padding:3rem;background:#fff;color:#0F172A">` +
           (code
             ? `<h1>Done.</h1><p>Phoenix can now update your sheet scripts. You can close this tab.</p>`
-            : `<h1>Not authorised.</h1><p>Google said: ${error ?? "no code returned"}.</p>`) +
+            : `<h1>Not authorised.</h1><p>Google said: ${shownError}.</p>`) +
           `</body>`,
       );
       server.close();

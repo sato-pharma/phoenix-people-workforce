@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { csvCell } from "@/lib/export/csv-cell";
@@ -6,6 +6,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
+import { hashPasscode, passcodeMatches } from "@/lib/share-links/passcode-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   APPROVAL_COLUMNS,
@@ -47,20 +48,6 @@ function badRequest(message: string): never {
 /** 32 random bytes, URL-safe. Long enough that guessing is not a threat model. */
 function mintToken(): string {
   return randomBytes(32).toString("base64url");
-}
-
-function hashPasscode(passcode: string, token: string): string {
-  // Salted with the token so two links sharing a passcode do not share a hash.
-  return createHash("sha256").update(`${token}:${passcode.trim()}`).digest("hex");
-}
-
-function passcodeMatches(input: string, token: string, expected: string | null): boolean {
-  if (!expected) return true;
-  const candidate = Buffer.from(hashPasscode(input, token), "hex");
-  const known = Buffer.from(expected, "hex");
-  // Constant-time: a length-varying compare leaks the prefix to a patient caller.
-  if (candidate.length !== known.length) return false;
-  return timingSafeEqual(candidate, known);
 }
 
 /**

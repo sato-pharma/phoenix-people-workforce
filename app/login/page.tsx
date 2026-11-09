@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { PremiumLoginPage } from "@/components/auth/premium-login-page";
 import { systemIdentity } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { safeReturnUrl } from "@/lib/auth/safe-return-url";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const metadata: Metadata = {
@@ -22,12 +23,6 @@ type LoginPageProps = {
 
 function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function safeReturnUrl(value: string | null | undefined): string | null {
-  const v = value?.trim();
-  if (!v || !v.startsWith("/") || v.startsWith("//")) return null;
-  return v;
 }
 
 async function resolveSessionRedirectRole() {

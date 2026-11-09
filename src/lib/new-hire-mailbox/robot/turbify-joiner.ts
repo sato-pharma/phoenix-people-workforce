@@ -174,6 +174,15 @@ const PASSWORD_FIELD = 'input[type="password"]';
 /** The account list. Reloaded before each existence check, because only the first search filters. */
 const consoleUrl = `https://ecp.turbify.com/${COMPANY_MAIL_DOMAIN}`;
 
+/** Whether a url is ON the admin console's host — the parsed hostname, never a substring of the url. */
+export function isConsoleHost(url: string): boolean {
+  try {
+    return new URL(url).hostname.toLowerCase() === "ecp.turbify.com";
+  } catch {
+    return false;
+  }
+}
+
 /** Candidate wordings for the create form's submit control. Tried in order; a miss is a refusal. */
 const CREATE_SUBMIT_WORDINGS = ["Create", "Create user", "Add user", "Add", "Save", "Continue"] as const;
 /** Candidate wordings for the change-password screen inside a mailbox. */
@@ -403,8 +412,10 @@ async function clickOneOf(
 
 /** Whether a dialog with this heading is on the page. The success signal for a reset or a creation. */
 async function hasHeading(page: ConsolePage, heading: string): Promise<boolean> {
+  // In-page code is a real function, never a string built from a value; the match runs here.
   return page
-    .evaluate<boolean>(`(() => (document.body?.innerText || "").toLowerCase().includes(${JSON.stringify(heading.toLowerCase())}))()`)
+    .evaluate<string>(() => document.body?.innerText || "")
+    .then((text) => text.toLowerCase().includes(heading.toLowerCase()))
     .catch(() => false);
 }
 
@@ -1067,7 +1078,8 @@ export async function createTurbifyJoinerDriver(
         LOGIN_URL,
         credentials.username,
         credentials.password,
-        async () => page.url().includes("ecp.turbify.com"),
+        // The HOST, never a substring: LOGIN_URL itself carries `ecp.turbify.com` in its `.done` query.
+        async () => isConsoleHost(page.url()),
         "the administrator",
         [credentials.password],
       );
