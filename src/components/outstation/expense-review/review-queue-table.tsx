@@ -274,7 +274,7 @@ function FoundCell({ actions, record }: { actions: RowActions; record: LoadedRec
         {flag && flag.tone !== "none" ? <DistanceChip km={record.km} /> : null}
       </div>
       {daysAwaiting !== null ? (
-        <span className={cn("text-phx-2xs font-black", daysAwaiting >= 7 ? "text-orange-700" : "text-slate-500")} data-days-awaiting={daysAwaiting}>
+        <span className={cn("text-phx-sm font-black", daysAwaiting >= 7 ? "text-orange-700" : "text-slate-500")} data-days-awaiting={daysAwaiting}>
           {expenseTripAwaitingLabel(daysAwaiting)}
         </span>
       ) : null}
@@ -364,7 +364,7 @@ function QueueRow({ actions, record }: { actions: RowActions; record: LoadedReco
               type="button"
             >
               <span className="block break-words text-sm font-black text-slate-950 hover:text-orange-700">{record.specialist || "Unassigned"}</span>
-              <span className="block text-phx-2xs font-bold tracking-wide text-slate-400">{record.tripId}</span>
+              <span className="block text-phx-sm font-bold tracking-wide text-slate-400">{record.tripId}</span>
               <TripLine record={record} />
             </button>
           </div>
@@ -399,7 +399,7 @@ function QueueCard({ actions, record }: { actions: RowActions; record: LoadedRec
       className={actions.selectedTripIds.has(record.tripId) ? "bg-orange-50/70" : undefined}
       meta={
         <>
-          <span className="block text-phx-2xs font-bold tracking-wide text-slate-400">{record.tripId}</span>
+          <span className="block text-phx-sm font-bold tracking-wide text-slate-400">{record.tripId}</span>
           <TripLine record={record} />
         </>
       }

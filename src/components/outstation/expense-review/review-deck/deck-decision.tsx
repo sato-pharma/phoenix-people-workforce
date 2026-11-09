@@ -132,7 +132,7 @@ export function DeckAdjust({
   if (locked) {
     return decision.hrComment.trim() ? (
       <section className="min-w-0 space-y-1.5 px-5 py-4" data-deck-adjust>
-        <h4 className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">The reason on file</h4>
+        <h4 className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">The reason on file</h4>
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-slate-700" dir="auto">
           {decision.hrComment}
         </p>
@@ -142,18 +142,18 @@ export function DeckAdjust({
 
   return (
     <section className="min-w-0 space-y-4 px-5 py-4" data-deck-adjust>
-      <h4 className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Your decision</h4>
+      <h4 className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Your decision</h4>
 
       {/* Claimed − Deduction = Approved, written out as the equation it is. HR thinks in "cut 200 off
           this", so Deduction is the field to type in and Approved follows; typing Approved directly
           still works and back-fills the deduction (one function, payable.ts). */}
       <div className="grid min-w-0 grid-cols-3 items-end gap-x-2 gap-y-2" data-amount-equation>
         <div className="min-w-0">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
           <p className="mt-1 h-10 break-words text-sm font-black leading-10 tabular-nums text-slate-900">{egp(record.total)}</p>
         </div>
         <div className="min-w-0">
-          <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-600" htmlFor={`deck-deduct-${record.tripId}`}>
+          <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-orange-600" htmlFor={`deck-deduct-${record.tripId}`}>
             − Deduction
           </label>
           <input
@@ -171,7 +171,7 @@ export function DeckAdjust({
           />
         </div>
         <div className="min-w-0">
-          <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`deck-amt-${record.tripId}`}>
+          <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`deck-amt-${record.tripId}`}>
             = Approved
           </label>
           <input
@@ -217,7 +217,7 @@ export function DeckAdjust({
             Keep full claim
           </CrmButton>
           {soleOffer ? (
-            <p className="basis-full text-phx-2xs text-orange-900">
+            <p className="basis-full text-phx-sm text-orange-900">
               Allowance {egp(record.allowance)} only · travel and tickets are never part of it.
             </p>
           ) : null}
@@ -226,7 +226,7 @@ export function DeckAdjust({
 
       {suggestions.length > 0 && idle && !soleOffer ? (
         <div className="min-w-0 border-l-[3px] border-orange-500 bg-orange-50 px-3 py-2.5" data-idle-deduction>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700">
             Suggested deduction · {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no field activity
           </p>
           <div className="mt-1.5 flex min-w-0 flex-wrap gap-1.5">
@@ -249,7 +249,7 @@ export function DeckAdjust({
               );
             })}
           </div>
-          <p className="mt-1.5 text-phx-2xs text-slate-600">
+          <p className="mt-1.5 text-phx-sm text-slate-600">
             Allowance {egp(record.allowance)} only · travel and tickets are never part of it.{" "}
             {preCut ? "Approve applies the pre-cut unless you keep the full claim or type your own." : "The deduction stays editable."}
           </p>
@@ -258,7 +258,7 @@ export function DeckAdjust({
 
       <div className="min-w-0 space-y-1.5">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`deck-reason-${record.tripId}`}>
+          <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`deck-reason-${record.tripId}`}>
             Reason{" "}
             {adjusted ? <span className="text-rose-600">· required for a changed amount</span> : <span className="text-slate-400">· required to reject</span>}
           </label>
@@ -304,7 +304,7 @@ export function DeckAdjust({
           </div>
         ) : null}
         {showsSystemText ? (
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Why it is held · the system&rsquo;s sentence until you write your own</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Why it is held · the system&rsquo;s sentence until you write your own</p>
         ) : null}
         <textarea
           className={cn(phxTextareaClassName, "resize-none", reasonMissing ? "border-rose-400" : "")}
@@ -378,7 +378,7 @@ export function DeckDecisionBar({
     <div className="min-w-0 space-y-2.5" data-deck-decision>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="min-w-0 text-sm font-bold tabular-nums text-slate-900">
-          <span className={cn("text-phx-2xs font-black uppercase tracking-[0.12em]", adjusted || preCut ? "text-orange-600" : "text-slate-400")}>
+          <span className={cn("text-phx-sm font-black uppercase tracking-[0.12em]", adjusted || preCut ? "text-orange-600" : "text-slate-400")}>
             {preCut ? "Pre-cut · pays " : adjusted ? "Pays " : "Claimed "}
           </span>
           {egp(pays)}

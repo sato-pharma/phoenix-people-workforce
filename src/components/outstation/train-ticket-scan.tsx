@@ -133,7 +133,7 @@ export function TicketScanNotices({
               {verdict.reason}
             </span>
           </p>
-          <p className="mt-2 text-phx-2xs font-bold uppercase tracking-wider text-rose-700">Take the photo again</p>
+          <p className="mt-2 text-phx-sm font-bold uppercase tracking-wider text-rose-700">Take the photo again</p>
           <ul className="mt-1 grid gap-1 pl-6">
             {verdict.guidance.map((line) => (
               <li className="list-disc" key={line}>

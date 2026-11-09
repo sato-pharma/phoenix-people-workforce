@@ -310,7 +310,7 @@ function RequestDetailsModal({
             approval-detail-primitives so the two cannot drift apart. */}
         <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-3 bg-slate-900 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">
               {formatEmployeeDisplayName(request.employeeName) || "Unassigned"}
             </h2>
@@ -357,7 +357,7 @@ function RequestDetailsModal({
               <div className="flex items-start gap-2 rounded-none border border-amber-300 bg-amber-50 p-3">
                 <Clock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div className="min-w-0">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">
+                  <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-amber-700">
                     Location captured after the trip ended
                   </p>
                   <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-900">

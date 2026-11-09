@@ -234,19 +234,19 @@ function EmployeeTrips({
   const ids = trips.map((row) => row.tripId);
   return (
     <div className="min-w-0" data-employee-trips>
-      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Trips · distance and declared workload</p>
+      <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Trips · distance and declared workload</p>
       <div className="space-y-2 md:hidden">
         {trips.map((row) => (
           <article className={cn("min-w-0 border border-slate-200 border-l-[3px] bg-white px-3 py-2.5 text-xs", STATE_ACCENT[row.state])} key={row.tripId}>
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
               <span className="min-w-0 text-slate-600">
                 <TripDates row={row} />
-                <span className="block text-phx-2xs font-bold text-slate-400">{row.tripId}</span>
+                <span className="block text-phx-sm font-bold text-slate-400">{row.tripId}</span>
               </span>
               <span className="text-right tabular-nums">
                 <span className="block font-black text-slate-950">{egp(row.approvedAmount)}</span>
                 {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
-                  <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
+                  <span className="block text-phx-sm text-slate-400">of {egp(row.claimedTotal)}</span>
                 ) : null}
               </span>
             </div>
@@ -285,7 +285,7 @@ function EmployeeTrips({
             <tr key={row.tripId}>
               <td className={cn(crmTdClassName, "border-l-[3px] text-xs", STATE_ACCENT[row.state])}>
                 <TripDates row={row} />
-                <span className="block text-phx-2xs font-bold text-slate-400">{row.tripId}</span>
+                <span className="block text-phx-sm font-bold text-slate-400">{row.tripId}</span>
               </td>
               <td className={cn(crmTdClassName, "text-xs")} dir="auto" title={row.destination || undefined}>
                 {displayPlace(row.destination)}
@@ -299,7 +299,7 @@ function EmployeeTrips({
               <td className={cn(crmTdClassName, "text-right tabular-nums")}>
                 <span className="block font-black text-slate-950">{egp(row.approvedAmount)}</span>
                 {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
-                  <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
+                  <span className="block text-phx-sm text-slate-400">of {egp(row.claimedTotal)}</span>
                 ) : null}
               </td>
               <td className={crmTdClassName}>

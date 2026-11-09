@@ -190,7 +190,7 @@ export function BrickLine({ place }: { place: WorkloadCheckinDetail["place"] }) 
   ].filter((part): part is [string, string] => Boolean(part[1]));
   if (parts.length === 0) return null;
   return (
-    <span className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-phx-2xs" data-brick-line>
+    <span className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-phx-sm" data-brick-line>
       {parts.map(([label, value]) => (
         <span key={label}>
           <span className="font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>{" "}
@@ -249,7 +249,7 @@ function DayDetail({
       <div>
         {visits.length === 0 ? (
           <>
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visits</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Visits</p>
             <p className="mt-1 text-xs text-slate-400">No visits saved</p>
           </>
         ) : (
@@ -267,7 +267,7 @@ function DayDetail({
                 badge: (
                   <span
                     className={cn(
-                      "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                      "inline-block px-1 py-0.5 text-phx-xs font-bold uppercase",
                       visit.kind === "campaign"
                         ? "bg-violet-100 text-violet-700"
                         : visit.kind === "meeting"
@@ -292,7 +292,7 @@ function DayDetail({
                     {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
                         clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
                     {visit.ampm ? (
-                      <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
+                      <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-xs font-bold uppercase text-slate-500">
                         {visitListLabel(visit.ampm)}
                       </span>
                     ) : null}
@@ -328,7 +328,7 @@ function DayDetail({
       <div>
         {checkins.length === 0 ? (
           <>
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Check-ins</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Check-ins</p>
             <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
           </>
         ) : (
@@ -340,7 +340,7 @@ function DayDetail({
             ]}
             rows={checkins.map((checkin, index) => ({
               badge: (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
+                <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-xs font-black text-white">
                   {firstCheckinNumber + index}
                 </span>
               ),
@@ -449,23 +449,23 @@ function TripDayRow({
   const figures = (
     <span className="grid grid-cols-3 gap-x-3 tabular-nums text-xs text-slate-700 sm:flex sm:flex-wrap sm:gap-x-4">
       <span>
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
+        <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">AM </span>
         {fmt(day.am)}
       </span>
       <span>
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">PM </span>
+        <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">PM </span>
         {fmt(day.pm)}
       </span>
       <span className="break-words">
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
+        <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
         {pharmacyText}
       </span>
       <span className="text-sky-700">
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Planned </span>
+        <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Planned </span>
         {fmt(day.regular)}
       </span>
       <span className="text-violet-700">
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Unplanned </span>
+        <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Unplanned </span>
         {fmt(day.campaign)}
       </span>
     </span>
@@ -475,7 +475,7 @@ function TripDayRow({
     <span className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-center">
       <span className="min-w-0">
         {dayCount > 1 ? (
-          <span className="block text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+          <span className="block text-phx-sm font-black uppercase tracking-wide text-slate-400">
             Day {fmt(dayNumber)} of {fmt(dayCount)}
           </span>
         ) : null}
@@ -513,7 +513,7 @@ function TripDayRow({
           <DayDetail checkins={checkins} firstCheckinNumber={1} hiddenCheckins={day.hiddenCheckins} visits={visits} />
           {opened && checkins.length > 0 ? (
             <div className="min-w-0">
-              <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
+              <p className="mb-1 text-phx-sm font-black uppercase tracking-wide text-slate-400">Route map</p>
               {/* overflow-hidden is load-bearing: Google Maps draws absolutely-positioned internals
                   wider than their box (measured at 375px: 247 vs 486), which pushed the page sideways. */}
               <div className="min-w-0 overflow-hidden">
@@ -564,7 +564,7 @@ function TripDayOpen({
       >
         <span className="min-w-0">
           {dayCount > 1 ? (
-            <span className="mr-2 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+            <span className="mr-2 text-phx-sm font-black uppercase tracking-wide text-slate-400">
               Day {fmt(dayNumber)} of {fmt(dayCount)}
             </span>
           ) : null}
@@ -579,23 +579,23 @@ function TripDayOpen({
         )}
         <span className="grid grid-cols-3 gap-x-3 tabular-nums text-xs text-slate-700 sm:ml-auto sm:flex sm:flex-wrap sm:gap-x-4">
           <span>
-            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
+            <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">AM </span>
             {fmt(day.am)}
           </span>
           <span>
-            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">PM </span>
+            <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">PM </span>
             {fmt(day.pm)}
           </span>
           <span className="break-words">
-            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
+            <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
             {pharmacyText}
           </span>
           <span className="text-sky-700">
-            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Planned </span>
+            <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Planned </span>
             {fmt(day.regular)}
           </span>
           <span className="text-violet-700">
-            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Unplanned </span>
+            <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">Unplanned </span>
             {fmt(day.campaign)}
           </span>
         </span>
@@ -666,7 +666,7 @@ function DayFacts({ checkins, visits }: { checkins: WorkloadCheckinDetail[]; vis
     <div className="grid grid-cols-2 border-t border-slate-200 lg:grid-cols-5" data-day-facts>
       {facts.map(([label, value]) => (
         <div className="min-w-0 border-b border-r border-slate-200 px-3 py-2 even:bg-slate-50 lg:even:bg-transparent" key={label}>
-          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
           <p className="break-words text-sm font-bold tabular-nums text-slate-900">{value}</p>
         </div>
       ))}
@@ -883,7 +883,7 @@ export function TripWorkloadEvidencePanel({
         <div className="flex items-start gap-2 border border-amber-300 bg-amber-50 p-3">
           <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">
+            <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-amber-700">
               Stored verdict is out of date
             </p>
             <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-900">{freshness.headline}</p>
@@ -892,32 +892,32 @@ export function TripWorkloadEvidencePanel({
       ) : null}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="border border-phx-line bg-white p-3">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
           <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             AM {fmt(declaredAm)} · PM {fmt(declaredPm)} · Pharmacies{" "}
             {declaredPharmacies === null ? "not counted separately" : fmt(declaredPharmacies)}
           </p>
         </div>
         <div className={cn("border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
           <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} ·{" "}
             {formatPharmacyFigure(evidenceSplit(data.amWorkload, data.pmWorkload, actualPharmacies, data.phoenixWorkload), { formatNumber: fmt })}
           </p>
           {mismatch ? (
-            <p className="mt-0.5 text-phx-2xs font-bold text-rose-600">
+            <p className="mt-0.5 text-phx-sm font-bold text-rose-600">
               ≠ declared ({fmt(actualTotal)} actual vs {fmt(declaredTotal)} declared)
             </p>
           ) : null}
         </div>
         <div className="border border-phx-line bg-white p-3">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
           <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             Planned {fmt(data.regularVisits)} · Unplanned {fmt(data.campaignVisits)}
           </p>
           {/* A manager's visits count to him both ways (owner, 6 Nov 2026): with a rep, and on his own. */}
           {data.managerOwnVisits ? (
-            <p className="mt-0.5 tabular-nums text-phx-2xs font-bold text-slate-600">
+            <p className="mt-0.5 tabular-nums text-phx-sm font-bold text-slate-600">
               With a rep {fmt(data.regularVisits + data.campaignVisits - data.managerOwnVisits)} · Own visits{" "}
               {fmt(data.managerOwnVisits)}
             </p>

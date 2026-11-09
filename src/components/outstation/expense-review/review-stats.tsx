@@ -114,7 +114,7 @@ export function ReviewStatTiles({
               title={tile.description}
               type="button"
             >
-              <span className="flex min-w-0 items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <span className="flex min-w-0 items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                 <span className={cn("shrink-0", TONE_ICON[tile.tone])}>{tile.icon}</span>
                 {tile.label}
               </span>
@@ -136,7 +136,7 @@ export function ReviewStatTiles({
         })}
       </div>
       {narrowed ? (
-        <p className="mt-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500" data-stat-filtered>
+        <p className="mt-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500" data-stat-filtered>
           Filtered · each figure is out of the whole queue
         </p>
       ) : null}

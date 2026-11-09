@@ -51,7 +51,7 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
     <section aria-label="Ticket missing" className="border border-orange-200 bg-orange-50/60 p-4 sm:p-5">
       <div className="flex items-center gap-2">
         <Ticket aria-hidden className="h-4 w-4 text-orange-600" />
-        <span className="bg-orange-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-700">
+        <span className="bg-orange-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-700">
           Ticket missing
         </span>
       </div>

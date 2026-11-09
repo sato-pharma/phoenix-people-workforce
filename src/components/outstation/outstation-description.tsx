@@ -65,7 +65,7 @@ export function OutstationDescription({
 
         return (
           <div className="border border-slate-200 bg-white px-3 py-2" key={`evidence-${index}`}>
-            <p className="flex flex-wrap items-center gap-x-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+            <p className="flex flex-wrap items-center gap-x-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
               <Camera aria-hidden className="h-3.5 w-3.5 text-orange-500" />
               <span>{stamp.title}</span>
               {stamp.sourceLabel && <span className="font-medium normal-case tracking-normal">· {stamp.sourceLabel}</span>}
