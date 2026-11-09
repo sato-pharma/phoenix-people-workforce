@@ -196,13 +196,14 @@ fi
 # and the server still boots, so a bad release can never take the whole MDM down. The release asset is
 # immutable, so its byte size is pinned and a wrong size is refused.
 #
-# 🔴 9 Nov 2026: 6.50 is the launcher the version url (app 46 / version 10045) will be MOVED to — on top of
-# 6.49 it stops RustDesk opening at every restart, removes the last touch blocker over the pull-down, and lets
-# the password-locked admin screen's Clear restrictions lift the debugging block until the next sync. Both 6.49
-# (the version the url points at today) and 6.50 are immutable release assets on Omar-3-xx/hmdm-android, so
-# both addresses answer 200 and a redeploy re-stages both into a bare Railway work/.
-PHX_LAUNCHER_APK="hmdm-phoenix-6.50.apk"
-PHX_LAUNCHER_URL="https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.50-r1/${PHX_LAUNCHER_APK}"
+# 🔴 9 Nov 2026: 6.51 is the launcher the version url (app 46 / version 10045) will be MOVED to — on top of
+# 6.50 (RustDesk never opens at restart, no touch blocker over the pull-down, the admin screen's Clear
+# restrictions lifts the debugging block) it quiets the push service's notice: no status-bar icon, no sound,
+# it reads "Sato Pharma" under Silent, while the instant line that carries lock, wipe and config changes stays
+# open. Both 6.50 (the version the url points at today) and 6.51 are immutable release assets on
+# Omar-3-xx/hmdm-android, so both addresses answer 200 and a redeploy re-stages both into a bare Railway work/.
+PHX_LAUNCHER_APK="hmdm-phoenix-6.51.apk"
+PHX_LAUNCHER_URL="https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.51-r1/${PHX_LAUNCHER_APK}"
 PHX_LAUNCHER_SIZE=6466497   # bytes — the exact size of the signed Phoenix launcher release asset
 PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
 have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
@@ -225,14 +226,14 @@ else
   fi
 fi
 
-# 🔴 AND KEEP SERVING 6.49 UNTIL THE LAUNCHER'S URL HAS MOVED TO 6.50. The rep configurations still point the
-# launcher (app 46 / version 10045) at /files/hmdm-phoenix-6.49.apk — the whole fleet's current build — and
-# that url is moved by hand only AFTER this server is up, so a redeploy that served 6.50 alone would 404
+# 🔴 AND KEEP SERVING 6.50 UNTIL THE LAUNCHER'S URL HAS MOVED TO 6.51. The rep configurations still point the
+# launcher (app 46 / version 10045) at /files/hmdm-phoenix-6.50.apk — the whole fleet's current build — and
+# that url is moved by hand only AFTER this server is up, so a redeploy that served 6.51 alone would 404
 # every enrolment and in-place update in between. Drop this line in a later change, once version 10045 names
-# 6.50. Same Phoenix signing key, so 6.50 installs in place over 6.49 with no factory reset.
-PHX_LAUNCHER_PREVIOUS_SIZE=6466497   # bytes — the exact size of the signed 6.49 release asset (6.50 is the same size by coincidence)
-provision_official_apk "hmdm-phoenix-6.49.apk" \
-  "https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.49-r1/hmdm-phoenix-6.49.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
+# 6.51. Same Phoenix signing key, so 6.51 installs in place over 6.50 with no factory reset.
+PHX_LAUNCHER_PREVIOUS_SIZE=6466497   # bytes — the exact size of the signed 6.50 release asset (6.49, 6.50 and 6.51 share this size; their SHA-256s differ)
+provision_official_apk "hmdm-phoenix-6.50.apk" \
+  "https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.50-r1/hmdm-phoenix-6.50.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
 
 # 🔴 THE EVERYDAY APPS ARE FETCHED IN THE BACKGROUND, SO TOMCAT STARTS AT ONCE. WhatsApp, Telegram and WPS
 # are about 390 MB together and no enrolment needs them (RustDesk and the launcher above stay in the
