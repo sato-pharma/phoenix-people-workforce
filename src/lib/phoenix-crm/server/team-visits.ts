@@ -1,10 +1,15 @@
 import { forbiddenError } from "@/lib/http/api-errors";
+import { logWarning } from "@/lib/observability/log";
 import { addDaysIso } from "@/lib/crm/dates";
+import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadSeatDayActivities, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+import { loadSeatsLeaveLabels } from "@/lib/phoenix-crm/server/leave-days";
+import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay } from "@/lib/phoenix-crm/server/manager-dm-day";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -50,11 +55,21 @@ export type TeamVisitDay = {
   /** Visits saved to a customer nobody has validated yet — real work, counted in none of the three. */
   waiting: number;
   times: TeamVisitTime[];
+  /**
+   * What the day was instead of visits (owner, 2026-11-09: "if a day for dm or rep has admin work put it instead of
+   * visits and if vacation put it"): approved leave ("On leave · Annual Vacation") and the day activity the person
+   * recorded ("Admin work", "Training · half day"). Shown, never counted. Absent on a plain working day.
+   */
+  away?: string[];
 };
 
 export type TeamVisitRep = {
   seatId: string;
   person: string;
+  /** Nobody sits in the seat — the row wears a light colour of its own (owner, 2026-11-09). */
+  vacant: boolean;
+  /** `employees.hire_date` of whoever sits in the seat (`YYYY-MM-DD`), printed "Hired 1 Nov 2026" (owner, 2026-11-09). */
+  hireDates: string[];
   territory: string;
   yesterday: TeamVisitDay;
   today: TeamVisitDay;
@@ -65,6 +80,8 @@ export type TeamVisitDistrict = {
   regionName: string;
   managerName: string;
   managerHrId: string | null;
+  /** The district manager's `employees.hire_date`, `YYYY-MM-DD`; null when unknown or the seat is vacant. */
+  managerHireDate: string | null;
   districtName: string;
   /** The region's rep seats with nobody in them. */
   vacantSeats: number;
@@ -75,7 +92,23 @@ export type TeamVisitDistrict = {
    * managers visits count the total number visits of his reps"). His own visits stay apart, in `managerOwn`.
    */
   repsTotal: { yesterday: TeamVisitDay; today: TeamVisitDay };
+  /**
+   * Was the district manager's day double or single — double with whom, single where (owner, 2026-11-09: "show the
+   * district manager this day was double or single, if double with who, if single where"). Read from his own sent or
+   * draft week (`loadDistrictManagerWeeks`), never judged. Null for a vacant seat.
+   */
+  managerDay: { yesterday: TeamVisitManagerDay; today: TeamVisitManagerDay } | null;
   reps: TeamVisitRep[];
+};
+
+/** The district manager's day in words: one headline and one line per half. */
+export type TeamVisitManagerDay = {
+  /** "Double visit day" · "Single visit day" · "Admin day" · "Double and single" · "Single and admin" · "Nothing planned" · "Plan could not be read". */
+  headline: string;
+  /** "AM · Double with Momen Fathy · Smouha" · "PM · Single in Sidi Gaber". */
+  halves: string[];
+  /** His week's status when it is not sent yet ("Draft", "Not started"); null once sent. */
+  unsent: string | null;
 };
 
 export type TeamVisitsReport = {
@@ -83,6 +116,10 @@ export type TeamVisitsReport = {
   today: string;
   districts: TeamVisitDistrict[];
   totals: { yesterday: TeamVisitDay; today: TeamVisitDay };
+  /** Approved leave could not be read — the screen says so instead of reading the day as worked. */
+  leaveUnread?: boolean;
+  /** The recorded day activities (Admin work, Training…) could not be read — said on the screen. */
+  activitiesUnread?: boolean;
 };
 
 const DISTRICT_TIERS = new Set(["DM", "ACTING_DM"]);
@@ -146,6 +183,63 @@ export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>, customerNames: R
   day.pharmacies = pharmacies.size;
   day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
   return day;
+}
+
+/**
+ * The district manager's planned day in words (owner, 2026-11-09): double with whom, single where. A half with a
+ * manager or product manager is a double too and names that person; Admin names its activity.
+ */
+export function teamVisitManagerDay(day: DistrictManagerDay | null, unread = false): TeamVisitManagerDay {
+  if (unread) return { headline: "Plan could not be read", halves: [], unsent: null };
+  if (!day || day.halves.length === 0) return { headline: "Nothing planned", halves: [], unsent: day && !day.sent ? day.statusLabel : null };
+  const kinds = new Set(day.halves.map((half) => (half.kindLabel.startsWith("Double") ? "double" : half.kindLabel === "Single visit" ? "single" : "admin")));
+  const parts = (["double", "single", "admin"] as const).filter((kind) => kinds.has(kind));
+  const headline =
+    parts.length === 1
+      ? { admin: "Admin day", double: "Double visit day", single: "Single visit day" }[parts[0]]
+      : parts.map((kind, index) => (index === 0 ? kind[0].toUpperCase() + kind.slice(1) : kind)).join(" and ");
+  const halves = day.halves.map((half) => {
+    const where = half.areaName ? ` · ${half.areaName}` : "";
+    if (half.kindLabel === "Double visit") return `${half.half} · Double with ${half.repName ?? "no rep named"}${where}`;
+    if (half.kindLabel.startsWith("Double")) return `${half.half} · ${half.kindLabel}${half.detail ? ` — ${half.detail}` : ""}${where}`;
+    if (half.kindLabel === "Single visit") return `${half.half} · Single in ${half.areaName ?? "no area named"}`;
+    return `${half.half} · Admin${half.detail ? ` — ${half.detail}` : ""}`;
+  });
+  return { headline, halves, unsent: day.sent ? null : day.statusLabel };
+}
+
+/**
+ * Each person's `employees.hire_date`, by person key — display only. A failed read is logged and prints no date;
+ * it never takes the visits down with it.
+ */
+async function readHireDates(hrIds: ReadonlyArray<string>): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(hrIds.filter(Boolean))];
+  try {
+    for (let index = 0; index < ids.length; index += 100) {
+      const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, hire_date").in("hr_id", ids.slice(index, index + 100));
+      if (error) throw error;
+      for (const row of (data ?? []) as Array<{ hr_id: string | null; hire_date: string | null }>) {
+        const key = personKey(row.hr_id);
+        if (key && row.hire_date) out.set(key, String(row.hire_date).slice(0, 10));
+      }
+    }
+  } catch (error) {
+    logWarning("Phoenix CRM could not read hire dates for Visits — Yesterday and Today", {
+      labels: { event: "phoenix_crm_team_visits_hire_dates_unread" },
+      error,
+      context: { people: ids.length },
+    });
+  }
+  return out;
+}
+
+/** The day's leave and recorded activity, in the words the square prints instead of visits (owner, 2026-11-09). */
+export function teamVisitAway(leave: string | null | undefined, activity: Pick<DayActivityRow, "activityLabel" | "halfDay"> | null | undefined): string[] {
+  const out: string[] = [];
+  if (leave) out.push(`On leave · ${leave}`);
+  if (activity) out.push(activity.halfDay ? `${activity.activityLabel} · half day` : activity.activityLabel);
+  return out;
 }
 
 /** The total of the reps' visits for one day — AM · PM · Pharmacies still three figures apart, no times. */
@@ -232,7 +326,63 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
   const ownRows = managerHrIds.length
     ? (await Promise.all(worlds.map((isTest) => loadManagerOwnVisitRows({ end: today, isTest, managerHrIds, start: yesterday })))).flat()
     : [];
-  const names = await loadPeopleNames([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]);
+  const [names, hireDates] = await Promise.all([
+    loadPeopleNames([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]),
+    readHireDates([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]),
+  ]);
+  const hireDateOf = (hrId: string | null | undefined) => hireDates.get(personKey(hrId) ?? "") ?? null;
+
+  // Each district manager's own week for yesterday and today — two weeks when a Saturday falls between them. A read
+  // that fails is said on his row ("Plan could not be read"), never shown as nothing planned.
+  const dmSeatIds = groups.flatMap((group) => (group.district?.occupantHrId ? [group.district.seatId] : []));
+  const weekStarts = [...new Set([fieldWeekStart(yesterday), fieldWeekStart(today)])];
+  let dmWeeksUnread = false;
+  const dmWeeks = new Map<string, Awaited<ReturnType<typeof loadDistrictManagerWeeks>>>();
+  if (dmSeatIds.length > 0) {
+    try {
+      for (const weekStart of weekStarts) {
+        const parts = await Promise.all(
+          worlds.map((isTest) => loadDistrictManagerWeeks({ cairoToday: viewer.cairoToday, dmSeatIds, isTest, org: viewer.org, weekStart })),
+        );
+        dmWeeks.set(weekStart, mergeDistrictManagerWeeks(parts));
+      }
+    } catch (error) {
+      dmWeeksUnread = true;
+      logWarning("Phoenix CRM could not read the district managers' own weeks for Visits — Yesterday and Today", {
+        labels: { event: "phoenix_crm_team_visits_dm_day_unread" },
+        error,
+        context: { weekStarts },
+      });
+    }
+  }
+  const seatLookup = (seatId: string) => viewer.org.seats.get(seatId);
+
+  // Leave and recorded day activities for every rep and district manager seat, both days — printed in the square
+  // instead of visits (owner, 2026-11-09). Each read that fails is said on the screen, never read as a worked day.
+  const dmSeats = groups.flatMap((group) => (group.district ? [group.district] : []));
+  const range = { from: yesterday, to: today };
+  const leave = await loadSeatsLeaveLabels([...seats, ...dmSeats], range);
+  let activitiesUnread = false;
+  const activities = new Map<string, DayActivityRow>();
+  try {
+    for (const isTest of worlds) {
+      const found = await loadSeatDayActivities([...seats, ...dmSeats].map((seat) => seat.seatId), isTest, range);
+      for (const [key, row] of found) if (!activities.has(key)) activities.set(key, row);
+    }
+  } catch (error) {
+    activitiesUnread = true;
+    logWarning("Phoenix CRM could not read the day activities for Visits — Yesterday and Today", {
+      labels: { event: "phoenix_crm_team_visits_activities_unread" },
+      error,
+      context: { seats: seats.length + dmSeats.length },
+    });
+  }
+  const awayOn = (seatId: string, on: string) => teamVisitAway(leave.days.get(seatId)?.get(on), activities.get(`${seatId}|${on}`));
+  const managerDayOn = (dmSeatId: string, on: string): TeamVisitManagerDay => {
+    if (dmWeeksUnread) return teamVisitManagerDay(null, true);
+    const week = (dmWeeks.get(fieldWeekStart(on)) ?? []).find((row) => row.dmSeatId === dmSeatId);
+    return teamVisitManagerDay(week ? districtManagerDayOn(week, on, seatLookup) : null);
+  };
 
   const totals = { today: emptyTeamVisitDay(), yesterday: emptyTeamVisitDay() };
   const districts: TeamVisitDistrict[] = [];
@@ -242,10 +392,12 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     const reps = group.items
       .map((seat): TeamVisitRep => {
         const people = seatOccupants(seat);
-        const day = (on: string) => foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames);
+        const day = (on: string): TeamVisitDay => ({ ...foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames), away: awayOn(seat.seatId, on) });
         const rep: TeamVisitRep = {
           person: people.length ? people.map((hrId) => nameOf(names, hrId)).join(" · ") : "Seat is vacant",
           seatId: seat.seatId,
+          vacant: people.length === 0,
+          hireDates: people.flatMap((hrId) => hireDateOf(hrId) ?? []),
           territory: territoryName(seat),
           today: day(today),
           yesterday: day(yesterday),
@@ -273,6 +425,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
           });
         }
         day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
+        if (district) day.away = awayOn(district.seatId, on);
         return day;
       };
       managerOwn = { today: ownDay(today), yesterday: ownDay(yesterday) };
@@ -283,11 +436,13 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
       regionName: group.regionName,
       vacantSeats: group.items.filter((seat) => seatOccupants(seat).length === 0).length,
       managerHrId,
+      managerHireDate: managerHrId ? hireDateOf(managerHrId) : null,
       managerName: district ? (managerHrId ? nameOf(names, managerHrId) : "Seat is vacant") : "No district manager",
       managerOwn,
+      managerDay: district && managerHrId ? { today: managerDayOn(district.seatId, today), yesterday: managerDayOn(district.seatId, yesterday) } : null,
       repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },
       reps,
     });
   }
-  return { districts, today, totals, yesterday };
+  return { activitiesUnread, districts, leaveUnread: leave.unread, today, totals, yesterday };
 }
