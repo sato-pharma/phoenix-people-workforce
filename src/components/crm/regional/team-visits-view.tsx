@@ -17,7 +17,11 @@ import {
   filterTeamVisitReps,
   repsWord,
   sortTeamVisitReps,
+  TEAM_VISIT_ORIGIN_EDGE,
+  TEAM_VISIT_ORIGIN_INK,
+  TEAM_VISIT_ORIGIN_LABEL,
   TEAM_VISIT_PHONE_FOLD,
+  teamVisitDistanceText,
   teamVisitNonWorkingNotice,
   teamVisitRepAnchor,
   TEAM_VISIT_SHOW_LABEL,
@@ -125,18 +129,23 @@ function Times({ day }: { day: TeamVisitDay }) {
           <div key={group.list}>
             <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{group.label}</p>
             <ul className="mt-0.5 grid gap-0.5">
-              {times.map((time, index) => (
-                <li
-                  className={`grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border px-1.5 py-0.5 text-phx-3xs ${time.waiting ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}
-                  key={index}
-                >
-                  <span className="font-semibold tabular-nums text-slate-700">{time.savedAt ?? "No time recorded"}</span>
-                  <span className="break-words font-semibold text-slate-900">
-                    {time.customer ?? "Customer not recorded"}
-                    {time.waiting ? <span className="ml-1 font-black uppercase tracking-[0.08em] text-amber-800">· Waiting for validation</span> : null}
-                  </span>
-                </li>
-              ))}
+              {times.map((time, index) => {
+                const distance = teamVisitDistanceText(time);
+                return (
+                  <li
+                    className={`grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border border-l-[3px] px-1.5 py-0.5 text-phx-3xs ${TEAM_VISIT_ORIGIN_EDGE[time.origin]} ${time.waiting ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}
+                    key={index}
+                  >
+                    <span className="font-semibold tabular-nums text-slate-700">{time.savedAt ?? "No time recorded"}</span>
+                    <span className="break-words font-semibold text-slate-900">
+                      {time.customer ?? "Customer not recorded"}
+                      {distance ? <span className={`ml-1 tabular-nums ${typeof time.metres === "number" ? "font-black text-slate-800" : "font-semibold text-slate-500"}`}>· {distance}</span> : null}
+                      <span className={`ml-1 font-black uppercase tracking-[0.08em] ${TEAM_VISIT_ORIGIN_INK[time.origin]}`}>· {TEAM_VISIT_ORIGIN_LABEL[time.origin]}</span>
+                      {time.waiting ? <span className="ml-1 font-black uppercase tracking-[0.08em] text-amber-800">· Waiting for validation</span> : null}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         );

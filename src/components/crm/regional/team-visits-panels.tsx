@@ -8,6 +8,9 @@ import {
   repsWord,
   TEAM_VISIT_DAYS,
   TEAM_VISIT_SHOW,
+  TEAM_VISIT_ORIGINS,
+  TEAM_VISIT_ORIGIN_LABEL,
+  TEAM_VISIT_ORIGIN_SWATCH,
   TEAM_VISIT_SHOW_LABEL,
   TEAM_VISIT_SORT,
   TEAM_VISIT_SORT_LABEL,
@@ -77,8 +80,17 @@ export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { d
             {dayLabel(report.yesterday)} and {dayLabel(report.today)}
           </p>
           <p className="text-phx-2xs text-slate-500">
-            Today is the visit day still running, so its figures grow until it closes. The times are when each visit was saved, Cairo time.
+            Today is the visit day still running, so its figures grow until it closes. The times are when each visit was saved, Cairo time. Beside each
+            customer, the metres from where the visit was logged to the place&apos;s validated live photo.
           </p>
+          <ul aria-label="Visit colours" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+            {TEAM_VISIT_ORIGINS.map((origin) => (
+              <li className="flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-700" key={origin}>
+                <span aria-hidden className={`inline-block h-3 w-[3px] ${TEAM_VISIT_ORIGIN_SWATCH[origin]}`} />
+                {TEAM_VISIT_ORIGIN_LABEL[origin]}
+              </li>
+            ))}
+          </ul>
         </div>
         <a className={LINK} href={TEAM_VISITS_EXPORT_HREF}>
           Download Excel

@@ -30,6 +30,8 @@ import {
   teamVisitHourSpread,
   teamVisitPace,
   teamVisitAttention,
+  teamVisitDistanceText,
+  TEAM_VISIT_ORIGIN_LABEL,
   teamVisitPaceLine,
   teamVisitRepPace,
   teamVisitSignedDifference,
@@ -223,13 +225,13 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
   // Visits — every visit with its saved time and customer, the reps' and the managers' own.
   const visitSheet = workbook.addWorksheet("Visits", { properties: { defaultRowHeight: 18 } });
   visitSheet.views = [{ showGridLines: false }];
-  const visitStart = writeHouseMasthead(workbook, visitSheet, { columns: 9, provenance, subtitle, title: "Visits" });
+  const visitStart = writeHouseMasthead(workbook, visitSheet, { columns: 11, provenance, subtitle, title: "Visits" });
   const visitRows: CellValue[][] = [];
   for (const district of report.districts) {
     for (const key of TEAM_VISIT_DAYS) {
       const own = district.managerOwn?.[key];
       for (const time of own?.times ?? []) {
-        visitRows.push([district.regionName, district.managerName, `${district.managerName} (own visit)`, "District manager", dayName(key), LIST_LABEL[time.list], time.savedAt ?? TEAM_VISITS_NO_TIME, time.customer ?? "Customer not recorded", "Own visit — in no rep's figure"]);
+        visitRows.push([district.regionName, district.managerName, `${district.managerName} (own visit)`, "District manager", dayName(key), LIST_LABEL[time.list], time.savedAt ?? TEAM_VISITS_NO_TIME, time.customer ?? "Customer not recorded", TEAM_VISIT_ORIGIN_LABEL[time.origin], teamVisitDistanceText(time) ?? "", "Own visit — in no rep's figure"]);
       }
     }
     for (const rep of district.reps) {
@@ -245,6 +247,8 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
             LIST_LABEL[time.list],
             time.savedAt ?? TEAM_VISITS_NO_TIME,
             time.customer ?? "Customer not recorded",
+            TEAM_VISIT_ORIGIN_LABEL[time.origin],
+            teamVisitDistanceText(time) ?? "",
             time.waiting ? "Waiting for validation" : "Counted",
           ]);
         }
@@ -261,6 +265,8 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
       { label: "List", width: 10 },
       { label: "Saved at", width: 14 },
       { label: "Customer", width: 36 },
+      { label: "Planned or not", width: 16 },
+      { label: "From the live photo", width: 28 },
       { label: "In the figures", width: 26 },
     ],
     note: "Pharmacies are counted as distinct pharmacies in a day, so two visits to one pharmacy are two rows and one pharmacy.",
