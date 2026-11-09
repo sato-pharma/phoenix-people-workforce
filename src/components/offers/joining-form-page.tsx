@@ -596,10 +596,13 @@ function Field({
  * tap anywhere opens the phone's camera or gallery. `portrait` draws the optional photo's tile instead:
  * a 3:4 frame with a head-and-shoulders mark, and a tag beside its label.
  *
- * When the phone's chooser closes with nothing chosen, the tile says so and offers the camera on its
- * own input. Chrome on Android refuses the gallery when it has no Photos permission and only flashes
- * "Unable to select media because permissions were denied" for a few seconds — a candidate who then
- * sees an empty tile has no way forward, and the national ID photos are required.
+ * While the tile is empty, a "Trouble choosing a photo?" line under it opens two ways round the
+ * gallery: the camera on its own `capture` input, and the system file picker on an input with no
+ * `accept`, which Android opens without any Photos permission. Chrome on Android refuses the gallery
+ * when it has no Photos permission and only flashes "Unable to select media because permissions were
+ * denied" for a few seconds — and it does NOT report the refused chooser to the page (9 Nov 2026: the
+ * first fix waited for the `cancel` event and the candidate saw only the toast), so the line is always
+ * there and `cancel` merely opens it where a phone does send it. The national ID photos are required.
  */
 function IdPhotoTile({
   busy,
@@ -623,22 +626,24 @@ function IdPhotoTile({
   const { t } = useCopy();
   const id = `jf-${field}`;
   const chooser = useRef<HTMLInputElement>(null);
-  const [stalled, setStalled] = useState(false);
-  // Chrome fires `cancel` on a file input whenever its chooser closes with nothing chosen — the
-  // candidate backing out, or the phone refusing the gallery. React does not bind it on an input.
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Some phones send `cancel` when the chooser closes with nothing chosen (React does not bind it on
+  // an input). Where one does, the help opens by itself — but Chrome's refused gallery sends nothing.
   useEffect(() => {
     const input = chooser.current;
     if (!input) return;
-    const onCancel = () => setStalled(true);
+    const onCancel = () => setHelpOpen(true);
     input.addEventListener("cancel", onCancel);
     return () => input.removeEventListener("cancel", onCancel);
   }, []);
   const take = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    setStalled(false);
+    setHelpOpen(false);
     if (file) onPick(file);
   };
+  const helpButton =
+    "inline-flex min-h-[44px] cursor-pointer items-center border border-[#0879b8] px-4 text-[13px] font-bold leading-none text-[#0879b8] transition-colors hover:bg-[#0879b8] hover:text-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#111820]";
   return (
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
@@ -696,16 +701,32 @@ function IdPhotoTile({
         />
       </label>
       <Message error={error} id={id} />
-      {stalled && !photo && !busy ? (
-        <div className="jf-no-print mt-2 space-y-3 border border-[#cdd6dc] bg-white p-3" role="status">
-          <p className="text-[13px] leading-snug text-[#69757e]">{t.photos.blocked}</p>
-          <label
-            className="inline-flex min-h-[44px] cursor-pointer items-center border border-[#0879b8] px-4 text-[13px] font-bold leading-none text-[#0879b8] transition-colors hover:bg-[#0879b8] hover:text-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#111820]"
-            htmlFor={`${id}-camera`}
+      {!photo && !busy ? (
+        <div className="jf-no-print mt-1">
+          <button
+            aria-controls={`${id}-help`}
+            aria-expanded={helpOpen}
+            className="inline-flex min-h-[44px] items-center text-[13px] font-semibold text-[#06628f] underline underline-offset-4 hover:text-[#0879b8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#111820]"
+            onClick={() => setHelpOpen((open) => !open)}
+            type="button"
           >
-            {t.photos.camera}
-            <input accept="image/*" capture={portrait ? "user" : "environment"} className="sr-only" id={`${id}-camera`} onChange={take} type="file" />
-          </label>
+            {t.photos.trouble}
+          </button>
+          {helpOpen ? (
+            <div className="space-y-3 border border-[#cdd6dc] bg-white p-3" id={`${id}-help`} role="status">
+              <p className="text-[13px] leading-snug text-[#69757e]">{t.photos.blocked}</p>
+              <div className="flex flex-wrap gap-2">
+                <label className={helpButton} htmlFor={`${id}-camera`}>
+                  {t.photos.camera}
+                  <input accept="image/*" capture={portrait ? "user" : "environment"} className="sr-only" id={`${id}-camera`} onChange={take} type="file" />
+                </label>
+                <label className={helpButton} htmlFor={`${id}-files`}>
+                  {t.photos.files}
+                  <input className="sr-only" id={`${id}-files`} onChange={take} type="file" />
+                </label>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
