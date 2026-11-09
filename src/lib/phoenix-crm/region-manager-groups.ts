@@ -20,6 +20,22 @@ export function seatRegionName(seat: Pick<OrgSeat, "regionName"> | null | undefi
   return name ? name : null;
 }
 
+/** The district tiers a rep reports through — the same two every Regional Sales Manager screen reads. */
+const DISTRICT_TIERS = new Set(["DM", "ACTING_DM"]);
+
+/**
+ * The nearest district manager seat above a seat, read off the organogram's own path — null when no district holds
+ * it. The per-line "Others" bucket is not a district (it holds no reps), so it is passed over.
+ */
+export function districtSeatAbove(seats: ReadonlyMap<string, OrgSeat>, seat: Pick<OrgSeat, "path" | "seatId">): OrgSeat | null {
+  for (const ancestorId of [...seat.path].reverse()) {
+    if (ancestorId === seat.seatId) continue;
+    const ancestor = seats.get(ancestorId);
+    if (ancestor && DISTRICT_TIERS.has(ancestor.tier) && !ancestor.isOtherPseudoDm) return ancestor;
+  }
+  return null;
+}
+
 export type RegionManagerGroup<T> = {
   /** Stable key: the region and the district manager's seat. */
   key: string;
