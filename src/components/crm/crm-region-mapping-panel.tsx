@@ -148,9 +148,9 @@ function SuggestionCell({ region }: { region: UnmappedCrmRegionRow }) {
         <span className="font-bold text-slate-900" dir="auto">
           {suggestion.brickName}
         </span>
-        <span className="text-phx-2xs font-semibold text-slate-400">{suggestion.brickId}</span>
+        <span className="text-phx-sm font-semibold text-slate-400">{suggestion.brickId}</span>
         <span
-          className={`border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${CONFIDENCE_CHIP[suggestion.confidence]}`}
+          className={`border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${CONFIDENCE_CHIP[suggestion.confidence]}`}
         >
           {CONFIDENCE_LABEL[suggestion.confidence]}
         </span>
@@ -434,16 +434,16 @@ export function CrmRegionMappingPanel({
             >
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Region Name</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">First Seen</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-                  <th className="border-l border-slate-700 px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">CRM Region Name</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="border-l border-slate-700 px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">
                     Suggested Brick
                   </th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Resolution</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Action</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">

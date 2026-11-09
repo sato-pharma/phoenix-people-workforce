@@ -128,9 +128,9 @@ export function Section({
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-l-[3px] border-b-slate-200 border-l-orange-500 bg-slate-900 px-5 py-3.5">
         <div className="min-w-0 flex-1">
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-1 max-w-[110ch] text-phx-2xs leading-relaxed text-slate-300">{description}</p> : null}
+          {description ? <p className="mt-1 max-w-[110ch] text-phx-sm leading-relaxed text-slate-300">{description}</p> : null}
         </div>
-        {action ?? (meta ? <p className="shrink-0 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300 tabular-nums">{meta}</p> : null)}
+        {action ?? (meta ? <p className="shrink-0 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300 tabular-nums">{meta}</p> : null)}
       </div>
       {children}
     </section>
@@ -176,7 +176,7 @@ export function Tile({
   const body = (
     <>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
         {href ? (
           <ChevronRight
             aria-hidden
@@ -186,7 +186,7 @@ export function Tile({
       </div>
       <p className={`mt-1.5 text-2xl font-black leading-none tabular-nums ${TONE_TEXT[key]}`}>{value}</p>
       {share != null ? <Meter percent={share} tone={key} /> : null}
-      {sub ? <p className="mt-1.5 text-phx-2xs leading-snug text-slate-500">{sub}</p> : null}
+      {sub ? <p className="mt-1.5 text-phx-sm leading-snug text-slate-500">{sub}</p> : null}
     </>
   );
   const frame = `border border-t-[3px] ${TONE_TOP_RULE[key]} px-3.5 pb-3 pt-2.5`;
@@ -248,7 +248,7 @@ export function Swatch({ tone }: { tone: ChromeTone }) {
 /** A status in words, led by its square swatch. The words are the information; the swatch only repeats the tone. */
 export function StatusMark({ text, tone }: { text: string; tone: ChromeTone }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${TONE_TEXT[tone]}`}>
+    <span className={`inline-flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.1em] ${TONE_TEXT[tone]}`}>
       <Swatch tone={tone} />
       {text}
     </span>
@@ -268,8 +268,8 @@ export function ShareBar({ caption, segments }: { caption: string; segments: rea
   return (
     <figure className="px-5 pt-4">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
-        <span className="text-phx-2xs font-semibold text-slate-500 tabular-nums">{total} in all</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
+        <span className="text-phx-sm font-semibold text-slate-500 tabular-nums">{total} in all</span>
       </figcaption>
       <div aria-hidden className="mt-2 flex h-2.5 w-full bg-slate-100">
         {slices.map((slice) =>
@@ -284,7 +284,7 @@ export function ShareBar({ caption, segments }: { caption: string; segments: rea
       </div>
       <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
         {slices.map((slice) => (
-          <li className="inline-flex items-center gap-1.5 text-phx-2xs text-slate-600" key={slice.key}>
+          <li className="inline-flex items-center gap-1.5 text-phx-sm text-slate-600" key={slice.key}>
             <Swatch tone={toneOf.get(slice.key) ?? "slate"} />
             <span className="font-semibold">{slice.label}</span>
             <span className="font-black text-slate-900 tabular-nums">{slice.value}</span>
@@ -310,7 +310,7 @@ export function RegionHeading({ count, label, noun, right }: { count: number; la
           {count} {count === 1 ? noun : `${noun}s`}
         </span>
       </h3>
-      {right ? <div className="text-phx-2xs text-slate-500">{right}</div> : null}
+      {right ? <div className="text-phx-sm text-slate-500">{right}</div> : null}
     </div>
   );
 }
@@ -360,7 +360,7 @@ export function RepMonogram({ muted, name }: { muted?: boolean; name: string }) 
   return (
     <span
       aria-hidden
-      className={`flex h-9 w-9 shrink-0 items-center justify-center text-phx-2xs font-black tracking-[0.06em] ${
+      className={`flex h-9 w-9 shrink-0 items-center justify-center text-phx-sm font-black tracking-[0.06em] ${
         muted ? "border border-dashed border-slate-300 bg-white text-slate-400" : "bg-slate-900 text-white"
       }`}
     >
@@ -397,7 +397,7 @@ export function RepCardFrame({
       <RepMonogram muted={monogramMuted} name={name} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-black leading-tight text-slate-900 [overflow-wrap:anywhere]">{name}</p>
-        <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
+        <p className="mt-0.5 text-phx-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
         {children ? <div className="mt-2">{children}</div> : null}
       </div>
       <ChevronRight
@@ -433,7 +433,7 @@ export function EmptyNote({ detail, title }: { detail?: React.ReactNode; title: 
 
 /** A one-line helper sentence under a control row — the field-week note, the scope note. */
 export function HelpLine({ children }: { children: React.ReactNode }) {
-  return <p className="self-end text-phx-2xs leading-relaxed text-slate-500">{children}</p>;
+  return <p className="self-end text-phx-sm leading-relaxed text-slate-500">{children}</p>;
 }
 
 /** Cairo wall-clock, per the owner's standing rule that no raw UTC is ever shown. */
@@ -495,7 +495,7 @@ export function TeamTable<T>({
           <tr className="bg-slate-900">
             {columns.map((column) => (
               <th
-                className={`px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white ${column.align === "right" ? "text-right" : ""}`}
+                className={`px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white ${column.align === "right" ? "text-right" : ""}`}
                 key={column.key}
                 scope="col"
               >
@@ -516,7 +516,7 @@ export function TeamTable<T>({
                     </span>
                   </span>
                   {renderGroupMeta ? (
-                    <span className="text-phx-2xs font-normal normal-case tracking-normal text-slate-500">
+                    <span className="text-phx-sm font-normal normal-case tracking-normal text-slate-500">
                       {renderGroupMeta(group.reps)}
                     </span>
                   ) : null}
@@ -549,7 +549,7 @@ export function TeamTableName({ href, muted, name, sub }: { href: string; muted?
       <RepMonogram muted={muted} name={name} />
       <span className="min-w-0">
         <span className="block font-black leading-tight text-slate-900 group-hover:text-orange-700">{name}</span>
-        {sub ? <span className="mt-0.5 block text-phx-2xs font-semibold text-slate-500">{sub}</span> : null}
+        {sub ? <span className="mt-0.5 block text-phx-sm font-semibold text-slate-500">{sub}</span> : null}
       </span>
     </Link>
   );
@@ -587,15 +587,15 @@ export function RepProfileBand({
         </span>
         <div className="min-w-0">
           <p className="text-base font-black leading-tight text-slate-900 [overflow-wrap:anywhere]">{name}</p>
-          <p className="mt-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700 [overflow-wrap:anywhere]">{team}</p>
-          <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
+          <p className="mt-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700 [overflow-wrap:anywhere]">{team}</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{places}</p>
         </div>
       </div>
       {facts.length > 0 ? (
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:flex sm:flex-wrap">
           {facts.map((fact) => (
             <div className="border-l-[3px] border-slate-200 pl-2.5" key={fact.label}>
-              <dt className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{fact.label}</dt>
+              <dt className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{fact.label}</dt>
               <dd className={`text-sm font-black tabular-nums ${TONE_TEXT[fact.tone ?? "slate"]}`}>{fact.value}</dd>
             </div>
           ))}
@@ -624,18 +624,18 @@ export function RankedBars({
   return (
     <figure className="px-5 pt-4">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
-        <span className="text-phx-2xs font-semibold text-slate-500 tabular-nums">{total}</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
+        <span className="text-phx-sm font-semibold text-slate-500 tabular-nums">{total}</span>
       </figcaption>
       <ul className="mt-2 grid gap-x-6 gap-y-2 lg:grid-cols-2">
         {items.map((item) => (
           <li key={item.key}>
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-phx-2xs font-semibold text-slate-700 [overflow-wrap:anywhere]" dir="auto">
+              <span className="text-phx-sm font-semibold text-slate-700 [overflow-wrap:anywhere]" dir="auto">
                 {item.label}
                 {item.note ? <span className="ml-1.5 text-amber-700">{item.note}</span> : null}
               </span>
-              <span className="shrink-0 text-phx-2xs font-black text-slate-900 tabular-nums">{item.value}</span>
+              <span className="shrink-0 text-phx-sm font-black text-slate-900 tabular-nums">{item.value}</span>
             </div>
             <div aria-hidden className="mt-1 h-1.5 w-full bg-slate-100">
               <div className={`h-1.5 ${TONE_FILL[item.tone ?? "slate"]}`} style={{ width: `${meterPercent(item.value, largest)}%` }} />
@@ -651,7 +651,7 @@ export function RankedBars({
 export function ExportRowBar({ children, note }: { children: React.ReactNode; note: string }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4 print:hidden">
-      <p className="text-phx-2xs leading-relaxed text-slate-500">{note}</p>
+      <p className="text-phx-sm leading-relaxed text-slate-500">{note}</p>
       {children}
     </div>
   );
@@ -682,8 +682,8 @@ export function TeamRollup<T>({
   return (
     <figure className="px-5 pt-4">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
-        <span className="text-phx-2xs font-semibold text-slate-500 tabular-nums">{countOf(groups.length, "team")}</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
+        <span className="text-phx-sm font-semibold text-slate-500 tabular-nums">{countOf(groups.length, "team")}</span>
       </figcaption>
       <dl className="mt-2 border-t border-slate-200">
         {groups.map((group) => {
@@ -695,7 +695,7 @@ export function TeamRollup<T>({
               className="grid gap-x-6 gap-y-1.5 border-b border-slate-100 py-2.5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-center"
               key={group.key ?? group.label}
             >
-              <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-900 [overflow-wrap:anywhere]">
+              <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-900 [overflow-wrap:anywhere]">
                 {group.label}
                 <span className="ml-2 font-semibold normal-case tracking-normal text-slate-500 tabular-nums">
                   {countOf(group.reps.length, noun)}
@@ -713,7 +713,7 @@ export function TeamRollup<T>({
                     ) : null,
                   )}
                 </div>
-                <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-phx-2xs text-slate-600">
+                <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-phx-sm text-slate-600">
                   {slices.map((slice) => (
                     <span className="inline-flex items-center gap-1.5" key={slice.key}>
                       <Swatch tone={toneOf.get(slice.key) ?? "slate"} />

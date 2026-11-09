@@ -37,7 +37,7 @@ function Section({
             line at every desktop size. */}
         <div className="min-w-0 flex-1">
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
+          {description ? <p className="mt-0.5 text-phx-sm text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -67,9 +67,9 @@ function Tile({
           : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
+      {sub ? <p className="text-phx-sm text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -180,7 +180,7 @@ export function PlanVerificationBoardView({
               loud because a manager looking for a 30 August plan in September would otherwise
               conclude it was lost. */}
           {kind === "weekly" ? (
-            <p className="text-phx-2xs text-slate-400">
+            <p className="text-phx-sm text-slate-400">
               A week that crosses into the next month is listed under the month it starts in, and is always
               shown whole.
             </p>
