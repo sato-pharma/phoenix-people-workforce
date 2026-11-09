@@ -2,15 +2,17 @@ import { forbiddenError } from "@/lib/http/api-errors";
 import { logWarning } from "@/lib/observability/log";
 import { addDaysIso } from "@/lib/crm/dates";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import { distanceMeters } from "@/lib/phoenix-crm/geo";
+import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { locationSight, readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatDayActivities, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { loadSeatsLeaveLabels } from "@/lib/phoenix-crm/server/leave-days";
 import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay } from "@/lib/phoenix-crm/server/manager-dm-day";
-import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadManagerOwnVisitRows, loadManagerVisitFixes } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -25,9 +27,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * counted APART (the golden rule) and every visit's "Saved at" time — `captured_at`, the moment the rep saved
  * it. A district manager's own visits are listed in his own row and counted in no rep's figure.
  *
- * 🔴 NO LOCATION IS READ. The select names no coordinate, distance or location flag: the far-visit evidence is
- * not a Regional Sales Manager's (`readsPlaceVsActual`). "Today" is the VISIT day (`viewer.visitDay`, which runs
- * to 02:00 Cairo) and yesterday is the day before it.
+ * 🔴 EACH VISIT'S DISTANCE FROM THE LIVE PHOTO, AND NOTHING ELSE ABOUT THE READING (owner, 2026-11-09: "beside
+ * every customer write the distance in m the visit was logged vs validation live photo"). The metres between where
+ * the visit was logged and the place's validated live photo — the photograph's own fix, never a dragged pin — and
+ * only where `locationSight` answers "distance" or more for that seat (owner, 2026-10-02: every reader below the
+ * Super Admin and the SFE Manager reads the distance, never the reading behind it). No flag, no far count, no
+ * accuracy: the far-visit report stays off the Regional Sales Manager (`readsPlaceVsActual`). "Today" is the VISIT
+ * day (`viewer.visitDay`, which runs to 02:00 Cairo) and yesterday is the day before it.
  *
  * 🔴 A TEST ACCOUNT READS THE REAL TEAM AND ITS OWN TEST WORK BESIDE IT, the way every report does for one
  * (`regionalReportWorlds`). Read in the test world alone, the TEST- login that mirrors the Regional
@@ -51,7 +57,18 @@ export type TeamVisitTime = {
    * the three figures. The square tags it so the reader can tell which of the times the "waiting" figure means.
    */
   waiting: boolean;
+  /**
+   * Planned, unplanned or entered for the person by the Super Admin — each wears its own colour (owner, 2026-11-09:
+   * "give planned visit a color and unplanned a color and logged by admin another color"). Entered by admin wins.
+   */
+  origin: TeamVisitOrigin;
+  /** Metres from where the visit was logged to the place's validated live photo; null with `distanceNote` saying why. */
+  metres: number | null;
+  /** "No location on the visit" · "No live photo for this place" — null when `metres` is printed or nothing is shown. */
+  distanceNote: string | null;
 };
+
+export type TeamVisitOrigin = "planned" | "unplanned" | "admin";
 
 export type TeamVisitDay = {
   am: number;
@@ -140,7 +157,45 @@ type VisitRow = {
   customer_validated: boolean | null;
   captured_at: string | null;
   imported_from_ireports360_at: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  place_id?: string | null;
+  is_unplanned?: boolean | null;
+  entered_by_hr_id?: string | null;
+  rep_hr_id?: string | null;
+  manager_hr_id?: string | null;
+  senior_hr_id?: string | null;
 };
+
+/** A place's validated live photo, by the photograph's own fix. */
+export type PhotoPoint = { lat: number; lon: number };
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * The metres from where a visit was logged to the validated live photo of its place, or why there are none. Pure.
+ * `shown: false` (the seat is the viewer's own as its rep, Golden Rule #1) prints nothing at all.
+ */
+export function visitPhotoDistance(
+  visit: { lat?: number | null; lon?: number | null },
+  photo: PhotoPoint | null | undefined,
+  shown = true,
+): { metres: number | null; distanceNote: string | null } {
+  if (!shown) return { distanceNote: null, metres: null };
+  if (!finite(visit.lat) || !finite(visit.lon)) return { distanceNote: "No location on the visit", metres: null };
+  if (!photo || !finite(photo.lat) || !finite(photo.lon)) return { distanceNote: "No live photo for this place", metres: null };
+  return { distanceNote: null, metres: distanceMeters({ lat: visit.lat, lon: visit.lon }, photo) };
+}
+
+/** Planned, unplanned or entered for the rep by the Super Admin — `isEnteredForRep`, the missed-record rule. */
+export function teamVisitOrigin(
+  row: Pick<VisitRow, "is_unplanned" | "entered_by_hr_id" | "rep_hr_id" | "manager_hr_id" | "senior_hr_id">,
+): TeamVisitOrigin {
+  if (isEnteredForRep({ enteredBy: row.entered_by_hr_id, manager: row.manager_hr_id, rep: row.rep_hr_id, senior: row.senior_hr_id })) return "admin";
+  return row.is_unplanned === true ? "unplanned" : "planned";
+}
 
 export function emptyTeamVisitDay(): TeamVisitDay {
   return { am: 0, pm: 0, pharmacies: 0, times: [], waiting: 0 };
@@ -166,14 +221,27 @@ function listOf(listType: unknown): "AM" | "PM" | "Pharmacy" {
  * validated AM and PM counted apart, pharmacies as DISTINCT names (the team calendar's rule, so the two agree),
  * an unvalidated customer counted only as waiting, and a copied visit's time printed as none.
  */
-export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>, customerNames: ReadonlyMap<string, string> = new Map()): TeamVisitDay {
+export function foldTeamVisitDay(
+  rows: ReadonlyArray<VisitRow>,
+  customerNames: ReadonlyMap<string, string> = new Map(),
+  photos: ReadonlyMap<string, PhotoPoint> = new Map(),
+  distanceShown = true,
+): TeamVisitDay {
   const day = emptyTeamVisitDay();
   const pharmacies = new Set<string>();
   for (const row of rows) {
     const copied = Boolean(row.imported_from_ireports360_at);
     const list = listOf(row.list_type);
     const customer = (list === "Pharmacy" ? row.pharmacy_name?.trim() : null) || (row.customer_id ? customerNames.get(row.customer_id) : null) || row.pharmacy_name?.trim() || null;
-    day.times.push({ at: copied ? null : row.captured_at, customer, list, savedAt: copied ? null : cairoTimeOnly(row.captured_at), waiting: row.customer_validated !== true });
+    day.times.push({
+      at: copied ? null : row.captured_at,
+      customer,
+      list,
+      origin: teamVisitOrigin(row),
+      savedAt: copied ? null : cairoTimeOnly(row.captured_at),
+      waiting: row.customer_validated !== true,
+      ...visitPhotoDistance(row, row.place_id ? photos.get(String(row.place_id)) : null, distanceShown),
+    });
     if (row.customer_validated !== true) {
       day.waiting += 1;
       continue;
@@ -278,9 +346,12 @@ async function readVisitRows(seatIds: string[], worlds: boolean[], from: string,
     fetchAllRowsKeyset<VisitRow>(
       () =>
         getSupabaseAdmin()
-          // Named columns, every one read off the live view — and NO location column (see the file header).
+          // Named columns, every one read off the live view — the visit's own fix and place for the distance from the
+          // live photo, and no flag, accuracy or stored verdict (see the file header).
           .from("phoenix_crm_countable_visits_with_history")
-          .select("id, seat_id, customer_id, visit_date, list_type, pharmacy_name, customer_validated, captured_at, imported_from_ireports360_at")
+          .select(
+            "id, seat_id, customer_id, visit_date, list_type, pharmacy_name, customer_validated, captured_at, imported_from_ireports360_at, lat, lon, place_id, is_unplanned, entered_by_hr_id, rep_hr_id, manager_hr_id, senior_hr_id",
+          )
           .in("is_test", worlds)
           .gte("visit_date", from)
           .lte("visit_date", to)
@@ -288,6 +359,67 @@ async function readVisitRows(seatIds: string[], worlds: boolean[], from: string,
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   );
+}
+
+/**
+ * Each place's validated live photo, by place id — the photograph's own fix; a place seated in a shared venue with
+ * no photo of its own takes the venue's. A failed read throws: the page says so, never a wrong distance.
+ */
+async function readPlacePhotos(placeIds: string[]): Promise<Map<string, PhotoPoint>> {
+  const out = new Map<string, PhotoPoint>();
+  const ids = [...new Set(placeIds)];
+  if (ids.length === 0) return out;
+  type PlaceRow = { id: string; photo_lat: number | null; photo_lon: number | null; shared_place_id: string | null };
+  const places = await readSeatGroups(ids, 100, async (part) => {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_places").select("id, photo_lat, photo_lon, shared_place_id").in("id", part);
+    if (error) throw new Error(`Could not read the places' live photos: ${error.message}`);
+    return (data ?? []) as PlaceRow[];
+  });
+  const venueIds = [...new Set(places.flatMap((place) => (!finite(place.photo_lat) && place.shared_place_id ? [String(place.shared_place_id)] : [])))];
+  const venues = new Map<string, PhotoPoint>();
+  if (venueIds.length > 0) {
+    const rows = await readSeatGroups(venueIds, 100, async (part) => {
+      const { data, error } = await getSupabaseAdmin().from("phoenix_crm_shared_places").select("id, photo_lat, photo_lon").in("id", part);
+      if (error) throw new Error(`Could not read the shared places' live photos: ${error.message}`);
+      return (data ?? []) as Array<{ id: string; photo_lat: number | null; photo_lon: number | null }>;
+    });
+    for (const row of rows) if (finite(row.photo_lat) && finite(row.photo_lon)) venues.set(String(row.id), { lat: row.photo_lat, lon: row.photo_lon });
+  }
+  for (const place of places) {
+    if (finite(place.photo_lat) && finite(place.photo_lon)) out.set(String(place.id), { lat: place.photo_lat, lon: place.photo_lon });
+    else if (place.shared_place_id && venues.has(String(place.shared_place_id))) out.set(String(place.id), venues.get(String(place.shared_place_id))!);
+  }
+  return out;
+}
+
+/**
+ * A district manager's own visits, measured the same way: the visit's own fix (`loadManagerVisitFixes`, the one
+ * adapter) against the live photo of that customer's place. A visit to a customer on his own list has no validated place
+ * and reads "No live photo for this place". A failed read throws: the page says so.
+ */
+async function readManagerVisitFixes(visitIds: string[]): Promise<Map<string, { lat: number | null; lon: number | null; photo: PhotoPoint | null }>> {
+  const out = new Map<string, { lat: number | null; lon: number | null; photo: PhotoPoint | null }>();
+  const ids = [...new Set(visitIds)];
+  if (ids.length === 0) return out;
+  const visits = await loadManagerVisitFixes(ids);
+  const customerIds = [...new Set(visits.flatMap((visit) => (visit.customerId ? [visit.customerId] : [])))];
+  const places = customerIds.length
+    ? await readSeatGroups(customerIds, 100, async (part) => {
+        const { data, error } = await getSupabaseAdmin().from("phoenix_crm_places").select("id, customer_id").in("customer_id", part).eq("status", "active");
+        if (error) throw new Error(`Could not read the customers' places: ${error.message}`);
+        return (data ?? []) as Array<{ id: string; customer_id: string }>;
+      })
+    : [];
+  const photos = await readPlacePhotos(places.map((place) => String(place.id)));
+  const photoOfCustomer = new Map<string, PhotoPoint>();
+  for (const place of places) {
+    const photo = photos.get(String(place.id));
+    if (photo && !photoOfCustomer.has(String(place.customer_id))) photoOfCustomer.set(String(place.customer_id), photo);
+  }
+  for (const visit of visits) {
+    out.set(String(visit.id), { lat: visit.lat, lon: visit.lon, photo: visit.customerId ? (photoOfCustomer.get(visit.customerId) ?? null) : null });
+  }
+  return out;
 }
 
 /** The names of the customers the visits went to, by id. A failed read throws: the page says so, never a blank name. */
@@ -316,7 +448,10 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     yesterday,
     today,
   );
-  const customerNames = await readCustomerNames([...new Set(rows.flatMap((row) => (row.customer_id ? [String(row.customer_id)] : [])))]);
+  const [customerNames, photos] = await Promise.all([
+    readCustomerNames([...new Set(rows.flatMap((row) => (row.customer_id ? [String(row.customer_id)] : [])))]),
+    readPlacePhotos(rows.flatMap((row) => (row.place_id ? [String(row.place_id)] : []))),
+  ]);
   const bySeatDay = new Map<string, VisitRow[]>();
   for (const row of rows) {
     const key = `${row.seat_id ?? ""}|${String(row.visit_date ?? "").slice(0, 10)}`;
@@ -332,6 +467,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
   const ownRows = managerHrIds.length
     ? (await Promise.all(worlds.map((isTest) => loadManagerOwnVisitRows({ end: today, isTest, managerHrIds, start: yesterday })))).flat()
     : [];
+  const managerFixes = await readManagerVisitFixes(ownRows.filter((visit) => visit.source === "own").map((visit) => visit.id));
   const [names, hireDates] = await Promise.all([
     loadPeopleNames([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]),
     readHireDates([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]),
@@ -398,7 +534,11 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     const reps = group.items
       .map((seat): TeamVisitRep => {
         const people = seatOccupants(seat);
-        const day = (on: string): TeamVisitDay => ({ ...foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames), away: awayOn(seat.seatId, on) });
+        const shown = locationSight(viewer, seat) !== "none";
+        const day = (on: string): TeamVisitDay => ({
+          ...foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames, photos, shown),
+          away: awayOn(seat.seatId, on),
+        });
         const rep: TeamVisitRep = {
           person: people.length ? people.map((hrId) => nameOf(names, hrId)).join(" · ") : "Seat is vacant",
           seatId: seat.seatId,
@@ -427,8 +567,10 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
             at: visit.loggedAt,
             customer: visit.customerName?.trim() || null,
             list: visit.bucket === "AM" ? "AM" : visit.bucket === "PM" ? "PM" : "Pharmacy",
+            origin: visit.enteredByAdmin ? "admin" : visit.planned ? "planned" : "unplanned",
             savedAt: cairoTimeOnly(visit.loggedAt),
             waiting: false,
+            ...visitPhotoDistance(managerFixes.get(visit.id) ?? {}, managerFixes.get(visit.id)?.photo, !district || locationSight(viewer, district) !== "none"),
           });
         }
         day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
