@@ -1,7 +1,11 @@
 import crypto from "crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import sanitizeHtml from "sanitize-html";
 
 const defaultSignatureCacheTtlMs = 60 * 60 * 1000;
+/** What fetch follows on its own when told to; the manual loop keeps that reach, one vetted hop at a time. */
+const maxImageRedirects = 20;
 const signatureImageChecks = new Map<string, { checkedAt: number; contentType: string }>();
 
 export type RecipientPolicyIssue =
@@ -120,46 +124,93 @@ function configuredAllowedDomains() {
 }
 
 /**
- * Block hosts that resolve to local/internal networks (SSRF guard for the reusable image
- * validator). Matches the parsed hostname against loopback, RFC1918 private ranges,
- * link-local (incl. the 169.254.169.254 cloud-metadata endpoint), and IPv6
- * loopback/ULA/link-local. The naive original only matched `localhost`/`127.0.0.1`.
- *
- * Also (owner, 2026-11-09): an IPv4-mapped IPv6 address is judged as the IPv4 host inside it —
- * `https://[::ffff:127.0.0.1]/` reaches loopback, and the URL parser writes it `::ffff:7f00:1`, which
- * no IPv4 pattern below would match — and Railway's private network (`*.railway.internal`), where
- * the app's own services answer, is internal. A trailing dot (`host.railway.internal.`) is the same host.
+ * Block hosts that are local/internal networks (SSRF guard for the reusable image validator).
+ * A hostname that is an IP address is judged by its NUMBER, never by a text pattern: loopback, 0.0.0.0/8,
+ * RFC1918, CGNAT (100.64/10), link-local (incl. the 169.254.169.254 cloud-metadata endpoint), and for
+ * IPv6 loopback, ULA (fc00::/7) and link-local (fe80::/10). An IPv6 address that carries an IPv4 one —
+ * IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible (`::a.b.c.d`), SIIT (`::ffff:0:a.b.c.d`) and NAT64
+ * (`64:ff9b::a.b.c.d`) — is judged as the IPv4 host inside it, in whichever spelling the URL parser
+ * hands over (`https://[::ffff:127.0.0.1]/` is written `::ffff:7f00:1`). Railway's private network
+ * (`*.railway.internal`), where the app's own services answer, is internal, and a trailing dot
+ * (`host.railway.internal.`) is the same host. A NAME is never matched against an address pattern, so
+ * `10.example.com` is an ordinary public host; what a name RESOLVES to is `resolvesToBlockedAddress`.
  */
 export function isBlockedImageHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "").replace(/\.$/, "");
-  const mapped = ipv4InsideMappedIpv6(h);
-  if (mapped) return isBlockedImageHost(mapped);
+  const h = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "").replace(/\.$/, "").replace(/%.*$/, "");
   if (h === "railway.internal" || h.endsWith(".railway.internal")) return true; // Railway private network
-  if (h === "localhost" || h.endsWith(".localhost") || h === "0.0.0.0" || h === "::1" || h === "::") return true;
-  if (/^127\./.test(h)) return true; // IPv4 loopback
-  if (/^10\./.test(h)) return true; // RFC1918
-  if (/^192\.168\./.test(h)) return true; // RFC1918
-  if (/^169\.254\./.test(h)) return true; // link-local incl. cloud metadata
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true; // RFC1918 172.16-31
-  if (/^(fc|fd)[0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
-  if (/^fe80:/i.test(h)) return true; // IPv6 link-local
-  return false;
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  const family = isIP(h);
+  if (family === 4) return isBlockedIpv4(h.split(".").map(Number));
+  if (family === 6) return isBlockedIpv6(ipv6Groups(h));
+  // Digits and dots that are not a clean dotted quad ("127.1", "2130706433") are an address in a
+  // spelling a resolver may still honour; no real image host looks like that, so it is refused.
+  return /^[\d.]+$/.test(h);
 }
 
+function isBlockedIpv4([a, b]: number[]): boolean {
+  return (
+    a === 0 || // 0.0.0.0/8, "this network"
+    a === 10 || // RFC1918
+    a === 127 || // loopback
+    (a === 100 && b >= 64 && b <= 127) || // CGNAT 100.64.0.0/10
+    (a === 169 && b === 254) || // link-local incl. cloud metadata
+    (a === 172 && b >= 16 && b <= 31) || // RFC1918 172.16-31
+    (a === 192 && b === 168) // RFC1918
+  );
+}
+
+/** The eight 16-bit groups of a valid IPv6 address, `::` expanded and a dotted IPv4 tail turned into two groups. */
+function ipv6Groups(h: string): number[] {
+  const tail = /^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  const text = tail
+    ? `${tail[1]}${((Number(tail[2]) << 8) | Number(tail[3])).toString(16)}:${((Number(tail[4]) << 8) | Number(tail[5])).toString(16)}`
+    : h;
+  const [head, rest] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = rest ? rest.split(":") : [];
+  const fill = rest === undefined ? [] : Array<string>(8 - left.length - right.length).fill("0");
+  return [...left, ...fill, ...right].map((group) => parseInt(group, 16));
+}
+
+function isBlockedIpv6(g: number[]): boolean {
+  const zeroThrough = (count: number) => g.slice(0, count).every((group) => group === 0);
+  const embedded = () => isBlockedIpv4([g[6] >> 8, g[6] & 255, g[7] >> 8, g[7] & 255]);
+  if (zeroThrough(7)) return true; // :: and ::1
+  if (zeroThrough(6)) return embedded(); // IPv4-compatible
+  if (zeroThrough(5) && g[5] === 0xffff) return embedded(); // IPv4-mapped
+  if (zeroThrough(4) && g[4] === 0xffff && g[5] === 0) return embedded(); // SIIT
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((group) => group === 0)) return embedded(); // NAT64
+  if ((g[0] & 0xfe00) === 0xfc00) return true; // unique-local fc00::/7
+  return (g[0] & 0xffc0) === 0xfe80; // link-local fe80::/10
+}
+
+const dnsAnswerTimeoutMs = 5000;
+
 /**
- * The IPv4 address inside an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`), in either spelling the
- * parser can hand over — dotted (`::ffff:127.0.0.1`) or two hex groups (`::ffff:7f00:1`), with the
- * leading zero groups compressed or written out. Null for anything else.
+ * The name side of the SSRF guard: a public-looking name can point at an internal address
+ * (`127.0.0.1.nip.io`, or any record its owner chooses), which `isBlockedImageHost` cannot see in a
+ * string. This resolves the name and refuses it when ANY answer is internal. A lookup that fails or
+ * stalls says nothing — the fetch that follows fails on its own — so only an internal ANSWER blocks.
+ * It narrows DNS rebinding (a second answer at fetch time) but cannot close it; that needs the
+ * connection pinned to the vetted address.
  */
-function ipv4InsideMappedIpv6(h: string): string | null {
-  const rest = /^(?:::|(?:0{1,4}:){5})ffff:(.+)$/.exec(h)?.[1];
-  if (!rest) return null;
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(rest)) return rest;
-  const groups = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(rest);
-  if (!groups) return null;
-  const high = parseInt(groups[1], 16);
-  const low = parseInt(groups[2], 16);
-  return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+export async function resolvesToBlockedAddress(hostname: string): Promise<boolean> {
+  const h = hostname.replace(/^\[/, "").replace(/\]$/, "");
+  if (isIP(h)) return false; // a literal address is already judged by isBlockedImageHost
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answers = await Promise.race([
+      lookup(h, { all: true, verbatim: true }),
+      new Promise<[]>((resolve) => {
+        timer = setTimeout(() => resolve([]), dnsAnswerTimeoutMs);
+      }),
+    ]);
+    return answers.some((answer) => isBlockedImageHost(answer.address));
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -336,8 +387,14 @@ export async function assertReachableEmailImage(url: string, input?: {
     return { cached: true, contentType: cached.contentType, verified: true as const };
   }
 
-  // Redirects are followed by hand, at most three hops, and each hop is held to the same rule
-  // (https, public host, no credentials) — a public URL cannot bounce the check onto an internal one.
+  // A public-looking NAME must not point at an internal address either (see resolvesToBlockedAddress).
+  if (await resolvesToBlockedAddress(parsed.hostname)) {
+    throw new Error("Email signature image must not use a local/internal host or a relative /assets URL.");
+  }
+
+  // Redirects are followed by hand, up to the 20 hops fetch itself would follow, and each hop is held to
+  // the same rule (https, public host that resolves to a public address, no credentials) — a public URL
+  // cannot bounce the check onto an internal one.
   const verify = async (method: "GET" | "HEAD") => {
     let target = parsed;
     for (let hop = 0; ; hop += 1) {
@@ -349,11 +406,19 @@ export async function assertReachableEmailImage(url: string, input?: {
         signal: AbortSignal.timeout(8000),
       });
       const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
-      if (!location || hop >= 3) return response;
+      if (!location || hop >= maxImageRedirects) return response;
       const next = new URL(location, target);
-      if (next.protocol !== "https:" || isBlockedImageHost(next.hostname) || next.username || next.password) {
+      if (
+        next.protocol !== "https:" ||
+        isBlockedImageHost(next.hostname) ||
+        next.username ||
+        next.password ||
+        (await resolvesToBlockedAddress(next.hostname))
+      ) {
         return response;
       }
+      // The redirect's own body is never read: release its connection before following it.
+      await response.body?.cancel().catch(() => undefined);
       target = next;
     }
   };

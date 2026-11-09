@@ -47,22 +47,22 @@ function testSafeReturnUrl(): void {
   }
 }
 
-function testSharePasscode(): void {
+async function testSharePasscode(): Promise<void> {
   const token = "tok-123";
   const stored = hashPasscode("4821", token);
   assert.ok(stored.startsWith("scrypt$"), `a new passcode is a scrypt hash, got ${stored}`);
   assert.notEqual(hashPasscode("4821", token), stored, "each hash carries its own salt");
-  assert.equal(passcodeMatches("4821", token, stored), true);
-  assert.equal(passcodeMatches(" 4821 ", token, stored), true, "the typed passcode is trimmed, as before");
-  assert.equal(passcodeMatches("4822", token, stored), false);
-  assert.equal(passcodeMatches("4821", "another-token", stored), false, "the hash is still bound to its link");
-  assert.equal(passcodeMatches("4821", token, "scrypt$broken"), false, "a damaged hash opens nothing");
+  assert.equal(await passcodeMatches("4821", token, stored), true);
+  assert.equal(await passcodeMatches(" 4821 ", token, stored), true, "the typed passcode is trimmed, as before");
+  assert.equal(await passcodeMatches("4822", token, stored), false);
+  assert.equal(await passcodeMatches("4821", "another-token", stored), false, "the hash is still bound to its link");
+  assert.equal(await passcodeMatches("4821", token, "scrypt$broken"), false, "a damaged hash opens nothing");
 
   // A link minted before 9 Nov 2026 stored hex SHA-256 of `<token>:<passcode>`; it must still open.
   const legacyStored = createHash("sha256").update(`${token}:4821`).digest("hex");
-  assert.equal(passcodeMatches("4821", token, legacyStored), true, "an old link's passcode still opens it");
-  assert.equal(passcodeMatches("0000", token, legacyStored), false);
-  assert.equal(passcodeMatches("4821", token, null), true, "a link with no passcode needs none");
+  assert.equal(await passcodeMatches("4821", token, legacyStored), true, "an old link's passcode still opens it");
+  assert.equal(await passcodeMatches("0000", token, legacyStored), false);
+  assert.equal(await passcodeMatches("4821", token, null), true, "a link with no passcode needs none");
 }
 
 async function testEmailImageNeverReachesAnInternalHost(): Promise<void> {
@@ -143,6 +143,11 @@ function testSlowReadsAreLinear(): void {
   assert.equal(fast("the car photo path", () => buildOutstationCarEvidenceImagePath(metadata)), `car/${hrId}/r.jpg`);
 
   fast("the admin Telegram mirror", () => buildAdminMirrorMessage({ subject: "s", html: "<style".repeat(LONG) } as never));
+
+  // Thousands of openers that never close: every one used to re-read the rest of the file.
+  const unclosed = "<script>".repeat(LONG);
+  assert.equal(fast("the uploaded HTML file's script and style removal", () => htmlDocumentBody(unclosed)), unclosed);
+  assert.equal(htmlDocumentBody("<p>a</p><SCRIPT type=x>b()</Script ><style>c{}</style><p>d</p>"), "<p>a</p><p>d</p>");
 }
 
 function testHtmlIsStrippedWholeAndDecodedOnce(): void {

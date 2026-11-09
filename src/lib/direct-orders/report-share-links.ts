@@ -265,7 +265,7 @@ export async function resolveDirectOrderReportShareLink(input: {
 
   if (link.passcode_hash) {
     const supplied = String(input.passcode ?? "");
-    if (!supplied || !passcodeMatches(supplied, token, String(link.passcode_hash))) {
+    if (!supplied || !(await passcodeMatches(supplied, token, String(link.passcode_hash)))) {
       throw forbiddenError("Passcode required.");
     }
   }

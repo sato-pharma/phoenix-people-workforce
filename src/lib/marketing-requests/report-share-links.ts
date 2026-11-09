@@ -257,7 +257,7 @@ export async function resolveMarketingReportShareLink(input: {
 
   if (link.passcode_hash) {
     const supplied = String(input.passcode ?? "");
-    if (!supplied || !passcodeMatches(supplied, String(input.token).trim(), String(link.passcode_hash))) {
+    if (!supplied || !(await passcodeMatches(supplied, String(input.token).trim(), String(link.passcode_hash)))) {
       throw forbiddenError("Passcode required.");
     }
   }

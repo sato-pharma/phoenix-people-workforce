@@ -1536,7 +1536,9 @@ export function recommendHeldRelease(
     // ...EXCEPT WHAT HE ADDED HERE ("I want them to be held and at least what I add only"): a held
     // amount he entered while working in this run is his choice already, so it starts in the box —
     // never above what is due now. Ahmed Helal's 9,401, entered at 10:07, sat at 0 and left the sheet.
-    const added = roundCurrency(addedInRun.get(compact) ?? 0);
+    // What Part 1 already released comes off it first: that part of his choice is paid, so Part 2 never
+    // fills in a figure he did not add (9,401 added and released in Part 1, 600 still due → 0, not 600).
+    const added = Math.max(0, roundCurrency((addedInRun.get(compact) ?? 0) - releasedInPart1));
     const prefill = added > 0 ? Math.min(dueNow, added) : 0;
     if (member?.releaseOnly) row.releaseOnly = true;
     row.recommended = { [field]: prefill, part1NotPaid };

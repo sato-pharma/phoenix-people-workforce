@@ -1,5 +1,6 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -431,7 +432,11 @@ function num(value: unknown): number {
  * `excludeRunId` drops the run being worked on, so the current month's own holds do not read as a
  * debt against themselves.
  */
-export async function loadHeldBalances(options?: { excludeRunId?: string }): Promise<HeldBalance[]> {
+export async function loadHeldBalances(options?: {
+  excludeRunId?: string;
+  /** The held amounts HR entered, when the caller has already read them — saves a second read of the table. */
+  entered?: EnteredHeld[];
+}): Promise<HeldBalance[]> {
   const published = await newestPublishedDetailByRun();
   if (!published || published.size === 0) return [];
   const runIds = [...published.keys()];
@@ -441,7 +446,7 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
   for (const runId of runIds) settlementsByRun.set(runId, await getHeldSettlements(runId));
   const releasedByPayroll = payrollReleasedByHeldMonth(await loadPayrollReleases(), options?.excludeRunId);
   const corrections = await loadPart1Corrections();
-  const entered = await loadEnteredHeld();
+  const entered = options?.entered ?? (await loadEnteredHeld());
 
   const balances: HeldBalance[] = [];
   for (const [runId, detail] of published) {
@@ -667,8 +672,11 @@ export async function recordPart1Corrections(input: {
  * payroll". A person with an outstanding balance here has money the company still owes; a person
  * with none has either never been held or has been settled by hand and recorded.
  */
-export async function outstandingHeldByEmployee(currentRunId: string): Promise<Map<string, HeldBalance[]>> {
-  const balances = await loadHeldBalances({ excludeRunId: currentRunId });
+export async function outstandingHeldByEmployee(
+  currentRunId: string,
+  entered?: EnteredHeld[],
+): Promise<Map<string, HeldBalance[]>> {
+  const balances = await loadHeldBalances({ excludeRunId: currentRunId, entered });
   const byEmployee = new Map<string, HeldBalance[]>();
   for (const balance of balances) {
     if (balance.outstanding <= 0) continue;
@@ -1134,7 +1142,8 @@ export async function deleteEnteredHeld(
 ): Promise<void> {
   assertAutomatedPayrollHrActor(access);
   const compact = compactHrKey(hrId);
-  if (!compact || !heldRunId) throw new Error("Validation: choose the entry to remove.");
+  // A malformed id would reach a uuid column and come back as a raw Postgres error, not a refusal.
+  if (!compact || !isUuid(heldRunId)) throw new Error("Validation: choose the entry to remove.");
 
   const released = await releasedAgainst(heldRunId, compact);
   if (released > 0) {
@@ -1143,12 +1152,15 @@ export async function deleteEnteredHeld(
     );
   }
 
-  const { error } = await getSupabaseAdmin()
+  const { data, error } = await getSupabaseAdmin()
     .from(ENTERED_TABLE)
     .delete()
     .eq("held_run_id", heldRunId)
-    .eq("employee_hr_id_compact", compact);
+    .eq("employee_hr_id_compact", compact)
+    .select("id");
   if (error) throw error;
+  // Nothing was there (a repeated or stale delete): nothing changed, so no audit row says it did.
+  if (!data || data.length === 0) return;
 
   await writeAutomatedPayrollAudit({
     runId: currentRunId,
