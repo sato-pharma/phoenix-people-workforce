@@ -33,16 +33,39 @@ function Figures({ day }: { day: TeamVisitDay }) {
   );
 }
 
+const TIME_GROUPS: ReadonlyArray<{ list: TeamVisitDay["times"][number]["list"]; label: string }> = [
+  { label: "AM", list: "AM" },
+  { label: "PM", list: "PM" },
+  { label: "Pharmacies", list: "Pharmacy" },
+];
+
+/**
+ * Each visit as its time and the customer beside it, grouped AM · PM · Pharmacies inside the day's square, earliest
+ * first (owner, 2026-11-09: "in the same square gp by am/pm put customer name and beside the visit time sort
+ * ascending"). The loader already sorts by the saved instant; a copied old-CRM visit has none and comes last.
+ */
 function Times({ day }: { day: TeamVisitDay }) {
   if (day.times.length === 0) return <p className="mt-1 text-phx-2xs text-slate-400">No visits saved</p>;
   return (
-    <ul className="mt-1.5 flex flex-wrap gap-1">
-      {day.times.map((time, index) => (
-        <li className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold tabular-nums text-slate-700" key={index}>
-          {time.savedAt ?? "No time recorded"} · {time.list}
-        </li>
-      ))}
-    </ul>
+    <div className="mt-1.5 grid gap-1.5">
+      {TIME_GROUPS.map((group) => {
+        const times = day.times.filter((time) => time.list === group.list);
+        if (times.length === 0) return null;
+        return (
+          <div key={group.list}>
+            <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{group.label}</p>
+            <ul className="mt-0.5 grid gap-0.5">
+              {times.map((time, index) => (
+                <li className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs" key={index}>
+                  <span className="font-semibold tabular-nums text-slate-700">{time.savedAt ?? "No time recorded"}</span>
+                  <span className="break-words font-semibold text-slate-900">{time.customer ?? "Customer not recorded"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
