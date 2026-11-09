@@ -1215,6 +1215,16 @@ export function regionalTeamRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
 }
 
 /**
+ * The worlds a Regional Sales Manager team report reads (Visits — Yesterday and Today, District Managers' Plans,
+ * the Weekly Sheet): a real viewer the real one; a `TEST-` login the real team AND its own test work beside it,
+ * the way every report does for one (`docs/test-accounts.md`, "Reports"). Read in the test world alone, the test
+ * account mirroring Dr. Hany Saad showed every rep at zero and every plan empty (owner, 2026-11-09).
+ */
+export function regionalReportWorlds(viewer: Pick<PhoenixCrmViewer, "isTestPersona">): boolean[] {
+  return viewer.isTestPersona ? [false, true] : [false];
+}
+
+/**
  * Who opens My map (owner, 2026-10-27): a rep on his own territory, a district, regional or national sales manager
  * across what he reads, and the Super Admin, the CEO and the SFE Manager across the company.
  *

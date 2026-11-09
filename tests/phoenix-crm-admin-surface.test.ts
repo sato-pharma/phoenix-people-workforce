@@ -235,8 +235,8 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
       ["src/lib/phoenix-crm/server/team.ts", "const isTest = readWorldFor(viewer, raw.test);"],
       ["src/lib/phoenix-crm/server/manager-visits.ts", "const isTest = readWorldFor(viewer, raw.test);"],
       ["src/lib/phoenix-crm/server/manager-plans.ts", "const isTest = readWorldFor(viewer, raw.test);"],
-      ["src/lib/phoenix-crm/server/team-visits.ts", "const isTest = readWorldFor(viewer, null);"],
-      ["src/lib/crm/weekly-sheet.ts", "const isTest = readWorldFor(viewer, null);"],
+      ["src/lib/phoenix-crm/server/team-visits.ts", "const worlds = regionalReportWorlds(viewer);"],
+      ["src/lib/crm/weekly-sheet.ts", "const worlds = regionalReportWorlds(viewer);"],
       ["src/lib/phoenix-crm/server/today.ts", "territoryForView(viewer, raw.seatId, readTestFlag(raw.test))"],
       ["src/lib/phoenix-crm/server/list.ts", "const ensured = ensureReferenceCustomersForView(viewer, seat, isTest);"],
     ] as const) {
