@@ -2970,6 +2970,7 @@ import { runPublicIntakeLimitsTests } from "./public-intake-limits.test.ts";
 import { runMemoryRateBucketsTests } from "./memory-rate-buckets.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
+import { runCredentialOutboxSealTests } from "./credential-outbox-seal.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
   runCsvFormulaNeutraliserTests,
@@ -11888,6 +11889,10 @@ await runTest(
 await runTest(
   "the reset-code and set-your-password-link emails are not mirrored to the admin Telegram, by the explicit credential stamp that rides the outbox payload, while every other email keeps its mirror; and the Recipient Assurance Guard fails closed — a day-old directory copy covers a short outage, past it the email is held back with a transient reason and retried",
   runCredentialEmailMirrorTests,
+);
+await runTest(
+  "a reset code or a set-your-password link never sits readable in the email outbox: both are sealed before the row is written, opened only in memory to send, deleted once the row is sent, skipped or out of retries, and keyed out of the dedupe hash; every other email is stored as before",
+  runCredentialOutboxSealTests,
 );
 await runTest(
   "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",

@@ -34,13 +34,16 @@ export class SecretBoxError extends Error {
   }
 }
 
-function envSecret(): string {
-  const raw = process.env.MAILBOX_MONITOR_SECRET;
+/** The server-only env secret a key is derived from. MAILBOX_MONITOR_SECRET unless a caller names another. */
+export type SecretBoxKeyEnv = "MAILBOX_MONITOR_SECRET" | "PHOENIX_AUTH_SECRET";
+
+function envSecret(keyEnv: SecretBoxKeyEnv = "MAILBOX_MONITOR_SECRET"): string {
+  const raw = process.env[keyEnv];
   if (typeof raw !== "string" || raw.trim().length < 16) {
     // A short or absent secret is a configuration error, not a runtime edge case: refuse to seal
     // or open rather than fall back to a weak or predictable key.
     throw new SecretBoxError(
-      "MAILBOX_MONITOR_SECRET is not set (or is too short). Set a long random value on the server before storing mailbox credentials.",
+      `${keyEnv} is not set (or is too short). Set a long random value on the server before storing credentials.`,
     );
   }
   return raw;
@@ -59,10 +62,16 @@ function envSecret(): string {
  */
 export type SecretBoxOptions = {
   context?: string;
+  /**
+   * Which env secret the key comes from. Omitted, MAILBOX_MONITOR_SECRET, as every existing blob.
+   * The email outbox seals a queued reset code or set-your-password link under PHOENIX_AUTH_SECRET,
+   * the secret those credentials already depend on, so a server that can mint them can always send them.
+   */
+  keyEnv?: SecretBoxKeyEnv;
 };
 
 function keyMaterial(options?: SecretBoxOptions): string {
-  const secret = envSecret();
+  const secret = envSecret(options?.keyEnv);
   const context = options?.context?.trim();
   // NUL cannot appear in an env value, so no secret+context pair can collide with a bare secret.
   return context ? `${secret}\u0000${context}` : secret;

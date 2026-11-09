@@ -1,6 +1,3 @@
-import crypto from "crypto";
-
-
 import {
   renderGeneralNotificationEmailHtml,
   renderGeneralNotificationEmailText,
@@ -18,6 +15,7 @@ import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import type { CredentialEmailKind } from "@/lib/email/transactional-types";
 import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
+import { openCredentialFields, outboxDedupeDigest, redactedCredentialPayload, sealCredentialFields } from "@/lib/notifications/credential-seal";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
@@ -124,6 +122,13 @@ export type NotificationEmailInput = {
    * this input, so a queued row is covered when it drains.
    */
   credentialEmail?: CredentialEmailKind | null;
+  /**
+   * A credential email's `metrics` and `ctaHref` (the reset code, the set-your-password link), sealed
+   * by credential-seal.ts while the row waits in the outbox. Opened in memory only to send.
+   */
+  sealedCredential?: string;
+  /** True on a finished credential row whose code and link have been deleted from the payload. */
+  credentialRedacted?: boolean;
   /**
    * The one mailbox a person pressed for (New Hire Accounts). Travels in the outbox payload, so a retried row keeps the
    * same answer at the Recipient Assurance Guard, which is the only reader.
@@ -1367,10 +1372,7 @@ function normalizeNotificationPayload(input: NotificationEmailInput) {
 }
 
 function notificationDedupeKey(input: NotificationEmailInput) {
-  return crypto
-    .createHash("sha256")
-    .update(JSON.stringify(normalizeNotificationPayload(input)))
-    .digest("hex");
+  return outboxDedupeDigest(JSON.stringify(normalizeNotificationPayload(input)), input.credentialEmail);
 }
 
 function isProbationReminderNotification(input: NotificationEmailInput) {
@@ -2098,7 +2100,8 @@ async function enqueueNotificationEmail(input: NotificationEmailInput) {
       next_attempt_at: now,
       // Stamped into the payload rather than a new column: no migration, and it travels with the
       // row wherever the payload is read.
-      payload: { ...input, originEnvironment: enqueueOriginEnvironment() },
+      // A credential email's code and link are sealed here and never written readable (credential-seal.ts).
+      payload: { ...sealCredentialFields(input), originEnvironment: enqueueOriginEnvironment() },
       status: "pending",
       updated_at: now,
     })
@@ -2133,6 +2136,12 @@ async function claimNotificationOutboxRow(id: string) {
   return (data as NotificationOutboxRow | null) ?? null;
 }
 
+/** The payload update a finished row gets: a credential email's code and link deleted, anything else untouched. */
+function finishedCredentialPayload(payload: NotificationEmailInput): { payload?: NotificationEmailInput } {
+  const redacted = redactedCredentialPayload(payload);
+  return redacted ? { payload: redacted } : {};
+}
+
 async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
@@ -2147,6 +2156,7 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
       sent_at: now,
       status: "sent",
       updated_at: now,
+      ...finishedCredentialPayload(row.payload),
     })
     .eq("id", row.id);
   // The email already went out at the provider. If we fail to flip the row to "sent",
@@ -2182,6 +2192,8 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
       next_attempt_at: nextAttempt,
       status: "failed",
       updated_at: now,
+      // Out of retries, nothing will send it again: the code or link goes. A retry keeps its seal.
+      ...(terminal ? finishedCredentialPayload(row.payload) : {}),
     })
     .eq("id", row.id);
   // S-INT-01 (23 Oct 2026 audit): this write's error used to be dropped, so a failed write left the
@@ -2222,6 +2234,7 @@ async function markNotificationOutboxSkipped(row: NotificationOutboxRow, reason:
       next_attempt_at: null,
       status: "skipped",
       updated_at: now,
+      ...finishedCredentialPayload(row.payload),
     })
     .eq("id", row.id);
 
@@ -2562,12 +2575,15 @@ export function auditProbationOutboundEmail(payload: NotificationEmailInput): { 
 
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
   const isRetry = row.attempts > 0;
-  const claimed = await claimNotificationOutboxRow(row.id);
-  if (!claimed) {
+  const claimedRow = await claimNotificationOutboxRow(row.id);
+  if (!claimedRow) {
     return { reason: "Notification is already being processed.", skipped: true };
   }
+  let claimed = claimedRow;
 
   try {
+    // A credential email's code and link are opened here, in memory, and never written back.
+    claimed = { ...claimedRow, payload: openCredentialFields(claimedRow.payload) };
     const identity = validateNotificationEmailIdentity(claimed.payload);
     if (!identity.ok) {
       await markNotificationOutboxSkipped(claimed, identity.reason, "unsafe_identity");

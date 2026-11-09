@@ -44,7 +44,7 @@ export async function runCredentialEmailMirrorTests() {
   const system = readFileSync("src/lib/notifications/system.ts", "utf8");
   assert.match(system, /credentialEmail: input\.email\?\.credentialEmail \?\? null,/, "the notification layer carries the stamp into the email input");
   const outbox = readFileSync("src/lib/notifications/email.ts", "utf8");
-  assert.match(outbox, /payload: \{ \.\.\.input, originEnvironment: enqueueOriginEnvironment\(\) \}/, "the whole input — stamp included — is the outbox payload");
+  assert.match(outbox, /payload: \{ \.\.\.sealCredentialFields\(input\), originEnvironment: enqueueOriginEnvironment\(\) \}/, "the whole input — stamp included — is the outbox payload, its code and link sealed");
   assert.equal((outbox.match(/credentialEmail: input\.credentialEmail \?\? null,/g) ?? []).length, 2, "both send paths (templated and direct) pass it on");
   const templates = readFileSync("src/lib/email-templates/service.ts", "utf8");
   assert.match(templates, /credentialEmail: input\.credentialEmail \?\? null/, "and the templated path hands it to sendPhoenixEmail");
