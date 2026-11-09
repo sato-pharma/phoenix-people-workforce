@@ -21,7 +21,9 @@ import { cn } from "@/lib/utils";
 // line is still selected would otherwise submit a pair that no rep occupies — which the server
 // prunes correctly, but only after a round trip that looks to the user like the filter was ignored.
 
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+// slate-500, not slate-400: the label is the only name a control has, and 400 on white read as disabled (premium
+// pass, 2026-11-09). The same string in all three Reps List control files, so a row of them never mixes two greys.
+const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500";
 /**
  * `text-sm`, and DO NOT shrink it to make a long rep name fit on a phone. That was tried here on
  * 2026-09-01 and is wrong twice over.
@@ -99,8 +101,38 @@ export function RepsListFilters({
     router.push(query ? `${basePath}?${query}` : basePath);
   };
 
+  // How many cascade levels are narrowed — the count beside "Clear filters", and whether that control shows at all.
+  const narrowed = levels.filter((level) => Boolean(selection[level.key])).length;
+  const clearAll = () => {
+    const next = new URLSearchParams();
+    for (const [name, carried] of Object.entries(preserve ?? {})) {
+      if (carried) next.set(name, carried);
+    }
+    setPending(true);
+    const query = next.toString();
+    router.push(query ? `${basePath}?${query}` : basePath);
+  };
+
   return (
-    <div className={`grid gap-3 px-5 py-4 sm:grid-cols-2 ${levels.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
+    <div className="px-5 py-4">
+      {/* The cascade's own heading line: what it is, how much of it is narrowed, and the one way to undo every pick
+          at once. A pick in progress says so in words, because the selects disable while the page re-enters. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+          {pending ? "Applying the filter" : narrowed > 0 ? `Filtered · ${narrowed} of ${levels.length} levels` : "Filters · showing everything in your reach"}
+        </p>
+        {narrowed > 0 ? (
+          <button
+            className="inline-flex min-h-11 items-center border border-slate-300 bg-white px-3 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 disabled:text-slate-400 md:min-h-0"
+            disabled={pending}
+            onClick={clearAll}
+            type="button"
+          >
+            Clear filters
+          </button>
+        ) : null}
+      </div>
+      <div className={`grid gap-3 sm:grid-cols-2 ${levels.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
       {levels.map((level) => {
         const list = options[level.options];
         // A level with nothing to offer is disabled rather than hidden: the owner asked for four
@@ -109,7 +141,10 @@ export function RepsListFilters({
         const disabled = pending || list.length === 0;
         return (
           <label className="block" key={level.key}>
-            <span className={LABEL_CLASS}>{level.label}</span>
+            <span className={LABEL_CLASS}>
+              {level.label}
+              {selection[level.key] ? <span className="ml-1.5 text-orange-700">· set</span> : null}
+            </span>
             <select
               className={`mt-1 ${SELECT_CLASS}`}
               disabled={disabled}
@@ -128,6 +163,7 @@ export function RepsListFilters({
           </label>
         );
       })}
+      </div>
     </div>
   );
 }

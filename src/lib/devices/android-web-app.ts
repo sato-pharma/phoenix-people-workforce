@@ -134,6 +134,10 @@ export class AndroidManagementRequestError extends Error {
   }
 }
 
+/** What the signup and its callback answer once Phoenix is already bound to an enterprise. */
+export const ENTERPRISE_ALREADY_BOUND_MESSAGE =
+  "Phoenix is already bound to the company's Android Enterprise, so a new signup is refused. A second signup would create a second enterprise, owned by whoever finished it, that holds none of the company's tablets.";
+
 export function isAndroidManagementConfigured(): boolean {
   return Boolean(process.env.ANDROID_MANAGEMENT_ENTERPRISE_NAME?.trim());
 }

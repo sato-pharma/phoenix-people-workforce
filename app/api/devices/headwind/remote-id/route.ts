@@ -31,7 +31,9 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
 
-    const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body of `null`, a number or a list is not an object to read fields from; it reads as empty.
+    const parsed: unknown = await request.json().catch(() => null);
+    const payload = (parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}) as Record<string, unknown>;
     const deviceNumber = typeof payload.deviceNumber === "string" ? payload.deviceNumber : "";
     const remoteScreenId = typeof payload.remoteScreenId === "string" ? payload.remoteScreenId : "";
     if (!deviceNumber) throw new HeadwindRemoteScreenIdError("Say which tablet this ID belongs to.");
@@ -43,6 +45,12 @@ export async function POST(request: Request) {
       headers: { "cache-control": "no-store" },
     });
   } catch (error) {
+    // 🔴 MAPPED HERE, BEFORE THE SHARED MAPPING (audit, 9 Nov 2026, F15). `headwindErrorResponse` does
+    // not know this error, so a mistyped ID — the commonest mistake on this screen — answered 500 as if
+    // Phoenix had broken. The person's mistake is 400; a write the server did not hold is 502.
+    if (error instanceof HeadwindRemoteScreenIdError) {
+      return NextResponse.json({ message: error.message }, { status: error.serverSide ? 502 : 400 });
+    }
     return headwindErrorResponse(error, "Could not record the tablet's remote screen ID.");
   }
 }

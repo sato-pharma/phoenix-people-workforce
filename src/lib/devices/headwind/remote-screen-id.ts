@@ -23,10 +23,19 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
 import { deviceWriteBody, searchHeadwindDevices } from "@/lib/devices/headwind/devices";
 
+/**
+ * Why a remote screen ID could not be recorded, in a sentence for the person.
+ *
+ * 🔴 `serverSide` SAYS WHOSE FAULT IT IS, SO THE ROUTE CAN ANSWER HONESTLY (audit, 9 Nov 2026, F15). A
+ * mistyped ID or a tablet no longer in the fleet is the person's to fix — 400. A write the Headwind
+ * server answered OK and then did not hold is the server's — 502, never "you typed it wrong".
+ */
 export class HeadwindRemoteScreenIdError extends Error {
-  constructor(message: string) {
+  readonly serverSide: boolean;
+  constructor(message: string, options: { serverSide?: boolean } = {}) {
     super(message);
     this.name = "HeadwindRemoteScreenIdError";
+    this.serverSide = options.serverSide === true;
   }
 }
 
@@ -117,6 +126,7 @@ export async function setHeadwindRemoteScreenId(
       `The Headwind server accepted the change and then still reports ${
         stored ? `remote screen ID ${stored}` : "no remote screen ID"
       } for ${deviceNumber}. Nothing has been recorded — set it in the Headwind console instead, and say so, because a write that reports success and changes nothing has been seen on this server before.`,
+      { serverSide: true },
     );
   }
 

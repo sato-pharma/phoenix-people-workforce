@@ -32,7 +32,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { callHeadwind } from "@/lib/devices/headwind/client";
+import { callHeadwind, HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
 
 /**
@@ -130,6 +130,8 @@ export async function wipeHeadwindDevice(
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  // The audit writer is a parameter only so a test can read the row without a database.
+  audit: typeof writeRequiredAuditLog = writeRequiredAuditLog,
 ): Promise<HeadwindWipeResult> {
   const deviceNumber = input.deviceNumber.trim();
   if (!deviceNumber) throw new HeadwindWipeError("Say which tablet to erase the company's data from.");
@@ -157,7 +159,18 @@ export async function wipeHeadwindDevice(
       sent.push(step.described);
     }
   } catch (error) {
-    await writeRequiredAuditLog({
+    // 🔴 THREE DIFFERENT STORIES, AND THE ROW AND THE SENTENCE USED TO TELL ONE OF THEM FOR ALL THREE
+    // (9 Nov 2026 audit). The step that failed is `steps[sent.length]`.
+    //   · It TIMED OUT: the server may well have taken it, so it is neither "sent" nor "not sent" —
+    //     it is `uncertain`, and the sentence says so rather than "the rest were not sent".
+    //   · Nothing was sent at all: the row used to read "Erased part of the company's data … 0 of 4
+    //     instructions sent" — a part-erasure that never happened, in the tablet's command history.
+    //   · Some were sent: a true partial, as before.
+    const failed = steps[sent.length];
+    const uncertain = error instanceof HeadwindRequestError && error.status === 504 && failed ? failed.described : null;
+    const reason = error instanceof Error ? error.message : "The server gave no reason.";
+    const nothingSent = sent.length === 0 && uncertain === null;
+    await audit({
       actorLoginId: actor,
       entityId: target.deviceNumber,
       entityType: "headwind_device_command",
@@ -167,20 +180,38 @@ export async function wipeHeadwindDevice(
         completed: false,
         deviceName: target.deviceName,
         sent,
+        uncertain,
       },
       oldValues: null,
-      summary: `Erased part of the company's data from ${target.subject} — ${sent.length} of ${steps.length} instructions sent`,
+      summary: nothingSent
+        ? `Tried to erase the company's data from ${target.subject} — the server refused the first instruction, so nothing was sent`
+        : `Erased part of the company's data from ${target.subject} — ${sent.length} of ${steps.length} instructions sent` +
+          (uncertain ? `, and "${uncertain}" may or may not have reached it` : ""),
     });
+    if (nothingSent) {
+      // Not the caller's mistake (that is the 400 path) and not a partial: the server said no to the
+      // first instruction. Its own status and sentence go up as a 502.
+      throw new HeadwindRequestError(
+        // A refusal inside an HTTP 200 envelope carries status 200; that is no status for an error.
+        error instanceof HeadwindRequestError && error.status >= 400 ? error.status : 502,
+        `Nothing was erased from ${target.subject}: the server refused the first of the ${steps.length} ` +
+          `instructions, so none was sent. ${reason}`,
+      );
+    }
     throw new HeadwindWipeError(
-      `${target.subject} took ${sent.length} of the ${steps.length} instructions before the server refused ` +
-        `(${sent.join(", ") || "none"}). The rest were not sent. Press it again to send the whole list — ` +
+      `${target.subject} took ${sent.length} of the ${steps.length} instructions` +
+        (sent.length ? ` (${sent.join(", ")})` : "") +
+        (uncertain
+          ? `, and the server stopped answering on the next one (${uncertain}), so that one may or may not have been taken.`
+          : " before the server refused the next one.") +
+        ` ${uncertain ? "Any after it" : "The rest"} were not sent. Press it again to send the whole list — ` +
         "repeating one that already ran does no harm. " +
-        (error instanceof Error ? error.message : "The server gave no reason."),
+        reason,
       true,
     );
   }
 
-  await writeRequiredAuditLog({
+  await audit({
     actorLoginId: actor,
     entityId: target.deviceNumber,
     entityType: "headwind_device_command",

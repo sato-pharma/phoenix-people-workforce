@@ -229,6 +229,77 @@ export function planIdentityCorrection(
   return { serialNumber, imei, reason, serialChanged, imeiChanged };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Registering a NEW entry
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The key a serial or IMEI is compared on when the register is checked for a repeat.
+ *
+ * An IMEI with at least 14 digits is its first 14 digits (the check digit left off either side still
+ * matches, the same rule as everywhere above); anything shorter is compared as text, lowered —
+ * exactly what `uq_company_devices_imei` sees, so a short value is never refused that the database
+ * would have taken.
+ */
+export function imeiDuplicateKey(value: string | null | undefined): string | null {
+  const text = blankToNull(value);
+  if (!text) return null;
+  const digits = imeiFieldDigits(text);
+  return digits.length >= 14 ? digits.slice(0, 14) : text.toLowerCase();
+}
+
+/** A serial compared on its letters and digits, upper-cased — "hs1 a-2b3" is "HS1A2B3". */
+export function serialDuplicateKey(value: string | null | undefined): string | null {
+  return normalizeSerial(value);
+}
+
+/**
+ * The entry a NEW device would repeat — its asset tag, serial number or IMEI — as the sentence that
+ * refuses it, or null when it repeats nothing.
+ *
+ * The database's unique indexes compare `lower(serial_number)` and `lower(imei)`, the TEXT. So
+ * "HA255LN1" and "ha255-ln1", or "351234567890123" and "35-123456-789012-3", went in as two
+ * entries for one machine — and the register then answered "where is it" two ways, which is the
+ * failure those indexes exist to stop. This compares the way the identity correction already does.
+ * Every sentence starts "A device" so the route answers it 400, as the caller's mistake it is.
+ */
+export function findRegistrationClash(
+  candidate: { assetTag: string | null | undefined; serialNumber: string | null | undefined; imei: string | null | undefined },
+  entries: readonly IdentityEntry[],
+): string | null {
+  const tag = blankToNull(candidate.assetTag)?.toLowerCase() ?? null;
+  if (tag) {
+    const holder = entries.find((entry) => blankToNull(entry.assetTag)?.toLowerCase() === tag);
+    if (holder) {
+      return `A device tagged ${holder.assetTag} is already in the register. Every asset tag belongs to one device — use the next free number.`;
+    }
+  }
+
+  const serial = serialDuplicateKey(candidate.serialNumber);
+  if (serial) {
+    const holder = entries.find((entry) => serialDuplicateKey(entry.serialNumber) === serial);
+    if (holder) {
+      return `A device with the serial number ${blankToNull(candidate.serialNumber)} is already in the register as ${holder.assetTag} (${blankToNull(holder.serialNumber)}). One serial number belongs to one device.`;
+    }
+  }
+
+  const imei = blankToNull(candidate.imei);
+  if (imei) {
+    const key = imeiDuplicateKey(imei);
+    const holder = entries.find((entry) => {
+      const stored = blankToNull(entry.imei);
+      if (!stored) return false;
+      if (imeiFieldHolds(stored, imei) || imeiFieldHolds(imei, stored)) return true;
+      return imeiDuplicateKey(stored) === key;
+    });
+    if (holder) {
+      return `A device with the IMEI ${imei} is already in the register as ${holder.assetTag} (${blankToNull(holder.imei)}). One IMEI belongs to one device.`;
+    }
+  }
+
+  return null;
+}
+
 /** "the IMEI", "the serial number", or "the serial number and IMEI" — for the audit summary. */
 export function describeIdentityChange(plan: Pick<IdentityCorrectionPlan, "serialChanged" | "imeiChanged">): string {
   if (plan.serialChanged && plan.imeiChanged) return "the serial number and IMEI";

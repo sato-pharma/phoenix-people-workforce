@@ -21,7 +21,13 @@ async function readFleet(): Promise<FleetWatchRead> {
   if (!isHeadwindConfigured()) return { kind: "not_configured" };
   try {
     const fleet = await getHeadwindFleet();
-    return { kind: "answered", pendingRegistration: fleet.pendingRegistration, registerError: fleet.registerError, rows: fleet.rows };
+    return {
+      awaitingHardwareReport: fleet.awaitingHardwareReport,
+      kind: "answered",
+      pendingRegistration: fleet.pendingRegistration,
+      registerError: fleet.registerError,
+      rows: fleet.rows,
+    };
   } catch (error) {
     if (error instanceof HeadwindNotConfiguredError) return { kind: "not_configured" };
     // An answer that says no is a settings or password problem and waits for nobody; anything else may pass.

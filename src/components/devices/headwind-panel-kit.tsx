@@ -77,23 +77,45 @@ function failureOf(payload: unknown): string {
     : "The server answered with an error and no explanation.";
 }
 
-export async function readJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
+/** What a panel says when the browser could not reach Phoenix at all — never the browser's "Failed to fetch". */
+export const UNREACHABLE_MESSAGE = "Phoenix could not be reached from this browser. Check the connection and try again.";
+/** What a panel says when the server answered OK with nothing it can read. */
+export const NO_ANSWER_MESSAGE =
+  "The server answered without saying what happened. Reload the page to see whether it took effect.";
+
+/**
+ * One request, and the three ways it can go.
+ *
+ * 🔴 AN OK WITH NO READABLE BODY IS NOT A SUCCESS, AND IT IS NOT A BLANK (audit, 9 Nov 2026). It used
+ * to come back as `null`: a read then rendered NOTHING — no list, no "none yet", no error — and a
+ * press that had worked showed "Cannot read properties of null (reading 'message')". Both now say
+ * plainly that the answer was unreadable. A network failure says Phoenix could not be reached, not the
+ * browser's own "Failed to fetch".
+ */
+async function request<T>(url: string, init: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new Error(UNREACHABLE_MESSAGE);
+  }
   const payload = await readBody(response);
   if (!response.ok) throw new Error(failureOf(payload));
+  if (payload === null || typeof payload !== "object") throw new Error(NO_ANSWER_MESSAGE);
   return payload as T;
 }
 
+export async function readJson<T>(url: string): Promise<T> {
+  return request<T>(url, { cache: "no-store" });
+}
+
 export async function postJson<T>(url: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(url, {
+  return request<T>(url, {
     body: JSON.stringify(body),
     cache: "no-store",
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  const payload = await readBody(response);
-  if (!response.ok) throw new Error(failureOf(payload));
-  return payload as T;
 }
 
 type ReadState<T> = { url: string; data: T | null; error: string | null; answered: boolean };

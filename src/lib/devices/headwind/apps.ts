@@ -28,7 +28,8 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/commands";
-import { searchHeadwindDevices } from "@/lib/devices/headwind/devices";
+import { readHeadwindConfigurationApplications } from "@/lib/devices/headwind/configurations";
+import { HeadwindDeviceNotFoundError, searchHeadwindDevices } from "@/lib/devices/headwind/devices";
 
 export class HeadwindAppInputError extends Error {
   constructor(message: string) {
@@ -136,7 +137,14 @@ export async function getHeadwindDeviceApps(
   // from a tablet that has genuinely installed nothing.
   const { records } = await searchHeadwindDevices(number, fetchImpl, env);
   const record = records.find((entry) => pickString(entry, ["number", "deviceNumber"]) === number) ?? null;
-  const installed = record ? installedAppsFromInfo(record.info ?? record.deviceInfo, remoteScreenPackage) : [];
+  // 🔴 A TABLET THAT IS NOT IN THE FLEET IS NOT "A TABLET WITH NO APPS". Answering `[]` made a removed
+  // or mistyped tablet read exactly like a real one with nothing installed.
+  if (!record) {
+    throw new HeadwindDeviceNotFoundError(
+      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
+    );
+  }
+  const installed = installedAppsFromInfo(record.info ?? record.deviceInfo, remoteScreenPackage);
 
   return { installed, remoteScreenAppPresent: installed.some((app) => app.isRemoteScreenApp) };
 }
@@ -198,6 +206,27 @@ export async function removeHeadwindApp(
   }
 
   const target = await resolveHeadwindActionTarget(deviceNumber, fetchImpl, env);
+
+  // 🔴 AN APP THE TABLET'S OWN RULES INSTALL COMES BACK AT ITS NEXT CHECK-IN. Being in the rules is what
+  // installs an app (there is no install command), so removing one the rules still carry "succeeded"
+  // and was undone within the hour while the audit row said removed. It is refused, naming the rules.
+  const { configurationNames, records } = await searchHeadwindDevices(target.deviceNumber, fetchImpl, env);
+  const record = records.find((entry) => pickString(entry, ["number", "deviceNumber"]) === target.deviceNumber);
+  const configurationId = typeof record?.configurationId === "number" ? record.configurationId : null;
+  if (configurationId === null) {
+    throw new HeadwindAppInputError(
+      `Phoenix could not tell which set of rules ${target.subject} follows, so it could not check whether those rules would put ${packageName} straight back. Nothing was sent; try again in a minute.`,
+    );
+  }
+  const rulesName = configurationNames.get(String(configurationId)) ?? "the set of rules it follows";
+  const onRules = (await readHeadwindConfigurationApplications(configurationId, fetchImpl, env)).some(
+    (app) => app.action === 1 && pickString(app, ["pkg"]) === packageName,
+  );
+  if (onRules) {
+    throw new HeadwindAppInputError(
+      `${packageName} is installed by ${rulesName}, the rules ${target.subject} follows, so the tablet would install it again at its next check-in. Nothing was sent. To take it off, remove it from those rules — then every tablet on them drops it.`,
+    );
+  }
 
   await callHeadwind(
     "/rest/private/push",
