@@ -332,6 +332,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
                   subtitle="by achievement %"
                   icon={Network}
                   rows={rmRegional?.dsms ?? []}
+                  unranked={rmRegional?.dsmsWithoutPublishedMonth ?? []}
                   windowLabel={rmRegional?.windowLabel ?? null}
                 />
                 <RankingPanel

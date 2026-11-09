@@ -50,6 +50,7 @@ import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types"
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { loadRepRankStanding, type RepRankStanding } from "@/lib/employee-portal/rep-rank";
 import { resolveServingRoster, servingRosterManagers } from "@/lib/employee-portal/serving-roster";
+import { managersWithoutPublishedMonth, type UnrankedManager } from "@/lib/employee-portal/unranked-managers";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
@@ -563,6 +564,8 @@ export type PortalHomeSnapshot = {
         departedSales: number;
         /** Districts (DSMs) inside the RM's region set, ranked by achievement % then sales. */
         dsms: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
+        /** His district managers with no row in the window yet (joined after it): listed unranked, never a 0%. */
+        dsmsWithoutPublishedMonth: UnrankedManager[];
         /** Top med reps inside the RM's region set, ranked the same way. */
         topReps: Array<{
           hrId: string;
@@ -1013,6 +1016,13 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           departedCount: dsmRoster.departed.length + repRoster.departed.length,
           departedSales: sumSales(dsmRoster.departed) + sumSales(repRoster.departed),
           dsms,
+          dsmsWithoutPublishedMonth: servingRoster
+            ? managersWithoutPublishedMonth({
+                hireDates: new Map(directoryRows.map((row) => [row.hrId, row.hireDate ?? null])),
+                ranked: dsms,
+                roster: servingRoster.dsms.map((person) => ({ hrId: person.hrId, name: display(person.hrId, person.name) })),
+              })
+            : [],
           topReps,
           crm,
         },
