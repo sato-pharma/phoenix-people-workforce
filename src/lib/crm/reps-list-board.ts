@@ -38,6 +38,10 @@ import {
   type CoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
 import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
+import { districtSeatAbove, groupByRegionAndManager, NO_REGION } from "@/lib/phoenix-crm/region-manager-groups";
+import type { OrgIndex, OrgSeat } from "@/lib/phoenix-crm/scope";
+import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getRepListSummaries, type RepListSummary } from "@/lib/crm/contact-lists";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
@@ -76,6 +80,24 @@ export type RepsListRep = {
   pharmacyCount: number;
   /** The cascade's own key for this rep — what rides in the URL. */
   repKey: string;
+  /**
+   * The rep's team — the organogram region and the district manager above the seat — which every board groups its
+   * rep cards under (owner, 2026-11-09: "in every screen u build for Hany group reps by their manager and region").
+   */
+  team: RepTeam;
+};
+
+/**
+ * One group on a Reps List board: a region and its district manager, ordered exactly as `groupByRegionAndManager`
+ * orders every Regional Sales Manager screen. `managerName` is null when no district manager sits above the seat —
+ * or when the organogram could not be read, in which case the region alone heads the group.
+ */
+export type RepTeam = {
+  key: string;
+  managerName: string | null;
+  /** The group's position in region-then-district order; lower reads first. */
+  order: number;
+  regionName: string;
 };
 
 export type RepsListBoard = {
@@ -216,6 +238,47 @@ export type RepsCascade = {
   syncedAt: string | null;
 };
 
+/** The team of a rep the organogram does not place — filed last, under "No region", never under a guess. */
+export const NO_TEAM: RepTeam = { key: NO_REGION, managerName: null, order: Number.MAX_SAFE_INTEGER, regionName: NO_REGION };
+
+/**
+ * Each matched seat's team: the organogram region and the district manager above it, grouped and ordered by
+ * `groupByRegionAndManager` — the one rule every Regional Sales Manager screen follows. A seat the organogram does
+ * not hold (or a failed organogram read) falls back to the coverage tree's own region names with no manager, so a
+ * card is never dropped and never filed under a guess.
+ */
+export async function repTeamsFor(
+  matched: ReadonlyArray<{ seatId: string }>,
+  org: OrgIndex | null,
+  coverageRegions: (seatId: string) => string[],
+): Promise<Map<string, RepTeam>> {
+  const seatIds = [...new Set(matched.map((rep) => rep.seatId))];
+  const seatOf = (seatId: string): OrgSeat => {
+    const known = org?.seats.get(seatId);
+    if (known) return known;
+    const regionName = coverageRegions(seatId).join(" · ") || null;
+    return { areaName: null, lineCode: null, lineName: null, occupantHrId: null, parentSeatId: null, path: [seatId], regionName, seatId, seatLabel: null, tier: "REP" };
+  };
+  const groups = groupByRegionAndManager(seatIds, seatOf, (seat) => (org ? districtSeatAbove(org.seats, seat) : null));
+  const managerHrIds = groups.flatMap((group) => (group.district?.occupantHrId ? [group.district.occupantHrId] : []));
+  const names = managerHrIds.length > 0 ? await loadPeopleNames(managerHrIds).catch(() => null) : null;
+  const teams = new Map<string, RepTeam>();
+  groups.forEach((group, order) => {
+    const district = group.district;
+    const managerName = !district
+      ? org
+        ? "No district manager"
+        : null
+      : district.occupantHrId
+        ? names
+          ? nameOf(names, district.occupantHrId, "District manager")
+          : "District manager"
+        : "District manager seat vacant";
+    for (const seatId of group.items) teams.set(seatId, { key: group.key, managerName, order, regionName: group.regionName });
+  });
+  return teams;
+}
+
 export async function buildRepsCascade(input: {
   scope: CrmManagerScope;
   params: { area?: string; line?: string; region?: string; rep?: string };
@@ -237,7 +300,13 @@ export async function buildRepsCascade(input: {
     };
   }
 
-  const [companyTree, summaries] = await Promise.all([loadCoverageFilterTree(), getRepListSummaries()]);
+  const [companyTree, summaries, org] = await Promise.all([
+    loadCoverageFilterTree(),
+    getRepListSummaries(),
+    // The organogram is read only to group the cards by region and district manager. A failed read costs the
+    // grouping its manager names and nothing else — the reps, their lists and every count come from the reads above.
+    loadPhoenixCrmOrg().catch(() => null),
+  ]);
   // RESTRICT FIRST. Every option list below is derived from `tree`, never from `companyTree`.
   const tree = restrictCoverageFilterTree(companyTree, allowedHrIdsFor(input.scope));
 
@@ -266,16 +335,21 @@ export async function buildRepsCascade(input: {
   // raw area code at the reader (owner's standing rule). Built once from the restricted tree rather
   // than per rep, because `cells` is the whole org and a per-rep scan of it is quadratic.
   const areaNameByCode = new Map(tree.areas.map((area) => [area.code, area.name]));
+  const regionNameByCode = new Map(tree.regions.map((region) => [region.code, region.name]));
   const areaNamesBySeat = new Map<string, Set<string>>();
-  for (const cell of tree.cells) {
-    const name = areaNameByCode.get(cell.areaCode);
-    if (!name) continue;
-    let names = areaNamesBySeat.get(cell.seatId);
+  const regionNamesBySeat = new Map<string, Set<string>>();
+  const addName = (bySeat: Map<string, Set<string>>, seatId: string, name: string | undefined) => {
+    if (!name) return;
+    let names = bySeat.get(seatId);
     if (!names) {
       names = new Set<string>();
-      areaNamesBySeat.set(cell.seatId, names);
+      bySeat.set(seatId, names);
     }
     names.add(name);
+  };
+  for (const cell of tree.cells) {
+    addName(areaNamesBySeat, cell.seatId, areaNameByCode.get(cell.areaCode));
+    addName(regionNamesBySeat, cell.seatId, regionNameByCode.get(cell.regionCode));
   }
 
   // The cascade's reps are the org tree's seated reps — the authority on who exists and who a
@@ -283,7 +357,7 @@ export async function buildRepsCascade(input: {
   // has no list in the CRM" is a finding the owner wants to see, not a row to hide.
   // Matched WITHOUT the rep level, then narrowed below. One pass over the tree yields both lists:
   // the one the grid browses and the one the status picker counts.
-  const repsIgnoringRep: RepsListRep[] = repsMatching(tree, { ...selection, rep: undefined })
+  const matched = repsMatching(tree, { ...selection, rep: undefined })
     .map((rep) => {
       const summary = summaryFor(rep.hrId);
       return {
@@ -295,9 +369,17 @@ export async function buildRepsCascade(input: {
         name: rep.repName,
         pharmacyCount: summary?.pharmacyCount ?? 0,
         repKey: rep.repKey,
+        seatId: rep.seatId,
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+  const teams = await repTeamsFor(matched, org, (seatId) =>
+    [...(regionNamesBySeat.get(seatId) ?? [])].sort((left, right) => left.localeCompare(right, "en", { numeric: true })),
+  );
+  const repsIgnoringRep: RepsListRep[] = matched.map(({ seatId, ...rep }) => ({
+    ...rep,
+    team: teams.get(seatId) ?? NO_TEAM,
+  }));
 
   const reps: RepsListRep[] = selection.rep
     ? repsIgnoringRep.filter((rep) => rep.repKey === selection.rep)
@@ -535,6 +617,7 @@ async function buildOwnListCascade(scope: CrmManagerScope): Promise<RepsCascade>
       name: "",
       pharmacyCount: summary?.pharmacyCount ?? 0,
       repKey: coverageRepKey(hrId),
+      team: NO_TEAM,
     };
     syncedAt = summary?.syncedAt ?? null;
   }
