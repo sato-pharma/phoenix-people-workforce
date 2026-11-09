@@ -227,7 +227,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
 // NSM-only and bounces an RM straight back to /employee-portals.
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales" },
-  { href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Territory" },
+  { href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Sales Drilldown" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   // His board in Phoenix CRM, never the read-only plan history at /employee-portals/plans (owner, 2026-11-09).
   { href: RSM_PLAN_BOARD_HREF, icon: CalendarDays, label: "Region Plans" },

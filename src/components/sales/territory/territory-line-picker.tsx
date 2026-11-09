@@ -41,10 +41,10 @@ export function TerritoryLinePicker({
   );
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    <div className="border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5">
-          <Layers className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+          <Layers aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Product line</h3>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -63,8 +63,8 @@ export function TerritoryLinePicker({
           ))}
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        You see every line — pick one to drill its territory nationwide.
+      <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+        Your account sees every line. Pick one to see its regions, areas and pharmacies nationwide.
       </p>
     </div>
   );
