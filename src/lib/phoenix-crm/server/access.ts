@@ -1220,6 +1220,43 @@ export function regionalTeamRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   return viewer.scopeTerritories.filter((seat) => seat.tier === "REP" && !isLocationBlind(viewer, seat));
 }
 
+/** The district seat tiers whose holder reads the same team reports over their own district. */
+const DISTRICT_TEAM_REPORT_TIERS = new Set(["DM", "ACTING_DM"]);
+
+/**
+ * Who opens the team reports over their OWN district (owner, 2026-11-09: "all shortcuts we built for Hany, build
+ * it for all district managers, but every one based on his scope"): a viewer holding a District Manager or an
+ * acting District Manager seat. Never the line's "Others" pseudo seat — it is not a team.
+ *
+ * 🔴 ITS OWN PREDICATE. `readsRegionalTeamReports` is left as it was, because the plan board's Regional Sales
+ * Manager extras key on it (`manager-plan-hub.ts`, the "Also with" half-notes); widening it would hand those to
+ * every District Manager. The three reports ask `readsRegionOrDistrictReports`, which admits either.
+ */
+export function readsDistrictTeamReports(viewer: PhoenixCrmViewer): boolean {
+  return viewer.managerSeats.some((seat) => DISTRICT_TEAM_REPORT_TIERS.has(seat.tier) && !seat.isOtherPseudoDm);
+}
+
+/**
+ * The gate of the three team reports — Visits — Yesterday and Today, District Managers' Plans and the Weekly
+ * Sheet: a Regional Sales Manager over the region, a District Manager over the district. Nobody else.
+ *
+ * 🔴 NOT `readsTeamReports` — that one also admits the CEO's company basis, the SFE Manager, the Super Admin and
+ * every manager seat, and a dozen boards share it; these three reports stay with the two tiers.
+ */
+export function readsRegionOrDistrictReports(viewer: PhoenixCrmViewer): boolean {
+  return readsRegionalTeamReports(viewer) || readsDistrictTeamReports(viewer);
+}
+
+/**
+ * The rep seats a team report covers — the viewer's own scope, reps only, never a blind seat (an acting District
+ * Manager's own rep seat). `scopeTerritories` is already the viewer's tree, so the same filter gives a Regional
+ * Sales Manager the region and a District Manager the district.
+ */
+export function teamReportRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
+  if (!readsRegionOrDistrictReports(viewer)) return [];
+  return viewer.scopeTerritories.filter((seat) => seat.tier === "REP" && !isLocationBlind(viewer, seat));
+}
+
 /**
  * The worlds a Regional Sales Manager team report reads (Visits — Yesterday and Today, District Managers' Plans,
  * the Weekly Sheet): a real viewer the real one; a `TEST-` login the real team AND its own test work beside it,

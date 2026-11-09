@@ -52,6 +52,13 @@ export type ResolveMarketingRoiScopeOptions = {
  */
 export const REGION_ROUTE_ROLE = "Regional Manager" as const;
 
+/**
+ * Who runs the region route: the Regional Manager over the region, and a District Manager over the areas of the
+ * reps under them (owner, 2026-11-09: "all shortcuts we built for Hany, build it for all district managers, but
+ * every one based on his scope"). Same two halves, same line hold — only the chain it walks is shorter.
+ */
+export const TEAM_AREA_ROUTE_ROLES: ReadonlySet<string> = new Set<string>([REGION_ROUTE_ROLE, "District Manager"]);
+
 function isActiveDirectoryRow(row: EmployeeDirectoryRow): boolean {
   const status = String(row.employmentStatus ?? "").trim().toLowerCase();
   return status === "active" || status === "on_leave";
@@ -74,7 +81,7 @@ export function resolveRegionRouteScope(
 ): { areaIds: Set<number>; lineNames: Set<string> } {
   const areaIds = new Set<number>();
   const lineNames = new Set<string>();
-  if (access.role !== REGION_ROUTE_ROLE || !viewerHrId) return { areaIds, lineNames };
+  if (!TEAM_AREA_ROUTE_ROLES.has(access.role) || !viewerHrId) return { areaIds, lineNames };
   for (const row of employeeRows) {
     const hrId = normalizeHrId(row.hrId);
     if (!hrId) continue;
@@ -361,10 +368,10 @@ export function resolveMarketingRoiScope(
   }
 
   // The Medical Rep's territory route, or — for a Regional Manager — the same route over his region (owner,
-  // 2026-11-08). One pair of fields, one decision (`territoryRouteAdmitsRequest`), so the report, View Sales,
+  // 2026-11-08), and for a District Manager over the district (owner, 2026-11-09). One pair of fields, one decision (`territoryRouteAdmitsRequest`), so the report, View Sales,
   // the export and the filter options admit exactly the same rows for him as they do for a rep.
   const territory =
-    role === REGION_ROUTE_ROLE
+    TEAM_AREA_ROUTE_ROLES.has(role)
       ? resolveRegionRouteScope(access, employeeRows, viewerHrId, visibleRequesterHrIds)
       : viewerAreaScope(access, employeeRows, viewerHrId);
   const lineRoute = resolveViewerLineRouteNames(access, employeeRows, viewerHrId, opts.lineScopeOverride);

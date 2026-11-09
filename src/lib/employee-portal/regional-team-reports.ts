@@ -58,3 +58,16 @@ export function regionalTeamReportLinks(cairoTodayIso: string): RegionalTeamRepo
     { href: "/employee-portals/marketing-requests/roi-tracking", key: "roi-tracking", label: "ROI Tracking" },
   ];
 }
+
+/**
+ * The same shortcuts on a District Manager's overview, each over that manager's own district (owner, 2026-11-09:
+ * "all shortcuts we built for Hany, build it for all district managers, but every one based on his scope"). Same
+ * pages, same order, same words — the scope is decided by each page's own gate, never by the link. One label
+ * differs: District Managers' Plans is their own sent week beside their reps' days, so it reads "My Plans", the
+ * title that page carries for a District Manager.
+ */
+export function districtTeamReportLinks(cairoTodayIso: string): RegionalTeamReportLink[] {
+  return regionalTeamReportLinks(cairoTodayIso).map((link) =>
+    link.key === "district-manager-plans" ? { ...link, label: "My Plans" } : link,
+  );
+}
