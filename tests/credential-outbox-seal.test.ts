@@ -16,14 +16,26 @@ import {
  * codes and 117 set-your-password links in plain text, kept 90 days. Now the code and the link are
  * sealed before the row is written, opened only in memory to send, and deleted once the row is done.
  */
+type Payload = {
+  credentialEmail?: string | null;
+  credentialRedacted?: boolean;
+  ctaHref?: string;
+  metrics?: Array<{ label: string; value: string | number }>;
+  recipients?: string[];
+  sealedCredential?: string;
+  subject?: string;
+  summary?: string;
+  title?: string;
+};
+
 export async function runCredentialOutboxSealTests() {
   const priorSecret = process.env.PHOENIX_AUTH_SECRET;
   process.env.PHOENIX_AUTH_SECRET = "test-secret-for-the-credential-outbox-seal";
   try {
     const code = "482913";
     const token = "fake-setup-link-for-the-seal-test";
-    const resetCode = {
-      credentialEmail: "password_reset_code" as const,
+    const resetCode: Payload = {
+      credentialEmail: "password_reset_code",
       ctaHref: "/password-reset",
       metrics: [
         { label: "Your code", value: code },
@@ -34,8 +46,8 @@ export async function runCredentialOutboxSealTests() {
       summary: "Enter this 6-digit code",
       title: "Password reset",
     };
-    const setupLink = {
-      credentialEmail: "password_setup_link" as const,
+    const setupLink: Payload = {
+      credentialEmail: "password_setup_link",
       ctaHref: `/password-setup/${token}`,
       metrics: [{ label: "Login ID", value: "B-77" }],
       recipients: ["someone@satopharma.com"],
@@ -57,7 +69,7 @@ export async function runCredentialOutboxSealTests() {
     assert.equal(sealedCode.subject, resetCode.subject, "the rest of the email (subject, recipients) stays readable for the activity screens");
     assert.deepEqual(sealedCode.recipients, resetCode.recipients);
 
-    const ordinary = { ctaHref: "/leave", metrics: [{ label: "Days", value: 3 }], subject: "Leave approved", summary: "", title: "" };
+    const ordinary: Payload = { ctaHref: "/leave", metrics: [{ label: "Days", value: 3 }], subject: "Leave approved", summary: "", title: "" };
     assert.equal(sealCredentialFields(ordinary), ordinary, "every other email is stored exactly as before");
     assert.equal(sealCredentialFields({ ...ordinary, credentialEmail: "payslip" }).metrics, ordinary.metrics, "an unknown stamp seals nothing");
 
