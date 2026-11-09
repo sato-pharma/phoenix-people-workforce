@@ -894,7 +894,7 @@ export async function recordHeldReleases(input: {
  */
 const ENTERED_TABLE = "automated_payroll_held_entered";
 const ENTERED_SELECT =
-  "held_run_id,employee_hr_id,employee_hr_id_compact,employee_name,amount,note,recorded_by,updated_at";
+  "held_run_id,employee_hr_id,employee_hr_id_compact,employee_name,amount,note,recorded_in_run_id,recorded_by,updated_at";
 
 export type EnteredHeld = {
   heldRunId: string;
@@ -903,6 +903,8 @@ export type EnteredHeld = {
   name: string;
   amount: number;
   note: string;
+  /** The payroll run HR was working in when they entered it — the run whose Held Salary Release pre-fills it. */
+  recordedInRunId: string;
   recordedBy: string;
   updatedAt: string;
 };
@@ -933,6 +935,7 @@ function mapEnteredRow(row: Row): EnteredHeld {
     name: String(row.employee_name ?? ""),
     amount: num(row.amount),
     note: String(row.note ?? ""),
+    recordedInRunId: String(row.recorded_in_run_id ?? ""),
     recordedBy: String(row.recorded_by ?? ""),
     updatedAt: String(row.updated_at ?? ""),
   };
@@ -950,6 +953,19 @@ export async function loadEnteredHeld(): Promise<EnteredHeld[]> {
     throw error;
   }
   return ((data ?? []) as Row[]).map(mapEnteredRow).filter((entry) => entry.heldRunId && entry.compact);
+}
+
+/**
+ * What HR added while working in this run, by compact HR id — the held amounts they entered here
+ * (owner, 2026-11-09: "at least what I add only"). Held Salary Release pre-fills these and nothing else.
+ */
+export function enteredHeldAddedInRun(entries: readonly EnteredHeld[], runId: string): Map<string, number> {
+  const byCompact = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.recordedInRunId !== runId || !(entry.amount > 0)) continue;
+    byCompact.set(entry.compact, roundCurrency((byCompact.get(entry.compact) ?? 0) + entry.amount));
+  }
+  return byCompact;
 }
 
 /**

@@ -1468,6 +1468,7 @@ export function recommendHeldRelease(
   period: PayrollPeriod,
   part1Corrections: Map<string, number> = new Map(),
   part: 1 | 2 = 2,
+  addedInRun: Map<string, number> = new Map(),
 ): StepRow[] {
   const field = part === 1 ? "heldReleaseP1Value" : "heldReleaseValue";
   const memberByCompact = new Map(members.map((member) => [member.compact, member]));
@@ -1531,9 +1532,15 @@ export function recommendHeldRelease(
     // gonna make me mistake"). This used to pre-fill every held person with dueNow, so confirming the
     // step paid all of them — October 2026 released four 30 September leavers he never picked. The
     // amount owed now shows as "Due Now"; the box stays 0 until he types a figure into it.
+    //
+    // ...EXCEPT WHAT HE ADDED HERE ("I want them to be held and at least what I add only"): a held
+    // amount he entered while working in this run is his choice already, so it starts in the box —
+    // never above what is due now. Ahmed Helal's 9,401, entered at 10:07, sat at 0 and left the sheet.
+    const added = roundCurrency(addedInRun.get(compact) ?? 0);
+    const prefill = added > 0 ? Math.min(dueNow, added) : 0;
     if (member?.releaseOnly) row.releaseOnly = true;
-    row.recommended = { [field]: 0, part1NotPaid };
-    row.values = { [field]: pick(draft?.[field], 0), part1NotPaid };
+    row.recommended = { [field]: prefill, part1NotPaid };
+    row.values = { [field]: pick(draft?.[field], prefill), part1NotPaid };
     rows.push(row);
   }
   return rows.sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -2229,6 +2236,8 @@ export async function recommendStep(input: {
   directory?: Map<string, EmployeeDirectoryRow>;
   /** Held Salary Release only: "Part 1 Not Paid" entered against the previous published month. */
   part1Corrections?: Map<string, number>;
+  /** Held Salary Release only: held amounts HR entered while working in this run (enteredHeldAddedInRun). */
+  addedInRun?: Map<string, number>;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
   const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
@@ -2254,6 +2263,7 @@ async function recommendStepRows(
     heldBalances?: Map<string, HeldBalance[]>;
     directory?: Map<string, EmployeeDirectoryRow>;
     part1Corrections?: Map<string, number>;
+    addedInRun?: Map<string, number>;
     carryForwardByCompact?: Map<string, number>;
   },
   drafts: Map<string, DraftRow>,
@@ -2343,6 +2353,7 @@ async function recommendStepRows(
         input.period,
         input.part1Corrections,
         input.stepKey === "p1_held_release" ? 1 : 2,
+        input.addedInRun,
       );
     case "p1_pay_deferral":
       return recommendPayDeferralP1(input.members, input.sources, input.draftRows, drafts, input.period);
