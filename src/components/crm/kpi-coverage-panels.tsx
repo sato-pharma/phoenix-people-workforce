@@ -288,7 +288,8 @@ export function kpiTeamsWithCoverage(
     team,
     coverage: kpiTeamCoverage(
       team.members.map((member) => member.row),
-      rules,
+      // The board names its rules once scored; until then it is "legacy", the board's own default.
+      rules ?? "legacy",
     ),
   }));
 }

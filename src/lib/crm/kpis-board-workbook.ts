@@ -519,7 +519,7 @@ export async function buildKpisBoardWorkbook(
           team,
           coverage: kpiTeamCoverage(
             team.members.map((member) => member.row),
-            board.kpiRules,
+            board.kpiRules ?? "legacy",
           ),
         }))
       : [];
