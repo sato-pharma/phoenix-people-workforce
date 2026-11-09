@@ -8,7 +8,7 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
-import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, sumTeamVisitDays } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -85,6 +85,13 @@ function visitsYesterdayAndToday() {
   const grouped = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
   assert.ok(grouped.includes('{ label: "AM", list: "AM" },') && grouped.includes('{ label: "PM", list: "PM" },'), "the square groups its times AM, then PM");
   assert.ok(grouped.includes('{time.customer ?? "Customer not recorded"}'), "the customer's name sits beside the time");
+  // The district manager's count is the total of his reps' visits (owner, 2026-11-09), three figures still apart.
+  const other = foldTeamVisitDay([row({ list_type: "AM", seat_id: "R2" }), row({ seat_id: "R2" })], new Map());
+  const total = sumTeamVisitDays([day, other]);
+  assert.deepEqual([total.am, total.pm, total.pharmacies, total.waiting], [2, 3, 1, 1], "the district manager's count adds up every rep's visits");
+  assert.equal(total.times.length, 0, "the total carries counts, never a second copy of the times");
+  assert.ok(source0().includes("repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },"), "every district carries its reps' total");
+  assert.ok(grouped.includes("<RepsTotal day={district.repsTotal.yesterday} />") && grouped.includes("<RepsTotal day={district.repsTotal.today} />"), "the manager's row prints his reps' total");
   // No location column is read by the report.
   const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
   const select = /\.select\("([^"]+)"\)/.exec(source)?.[1] ?? "";
@@ -395,6 +402,10 @@ function boardAndApprovalReadTheRealTeam() {
     [week("D1", "draft"), week("D2", "submitted"), week("D3", null)],
   ]);
   assert.deepEqual(merged.map((entry) => `${entry.dmSeatId}:${entry.status}`), ["D1:approved", "D2:submitted", "D3:null"]);
+}
+
+function source0(): string {
+  return readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
 }
 
 export function runRegionalTeamReportsTests() {

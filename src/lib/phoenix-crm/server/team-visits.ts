@@ -70,6 +70,11 @@ export type TeamVisitDistrict = {
   vacantSeats: number;
   /** The district manager's own visits, listed apart and counted in no rep's figure. Null when the seat is vacant. */
   managerOwn: { yesterday: TeamVisitDay; today: TeamVisitDay } | null;
+  /**
+   * The district manager's count: the total of his reps' visits, each day (owner, 2026-11-09: "put the district
+   * managers visits count the total number visits of his reps"). His own visits stay apart, in `managerOwn`.
+   */
+  repsTotal: { yesterday: TeamVisitDay; today: TeamVisitDay };
   reps: TeamVisitRep[];
 };
 
@@ -141,6 +146,13 @@ export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>, customerNames: R
   day.pharmacies = pharmacies.size;
   day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
   return day;
+}
+
+/** The total of the reps' visits for one day — AM · PM · Pharmacies still three figures apart, no times. */
+export function sumTeamVisitDays(days: readonly TeamVisitDay[]): TeamVisitDay {
+  const total = emptyTeamVisitDay();
+  for (const day of days) addDay(total, day);
+  return total;
 }
 
 function addDay(into: TeamVisitDay, from: TeamVisitDay): void {
@@ -273,6 +285,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
       managerHrId,
       managerName: district ? (managerHrId ? nameOf(names, managerHrId) : "Seat is vacant") : "No district manager",
       managerOwn,
+      repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },
       reps,
     });
   }

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { joinKpiRows, kpiBoardRoster, type KpiDirectoryEntry } from "../src/lib/crm/kpis-board.ts";
 import type { RepCallRate } from "../src/lib/crm/call-rate.ts";
+import type { DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
 import { buildKpiManagerRows } from "../src/lib/crm/kpis-manager-rows.ts";
 
 // OWNER, 2026-11-09 — "y are not pulling data of these reports from phoenix crm". Hany Saad's Coverage read
@@ -11,7 +12,7 @@ import { buildKpiManagerRows } from "../src/lib/crm/kpis-manager-rows.ts";
 // Sahar El Gallad's whole district — were absent from the rep rows AND the manager rows. Every rep in reach
 // is now on the board, with nothing to measure until he works. Names below are invented.
 
-const SCOPE = { kind: "agents", basis: "team", agentHrIds: ["PD-0001", "PD-0028", "PD-0012", "B-100", "PD-0032", "PD-0034"], label: "test" } as const;
+const SCOPE: DoctorCoverageScope = { kind: "agents", basis: "team", agentHrIds: ["PD-0001", "PD-0028", "PD-0012", "B-100", "PD-0032", "PD-0034"], label: "test" };
 
 const entry = (hrId: string, displayName: string, managerHrId: string | null, managerName: string | null, jobTitle: string, hireDate: string): KpiDirectoryEntry => ({
   hrId,

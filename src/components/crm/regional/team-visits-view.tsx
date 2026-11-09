@@ -69,6 +69,23 @@ function Times({ day }: { day: TeamVisitDay }) {
   );
 }
 
+/**
+ * The district manager's count — the total of his reps' visits that day (owner, 2026-11-09), first in his row and
+ * above his own visits, which stay apart.
+ */
+function RepsTotal({ day }: { day: TeamVisitDay }) {
+  return (
+    <div className="mb-2 border-b border-sky-200 pb-2">
+      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Reps&apos; total · {day.am + day.pm} doctor visits</p>
+      <Figures day={day} />
+    </div>
+  );
+}
+
+function OwnLabel() {
+  return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Own visits</p>;
+}
+
 function DayCell({ day, href }: { day: TeamVisitDay; href: string | null }) {
   return (
     <div className="min-w-0">
@@ -122,16 +139,20 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
                 </tr>
               </thead>
               <tbody>
-                {district.managerOwn ? (
-                  <tr className={`border-b border-slate-100 align-top ${MANAGER_ROW}`}>
-                    <td className="break-words px-4 py-3">
-                      <p className={MANAGER_NAME}>{district.managerName}</p>
-                      <p className={MANAGER_NOTE}>District manager · own visits, counted in no rep&apos;s figure</p>
-                    </td>
-                    <td className="px-4 py-3"><DayCell day={district.managerOwn.yesterday} href={null} /></td>
-                    <td className="px-4 py-3"><DayCell day={district.managerOwn.today} href={null} /></td>
-                  </tr>
-                ) : null}
+                <tr className={`border-b border-slate-100 align-top ${MANAGER_ROW}`}>
+                  <td className="break-words px-4 py-3">
+                    <p className={MANAGER_NAME}>{district.managerName}</p>
+                    <p className={MANAGER_NOTE}>District manager · the reps&apos; total, then own visits, counted in no rep&apos;s figure</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <RepsTotal day={district.repsTotal.yesterday} />
+                    {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.yesterday} href={null} /></> : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <RepsTotal day={district.repsTotal.today} />
+                    {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.today} href={null} /></> : null}
+                  </td>
+                </tr>
                 {district.reps.map((rep) => (
                   <tr className="border-b border-slate-100 align-top last:border-b-0" key={rep.seatId}>
                     <td className="break-words px-4 py-3">
@@ -145,18 +166,18 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
               </tbody>
             </table>
             <div className="grid divide-y divide-slate-100 md:hidden">
-              {district.managerOwn ? (
-                <div className={`grid gap-2 p-4 ${MANAGER_ROW}`}>
-                  <div>
-                    <p className={MANAGER_NAME}>{district.managerName}</p>
-                    <p className={MANAGER_NOTE}>District manager · own visits, counted in no rep&apos;s figure</p>
-                  </div>
-                  <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Yesterday · {yesterday}</p>
-                  <DayCell day={district.managerOwn.yesterday} href={null} />
-                  <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Today · {today}</p>
-                  <DayCell day={district.managerOwn.today} href={null} />
+              <div className={`grid gap-2 p-4 ${MANAGER_ROW}`}>
+                <div>
+                  <p className={MANAGER_NAME}>{district.managerName}</p>
+                  <p className={MANAGER_NOTE}>District manager · the reps&apos; total, then own visits, counted in no rep&apos;s figure</p>
                 </div>
-              ) : null}
+                <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Yesterday · {yesterday}</p>
+                <RepsTotal day={district.repsTotal.yesterday} />
+                {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.yesterday} href={null} /></> : null}
+                <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Today · {today}</p>
+                <RepsTotal day={district.repsTotal.today} />
+                {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.today} href={null} /></> : null}
+              </div>
               {district.reps.map((rep) => (
                 <div className="grid gap-2 p-4" key={rep.seatId}>
                   <div>
