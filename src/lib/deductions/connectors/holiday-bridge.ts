@@ -41,7 +41,7 @@ import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
 import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
-import type { HolidayBridgeDay } from "../holiday-bridge.ts";
+import { isBeforeHireDate, type HolidayBridgeDay } from "../holiday-bridge.ts";
 
 /**
  * The one `source_system` this connector writes, and therefore the only one its re-run may retire.
@@ -111,12 +111,19 @@ async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
  * flagged 44 resigned, terminated and historical-payroll records for "not
  * logging visits", which is true of everyone who no longer works here. They
  * would have been charged a day's pay on every bridge day.
+ *
+ * And the HIRE DATE rides along, because "active" says nothing about WHEN he started. A rep hired on
+ * 11 October has CRM signal that month, so the zero-signal guard lets him through, and 7 and 10
+ * October — before he joined — read as "no record" bridge days (owner report 2026-11-09: 18 joiners
+ * charged around Armed Forces Day). A day before the hire date is never a day he could have bridged.
  */
-async function loadFieldForceRoster(): Promise<Map<string, { hrId: string; name: string | null }>> {
-  const roster = new Map<string, { hrId: string; name: string | null }>();
+type FieldForceEmployee = { hrId: string; name: string | null; hireDate: string | null };
+
+async function loadFieldForceRoster(): Promise<Map<string, FieldForceEmployee>> {
+  const roster = new Map<string, FieldForceEmployee>();
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id, full_name, job_title, employment_status")
+    .select("hr_id, full_name, job_title, employment_status, hire_date")
     .eq("employment_status", "active");
   if (error) throw new Error(`Failed to load the field-force roster: ${error.message}`);
   for (const row of (data ?? []) as Array<Record<string, unknown>>) {
@@ -124,7 +131,8 @@ async function loadFieldForceRoster(): Promise<Map<string, { hrId: string; name:
     const hrId = String(row.hr_id ?? "").trim();
     const compact = compactDeductionsHrId(hrId);
     if (!compact) continue;
-    roster.set(compact, { hrId, name: (row.full_name as string | null) ?? null });
+    const hireDate = String(row.hire_date ?? "").slice(0, 10) || null;
+    roster.set(compact, { hrId, name: (row.full_name as string | null) ?? null, hireDate });
   }
   return roster;
 }
@@ -172,7 +180,7 @@ async function loadVacationOnBridgeDays(bridgeDays: readonly HolidayBridgeDay[])
  */
 async function loadNoRecordOnBridgeDays(input: {
   bridgeDays: readonly HolidayBridgeDay[];
-  roster: Map<string, { hrId: string; name: string | null }>;
+  roster: Map<string, FieldForceEmployee>;
   monthKey: string;
 }): Promise<Set<string>> {
   const noRecord = new Set<string>();
@@ -336,6 +344,9 @@ export async function collectHolidayBridgeCandidates(input: {
   const drafts: DeductionsCandidateDraft[] = [];
   for (const [compact, employee] of roster) {
     for (const bridge of uniqueBridgeDays) {
+      // Not yet hired that day — nothing to bridge. Same rule the Half Day, DSM and vacation
+      // connectors already keep (`day < hireDate`).
+      if (isBeforeHireDate(bridge.date, employee.hireDate)) continue;
       const key = `${compact}:${bridge.date}`;
       // The dedup rule: a day another category already charges is never charged
       // twice. Checked BEFORE anything else so the cheapest exit wins.
