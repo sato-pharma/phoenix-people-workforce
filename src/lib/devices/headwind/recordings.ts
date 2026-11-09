@@ -45,6 +45,7 @@ import { callHeadwind } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 import { isUuid } from "@/lib/http/uuid";
+import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const TABLET_RECORDING_BUCKET = "device-screen-recordings";
@@ -147,6 +148,26 @@ export type UploadDecision = { ok: true } | { ok: false; status: number; reason:
 type SlotRow = { status: string; requestedAtMs: number; uploadTokenHash: string | null } | null;
 
 /**
+ * Whether a slot's upload window has run out. PURE. An unreadable request time counts as run out —
+ * a slot whose age cannot be told is never left open for ever.
+ */
+export function recordingSlotExpired(requestedAtMs: number, nowMs: number): boolean {
+  return !Number.isFinite(requestedAtMs) || nowMs > requestedAtMs + RECORDING_TOKEN_TTL_SECONDS * 1000;
+}
+
+/**
+ * The status a person is shown. PURE.
+ *
+ * 🔴 NOTHING EVER WRITES `expired`, SO IT IS READ (audit, 9 Nov 2026, F13b). A slot the tablet never
+ * filled stays `requested` on its row; without this the list said "Recording…" beside it for ever.
+ * Past `RECORDING_TOKEN_TTL_SECONDS` it is expired — the same clock the upload door refuses it on.
+ */
+export function recordingDisplayStatus(status: string, requestedAtMs: number, nowMs: number): RecordingStatus {
+  if (status === "requested") return recordingSlotExpired(requestedAtMs, nowMs) ? "expired" : "requested";
+  return (["ready", "failed", "expired"].includes(status) ? status : "failed") as RecordingStatus;
+}
+
+/**
  * Whether a slot can still take an upload, judged on its row alone — before any token or body. PURE.
  * These are the first four refusals of `recordingUploadDecision`, which calls this.
  */
@@ -154,10 +175,45 @@ export function recordingSlotOpenDecision(row: SlotRow, nowMs: number): UploadDe
   if (!row) return { ok: false, reason: "No such recording request.", status: 404 };
   if (row.status !== "requested") return { ok: false, reason: "This recording has already been handled.", status: 409 };
   if (!row.uploadTokenHash) return { ok: false, reason: "This recording slot is already closed.", status: 410 };
-  if (nowMs > row.requestedAtMs + RECORDING_TOKEN_TTL_SECONDS * 1000) {
+  if (recordingSlotExpired(row.requestedAtMs, nowMs)) {
     return { ok: false, reason: "This recording slot has expired.", status: 410 };
   }
   return { ok: true };
+}
+
+/**
+ * Where one capture is stored in the bucket. PURE.
+ *
+ * 🔴 THE TABLET'S NUMBER IS MADE SAFE FOR A STORAGE KEY (audit, 9 Nov 2026). It is whatever an admin
+ * typed into Headwind, so a `/` would add a folder, a `..` would climb one, and a character Storage
+ * refuses (Arabic, `%`, `#`) would fail the upload AFTER the tablet had recorded. Only letters, digits,
+ * `-` and `_` survive; the recording's own id keeps every path unique whatever the number folds to.
+ */
+export function recordingStoragePath(deviceNumber: string, recordingId: string): string {
+  const folder = deviceNumber.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "tablet";
+  return `${folder}/${recordingId}.mp4`;
+}
+
+/** The ISO-BMFF (mp4) box types a file can open with. An mp4 writer puts `ftyp` first; the rest are legal openers. */
+const MP4_FIRST_BOXES = new Set(["ftyp", "styp", "free", "skip", "wide", "mdat", "moov"]);
+const WEBM_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
+
+/**
+ * Whether the bytes are the container the upload says they are. PURE.
+ *
+ * 🔴 THE TYPE WAS THE TABLET'S OWN WORD (audit, 9 Nov 2026). The door checked only the declared
+ * `video/mp4` or `video/webm`, so a holder of a token — and a token rides a push any long-poll on that
+ * device number can read — could file any bytes at all as a "recording" the Super Admin later opens.
+ * An mp4 opens with an ISO-BMFF box (size, then a four-letter type); a webm with the EBML magic.
+ */
+export function recordingContainerMatches(bytes: Uint8Array, contentType: string | null): boolean {
+  const type = normaliseContentType(contentType);
+  if (type === "video/webm") return bytes.length >= 4 && WEBM_MAGIC.every((byte, index) => bytes[index] === byte);
+  if (type === "video/mp4") {
+    if (bytes.length < 8) return false;
+    return MP4_FIRST_BOXES.has(String.fromCharCode(bytes[4]!, bytes[5]!, bytes[6]!, bytes[7]!));
+  }
+  return false;
 }
 
 /**
@@ -233,7 +289,8 @@ export function recordingUploadUrl(uploadBaseUrl: string, recordingId: string): 
   return `${base}?${RECORDING_UPLOAD_ID_PARAM}=${encodeURIComponent(recordingId)}`;
 }
 
-function toRecording(row: RecordingDbRow, playbackUrl: string | null): TabletRecording {
+function toRecording(row: RecordingDbRow, playbackUrl: string | null, nowMs: number): TabletRecording {
+  const requestedAtMs = new Date(row.requested_at).getTime();
   return {
     assetTag: row.asset_tag,
     capturedSeconds: row.captured_seconds,
@@ -245,7 +302,7 @@ function toRecording(row: RecordingDbRow, playbackUrl: string | null): TabletRec
     requestedAt: typeof row.requested_at === "string" ? row.requested_at : new Date(row.requested_at).toISOString(),
     requestedByHrId: row.requested_by_hr_id,
     sizeBytes: row.size_bytes,
-    status: (["requested", "ready", "failed", "expired"].includes(row.status) ? row.status : "failed") as RecordingStatus,
+    status: recordingDisplayStatus(row.status, requestedAtMs, nowMs),
     uploadedAt: row.uploaded_at,
   };
 }
@@ -275,7 +332,7 @@ export async function requestRecording(input: {
   const durationRequestedS = clampRecordingDuration(input.durationSeconds);
   const id = randomUUID();
   const token = randomBytes(32).toString("hex");
-  const storagePath = `${target.deviceNumber}/${id}.mp4`;
+  const storagePath = recordingStoragePath(target.deviceNumber, id);
   const requestedAt = new Date().toISOString();
 
   const supabase = getSupabaseAdmin();
@@ -293,24 +350,33 @@ export async function requestRecording(input: {
   if (insert.error) throw new Error(`Could not open a recording slot: ${insert.error.message}`);
 
   const uploadUrl = recordingUploadUrl(input.uploadBaseUrl, id);
-  await callHeadwind(
-    "/rest/private/push",
-    {
-      body: JSON.stringify({
-        broadcast: false,
-        deviceNumbers: [target.deviceNumber],
-        messageType: "intent",
-        payload: JSON.stringify({
-          action: PHOENIX_RECORD_INTENT,
-          extra: { durationSeconds: durationRequestedS, recordingId: id, token, uploadUrl },
-          pkg: rustDeskPackageName(env),
+  try {
+    await callHeadwind(
+      "/rest/private/push",
+      {
+        body: JSON.stringify({
+          broadcast: false,
+          deviceNumbers: [target.deviceNumber],
+          messageType: "intent",
+          payload: JSON.stringify({
+            action: PHOENIX_RECORD_INTENT,
+            extra: { durationSeconds: durationRequestedS, recordingId: id, token, uploadUrl },
+            pkg: rustDeskPackageName(env),
+          }),
         }),
-      }),
-      method: "POST",
-    },
-    fetchImpl,
-    env,
-  );
+        method: "POST",
+      },
+      fetchImpl,
+      env,
+    );
+  } catch (error) {
+    // 🔴 A PUSH THAT FAILED CLOSES ITS SLOT (audit, 9 Nov 2026, F13c). The row was written first, so a
+    // refused or timed-out push used to leave a `requested` slot with a live token behind it, listed as
+    // "Recording…". It is marked failed with the reason and its token is spent, so even a push that did
+    // land behind a lost reply cannot file a capture nobody was told had started.
+    await closeRecordingSlot(id, `The record request did not reach the tablet: ${errorText(error)}`);
+    throw error;
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: input.actor,
@@ -337,6 +403,29 @@ export async function requestRecording(input: {
   };
 }
 
+function errorText(error: unknown): string {
+  const text = error instanceof Error && error.message ? error.message : String(error);
+  return text.slice(0, 500);
+}
+
+/** Mark a still-open slot failed, with the reason, and spend its token. Never throws: it runs on a failure path. */
+async function closeRecordingSlot(id: string, reason: string): Promise<void> {
+  try {
+    const closed = await getSupabaseAdmin()
+      .from(TABLET_RECORDING_TABLE)
+      .update({ error: reason, status: "failed", upload_token_hash: null })
+      .eq("id", id)
+      .eq("status", "requested");
+    if (closed.error) throw new Error(closed.error.message);
+  } catch (error) {
+    // The slot still expires on its own clock (`recordingSlotExpired`); this only says it is not closed yet.
+    logWarning("A tablet recording slot could not be marked failed", {
+      error,
+      labels: { event: "tablet_recording_slot_close_failed", job: "devices/recordings" },
+    });
+  }
+}
+
 /** The recordings for one tablet, newest first, each ready one carrying a short-lived playback link. */
 export async function listRecordings(deviceNumber: string, limit = 50): Promise<{ recordings: TabletRecording[] }> {
   const supabase = getSupabaseAdmin();
@@ -348,6 +437,7 @@ export async function listRecordings(deviceNumber: string, limit = 50): Promise<
     .limit(limit);
   if (error) throw new Error(`Could not read the recordings: ${error.message}`);
   const rows = (data ?? []) as RecordingDbRow[];
+  const nowMs = Date.now();
   const recordings = await Promise.all(
     rows.map(async (row) => {
       let playbackUrl: string | null = null;
@@ -357,7 +447,7 @@ export async function listRecordings(deviceNumber: string, limit = 50): Promise<
           .createSignedUrl(row.storage_path, RECORDING_SIGNED_URL_TTL_SECONDS);
         playbackUrl = signed.data?.signedUrl ?? null;
       }
-      return toRecording(row, playbackUrl);
+      return toRecording(row, playbackUrl, nowMs);
     }),
   );
   return { recordings };
@@ -383,6 +473,10 @@ export async function ingestRecording(input: {
     .select("id, status, requested_at, upload_token_hash, storage_path")
     .eq("id", id)
     .maybeSingle();
+  // 🔴 A READ THAT FAILED IS NOT "NO SUCH RECORDING" (audit, 9 Nov 2026). It fell through to the 404,
+  // which tells the tablet the slot is gone, so it stopped retrying a capture a moment's outage cost.
+  // 503, the same answer `checkRecordingSlotOpen` gives, so the tablet tries again.
+  if (read.error) return { body: { error: "The recording slot could not be read." }, status: 503 };
   const row = read.data as Pick<RecordingDbRow, "id" | "status" | "requested_at" | "storage_path"> & {
     upload_token_hash: string | null;
   } | null;
@@ -396,6 +490,10 @@ export async function ingestRecording(input: {
     sizeBytes,
   });
   if (!decision.ok) return { body: { error: decision.reason }, status: decision.status };
+  // Before the claim, so bytes that are not a video never spend the slot the real capture needs.
+  if (!recordingContainerMatches(input.bytes, input.contentType)) {
+    return { body: { error: "The file is not the mp4 or webm video it says it is." }, status: 415 };
+  }
 
   // CLAIM THE SLOT, ATOMICALLY: clear the hash on the one row still `requested` that still holds the
   // hash this token matched. Of two uploads racing on one token, exactly one gets the row back; the
