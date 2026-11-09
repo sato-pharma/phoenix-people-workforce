@@ -548,6 +548,19 @@ export async function previousPublishedRun(period: {
   return null;
 }
 
+/** The Part 1 one run confirmed per person (first_part_frozen above 0), by compact HR id. */
+export async function frozenPart1ForRun(runId: string): Promise<Map<string, number>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_draft_rows")
+    .select("employee_hr_id_compact,first_part_frozen")
+    .eq("run_id", runId)
+    .gt("first_part_frozen", 0);
+  if (error) throw error;
+  return new Map(
+    ((data ?? []) as Row[]).map((row) => [String(row.employee_hr_id_compact ?? ""), roundCurrency(num(row.first_part_frozen))]),
+  );
+}
+
 /** What HR has entered as "Part 1 Not Paid" against one run, by compact HR id. */
 export async function part1CorrectionsForRun(heldRunId: string): Promise<Map<string, number>> {
   const byCompact = new Map<string, number>();
@@ -600,7 +613,9 @@ export async function recordPart1Corrections(input: {
     const frozen = roundCurrency(frozenByCompact.get(compact) ?? 0);
     if (amount > frozen) {
       problems.push(
-        `${entry.name || entry.hrId}: ${amount.toFixed(2)} is more than the ${frozen.toFixed(2)} Part 1 that month confirmed`,
+        frozen === 0
+          ? `${entry.name || entry.hrId} was not paid a Part 1 last month, so there is no Part 1 to mark unpaid — remove the row and add them again with For set to the month the pay was held`
+          : `${entry.name || entry.hrId}: ${amount.toFixed(2)} is more than the ${frozen.toFixed(2)} Part 1 that month confirmed`,
       );
       continue;
     }

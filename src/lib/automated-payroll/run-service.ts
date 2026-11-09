@@ -106,6 +106,7 @@ import {
   outstandingHeldByEmployee,
   part1CorrectionsForRun,
   previousPublishedRun,
+  frozenPart1ForRun,
   recordHeldReleases,
   recordPart1Corrections,
 } from "./held-settlements.ts";
@@ -751,6 +752,12 @@ const PART1_ONLY_STEP_KEYS: ReadonlySet<StepKey> = new Set<StepKey>(["p1_held_re
  * entered against the previous published month. Defer Pay needs the carry-forward debts, so its Part 2
  * column is the same figure the sheet pays. Loaded only for those steps, so no other step pays for the read.
  */
+/** The previous published month's confirmed Part 1 per person; empty when there is no such month. */
+async function lastMonthPart1For(period: PayrollPeriod): Promise<Map<string, number>> {
+  const previous = await previousPublishedRun(period);
+  return previous ? frozenPart1ForRun(previous.id) : new Map();
+}
+
 async function heldReleaseInputs(
   stepKey: StepKey,
   runId: string,
@@ -934,6 +941,7 @@ function manualRowCandidates(
   members: PopulationMember[],
   rows: StepRow[],
   directory: Map<string, EmployeeDirectoryRow>,
+  lastMonthPart1: Map<string, number> = new Map(),
 ): ManualRowCandidate[] {
   if (!stepDefinition(stepKey).allowsManualRows) return [];
   const listed = new Set(rows.map((row) => compactHrKey(row.hrId)).filter(Boolean));
@@ -951,6 +959,7 @@ function manualRowCandidates(
         jobTitle: employee.jobTitle ?? null,
         line: employee.lineName ?? null,
         status: employee.employmentStatus ?? null,
+        lastMonthPart1: lastMonthPart1.get(compact) ?? 0,
       });
     }
     return everyone.sort((left, right) => left.fullName.localeCompare(right.fullName));
@@ -1044,7 +1053,16 @@ async function loadStepView(
     run,
     rows,
     state,
-    candidates: manualRowCandidates(stepKey, members, rows, directory),
+    candidates: manualRowCandidates(
+      stepKey,
+      members,
+      rows,
+      directory,
+      // Who last month's Part 1 actually paid — "Part 1 Not Paid" is offered only for them (owner, 2026-11-09).
+      stepKey === "p1_held_release" || stepKey === "p2_held_release"
+        ? await lastMonthPart1For({ month: run.month, year: run.year })
+        : new Map(),
+    ),
     draftRows,
   };
 }
