@@ -1418,7 +1418,7 @@ async function runUploadTests() {
   assert.equal(tabletFollowableUrl(null), null, "a built-in app with no link is left alone");
   assert.match(
     uploads,
-    /if \(applicationId !== null\) await secureVersionLinks\(applicationId, fetchImpl, env\);/,
+    /await secureHeadwindVersionLinks\(applicationId, fetchImpl, env\);/,
     "and every upload moves its new version onto the https link before any tablet is told about it",
   );
 

@@ -41,6 +41,7 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 
 const PRIMARY_BUTTON =
@@ -90,6 +91,25 @@ type Branding = {
   kioskMode: boolean;
 };
 
+/**
+ * The name every rep set of rules starts with — the same as `REP_RULES_PREFIX`, copied for the browser
+ * bundle. "Rep tablets" and each line's copy of it; found by name, never by id.
+ */
+const REP_RULES_PREFIX = "Rep tablets";
+
+type InstallLink = {
+  applicationId: number | null;
+  name: string;
+  version: string | null;
+  url: string | null;
+  status: number | null;
+  verdict: string;
+  label: string;
+  redirectsTo: string | null;
+};
+
+type InstallLinkReport = { configurationId: number; name: string; links: InstallLink[]; broken: number };
+
 type ConsoleUser = {
   id: number;
   login: string;
@@ -97,7 +117,11 @@ type ConsoleUser = {
   email: string | null;
   roleId: number | null;
   roleName: string | null;
-  enabled: boolean;
+  /**
+   * False for the login Phoenix itself signs in with (the server's `editable: false`, or the login in
+   * `HEADWIND_MDM_LOGIN`). The server refuses removing it; the page offers no Remove beside it.
+   */
+  removable?: boolean;
 };
 type ConsoleRole = { id: number; name: string };
 
@@ -305,12 +329,16 @@ type UploadState = { busy: boolean; notice: string | null; failure: string | nul
  * tablet carrying them installs it at its next check-in. Leaving the rules out would upload something
  * that reaches no tablet at all — which looks exactly like success.
  */
-function UploadPanel({ configurationId }: { configurationId: number }) {
+function UploadPanel({ configurationId, repRules }: { configurationId: number; repRules: boolean }) {
   const [state, setState] = useState<UploadState>({ busy: false, failure: null, notice: null });
 
   async function send(form: HTMLFormElement) {
     const body = new FormData(form);
-    body.set("configurationId", String(configurationId));
+    // 🔴 EVERY REP SET, OR THESE RULES ALONE. Each line's tablets follow their own copy of "Rep
+    // tablets", so an app meant for every rep tablet has to go on each copy — `rep` does that on the
+    // server, one audit row per set; sending only this id left the other lines without it.
+    body.set("configurationId", body.get("reach") === "rep" ? "rep" : String(configurationId));
+    body.delete("reach");
     setState({ busy: true, failure: null, notice: null });
     try {
       const response = await fetch("/api/devices/headwind/upload", { body, cache: "no-store", method: "POST" });
@@ -363,17 +391,138 @@ function UploadPanel({ configurationId }: { configurationId: number }) {
             <span className={`block ${MICRO_LABEL}`}>The file</span>
             <input className={cn(phxFieldClassName, "mt-1")} name="file" required type="file" />
           </label>
+          {repRules ? (
+            <label className="block min-w-0 sm:col-span-2">
+              <span className={`block ${MICRO_LABEL}`}>Which tablets</span>
+              <select className={cn(phxSelectClassName, "mt-1")} defaultValue="rep" name="reach">
+                <option value="rep">Every rep tablet — these rules and each line&rsquo;s copy of them</option>
+                <option value="only">Only the tablets on these rules</option>
+              </select>
+            </label>
+          ) : null}
         </div>
         <p className="break-words text-[11px] font-semibold text-slate-500">
           An app has to be a <span className="font-mono">.apk</span> — the <span className="font-mono">.aab</span>{" "}
           bundle Google Play builds from cannot be installed on a tablet. It goes onto every tablet following
-          these rules at its next check-in.
+          the rules chosen at its next check-in, and only once its download link answers on https by itself.
         </p>
         <button className={PRIMARY_BUTTON} disabled={state.busy} type="submit">
           {state.busy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Upload aria-hidden className="size-4" />}
           Send it to the tablets
         </button>
       </form>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Install links — what a tablet on these rules actually downloads.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+function linkAnswer(link: InstallLink): string {
+  const status = link.status ? ` · HTTP ${link.status}` : "";
+  const target = link.redirectsTo ? ` · to ${link.redirectsTo}` : "";
+  return `${link.label}${status}${target}`;
+}
+
+/**
+ * 🔴 A TABLET WILL NOT FOLLOW A REDIRECT, AND ONE DEAD LINK STOPS ITS WHOLE UPDATE RUN (runbook §8.16,
+ * §8.18). Twice in 2026 a single dead link held a rep tablet on an old launcher for weeks — no location,
+ * no remote-screen ID — while every screen here looked healthy. So every install link on a rep set of
+ * rules is checked the way the tablet meets it, on this page, with the time of the check.
+ */
+function InstallLinksBlock({ configurationId }: { configurationId: number }) {
+  const [round, setRound] = useState(0);
+  const read = useRead<{ checkedAt: string; configurations: InstallLinkReport[] }>(
+    `/api/devices/headwind/configurations?view=install-links&configurationId=${configurationId}&round=${round}`,
+  );
+  const report = read.data?.configurations.find((entry) => entry.configurationId === configurationId) ?? null;
+  const total = report?.links.length ?? 0;
+
+  return (
+    <div className="mt-2 border-t border-slate-100 pt-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <p className={MICRO_LABEL}>Install links</p>
+        {read.data ? (
+          <span className="text-[10px] font-semibold text-slate-500">
+            Checked {cairoDateTime(read.data.checkedAt)}, Cairo time
+          </span>
+        ) : null}
+        <button className={PANEL_ACTION} disabled={read.loading} onClick={() => setRound((value) => value + 1)} type="button">
+          {read.loading ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+          Check again
+        </button>
+      </div>
+      {read.loading ? <Busy what="every install link on these rules" /> : null}
+      {read.error ? <Failed message={read.error} /> : null}
+      {report ? (
+        <div className="mt-1 space-y-2">
+          {total === 0 ? (
+            <p className="break-words text-[11px] font-semibold text-slate-500">These rules install no app from a download.</p>
+          ) : report.broken === 0 ? (
+            <Done
+              message={`All ${total} install link${total === 1 ? "" : "s"} answer on https by themselves — a tablet can download every one.`}
+            />
+          ) : (
+            <Failed
+              message={`${report.broken} of ${total} install link${total === 1 ? "" : "s"} would stop a tablet's update run. The tablet stops at the first dead link, so nothing after it — the launcher included — arrives.`}
+            />
+          )}
+          {total > 0 ? (
+            <>
+              {/* DESKTOP — three columns, the broken links first. */}
+              <table className="hidden w-full table-fixed border-collapse md:table">
+                <colgroup>
+                  <col className="w-[26%]" />
+                  <col className="w-[46%]" />
+                  <col className="w-[28%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-slate-300 bg-slate-50">
+                    {["App", "Download link", "What a tablet gets"].map((heading) => (
+                      <th className={`px-2 py-1.5 text-left ${MICRO_LABEL}`} key={heading} scope="col">
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.links.map((link, index) => (
+                    <tr className="border-b border-slate-100 align-top" key={`${link.url ?? "none"}-${index}`}>
+                      <td className="px-2 py-1.5">
+                        <span className="block break-words text-[11px] font-bold text-slate-900">{link.name}</span>
+                        <span className="block text-[10px] font-semibold text-slate-500">{link.version ?? "Version not reported"}</span>
+                      </td>
+                      <td className="break-all px-2 py-1.5 font-mono text-[10px] text-slate-700">{link.url ?? "None"}</td>
+                      <td
+                        className={`break-words px-2 py-1.5 text-[11px] font-bold ${link.verdict === "ok" ? "text-emerald-800" : "text-rose-700"}`}
+                      >
+                        {linkAnswer(link)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* MOBILE — one card per link. */}
+              <ul className="space-y-1 md:hidden">
+                {report.links.map((link, index) => (
+                  <li className="border border-slate-200 px-2 py-1.5" key={`${link.url ?? "none"}-${index}`}>
+                    <p className="break-words text-[11px] font-bold text-slate-900">
+                      {link.name}
+                      <span className="font-semibold text-slate-500"> · {link.version ?? "Version not reported"}</span>
+                    </p>
+                    <p className="mt-0.5 break-all font-mono text-[10px] text-slate-700">{link.url ?? "No download link"}</p>
+                    <p className={`mt-0.5 break-words text-[11px] font-bold ${link.verdict === "ok" ? "text-emerald-800" : "text-rose-700"}`}>
+                      {linkAnswer(link)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -425,10 +574,16 @@ function ConfigurationsPanel() {
                   {configuration.description}
                 </p>
               ) : null}
+              {configuration.name.startsWith(REP_RULES_PREFIX) ? (
+                <InstallLinksBlock configurationId={configuration.id} />
+              ) : null}
               {openId === configuration.id ? (
                 <div className="mt-2 space-y-3">
                   <BrandingPanel configurationId={configuration.id} />
-                  <UploadPanel configurationId={configuration.id} />
+                  <UploadPanel
+                    configurationId={configuration.id}
+                    repRules={configuration.name.startsWith(REP_RULES_PREFIX)}
+                  />
                 </div>
               ) : null}
             </li>
@@ -551,19 +706,23 @@ function UsersPanel() {
                       {user.roleName}
                     </span>
                   ) : null}
-                  {user.enabled ? null : (
-                    <span className="border border-amber-500 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-700">
-                      Switched off
+                  {/* 🔴 NO REMOVE BESIDE THE LOGIN PHOENIX SIGNS IN WITH. Removing it cuts Phoenix off from
+                      every tablet with no way back from this screen; the server refuses it too. (There is
+                      no "switched off" here: the server's users carry no such field.) */}
+                  {user.removable === false ? (
+                    <span className="break-words text-[10px] font-semibold text-slate-500">
+                      Phoenix signs in with this login, so it cannot be removed here.
                     </span>
+                  ) : (
+                    <button
+                      className={state.armed === user.id ? PANEL_ARMED : PANEL_ACTION}
+                      disabled={state.busy}
+                      onClick={() => void remove(user)}
+                      type="button"
+                    >
+                      {state.armed === user.id ? `Press again to remove ${user.login}` : "Remove"}
+                    </button>
                   )}
-                  <button
-                    className={state.armed === user.id ? PANEL_ARMED : PANEL_ACTION}
-                    disabled={state.busy}
-                    onClick={() => void remove(user)}
-                    type="button"
-                  >
-                    {state.armed === user.id ? `Press again to remove ${user.login}` : "Remove"}
-                  </button>
                 </li>
               ))}
             </ul>
