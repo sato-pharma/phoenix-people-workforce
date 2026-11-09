@@ -59,9 +59,23 @@ export type PhoenixContactPlaces = {
   intakes: Map<number, string>;
   /** The validated place's point, kept only when it is a usable fix. */
   points: Map<number, ValidatedPlacePoint>;
+  /**
+   * When each contact was validated — every validated, not-dropped customer, with or without a usable
+   * place, so a doctor validated with a poor fix still reads "Validated" (owner, 2026-11-09: "in rep
+   * list show what's validated").
+   */
+  validatedAt: Map<number, string>;
+  /** False when Phoenix CRM could not be read: the board then says so instead of "Not validated yet". */
+  read: boolean;
 };
 
-const EMPTY_PLACES = (): PhoenixContactPlaces => ({ brickIds: new Map(), intakes: new Map(), points: new Map() });
+const EMPTY_PLACES = (read = true): PhoenixContactPlaces => ({
+  brickIds: new Map(),
+  intakes: new Map(),
+  points: new Map(),
+  read,
+  validatedAt: new Map(),
+});
 
 function chunk<T>(values: readonly T[]): T[][] {
   const out: T[][] = [];
@@ -95,6 +109,25 @@ export function chooseValidatedPlacePoints(
       lon: Number(place.lon),
       validatedAt: customer.validated_at,
     });
+  }
+  return out;
+}
+
+/**
+ * When each contact was validated. Pure. A dropped customer is not validated on anyone's list; when two
+ * customers carry one contact (two reps, or carried over and added), the EARLIEST validation answers.
+ */
+export function chooseValidatedDates(
+  customers: ReadonlyArray<Pick<CustomerRow, "status" | "validated_at" | "reference_contact_crm_id" | "own_contact_crm_id">>,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const row of customers) {
+    const at = String(row.validated_at ?? "").trim();
+    if (!at || String(row.status ?? "").trim().toLowerCase() === "dropped") continue;
+    const contactId = phoenixContactId(row);
+    if (contactId == null) continue;
+    const before = out.get(contactId);
+    if (!before || Date.parse(at) < Date.parse(before)) out.set(contactId, at);
   }
   return out;
 }
@@ -178,9 +211,11 @@ export async function loadPhoenixContactPlaces(contactIds: readonly number[]): P
       brickIds: chooseValidatedPlaceBricks(validated, places),
       intakes: chooseIntakeWhere(customers),
       points: chooseValidatedPlacePoints(validated, places),
+      read: true,
+      validatedAt: chooseValidatedDates(customers),
     };
   } catch (error) {
     console.error("[reps-list] Phoenix CRM's places could not be read; the list falls back to check-ins and the iReports360 mapping", error);
-    return EMPTY_PLACES();
+    return EMPTY_PLACES(false);
   }
 }

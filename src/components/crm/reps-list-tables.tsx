@@ -334,6 +334,7 @@ function GroupHeading({
   onToggle,
   shown,
   tint,
+  validated,
 }: {
   /** Phoenix CRM only. When true, the heading is a button that opens and shuts its own block. */
   collapsible?: boolean;
@@ -342,6 +343,8 @@ function GroupHeading({
   onToggle?: () => void;
   shown: number;
   tint?: BrickTint | null;
+  /** Reps List only: "x of y validated" over the rows shown, beside the count. Absent everywhere else. */
+  validated?: string;
 }) {
   // A mapped brick and an unmapped locality are visually distinct because they mean different
   // things: the first is a real territory, the second is a locality nobody has mapped to one yet.
@@ -383,6 +386,7 @@ function GroupHeading({
       </div>
       <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
         {shown === group.rows.length ? describeMix(group.rows) : `${shown} of ${group.rows.length} shown`}
+        {validated ? ` · ${validated}` : ""}
       </span>
     </>
   );
@@ -972,8 +976,56 @@ function matchesActivity(row: RepsListContact, choice: string): boolean {
   return status === choice;
 }
 
+/**
+ * WHAT IS VALIDATED, ON EVERY ROW (owner, 2026-11-09: "in rep list show what's validated"). Validated
+ * in Phoenix CRM with a live photo at the door, dated in Cairo — or not validated yet.
+ *
+ * NO COLOUR, ONLY INK: the board's colour budget is spent (see the note above BAND_BAR), so the chip
+ * spends weight instead — dark ink for validated, the faint slate every "not yet" on this board uses.
+ * Nothing at all is drawn when Phoenix CRM could not be read: "Not validated yet" on the strength of a
+ * failed read would be a claim about every doctor on the list. The board says so once, above.
+ */
+function ValidationChip({ row }: { row: RepsListContact }) {
+  const at = row.validatedAt ? cairoDay(row.validatedAt) : "";
+  return row.validatedAt ? (
+    <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 bg-white px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-900 ring-1 ring-inset ring-slate-400">
+      Validated
+      {at ? <span className="font-semibold text-slate-500">{at}</span> : null}
+    </span>
+  ) : (
+    <span className="mt-0.5 inline-flex px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-400 ring-1 ring-inset ring-slate-200">
+      Not validated yet
+    </span>
+  );
+}
+
+const VALIDATION_FILTERS = [
+  { label: "Validated and not", value: "" },
+  { label: "Validated", value: "validated" },
+  { label: "Not validated yet", value: "not_validated" },
+] as const;
+
+function matchesValidation(row: RepsListContact, choice: string): boolean {
+  if (!choice) return true;
+  return choice === "validated" ? Boolean(row.validatedAt) : !row.validatedAt;
+}
+
+/** "41 of 120 validated" over the rows given — contacts and pharmacies alike, each is validated on its own. */
+function validatedLine(rows: readonly RepsListContact[]): string {
+  return `${rows.filter((row) => row.validatedAt).length} of ${rows.length} validated`;
+}
+
 /** Name, then grade and phone beneath it — one cell, so neither needs a column of its own. */
-function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row: RepsListContact }) {
+function ContactCell({
+  onOpenInsights,
+  row,
+  showValidation = false,
+}: {
+  onOpenInsights: () => void;
+  row: RepsListContact;
+  /** Reps List only, and only when Phoenix CRM's validations were read. */
+  showValidation?: boolean;
+}) {
   const phone = phoneOf(row);
   return (
     <div className="break-words">
@@ -993,6 +1045,11 @@ function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row:
           under the name, above grade and phone, because on this board it is the line a manager is
           scanning for. */}
       <ActivityChip activity={row.activity} />
+      {showValidation ? (
+        <span className="block">
+          <ValidationChip row={row} />
+        </span>
+      ) : null}
       <span className="mt-0.5 block text-phx-2xs font-semibold">
         <span className={gradeClass(row.grade)}>{row.grade ?? "No grade"}</span>
         <span className="text-slate-400">{phone ? ` · ${phone}` : " · no phone"}</span>
@@ -1016,6 +1073,7 @@ function GroupTable({
   rows,
   showConfidence,
   showList,
+  showValidation = false,
 }: {
   group: RepsListGroup;
   onOpenConfidence: (row: RepsListContact) => void;
@@ -1032,6 +1090,8 @@ function GroupTable({
   showConfidence: boolean;
   /** False on the Pharmacies tab, where every row's list is "Pharmacist" and the column says nothing. */
   showList: boolean;
+  /** Reps List only, when Phoenix CRM's validations were read: each row says whether it is validated. */
+  showValidation?: boolean;
 }) {
   // The owner asked for the Locality column to become the BRICK (2026-09-01), and the HEADING SAYS
   // BRICK ON EVERY GROUP — a column that renames itself block by block is not a column. Every row in
@@ -1084,6 +1144,11 @@ function GroupTable({
           <div className="mt-1">
             <ActivityChip activity={row.activity} />
           </div>
+          {showValidation ? (
+            <div className="mt-1">
+              <ValidationChip row={row} />
+            </div>
+          ) : null}
           <PortalRecordFields
             fields={[
               { label: "Specialty", value: row.speciality ?? "Unspecified" },
@@ -1189,7 +1254,7 @@ function GroupTable({
                     key={`${row.agentCrmId}:${row.contactCrmId}:${row.listType}`}
                   >
                     <td className="px-3 py-2">
-                      <ContactCell onOpenInsights={() => onOpenInsights(row)} row={row} />
+                      <ContactCell onOpenInsights={() => onOpenInsights(row)} row={row} showValidation={showValidation} />
                     </td>
                     <td className="break-words px-3 py-2 text-slate-600">{row.speciality ?? "Unspecified"}</td>
                     {showList ? (
@@ -1245,6 +1310,7 @@ export function RepsListContacts({
   groups,
   repName,
   rowActions,
+  validationRead,
 }: {
   /** False when the month's plan and visits could not be read. The chip, the filter and the export
    * columns all disappear together — a half-present column is worse than an absent one. */
@@ -1278,8 +1344,17 @@ export function RepsListContacts({
    * export columns go with it — a download that still scored every row would contradict the screen.
    */
   rowActions?: (row: RepsListContact) => ReactNode;
+  /**
+   * The manager Reps List only (owner, 2026-11-09: "in rep list show what's validated"). True: every
+   * row says Validated or Not validated yet, each brick heading and the summary count them, and a
+   * Validation filter joins the row. False: Phoenix CRM could not be read, and the board says so once
+   * rather than calling every doctor unvalidated. Absent (My List in Phoenix CRM, which carries its own
+   * Validate button): nothing changes.
+   */
+  validationRead?: boolean;
 }) {
   const showConfidence = !rowActions;
+  const showValidation = validationRead === true;
   // Five filters, all client-side: brick, list, grade, specialty and free text. The owner asked for
   // them on 2026-09-01 — "filter by grade, or by specialty, or by AM or PM or pharmacist, or by
   // brick". They compose rather than replace each other, so "grade A neurologists in Smouha" is one
@@ -1292,6 +1367,7 @@ export function RepsListContacts({
   // pharmacy is visited or not visited exactly as a doctor is, so the choice stays meaningful on
   // both sides of the split and clearing it would be the surprise.
   const [activity, setActivity] = useState("");
+  const [validation, setValidation] = useState("");
   const [query, setQuery] = useState("");
   // Phoenix CRM, phones only: whether the filter row is unfolded. Shut by default — the toggle names
   // how many filters are on, so a narrowed list never passes for the whole one.
@@ -1364,11 +1440,12 @@ export function RepsListContacts({
             (!grade || gradeOf(row) === grade) &&
             (!speciality || specialityOf(row) === speciality) &&
             matchesActivity(row, activity) &&
+            (!showValidation || matchesValidation(row, validation)) &&
             matches(row, needle),
         ),
       }))
       .filter((entry) => entry.rows.length > 0);
-  }, [activity, brick, grade, groups, listType, query, speciality, tab]);
+  }, [activity, brick, grade, groups, listType, query, showValidation, speciality, tab, validation]);
 
   // The export carries the brick and the area on every row, because the grouping IS the finding
   // here — a flat contact export would throw away the one thing this board adds. Unmapped rows
@@ -1399,7 +1476,15 @@ export function RepsListContacts({
       contact_ar: row.nameAr ?? "",
       grade: row.grade ?? "",
       last_seen: row.seenAt?.at ? cairoDay(row.seenAt.at) : "",
-      validated: row.place?.validatedAt ? cairoDay(row.place.validatedAt) : "",
+      // The row's own validation where the board read it, so a doctor validated with no usable place
+      // still exports his date; otherwise the place's date, as before.
+      validated: showValidation
+        ? row.validatedAt
+          ? cairoDay(row.validatedAt)
+          : "Not validated yet"
+        : row.place?.validatedAt
+          ? cairoDay(row.place.validatedAt)
+          : "",
       // The plan's own ask, TO DATE — the denominator the screen shows. Exporting the whole month's
       // ask instead would make every mid-month row look behind.
       last_visit: row.activity?.lastVisitDate ?? "",
@@ -1445,7 +1530,7 @@ export function RepsListContacts({
   const labelClass = collapsible ? FIELD_LABEL_CLASS : LABEL_CLASS;
   const selectClass = collapsible ? FIELD_SELECT_CLASS : SELECT_CLASS;
   // What the folded toggle says, so a phone showing a narrowed list says so before it is opened.
-  const filtersOn = [brick, listType, activity, grade, speciality, query.trim()].filter(Boolean).length;
+  const filtersOn = [brick, listType, activity, validation, grade, speciality, query.trim()].filter(Boolean).length;
   // `hidden` and `flex` are never written together: they set one property, and which of two display
   // utilities wins is the stylesheet's order, not the class list's.
   const filterRowClass =
@@ -1554,6 +1639,22 @@ export function RepsListContacts({
                 {ACTIVITY_FILTER_ORDER.map((status) => (
                   <option key={status} value={status}>
                     {ACTIVITY_LABEL[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {showValidation ? (
+            <label className="block w-full sm:w-48">
+              <span className={labelClass}>Validation</span>
+              <select
+                className={`mt-1 ${selectClass}`}
+                onChange={(event) => setValidation(event.target.value)}
+                value={validation}
+              >
+                {VALIDATION_FILTERS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -1672,7 +1773,13 @@ export function RepsListContacts({
           : shownCount === totalCount
             ? spread
             : `${shownCount} of ${totalCount} shown · ${visible.length} of ${tabGroups.length} groups`}
+        {showValidation && totalCount > 0 ? ` · ${validatedLine(tabRows)}` : ""}
       </p>
+      {validationRead === false ? (
+        <p className="text-phx-2xs font-semibold text-amber-700">
+          Phoenix CRM could not be read just now, so this list does not say which contacts are validated. The list itself is complete.
+        </p>
+      ) : null}
 
       {/* AN EMPTY TAB AND AN EMPTY FILTER ARE DIFFERENT ANSWERS AND MUST NOT SHARE A SENTENCE.
           "Nothing matches this filter" tells a reader to go and clear a filter; on a rep who simply
@@ -1702,6 +1809,7 @@ export function RepsListContacts({
                     onToggle={collapsible ? () => toggleGroup(key) : undefined}
                     shown={entry.rows.length}
                     tint={tints.get(key)}
+                    validated={showValidation ? validatedLine(entry.rows) : undefined}
                   />
                   {isCollapsed ? null : (
                     <GroupTable
@@ -1712,6 +1820,7 @@ export function RepsListContacts({
                       rows={entry.rows}
                       showConfidence={showConfidence}
                       showList={tab === "contacts"}
+                      showValidation={showValidation}
                     />
                   )}
                 </div>
