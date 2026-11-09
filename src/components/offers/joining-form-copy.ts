@@ -132,6 +132,8 @@ const en = {
   pending: "To be confirmed by HR",
   photos: {
     back: "Back of the card",
+    blocked: "No photo was chosen. If the phone said it cannot select media, allow Chrome to use Photos in the phone's Settings, under Apps, then Chrome, then Permissions. Or use the camera instead.",
+    camera: "Take a photo with the camera",
     choose: "Take or choose a photo",
     front: "Front of the card",
     hint: "A clear photo of each side, with all four corners and every word showing.",
@@ -287,6 +289,8 @@ const ar: JoiningCopy = {
   pending: "تؤكده الموارد البشرية",
   photos: {
     back: "ظهر البطاقة",
+    blocked: "لم تُختَر أي صورة. إذا ظهرت رسالة بتعذّر اختيار الوسائط، يُرجى السماح لمتصفح Chrome باستخدام الصور من إعدادات الهاتف، ثم التطبيقات، ثم Chrome، ثم الأذونات. أو استخدام الكاميرا بدلاً من ذلك.",
+    camera: "التقاط صورة بالكاميرا",
     choose: "التقاط صورة أو اختيارها",
     front: "وجه البطاقة",
     hint: "صورة واضحة لكل وجه، تظهر فيها الأركان الأربعة وكل الكتابة.",
