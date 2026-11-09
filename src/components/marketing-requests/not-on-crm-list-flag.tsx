@@ -18,7 +18,7 @@ export function NotOnCrmListFlag({ compact = false, flag }: { compact?: boolean;
   if (compact) {
     return (
       <p
-        className="mt-1 inline-flex items-start gap-1 rounded-none border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-900"
+        className="mt-1 inline-flex items-start gap-1 rounded-none border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide text-amber-900"
         title={flag}
       >
         <AlertTriangle aria-hidden className="mt-px h-3 w-3 shrink-0" />

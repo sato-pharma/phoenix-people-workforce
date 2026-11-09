@@ -80,7 +80,7 @@ export function MarketingInboxCancelButton({
 
   return (
     <div className="w-full max-w-xs rounded-sm border border-rose-200 bg-rose-50/40 p-2.5 text-left">
-      <p className="text-phx-2xs font-black uppercase tracking-wide text-rose-700">Call off {requestCode}</p>
+      <p className="text-phx-sm font-black uppercase tracking-wide text-rose-700">Call off {requestCode}</p>
       <textarea
         className={`${phxTextareaClassName} mt-1.5`}
         disabled={busy}

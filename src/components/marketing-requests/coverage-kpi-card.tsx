@@ -103,7 +103,7 @@ export function CoverageKpiCard({
       <div className="relative flex items-start justify-between gap-2 sm:gap-4">
         <div className="min-w-0 space-y-1.5">
           {/* Wraps, never clips: "DISTINCT PHARMACIES" in tracked capitals is wider than a phone card. */}
-          <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          <p className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
           <div className="break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">{value}</div>
           {description ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{description}</p> : null}
         </div>

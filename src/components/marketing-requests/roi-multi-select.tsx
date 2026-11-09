@@ -44,13 +44,13 @@ export function RoiMultiSelect({
         onClick={onSummaryClick}
       >
         <span className="min-w-0">
-          <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+          <span className="mb-1 flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-phx-ink-faint">
             <span className="min-w-0 break-words">{label}</span>
           </span>
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="min-w-0 break-words text-sm font-black text-phx-ink">{summary}</span>
             {selected.length > 0 ? (
-              <span className="shrink-0 bg-phx-accent px-1 text-phx-3xs font-black uppercase tracking-wide text-white">incl</span>
+              <span className="shrink-0 bg-phx-accent px-1 text-phx-xs font-black uppercase tracking-wide text-white">incl</span>
             ) : null}
           </span>
         </span>
