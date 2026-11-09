@@ -161,7 +161,7 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
     destructive: false,
     id: "APPLY_SETTINGS",
     label: "Apply settings now",
-    pastTense: "Applied settings on",
+    pastTense: "Sent apply-settings to",
   },
   {
     description:
@@ -169,14 +169,14 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
     destructive: false,
     id: "WAKE_REMOTE_APP",
     label: "Wake the remote app",
-    pastTense: "Woke the remote app on",
+    pastTense: "Sent the remote-app wake to",
   },
   {
     description: "Restarts the tablet now. Anything unsaved on it is lost, as with any restart.",
     destructive: false,
     id: "REBOOT",
     label: "Restart",
-    pastTense: "Restarted",
+    pastTense: "Sent a restart to",
   },
   {
     // 🔴 NOT THE ANDROID SCREEN LOCK. This is the agent's own full-screen overlay: the rep's own PIN
@@ -201,14 +201,14 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
     destructive: false,
     id: "PAUSE_KIOSK",
     label: "Pause kiosk mode",
-    pastTense: "Paused kiosk mode on",
+    pastTense: "Sent a kiosk-mode pause to",
   },
   {
     description: "Puts the tablet back into kiosk mode, pinned to the company's apps again.",
     destructive: false,
     id: "RESUME_KIOSK",
     label: "Resume kiosk mode",
-    pastTense: "Resumed kiosk mode on",
+    pastTense: "Sent a kiosk-mode resume to",
   },
   {
     description:
@@ -289,26 +289,29 @@ export type HeadwindCommandResult = {
   locatedAt?: string | null;
 };
 
-function resultMessage(def: HeadwindCommandDef, subject: string): string {
-  switch (def.id) {
+/**
+ * The sentence shown after a push action is SENT.
+ *
+ * 🔴 IT SAYS WHAT WAS SENT, NEVER WHAT THE TABLET DID. `/rest/private/push` answers once the server has
+ * queued the message; the tablet acts on it only when it receives it, which for a tablet asleep in a
+ * bag is later, and for one that is off is never. "is restarting now" and "is back in kiosk mode,
+ * pinned" claimed effects nobody had seen, so a press on a dead tablet read as a success. Only the push
+ * actions reach here — lock, locate and factory reset are answered by the module that carries them.
+ */
+export function headwindCommandSentMessage(id: HeadwindCommandId, subject: string): string {
+  switch (id) {
     case "APPLY_SETTINGS":
-      return `${subject} has been told to re-read its settings. They apply as soon as it answers.`;
+      return `${subject} was told to re-read its settings. They apply when it receives the message.`;
     case "WAKE_REMOTE_APP":
-      return `The remote app is starting on ${subject}. Give it a moment, then open the screen session.`;
+      return `${subject} was told to start the remote app. It starts when the tablet receives the message; give it a moment, then open the screen session.`;
     case "REBOOT":
-      return `${subject} is restarting now.`;
-    case "LOCK":
-      return `${subject} is locked. The rep unlocks it with their screen lock.`;
-    case "LOCATE_NOW":
-      return `${subject} has been asked where it is. Its position refreshes as soon as it answers.`;
+      return `${subject} was told to restart. It restarts when it receives the message.`;
     case "PAUSE_KIOSK":
-      return `${subject} is out of kiosk mode. The whole tablet can be reached until kiosk mode is resumed.`;
+      return `${subject} was told to leave kiosk mode for a while. Once it receives the message the whole tablet can be reached, until kiosk mode is resumed.`;
     case "RESUME_KIOSK":
-      return `${subject} is back in kiosk mode, pinned to the company's apps.`;
-    case "FACTORY_RESET":
-      return `${subject} is being factory-reset. It comes back at the welcome screen and needs to be enrolled again.`;
+      return `${subject} was told to re-read its rules, which puts it back in kiosk mode when it receives the message.`;
     default:
-      return `${subject}: done.`;
+      return `The action was sent to ${subject}. It acts when it receives the message.`;
   }
 }
 
@@ -391,5 +394,5 @@ export async function issueHeadwindCommand(
     summary: `${def.pastTense} ${target.subject}`,
   });
 
-  return { assetTag: target.assetTag, command: def.id, message: resultMessage(def, target.subject) };
+  return { assetTag: target.assetTag, command: def.id, message: headwindCommandSentMessage(def.id, target.subject) };
 }

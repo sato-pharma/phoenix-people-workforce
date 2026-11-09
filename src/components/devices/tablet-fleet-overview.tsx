@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The strip of figures across the top of the Tablet Dashboard — how many tablets, how many online,
+ * The strip of figures across the top of the Tablet Dashboard — how many tablets, how many seen in a day,
  * how many reporting a position, how many ready for a remote screen, how many low on battery, and how
  * many a person has not confirmed into custody yet.
  *
@@ -30,18 +30,20 @@ export function TabletFleetOverview({ rows, registerError }: { rows: RepHeadwind
           tone="blue"
           value={summary.total}
         />
+        {/* 🔴 Custody and the SIM come from the register: unread, "0 / N" would be an invented count. */}
         <AdminStatCard
-          description="Every setup step done"
+          description={registerError ? "Register could not be read" : "Every setup step done"}
           icon={<CheckCircle2 className={iconClass} aria-hidden />}
           label="Fully set up"
           size="compact"
           tone="emerald"
-          value={`${summary.fullySetUp} / ${summary.total}`}
+          value={registerError ? "—" : `${summary.fullySetUp} / ${summary.total}`}
         />
+        {/* A tablet heard from 23 hours ago is not "online now" — the tile says what it counts. */}
         <AdminStatCard
           description="Checked in within the last day"
           icon={<Wifi className={iconClass} aria-hidden />}
-          label="Online now"
+          label="Seen in 24 hours"
           size="compact"
           tone="emerald"
           value={summary.online}
@@ -71,7 +73,13 @@ export function TabletFleetOverview({ rows, registerError }: { rows: RepHeadwind
           value={summary.lowBattery}
         />
         <AdminStatCard
-          description={registerError ? "Register could not be read" : "Not confirmed into custody yet"}
+          description={
+            registerError
+              ? "Register could not be read"
+              : summary.awaitingHardwareReport > 0
+                ? `Not confirmed into custody yet · ${summary.awaitingHardwareReport} never sent a serial or IMEI`
+                : "Not confirmed into custody yet"
+          }
           icon={<UserPlus className={iconClass} aria-hidden />}
           label="Not in register"
           size="compact"
