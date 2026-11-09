@@ -172,7 +172,7 @@ export function ValidatedCustomerRegister() {
       <PortalFilterBar countLabel={`${filtered.length} of ${workspace.rows.length} shown`}>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
-            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               Employee
             </span>
             <select
@@ -189,7 +189,7 @@ export function ValidatedCustomerRegister() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               Transfer state
             </span>
             <select
@@ -203,7 +203,7 @@ export function ValidatedCustomerRegister() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               Search
             </span>
             <input

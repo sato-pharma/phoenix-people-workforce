@@ -53,7 +53,7 @@ function Section({
 }) {
   return (
     <div id={anchorId} className="scroll-mt-4 space-y-1.5">
-      <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
       {children}
     </div>
   );
@@ -77,7 +77,7 @@ function Field({
   const clean = typeof value === "string" ? value.trim() : "";
   return (
     <div className="flex flex-col">
-      <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
+      <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
       {clean ? (
         <span className="text-phx-sm font-bold text-slate-900">{clean}</span>
       ) : (
@@ -158,7 +158,7 @@ function LicenseNameCheck({
 
   return (
     <div className="mt-1 border border-slate-200 px-2 py-1.5">
-      <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
         Does the licence trade name match the shop sign?
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -176,23 +176,23 @@ function LicenseNameCheck({
               onClick={() => void record(active ? null : choice.value)}
               className={
                 active
-                  ? `rounded-sm border px-2 py-0.5 text-phx-2xs font-black ${
+                  ? `rounded-sm border px-2 py-0.5 text-phx-sm font-black ${
                     choice.tone === "emerald"
                       ? "border-emerald-400 bg-emerald-50 text-emerald-800"
                       : "border-rose-400 bg-rose-50 text-rose-800"
                   }`
-                  : "rounded-sm border border-slate-300 px-2 py-0.5 text-phx-2xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  : "rounded-sm border border-slate-300 px-2 py-0.5 text-phx-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               }
             >
               {choice.label}
             </button>
           );
         })}
-        <span className="text-phx-3xs font-medium text-slate-400">
+        <span className="text-phx-xs font-medium text-slate-400">
           {isSaving ? "Saving…" : verdict === null ? "Not answered — optional" : "Recorded"}
         </span>
       </div>
-      {saveError ? <p className="mt-1 text-phx-2xs font-bold text-rose-700">{saveError}</p> : null}
+      {saveError ? <p className="mt-1 text-phx-sm font-bold text-rose-700">{saveError}</p> : null}
     </div>
   );
 }
@@ -359,9 +359,9 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="pb-1 text-phx-3xs font-bold uppercase tracking-[0.1em] text-slate-400">Product</th>
-                  <th className="pb-1 text-right text-phx-3xs font-bold uppercase tracking-[0.1em] text-slate-400">Qty</th>
-                  <th className="pb-1 text-right text-phx-3xs font-bold uppercase tracking-[0.1em] text-slate-400">Value</th>
+                  <th className="pb-1 text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-400">Product</th>
+                  <th className="pb-1 text-right text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-400">Qty</th>
+                  <th className="pb-1 text-right text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-400">Value</th>
                 </tr>
               </thead>
               <tbody>
@@ -478,11 +478,11 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                 <div className="flex flex-wrap items-baseline gap-x-2">
                   <Store className="h-3 w-3 shrink-0 text-slate-400" />
                   <span className="text-phx-sm font-bold text-slate-900">{pharmacy.pharmacyName}</span>
-                  <span className="text-phx-2xs font-medium text-slate-500">
+                  <span className="text-phx-sm font-medium text-slate-500">
                     {pharmacy.distributorName} · {pharmacy.distributorPharmacyCode || "no distributor code"}
                   </span>
                   {pharmacy.referenceStatus !== "matched" ? (
-                    <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-amber-900">
+                    <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-amber-900">
                       {pharmacy.referenceStatus}
                     </span>
                   ) : null}
@@ -491,12 +491,12 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                       pending pharmacies with no photo — reads an explicit "Not validated", so the
                       approver is never left guessing at a bare name. */}
                   {pharmacy.validationBadge ? (
-                    <span className="inline-flex items-center gap-1 rounded-sm border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-emerald-800">
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-emerald-800">
                       <span aria-hidden className="inline-block h-1.5 w-1.5 bg-emerald-500" />
                       Validated
                     </span>
                   ) : (
-                    <span className="rounded-sm border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-600">
+                    <span className="rounded-sm border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-600">
                       Not validated
                     </span>
                   )}
@@ -504,7 +504,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                 {/* Who validated it and when — only in the validated case, and never a fabricated
                     reviewer: the system case reads "by the system", the human case the resolved name. */}
                 {pharmacy.validationBadge ? (
-                  <p className="mt-0.5 text-phx-2xs font-medium text-emerald-800" dir="auto">
+                  <p className="mt-0.5 text-phx-sm font-medium text-emerald-800" dir="auto">
                     {pharmacy.validationBadge.isHuman
                       ? pharmacy.validationBadge.byName
                         ? `Validated by ${pharmacy.validationBadge.byName}`
@@ -521,7 +521,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                 {/* Validated WITH this request's customer — the pairing, not the venue (owner,
                     2026-10-31). Sentence resolved on the server; amber whenever it is not a yes. */}
                 <p
-                  className={`mt-0.5 text-phx-2xs font-bold ${
+                  className={`mt-0.5 text-phx-sm font-bold ${
                     pharmacy.customerLink.state === "validated" ? "text-emerald-800" : "text-amber-800"
                   }`}
                   dir="auto"
@@ -598,7 +598,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                   <span className="text-phx-xs font-black text-slate-900">{entry.requestCode}</span>
                   <span className="text-phx-xs font-medium text-slate-600">{entry.status}</span>
                   {formatDate(entry.payDate) ? (
-                    <span className="text-phx-2xs font-medium text-slate-500">{formatDate(entry.payDate)}</span>
+                    <span className="text-phx-sm font-medium text-slate-500">{formatDate(entry.payDate)}</span>
                   ) : null}
                   <span className="text-phx-xs font-bold text-slate-900">{egp(entry.estimatedCost) ?? "-"}</span>
                   <span className="text-phx-xs font-medium text-slate-600">

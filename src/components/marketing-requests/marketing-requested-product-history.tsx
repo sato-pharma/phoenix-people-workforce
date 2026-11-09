@@ -59,7 +59,7 @@ export function MarketingRequestedProductHistory({ requestId }: { requestId: str
 
   return (
     <div>
-      <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
         Requested products at this customer
       </p>
       {soldCount > 0 ? (

@@ -121,7 +121,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
     <section className="space-y-3 rounded-[10px] border border-phx-line bg-phx-paper p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Sales evidence</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-phx-ink-soft">Sales evidence</p>
           <p className="mt-1 text-phx-lg font-black text-phx-ink">{data.customerName}</p>
         </div>
         <span
@@ -178,7 +178,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           family, different SKUs, matched on CODE so a name never credits one to the other. This
           sits above the customer-wide figures because it is the number that decides the request. */}
       <div className={`${adminSoftPanelClassName} rounded-[6px] p-3`}>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+        <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-phx-ink-soft">
           The {data.requested.productCount} product{data.requested.productCount === 1 ? "" : "s"} this request promotes
         </p>
         {data.requested.sold.length > 0 ? (
@@ -213,11 +213,11 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       {/* The ask, next to what the history projects. */}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
           <p className="mt-0.5 text-phx-lg font-black text-phx-ink">{egp(ask.estimatedCost)}</p>
         </div>
         <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2`}>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             Required return ({ask.roiDurationMonths}mo)
           </p>
           <p className="mt-0.5 text-phx-lg font-black text-phx-ink">{egp(ask.requiredRoiValue)}</p>
@@ -227,7 +227,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
             shortfall ? "border-[#FECACA] bg-[#FEF2F2]" : "border-[#BBF7D0] bg-[#F0FDF4]"
           }`}
         >
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             History projects ({ask.roiDurationMonths}mo)
           </p>
           <p className={`mt-0.5 text-phx-lg font-black ${shortfall ? "text-[#B91C1C]" : "text-[#166534]"}`}>

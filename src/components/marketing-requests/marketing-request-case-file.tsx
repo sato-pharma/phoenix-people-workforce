@@ -60,7 +60,7 @@ function initials(name: string) {
 function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="bg-slate-50 px-3 py-2.5">
-      <p className="text-phx-2xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-phx-sm uppercase tracking-wide text-slate-400">{label}</p>
       <p className={`text-phx-md font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
         {value || "Not captured"}
       </p>
@@ -132,7 +132,7 @@ function Warnings({ warnings }: { warnings: MarketingCaseFileWarning[] }) {
           className={`flex items-start gap-2 border px-3 py-2 ${warningClasses(warning)}`}
           key={warning.key}
         >
-          <span className="mt-px shrink-0 text-phx-2xs font-black uppercase tracking-wider">
+          <span className="mt-px shrink-0 text-phx-sm font-black uppercase tracking-wider">
             {warningMark(warning)}
           </span>
           <p className="text-phx-sm font-medium leading-5">{warning.sentence}</p>
@@ -321,12 +321,12 @@ function Chain({
                   {/* CC rows are KEPT and tagged. "The PM was asked and said nothing" is a fact
                       about the decision; dropping the row deletes it. */}
                   {rung.isCc ? (
-                    <span className="ml-1.5 bg-slate-200/70 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-500">
+                    <span className="ml-1.5 bg-slate-200/70 px-1 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
                       CC
                     </span>
                   ) : null}
                   {rung.isMine ? (
-                    <span className="ml-1.5 bg-orange-200/70 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-orange-800">
+                    <span className="ml-1.5 bg-orange-200/70 px-1 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-orange-800">
                       You
                     </span>
                   ) : null}
@@ -337,7 +337,7 @@ function Chain({
                 </p>
               </div>
               <span
-                className={`shrink-0 px-2 py-0.5 text-phx-2xs font-semibold uppercase tracking-[0.06em] ${
+                className={`shrink-0 px-2 py-0.5 text-phx-sm font-semibold uppercase tracking-[0.06em] ${
                   neverReached(rung) ? "bg-slate-100 text-slate-400" : rungClasses(rung)
                 }`}
               >
@@ -404,7 +404,7 @@ function History({ history }: { history: MarketingCaseFileHistory }) {
             {/* A reconstruction is labelled as one. A row derived from the request's own columns
                 during the backfill did not witness the event, and must not pass as if it had. */}
             {entry.isBackfilled ? (
-              <p className="mt-1 text-phx-2xs uppercase tracking-[0.06em] text-slate-400">
+              <p className="mt-1 text-phx-sm uppercase tracking-[0.06em] text-slate-400">
                 Reconstructed from the request&apos;s own rows
               </p>
             ) : null}
@@ -768,21 +768,21 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           <SectionLabel>The ask</SectionLabel>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Estimated cost</p>
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Estimated cost</p>
               <p className="text-base font-medium text-slate-950">{egp(money.estimatedCost)}</p>
             </div>
             <div className="bg-orange-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-orange-700">
+              <p className="text-phx-sm uppercase tracking-wide text-orange-700">
                 Required ROI{money.roiDurationMonths ? ` · ${money.roiDurationMonths} mo` : ""}
               </p>
               <p className="text-base font-medium text-orange-800">{egp(money.requiredRoiValue)}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Expected ROI</p>
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Expected ROI</p>
               <p className="text-phx-md font-medium text-slate-950">{egp(money.expectedRoiValue)}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">
                 Forecast coverage
               </p>
               <p className="text-phx-md font-medium text-slate-950">
@@ -866,11 +866,11 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
                 </p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div className="bg-slate-50 px-3 py-2.5">
-                    <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Realised sales</p>
+                    <p className="text-phx-sm uppercase tracking-wide text-slate-400">Realised sales</p>
                     <p className="text-phx-md font-medium text-slate-950">{egp(value.actualSalesValue)}</p>
                   </div>
                   <div className="bg-slate-50 px-3 py-2.5">
-                    <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Coverage of required</p>
+                    <p className="text-phx-sm uppercase tracking-wide text-slate-400">Coverage of required</p>
                     <p className="text-phx-md font-medium text-slate-950">
                       {percent(value.actualCoverageRatio)}
                     </p>

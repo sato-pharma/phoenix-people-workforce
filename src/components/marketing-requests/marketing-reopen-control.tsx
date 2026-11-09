@@ -69,7 +69,7 @@ export function MarketingReopenControl({
 
   return (
     <div className="mt-3">
-      <label className="block text-phx-2xs uppercase tracking-wide text-slate-400" htmlFor="marketing-reopen-reason">
+      <label className="block text-phx-sm uppercase tracking-wide text-slate-400" htmlFor="marketing-reopen-reason">
         Reason
       </label>
       <textarea

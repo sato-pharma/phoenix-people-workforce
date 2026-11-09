@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { buildCaseFileDecisionBar, type DecisionBarStep } from "@/lib/marketing-requests/case-file-decision-bar";
 
@@ -170,4 +170,15 @@ export function runMarketingCaseFileDecisionBarTests() {
     /navigationMode: resolveNavigationMode\(access\)/,
     "the bar's hrefs must be resolved from the VIEWER's shell — the Case File URL is shared by both",
   );
+
+  // Nothing on a Marketing requests screen is drawn below 11px ("raise the marketing requests screens' fonts too",
+  // owner, 2026-11-09). Every .tsx under src/components/marketing-requests is read, so a new screen is held to it as well.
+  let marketingScreens = 0;
+  for (const entry of readdirSync("src/components/marketing-requests", { recursive: true, encoding: "utf8" })) {
+    if (!entry.endsWith(".tsx")) continue;
+    const file = `src/components/marketing-requests/${entry.replace(/\\/g, "/")}`;
+    marketingScreens++;
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(readFileSync(file, "utf8")), `${file}: no text below 11px on a Marketing requests screen`);
+  }
+  assert.ok(marketingScreens >= 30, `the floor read every Marketing requests screen (${marketingScreens})`);
 }

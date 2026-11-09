@@ -404,7 +404,7 @@ function FacetSelect({
 
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
+    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide", className)}>
       {children}
     </span>
   );
@@ -487,7 +487,7 @@ function MoneyWaterfall({
           >
             <span className="flex items-center gap-1.5">
               <span className={cn("h-2 w-2 rounded-sm", BUCKET_META[b].bar)} />
-              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{BUCKET_META[b].label}</span>
+              <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">{BUCKET_META[b].label}</span>
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[b].cost)}</span>
             <span className="text-phx-xs text-slate-500">
@@ -607,7 +607,7 @@ function Counter({ label, value, tone }: { label: string; value: number; tone?: 
       >
         {value}
       </span>
-      <span className="text-phx-2xs uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-phx-sm uppercase tracking-wide text-slate-500">{label}</span>
     </div>
   );
 }
@@ -826,7 +826,7 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
                 <col className="w-[20%]" />
               </colgroup>
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-sm font-black uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-1.5">Month</th>
                   <th className="px-2 py-1.5">Product</th>
                   <th className="px-2 py-1.5">Pharmacy</th>
@@ -1199,7 +1199,7 @@ export function MarketingRoiTracker({
 
                         {/* UNITS — how many we forecast vs how many actually sold */}
                         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-                          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Units</span>
+                          <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Units</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-bold tabular-nums text-slate-900">
                               {measured && unitFigures ? units(unitFigures.actualUnits) : "—"}
@@ -1229,7 +1229,7 @@ export function MarketingRoiTracker({
 
                         {/* VALUE — the money those units are worth */}
                         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-                          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Value</span>
+                          <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Value</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-bold tabular-nums text-slate-900">
                               {measured ? money(row.actualSalesValue) : "—"}

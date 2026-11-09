@@ -72,7 +72,7 @@ export function MarketingFinanceHoldControl({
 
   return (
     <div className="mt-3">
-      <label className="block text-phx-2xs uppercase tracking-wide text-slate-400" htmlFor="finance-hold-reason">
+      <label className="block text-phx-sm uppercase tracking-wide text-slate-400" htmlFor="finance-hold-reason">
         Reason
       </label>
       <textarea

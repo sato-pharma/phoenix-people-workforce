@@ -52,7 +52,7 @@ function StatCard({ label, value, hint, accent = "slate" }: { label: string; val
   const border = { slate: "border-l-slate-500", orange: "border-l-phx-accent", green: "border-l-emerald-500", sky: "border-l-sky-500" }[accent];
   return (
     <div className={cn("rounded-[6px] border border-phx-line border-l-[3px] bg-white px-3.5 py-3 shadow-sm", border)}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
       <p className="mt-1.5 text-[22px] font-black leading-none text-phx-ink">{value}</p>
       {hint ? <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{hint}</p> : null}
     </div>
@@ -203,7 +203,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             <section className={`${adminPanelClassName} rounded-[6px] p-4 sm:p-5`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">View Sales · {data.context.requestCode}</p>
+                  <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-phx-accent">View Sales · {data.context.requestCode}</p>
                   <h2 className="mt-1 text-lg font-black tracking-tight text-phx-ink">{data.context.customerName}</h2>
                   <p className="mt-1 text-phx-sm font-semibold text-phx-ink-soft">
                     {data.context.requesterName ?? "Unknown requester"}
@@ -240,17 +240,17 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
               <div className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <CalendarRange className="h-3.5 w-3.5" /> Period range
                 {data.range.isCustom ? (
-                  <span className="rounded-[3px] bg-phx-accent px-1 text-phx-3xs text-white">custom</span>
+                  <span className="rounded-[3px] bg-phx-accent px-1 text-phx-xs text-white">custom</span>
                 ) : (
-                  <span className="rounded-[3px] bg-phx-ink px-1 text-phx-3xs text-white">ROI window</span>
+                  <span className="rounded-[3px] bg-phx-ink px-1 text-phx-xs text-white">ROI window</span>
                 )}
               </div>
               <label className="flex flex-col gap-1">
-                <span className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">From</span>
+                <span className="text-phx-sm font-bold uppercase tracking-wide text-phx-ink-faint">From</span>
                 <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} className={phxFieldClassName} />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">To</span>
+                <span className="text-phx-sm font-bold uppercase tracking-wide text-phx-ink-faint">To</span>
                 <input type="month" value={to} onChange={(event) => setTo(event.target.value)} className={phxFieldClassName} />
               </label>
               <button
@@ -334,7 +334,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                       </colgroup>
                     }
                   >
-                    <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.12em] text-white">
+                    <thead className="bg-phx-ink text-phx-sm font-black uppercase tracking-[0.12em] text-white">
                       <tr>
                         <th className="px-3 py-2.5">
                           <button type="button" onClick={() => toggleSort("invoicePeriod")} className="inline-flex items-center gap-1 font-black">Period {sortArrow("invoicePeriod")}</button>
