@@ -471,6 +471,7 @@ export function runAutomatedPayrollHeldReleaseTests() {
     assert.equal(untouched.values[field], 0, `Part ${part}: nobody is released until HR enters an amount`);
     assert.equal(untouched.recommended[field], 0, `Part ${part}: the system recommends no release on its own`);
     assert.equal(untouched.context["Due Now"], 7265, `Part ${part}: what is owed now is shown, so HR can choose it`);
+    assert.equal(untouched.releaseOnly, true, `Part ${part}: someone on the step only for a held release is tinted as a resignation`);
     const chosen = recommendHeldRelease(
       [],
       chooseDirectory,

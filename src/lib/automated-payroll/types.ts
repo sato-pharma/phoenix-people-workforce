@@ -428,6 +428,12 @@ export type StepRow = {
   priorHold?: PriorHold;
   lifecycle?: RowLifecycle;
   /**
+   * On the step only to be paid an earlier month's held salary (releaseOnlyMember). Colour only — the
+   * row is tinted as a resignation (owner, 2026-11-09). Never read it as `lifecycle`: saveStep treats a
+   * "leaver" row's edits as a settlement.
+   */
+  releaseOnly?: boolean;
+  /**
    * Informational row — rendered but not editable, and carrying no values to
    * save. Used for employees serving notice into a FUTURE month: they belong on
    * the Resignations step visually (HR needs to know they are leaving) but must

@@ -1531,6 +1531,7 @@ export function recommendHeldRelease(
     // gonna make me mistake"). This used to pre-fill every held person with dueNow, so confirming the
     // step paid all of them — October 2026 released four 30 September leavers he never picked. The
     // amount owed now shows as "Due Now"; the box stays 0 until he types a figure into it.
+    if (member?.releaseOnly) row.releaseOnly = true;
     row.recommended = { [field]: 0, part1NotPaid };
     row.values = { [field]: pick(draft?.[field], 0), part1NotPaid };
     rows.push(row);
