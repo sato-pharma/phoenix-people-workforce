@@ -20,6 +20,7 @@ import {
   ZEBRA,
 } from "@/lib/sales/sales-workbook-kit";
 
+import { HELD_RELEASE_ONLY_COMMENT } from "@/lib/payroll/held-release";
 import { HELD_ROW_NOTE } from "@/lib/payroll/payroll-sheet-style";
 
 import type { AssembledRow } from "../assemble.ts";
@@ -49,6 +50,12 @@ export const NAME_HIGHLIGHT = {
 } as const;
 
 export function nameHighlightKey(entry: AssembledRow): keyof typeof NAME_HIGHLIGHT {
+  // A row that only pays an earlier month's held salary is someone who has left (owner, 2026-11-09:
+  // "colour release-only rows as resignation"). Their member is built "regular" on purpose — nothing
+  // of this month is settled for them — so the colour reads the release-only marker instead.
+  if (entry.row.payrollComment === HELD_RELEASE_ONLY_COMMENT && Number(entry.row.workingDays ?? 0) === 0) {
+    return "leaver";
+  }
   if (entry.lifecycle === "leaver") return "leaver";
   if (entry.lifecycle === "joiner") return "joiner";
   return entry.row.paymentMode === "one_part" ? "one_part" : "two_parts";

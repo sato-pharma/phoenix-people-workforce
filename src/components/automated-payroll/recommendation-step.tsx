@@ -997,7 +997,7 @@ export function RecommendationStep({
     // Above "leaver": that a figure was typed by a person rather than derived
     // from data is the more important thing to see on a payroll screen.
     if (row.manual) return "manual";
-    if (row.lifecycle === "leaver") return "leaver";
+    if (row.lifecycle === "leaver" || row.releaseOnly) return "leaver";
     return null;
   };
 

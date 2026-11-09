@@ -441,7 +441,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Held Salary Release",
     subtitle:
-      "Salary an earlier published month withheld and has not paid since — Part 2 withheld, Part 1 when it was never paid, and pay deferred to this month — less anything already settled by hand. Released here, it is paid in THIS month's Part 1 and its bank file — for someone who resigned and whose last pay is only in Part 1, this is where their held salary goes. The recommended figure is everything due now; lower it to pay part now, or set 0 and Part 2's Held Salary Release offers whatever is left. It can never be raised above what is owed. Someone held at Part 1 is not released. If last month's Part 1 was not paid to someone, enter it under Part 1 Not Paid — add them with Add employee if they are not listed. Confirming Part 1 reserves the release against the held month, so it is released once.",
+      "Salary an earlier published month withheld and has not paid since — Part 2 withheld, Part 1 when it was never paid, and pay deferred to this month — less anything already settled by hand. Released here, it is paid in THIS month's Part 1 and its bank file — for someone who resigned and whose last pay is only in Part 1, this is where their held salary goes. Nobody is released unless you enter an amount: Due Now shows what is owed now. Enter it to pay it all, less to pay part, or leave 0 and Part 2's Held Salary Release offers whatever is left. It can never be raised above what is owed. Someone held at Part 1 is not released. If last month's Part 1 was not paid to someone, enter it under Part 1 Not Paid — add them with Add employee if they are not listed. Confirming Part 1 reserves the release against the held month, so it is released once.",
     contextColumns: [
       { key: "Held Month", label: "Held Month" },
       { key: "Part 1 Already Paid", label: "Part 1 Already Paid", money: true },
@@ -452,6 +452,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Released In Payroll", label: "Released In Payroll", money: true },
       { key: "Outstanding", label: "Outstanding", money: true },
       { key: "Not Yet Due", label: "Not Yet Due", money: true },
+      { key: "Due Now", label: "Due Now", money: true },
     ],
     fields: [
       // Saved to its own ledger against last month's run, not to this run's draft row (run-service saveStep).
@@ -622,7 +623,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Held Salary Release",
     subtitle:
-      "Salary an earlier published month withheld and has not paid since — Part 2 withheld, Part 1 when it was never paid, and pay deferred to this month — less anything already settled by hand, and less what this month's Part 1 already released. It is paid in this month's Part 2, in Other Additions, including for people who have since left. The recommended figure is everything due now; deferred pay not due yet is left out until its month. Lower it to pay part now, or set 0 to keep holding; it can never be raised above what is owed. Someone held again this month is not released. If last month's Part 1 was not paid to someone (they were held when it was confirmed), enter it under Part 1 Not Paid — add them with Add employee if they are not listed — and it joins what they are owed. Confirming Part 2 reserves the release against the held month and publishing records it, so it is released once.",
+      "Salary an earlier published month withheld and has not paid since — Part 2 withheld, Part 1 when it was never paid, and pay deferred to this month — less anything already settled by hand, and less what this month's Part 1 already released. It is paid in this month's Part 2, in Other Additions, including for people who have since left. Nobody is released unless you enter an amount: Due Now shows what is owed now, leaving out deferred pay not due until a later month. Enter it to pay it all, less to pay part, or leave 0 to keep holding; it can never be raised above what is owed. Someone held again this month is not released. If last month's Part 1 was not paid to someone (they were held when it was confirmed), enter it under Part 1 Not Paid — add them with Add employee if they are not listed — and it joins what they are owed. Confirming Part 2 reserves the release against the held month and publishing records it, so it is released once.",
     contextColumns: [
       { key: "Held Month", label: "Held Month" },
       { key: "Part 1 Already Paid", label: "Part 1 Already Paid", money: true },
@@ -634,6 +635,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Released In Part 1", label: "Released In Part 1", money: true },
       { key: "Outstanding", label: "Outstanding", money: true },
       { key: "Not Yet Due", label: "Not Yet Due", money: true },
+      { key: "Due Now", label: "Due Now", money: true },
     ],
     fields: [
       // Saved to its own ledger against last month's run, not to this run's draft row (run-service saveStep).

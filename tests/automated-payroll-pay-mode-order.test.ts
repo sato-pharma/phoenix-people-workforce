@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
 import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
+import { HELD_RELEASE_ONLY_COMMENT } from "../src/lib/payroll/held-release.ts";
 import { buildFinanceSheetWorkbook } from "../src/lib/automated-payroll/exports/finance-sheet.ts";
 import {
   buildFullSheetWorkbook,
@@ -121,6 +122,8 @@ export async function runAutomatedPayrollPayModeOrderTests() {
     assembled("A-2", "one_part"),
     assembled("A-9", "two_parts", "joiner"),
     assembled("A-3", "one_part", "leaver"),
+    // Owner, 2026-11-09: a row that only pays an earlier month's held salary is coloured as a resignation.
+    { ...assembled("A-7", "two_parts"), row: { ...assembled("A-7", "two_parts").row, payrollComment: HELD_RELEASE_ONLY_COMMENT, workingDays: 0 } },
   ];
   for (const [variant, sheetName, buffer] of [
     ["full", "Payroll", (await buildFullSheetWorkbook({ run, rows: tinted })) as Buffer],
@@ -142,6 +145,7 @@ export async function runAutomatedPayrollPayModeOrderTests() {
       "A-1": NAME_HIGHLIGHT.two_parts.argb,
       "A-9": NAME_HIGHLIGHT.joiner.argb,
       "A-3": NAME_HIGHLIGHT.leaver.argb,
+      "A-7": NAME_HIGHLIGHT.leaver.argb,
     };
     for (const [hrId, argb] of Object.entries(expected)) {
       const row = byHrId.get(hrId)!;
