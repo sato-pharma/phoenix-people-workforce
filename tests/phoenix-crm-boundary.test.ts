@@ -325,6 +325,8 @@ const ROUTE_GATES: RouteGate[] = [
   get("manager-plans/customers/insight"),
   // "Show visit times" on each customer he plans with (owner, 2026-11-05) — the marks' own gate in the service.
   get("manager-plans/customers/visit-times"),
+  // The week's Excel file (2026-11-09) — "read", then the board's reader rule or the hub's; an export, audited.
+  exportGet("manager-plans/export"),
   { route: "manager-plans/customers/match", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   { route: "manager-plans/customers/locate", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   post("manager-plans/customers/removal", "read"),

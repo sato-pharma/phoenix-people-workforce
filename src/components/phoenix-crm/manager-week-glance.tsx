@@ -28,6 +28,7 @@ import {
   type ManagerGlanceScopeWords,
 } from "@/lib/phoenix-crm/manager-week-glance";
 import type { ManagerPlanBoardView } from "@/lib/phoenix-crm/view-types";
+import { CrmTable } from "@/components/phoenix-crm/ui";
 
 /**
  * A manager's own week at a glance, above the plan board's steps (premium pass, owner, 2026-11-09). Every figure comes
@@ -141,17 +142,16 @@ function DayLabel({ row }: { row: ManagerGlanceDayRow }) {
   );
 }
 
+/** The day, then the morning and the afternoon at an even share. */
+const WEEK_GRID_COLUMNS = ["14%", "43%", "43%"] as const;
+
 function WeekGrid({ canOpen, glance, onOpenHalf, view }: { canOpen: boolean; glance: ManagerGlance; onOpenHalf: (date: string, half: ManagerHalf) => void; view: ManagerPlanBoardView }) {
   const halfOf = (row: ManagerGlanceDayRow, half: ManagerHalf) => row.cells.find((cell) => cell.half === half) ?? null;
   return (
     <div className="grid min-w-0 gap-2">
       <p className={SECTION_TITLE}>The week</p>
-      <table className="hidden w-full table-fixed border-separate border-spacing-y-1.5 text-left lg:table">
-        <colgroup>
-          <col className="w-[14%]" />
-          <col className="w-[43%]" />
-          <col className="w-[43%]" />
-        </colgroup>
+      <div className="hidden min-w-0 lg:block">
+        <CrmTable className="border-separate border-spacing-y-1.5 text-base" columns={WEEK_GRID_COLUMNS} desktopOnly={false}>
         <thead>
           <tr className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
             <th className="pb-1" scope="col">Day</th>
@@ -188,7 +188,8 @@ function WeekGrid({ canOpen, glance, onOpenHalf, view }: { canOpen: boolean; gla
             </tr>
           ))}
         </tbody>
-      </table>
+        </CrmTable>
+      </div>
       <ul className="grid min-w-0 gap-2 lg:hidden">
         {glance.rows.map((row) => (
           <li className="grid min-w-0 gap-1.5 border-t border-slate-100 pt-2 first:border-t-0 first:pt-0" key={row.date}>
@@ -287,9 +288,9 @@ function Customers({ glance }: { glance: ManagerGlance }) {
           <bdi>{repeated}</bdi>
         </p>
       ) : null}
-      {customers.flagged.length > 0 ? (
+      {customers.marked.length > 0 ? (
         <ul className="grid min-w-0 gap-0.5">
-          {customers.flagged.map((entry) => (
+          {customers.marked.map((entry) => (
             <li className="break-words text-xs font-semibold leading-5 text-slate-500" key={`${entry.name}|${entry.flagLabel}`}>
               <bdi>{entry.name}</bdi> · {entry.flagLabel}
             </li>

@@ -324,7 +324,7 @@ function theCustomers() {
   assert.equal(customers.distinct, 4, "Dr. Mona Saleh on two half-days is one customer");
   assert.deepEqual(customers.byGrade, { A: 1, B: 1, C: 1, none: 1 }, "grades count customers, read whatever their case or spaces");
   assert.equal(customers.own, 1);
-  assert.deepEqual(customers.flagged, [{ flagLabel: "No longer on the rep's day", name: "Dr. Samia Lotfy" }]);
+  assert.deepEqual(customers.marked, [{ flagLabel: "No longer on the rep's day", name: "Dr. Samia Lotfy" }]);
   assert.deepEqual(customers.repeated, [{ name: "Dr. Mona Saleh", times: 2 }]);
   assert.equal(managerGlanceCustomerLine(customers), "5 ticks · 4 different customers");
   assert.equal(managerGlanceGradeLine(customers), "1 A · 1 B · 1 C · 1 with no grade");
@@ -350,7 +350,7 @@ function theCustomers() {
   const later = managerGlanceCustomers([
     day("2026-11-09", "Mon", { slots: [slot("AM", "with_rep", { customers: [MONA] }), slot("PM", "with_rep", { customers: [{ ...MONA, flag: "dropped", flagLabel: "No longer on the rep's day" }] })] }),
   ]);
-  assert.deepEqual(later.flagged.map((entry) => entry.name), ["Dr. Mona Saleh"]);
+  assert.deepEqual(later.marked.map((entry) => entry.name), ["Dr. Mona Saleh"]);
 }
 
 function theBar() {
@@ -482,8 +482,9 @@ function theFlatKit() {
   assert.ok(!/shadow-|gradient|blur|glow/.test(panel), "flat colour: no shadow, gradient or glow");
   assert.ok(!/\btruncate\b|line-clamp|text-ellipsis|…/.test(panel), "no ellipsis");
   assert.ok(!/overflow-x-auto|min-w-\[/.test(panel), "never a sideways scroll");
-  assert.ok(panel.includes("table-fixed") && panel.includes("lg:hidden"), "a fixed table on a desktop, cards on a phone");
-  const widths = [...panel.matchAll(/<col className="w-\[(\d+)%\]"/g)].map((match) => Number(match[1]));
+  assert.ok(panel.includes("<CrmTable ") && !panel.includes("<table") && panel.includes("lg:hidden"), "a fixed table on a desktop, through the module's CrmTable (w-full table-fixed and its colgroup), and cards on a phone");
+  const widths = [...(panel.match(/const WEEK_GRID_COLUMNS = \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"(\d+)%"/g)].map((match) => Number(match[1]));
+  assert.equal(widths.length, 3, "the day, the morning and the afternoon");
   assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "the columns add up to 100%");
   assert.ok(panel.includes("managerWeekGlance(view)"), "every figure comes from the lib");
   const strings = [...panel.matchAll(/>([^<>{}]+)</g)].map((match) => match[1]).join(" ");
@@ -805,7 +806,7 @@ async function theDistrictManagersOwnWeek() {
   assert.equal(customers.distinct, 4, "Dr. Mona Saleh twice is one; the others once each");
   assert.equal(customers.own, 1);
   assert.deepEqual(customers.repeated, [{ name: "Dr. Mona Saleh", times: 2 }]);
-  assert.deepEqual(customers.flagged, [], "nothing flagged on this week");
+  assert.deepEqual(customers.marked, [], "nothing marked on this week");
   assert.equal(managerGlanceGradeLine(customers), "1 A · 1 B · 1 C · 1 with no grade");
   // Her Send step: every coming half, Wednesday PM going empty.
   assert.deepEqual(managerSendTally(view.days, () => null).emptyHalves, ["Wednesday 11 November PM"]);

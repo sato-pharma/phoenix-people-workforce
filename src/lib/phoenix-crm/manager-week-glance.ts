@@ -1,4 +1,4 @@
-import { MANAGER_SLOT_KINDS, type ManagerHalf, type ManagerSlotKind } from "@/lib/phoenix-crm/manager-plan-rules";
+import { MANAGER_SLOT_KINDS, managerCustomerFlagLabel, type ManagerHalf, type ManagerSlotKind } from "@/lib/phoenix-crm/manager-plan-rules";
 import type { DistrictManagerDay, ManagerBoardDay, ManagerBoardScope, ManagerBoardSlot, ManagerBoardSlotCustomer, ManagerPlanBoardView } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -224,8 +224,8 @@ export type ManagerGlanceCustomers = {
   byGrade: Record<ManagerGlanceGrade, number>;
   /** Different customers from Manager's own list. */
   own: number;
-  /** Different customers the board flags (no longer on the rep's day, off the list). */
-  flagged: Array<{ name: string; flagLabel: string }>;
+  /** Different customers the board marks (no longer on the rep's day, not sent), each with the board's own words. */
+  marked: Array<{ name: string; flagLabel: string }>;
   /** Ticked on more than one half-day, most first, then by name. */
   repeated: Array<{ name: string; times: number }>;
 };
@@ -253,18 +253,18 @@ export function managerGlanceCustomers(days: ReadonlyArray<Pick<ManagerBoardDay,
   }
   const byGrade: Record<ManagerGlanceGrade, number> = { A: 0, B: 0, C: 0, none: 0 };
   let own = 0;
-  const flagged: ManagerGlanceCustomers["flagged"] = [];
+  const marked: ManagerGlanceCustomers["marked"] = [];
   for (const { customer } of byKey.values()) {
     byGrade[managerGlanceGrade(customer.grade)] += 1;
     if (customer.own) own += 1;
-    if (customer.flag) flagged.push({ flagLabel: customer.flagLabel ?? "Flagged", name: customer.name });
+    if (customer.flag) marked.push({ flagLabel: customer.flagLabel ?? managerCustomerFlagLabel(customer.flag), name: customer.name });
   }
-  flagged.sort((left, right) => left.name.localeCompare(right.name));
+  marked.sort((left, right) => left.name.localeCompare(right.name));
   const repeated = [...byKey.values()]
     .filter((entry) => entry.times > 1)
     .map((entry) => ({ name: entry.customer.name, times: entry.times }))
     .sort((left, right) => right.times - left.times || left.name.localeCompare(right.name));
-  return { byGrade, distinct: byKey.size, flagged, own, repeated, ticked };
+  return { byGrade, distinct: byKey.size, marked, own, repeated, ticked };
 }
 
 // ── The people and the districts ───────────────────────────────────────────────────────────────
