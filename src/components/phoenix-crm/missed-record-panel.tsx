@@ -26,6 +26,7 @@ import { CompanyPicker } from "@/components/phoenix-crm/visit-company-picker";
 import { DAY_ACTIVITY_NOTE_MAX, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { MISSED_RECORD_MARK, MISSED_VISIT_KIND_LABELS, type MissedVisitKind } from "@/lib/phoenix-crm/missed-records";
+import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, EnteredMissedVisit, MissedRecordCustomer, MissedRecordForm } from "@/lib/phoenix-crm/view-types";
 import { COMPANY_MOST, companyToStorage } from "@/lib/phoenix-crm/visit-company";
@@ -103,10 +104,8 @@ function CustomerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState(PAGE);
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return needle ? customers.filter((customer) => customer.name.toLowerCase().includes(needle)) : customers;
-  }, [customers, query]);
+  // Arabic spelling folded on both sides: مستشفي typed with ي finds مستشفى (owner, 2026-11-10).
+  const matches = useMemo(() => customers.filter((customer) => foldedWordsMatch(query, [customer.name])), [customers, query]);
   const visible = matches.slice(0, shown);
 
   return (
