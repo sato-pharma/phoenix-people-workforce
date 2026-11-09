@@ -9,6 +9,7 @@ import {
   type HeldBalance,
 } from "../src/lib/automated-payroll/held-settlements.ts";
 import {
+  recommendHeldRelease,
   releaseOnlyMember,
   releaseOnlyMembersFor,
   type PopulationMember,
@@ -455,6 +456,32 @@ export function runAutomatedPayrollHeldReleaseTests() {
     /releaseOnlyMembers,/,
     `${path}: every sheet finance executes carries the leavers' releases`,
   );
+
+  // ---- NOTHING IS RELEASED UNLESS HR CHOOSES IT (owner, 2026-11-09) ------------------------------
+  //
+  // "only who i choose because u were gonna make me mistake": the step used to pre-fill every held
+  // person with everything due, so confirming it paid people he never picked. The box starts at 0,
+  // what is owed shows as Due Now, and a figure he did enter is kept.
+  const chooseBalances = new Map([["b2", [balance("run-sep", 9, 7265)]]]);
+  const chooseDirectory = new Map([["b2", employee("B-2")]]);
+  for (const part of [1, 2] as const) {
+    const field = part === 1 ? "heldReleaseP1Value" : "heldReleaseValue";
+    const [untouched] = recommendHeldRelease([], chooseDirectory, new Map(), chooseBalances, OCTOBER, new Map(), part);
+    assert.ok(untouched, `Part ${part}: a held person is still listed`);
+    assert.equal(untouched.values[field], 0, `Part ${part}: nobody is released until HR enters an amount`);
+    assert.equal(untouched.recommended[field], 0, `Part ${part}: the system recommends no release on its own`);
+    assert.equal(untouched.context["Due Now"], 7265, `Part ${part}: what is owed now is shown, so HR can choose it`);
+    const chosen = recommendHeldRelease(
+      [],
+      chooseDirectory,
+      new Map([["b2", draft("B-2", { [field]: 1183 })]]),
+      chooseBalances,
+      OCTOBER,
+      new Map(),
+      part,
+    )[0];
+    assert.equal(chosen?.values[field], 1183, `Part ${part}: an amount HR entered is kept`);
+  }
 }
 
 function statutoryRecord(overrides: Partial<SalaryRecord>): SalaryRecord {
