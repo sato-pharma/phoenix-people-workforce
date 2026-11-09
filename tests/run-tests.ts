@@ -1681,6 +1681,7 @@ import { runAutomatedPayrollSettlementAndHeldRecordTests } from "./automated-pay
 import { runAutomatedPayrollHeldReleaseTests } from "./automated-payroll-held-release.test.ts";
 import { runAutomatedPayrollPayDeferralTests } from "./automated-payroll-pay-deferral.test.ts";
 import { runAutomatedPayrollPart1ReleaseDeferralTests } from "./automated-payroll-part1-release-deferral.test.ts";
+import { runAutomatedPayrollHeldEnteredTests } from "./automated-payroll-held-entered.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
 import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
 import { runAutomatedPayrollSettlementSummaryTests } from "./automated-payroll-settlement-summary.test.ts";
@@ -3586,6 +3587,10 @@ await runTest(
 await runTest(
   "automated payroll: Held Salary Release and Defer Pay in Part 1 are paid or taken off the First Part only, and Part 2 is left alone",
   runAutomatedPayrollPart1ReleaseDeferralTests,
+);
+await runTest(
+  "automated payroll: a held amount HR enters counts only for a month that kept the count alone, and never doubles a recorded one",
+  runAutomatedPayrollHeldEnteredTests,
 );
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);
