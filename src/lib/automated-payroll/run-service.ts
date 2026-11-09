@@ -105,6 +105,8 @@ import {
   monthKeyAfter,
   outstandingHeldByEmployee,
   part1CorrectionsForRun,
+  enteredHeldAddedInRun,
+  loadEnteredHeld,
   previousPublishedRun,
   frozenPart1ForRun,
   recordHeldReleases,
@@ -767,6 +769,7 @@ async function heldReleaseInputs(
   heldBalances?: Awaited<ReturnType<typeof outstandingHeldByEmployee>>;
   directory?: typeof directory;
   part1Corrections?: Map<string, number>;
+  addedInRun?: Map<string, number>;
   carryForwardByCompact?: Map<string, number>;
 }> {
   if (stepKey === "p2_pay_deferral") return { carryForwardByCompact: await outstandingCarryForwardFor(runId) };
@@ -776,6 +779,7 @@ async function heldReleaseInputs(
     heldBalances: await outstandingHeldByEmployee(runId),
     directory,
     part1Corrections: previous ? await part1CorrectionsForRun(previous.id) : new Map(),
+    addedInRun: enteredHeldAddedInRun(await loadEnteredHeld(), runId),
   };
 }
 

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  enteredHeldAddedInRun,
   heldBalancesForRun,
   payrollReleasedByHeldMonth,
   type EnteredHeld,
@@ -39,6 +40,7 @@ function entered(overrides: Partial<EnteredHeld> = {}): EnteredHeld {
     name: "Ahmed Helal",
     amount: 9800,
     note: "July sheet, held after resignation",
+    recordedInRunId: "run-oct",
     recordedBy: "B-10",
     updatedAt: "2026-11-09T08:00:00.000Z",
     ...overrides,
@@ -65,6 +67,18 @@ function settlement(amount: number): HeldSettlement {
 const COUNT_ONLY = { batchId: "batch-jul", heldExcluded: 2, publishedCount: 98 } as Record<string, unknown>;
 
 export function runAutomatedPayrollHeldEnteredTests() {
+  // ---- WHAT HR ADDED IN THIS RUN (owner, 2026-11-09: "at least what I add only") -------------------
+  // Held Salary Release pre-fills only amounts entered while working in this run, summed per person.
+  const addedInRun = enteredHeldAddedInRun(
+    [
+      entered({ amount: 7200 }),
+      entered({ heldRunId: AUGUST, amount: 2201 }),
+      entered({ hrId: "B-4", compact: "b4", amount: 5000, recordedInRunId: "run-sep" }),
+    ],
+    "run-oct",
+  );
+  assert.deepEqual([...addedInRun], [["b3", 9401]], "only this run's entries, July and August summed for Ahmed Helal");
+
   // ---- (a) A COUNT-ONLY RUN OWES WHAT HR ENTERED ---------------------------------------------------
   const released = payrollReleasedByHeldMonth([
     { payingRunId: "run-oct", payingRunPhase: "published", heldRunId: JULY, compact: "b3", amount: 1500 },

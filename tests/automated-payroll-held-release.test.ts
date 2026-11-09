@@ -482,6 +482,28 @@ export function runAutomatedPayrollHeldReleaseTests() {
       part,
     )[0];
     assert.equal(chosen?.values[field], 1183, `Part ${part}: an amount HR entered is kept`);
+
+    // "at least what I add only": a held amount HR added while working in this run starts in the box,
+    // never above what is due now; everyone else stays at 0, and a figure already saved still wins.
+    const addedInRun = new Map([["b2", 9401]]);
+    const added = recommendHeldRelease([], chooseDirectory, new Map(), chooseBalances, OCTOBER, new Map(), part, addedInRun)[0];
+    assert.equal(added?.values[field], 7265, `Part ${part}: what HR added is pre-filled, capped at Due Now`);
+    assert.equal(added?.recommended[field], 7265, `Part ${part}: and recommended, so confirming the step releases it`);
+    const addedSmall = recommendHeldRelease([], chooseDirectory, new Map(), chooseBalances, OCTOBER, new Map(), part, new Map([["b2", 2201]]))[0];
+    assert.equal(addedSmall?.values[field], 2201, `Part ${part}: only the added amount, not everything owed`);
+    const otherPerson = recommendHeldRelease([], chooseDirectory, new Map(), chooseBalances, OCTOBER, new Map(), part, new Map([["b9", 5000]]))[0];
+    assert.equal(otherPerson?.values[field], 0, `Part ${part}: someone HR did not add is still not released`);
+    const savedZero = recommendHeldRelease(
+      [],
+      chooseDirectory,
+      new Map([["b2", draft("B-2", { [field]: 0 })]]),
+      chooseBalances,
+      OCTOBER,
+      new Map(),
+      part,
+      addedInRun,
+    )[0];
+    assert.equal(savedZero?.values[field], 0, `Part ${part}: a 0 HR saved is kept`);
   }
 }
 
