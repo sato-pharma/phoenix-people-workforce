@@ -69,6 +69,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   crm_contact_list_sync: true,
   crm_kpis_export: true,
   crm_weekly_sheet_export: true,
+  crm_team_visits_export: true,
   crm_master_export: true,
   crm_phoenix_team_start: true,
   crm_plan_sync: true,

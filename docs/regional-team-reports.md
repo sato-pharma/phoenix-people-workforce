@@ -49,6 +49,10 @@ Dashboards row's "Region Plans" included. `/employee-portals/plans` is the old f
   leave" notes beside each rep) and his approval view of a district manager's week; his own week stays in his world.
 - **No location column is selected.** The far-visit and place-vs-actual evidence is not the Regional Sales
   Manager's (`readsPlaceVsActual`).
+- **The premium pass (9 November 2026)** added a filter, the Excel download (`/api/crm/team-visits/export`), the
+  teams side by side, today against yesterday at the same time, when the visits were saved, the district managers'
+  own visits, the reps to look at, and a day strip per rep. Vacant seats moved to one line under each heading.
+  Account: `docs/team-visits-report.md`.
 
 ## Chain visits on the plans
 

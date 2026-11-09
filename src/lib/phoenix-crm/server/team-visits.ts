@@ -46,6 +46,11 @@ export type TeamVisitTime = {
   customer: string | null;
   /** The instant, for sorting. */
   at: string | null;
+  /**
+   * The visit was saved to a customer nobody has validated yet: real work, listed with its time, counted in none of
+   * the three figures. The square tags it so the reader can tell which of the times the "waiting" figure means.
+   */
+  waiting: boolean;
 };
 
 export type TeamVisitDay = {
@@ -65,8 +70,9 @@ export type TeamVisitDay = {
 
 export type TeamVisitRep = {
   seatId: string;
+  /** "Seat is vacant" when nobody sits in it — then `vacant` is true and the seat is listed by territory alone. */
   person: string;
-  /** Nobody sits in the seat — the row wears a light colour of its own (owner, 2026-11-09). */
+  /** A rep seat with nobody in it: never a rep, never "no visits saved"; the row wears a light colour of its own (owner, 2026-11-09). */
   vacant: boolean;
   /** `employees.hire_date` of whoever sits in the seat (`YYYY-MM-DD`), printed "Hired 1 Nov 2026" (owner, 2026-11-09). */
   hireDates: string[];
@@ -167,7 +173,7 @@ export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>, customerNames: R
     const copied = Boolean(row.imported_from_ireports360_at);
     const list = listOf(row.list_type);
     const customer = (list === "Pharmacy" ? row.pharmacy_name?.trim() : null) || (row.customer_id ? customerNames.get(row.customer_id) : null) || row.pharmacy_name?.trim() || null;
-    day.times.push({ at: copied ? null : row.captured_at, customer, list, savedAt: copied ? null : cairoTimeOnly(row.captured_at) });
+    day.times.push({ at: copied ? null : row.captured_at, customer, list, savedAt: copied ? null : cairoTimeOnly(row.captured_at), waiting: row.customer_validated !== true });
     if (row.customer_validated !== true) {
       day.waiting += 1;
       continue;
@@ -422,6 +428,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
             customer: visit.customerName?.trim() || null,
             list: visit.bucket === "AM" ? "AM" : visit.bucket === "PM" ? "PM" : "Pharmacy",
             savedAt: cairoTimeOnly(visit.loggedAt),
+            waiting: false,
           });
         }
         day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));

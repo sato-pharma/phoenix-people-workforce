@@ -223,6 +223,8 @@ export type AuditEntityType =
   // The KPIs board downloaded as a workbook: every rep in the viewer's scope with his hire date.
   | "crm_kpis_export"
   | "crm_weekly_sheet_export"
+  // Visits — Yesterday and Today downloaded as a workbook: every rep under the Regional Sales Manager, each visit's time.
+  | "crm_team_visits_export"
   // Pulling the mobile numbers behind the organogram export. The only route in the module
   // that hands back personal contact details in bulk, so who took the list is recorded.
   | "organogram_contact_export"
