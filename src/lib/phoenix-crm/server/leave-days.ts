@@ -136,3 +136,35 @@ export async function loadSeatsDaysOff(seats: readonly OrgSeat[], range: { from:
   }
   return out;
 }
+
+/**
+ * Approved leave for many territories, by its own name, half days included — `seatId → (day → "Annual Vacation"
+ * or "Annual Vacation (half day)")` — for Visits — Yesterday and Today, which prints it in the day's square
+ * instead of visits (owner, 2026-11-09: "if vacation put it"). Unlike `loadSeatsDaysOff` a failed read is SAID:
+ * `unread: true`, and the screen says so instead of reading the day as worked.
+ */
+export async function loadSeatsLeaveLabels(
+  seats: readonly OrgSeat[],
+  range: { from: string; to: string },
+): Promise<{ days: Map<string, Map<string, string>>; unread: boolean }> {
+  const days = new Map<string, Map<string, string>>();
+  const seatsByHrId = seatsByOccupant(seats);
+  if (seatsByHrId.size === 0) return { days, unread: false };
+  try {
+    for (const row of await loadApprovedLeaveDays(seatsByHrId.keys(), range)) {
+      for (const seatId of seatsByHrId.get(personKey(row.hrId) ?? "") ?? []) {
+        const held = days.get(seatId) ?? new Map<string, string>();
+        // A full day outranks a half day of the same date.
+        if (!held.has(row.day) || row.fullDay) held.set(row.day, row.fullDay ? row.typeLabel : `${row.typeLabel} (half day)`);
+        days.set(seatId, held);
+      }
+    }
+    return { days, unread: false };
+  } catch (error) {
+    logError("Phoenix CRM: approved leave could not be read for Visits — Yesterday and Today", {
+      error,
+      labels: { event: "phoenix_crm_team_visits_leave_unread" },
+    });
+    return { days: new Map(), unread: true };
+  }
+}

@@ -10,9 +10,9 @@ import {
   TeamVisitsRollupPanel,
   TeamVisitsToolbar,
 } from "@/components/crm/regional/team-visits-panels";
-import { cairoDate } from "@/lib/format/cairo-datetime";
+import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
 import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
-import type { TeamVisitDay, TeamVisitDistrict, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
+import type { TeamVisitDay, TeamVisitDistrict, TeamVisitManagerDay, TeamVisitRep, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
 import {
   filterTeamVisitReps,
   repsWord,
@@ -31,8 +31,6 @@ import {
   teamVisitTeamRollup,
   teamVisitTimeline,
   teamVisitTimelineLine,
-  teamVisitVacantLine,
-  teamVisitVacantSeats,
   teamVisitWaitingLine,
   type TeamVisitDayKey,
   type TeamVisitShow,
@@ -48,8 +46,8 @@ import {
  * single component"): a filter and the Excel download on top, four tiles, the teams side by side, when the visits
  * were saved, and the reps to look at — every figure from `team-visits-summary.ts`, the arithmetic the rows and the
  * file read. Each day's square adds the first and last saved time, and tags the visits still waiting for
- * validation, so the "waiting" figure points at real rows. A vacant seat is one line under its team's heading,
- * never a row of zeros.
+ * validation, so the "waiting" figure points at real rows. A vacant seat keeps its row in a light colour of its own
+ * and says it is vacant, never a row of zeros.
  */
 
 /**
@@ -60,6 +58,20 @@ import {
 const MANAGER_ROW = "border-l-[3px] border-l-sky-700 bg-sky-50";
 const MANAGER_NAME = "text-phx-xs font-black text-sky-900";
 const MANAGER_NOTE = "text-phx-2xs font-semibold text-sky-800";
+
+/**
+ * A vacant seat — a rep seat or a district manager seat with nobody in it — wears a light colour of its own (owner,
+ * 2026-11-09: "if a seat a vacant color in light color"): a flat pale amber ground, the name in amber.
+ */
+const VACANT_ROW = "bg-amber-50";
+const VACANT_NAME = "text-phx-xs font-black text-amber-800";
+
+/** "Hired 1 Nov 2026", the KPIs pages' own words (owner, 2026-11-09: "also show hiring date"); nothing when unknown. */
+function Hired({ dates }: { dates: ReadonlyArray<string | null> }) {
+  const shown = dates.flatMap((date) => (date && /^\d{4}-\d{2}-\d{2}/.test(date) ? [utcDate(date.slice(0, 10))] : []));
+  if (shown.length === 0) return null;
+  return <p className="text-phx-2xs tabular-nums text-slate-500">Hired {shown.join(" · ")}</p>;
+}
 
 function dayLabel(iso: string): string {
   return cairoDate(`${iso}T12:00:00Z`);
@@ -140,14 +152,47 @@ function Times({ day }: { day: TeamVisitDay }) {
 function RepsTotal({ day }: { day: TeamVisitDay }) {
   return (
     <div className="mb-2 border-b border-sky-200 pb-2">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Reps&apos; total · {day.am + day.pm} doctor visits</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">All reps together · {day.am + day.pm} doctor visits</p>
       <Figures day={day} />
     </div>
   );
 }
 
+/**
+ * Was the district manager's day double or single — double with whom, single where (owner, 2026-11-09). Read from
+ * his own week; a week not sent yet says so, because the day may still change.
+ */
+function ManagerDayPlan({ day }: { day: TeamVisitManagerDay }) {
+  return (
+    <div className="mb-2 border-b border-sky-200 pb-2">
+      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Day planned · {day.headline}</p>
+      {day.halves.map((line) => (
+        <p className="break-words text-phx-2xs font-semibold text-slate-900" key={line}>{line}</p>
+      ))}
+      {day.unsent ? <p className="text-phx-2xs font-semibold text-amber-700">Plan not sent yet · {day.unsent}</p> : null}
+    </div>
+  );
+}
+
 function OwnLabel() {
-  return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Own visits</p>;
+  return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Visits made alone · not added to any rep</p>;
+}
+
+/**
+ * Leave and a recorded day activity (Admin work, Training…) are printed INSTEAD of visits (owner, 2026-11-09: "if a
+ * day for dm or rep has admin work put it instead of visits and if vacation put it"). A day with visits as well —
+ * a half-day leave, a half-day meeting — prints both, the day's reason first.
+ */
+function Away({ lines }: { lines: readonly string[] }) {
+  return (
+    <div className="grid gap-0.5">
+      {lines.map((line) => (
+        <p className="break-words border-l-[3px] border-l-violet-700 bg-violet-50 px-1.5 py-0.5 text-phx-xs font-black text-violet-900" key={line}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -156,12 +201,13 @@ function OwnLabel() {
  */
 function OwnDay({ day }: { day: TeamVisitDay }) {
   if (day.times.length === 0 && day.am + day.pm + day.pharmacies === 0) {
-    return <p className="text-phx-2xs font-semibold text-sky-800">Own visits · none saved</p>;
+    return <p className="text-phx-2xs font-semibold text-sky-800">Visits made alone · none saved</p>;
   }
+  // The manager's leave or day activity heads the cell already, so it is not printed a second time here.
   return (
     <>
       <OwnLabel />
-      <DayCell day={day} href={null} />
+      <DayCell day={{ ...day, away: [] }} href={null} />
     </>
   );
 }
@@ -225,8 +271,18 @@ function FoldedTimes({ day }: { day: TeamVisitDay }) {
 }
 
 function DayCell({ day, fold = false, href, pace = null }: { day: TeamVisitDay; fold?: boolean; href: string | null; pace?: { today: number; yesterdayBy: number } | null }) {
+  const away = day.away ?? [];
+  const worked = day.am + day.pm + day.pharmacies + day.waiting > 0 || day.times.length > 0;
+  if (away.length > 0 && !worked) {
+    return (
+      <div className="min-w-0">
+        <Away lines={away} />
+      </div>
+    );
+  }
   return (
     <div className="min-w-0">
+      {away.length > 0 ? <Away lines={away} /> : null}
       <Figures day={day} />
       <Timeline day={day} />
       <RepPaceLine pace={pace} />
@@ -241,17 +297,32 @@ function DayCell({ day, fold = false, href, pace = null }: { day: TeamVisitDay; 
   );
 }
 
-/** A district manager's phone card: the reps' total each day, then the manager's own visits, apart. */
+/**
+ * A district manager's cell, one day, on the desktop row and the phone card alike: the day's leave or recorded
+ * activity first, then the day planned (double with whom, single where), the reps all together, and the visits the
+ * manager made alone, apart.
+ */
 function ManagerCells({ district, day }: { district: TeamVisitDistrict; day: TeamVisitDayKey }) {
+  const away = district.managerOwn?.[day].away ?? [];
   return (
     <>
-      <RepsTotal day={district.repsTotal[day]} />
+      {away.length ? <div className="mb-2"><Away lines={away} /></div> : null}
+      {district.managerDay ? (day === "today" ? <ManagerDayPlan day={district.managerDay.today} /> : <ManagerDayPlan day={district.managerDay.yesterday} />) : null}
+      {day === "today" ? <RepsTotal day={district.repsTotal.today} /> : <RepsTotal day={district.repsTotal.yesterday} />}
       {district.managerOwn ? <OwnDay day={district.managerOwn[day]} /> : null}
     </>
   );
 }
 
-const MANAGER_NOTE_TEXT = "District manager · the reps' total, then own visits, counted in no rep's figure";
+/** What a vacant seat's row says in place of the two days — there is no rep, so there is nothing to count. */
+const TEAM_VISIT_VACANT_CELL = "Seat is vacant · nobody to count on either day";
+
+/** A team's vacant seats, by territory, for the light-coloured rows after the reps. */
+function teamVisitVacantRows(reps: readonly TeamVisitRep[]): TeamVisitRep[] {
+  return reps.filter((rep) => rep.vacant).sort((left, right) => left.territory.localeCompare(right.territory));
+}
+
+const MANAGER_NOTE_TEXT = "District manager";
 const DAY_HEAD = "text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 export function TeamVisitsView({
@@ -311,16 +382,23 @@ export function TeamVisitsView({
       <TeamVisitsManagersPanel report={report} />
       <TeamVisitsAttentionPanel day={day} report={report} show={show} />
       <TeamVisitsJumpList report={report} />
+      {report.leaveUnread || report.activitiesUnread ? (
+        <p className="border border-amber-300 bg-amber-50 p-3 text-phx-xs font-semibold text-amber-900">
+          {report.leaveUnread ? "Approved leave could not be read just now, so a day on leave may show as no visits. " : ""}
+          {report.activitiesUnread ? "Recorded admin work and other day activities could not be read just now." : ""}
+        </p>
+      ) : null}
       {report.districts.length === 0 ? (
         <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No reps under your district managers yet.</p>
       ) : null}
       {report.districts.map((district) => {
         const reps = sortTeamVisitReps(filterTeamVisitReps(district.reps, show, day), sort, day);
-        const vacant = teamVisitVacantLine(teamVisitVacantSeats(district));
+        // A vacant seat keeps its row, in its own light colour (owner, 2026-11-09), after the reps and with no
+        // figures — never a row of zeros. A filter lists reps only, so it leaves the vacant rows out.
+        const vacantRows = filtered ? [] : teamVisitVacantRows(district.reps);
         return (
           <div className="scroll-mt-4 border border-slate-200" id={teamVisitDistrictAnchor(district)} key={`${district.regionName}|${district.districtName}|${district.managerName}`}>
             <KpiSection description={regionGroupCaption(district.reps.length, district.vacantSeats)} title={regionManagerTitle(district.regionName, district.managerName)}>
-              {vacant ? <p className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-2xs font-semibold text-slate-600">{vacant}</p> : null}
               {filtered ? (
                 <p className="border-b border-slate-200 bg-white px-4 py-2 text-phx-2xs text-slate-600">
                   {TEAM_VISIT_SHOW_LABEL[show]} · {teamVisitDayHeading(day).toLowerCase()}: {repsWord(reps.length)} listed. The district manager&apos;s figures are still the whole team&apos;s.
@@ -340,36 +418,46 @@ export function TeamVisitsView({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className={`border-b border-slate-100 align-top ${MANAGER_ROW}`}>
+                  <tr className={`border-b border-slate-100 align-top ${district.managerHrId ? MANAGER_ROW : VACANT_ROW}`}>
                     <td className="break-words px-4 py-3">
-                      <p className={MANAGER_NAME}>{district.managerName}</p>
+                      <p className={district.managerHrId ? MANAGER_NAME : VACANT_NAME}>{district.managerName}</p>
+                      <Hired dates={[district.managerHireDate]} />
                       <p className={MANAGER_NOTE}>{MANAGER_NOTE_TEXT}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <RepsTotal day={district.repsTotal.yesterday} />
-                      {district.managerOwn ? <OwnDay day={district.managerOwn.yesterday} /> : null}
+                      <ManagerCells day="yesterday" district={district} />
                     </td>
                     <td className="px-4 py-3">
-                      <RepsTotal day={district.repsTotal.today} />
-                      {district.managerOwn ? <OwnDay day={district.managerOwn.today} /> : null}
+                      <ManagerCells day="today" district={district} />
                     </td>
                   </tr>
                   {reps.map((rep) => (
                     <tr className="scroll-mt-4 border-b border-slate-100 align-top last:border-b-0" id={teamVisitRepAnchor(rep.seatId, "row")} key={rep.seatId}>
                       <td className="break-words px-4 py-3">
                         <p className="text-phx-xs font-black text-slate-900">{rep.person}</p>
+                        <Hired dates={rep.hireDates} />
                         <p className="text-phx-2xs text-slate-500">{rep.territory}</p>
                       </td>
                       <td className="px-4 py-3"><DayCell day={rep.yesterday} href={dayHref(rep.seatId, report.yesterday)} /></td>
                       <td className="px-4 py-3"><DayCell day={rep.today} href={dayHref(rep.seatId, report.today)} pace={paceOf(rep)} /></td>
                     </tr>
                   ))}
+                  {vacantRows.map((rep) => (
+                    <tr className={`border-b border-slate-100 align-top last:border-b-0 ${rep.vacant ? VACANT_ROW : ""}`} key={rep.seatId}>
+                      <td className="break-words px-4 py-3">
+                        <p className={rep.vacant ? VACANT_NAME : "text-phx-xs font-black text-slate-900"}>{rep.person}</p>
+                        <p className="text-phx-2xs text-slate-500">{rep.territory}</p>
+                      </td>
+                      <td className="px-4 py-3 text-phx-2xs font-semibold text-amber-800" colSpan={2}>{TEAM_VISIT_VACANT_CELL}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
               <div className="grid divide-y divide-slate-100 md:hidden">
-                <div className={`grid gap-2 p-4 ${MANAGER_ROW}`}>
+                <div className={`grid gap-2 p-4 ${district.managerHrId ? MANAGER_ROW : VACANT_ROW}`}>
                   <div>
-                    <p className={MANAGER_NAME}>{district.managerName}</p>
+                    <p className={district.managerHrId ? MANAGER_NAME : VACANT_NAME}>{district.managerName}</p>
+                    <Hired dates={[district.managerHireDate]} />
                     <p className={MANAGER_NOTE}>{MANAGER_NOTE_TEXT}</p>
                   </div>
                   <p className={DAY_HEAD}>Yesterday · {yesterday}</p>
@@ -381,12 +469,20 @@ export function TeamVisitsView({
                   <div className="grid scroll-mt-4 gap-2 p-4" id={teamVisitRepAnchor(rep.seatId, "card")} key={rep.seatId}>
                     <div>
                       <p className="text-phx-xs font-black text-slate-900">{rep.person}</p>
+                      <Hired dates={rep.hireDates} />
                       <p className="text-phx-2xs text-slate-500">{rep.territory}</p>
                     </div>
                     <p className={DAY_HEAD}>Yesterday · {yesterday}</p>
                     <DayCell day={rep.yesterday} fold href={dayHref(rep.seatId, report.yesterday)} />
                     <p className={DAY_HEAD}>Today so far · {today}</p>
                     <DayCell day={rep.today} fold href={dayHref(rep.seatId, report.today)} pace={paceOf(rep)} />
+                  </div>
+                ))}
+                {vacantRows.map((rep) => (
+                  <div className={`grid gap-1 p-4 ${rep.vacant ? VACANT_ROW : ""}`} key={rep.seatId}>
+                    <p className={rep.vacant ? VACANT_NAME : "text-phx-xs font-black text-slate-900"}>{rep.person}</p>
+                    <p className="text-phx-2xs text-slate-500">{rep.territory}</p>
+                    <p className="text-phx-2xs font-semibold text-amber-800">{TEAM_VISIT_VACANT_CELL}</p>
                   </div>
                 ))}
               </div>

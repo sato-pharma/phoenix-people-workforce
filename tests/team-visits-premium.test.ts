@@ -91,11 +91,11 @@ function day(over: Partial<TeamVisitDay> = {}): TeamVisitDay {
 }
 
 function rep(seatId: string, person: string, over: Partial<TeamVisitRep> = {}): TeamVisitRep {
-  return { person, seatId, territory: `${person} territory`, today: day(), vacant: false, yesterday: day(), ...over };
+  return { hireDates: [], person, seatId, territory: `${person} territory`, today: day(), vacant: false, yesterday: day(), ...over };
 }
 
 function vacantSeat(seatId: string, territory: string): TeamVisitRep {
-  return { person: "Seat is vacant", seatId, territory, today: day(), vacant: true, yesterday: day() };
+  return { hireDates: [], person: "Seat is vacant", seatId, territory, today: day(), vacant: true, yesterday: day() };
 }
 
 function district(regionName: string, managerName: string, reps: TeamVisitRep[]): TeamVisitDistrict {
@@ -103,6 +103,8 @@ function district(regionName: string, managerName: string, reps: TeamVisitRep[])
     reps.reduce((total, entry) => ({ ...total, am: total.am + entry[key].am, pharmacies: total.pharmacies + entry[key].pharmacies, pm: total.pm + entry[key].pm, waiting: total.waiting + entry[key].waiting }), day());
   return {
     districtName: `${managerName} district`,
+    managerDay: null,
+    managerHireDate: null,
     managerHrId: `HR-${managerName}`,
     managerName,
     managerOwn: { today: day(), yesterday: day({ am: 1, times: [time("AM", at(9, 15), { customer: "Own hospital" })] }) },
@@ -276,6 +278,9 @@ function repsToLookAt() {
   assert.deepEqual(attention.waitingOnly.map((entry) => entry.person), ["Shahd Mohamed"], "every visit still waiting");
   assert.deepEqual(attention.waiting.map((entry) => `${entry.person}:${entry.waiting}`), ["Momen Fathy:2", "Shahd Mohamed:1"]);
   assert.ok(![...attention.none, ...attention.waitingOnly].some((entry) => entry.person === "Seat is vacant"), "a vacant seat is never a rep to look at");
+  // A rep on approved leave, or on recorded admin work, with nothing saved is accounted for — never "saved nothing".
+  const onLeave = { ...report, districts: [district("Alex-BHR", "Mohamed Eleiwa", [rep("R7", "Sara Leave", { yesterday: day({ away: ["On leave · Annual Vacation"] }) }), rep("R8", "Omar Idle")])] };
+  assert.deepEqual(teamVisitAttention(onLeave, "yesterday").none.map((entry) => entry.person), ["Omar Idle"], "leave is not an empty day");
   assert.equal(attention.none[0].managerName, "Mohamed Eleiwa", "each rep carries the team it sits in");
   assert.equal(teamVisitRepState(report.districts[0].reps[2], day()), "vacant");
   assert.equal(teamVisitRepState(report.districts[0].reps[1], day()), "none");
@@ -427,7 +432,10 @@ function theScreen() {
   assert.ok(view.includes("<TeamVisitsRollupPanel report={report} />") && view.includes("<TeamVisitsHoursPanel report={report} />") && view.includes("<TeamVisitsAttentionPanel day={day} report={report} show={show} />"));
   assert.ok(view.includes("<TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />"));
   assert.ok(view.includes('· Waiting for validation'), "a waiting visit is tagged in the square");
-  assert.ok(view.includes("teamVisitVacantLine(teamVisitVacantSeats(district))"), "vacant seats are one line under the heading");
+  // A vacant seat keeps its row in the light colour (owner, 2026-11-09), after the reps, with no figures to read.
+  assert.ok(view.includes("const vacantRows = filtered ? [] : teamVisitVacantRows(district.reps);"), "vacant seats are their own rows, and a filter lists reps only");
+  assert.equal(view.split("{TEAM_VISIT_VACANT_CELL}").length - 1, 2, "the vacant row and card say the seat is vacant, never a row of zeros");
+  assert.ok(!/vacantRows\.map\(\(rep\) => \([\s\S]{0,600}<DayCell/.test(view), "a vacant row never draws a day's figures");
   assert.ok(view.includes("id={teamVisitDistrictAnchor(district)}"), "each team's section carries the anchor the roll-up links to");
   assert.ok(page.includes("parseTeamVisitShow(params.show)") && page.includes("parseTeamVisitDay(params.day)"), "the page reads the filter strictly");
   assert.ok(panels.includes("href={TEAM_VISITS_EXPORT_HREF}"), "the download sits in the toolbar");

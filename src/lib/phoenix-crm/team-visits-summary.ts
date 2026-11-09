@@ -354,7 +354,8 @@ export function teamVisitAttention(report: Pick<TeamVisitsReport, "districts">, 
       const ref: TeamVisitRepRef = { managerName: district.managerName, person: rep.person, regionName: district.regionName, seatId: rep.seatId, territory: rep.territory };
       const state = teamVisitRepState(rep, rep[day]);
       if (state === "vacant") continue;
-      if (state === "none") none.push(ref);
+      // A day on approved leave or recorded admin work, with nothing saved, is accounted for — never "saved nothing".
+      if (state === "none" && !(rep[day].away?.length)) none.push(ref);
       if (state === "waiting-only") waitingOnly.push(ref);
       if (rep[day].waiting > 0) waiting.push({ ...ref, waiting: rep[day].waiting });
     }

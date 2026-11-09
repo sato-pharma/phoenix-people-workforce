@@ -45,7 +45,7 @@ the counting rules it shares with the other team reports are in `docs/regional-t
 6. **The district managers' own visits.** What each district manager saved in person. These visits are counted in no
    rep's figure and in none of the tiles. A team with nobody in the district manager's seat says so.
 7. **Reps to look at.** For the "Judge by" day, three lists:
-   - reps in a seat who saved nothing;
+   - reps in a seat who saved nothing (a day on approved leave or recorded admin work is accounted for, never here);
    - reps whose every visit is still waiting for validation;
    - every rep with a visit waiting, and how many.
 
@@ -53,9 +53,10 @@ the counting rules it shares with the other team reports are in `docs/regional-t
    (on a phone, to the rep's card), but only when the row is on the page under the current filter.
 8. **The jump list.** One link per team.
 9. **One section per region and district manager**, as before (`groupByRegionAndManager`). The changes in this pass:
-   - Vacant seats are now one line under the heading ("2 vacant seats: Sharkia 1 · Sharkia 2"). They no longer
-     appear as rows of zeros.
-   - When the district manager saved no visits, their own row prints one quiet line, "Own visits · none saved".
+   - Vacant seats keep their rows in a light colour of their own (owner, 9 Nov 2026), after the reps. Each says
+     "Seat is vacant · nobody to count on either day" instead of rows of zeros. A filter lists reps only, so it
+     leaves them out.
+   - When the district manager saved no visits, their own row prints one quiet line, "Visits made alone · none saved".
      Before, it printed "0 AM · 0 PM · 0 Pharmacies" over "No visits saved".
    - Each rep's square adds the first and last saved time and the span between them.
    - Today's square adds what that rep had saved yesterday by this time.
@@ -132,7 +133,7 @@ Flat colour, square corners, hairline borders, no gradient, glow or drop shadow 
 ## Tests
 
 `tests/team-visits-premium.test.ts` is registered in `tests/run-tests.ts`, beside `tests/regional-team-reports.test.ts`,
-which still pins the earlier rules. Twelve of its rules were broken on purpose, and each break fired its own
+which still pins the earlier rules. Thirteen of its rules were broken on purpose, and each break fired its own
 assertion:
 
 - an hour block overlapping the next;
@@ -146,7 +147,8 @@ assertion:
 - a Friday read as a field working day.
 - a vacant seat counted in a team's pace;
 - a vacant seat listed on the "To look at" sheet;
-- a name in "Reps to look at" linking to a row the filter has hidden.
+- a name in "Reps to look at" linking to a row the filter has hidden;
+- a rep on approved leave or recorded admin work listed as "saved nothing".
 
 `orderNoticeAndFold` pins the order, the field-day notice and the phone fold. `paceTeamByTeam` and
 `theWorkbookLooksAndPaces` pin the team-by-team pace and the two sheets that carry the lists and the pace.
