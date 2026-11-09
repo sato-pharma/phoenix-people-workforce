@@ -70,6 +70,34 @@ export async function loadInsuranceWages(): Promise<InsuranceWageMap> {
   return map;
 }
 
+/**
+ * Compact HR ids whose employee record says the company does NOT insure them
+ * (`social_insurance_status = 'no'` — a government secondment, insured through the government).
+ *
+ * Read ONLY by the missing-wage FLAG, never by the filing: the wage alone decides who is filed. A
+ * failed read returns an empty set, so the flag fails toward being shown, never toward hiding one.
+ */
+export async function loadNotCompanyInsured(): Promise<Set<string>> {
+  const set = new Set<string>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const rows = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("employees").select("hr_id,social_insurance_status").eq("social_insurance_status", "no"),
+      "hr_id",
+    );
+    for (const row of rows) {
+      const key = compactHrKey(String(row.hr_id ?? ""));
+      if (key) set.add(key);
+    }
+  } catch (error) {
+    logError("Employee social-insurance status load threw an exception", {
+      labels: { event: "insurance_status_load_threw" },
+      error,
+    });
+  }
+  return set;
+}
+
 /** A usable wage, or null — rejects the non-numbers a hand-edited column can hold. */
 export function usableInsuranceWage(wage: number | null | undefined): number | null {
   if (wage === null || wage === undefined) return null;
