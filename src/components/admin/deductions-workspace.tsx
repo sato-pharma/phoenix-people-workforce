@@ -400,14 +400,14 @@ function DeductionDaysEditor({
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">Days to deduct</p>
             <button
-              className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
               onClick={() => setAll(true)}
               type="button"
             >
               Select all
             </button>
             <button
-              className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
               onClick={() => setAll(false)}
               type="button"
             >
@@ -439,7 +439,7 @@ function DeductionDaysEditor({
               {WEEKDAY_LABELS.map((label, index) => (
                 <div
                   className={[
-                    "px-1 pb-1 text-center text-phx-2xs font-black uppercase tracking-[0.06em]",
+                    "px-1 pb-1 text-center text-phx-sm font-black uppercase tracking-[0.06em]",
                     index === FRIDAY_COLUMN ? "text-orange-500" : "text-slate-400",
                   ].join(" ")}
                   key={label}
@@ -491,7 +491,7 @@ function DeductionDaysEditor({
               on the job title (isFieldWorkforceWeeklyOff), so it is deliberately
               not tinted here rather than asserting a rule that is wrong for half
               the company. */}
-          <p className="text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+          <p className="text-phx-sm font-semibold uppercase tracking-[0.08em] text-slate-400">
             Tickable days are the ones detected · greyed days were not flagged · Friday column tinted
           </p>
         </div>
@@ -535,7 +535,7 @@ function DeductionDaysEditor({
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <button
-            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
             disabled={saving}
             onClick={save}
             type="button"
@@ -543,7 +543,7 @@ function DeductionDaysEditor({
             {saving ? "Saving…" : "Save days"}
           </button>
           <button
-            className="whitespace-nowrap px-2 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            className="whitespace-nowrap px-2 py-1.5 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
             disabled={saving}
             onClick={onClose}
             type="button"
@@ -682,7 +682,7 @@ function StatusBadge({ status }: { status: string | null }) {
             ? "bg-amber-100 text-amber-700"
             : "bg-sky-50 text-sky-700";
   return (
-    <span className={["inline-block rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone].join(" ")}>
+    <span className={["inline-block rounded-full px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]", tone].join(" ")}>
       {label}
     </span>
   );
@@ -764,7 +764,7 @@ function CandidateDecideRow({
             {DECISION_STATUSES.map((status) => (
               <button
                 className={cn(
-                  "border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
+                  "border px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
                   decisionButtonTone(status),
                 )}
                 disabled={submitting}
@@ -776,7 +776,7 @@ function CandidateDecideRow({
               </button>
             ))}
             <button
-              className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
+              className="rounded-sm px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500"
               disabled={submitting}
               onClick={() => setOpen(false)}
               type="button"
@@ -787,7 +787,7 @@ function CandidateDecideRow({
         </div>
       ) : (
         <button
-          className="rounded-sm border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+          className="rounded-sm border border-slate-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
           onClick={() => setOpen(true)}
           type="button"
         >
@@ -923,12 +923,12 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
   if (charged) {
     return (
       <div className="mt-1.5 space-y-1">
-        <span className="inline-block rounded-full bg-sky-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-sky-800">
+        <span className="inline-block rounded-full bg-sky-100 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-sky-800">
           From leave balance · {daysText(charged.days)}
         </span>
         <p className="text-phx-xs text-slate-600">{charged.comment}</p>
         <button
-          className="border border-slate-300 px-2 py-1 text-left text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
+          className="border border-slate-300 px-2 py-1 text-left text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600 disabled:opacity-50"
           disabled={busy}
           onClick={() => send({ action: "return" })}
           type="button"
@@ -945,7 +945,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
     return (
       <div className="mt-1.5">
         <button
-          className="border border-sky-300 px-2 py-1 text-left text-phx-2xs font-black uppercase tracking-[0.08em] text-sky-800 transition hover:border-sky-500 hover:bg-sky-50"
+          className="border border-sky-300 px-2 py-1 text-left text-phx-sm font-black uppercase tracking-[0.08em] text-sky-800 transition hover:border-sky-500 hover:bg-sky-50"
           onClick={openDialog}
           type="button"
         >
@@ -1010,7 +1010,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
       {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
       <div className="flex flex-wrap gap-1.5">
         <button
-          className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+          className="rounded-sm bg-slate-900 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
           disabled={busy || loading || !preview || Boolean(preview.refusal) || !comment.trim()}
           onClick={() => send({ action: "charge", comment })}
           type="button"
@@ -1018,7 +1018,7 @@ function LeaveBalanceControl({ row, onChanged }: { row: CandidateApiRow; onChang
           {busy ? "Saving…" : "Deduct from leave"}
         </button>
         <button
-          className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
+          className="rounded-sm px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500"
           disabled={busy}
           onClick={() => setOpen(false)}
           type="button"
@@ -1048,7 +1048,7 @@ function SameDayBadge({ overlap }: { overlap: SameDayOverlap | undefined }) {
   if (!overlap) return null;
   const days = overlap.dates.map((date) => dayOfMonth(date)).join(", ");
   return (
-    <span className="mb-1 mr-1.5 inline-block rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700">
+    <span className="mb-1 mr-1.5 inline-block rounded-sm border border-red-300 bg-red-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em] text-red-700">
       Same day on another row · {days}
     </span>
   );
@@ -1157,7 +1157,7 @@ function BulkDecideBar({
               ) : null}
               <div className="flex flex-wrap gap-1.5">
                 <button
-                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
                   disabled={running}
                   onClick={() => apply(pendingStatus)}
                   type="button"
@@ -1165,7 +1165,7 @@ function BulkDecideBar({
                   {running ? `Saving ${progress} of ${count}` : `Confirm — ${pendingStatus}`}
                 </button>
                 <button
-                  className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
+                  className="rounded-sm px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500"
                   disabled={running}
                   onClick={() => setPendingStatus(null)}
                   type="button"
@@ -1178,7 +1178,7 @@ function BulkDecideBar({
             <div className="flex flex-wrap gap-1.5">
               {DECISION_STATUSES.map((status) => (
                 <button
-                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                  className="rounded-sm bg-slate-900 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
                   disabled={running}
                   key={status}
                   onClick={() => setPendingStatus(status)}
@@ -1313,19 +1313,19 @@ function PushControl({
   if (row.pushedLineId) {
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-emerald-700">
           <CheckCircle2 className="h-3 w-3" />
           Pushed
         </span>
         <button
-          className="whitespace-nowrap border border-red-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700 transition hover:border-red-500 hover:bg-red-50 disabled:opacity-50"
+          className="whitespace-nowrap border border-red-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-red-700 transition hover:border-red-500 hover:bg-red-50 disabled:opacity-50"
           disabled={busy}
           onClick={withdraw}
           type="button"
         >
           {busy ? "Withdrawing…" : "Withdraw"}
         </button>
-        {error ? <span className="text-phx-2xs font-semibold text-red-700">{error}</span> : null}
+        {error ? <span className="text-phx-sm font-semibold text-red-700">{error}</span> : null}
       </div>
     );
   }
@@ -1339,7 +1339,7 @@ function PushControl({
       <button
         className={cn(
           phxButtonApproveDenseClassName,
-          "inline-flex items-center gap-1 whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
+          "inline-flex items-center gap-1 whitespace-nowrap border px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
         )}
         disabled={busy}
         onClick={push}
@@ -1348,7 +1348,7 @@ function PushControl({
         <UserPlus className="h-3 w-3" />
         {busy ? "Pushing…" : "Push"}
       </button>
-      {error ? <span className="text-phx-2xs font-semibold text-red-700">{error}</span> : null}
+      {error ? <span className="text-phx-sm font-semibold text-red-700">{error}</span> : null}
     </div>
   );
 }
@@ -1556,10 +1556,10 @@ function AddManualDeduction({
                   >
                     <span className="text-xs font-bold text-slate-900">{match.name}</span>
                     {match.jobTitle ? (
-                      <span className="text-phx-2xs text-slate-500">{match.jobTitle}</span>
+                      <span className="text-phx-sm text-slate-500">{match.jobTitle}</span>
                     ) : null}
                     {match.isFinalSettlement ? (
-                      <span className="text-phx-2xs font-bold text-amber-700">
+                      <span className="text-phx-sm font-bold text-amber-700">
                         {`Left ${readableDate(match.lastWorkingDate) ?? "this month"} — final settlement`}
                       </span>
                     ) : null}
@@ -1568,7 +1568,7 @@ function AddManualDeduction({
               ))}
             </ul>
           ) : null}
-          {searching ? <span className="text-phx-2xs font-semibold text-slate-400">Searching…</span> : null}
+          {searching ? <span className="text-phx-sm font-semibold text-slate-400">Searching…</span> : null}
         </label>
 
         <label className="flex flex-col gap-1">
@@ -1624,7 +1624,7 @@ function AddManualDeduction({
         </label>
         <div className="flex items-center gap-1.5">
           <button
-            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
             disabled={saving}
             onClick={submit}
             type="button"
@@ -1632,7 +1632,7 @@ function AddManualDeduction({
             {saving ? "Adding…" : "Add deduction"}
           </button>
           <button
-            className="whitespace-nowrap px-2 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            className="whitespace-nowrap px-2 py-1.5 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
             disabled={saving}
             onClick={() => setOpen(false)}
             type="button"
@@ -1694,7 +1694,7 @@ function TabTotalCell({
     tone === "approve" ? "text-emerald-700" : tone === "warn" ? "text-amber-700" : tone === "danger" ? "text-rose-700" : "text-slate-600";
   return (
     <div className="bg-white px-4 py-2.5">
-      <p className={cn("text-phx-2xs font-black uppercase tracking-[0.1em]", ink)}>{label}</p>
+      <p className={cn("text-phx-sm font-black uppercase tracking-[0.1em]", ink)}>{label}</p>
       <p className="mt-0.5 text-base font-black tabular-nums text-slate-900">{money(value.amount)} EGP</p>
       <p className="text-xs font-semibold text-slate-500">
         {value.count} candidate{value.count === 1 ? "" : "s"}
@@ -1823,7 +1823,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </h2>
         <div className="flex items-center gap-2">
           {!config.requiresApproval ? (
-            <span className="whitespace-nowrap rounded-full bg-phx-warn/20 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-warn-bg">
+            <span className="whitespace-nowrap rounded-full bg-phx-warn/20 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-phx-warn-bg">
               Mandatory unless cleared
             </span>
           ) : null}
@@ -1903,7 +1903,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           </select>
           {search || statusFilter !== "all" ? (
             <button
-              className="whitespace-nowrap px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
+              className="whitespace-nowrap px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
               onClick={() => {
                 setSearch("");
                 setStatusFilter("all");
@@ -1932,7 +1932,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           </label>
           {pendingRows.length > 0 && pendingRows.length < selectableRows.length ? (
             <button
-              className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+              className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
               onClick={() => setSelection(pendingRows.map((row) => row.id))}
               type="button"
             >
@@ -1941,7 +1941,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           ) : null}
           {selectedRows.length > 0 ? (
             <button
-              className="whitespace-nowrap px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
+              className="whitespace-nowrap px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
               onClick={() => setSelection([])}
               type="button"
             >
@@ -2120,7 +2120,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               Pinned by tests/deductions-approved-not-pushed-feedback.test.ts. */}
                           {row.calculationStatus === "requires_review" &&
                           (row.decision?.decisionStatus ?? "Pending") === "Pending" ? (
-                            <span className="mb-1 mr-1.5 inline-block rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-phx-warn">
+                            <span className="mb-1 mr-1.5 inline-block rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em] text-phx-warn">
                               Needs your review
                             </span>
                           ) : null}
@@ -2142,7 +2142,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               ) : (
                                 <>
                                   <button
-                                    className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                                    className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                                     onClick={() => setEditingId(editingId === row.id ? null : row.id)}
                                     type="button"
                                     {...rowDetailToggleProps(`deduction-days-${row.id}`, editingId === row.id)}
@@ -2217,7 +2217,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       Withdraw, until it is pulled back. */}
                   {canDecide && !row.pushedLineId && !row.leaveBalanceCharge ? (
                     <button
-                      className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                      className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                       onClick={() => setEditingId(editingId === row.id ? null : row.id)}
                       type="button"
                     >
@@ -2347,7 +2347,7 @@ function PublicationPanel({
               <XCircle className="h-4 w-4 shrink-0" />
               <span className="break-words">The publish status could not be read, so this screen cannot say whether {monthLabel(monthKey)} is out. {loadError}</span>
               <button
-                className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 hover:border-slate-500"
+                className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 hover:border-slate-500"
                 onClick={reload}
                 type="button"
               >
@@ -2767,7 +2767,7 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
                     type="button"
                   >
                     <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
-                    <span className="whitespace-nowrap text-phx-2xs font-bold text-amber-700">
+                    <span className="whitespace-nowrap text-phx-sm font-bold text-amber-700">
                       {`Left ${readableDate(match.lastWorkingDate) ?? "this month"}`}
                     </span>
                   </button>
@@ -3275,7 +3275,7 @@ export function DeductionsWorkspace({
             {tab.key !== "overview" && tab.key !== "by_employee" && tab.key !== "disputes" && (tabPending?.[tab.key] ?? 0) > 0 ? (
               <span
                 aria-label={`${tabPending?.[tab.key]} awaiting a decision`}
-                className={cn("ml-1.5 inline-block bg-amber-100 px-1.5 py-px text-phx-2xs tabular-nums text-amber-800", adminChipDepthClassName)}
+                className={cn("ml-1.5 inline-block bg-amber-100 px-1.5 py-px text-phx-sm tabular-nums text-amber-800", adminChipDepthClassName)}
               >
                 {tabPending?.[tab.key]}
               </span>

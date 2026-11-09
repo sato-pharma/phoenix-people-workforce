@@ -29,7 +29,7 @@ export async function SlowPagesSection() {
   return <SlowPagesView overview={overview} />;
 }
 
-const headCell = "px-3 py-2 text-left align-bottom text-phx-2xs font-bold uppercase tracking-[0.06em] break-words";
+const headCell = "px-3 py-2 text-left align-bottom text-phx-sm font-bold uppercase tracking-[0.06em] break-words";
 const bodyCell = "px-3 py-2 align-top break-words";
 
 function ms(value: number): string {

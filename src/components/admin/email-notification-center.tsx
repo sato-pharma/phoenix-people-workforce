@@ -306,7 +306,7 @@ export function EmailNotificationCenter({
                     <span className="text-base font-black text-phx-ink">{policy.label}</span>
                     <span
                       className={cn(
-                        "rounded-full px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.14em]",
+                        "rounded-full px-2 py-1 text-phx-sm font-black uppercase tracking-[0.14em]",
                         policy.enabled
                           ? "bg-[#DCFCE7] text-[#166534]"
                           : "bg-phx-paper-2 text-phx-ink-soft",

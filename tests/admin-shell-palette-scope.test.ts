@@ -642,6 +642,22 @@ export async function runAdminShellPaletteScopeTests(): Promise<void> {
     assert.ok(cellSelector.test(".admin-shell td") && weakening.test("border-top-style: hidden !important"), "the cell-border detector must still match what it guards");
     assert.ok(weakening.test("border: none") && !weakening.test("border: 1px solid rgba(249, 115, 22, 0.22) !important"), "the weakening pattern must tell none from the orange hairline");
   }
+
+  // Nothing on an Admin screen is drawn below 11px ("raise the admin screens' fonts too", owner, 2026-11-09). Every
+  // .tsx under src/components/admin is read, so a new screen is held to it as well. The shared design system and
+  // tokens (admin-design-system.tsx, admin-design-tokens.ts) reach 200+ screens beyond Admin and are a decision of
+  // their own, like src/components/ui.
+  {
+    let adminScreens = 0;
+    for (const entry of readdirSync("src/components/admin", { recursive: true, encoding: "utf8" })) {
+      if (!entry.endsWith(".tsx")) continue;
+      const file = `src/components/admin/${entry.replace(/\\/g, "/")}`;
+      adminScreens++;
+      if (file === "src/components/admin/admin-design-system.tsx") continue;
+      assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(readFileSync(file, "utf8")), `${file}: no text below 11px on an Admin screen`);
+    }
+    assert.ok(adminScreens >= 60, `the floor read every Admin screen (${adminScreens})`);
+  }
 }
 
 /** sRGB hex -> OKLCH. Enough precision to compare lightness and classify hue. */
