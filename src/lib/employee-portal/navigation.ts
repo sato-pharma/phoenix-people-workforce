@@ -7,6 +7,7 @@ import { canViewMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-appro
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { isNamedProductionPlanningPerson } from "@/lib/production-planning/access";
+import { canOpenPvTrainingEvidence } from "@/lib/pv-training/access";
 import { isFullOrganogramPinnedHrId } from "@/lib/reports/organogram-pinned-accounts";
 import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
 
@@ -286,6 +287,10 @@ export type EmployeePortalNavVisibility = {
   // than by this row. That under-reports, which is the right direction for a door: the page itself
   // asks the database (resolveProductionPlanningLevel), so this row is UX only.
   showProductionPlanningTab?: boolean;
+  // PV Training Evidence — the signed PV training sheets, for the QPPV's own account alone (owner,
+  // 2026-11-09: "only in Dr. Sama account"). By HR id, never by role: her `Manager` role is shared
+  // with the R&D Manager. The page re-asks the same helper (src/lib/pv-training/access.ts).
+  showPvTrainingEvidenceTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -779,6 +784,8 @@ export function resolveEmployeePortalNavVisibility(
   const showMilestonesTab = canUseEmployeePortalMilestones(resolvedRole);
   // Production Planner — by NAME, never by role (see the field's comment above).
   const showProductionPlanningTab = isNamedProductionPlanningPerson(viewerHrId);
+  // PV Training Evidence — the QPPV alone, by HR id (see the field's comment above).
+  const showPvTrainingEvidenceTab = canOpenPvTrainingEvidence(viewerHrId);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -1212,6 +1219,7 @@ export function resolveEmployeePortalNavVisibility(
     showAreaDirectOrdersTab,
     showMilestonesTab,
     showProductionPlanningTab,
+    showPvTrainingEvidenceTab,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

@@ -2909,6 +2909,7 @@ import { runVacationSickAttachmentsTests } from "./vacation-sick-attachments.tes
 import { runProductionPlanningEngineTests } from "./production-planning-engine.test.ts";
 import { runProductionPlanningAccessTests } from "./production-planning-access.test.ts";
 import { runProductionPlanningStringsTests } from "./production-planning-strings.test.ts";
+import { runPvTrainingEvidenceTests } from "./pv-training-evidence.test.ts";
 import { runProductionPlanningFitsTheScreenTests } from "./production-planning-fits-the-screen.test.ts";
 import { runProductionPlanningWorkbookTests } from "./production-planning-workbook.test.ts";
 import { runProductionPlanningSilentUntilArmedTests } from "./production-planning-silent-until-armed.test.ts";
@@ -11574,6 +11575,10 @@ await runTest(
 await runTest(
   "the Production Planner's Arabic stays GENDERLESS and its digits stay Latin: both primary users are women (Dr. Sahar Khalil and Reham Elwiy), and Arabic marks gender on the imperative and the second person, so every one of the module's 140-odd strings is scanned against a curated deny-list - verbal nouns not imperatives, impersonal passive outcomes, the actor named as a person - with the near misses pinned so a tidy-up cannot break them (the NOUN سجل is allowed where the imperative سجّل is not, and لكل is not caught by a rule aimed at لك); the ar-EG locale appears nowhere outside a comment because it emits ٠١٢٣ and ج.م.; nothing is truncated with an ellipsis; and the sentence under the tiles SAYS the surplus over the ask rather than hiding it",
   runProductionPlanningStringsTests,
+);
+await runTest(
+  "PV Training Evidence opens for the QPPV's own account alone: the door is ONE HR id (A-3) matched in any case, and the R&D Manager who shares her Manager role, the Super Admin and a plain employee are refused; every one of the 30 scanned pages has exactly one scan, kept in assets/ and never public/ because each carries real signatures, and next.config.ts traces them into the build; the owner's own example, Nahed Hatab, brings up serial 01/2026 and also 03/2026; the crossed-out row is not offered; and the portal sidebar reads the gate from the data-free access file so no attendee name ships to the whole company",
+  runPvTrainingEvidenceTests,
 );
 await runTest(
   "the Production Planner fits the screen in BOTH its shells, pinned at birth rather than after a defect: the width that binds is 669px and not 1280, because the admin sidebar is `hidden lg:flex` at 292px, so all four tables are table-fixed with a colgroup of exactly four columns totalling 100% and each is paired with a `lg:hidden` card list; no overflow-x in any of the four spellings and no min-width floor, because a scrolling wrapper absorbs the overflow and the page-level check then certifies itself while content hangs off the side; the five-tab strip WRAPS, since on a right-to-left page a horizontal scroller opens at the LEFT and hides the FIRST tab; nothing truncates and nothing is nowrap, because where wrapping collides with the no-scroll rule wrapping wins; no hand-rolled radius; and the root carries dir=rtl with the Arabic face stack while every figure goes through the Num primitive, which is the only defence against bidi reordering a digit group that the string itself gets perfectly right",
