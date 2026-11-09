@@ -65,7 +65,7 @@ import { cn } from "@/lib/utils";
  * `node:crypto` into the browser bundle and 500 the page, invisibly to `tsc`.
  */
 
-const LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const LABEL = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 type FacetKey =
   | "lines"
@@ -250,7 +250,7 @@ export function KpisFilterBar({
           </label>
         ))}
       </div>
-      <p className="mt-1 text-phx-3xs leading-4 text-slate-400">{KPI_RANGE_UNIT[field]}</p>
+      <p className="mt-1 text-phx-xs leading-4 text-slate-400">{KPI_RANGE_UNIT[field]}</p>
     </div>
   );
 
@@ -269,15 +269,15 @@ export function KpisFilterBar({
             aria-expanded={open}
             className={
               anyActive
-                ? "inline-flex items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-orange-800"
-                : "inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-slate-400"
+                ? "inline-flex items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-orange-800"
+                : "inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-slate-400"
             }
             onClick={() => setOpen((value) => !value)}
             type="button"
           >
             <span>Advanced filters</span>
             {activeCount > 0 ? (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-3xs font-black tabular-nums text-white">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-xs font-black tabular-nums text-white">
                 {activeCount}
               </span>
             ) : null}
@@ -285,7 +285,7 @@ export function KpisFilterBar({
           </button>
           {anyActive ? (
             <button
-              className="border border-slate-300 bg-white px-3 py-2 text-phx-xs font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
+              className="border border-slate-300 bg-white px-3 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
               disabled={pending}
               onClick={clearAll}
               type="button"
@@ -294,7 +294,7 @@ export function KpisFilterBar({
             </button>
           ) : null}
         </div>
-        <p className="text-phx-2xs font-semibold text-slate-500">
+        <p className="text-phx-sm font-semibold text-slate-500">
           Showing <span className="tabular-nums text-slate-900">{visible}</span> of{" "}
           <span className="tabular-nums text-slate-900">{total}</span> medical reps in your reach
           {pending ? " · updating…" : ""}
@@ -323,7 +323,7 @@ export function KpisFilterBar({
                   value={query}
                 />
                 <button
-                  className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
+                  className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
                   disabled={pending}
                   type="submit"
                 >
@@ -344,14 +344,14 @@ export function KpisFilterBar({
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className={LABEL}>Ranges</p>
-              <p className="text-phx-3xs leading-4 text-slate-400">
+              <p className="text-phx-xs leading-4 text-slate-400">
                 Leave an end blank for open. A rep with nothing to measure on a column never matches a bound on it.
               </p>
             </div>
             <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{primaryRanges.map(rangeBox)}</div>
             {otherRanges.length > 0 ? (
               <details className="mt-3">
-                <summary className="cursor-pointer text-phx-xs font-bold text-slate-600 hover:text-slate-900">
+                <summary className="cursor-pointer text-phx-md font-bold text-slate-600 hover:text-slate-900">
                   More columns
                 </summary>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{otherRanges.map(rangeBox)}</div>
@@ -359,14 +359,14 @@ export function KpisFilterBar({
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <button
-                className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
+                className="border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700"
                 disabled={pending}
                 type="submit"
               >
                 Apply ranges
               </button>
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-phx-xs font-bold text-slate-600 transition-colors hover:border-slate-500"
+                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-slate-500"
                 disabled={pending}
                 onClick={() => {
                   setDraft(draftFrom({}));
@@ -392,7 +392,7 @@ export function KpisFilterBar({
               return (
                 <fieldset className="min-w-0 border border-slate-200 bg-white px-3 py-3" key={group.key}>
                   <legend className={`px-1 ${LABEL}`}>{group.title}</legend>
-                  <p className="text-phx-3xs leading-4 text-slate-400">
+                  <p className="text-phx-xs leading-4 text-slate-400">
                     {(kpiRules === "phoenix" ? GROUP_HINT_PHOENIX[group.key] : undefined) ?? group.hint}
                   </p>
                   {/* Vertical scroll on a long list is fine; horizontal never is. */}
@@ -403,8 +403,8 @@ export function KpisFilterBar({
                         <label
                           className={
                             isOn
-                              ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900"
-                              : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                              ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
+                              : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
                           }
                           key={option.value}
                           title={group.key === "flags" ? kpiFlagHint(option.value as KpiFlag, kpiRules) : undefined}

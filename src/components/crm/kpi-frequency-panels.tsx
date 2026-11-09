@@ -44,8 +44,8 @@ import {
 } from "@/lib/crm/kpi-frequency-teams";
 import type { KpisBoard } from "@/lib/crm/kpis-board";
 
-const EYEBROW = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-3xs";
-const SMALL = "text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs";
+const EYEBROW = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-xs";
+const SMALL = "text-phx-sm leading-4 text-slate-500 sm:text-phx-xs";
 
 /** The swatch each slice of the judged list is drawn in: the pass green, the deviations in two warm tones. */
 const DOCTOR_SWATCH: Record<string, string> = {
@@ -146,23 +146,23 @@ export function KpiTeamFrequencyRollup({ phoenix, teams }: { phoenix: boolean; t
           <tr>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Team
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">Region · manager</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">Region · manager</span>
             </th>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Frequency
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                 {phoenix ? "At norm ÷ graded" : "Exact ÷ planned"}
               </span>
             </th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`} scope="col">
               Off target
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                 {phoenix ? "Below the norm" : "Below or above"}
               </span>
             </th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`} scope="col">
               Reps at 90%+
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">Of those with a plan</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">Of those with a plan</span>
             </th>
           </tr>
         </thead>
@@ -255,7 +255,7 @@ function KpiFrequencyTeamHeadingText({ entry, phoenix }: { entry: KpiTeamWithFre
   return (
     <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className="min-w-0">
-        <span className="block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
+        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
           {kpiTeamHeading(team)}
         </span>
         <span className={`block ${SMALL}`}>{kpiFrequencyHeadCount(frequency)}</span>

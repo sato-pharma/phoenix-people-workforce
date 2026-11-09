@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
  * held to the same size for the same reason.
  */
 
-const LABEL_CLASS = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const LABEL_CLASS = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 const CONTROL_CLASS = cn(phxSelectClassName, "w-full px-3 py-2 text-base");
 
 export type KpiPickerOption = { label: string; value: string };
@@ -188,7 +188,7 @@ export function KpisPeriodPicker({
         ) : (
           <div className="min-w-0">
             <span className={LABEL_CLASS}>Period</span>
-            <p className="mt-1 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-2xs font-semibold leading-5 text-slate-600">
+            <p className="mt-1 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-semibold leading-5 text-slate-600">
               Laid out below, week by week or month by month.
             </p>
           </div>
@@ -221,7 +221,7 @@ export function KpisPeriodPicker({
               value={to}
             />
           </label>
-          <p className="text-phx-2xs font-semibold text-slate-500 sm:col-span-2">
+          <p className="text-phx-sm font-semibold text-slate-500 sm:col-span-2">
             Coverage and frequency are measured against every doctor planned inside these dates, and the call rate
             against the Sat–Wed working days they contain.
           </p>

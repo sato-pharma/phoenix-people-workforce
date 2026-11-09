@@ -241,7 +241,7 @@ export async function RepVisitsPageBody({
               <h1 className="text-xl font-black text-slate-900">{row.repName}</h1>
             )}
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
+              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600">
                 {roleLabel}
               </span>
               {portal
@@ -256,7 +256,7 @@ export async function RepVisitsPageBody({
               {/* Ruling A1 (owner, 2026-09-21): the same marker as the board, because the rates
                   beside it read "—" for the same reason. */}
               {row.noGpsFeed ? (
-                <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+                <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
                   No GPS feed
                 </span>
               ) : null}
@@ -270,13 +270,13 @@ export async function RepVisitsPageBody({
               at 360–430px. AM, PM and Pharmacy stay three separate figures, AM first. */}
           <div className={portal ? "grid w-full grid-cols-2 gap-x-5 gap-y-3 sm:w-auto sm:grid-cols-4" : "flex flex-wrap gap-5"}>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `AM of ${row.am.target}` : "AM rate"}
               </p>
               <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
               </p>
               <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(2) ?? "—"}</p>
@@ -285,16 +285,16 @@ export async function RepVisitsPageBody({
                 see PHARMACY_CALL_RATE_TARGET — so this tile shows the raw rate with no "of N". Zero
                 is a normal reading, not a gap: never badge it the way a zero AM/PM would be. */}
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
               <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
-              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
               <p className="text-lg font-black text-slate-900">{row.workingDays}</p>
             </div>
           </div>
         </div>
-        <p className="mt-3 text-phx-xs text-slate-400">
+        <p className="mt-3 text-phx-md text-slate-400">
           {windowLabel} · {row.workingDays} working {row.workingDays === 1 ? "day" : "days"}
           {board.todayLeftOut ? " · today is not scored until it is over, so its calls are not listed yet" : ""}
           {" · "}every call below is classified by the same rule the rate uses, so these rows and that rate are the
