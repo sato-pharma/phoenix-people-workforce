@@ -196,12 +196,13 @@ fi
 # and the server still boots, so a bad release can never take the whole MDM down. The release asset is
 # immutable, so its byte size is pinned and a wrong size is refused.
 #
-# 🔴 2 Nov 2026: the old account's suspension took these releases offline, and both addresses below answer 404
-# until the two launcher files are uploaded to the new account's hmdm-android. The running server still holds
-# them, but this folder is bare after a redeploy, so do not redeploy phoenix-headwind before that upload.
-PHX_LAUNCHER_APK="hmdm-phoenix-6.40.apk"
-PHX_LAUNCHER_URL="https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.40-r1/${PHX_LAUNCHER_APK}"
-PHX_LAUNCHER_SIZE=6286121   # bytes — the exact size of the signed Phoenix launcher release asset
+# 🔴 9 Nov 2026: 6.49 is the launcher the version url (app 46 / version 10045) will be MOVED to — it restores
+# the quick-settings pull-down and Android's privacy notices, and reads the Sato Pharma lock-screen label.
+# Both 6.48 (the version the url points at today) and 6.49 are uploaded to Omar-3-xx/hmdm-android as immutable
+# release assets, so both addresses answer 200 and a redeploy re-stages both into a bare Railway work/.
+PHX_LAUNCHER_APK="hmdm-phoenix-6.49.apk"
+PHX_LAUNCHER_URL="https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.49-r1/${PHX_LAUNCHER_APK}"
+PHX_LAUNCHER_SIZE=6466497   # bytes — the exact size of the signed Phoenix launcher release asset
 PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
 have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
 if [ "$have_launcher" = "$PHX_LAUNCHER_SIZE" ]; then
@@ -223,13 +224,14 @@ else
   fi
 fi
 
-# 🔴 AND KEEP SERVING 6.39 UNTIL THE LAUNCHER'S URL HAS MOVED TO 6.40. Configuration 3 still points the
-# launcher (app 46 / version 10045) at /files/hmdm-phoenix-6.39.apk, and that url is moved by hand only
-# AFTER this server is up — so a redeploy that served 6.40 alone would 404 every enrolment in between.
-# Drop this line in a later change, once version 10045 names 6.40. Same Phoenix key, same pinned size.
-PHX_LAUNCHER_PREVIOUS_SIZE=6286121   # bytes — the signed 6.39 release asset (the same size as 6.40 by coincidence)
-provision_official_apk "hmdm-phoenix-6.39.apk" \
-  "https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.39-r1/hmdm-phoenix-6.39.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
+# 🔴 AND KEEP SERVING 6.48 UNTIL THE LAUNCHER'S URL HAS MOVED TO 6.49. Configuration 3 still points the
+# launcher (app 46 / version 10045) at /files/hmdm-phoenix-6.48.apk — the whole fleet's current build — and
+# that url is moved by hand only AFTER this server is up, so a redeploy that served 6.49 alone would 404
+# every enrolment and in-place update in between. Drop this line in a later change, once version 10045 names
+# 6.49. Same Phoenix signing key, so 6.49 installs in place over 6.48 with no factory reset.
+PHX_LAUNCHER_PREVIOUS_SIZE=6290217   # bytes — the exact size of the signed 6.48 release asset
+provision_official_apk "hmdm-phoenix-6.48.apk" \
+  "https://github.com/Omar-3-xx/hmdm-android/releases/download/launcher-6.48-r1/hmdm-phoenix-6.48.apk" "$PHX_LAUNCHER_PREVIOUS_SIZE" 0
 
 # 🔴 THE EVERYDAY APPS ARE FETCHED IN THE BACKGROUND, SO TOMCAT STARTS AT ONCE. WhatsApp, Telegram and WPS
 # are about 390 MB together and no enrolment needs them (RustDesk and the launcher above stay in the
