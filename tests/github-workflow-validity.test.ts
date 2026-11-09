@@ -200,6 +200,7 @@ function assertScheduledDetectorsCannotBeCancelled(files: string[]) {
  */
 export const SCHEDULED_RUNS_PER_DAY: Record<string, number> = {
   "attendance-weekly-digest.yml": 2,
+  "codeql-weekly.yml": 1,
   "deploy-drift-check.yml": 48,
   "migration-drift-check.yml": 1,
   "origin-certificate-check.yml": 1,
@@ -214,8 +215,8 @@ export const DISPATCHED_RUNS_PER_DAY: Record<string, { slug: string; runsPerDay:
 };
 
 export const SCHEDULED_RUNS_CEILING = {
-  perDay: 61,
-  note: "2026-10-27: 55 GitHub-scheduled (deploy-drift-check 48, attendance-weekly-digest 2, five daily checks 1 each) + 6 synthetic-journeys dispatched by cron-job.org",
+  perDay: 62,
+  note: "2026-11-09: 56 GitHub-scheduled (deploy-drift-check 48, attendance-weekly-digest 2, five daily checks 1 each, codeql-weekly 1 on its Sunday) + 6 synthetic-journeys dispatched by cron-job.org. CodeQL moved here off every pull request (owner, 2026-11-09), so the real total of Actions runs fell",
 };
 
 /** How many values one cron field takes: `*`, `*\/n`, `a`, `a-b`, `a-b/n`, and comma lists of those. */

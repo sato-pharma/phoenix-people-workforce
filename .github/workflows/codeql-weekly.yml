@@ -1,0 +1,62 @@
+name: CodeQL (weekly)
+
+# 🔴 CODEQL RUNS ONCE A WEEK AND ON DEMAND — NEVER ON A PULL REQUEST (owner, 2026-11-09).
+#
+# GitHub's CodeQL "default setup" was switched on in the repository's settings on 2026-11-07, for
+# seven languages, together with a second "Code Quality" copy of the same scan. Every PR then ran
+# 11 CodeQL jobs beside CI's 5: CI took about 3 minutes, CodeQL 6–12 minutes per PR and 39 minutes
+# on one push to main. The owner ("CI IS RUNNING TOO MANY CHECKS AND A BIG TIME") chose a weekly
+# scan. So, on 2026-11-09:
+#
+#   - repos/{repo}/code-scanning/default-setup  → state not-configured
+#   - repos/{repo}/code-quality/setup           → state not-configured
+#   - this workflow scans what the app is actually written in — JavaScript/TypeScript and the
+#     workflow files — every Sunday night, and on demand from the Actions tab.
+#
+# Never switch either setting back on, and never add a pull_request or push trigger here: that
+# re-creates the 11 extra checks. C#, Java/Kotlin and Python were scanned only because default setup
+# found a few tooling files in those languages; the app is not written in them.
+#
+# Findings land under Security → Code scanning; a finding does not fail the job. CodeQL is not a
+# required check, and the release gate in ci.yml reads only validate and checks, so a red or slow run
+# here never holds a deploy.
+on:
+  schedule:
+    # Sunday 23:30 Cairo (UTC+2).
+    - cron: "30 21 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-weekly
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest # hosted-only: runs GitHub's CodeQL bundle, free on hosted runners for this public repository
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          category: "/language:${{ matrix.language }}"

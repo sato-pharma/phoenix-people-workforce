@@ -84,7 +84,7 @@ export function runGithubWorkflowWatchTests() {
   }
 
   // A blip stays quiet and keeps the last good read, then fails past three hours.
-  const previous = `All 8 checks within their limits. lastGoodRead=${new Date(NOW - 2 * HOUR).toISOString()}`;
+  const previous = `All 9 checks within their limits. lastGoodRead=${new Date(NOW - 2 * HOUR).toISOString()}`;
   const blip = assess(replaced("security-scan.yml", { file: "security-scan.yml", kind: "transient", reason: "x" }), previous);
   assert.equal(blip.outcome, "success", "two hours of a bad GitHub reaches nobody");
   assert.equal(parseLastGoodRead(blip.detail), new Date(NOW - 2 * HOUR).toISOString(), "a partial read must not move the clock");

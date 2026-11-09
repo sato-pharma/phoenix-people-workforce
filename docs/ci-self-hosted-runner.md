@@ -212,6 +212,10 @@ Roll back at any time with `gh variable delete CI_RUNNER_LABEL --repo sato-pharm
 - the setup script loses either CPU type or its pinned SHA-256, or any line could print the token;
 - the Windows block in this document stops matching `scripts/setup-spare-laptop-windows.ps1`.
 
+## CodeQL is weekly, never on a pull request (owner, 2026-11-09)
+
+GitHub's CodeQL "default setup" was switched on in the repository settings on 2026-11-07, for seven languages, plus a second "Code Quality" copy of the same scan. Every PR then showed 18 checks: CI's 5 (about 3 minutes) and 11 CodeQL jobs (6–12 minutes per PR, 39 minutes on one push to `main`). The owner chose a weekly scan. On 2026-11-09 both settings were set to `not-configured` (`repos/{repo}/code-scanning/default-setup` and `repos/{repo}/code-quality/setup`), and `.github/workflows/codeql-weekly.yml` scans JavaScript/TypeScript and the workflow files every Sunday at 23:30 Cairo, or on demand. Never switch either setting back on and never give that workflow a `pull_request` or `push` trigger. Findings go to Security → Code scanning. CodeQL is not a required check, so it never holds a merge or a deploy.
+
 ## What CI costs now, and the guards that hold it (2026-10-27)
 
 **History since 2026-11-05 — the section above is the current state.** Until then this was the state, and the box sections further down were already history.
@@ -238,7 +242,7 @@ come only from GitHub's own billing amounts (the rule below, "The invoice is the
 | Guard | Where | What makes it fire |
 | --- | --- | --- |
 | The job ledger, `CI_JOBS_BY_EVENT` | `tests/ci-runner-switch.test.ts` | A job, a matrix leg or a trigger added to `ci.yml` without the ledger and a dated billed-minutes note. Today: PR runs `validate`, `static`, `unit (1)`, `unit (2)`, `checks` (13.86 billed min/run); a push to `main` adds `release-gate` and `mobile` (19.36); a dispatch is 6 jobs, with `full-e2e` only when asked. |
-| The scheduled-run ceiling, `SCHEDULED_RUNS_CEILING` | `tests/github-workflow-validity.test.ts` | Seven scheduled workflows start 55 runs a day, and 6 dispatched ones make 61. A new cron or a faster one fails until the count and a dated note are updated. |
+| The scheduled-run ceiling, `SCHEDULED_RUNS_CEILING` | `tests/github-workflow-validity.test.ts` | Eight scheduled workflows start 56 runs on their busiest day (`codeql-weekly.yml` adds 1, on Sundays only), and 6 dispatched ones make 62. A new cron or a faster one fails until the count and a dated note are updated. |
 | The daily cost alarm, step `actions_cost` | `scripts/check-actions-cost.mjs`, in `secret-drift-check.yml` | It reads the billing usage API's own amounts, projects the month against `vars.ACTIONS_MONTHLY_BUDGET`, and pings Telegram with the day the budget would be reached. Exit 2, "cannot tell", is never a pass. |
 | The token-expiry alarm, step `token_expiry` | `scripts/check-token-expiry.mjs`, same workflow | It warns 21 days before `PHOENIX_ACTIONS_DISPATCH_TOKEN`, `GHCR_PULL_TOKEN` or `ACTIONS_BILLING_READ_TOKEN` expires, and reports a dead one at once. It prints names and dates only. |
 | No alarm is swallowed | `tests/scheduled-alarms-never-withhold.test.ts`, clause 12 | A `continue-on-error` step that the Notify step's `if:` does not name. |
