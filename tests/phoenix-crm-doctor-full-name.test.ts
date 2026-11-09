@@ -6,8 +6,11 @@ import {
   boardNamesOf,
   doctorFullNameProblem,
   doctorNamePartProblem,
+  doctorNameWordCount,
   doctorNeedsFullName,
   FULL_NAME_APPROVE_AT,
+  FULL_NAME_WRITE_BUTTON,
+  FULL_NAME_WRITE_SENTENCE,
   fullNameMatchPercent,
   fullNameRuling,
   joinDoctorName,
@@ -257,7 +260,64 @@ function checkPlaceChecksSendsAShortNameBack(): void {
   assert.ok(inUse.includes("takes: (row) => !approvalNeedsFullName(row)"), "the in-use bulk approve skips him");
 }
 
+function checkACompoundIsNeverSplitAcrossTwoBoxes(): void {
+  // Proven in production, 8 Nov 2026: علاء / الدين / الجمل passed every box, was saved, counted as two
+  // words, and blocked the doctor's visits for ever (seat SEAT-PED-REP-D15).
+  const split = { first: "علاء", middle: "الدين", last: "الجمل" };
+  assert.equal(doctorNameWordCount(joinDoctorName(split)), 2, "the saved name counts as two words");
+  assert.match(doctorFullNameProblem(split) ?? "", /الدين is part of a two-word name like عماد الدين or عبد الله/, "علاء / الدين / الجمل is refused");
+  assert.match(doctorNamePartProblem("الدين", "Middle name") ?? "", /Write the whole name in one box, then the father's name and the family name in the next two\./);
+  assert.match(doctorNamePartProblem("الله", "Middle name") ?? "", /two-word name/);
+  assert.match(doctorNamePartProblem("أبو", "First name") ?? "", /two-word name/, "a head alone too, however its alef is written");
+  assert.match(doctorFullNameProblem({ first: "عبد", middle: "الله", last: "علي" }) ?? "", /عبد is part of a two-word name/, "عبد / الله / x is refused");
+  // The whole compound in one box is one name, and the full name passes.
+  assert.equal(doctorFullNameProblem({ first: "علاء الدين", middle: "محمد", last: "الجمل" }), null, "علاء الدين / محمد / الجمل passes");
+  assert.equal(doctorNamePartProblem("عبد الله", "First name"), null);
+  assert.equal(doctorNamePartProblem("نور الدين", "First name"), null);
+  assert.equal(doctorFullNameProblem({ first: "عماد الدين", middle: "احمد", last: "سالم" }), null);
+  // The joined name is counted again: an open compound in the first box swallows the middle name, so
+  // every box passes on its own and the saved name would still be two words.
+  const swallowed = { first: "عبد ابو", middle: "محمد", last: "علي" };
+  assert.equal(doctorNamePartProblem(swallowed.first, "First name"), null, "the box alone passes");
+  assert.equal(doctorNameWordCount(joinDoctorName(swallowed)), 2);
+  assert.equal(doctorFullNameProblem(swallowed), "Write the first, middle and last name.", "a joined two-word name is refused");
+  assert.equal(parseDoctorFullName(split, null).ok, false, "the server refuses it too");
+}
+
+function checkAddVisitOffersTheWayToTheFullName(): void {
+  // Owner, 2026-11-09: the note repeated the name and offered no way out. Its title is the name,
+  // isolated; its body is the fix; the button opens the List on the customer's Change the details.
+  const tab = readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8").replace(/\r\n/g, "\n");
+  const note = tab.slice(tab.indexOf("const fullNameFirst = "), tab.indexOf("// 🔴 A REP THE SUPER ADMIN SWITCHED ON"));
+  assert.ok(note.includes("<CrmNote title={bidiIsolate(customer.name)} tone=\"warn\">"), "the title is the name, bidi-isolated");
+  assert.ok(note.includes("{FULL_NAME_WRITE_SENTENCE}"), "the body says what to write");
+  assert.ok(!note.includes("fullNameNeededSentence"), "the note no longer repeats the name");
+  assert.ok(note.includes("<CrmButton onClick={() => onWriteFullName(customer.customerId)} variant=\"primary\">"), "a primary button");
+  assert.ok(note.includes("{FULL_NAME_WRITE_BUTTON}"), "the button's words");
+  assert.equal(FULL_NAME_WRITE_BUTTON, "Write the full name");
+  assert.match(FULL_NAME_WRITE_SENTENCE, /first, middle and last name, as the signboard shows them, and the visit opens\./);
+  assert.ok(!/\b(accounts?|doctors?)\b/i.test(FULL_NAME_WRITE_SENTENCE + FULL_NAME_WRITE_BUTTON), "the screen words obey the AM · PM rule");
+  assert.ok(tab.includes("onWriteFullName({ seatId, test, customerId });"), "the tab hands the customer to the page");
+
+  // The page: the Validate hand-off's sibling, carried as ?fullname= in single-page mode.
+  const app = readFileSync("src/components/phoenix-crm/phoenix-crm-app.tsx", "utf8");
+  assert.ok(app.includes("onWriteFullName={startWriteFullName}"), "the page listens");
+  assert.ok(app.includes(`openTab("list", { fullname: handoff.customerId });`), "single mode carries it in the address");
+  assert.ok(app.includes(`searchParams?.get("fullname")`), "and reads it back");
+  assert.ok(app.includes("pendingFullName={arrivedFullName ?? pendingFullName}"), "the List receives it");
+  assert.ok(app.includes("onPendingFullNameDone={pendingFullNameDone}"), "and can let it go");
+  assert.ok(app.includes("pendingFullName.seatId !== nextListSeat"), "a territory change drops it");
+
+  // The List: the hand-off opens Change the details on that customer, and go() releases it.
+  const list = readFileSync("src/components/phoenix-crm/list-tab.tsx", "utf8");
+  assert.ok(list.includes(`? { name: "edit-details", customerId: fullNameHandoff.customerId }`), "the List opens on Change the details");
+  assert.ok(list.includes("if (fullNameHandoff) onPendingFullNameDone?.();"), "moving anywhere ends the hand-off");
+  assert.ok(list.includes("pendingFullName.seatId === seatId && pendingFullName.test === test"), "one territory, one world");
+}
+
 export function runPhoenixCrmDoctorFullNameTests(): void {
+  checkACompoundIsNeverSplitAcrossTwoBoxes();
+  checkAddVisitOffersTheWayToTheFullName();
   checkTheThreeNamesAreAskedAtValidation();
   checkPlaceChecksSendsAShortNameBack();
   checkEachBoxIsARealName();

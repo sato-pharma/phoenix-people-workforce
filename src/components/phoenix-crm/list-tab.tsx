@@ -129,6 +129,12 @@ function homeSectionFor(view: TerritoryListView, section: HomeSection | null): H
  */
 type ValidateHandoff = { seatId: string; test: boolean; contactCrmId: number };
 
+/**
+ * Add visit's "Write the full name" on a clinic customer with one or two names (owner, 2026-11-09): the
+ * tab opens on his Change the details screen, released through `go()` exactly like the Validate hand-off.
+ */
+type FullNameHandoff = { seatId: string; test: boolean; customerId: string };
+
 /** AM first, then PM, the way the rep's day starts. */
 const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];
 
@@ -151,13 +157,17 @@ function pairText(counts: Record<PhoenixCrmDoctorListType, number>): string {
 
 export function ListTab({
   cairoToday,
+  onPendingFullNameDone,
   onPendingValidateDone,
   onWorkChange,
+  pendingFullName,
   pendingValidate,
   seatId,
   test,
 }: {
   cairoToday: string;
+  /** The full-name hand-off was opened, saved, or left behind: the page may let it go. */
+  onPendingFullNameDone?: () => void;
   /** The Validate hand-off was opened, saved, or left behind: the page may let it go. */
   onPendingValidateDone?: () => void;
   /**
@@ -167,6 +177,8 @@ export function ListTab({
   onStartVisit?: unknown;
   /** A customer entry opened or closed: the page keeps this tab as it is while another tab is open. */
   onWorkChange?: (working: boolean) => void;
+  /** Add visit sent a clinic customer with one or two names here to have the full name written. */
+  pendingFullName?: FullNameHandoff | null;
   /** A visit was just saved on a pending customer and he chose to validate him now. */
   pendingValidate?: ValidateHandoff | null;
   seatId: string;
@@ -188,7 +200,13 @@ export function ListTab({
   // tab was left on, because the hand-off is the only reason the tab was opened. Every screen below is
   // dispatched from `current`, never from `screen` — including the held-work guard, which would
   // otherwise let the page swap the tab away from a validation he is standing at the door to finish.
-  const current: ListScreen = validateHandoff ? { name: "validate", contactCrmId: validateHandoff.contactCrmId } : screen;
+  const fullNameHandoff =
+    pendingFullName && pendingFullName.seatId === seatId && pendingFullName.test === test ? pendingFullName : null;
+  const current: ListScreen = validateHandoff
+    ? { name: "validate", contactCrmId: validateHandoff.contactCrmId }
+    : fullNameHandoff
+      ? { name: "edit-details", customerId: fullNameHandoff.customerId }
+      : screen;
 
   // The list, a customer and the saved screen hold nothing unsaved; every other screen is an entry under way.
   const working = current.name !== "home" && current.name !== "customer" && current.name !== "saved";
@@ -212,6 +230,7 @@ export function ListTab({
   /** Opens a screen. Deliberately moving anywhere is also the end of a Validate hand-off. */
   function go(next: ListScreen, nextNotice: ListNotice | null = null) {
     if (validateHandoff) onPendingValidateDone?.();
+    if (fullNameHandoff) onPendingFullNameDone?.();
     setScreen(next);
     setNotice(nextNotice);
     scrollToTop();
@@ -281,7 +300,7 @@ export function ListTab({
   // asking for the board. Only the REQUEST moves — what is drawn is still decided by `boardOnScreen`.
   // A tab opened on a Validate hand-off is not on its home, so it waits for the board to be shown.
   const boardOnScreen = view !== null && current.name === "home" && homeSectionFor(view, section) === "board";
-  const [boardWanted, setBoardWanted] = useState(() => validateHandoff === null);
+  const [boardWanted, setBoardWanted] = useState(() => validateHandoff === null && fullNameHandoff === null);
   // State derived while rendering, never in an effect — the same shape the page uses for its address.
   if (boardOnScreen && !boardWanted) setBoardWanted(true);
   const board = useCrmGet<RepsListBoard | null>(boardWanted ? listBoardUrl(seatId, test) : null, "board");
