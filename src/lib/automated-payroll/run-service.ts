@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { logError } from "@/lib/observability/log";
 import { runRetentionRiskPrePayrollNotice } from "@/lib/retention-risk/notify";
 import { roundCurrency } from "@/lib/payroll/money";
@@ -932,9 +933,28 @@ function manualRowCandidates(
   stepKey: StepKey,
   members: PopulationMember[],
   rows: StepRow[],
+  directory: Map<string, EmployeeDirectoryRow>,
 ): ManualRowCandidate[] {
   if (!stepDefinition(stepKey).allowsManualRows) return [];
   const listed = new Set(rows.map((row) => compactHrKey(row.hrId)).filter(Boolean));
+  // Held Salary Release pays people who have LEFT (owner, 2026-11-09: "every employee even if resigned …
+  // I want Ahmed Helal"), so its picker is every employee record, not this month's population.
+  if (stepKey === "p1_held_release" || stepKey === "p2_held_release") {
+    const seen = new Set<string>();
+    const everyone: ManualRowCandidate[] = [];
+    for (const [compact, employee] of directory) {
+      if (!compact || listed.has(compact) || seen.has(compact) || !employee.fullName?.trim()) continue;
+      seen.add(compact);
+      everyone.push({
+        hrId: employee.hrId,
+        fullName: employee.fullName,
+        jobTitle: employee.jobTitle ?? null,
+        line: employee.lineName ?? null,
+        status: employee.employmentStatus ?? null,
+      });
+    }
+    return everyone.sort((left, right) => left.fullName.localeCompare(right.fullName));
+  }
   return members
     .filter((member) => !listed.has(member.compact))
     .map((member) => ({
@@ -1024,7 +1044,7 @@ async function loadStepView(
     run,
     rows,
     state,
-    candidates: manualRowCandidates(stepKey, members, rows),
+    candidates: manualRowCandidates(stepKey, members, rows, directory),
     draftRows,
   };
 }

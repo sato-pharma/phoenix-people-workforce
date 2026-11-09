@@ -193,4 +193,29 @@ export function runAutomatedPayrollHeldEnteredTests() {
     ),
     "POST and DELETE are declared as CSRF-checked mutations",
   );
+
+  // The step's own "Add employee" picker on Held Salary Release lists EVERY employee, resigned included
+  // (owner, 2026-11-09: "every employee even if resigned … I want Ahmed Helal"), and can record a held
+  // month from there. The population picker it used before had no leaver in it.
+  const runService = stripComments(
+    readFileSync(path.join(process.cwd(), "src", "lib", "automated-payroll", "run-service.ts"), "utf8"),
+  );
+  const candidates = runService.slice(runService.indexOf("function manualRowCandidates("));
+  const candidatesBody = candidates.slice(0, candidates.search(/\r?\n\}\r?\n/));
+  assert.match(
+    candidatesBody,
+    /stepKey === "p1_held_release" \|\| stepKey === "p2_held_release"[\s\S]*for \(const \[compact, employee\] of directory\)/,
+    "Held Salary Release offers every employee record, not this month's population",
+  );
+  assert.match(candidatesBody, /status: employee\.employmentStatus/, "each offered employee carries their status");
+  assert.match(
+    runService,
+    /candidates: manualRowCandidates\(stepKey, members, rows, directory\)/,
+    "the step view hands the directory (resigned included) to the picker",
+  );
+  const step = stripComments(
+    readFileSync(path.join(process.cwd(), "src", "components", "automated-payroll", "recommendation-step.tsx"), "utf8"),
+  );
+  assert.match(step, /\/held-entered`, \{\s*method: "POST"/, "Add employee records a held month through held-entered");
+  assert.match(step, /Held in \{month\.label\}/, "Add employee offers the count-only months");
 }
