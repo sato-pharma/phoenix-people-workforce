@@ -2,6 +2,7 @@ import { forbiddenError } from "@/lib/http/api-errors";
 import { addDaysIso } from "@/lib/crm/dates";
 import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -51,9 +52,13 @@ export type TeamVisitRep = {
 };
 
 export type TeamVisitDistrict = {
+  /** The organogram region — the group's heading names it with the manager (`regionManagerTitle`). */
+  regionName: string;
   managerName: string;
   managerHrId: string | null;
   districtName: string;
+  /** The region's rep seats with nobody in them. */
+  vacantSeats: number;
   /** The district manager's own visits, listed apart and counted in no rep's figure. Null when the seat is vacant. */
   managerOwn: { yesterday: TeamVisitDay; today: TeamVisitDay } | null;
   reps: TeamVisitRep[];
@@ -182,18 +187,10 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     bySeatDay.set(key, list);
   }
 
-  const districtSeats = new Map<string, OrgSeat>();
-  const repsByDistrict = new Map<string, OrgSeat[]>();
-  for (const seat of seats) {
-    const district = districtSeatOf(viewer, seat);
-    const key = district?.seatId ?? "";
-    if (district) districtSeats.set(key, district);
-    const list = repsByDistrict.get(key) ?? [];
-    list.push(seat);
-    repsByDistrict.set(key, list);
-  }
+  // Grouped by region and district manager (owner, 2026-11-09) — `groupByRegionAndManager`.
+  const groups = groupByRegionAndManager(seats, (seat) => seat, (seat) => districtSeatOf(viewer, seat));
 
-  const managerHrIds = [...districtSeats.values()].flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []));
+  const managerHrIds = [...new Set(groups.flatMap((group) => (group.district?.occupantHrId ? [group.district.occupantHrId] : [])))];
   const ownRows = managerHrIds.length
     ? await loadManagerOwnVisitRows({ end: today, isTest, managerHrIds, start: yesterday })
     : [];
@@ -201,10 +198,10 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
 
   const totals = { today: emptyTeamVisitDay(), yesterday: emptyTeamVisitDay() };
   const districts: TeamVisitDistrict[] = [];
-  for (const [key, repSeats] of repsByDistrict) {
-    const district = districtSeats.get(key) ?? null;
+  for (const group of groups) {
+    const district = group.district;
     const managerHrId = district?.occupantHrId ?? null;
-    const reps = repSeats
+    const reps = group.items
       .map((seat): TeamVisitRep => {
         const people = seatOccupants(seat);
         const day = (on: string) => foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? []);
@@ -240,12 +237,13 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
 
     districts.push({
       districtName: district ? territoryName(district) : "No district manager",
+      regionName: group.regionName,
+      vacantSeats: group.items.filter((seat) => seatOccupants(seat).length === 0).length,
       managerHrId,
       managerName: district ? (managerHrId ? nameOf(names, managerHrId) : "Seat is vacant") : "No district manager",
       managerOwn,
       reps,
     });
   }
-  districts.sort((left, right) => left.districtName.localeCompare(right.districtName));
   return { districts, today, totals, yesterday };
 }
