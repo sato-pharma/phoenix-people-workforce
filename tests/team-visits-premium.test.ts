@@ -432,9 +432,20 @@ function theScreen() {
   assert.ok(view.includes("<TeamVisitsRollupPanel report={report} />") && view.includes("<TeamVisitsHoursPanel report={report} />") && view.includes("<TeamVisitsAttentionPanel day={day} report={report} show={show} />"));
   assert.ok(view.includes("<TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />"));
   assert.ok(view.includes(">Waiting for validation</span>"), "a waiting visit is tagged in the square");
-  // "the font is fucken small" (owner, 2026-11-09): nothing on this board is set below 11px (text-phx-xs).
-  for (const [name, source] of [["view", view], ["panels", panels]] as const) {
-    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(source), `${name}: no text below 11px on Visits — Yesterday and Today`);
+  // "the font is fucken small", then "not only in this page audit dr hany new reports" (owner, 2026-11-09): nothing
+  // on the Regional Sales Manager's reports, the KPI chrome they are framed in, or the hub card on the home is set
+  // below 11px (text-phx-xs).
+  const reportFiles = [
+    "src/components/crm/regional/team-visits-view.tsx",
+    "src/components/crm/regional/team-visits-panels.tsx",
+    "src/components/crm/regional/district-manager-plans-view.tsx",
+    "src/components/crm/regional/district-manager-plans-panels.tsx",
+    "src/components/crm/regional/weekly-sheet-view.tsx",
+    "src/components/crm/kpis-chrome.tsx",
+    "src/components/employee-portal/dashboards/rm-command-center.tsx",
+  ];
+  for (const file of reportFiles) {
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(stripComments(readFileSync(file, "utf8"))), `${file}: no text below 11px on the regional reports`);
   }
   // An Arabic customer name beside "30 m" pulled the number into the Arabic run (owner, 2026-11-09, the polish
   // pass): the name is bidi-isolated and the metres sit in a column of their own.
