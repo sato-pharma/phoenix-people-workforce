@@ -129,7 +129,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "missing_reply", message: "Reply message is required." }, { status: 400 });
     }
 
-    const signatureImageSrc = emailSignatureUrl(request.url);
+    const signatureImageSrc = emailSignatureUrl();
     // The signature image reachability check must NOT block a legitimate send: a cold
     // serverless start or a momentarily slow/unreachable image host would otherwise throw
     // and stop the email entirely. Downgrade any failure to a non-blocking warning, the

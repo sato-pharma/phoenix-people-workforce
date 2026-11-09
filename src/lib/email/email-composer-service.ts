@@ -421,28 +421,26 @@ function isLocalUrl(value: string) {
   }
 }
 
-function publicAssetUrl(publicPath: string, requestUrl: string) {
+function publicAssetUrl(publicPath: string) {
   const configuredBase =
     process.env.HR_EMAIL_ASSET_BASE_URL ||
     process.env.NOTIFICATION_DASHBOARD_URL ||
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    systemDeployment.productionUrl ||
-    new URL(requestUrl).origin;
+    systemDeployment.productionUrl;
+  if (!configuredBase) return null;
   const base = /^https?:\/\//i.test(configuredBase) ? configuredBase : `https://${configuredBase}`;
 
   return `${base.replace(/\/+$/, "")}/${publicPath.replace(/^\/+/, "")}`;
 }
 
-export function emailSignatureUrl(requestUrl: string) {
+export function emailSignatureUrl() {
   const explicitUrl = process.env.HR_EMAIL_SIGNATURE_URL?.trim();
   if (explicitUrl) return explicitUrl;
 
-  if (!process.env.HR_EMAIL_ASSET_BASE_URL?.trim()) {
-    return phoenixHrEmailSignatureHostedUrl;
-  }
+  const assetUrl = publicAssetUrl(phoenixHrEmailSignatureSmallPath);
+  if (!assetUrl) return phoenixHrEmailSignatureHostedUrl;
 
-  const assetUrl = publicAssetUrl(phoenixHrEmailSignatureSmallPath, requestUrl);
   return isLocalUrl(assetUrl) ? phoenixHrEmailSignatureHostedUrl : assetUrl;
 }
 
@@ -476,7 +474,7 @@ export async function previewManualEmail(input: ComposerPayload, requestUrl: str
     externalJustification: normalized.externalJustification,
     to: resolved.emails.to,
   });
-  const signatureImageSrc = emailSignatureUrl(requestUrl);
+  const signatureImageSrc = emailSignatureUrl();
   let signatureImageWarning: string | null = null;
 
   try {
