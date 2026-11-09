@@ -22,10 +22,17 @@ const MODULE = "manager_plans";
 type ConversationRequest = { plan: unknown; test: unknown };
 
 /** The week, once the viewer may open it. Not found for a week he may not: never a hint that it exists. */
-async function openConversationWeek(viewer: PhoenixCrmViewer, request: ConversationRequest): Promise<{ plan: ManagerPlanRow; asks: ManagerEditAskRow[]; isTest: boolean }> {
+async function openConversationWeek(
+  viewer: PhoenixCrmViewer,
+  request: ConversationRequest,
+  purpose: "read" | "post",
+): Promise<{ plan: ManagerPlanRow; asks: ManagerEditAskRow[]; isTest: boolean }> {
   const planId = textOrNull(request.plan);
   const isTest = testModeFor(viewer, request.test);
-  const plan = planId && /^[0-9a-f-]{36}$/i.test(planId) ? await loadManagerPlanRow(planId, isTest) : null;
+  // A test account READS the thread of a real week it opens from the approvals detail (owner,
+  // 2026-11-09, "Real data everywhere"); it POSTS in the test world only.
+  const world = purpose === "read" && viewer.isTestPersona ? null : isTest;
+  const plan = planId && /^[0-9a-f-]{36}$/i.test(planId) ? await loadManagerPlanRow(planId, world) : null;
   if (!plan) throw notFoundError("This plan could not be found, or you do not have access to it.");
   const asks = await loadEditAsks([plan.planId]);
   const approvers = [plan.firstApproverHrId, plan.secondApproverHrId, ...asks.flatMap((ask) => [ask.approverHrId, ask.secondApproverHrId])];
@@ -35,13 +42,13 @@ async function openConversationWeek(viewer: PhoenixCrmViewer, request: Conversat
 
 /** GET: every message on the week, oldest first. */
 export async function listManagerPlanConversation(viewer: PhoenixCrmViewer, request: ConversationRequest): Promise<{ comments: RecordConversationComment[]; schemaReady: boolean }> {
-  const { plan } = await openConversationWeek(viewer, request);
+  const { plan } = await openConversationWeek(viewer, request, "read");
   return listRecordConversation(MODULE, plan.planId);
 }
 
 /** POST: one message on the week, then a notice to everyone on its approval and everyone who has written. */
 export async function postManagerPlanConversation(viewer: PhoenixCrmViewer, raw: ConversationRequest & { body: unknown }): Promise<RecordConversationComment> {
-  const { plan, asks, isTest } = await openConversationWeek(viewer, raw);
+  const { plan, asks, isTest } = await openConversationWeek(viewer, raw, "post");
   if (!managerPlanConversationOpen(plan)) throw conflictError("This week has not been sent yet, so its conversation is not open.");
   const body = typeof raw.body === "string" ? raw.body.trim() : "";
   if (!body) throw validationError("Write a message first.");

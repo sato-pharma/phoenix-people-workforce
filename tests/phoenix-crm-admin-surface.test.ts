@@ -216,25 +216,27 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
     assert.equal(testModeFor(owner, "true"), false, "and a read across territories runs on the real entries");
     assert.equal(testModeFor(testRep, false), true, "the test login's does not");
 
-    // 🔴 A TEST ACCOUNT READS THE REAL FIELD FORCE (owner, 2026-11-09: every report read empty through
-    // a test account; he picked "Real data everywhere"). A READ is the real world for everybody; a SAVE
-    // and a decision keep the test login in the test world, so it can never write onto a real row.
+    // 🔴 A TEST ACCOUNT READS OTHER PEOPLE'S REAL ENTRIES, AND ITS OWN SCREENS STAY TEST (owner,
+    // 2026-11-09: every report read empty through a test account; he picked "Real data everywhere", then
+    // "Own screens stay test" so a test rep still rehearses and the Test accounts tab still receives it).
+    // A save and a decision keep the test login in the test world, so it can never write onto a real row.
     for (const flag of [true, false, "true", "1", null]) {
-      assert.equal(readWorldFor(testRep, flag), false, `a test login's read is the real field force (flag ${String(flag)})`);
-      assert.equal(readWorldFor(owner, flag), false, `and so is the Super Admin's (flag ${String(flag)})`);
+      assert.equal(readWorldFor(testRep, flag), false, `a test login's report reads the real field force (flag ${String(flag)})`);
+      assert.equal(readWorldFor(owner, flag), false, `and so does the Super Admin's (flag ${String(flag)})`);
     }
     assert.equal(readWorldFor(owner, false, { testWorld: true }), true, "his Test accounts tab still reads the test world");
     refused(() => readWorldFor(testRep, false, { testWorld: true }), /decided by the Super Admin/, "and nobody else may ask for it");
-    assert.equal(territoryForView(testRep, REP.seatId, true).isTest, false, "a test login's territory screen reads the real entries");
-    assert.equal(territoryForRead(testRep, REP.seatId, false).isTest, true, "while the gate a save goes through keeps it in the test world");
+    const testDm = viewerFor("B-12", "District Manager", { testPersona: true });
+    assert.equal(territoryForView(testDm, REP.seatId, true).isTest, false, "a test manager reads his rep's territory in the real world");
+    assert.equal(territoryForView(testRep, REP.seatId, false).isTest, true, "a test rep's OWN territory stays in the test world, so he can still add visits and plans");
+    assert.equal(territoryForRead(testDm, REP.seatId, false).isTest, true, "the gate a save goes through keeps a test login in the test world");
     const testStranger = viewerFor("B-99", "Medical Rep", { testPersona: true });
     refused(() => territoryForView(testStranger, REP.seatId, false), /outside your scope/, "reading real data never widens a test login's reach");
-    // The loaders a manager and a rep read, settled on the read side — and none pins a test login to
-    // its own world by hand any more.
+    // The loaders about other people read the real world; none pins a test login to its own world by hand.
     for (const [file, read] of [
       ["src/lib/phoenix-crm/server/team.ts", "const isTest = readWorldFor(viewer, raw.test);"],
-      ["src/lib/phoenix-crm/server/manager-visits.ts", "const isTest = readWorldFor(viewer, raw.test);"],
-      ["src/lib/phoenix-crm/server/manager-plans.ts", "const isTest = readWorldFor(viewer, raw.test);"],
+      ["src/lib/phoenix-crm/server/team-calendar.ts", "const isTest = readWorldFor(viewer, raw.test);"],
+      ["src/lib/phoenix-crm/server/plans.ts", "const isTest = readWorldFor(viewer, raw.test, read);"],
       ["src/lib/phoenix-crm/server/team-visits.ts", "const worlds = regionalReportWorlds(viewer);"],
       ["src/lib/crm/weekly-sheet.ts", "const worlds = regionalReportWorlds(viewer);"],
       ["src/lib/phoenix-crm/server/today.ts", "territoryForView(viewer, raw.seatId, readTestFlag(raw.test))"],
@@ -244,7 +246,16 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
       assert.ok(body.includes(read), `${file} reads the real field force for a test login`);
       assert.ok(!body.includes("const isTest = viewer.isTestPersona;"), `${file} does not pin a test login to the test world`);
     }
-    // A save keeps the test world: the rep's own list write and the manager's week save still use it.
+    // The manager's OWN screens keep his world: his week board, his own list, his day.
+    for (const [file, fn] of [
+      ["src/lib/phoenix-crm/server/manager-plans.ts", "export async function loadManagerPlanBoard("],
+      ["src/lib/phoenix-crm/server/manager-customers.ts", "export async function loadManagerOwnList("],
+      ["src/lib/phoenix-crm/server/manager-visits.ts", "export async function loadManagerToday("],
+    ] as const) {
+      const body = code(file);
+      const at = body.indexOf(fn);
+      assert.ok(at >= 0 && body.slice(at, at + 1200).includes("const isTest = testModeFor(viewer, raw.test);"), `${fn} keeps a test login's own screen in the test world`);
+    }
     assert.match(code("src/lib/phoenix-crm/server/list.ts"), /export async function sfeDropFromList[\s\S]*?territoryForRead\(viewer, body\.seatId/, "an SFE drop stays on the save gate");
     assert.deepEqual(
       testReadSeats(owner, true, [REP]).map((seat) => seat.seatId),

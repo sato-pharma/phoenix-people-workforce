@@ -47,7 +47,7 @@ import {
   type DoubleVisitSummary,
 } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readWorldFor, superAdminHasNoFieldWrite, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { superAdminHasNoFieldWrite, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
@@ -88,9 +88,7 @@ export function doubleVisitPlanReach(viewer: PhoenixCrmViewer, isTest: boolean):
   // SFE reads the real plans. The test world is the Super Admin's and the test accounts'.
   if (viewer.isSfeManager && !viewer.isTestPersona) return isTest ? null : { mode: "pick", canWrite: false };
   if (isDoubleVisitPlanner(viewer)) {
-    // A test account READS its district manager's real plan (owner, 2026-11-09, "Real data everywhere")
-    // and writes in the test world only; a real one is in the real world only.
-    if (viewer.isTestPersona && !isTest) return { mode: "own", canWrite: false };
+    // A test account is its district manager in the test world only; a real one in the real world only.
     if (viewer.isTestPersona !== isTest) return null;
     return { mode: "own", canWrite: viewer.canCreate };
   }
@@ -429,7 +427,7 @@ export async function loadDoubleVisitPlan(
   viewer: PhoenixCrmViewer,
   raw: { week: unknown; manager: unknown; test: unknown },
 ): Promise<DoubleVisitPlanView> {
-  const isTest = readWorldFor(viewer, raw.test);
+  const isTest = testModeFor(viewer, raw.test);
   const reader = resolveDoubleVisitPlanReader(viewer, isTest, raw.manager);
   const asked = typeof raw.week === "string" && raw.week.trim() ? raw.week.trim() : null;
   const weekStart = asked ?? defaultDoubleVisitWeek(viewer.cairoToday);
