@@ -125,6 +125,32 @@ import {
   kpiLateAgeing,
   kpiRepCoverageSummary,
 } from "@/lib/crm/kpi-coverage-rep-detail";
+import { kpiFrequencyExtraTiles, kpiTeamsWithFrequency, type KpiTeamWithFrequency } from "@/lib/crm/kpi-frequency-teams";
+import {
+  KpiFrequencyStanding,
+  KpiFrequencyTeamHeadingBand,
+  KpiFrequencyTeamHeadingRow,
+  KpiTeamFrequencyRollup,
+} from "@/components/crm/kpi-frequency-panels";
+import {
+  kpiFrequencyByGrade,
+  kpiFrequencyBySpeciality,
+  kpiFrequencyByWeek,
+  kpiFrequencyFirstSteps,
+  kpiFrequencyGap,
+  kpiFrequencyGapText,
+  kpiOneMoreVisitLift,
+  kpiRepFrequencySummary,
+  kpiShortDepths,
+} from "@/lib/crm/kpi-frequency-rep-detail";
+import {
+  KpiFrequencyFirstPanel,
+  KpiFrequencyGroupTable,
+  KpiFrequencyTrack,
+  KpiFrequencyWeekTable,
+  KpiRepFrequencyTiles,
+  KpiShortDepthPanel,
+} from "@/components/crm/kpi-frequency-rep-panels";
 import type { DoctorFrequencyStatus } from "@/lib/crm/phoenix-kpi-rules";
 import type { KpiTrend } from "@/lib/crm/kpis-trend";
 import { KPI_TREND_METRICS, KPI_TREND_SCALES, type KpiTrendMetric, type KpiTrendScale } from "@/lib/crm/kpis-trend-options";
@@ -1802,8 +1828,16 @@ function CoverageDoctors({
   );
 }
 
-/** One slot in the phone list: a team's heading, or one rep with his place on the whole board. */
-type CardSlot = { heading: KpiTeamWithCoverage | null; row: KpiRepRow | null; index: number };
+/**
+ * One slot in the phone list: a team's heading (a Coverage one or a Frequency one), or one rep with his place on
+ * the whole board.
+ */
+type CardSlot = {
+  heading: KpiTeamWithCoverage | null;
+  frequencyHeading?: KpiTeamWithFrequency | null;
+  row: KpiRepRow | null;
+  index: number;
+};
 
 /**
  * The phone list's slots. With two teams or more (the Coverage tab only), each team's heading and then its
@@ -1813,6 +1847,15 @@ function cardSlots(teams: readonly KpiTeamWithCoverage[], reps: readonly KpiRepR
   if (teams.length < 2) return reps.map((row, index) => ({ heading: null, row, index }));
   return teams.flatMap((entry) => [
     { heading: entry, row: null, index: -1 },
+    ...entry.team.members.map((member) => ({ heading: null, row: member.row, index: member.boardIndex })),
+  ]);
+}
+
+/** The Frequency tab's phone slots: each team's heading and then its reps, from two teams up. */
+function frequencyCardSlots(teams: readonly KpiTeamWithFrequency[], reps: readonly KpiRepRow[]): CardSlot[] {
+  if (teams.length < 2) return reps.map((row, index) => ({ heading: null, row, index }));
+  return teams.flatMap((entry) => [
+    { heading: null, frequencyHeading: entry, row: null, index: -1 },
     ...entry.team.members.map((member) => ({ heading: null, row: member.row, index: member.boardIndex })),
   ]);
 }
@@ -1931,9 +1974,24 @@ function CoverageTable({
   );
 }
 
-function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
+function FrequencyTable({
+  context,
+  rows,
+  teams,
+}: {
+  context: ViewContext;
+  rows: KpiRepRow[];
+  /** The reps filed under their region and direct manager (`groupKpiRepsByTeam`), headed from two teams up. */
+  teams: readonly KpiTeamWithFrequency[];
+}) {
   const { coverageDetail: detail, filters } = context.board;
   const phoenix = isPhoenix(context.board);
+  // A heading per team only when there is more than one: a single team is the board itself. Each row keeps its
+  // place on the WHOLE board, so a rank disc reads the board's own number under every heading.
+  const sections: ReadonlyArray<{ entry: KpiTeamWithFrequency | null; members: ReadonlyArray<{ row: KpiRepRow; boardIndex: number }> }> =
+    teams.length >= 2
+      ? teams.map((entry) => ({ entry, members: entry.team.members }))
+      : [{ entry: null, members: rows.map((row, boardIndex) => ({ row, boardIndex })) }];
   return (
     <table className="hidden w-full table-fixed md:table">
       {/* Five columns for five cells. This colgroup once carried a sixth, copied from Coverage,
@@ -2018,8 +2076,10 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
           />
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
-        {rows.map((row, index) => (
+      {sections.map((section) => (
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70" key={section.entry?.team.key ?? "all"}>
+        {section.entry ? <KpiFrequencyTeamHeadingRow columns={5} entry={section.entry} phoenix={phoenix} /> : null}
+        {section.members.map(({ boardIndex: index, row }) => (
           <Fragment key={row.agentCrmId ?? `${row.repName}-${index}`}>
           <tr
             className="scroll-mt-20"
@@ -2028,6 +2088,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
             <RepCell
               action={coverageDoctorsToggle(context, row, "desktop")}
               rank={context.showRank ? index + 1 : undefined}
+              report="frequency"
               row={row}
               rules={context.board.kpiRules}
             />
@@ -2056,6 +2117,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
           </Fragment>
         ))}
       </tbody>
+      ))}
     </table>
   );
 }
@@ -2216,26 +2278,7 @@ function RepCard({
 
 // ── Coverage: the summary above one rep's two lists ───────────────────────────────────────────
 
-/** A grade letter's group, with everything else (blank, unscored, "D"…) filed under one honest label. */
-function gradeGroupOf(grade: string | null): string {
-  const letter = (grade ?? "").trim().toUpperCase().charAt(0);
-  return letter === "A" || letter === "B" || letter === "C" ? `Grade ${letter}` : "No grade";
-}
-
 type CoverageGroupRow = { label: string; planned: number; covered: number; href?: string };
-
-/** Planned and covered doctors per group, biggest group first. A tie keeps the groups' alphabetical order. */
-function coverageGroups(doctors: readonly KpiCoverageDoctor[], keyOf: (doctor: KpiCoverageDoctor) => string): CoverageGroupRow[] {
-  const groups = new Map<string, CoverageGroupRow>();
-  for (const doctor of doctors) {
-    const label = keyOf(doctor);
-    const row = groups.get(label) ?? { label, planned: 0, covered: 0 };
-    row.planned += 1;
-    if (doctor.visits > 0) row.covered += 1;
-    groups.set(label, row);
-  }
-  return [...groups.values()].sort((left, right) => right.planned - left.planned || left.label.localeCompare(right.label));
-}
 
 /** A group's name, as a link into the list narrowed to that group when it has one. */
 function BreakdownLabel({ row }: { row: CoverageGroupRow }) {
@@ -2511,28 +2554,10 @@ function FrequencyStatusChip({ status }: { status: DoctorFrequencyStatus }) {
 type FrequencyDoctorRow = { doctor: KpiCoverageDoctor; frequency: NonNullable<KpiCoverageDoctor["frequency"]> };
 
 /**
- * How far one doctor is from where the plan or the norm puts them: negative is short, positive is extra, zero is on
- * target, null where there is nothing to compare (not graded, or not due yet).
- *
- * On the plan basis the shortfall is measured against the calls that have COME DUE and the excess
- * against the WHOLE period's calls, for the reason `frequencyStatusOf` gives: a rep who is behind
- * today's schedule can still catch up, one who has gone past the month's total cannot undo it.
+ * How far one doctor is from where the plan or the norm puts them, and the Gap column's words, are
+ * crm/kpi-frequency-rep-detail.ts's `kpiFrequencyGap` and `kpiFrequencyGapText`, so the screen and the
+ * export print the same "2 short" (premium pass, 9 Nov 2026).
  */
-function frequencyGap(frequency: FrequencyDoctorRow["frequency"]): number | null {
-  if (frequency.required == null || frequency.status === "not-due" || frequency.status === "ungraded") return null;
-  if (frequency.basis === "plan" && frequency.actual > frequency.required) return frequency.actual - frequency.required;
-  return frequency.actual - (frequency.dueSoFar ?? frequency.required);
-}
-
-function frequencyGapText(frequency: FrequencyDoctorRow["frequency"]): string {
-  const gap = frequencyGap(frequency);
-  if (gap == null) return "—";
-  if (gap === 0) return "On target";
-  if (gap < 0) return `${Math.abs(gap)} short`;
-  // Ahead of the schedule but inside the month's total: still exact, so it is not "extra".
-  if (frequency.basis === "plan" && frequency.required != null && frequency.actual <= frequency.required) return `${gap} ahead`;
-  return `${gap} extra`;
-}
 
 /**
  * The visits made as a share of the visits the plan or the norm asks for, for the meter under the
@@ -2552,7 +2577,7 @@ function frequencyRows(detail: KpiCoverageDetail): FrequencyDoctorRow[] {
       const byStatus = FREQUENCY_STATUS_ORDER[left.frequency.status] - FREQUENCY_STATUS_ORDER[right.frequency.status];
       if (byStatus !== 0) return byStatus;
       // Inside a verdict the biggest shortfall leads.
-      const byGap = (frequencyGap(left.frequency) ?? 0) - (frequencyGap(right.frequency) ?? 0);
+      const byGap = (kpiFrequencyGap(left.frequency) ?? 0) - (kpiFrequencyGap(right.frequency) ?? 0);
       if (byGap !== 0) return byGap;
       return (left.doctor.name ?? "~").localeCompare(right.doctor.name ?? "~");
     });
@@ -2619,40 +2644,26 @@ function FrequencyDoctors({
   const narrowing = hasActiveKpiDoctorFilter(board.filters.doctor);
   const sortNote = doctorSortNote(board.filters);
 
-  let asked = 0;
-  let due = 0;
-  let made = 0;
-  let owed = 0;
-  const byStatus = new Map<DoctorFrequencyStatus, number>();
-  for (const { frequency } of rows) {
-    byStatus.set(frequency.status, (byStatus.get(frequency.status) ?? 0) + 1);
-    if (frequency.required == null) continue;
-    asked += frequency.required;
-    due += frequency.dueSoFar ?? frequency.required;
-    made += frequency.actual;
-    owed += Math.max(0, (frequency.dueSoFar ?? frequency.required) - frequency.actual);
-  }
-  const judged = rows.filter(({ frequency }) => frequency.status !== "ungraded" && frequency.status !== "not-due");
-  const passing = judged.filter(({ frequency }) => frequency.status === "exact" || frequency.status === "at-norm").length;
-  const pct = judged.length > 0 ? Math.round((passing / judged.length) * 100) : null;
-  const gradeGroups = coverageGroups(
-    rows.map((row) => row.doctor),
-    (doctor) => gradeGroupOf(doctor.grade),
-  ).sort((left, right) => left.label.localeCompare(right.label));
-  const gradeAsked = new Map<string, { asked: number; made: number; passing: number; judged: number }>();
-  for (const { doctor, frequency } of rows) {
-    const key = gradeGroupOf(doctor.grade);
-    const slot = gradeAsked.get(key) ?? { asked: 0, made: 0, passing: 0, judged: 0 };
-    if (frequency.required != null) {
-      slot.asked += frequency.required;
-      slot.made += frequency.actual;
-    }
-    if (frequency.status !== "ungraded" && frequency.status !== "not-due") {
-      slot.judged += 1;
-      if (frequency.status === "exact" || frequency.status === "at-norm") slot.passing += 1;
-    }
-    gradeAsked.set(key, slot);
-  }
+  // THE PANEL ABOVE THE LIST (premium pass, 9 Nov 2026), from crm/kpi-frequency-rep-detail.ts counting the
+  // verdicts on the WHOLE list, so the tiles add up to the rep's row; only the table below is narrowed.
+  const summary = kpiRepFrequencySummary(detail);
+  const byStatus = summary?.byStatus ?? new Map<DoctorFrequencyStatus, number>();
+  const doctorHref = (patch: Partial<KpiDoctorFilter>) =>
+    hrefWith(context, { filters: { ...board.filters, doctor: { ...board.filters.doctor, ...patch } } });
+  const shortStatuses: KpiDoctorStatus[] = ["below", "not-visited"];
+  const buckets = kpiShortDepths(detail);
+  const lift = summary ? kpiOneMoreVisitLift(summary, buckets) : null;
+  const steps = kpiFrequencyFirstSteps(detail, board.asOf, 8);
+  const groupLinks = (patch: Partial<KpiDoctorFilter>) => ({
+    group: doctorHref({ ...patch, statuses: [] }),
+    short: doctorHref({ ...patch, statuses: shortStatuses }),
+  });
+  const grades = kpiFrequencyByGrade(detail).map((row) => ({ ...row, links: groupLinks({ grades: [row.label] }) }));
+  const specialities = kpiFrequencyBySpeciality(detail).map((row) => ({
+    ...row,
+    links: groupLinks({ specialities: [row.label === KPI_NO_SPECIALITY ? KPI_DOCTOR_NO_SPECIALITY : row.label] }),
+  }));
+  const weeks = kpiFrequencyByWeek(detail, board.asOf);
 
   const statusOrder = (Object.keys(FREQUENCY_STATUS_ORDER) as DoctorFrequencyStatus[])
     .filter((status) => (byStatus.get(status) ?? 0) > 0)
@@ -2708,7 +2719,7 @@ function FrequencyDoctors({
                   <KpiMeter band={FREQUENCY_STATUS_BAND[frequency.status]} value={visitFill(frequency)} />
                 )}
               </td>
-              <td className={NUM}>{frequencyGapText(frequency)}</td>
+              <td className={NUM}>{kpiFrequencyGapText(frequency)}</td>
               <td className={TD}>
                 <FrequencyStatusChip status={frequency.status} />
               </td>
@@ -2744,7 +2755,7 @@ function FrequencyDoctors({
               </div>
               <div className="min-w-0">
                 <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Gap</dt>
-                <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{frequencyGapText(frequency)}</dd>
+                <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{kpiFrequencyGapText(frequency)}</dd>
               </div>
             </dl>
           </li>
@@ -2765,33 +2776,34 @@ function FrequencyDoctors({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile
-          band={pct == null ? "noplan" : kpiBandOf(pct)}
-          caption={
-            pct == null
-              ? "Nothing to judge yet"
-              : `${passing} of ${judged.length} judged doctors ${phoenix ? "at their norm" : "visited exactly as planned"}`
-          }
-          label="Frequency"
-          progress={pct}
-          value={pct == null ? "—" : `${pct}%`}
-        />
-        <KpiTile
-          caption={
-            due === asked ? `Across ${rows.length} planned doctors` : `${due} have come due so far, of ${asked} in the period`
-          }
-          label="Visits asked for"
-          value={String(asked)}
-        />
-        <KpiTile caption="Visits made to those doctors" label="Visits made" value={String(made)} />
-        <KpiTile
-          band={owed > 0 ? "behind" : "elite"}
-          caption={owed > 0 ? "Due so far and not yet made" : "Nothing is owed"}
-          label="Visits owed"
-          value={String(owed)}
-        />
-      </div>
+      {summary ? (
+        <>
+          <KpiRepFrequencyTiles phoenix={phoenix} summary={summary} />
+          <KpiFrequencyTrack
+            hrefs={{
+              passing: doctorHref({ statuses: phoenix ? ["at-norm"] : ["exact"] }),
+              short: doctorHref({ statuses: shortStatuses }),
+              extra: doctorHref({ statuses: ["above"] }),
+              waiting: doctorHref({ statuses: phoenix ? ["ungraded", "not-due"] : ["not-due"] }),
+            }}
+            lift={lift}
+            phoenix={phoenix}
+            summary={summary}
+          />
+          {board.isCurrentMonth ? (
+            <p className={`leading-4 ${CAPTION}`}>
+              The period is still running, so a doctor is judged on the visits that have come due so far, and a doctor whose
+              planned days are all still ahead is not judged yet.
+            </p>
+          ) : null}
+          {summary.short > 0 ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <KpiFrequencyFirstPanel phoenix={phoenix} steps={steps} total={summary.short} />
+              <KpiShortDepthPanel buckets={buckets} shortHref={doctorHref({ statuses: shortStatuses })} />
+            </div>
+          ) : null}
+        </>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">
         {statusOrder.map((status) => {
@@ -2813,29 +2825,17 @@ function FrequencyDoctors({
         })}
       </div>
 
-      {gradeGroups.length > 1 || (gradeGroups[0] && gradeGroups[0].label !== "No grade") ? (
-        <div className="min-w-0 border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">By grade</p>
-          </div>
-          <ul className="divide-y divide-slate-100">
-            {gradeGroups.map((group) => {
-              const slot = gradeAsked.get(group.label) ?? { asked: 0, made: 0, passing: 0, judged: 0 };
-              return (
-                <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2" key={group.label}>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {group.label} <span className="text-phx-2xs font-bold text-slate-500">· {group.planned} doctors</span>
-                  </span>
-                  <span className="text-phx-2xs font-semibold tabular-nums text-slate-600">
-                    {slot.made} visits made of {slot.asked} asked for
-                    {slot.judged > 0 ? ` · ${slot.passing} of ${slot.judged} ${phoenix ? "at norm" : "exact"}` : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : null}
+      <KpiFrequencyWeekTable phoenix={phoenix} weeks={weeks} />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <KpiFrequencyGroupTable
+          caption={phoenix ? "The grade sets the norm: A 3, B 2, C 1 visits in the month." : undefined}
+          groupHeading="Grade"
+          phoenix={phoenix}
+          rows={grades}
+          title="By grade"
+        />
+        <KpiFrequencyGroupTable groupHeading="Speciality" phoenix={phoenix} rows={specialities} title="By speciality" />
+      </div>
 
       {/* The rep's WHOLE list per brick, like the tiles above: the filters narrow the table only. */}
       <BrickBreakdown
@@ -3573,6 +3573,14 @@ export function KpisBoardView({
     tab === "coverage" && board.reps.length > 1
       ? kpiTeamsWithCoverage(groupKpiRepsByTeam(board.reps), board.kpiRules)
       : [];
+  // The same teams on the Frequency tab (premium pass, 9 Nov 2026), each with its frequency from the board's own
+  // team arithmetic, so a team sits in the same place, under the same heading, on both pages.
+  const frequencyTeams: KpiTeamWithFrequency[] =
+    tab === "frequency" && board.reps.length > 1
+      ? kpiTeamsWithFrequency(groupKpiRepsByTeam(board.reps), board.kpiRules)
+      : [];
+  const phoneSlots =
+    frequencyTeams.length >= 2 ? frequencyCardSlots(frequencyTeams, board.reps) : cardSlots(coverageTeams, board.reps);
   // A measure with one leaderboard (Coverage, Frequency, one half of Call Rate) draws it across the row,
   // its three names side by side, instead of one card in a row built for four.
   const lonePodium = tab === "coverage" || tab === "frequency" || (tab === "call-rate" && callRateView !== "total");
@@ -3832,6 +3840,14 @@ export function KpisBoardView({
                   <KpiTile band={tile.band} caption={tile.caption} key={tile.key} label={tile.label} value={tile.value} />
                 ))
               : null}
+            {/* The Frequency report's own figures beside its tile (premium pass, 9 Nov 2026): the doctors short,
+                the doctors seen too often or left out ungraded, the reps in the top band and, when read, the
+                doctors not validated yet. */}
+            {reportPage && tab === "frequency" && !solo
+              ? kpiFrequencyExtraTiles(board).map((tile) => (
+                  <KpiTile band={tile.band} caption={tile.caption} key={tile.key} label={tile.label} value={tile.value} />
+                ))
+              : null}
           </div>
           )}
 
@@ -3922,6 +3938,25 @@ export function KpisBoardView({
                 </div>
               ) : null}
 
+              {/* WHERE THE TEAM STANDS ON FREQUENCY (premium pass, 9 Nov 2026), on the Frequency tab with more
+                  than one rep: the judged doctors in the rules' own words, the reps by band, and each region and
+                  district manager's team side by side. Every figure adds up to a tile above it. */}
+              {frequencyTeams.length > 0 ? (
+                <div className="border-t border-slate-100">
+                  <KpiSection
+                    description={
+                      phoenix
+                        ? "The graded doctors at their norm against the rest, the reps in the bands their own chips show, and each region and district manager's team side by side. Every figure adds up to the tiles above."
+                        : "The planned doctors visited exactly as planned against the rest, the reps in the bands their own chips show, and each region and district manager's team side by side. Every figure adds up to the tiles above."
+                    }
+                    title="Where the team stands"
+                  >
+                    <KpiFrequencyStanding board={board} />
+                    <KpiTeamFrequencyRollup phoenix={phoenix} teams={frequencyTeams} />
+                  </KpiSection>
+                </div>
+              ) : null}
+
               {/* THE LEADERBOARDS. Three, never one — a single "best rep" would need a blended
                   score, and this board adds no fourth measure. They rank the FILTERED rows, so
                   filtering to one line answers "best in that line". Only when there is more than one
@@ -3980,7 +4015,11 @@ export function KpisBoardView({
 
               <div className="border-t border-slate-100">
                 <div className="divide-y divide-slate-100 md:hidden">
-                  {cardSlots(coverageTeams, board.reps).map(({ heading, index, row }) => {
+                  {phoneSlots.map(({ frequencyHeading, heading, index, row }) => {
+                    if (frequencyHeading)
+                      return (
+                        <KpiFrequencyTeamHeadingBand entry={frequencyHeading} key={`team-${frequencyHeading.team.key}`} phoenix={phoenix} />
+                      );
                     if (heading) return <KpiTeamHeadingBand entry={heading} key={`team-${heading.team.key}`} />;
                     if (!row) return null;
                     const doctorsTab = tab === "coverage" || tab === "frequency";
@@ -4044,7 +4083,7 @@ export function KpisBoardView({
                     )
                   ) : null}
                   {tab === "coverage" ? <CoverageTable context={context} rows={board.reps} teams={coverageTeams} /> : null}
-                  {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} /> : null}
+                  {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} teams={frequencyTeams} /> : null}
                 </div>
               </div>
 

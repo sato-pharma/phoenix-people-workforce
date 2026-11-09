@@ -226,7 +226,12 @@ export function runKpiBrickWiringTests() {
     /coverageDoctors: doctorsTab \? \{ rep: searchParams\.get\("rep"\) \|\| null \} : null/,
     "the export asks for the doctor lists only from the Coverage and Frequency tabs",
   );
-  assert.match(route, /buildKpisBoardWorkbook\(board, new Date\(\)\.toISOString\(\), \{ doctorLists: doctorsTab \}\)/);
+  assert.match(route, /buildKpisBoardWorkbook\(board, new Date\(\)\.toISOString\(\), \{\s*doctorLists: doctorsTab,/);
+  assert.match(
+    route,
+    /report: tab === "frequency" \? "frequency" : tab === "coverage" \? "coverage" : undefined,/,
+    "the export names its report, so the Frequency file's Teams and Doctors sheets speak frequency",
+  );
   assert.match(route, /await getKpisBoard\(\{[\s\S]*?access,/, "through the same getKpisBoard and its scope gate");
 
   const screen = code("src/components/crm/kpis-board-view.tsx");

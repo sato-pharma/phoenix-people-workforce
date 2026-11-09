@@ -25,12 +25,20 @@
  * district manager"), a "Teams" sheet — one line per region and direct manager, the same lines the
  * Coverage screen heads its reps with, each from `kpiTeamCoverage` (the board's own team arithmetic), so
  * the teams' planned and visited add up to the cover's team coverage.
+ *
+ * FROM THE FREQUENCY TAB (the Frequency premium pass, 9 Nov 2026) the same Teams sheet speaks frequency
+ * instead — judged doctors, the pass, below, above or ungraded, and the team's frequency, each from
+ * `kpiTeamFrequency` (the board's own team arithmetic), so the teams' pass and judged add up to the cover's
+ * team frequency — and the Doctors sheet carries what the screen's Frequency table prints: Should visit,
+ * Visited, the Gap in the same words ("2 short") and the visits owed.
  */
 
 import ExcelJS from "exceljs";
 import type { KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 import { kpiIndexOf } from "@/lib/crm/kpi-index";
 import { groupKpiRepsByTeam, kpiTeamCoverage, type KpiCoverageTeam, type KpiTeamCoverage } from "@/lib/crm/kpi-coverage-teams";
+import { kpiTeamFrequency, type KpiTeamFrequency } from "@/lib/crm/kpi-frequency-teams";
+import { kpiFrequencyGapText, kpiFrequencyOwed } from "@/lib/crm/kpi-frequency-rep-detail";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { KPI_FREQUENCY_STATUS_LABEL, kpiBrickFrequencyColumns, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
 import { countActiveKpiDoctorFilter, filterKpiDoctors, kpiDoctorBrickLabel } from "@/lib/crm/kpis-doctor-filters";
@@ -64,6 +72,11 @@ export const KPI_EXPORT_MARKERS = {
 export type KpisWorkbookOptions = {
   /** True when the export came from the Coverage or Frequency tab, so the bricks were asked for. */
   doctorLists?: boolean;
+  /**
+   * The report the export came from, so the Teams and Doctors sheets speak its measure. Coverage when left
+   * out, which is what the sheets said before the Frequency pass.
+   */
+  report?: "coverage" | "frequency";
 };
 
 /** A cell value: a number with its format, a date, a marker in words, or blank. */
@@ -282,8 +295,68 @@ function teamColumns(board: KpisBoard): Array<Column<TeamLine>> {
   ];
 }
 
+/** One line of the Frequency export's Teams sheet: a region and direct manager, and that team's frequency. */
+type FrequencyTeamLine = { team: KpiCoverageTeam<KpiRepRow>; frequency: KpiTeamFrequency };
+
+/** The Frequency export's Teams sheet: the Frequency screen's team headings as columns, in the rules' own words. */
+function frequencyTeamColumns(board: KpisBoard): Array<Column<FrequencyTeamLine>> {
+  const phoenix = board.kpiRules === "phoenix";
+  return [
+    { header: "Region", width: 22, cell: (line) => text(line.team.regionName) },
+    { header: "Manager", width: 26, cell: (line) => text(line.team.managerName) },
+    { header: "Reps", width: 9, cell: (line) => ({ kind: "count", value: line.frequency.reps }) },
+    { header: "Just started", width: 11, cell: (line) => ({ kind: "count", value: line.frequency.justStarted }) },
+    {
+      header: phoenix ? "Graded doctors" : "Doctors planned",
+      width: 11,
+      cell: (line) => ({ kind: "count", value: line.frequency.judged }),
+    },
+    { header: phoenix ? "At norm" : "Exact", width: 10, cell: (line) => ({ kind: "count", value: line.frequency.met }) },
+    { header: phoenix ? "Below norm" : "Below", width: 10, cell: (line) => ({ kind: "count", value: line.frequency.below }) },
+    phoenix
+      ? { header: "Ungraded", width: 10, cell: (line) => ({ kind: "count", value: line.frequency.ungraded }) }
+      : { header: "Above", width: 10, cell: (line) => ({ kind: "count", value: line.frequency.above }) },
+    {
+      header: "Frequency",
+      width: 11,
+      cell: (line) => ({ kind: "pct", value: line.frequency.frequencyPct, marker: KPI_EXPORT_MARKERS.noPlan }),
+    },
+    {
+      header: "Reps at 90% or more",
+      width: 13,
+      cell: (line) =>
+        line.frequency.withPlan > 0
+          ? { kind: "text", value: `${line.frequency.topBand} of ${line.frequency.withPlan}` }
+          : { kind: "text", value: KPI_EXPORT_MARKERS.noPlan },
+    },
+  ];
+}
+
+/** What the Frequency table prints beside a doctor: Should visit, Visited, the Gap in its words, and the visits owed. */
+function frequencyDoctorColumns(): Array<Column<KpiCoverageDoctor>> {
+  return [
+    {
+      header: "Should visit",
+      width: 10,
+      cell: (row) =>
+        row.frequency?.required == null
+          ? { kind: "text", value: row.frequency ? "No norm" : "" }
+          : { kind: "count", value: row.frequency.required },
+    },
+    {
+      header: "Due so far",
+      width: 10,
+      cell: (row) =>
+        row.frequency?.dueSoFar == null ? { kind: "text", value: "" } : { kind: "count", value: row.frequency.dueSoFar },
+    },
+    { header: "Visited", width: 9, cell: (row) => ({ kind: "count", value: row.frequency?.actual ?? row.visits }) },
+    { header: "Gap", width: 11, cell: (row) => text(row.frequency ? kpiFrequencyGapText(row.frequency) : null) },
+    { header: "Visits owed", width: 10, cell: (row) => ({ kind: "count", value: row.frequency ? kpiFrequencyOwed(row.frequency) : 0 }) },
+  ];
+}
+
 /** The open rep's doctors, as the list on screen prints each one. */
-function doctorColumns(): Array<Column<KpiCoverageDoctor>> {
+function doctorColumns(report: "coverage" | "frequency" = "coverage"): Array<Column<KpiCoverageDoctor>> {
   return [
     { header: "Doctor", width: 30, cell: (row) => text(row.name ?? KPI_EXPORT_MARKERS.nameNotOnPlan) },
     { header: "Speciality", width: 18, cell: (row) => text(row.speciality) },
@@ -298,6 +371,7 @@ function doctorColumns(): Array<Column<KpiCoverageDoctor>> {
       cell: (row) => ({ kind: "date", value: row.lastVisitDate, marker: KPI_EXPORT_MARKERS.notVisited }),
     },
     { header: "Verdict", width: 14, cell: (row) => text(row.frequency ? KPI_FREQUENCY_STATUS_LABEL[row.frequency.status] : null) },
+    ...(report === "frequency" ? frequencyDoctorColumns() : []),
   ];
 }
 
@@ -513,8 +587,9 @@ export async function buildKpisBoardWorkbook(
     });
   }
 
+  const frequencyReport = options.report === "frequency";
   const teams: TeamLine[] =
-    options.doctorLists && board.reps.length > 1
+    options.doctorLists && !frequencyReport && board.reps.length > 1
       ? groupKpiRepsByTeam(board.reps).map((team) => ({
           team,
           coverage: kpiTeamCoverage(
@@ -537,13 +612,37 @@ export async function buildKpisBoardWorkbook(
     });
   }
 
+  const frequencyTeams: FrequencyTeamLine[] =
+    options.doctorLists && frequencyReport && board.reps.length > 1
+      ? groupKpiRepsByTeam(board.reps).map((team) => ({
+          team,
+          frequency: kpiTeamFrequency(
+            team.members.map((member) => member.row),
+            board.kpiRules ?? "legacy",
+          ),
+        }))
+      : [];
+  if (frequencyTeams.length >= 2) {
+    writeTableSheet(workbook, {
+      sheetName: "Teams",
+      title: "Teams",
+      subtitle: `${subtitle} · every rep filed under their region and direct manager`,
+      provenance: [
+        `${frequencyTeams.length} teams · a team's frequency is its ${board.kpiRules === "phoenix" ? "doctors at norm over its graded doctors" : "doctors visited exactly as planned over its planned doctors"} · reps who have just started are a head and nothing else, as on the board`,
+      ],
+      columns: frequencyTeamColumns(board),
+      rows: frequencyTeams,
+      empty: "No team on this board.",
+    });
+  }
+
   if (detail && doctorsShown) {
     writeTableSheet(workbook, {
       sheetName: "Doctors",
       title: `Doctors · ${detail.repName}`,
       subtitle,
       provenance: [doctorsShown],
-      columns: doctorColumns(),
+      columns: doctorColumns(frequencyReport ? "frequency" : "coverage"),
       rows: doctors,
       empty: "No doctor on this list matches the filters on screen.",
     });
