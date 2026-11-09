@@ -30,6 +30,7 @@ import type {
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import {
@@ -421,6 +422,17 @@ async function upsertPositions(
       .length,
     ids: await idsForCodes(supabase, "positions", codes),
   };
+}
+
+async function existingEmployeeHireDates(supabase: SupabaseClient, hrIds: string[]): Promise<Map<string, string | null>> {
+  const hireDates = new Map<string, string | null>();
+  if (hrIds.length === 0) return hireDates;
+  const { data, error } = await supabase.from("employees").select("hr_id, hire_date").in("hr_id", hrIds);
+  if (error) throw new Error(error.message);
+  for (const row of (data ?? []) as Array<{ hr_id: string; hire_date: string | null }>) {
+    hireDates.set(row.hr_id, row.hire_date ?? null);
+  }
+  return hireDates;
 }
 
 async function existingEmployeeHrIds(
@@ -839,10 +851,17 @@ async function upsertEmployees(
     positionIds: IdMap;
     teamIds: IdMap;
   },
+  actorHrId: string | null,
 ) {
   const employeeRecords = records.filter((record) => record.hrId);
   const hrIds = employeeRecords.map((record) => record.hrId as string);
   const existingHrIds = await existingEmployeeHrIds(supabase, hrIds);
+  // Read BEFORE the write: a row whose hire date this file moves later has deduction lines for the
+  // days before it that must be re-stated afterwards (src/lib/deductions/pre-hire.ts).
+  const previousHireDates = await existingEmployeeHireDates(
+    supabase,
+    employeeRecords.filter((record) => record.hireDate && existingHrIds.has(record.hrId as string)).map((record) => record.hrId as string),
+  );
 
   if (employeeRecords.length > 0) {
     const values = employeeRecords.map((record) =>
@@ -883,6 +902,17 @@ async function upsertEmployees(
     if (error) {
       throw new Error(error.message);
     }
+  }
+
+  const { restatePreHireDeductionsAfterHireDateSave } = await import("@/lib/deductions/pre-hire");
+  for (const [hrId, previousHireDate] of previousHireDates) {
+    const record = employeeRecords.find((candidate) => candidate.hrId === hrId);
+    await restatePreHireDeductionsAfterHireDateSave({
+      employeeHrId: hrId,
+      previousHireDate,
+      savedHireDate: record?.hireDate ?? null,
+      actorHrId: hrIdForStorage(actorHrId),
+    });
   }
 
   return {
@@ -1283,6 +1313,7 @@ export async function POST(request: Request) {
         positionIds,
         teamIds,
       },
+      access.hrId ?? null,
     );
     const compensationResult = await upsertEmployeeCompensation(
       supabase,

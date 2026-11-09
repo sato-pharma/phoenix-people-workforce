@@ -8,7 +8,7 @@ import {
 import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { sharedIdentityGroups } from "@/lib/auth/identity-aliases";
-import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeeCvHrIdSet } from "@/lib/employees/employee-cv";
 import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
 import {
@@ -2986,6 +2986,7 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
   const originalHrId = normalizeHrId(input.originalHrId);
   const isUpdate = Boolean(originalHrId);
   let previousManagerHrId: string | null = null;
+  let previousHireDate: string | null = null;
 
   if (isUpdate) {
     if (!hrId) {
@@ -2996,13 +2997,14 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
       throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
     }
 
-    const existing = await supabaseRest<Array<{ hr_id: string; manager_hr_id: string | null }>>(
-      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id`,
+    const existing = await supabaseRest<Array<{ hr_id: string; manager_hr_id: string | null; hire_date: string | null }>>(
+      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id,hire_date`,
     );
     if (existing.length === 0) {
       throw new Error(`Employee ${originalHrId} was not found.`);
     }
     previousManagerHrId = normalizeHrId(existing[0].manager_hr_id);
+    previousHireDate = existing[0].hire_date ?? null;
   } else if (hrId) {
     const existing = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
@@ -3062,6 +3064,18 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
         previousManagerHrId: vacancyReplacement.hrId,
       });
     }
+  }
+
+  // A hire date moved LATER leaves every line already written for the days before it standing
+  // (owner, 2026-11-09). Re-stated here; it never throws, so a failure cannot undo the save.
+  if (isUpdate) {
+    const { restatePreHireDeductionsAfterHireDateSave } = await import("@/lib/deductions/pre-hire");
+    await restatePreHireDeductionsAfterHireDateSave({
+      employeeHrId: payload.hr_id,
+      previousHireDate,
+      savedHireDate: rows[0]?.hire_date ?? null,
+      actorHrId: hrIdForStorage(actor?.actorHrId),
+    });
   }
 
   invalidateEmployeeDirectoryCache();
