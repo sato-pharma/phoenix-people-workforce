@@ -23,7 +23,17 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
-import { linkHeadwindApp, linkHeadwindFile } from "@/lib/devices/headwind/configurations";
+import {
+  applyToEachRules,
+  type HeadwindAuditWriter,
+  type HeadwindConfigurationSummary,
+  type HeadwindRulesTarget,
+  linkHeadwindApp,
+  linkHeadwindFile,
+  resolveHeadwindRules,
+  secureHeadwindVersionLinks,
+  tabletFollowableUrl,
+} from "@/lib/devices/headwind/configurations";
 
 export class HeadwindUploadError extends Error {
   constructor(message: string) {
@@ -71,47 +81,11 @@ export function applicationRegisterBody(
 }
 
 /**
- * The download link a tablet can actually follow.
- *
- * 🔴 THE SERVER WRITES AN UPLOADED APP'S LINK AS `http://`, AND A TABLET WILL NOT FOLLOW THE REDIRECT.
- * Headwind builds the link from its own base address, which is plain http behind Railway's TLS, so a
- * fresh upload is registered as `http://mdm.satopharma.com/files/<name>`. That address answers 301 to
- * https, and the agent treats the 301 as a failed download ("Bad server response … 301"). One dead link
- * stops the tablet's whole update run, so every app listed after it — the launcher included — never
- * arrives. Measured on production, 9 Nov 2026: both line apps were registered on http, PHX-TAB-0007
- * stopped at the Pedia app on every check-in and stayed on launcher 6.39, which sends no location.
- * The https twin is the same file on the same server.
+ * `tabletFollowableUrl` and the https step live beside the link check in `configurations.ts`, because
+ * linking an app (not only uploading one) must move its links onto https first. Re-exported here, where
+ * the upload's own readers look for it.
  */
-export function tabletFollowableUrl(url: unknown): string | null {
-  if (typeof url !== "string" || !url.startsWith("http://")) return null;
-  return `https://${url.slice("http://".length)}`;
-}
-
-/** Step 2b — move every version of a just-registered app onto its https link (see `tabletFollowableUrl`). */
-async function secureVersionLinks(
-  applicationId: number,
-  fetchImpl: typeof fetch,
-  env: NodeJS.ProcessEnv,
-): Promise<void> {
-  const versions = await callHeadwind<Array<Record<string, unknown>>>(
-    `/rest/private/applications/${applicationId}/versions`,
-    { method: "GET" },
-    fetchImpl,
-    env,
-  );
-  for (const version of Array.isArray(versions) ? versions : []) {
-    const url = tabletFollowableUrl(version.url);
-    if (!url) continue;
-    // The live version object goes back whole with only the link changed: its id is kept, so the server
-    // edits the row in place rather than adding a second version.
-    await callHeadwind(
-      "/rest/private/applications/versions",
-      { body: JSON.stringify({ ...version, url }), method: "PUT" },
-      fetchImpl,
-      env,
-    );
-  }
-}
+export { tabletFollowableUrl };
 
 /**
  * Step 1 — send the bytes up.
@@ -158,26 +132,87 @@ function checkFile(file: unknown, what: string): File {
   return file;
 }
 
+/**
+ * The most a request to the upload route may carry: the file's own limit plus room for the multipart
+ * framing around it.
+ */
+export const HEADWIND_MAX_UPLOAD_REQUEST_BYTES = HEADWIND_MAX_UPLOAD_BYTES + 1024 * 1024;
+
+/**
+ * Whether the upload route may read a request body of this declared length at all.
+ *
+ * 🔴 `formData()` HOLDS THE WHOLE BODY IN MEMORY BEFORE ANY CHECK RUNS. The route is left out of the
+ * proxy (its 10 MB copy cut every APK short), so nothing in front of it caps the body either: a 2 GB
+ * POST was buffered whole and only then refused by `checkFile` as over 300 MB. The declared length is
+ * read first — none (a chunked body, whose size is unknown until it is read) is refused, and so is one
+ * over the cap. A browser's FormData upload always declares it.
+ */
+export function headwindUploadLengthDecision(
+  value: string | null,
+): { ok: true } | { ok: false; status: 400 | 411 | 413; message: string } {
+  const text = value?.trim() ?? "";
+  if (!text) {
+    return { message: "The upload did not say how large it is, so it was not read. Send it again from the page.", ok: false, status: 411 };
+  }
+  if (!/^\d+$/.test(text) || Number(text) <= 0) {
+    return { message: "The upload's size is not a number, so it was not read.", ok: false, status: 400 };
+  }
+  if (Number(text) > HEADWIND_MAX_UPLOAD_REQUEST_BYTES) {
+    return {
+      message: `That upload is over the ${HEADWIND_MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit, so it was not read. Nothing reached the tablet server.`,
+      ok: false,
+      status: 413,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * An APK is a zip archive, and every zip starts with the four bytes `PK\x03\x04`.
+ *
+ * 🔴 A FILE MERELY NAMED `.apk` USED TO BE SENT WHOLE AND REGISTERED. The server then read no package
+ * out of it, the register failed as `error.internal.server` under an HTTP 200, and that failed register
+ * consumed the uploaded file — a sentence that names nothing, after up to 300 MB crossed the network
+ * twice. Four bytes read here refuse it before anything is sent.
+ */
+export async function looksLikeApk(file: File): Promise<boolean> {
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  return head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+}
+
 export type HeadwindAppUploadResult = {
   applicationId: number | null;
   packageName: string | null;
   version: string | null;
   installed: boolean;
+  /** The names of the sets of rules the app was put on — empty when none was named. */
+  rules: string[];
   message: string;
 };
 
+function readText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 /**
- * Send an APK up and, if a set of rules was named, install it on every tablet carrying those rules.
+ * Send an APK up and, if sets of rules were named, install it on every tablet carrying them.
  *
  * The server reads the package name and version out of the APK itself — Phoenix does not parse it and
  * does not guess. `showIcon` defaults to true because an app nobody can see is the hidden case, not
- * the ordinary one.
+ * the ordinary one. `rules` may name sets by id, or be `"rep"`: every rep set of rules ("Rep tablets"
+ * and each line's copy), which a change meant for every rep tablet needs (runbook §8.17) — the app is
+ * uploaded ONCE and linked to each, with one audit row per set.
+ *
+ * 🔴 THE REGISTRATION IS AUDITED THE MOMENT IT HAPPENS, before the https step and the links. Either of
+ * those can refuse, and the app is on the server by then whatever happens next — an audit row written
+ * after them left a registered app with no record of who added it.
  */
 export async function uploadHeadwindApp(
-  input: { file: unknown; configurationId?: number | null; showIcon?: boolean },
+  input: { file: unknown; rules?: HeadwindRulesTarget | null; showIcon?: boolean },
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  audit: HeadwindAuditWriter = writeRequiredAuditLog,
 ): Promise<HeadwindAppUploadResult> {
   const file = checkFile(input.file, "an APK");
   if (!file.name.toLowerCase().endsWith(".apk")) {
@@ -186,8 +221,25 @@ export async function uploadHeadwindApp(
         "builds from and cannot be installed on a tablet directly.",
     );
   }
+  if (!(await looksLikeApk(file))) {
+    throw new HeadwindUploadError(
+      "That file is named .apk but is not an Android app — an APK is a zip archive and this file does not start like one. Nothing was sent.",
+    );
+  }
+  // The rules are read BEFORE the bytes go up, so a set that does not exist refuses with nothing sent.
+  const rules: HeadwindConfigurationSummary[] = input.rules ? await resolveHeadwindRules(input.rules, fetchImpl, env) : [];
 
   const { fileDetails, serverPath } = await uploadBytes(file, fetchImpl, env);
+  const details = fileDetails && typeof fileDetails === "object" ? (fileDetails as Record<string, unknown>) : {};
+  const readPackage = readText(details.pkg);
+  const readVersion = readText(details.version);
+  // 🔴 NO PACKAGE READ, NO REGISTER. The server could not read the file as an app; registering it anyway
+  // fails as `error.internal.server` under an HTTP 200 and consumes the uploaded file (see below).
+  if (!readPackage) {
+    throw new HeadwindUploadError(
+      "The tablet server could not read a package name out of that file, so it was not added — it is not a working Android app. Nothing reached any tablet.",
+    );
+  }
 
   // 🔴 `type: "app"` IS NOT OPTIONAL, AND LEAVING IT OUT FAILS AS A 200. Headwind's `applications`
   // table has NOT NULL on `type`, so without it the insert throws and the server answers
@@ -212,60 +264,91 @@ export async function uploadHeadwindApp(
   );
 
   const applicationId = typeof application?.id === "number" ? application.id : null;
-  const packageName = typeof application?.pkg === "string" ? application.pkg : null;
-  const version = typeof application?.version === "string" ? application.version : null;
+  const packageName = readText(application?.pkg);
+  const version = readText(application?.version);
+  const shownVersion = version ?? readVersion;
+  const label = `${packageName ?? readPackage}${shownVersion ? ` ${shownVersion}` : ""}`;
 
-  if (applicationId !== null) await secureVersionLinks(applicationId, fetchImpl, env);
-
-  await writeRequiredAuditLog({
+  await audit({
     actorLoginId: actor,
-    entityId: packageName ?? file.name,
+    entityId: packageName ?? readPackage,
     entityType: "headwind_configuration",
     newValues: {
       applicationId,
       change: "application-upload",
       fileName: file.name,
       packageName,
+      readPackage,
+      readVersion,
       sizeBytes: file.size,
       version,
     },
     oldValues: null,
-    summary: `Added ${packageName ?? file.name}${version ? ` ${version}` : ""} to the Headwind app list`,
+    summary: `Added ${label} to the Headwind app list`,
   });
 
-  let installed = false;
-  if (applicationId !== null && Number.isInteger(input.configurationId)) {
-    await linkHeadwindApp(
-      {
-        action: 1,
-        applicationId,
-        configurationId: input.configurationId as number,
-        showIcon: input.showIcon !== false,
-      },
-      actor,
-      fetchImpl,
-      env,
+  // 🔴 WHAT THE SERVER REGISTERED MUST BE WHAT WAS UPLOADED. A register that answers with another
+  // package, or another version of it, would put THAT on the tablets under this upload's name.
+  if (packageName && packageName !== readPackage) {
+    throw new HeadwindUploadError(
+      `The file is ${readPackage}, but the tablet server registered it as ${packageName}, so it was put on no tablet rules. Check the app list in the Headwind console before sending it again.`,
     );
-    installed = true;
   }
+  if (version && readVersion && version !== readVersion) {
+    throw new HeadwindUploadError(
+      `The file is ${readPackage} ${readVersion}, but the tablet server answered with version ${version}, so it was put on no tablet rules — the tablets could be given a different version from the one uploaded. Check the app's versions in the Headwind console.`,
+    );
+  }
+  if (applicationId === null) {
+    if (rules.length) {
+      throw new HeadwindUploadError(
+        `${label} was added to the tablet server, but the server did not say which app it became, so it was put on no tablet rules. Put it on the rules from the app list in the Headwind console.`,
+      );
+    }
+    return {
+      applicationId,
+      installed: false,
+      message: `${label} is on the server. 🔴 It is on NO tablet yet — put it in a set of tablet rules to install it. Uploading alone reaches nobody.`,
+      packageName,
+      rules: [],
+      version,
+    };
+  }
+
+  // Every version onto https, and refused while the one the tablets get is not (§8.18).
+  await secureHeadwindVersionLinks(applicationId, fetchImpl, env);
+
+  const reached = rules.length
+    ? await applyToEachRules(
+        rules,
+        (set) =>
+          linkHeadwindApp(
+            { action: 1, applicationId, configurationId: set.id, showIcon: input.showIcon !== false },
+            actor,
+            fetchImpl,
+            env,
+            audit,
+          ),
+        `${label} is on the tablet server. Putting it on the rules`,
+      )
+    : [];
 
   return {
     applicationId,
-    installed,
-    message: installed
-      ? `${packageName ?? file.name}${version ? ` ${version}` : ""} is on the server and in the rules. Every ` +
-        "tablet on those rules installs it at its next check-in."
-      : `${packageName ?? file.name}${version ? ` ${version}` : ""} is on the server. 🔴 It is on NO tablet ` +
-        "yet — put it in a set of tablet rules to install it. Uploading alone reaches nobody.",
+    installed: reached.length > 0,
+    message: reached.length
+      ? `${label} is on the server and in ${reached.join(", ")}. Every tablet on those rules installs it at its next check-in.`
+      : `${label} is on the server. 🔴 It is on NO tablet yet — put it in a set of tablet rules to install it. Uploading alone reaches nobody.`,
     packageName,
+    rules: reached,
     version,
   };
 }
 
-export type HeadwindFileUploadResult = { fileId: number | null; sent: boolean; message: string };
+export type HeadwindFileUploadResult = { fileId: number | null; sent: boolean; rules: string[]; message: string };
 
 /**
- * Send an ordinary file up, and put it in a set of tablet rules so the tablets hold it.
+ * Send an ordinary file up, and put it in sets of tablet rules so the tablets hold it.
  *
  * 🔴 STEP 2 HERE IS `PUT /rest/private/web-ui-files`, AND UNLIKE THE APK PATH ITS EXACT BODY IS NOT
  * PINNED FROM SOURCE IN THIS REPOSITORY — the server's own upload result is therefore passed back
@@ -274,12 +357,14 @@ export type HeadwindFileUploadResult = { fileId: number | null; sent: boolean; m
  * staging area: nothing is half-installed on a tablet, because step 3 never runs.
  */
 export async function uploadHeadwindFile(
-  input: { file: unknown; configurationId?: number | null; description?: string | null; path?: string | null },
+  input: { file: unknown; rules?: HeadwindRulesTarget | null; description?: string | null; path?: string | null },
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  audit: HeadwindAuditWriter = writeRequiredAuditLog,
 ): Promise<HeadwindFileUploadResult> {
   const file = checkFile(input.file, "a file");
+  const rules: HeadwindConfigurationSummary[] = input.rules ? await resolveHeadwindRules(input.rules, fetchImpl, env) : [];
   const { serverPath } = await uploadBytes(file, fetchImpl, env);
 
   const saved = await callHeadwind<Record<string, unknown>>(
@@ -298,7 +383,7 @@ export async function uploadHeadwindFile(
 
   const fileId = typeof saved?.id === "number" ? saved.id : null;
 
-  await writeRequiredAuditLog({
+  await audit({
     actorLoginId: actor,
     entityId: file.name,
     entityType: "headwind_configuration",
@@ -307,22 +392,27 @@ export async function uploadHeadwindFile(
     summary: `Added the file ${file.name} to the Headwind server`,
   });
 
-  let sent = false;
-  if (fileId !== null && Number.isInteger(input.configurationId)) {
-    await linkHeadwindFile(
-      { configurationId: input.configurationId as number, fileId },
-      actor,
-      fetchImpl,
-      env,
+  // 🔴 A FILE ASKED FOR ON RULES BUT NEVER LINKED IS A REFUSAL, NOT A QUIET "ON NO TABLET YET".
+  if (fileId === null && rules.length) {
+    throw new HeadwindUploadError(
+      `${file.name} is on the tablet server, but the server did not say which file it became, so it was sent to no tablet rules. Send it to the rules from the Headwind console.`,
     );
-    sent = true;
   }
+  const reached =
+    fileId !== null && rules.length
+      ? await applyToEachRules(
+          rules,
+          (set) => linkHeadwindFile({ configurationId: set.id, fileId }, actor, fetchImpl, env, audit),
+          `${file.name} is on the tablet server. Sending it to the rules`,
+        )
+      : [];
 
   return {
     fileId,
-    message: sent
-      ? `${file.name} is in the rules. Every tablet on those rules downloads it at its next check-in.`
+    message: reached.length
+      ? `${file.name} is in ${reached.join(", ")}. Every tablet on those rules downloads it at its next check-in.`
       : `${file.name} is on the server. 🔴 It is on NO tablet yet — put it in a set of tablet rules to send it.`,
-    sent,
+    rules: reached,
+    sent: reached.length > 0,
   };
 }

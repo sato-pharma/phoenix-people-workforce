@@ -3001,6 +3001,7 @@ import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundl
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
 import { runTabletFleetWatchTests } from "./tablet-fleet-watch.test.ts";
+import { runHeadwindInstallLinksTests } from "./headwind-install-links.test.ts";
 import { runEmailBlockScreenTests } from "./email-block-screen.test.ts";
 import { runOperatorWatchChannelGuardTests } from "./operator-watch-channel-guard.test.ts";
 import { runMarketingVendorAndCustomerMergeTests } from "./marketing-vendor-and-customer-merge.test.ts";
@@ -12010,6 +12011,7 @@ await runTest(
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
 await runTest("the tablet fleet watch (3 Nov 2026): a held tablet gone quiet is flagged, blind means fail, the Super Admin alone, and nothing reaches a tablet", runTabletFleetWatchTests);
+await runTest("the rep tablets' install links (9 Nov 2026): checked as a tablet meets them, never linked dead, every rep set of rules reached, hide is not delete", runHeadwindInstallLinksTests);
 await runTest("blocked work emails (3 Nov 2026): who is refused, a lift sends nothing, a complaint stays, and old blocks page nobody", runEmailBlockScreenTests);
 await runTest("alarms that never email (3 Nov 2026): a failed Telegram send on any listed alarm is not re-sent as email, each name is the sender's real one, and a new system sender must be decided", runOperatorWatchChannelGuardTests);
 await runTest("marketing vendors and the customer merge (3 Nov 2026): a merged vendor stays hidden, a merge refuses what it should, and only customer_id moves on a request", runMarketingVendorAndCustomerMergeTests);
