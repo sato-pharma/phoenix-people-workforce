@@ -405,7 +405,7 @@ async function theWorkbook() {
 
 function theExportGateAndRegistry() {
   const route = stripComments(readFileSync("app/api/crm/team-visits/export/route.ts", "utf8"));
-  const gate = route.indexOf("readsRegionalTeamReports(viewer)");
+  const gate = route.indexOf("readsRegionOrDistrictReports(viewer)");
   const load = route.indexOf("loadTeamVisitsReport(viewer)");
   assert.ok(route.indexOf('canAccess(access, "phoenix_crm", "read")') > 0 && route.indexOf('canAccess(access, "phoenix_crm", "read")') < load, "phoenix_crm:read before any read");
   assert.ok(gate > 0 && gate < load, "the Regional Sales Manager's gate before any read");

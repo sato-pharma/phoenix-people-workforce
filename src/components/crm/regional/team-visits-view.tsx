@@ -448,7 +448,7 @@ export function TeamVisitsView({
         </p>
       ) : null}
       {report.districts.length === 0 ? (
-        <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No reps under your district managers yet.</p>
+        <p className="border border-slate-200 bg-white p-4 text-phx-md text-slate-600">No reps on your team yet.</p>
       ) : null}
       {report.districts.map((district) => {
         const reps = sortTeamVisitReps(filterTeamVisitReps(district.reps, show, day), sort, day);

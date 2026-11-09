@@ -7,9 +7,22 @@ report on his overview landing page, in words Phoenix already uses.
 
 ## Who opens them
 
-`readsRegionalTeamReports` (`src/lib/phoenix-crm/server/access.ts`) is true only for a viewer holding a manager seat
-of tier `RSM`. Every new page and the Weekly Sheet export check it on the server before any read: any other seat,
-the CEO's login included, is sent back to the portal home, and the export answers 403. The loaders ask it again. His reach is `regionalTeamRepSeats`: the REP seats in his `scopeTerritories`.
+`readsRegionOrDistrictReports` (`src/lib/phoenix-crm/server/access.ts`) is true for a viewer holding a manager seat
+of tier `RSM` (`readsRegionalTeamReports`) or `DM` / `ACTING_DM` (`readsDistrictTeamReports`, never the line's
+Others seat). The District Managers joined on 2026-11-09 (owner: "all shortcuts we built for Hany, build it for all
+district managers, but every one based on his scope"). Every page and every export checks it on the server before
+any read: any other seat, the CEO's login included, is sent back to the portal home, and the export answers 403. The
+loaders ask it again. The reach is `teamReportRepSeats`: the REP seats in the viewer's own `scopeTerritories`, so a
+Regional Sales Manager reads the region and a District Manager reads the district.
+
+- It is not `readsTeamReports`. That older gate admits every manager seat, the CEO's company basis and the SFE
+  Manager, and a dozen boards share it.
+- `readsRegionalTeamReports` itself is unchanged, because the plan board's "Also with" half-notes key on it.
+- For a District Manager, District Managers' Plans lists their own district seat only, so the page is titled My Plans.
+- ROI Tracking's region route (`resolveRegionRouteScope`) takes `District Manager` too: the areas of the reps under
+  them, plus their own line, both or nothing.
+- The District Manager's overview (`dsm-command-center.tsx`) shows every shortcut as My Team's Reports
+  (`districtTeamReportLinks`), and Source of Sales and Sales Drilldown in its dashboard row.
 
 ## The eight needs and where each lives
 

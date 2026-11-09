@@ -318,13 +318,17 @@ export function runEmployeePortalNavigationTests() {
     assert.equal(dsmNav.showMedRepsPerformanceTab, false, "a District Manager keeps Team Performance, not the roll-up pages");
     assert.equal(dsmNav.showDsmsPerformanceTab, false, "a District Manager is not offered DSMs Performance");
 
-    for (const page of ["app/employee-portals/med-reps-performance/page.tsx", "app/employee-portals/dsms-performance/page.tsx"]) {
+    // MRs Performance also admits a District Manager over their own district (owner, 2026-11-09: "open Med Rep
+    // Performance to District Managers over their own district"). They reach it from their overview's Med Rep
+    // Performance tile, never a tab, so the sidebar above stays as it was; DSMs Performance stays the two roles.
+    const admitted: Record<string, RegExp> = {
+      "app/employee-portals/med-reps-performance/page.tsx":
+        /const PERFORMANCE_ROLLUP_ROLES = new Set\(\["National Sales Manager", "Regional Manager", "District Manager"\]\)/,
+      "app/employee-portals/dsms-performance/page.tsx": /const PERFORMANCE_ROLLUP_ROLES = new Set\(\["National Sales Manager", "Regional Manager"\]\)/,
+    };
+    for (const [page, roles] of Object.entries(admitted)) {
       const source = stripComments(readFileSync(page, "utf8"));
-      assert.match(
-        source,
-        /const PERFORMANCE_ROLLUP_ROLES = new Set\(\["National Sales Manager", "Regional Manager"\]\)/,
-        `${page} must admit exactly the two roles its tab is offered to`,
-      );
+      assert.match(source, roles, `${page} must admit exactly the roles it is offered to`);
       assert.match(source, /if \(!PERFORMANCE_ROLLUP_ROLES\.has\(access\.role\)\)/, `${page} must gate on that set`);
       assert.doesNotMatch(source, /isNationalSalesManager\(access\.role\)/, `${page} must not keep the NSM-only gate`);
     }
