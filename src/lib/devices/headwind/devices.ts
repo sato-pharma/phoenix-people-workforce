@@ -137,7 +137,11 @@ export type HeadwindDevice = {
   /** Battery charge as a percentage, where the agent reported one. */
   batteryLevel: number | null;
   batteryCharging: boolean | null;
-  /** The Headwind agent's own version — a tablet far behind the fleet is worth seeing. */
+  /**
+   * The launcher version the tablet's RULES WANT — the record's top-level `launcherVersion`, set by the
+   * server. 🔴 Never the tablet's own word: it used to fall back to the version the tablet reported, which
+   * made "wanted" equal "running" whenever the server field was absent, so a tablet left behind read level.
+   */
   agentVersion: string | null;
   /**
    * The launcher version the tablet is ACTUALLY running, read from its reported app list.
@@ -191,7 +195,7 @@ function normalizeDevice(record: RawRecord, configurationNames: Map<string, stri
   const hasFix = rawLatitude !== null && rawLongitude !== null && rawLatitude !== 0 && rawLongitude !== 0;
 
   return {
-    agentVersion: pickString(record, ["launcherVersion", "agentVersion"]) ?? pickString(info, ["launcherVersion", "version"]),
+    agentVersion: pickString(record, ["launcherVersion", "agentVersion"]),
     batteryCharging: pickBoolean(info, ["batteryCharging", "charging", "isCharging"]),
     batteryLevel: pickNumber(info, ["batteryLevel", "battery"]),
     configurationId: pickString(record, ["configurationId", "configId"]),

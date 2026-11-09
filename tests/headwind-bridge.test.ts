@@ -560,6 +560,14 @@ async function runDeviceTests() {
   assert.equal(first.batteryLevel, 84);
   assert.equal(first.configurationName, "Rep tablets");
   assert.equal(first.agentVersion, "5.30");
+  // 🔴 The wanted version is the SERVER's field only — a tablet's own reported version is never read as
+  // what its rules want, or a tablet left behind would read level with itself.
+  resetHeadwindTokenCache();
+  const ownWord = await listHeadwindDevices(
+    makeFetch({ api: [{ body: { data: { items: [{ info: { launcherVersion: "6.39", version: "6.39" }, number: "W" }] }, status: "OK" }, status: 200 }] }).fetch,
+    ENV,
+  );
+  assert.equal(ownWord[0]?.agentVersion, null, "with no server field, the wanted version is unknown, never the tablet's own");
   assert.equal(first.rustDeskId, "123456789", "the screen-session id lives in Headwind's first custom field");
   assert.equal(first.latitude, 30.0444);
   assert.equal(first.longitude, 31.2357);

@@ -2087,6 +2087,14 @@ app links, and a QR key of their own. Each line app went in through Phoenix's `u
 download link reaches all three at once; a link or a setting is not. A new tablet is enrolled with **its
 line's** QR, never id 3's. CNS gets the same treatment (id 6) the day a CNS rep holds a tablet.
 
+**Phoenix holds one enrolment code per set of rules** (9 Nov 2026, migration
+`20261109030405_headwind_enrollment_code_per_configuration`). The tablet page shows one card per rep set
+of rules, headed by its name, each revealed and saved on its own and audited with that name. Before a
+code is saved or shown, Phoenix refuses it when its server address or launcher download is not
+`https://`, when it carries a non-empty `com.hmdm.DEVICE_ID`, when it names another set of rules, or
+when the download link does not answer exactly 200 to a HEAD sent with `redirect: "manual"` (§8.18). The
+older single saved code appears only on the card of the rules its own `com.hmdm.CONFIG` names.
+
 **The upload fix that came with it.** `uploadHeadwindApp` registered an APK with only `filePath`, so the
 insert hit `null value in column "name" of relation "applications"` and the server answered
 `error.internal.server` under an HTTP 200 — every upload from Phoenix's tablet page failed this way. The
