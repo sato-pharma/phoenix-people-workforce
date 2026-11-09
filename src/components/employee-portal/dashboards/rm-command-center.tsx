@@ -63,16 +63,25 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { regionalTeamReportLinks, RSM_PLAN_BOARD_HREF, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import {
+  INCENTIVE_NOT_CONFIRMED_NOTE,
+  REGION_FIGURES_UNAVAILABLE,
+  districtsNeedingAttention,
+  incentiveGap,
+  ownRequestsHref,
+  ownRequestsLabel,
+  wholePercent,
+} from "@/lib/employee-portal/rsm-home-summary";
 
 /* ── Region performance keycards ───────────────────────────────────── */
 
 function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegional"] }) {
-  const pct = rmRegional ? Math.max(0, Math.round(rmRegional.achievementPercent)) : null;
+  // Never rounded UP across a line (rsm-home-summary.ts): 89.6% reads 89%, beside a gap to 90%.
+  const pct = rmRegional ? wholePercent(rmRegional.achievementPercent) : null;
   const sales = rmRegional?.totalSales ?? 0;
   const target = rmRegional?.totalTarget ?? 0;
-  const threshold90 = target * 0.9;
-  const eligible = target > 0 && sales >= threshold90;
-  const gapTo90 = Math.max(0, threshold90 - sales);
+  // Measured on the money, the same test Districts Needing Attention uses, so the two always agree.
+  const gap = incentiveGap(sales, target);
   const pctNum = pct ?? 0;
 
   // 🔒 A null windowLabel means NOTHING is published in this region's scope, so every money tile is
@@ -81,13 +90,14 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
   const published = hasPublishedWindow(windowLabel);
   const figureInk = published ? "text-slate-900" : "text-slate-500";
   const { accent: achAccent, valueClass: achValueClass } = achievementTone(windowLabel, pctNum);
+  const cleared = gap.state === "cleared";
 
   const cards: Keycard[] = [
     {
       icon: TrendingUp,
       label: "Achievement",
       value: pct !== null ? publishedFigure(windowLabel, () => `${pct}%`) : "—",
-      sub: "vs region target",
+      sub: published && target <= 0 ? "no region target loaded" : "vs region target",
       accent: achAccent,
       valueClass: achValueClass,
     },
@@ -103,18 +113,18 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
     {
       icon: Target,
       label: "Target",
-      value: publishedFigure(windowLabel, () => egpCompact(target)),
-      sub: "region target",
+      value: publishedFigure(windowLabel, () => (target <= 0 ? "—" : egpCompact(target))),
+      sub: published && target <= 0 ? "no region target loaded" : "region target",
       accent: "bg-slate-900",
       valueClass: figureInk,
     },
     {
-      icon: eligible ? CheckCircle2 : Flag,
+      icon: cleared ? CheckCircle2 : Flag,
       label: "Gap to 90%",
-      value: publishedFigure(windowLabel, () => (target <= 0 ? "—" : eligible ? "Eligible" : egpCompact(gapTo90))),
-      sub: published ? (eligible ? "incentive threshold cleared" : "sales to reach incentive") : NO_PUBLISHED_CLOSING_SUB,
-      accent: published && eligible ? "bg-emerald-500" : published ? "bg-orange-500" : "bg-slate-900",
-      valueClass: published ? (eligible ? "text-emerald-600" : "text-orange-600") : "text-slate-500",
+      value: publishedFigure(windowLabel, () => (gap.state === "short" ? egpCompact(gap.gap) : gap.state === "cleared" ? "Cleared" : "—")),
+      sub: published ? gap.sub : NO_PUBLISHED_CLOSING_SUB,
+      accent: published && cleared ? "bg-emerald-500" : published && gap.state === "short" ? "bg-orange-500" : "bg-slate-900",
+      valueClass: published ? (cleared ? "text-emerald-600" : gap.state === "short" ? "text-orange-600" : "text-slate-500") : "text-slate-500",
     },
   ];
 
@@ -137,6 +147,14 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
           {!published && (
             <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
           )}
+          {/* The Gap to 90% tile is the only incentive figure on this page, so its caveat sits here,
+              under it. It used to float further down the page, above boards that show no incentive. */}
+          {published && target > 0 ? (
+            <p className="mx-4 mb-4 mt-3 flex items-start gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words">{INCENTIVE_NOT_CONFIRMED_NOTE}</span>
+            </p>
+          ) : null}
           {/* Region Sales counts vacant-district reps + in-region direct orders no DSM row below carries */}
           <PerformanceReconciliationNote
             className="mx-4 mb-4"
@@ -145,9 +163,7 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
           />
         </>
       ) : (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">
-          No region sales data synced for the current period yet.
-        </p>
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">{REGION_FIGURES_UNAVAILABLE}</p>
       )}
     </div>
   );
@@ -155,66 +171,49 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
 
 /* ── Districts needing attention ───────────────────────────────────── */
 
+const ATTENTION_INK = { met: "text-emerald-600", near: "text-amber-600", behind: "text-orange-600", far: "text-rose-600" } as const;
+
 /**
- * Districts below the 90% incentive threshold, worst first. Deliberately keyed to the same 90%
- * line the Gap-to-90% keycard uses, so "needs attention" and "gap to incentive" always agree.
+ * Districts below the 90% incentive line, worst first. The list, the order and every word come from
+ * `districtsNeedingAttention` (rsm-home-summary.ts), measured on the money the same way the Gap to 90%
+ * tile is, so "needs attention" and "gap to incentive" always agree. Nothing shows while no closing
+ * is published.
  */
 function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegional"] }) {
-  if (!rmRegional || rmRegional.dsms.length === 0) return null;
-
-  const behind = rmRegional.dsms
-    .filter((d) => d.totalTarget > 0 && d.achievementPercent < 90)
-    .slice()
-    .sort((a, b) => a.achievementPercent - b.achievementPercent);
-
-  // A district with no target loaded is not "behind" — it is unmeasurable. Surfaced separately so a
-  // data gap never reads as a performance problem, nor gets swallowed by a green all-clear.
-  const unmeasured = rmRegional.dsms.filter((d) => d.totalTarget <= 0);
+  if (!rmRegional) return null;
+  const attention = districtsNeedingAttention(rmRegional.dsms, rmRegional.windowLabel);
+  if (attention.state === "hidden") return null;
 
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <SectionHead
-        title="Districts Needing Attention"
-        right={<span className="whitespace-nowrap text-phx-sm font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
-      />
-      {behind.length === 0 && unmeasured.length === 0 ? (
+      <SectionHead title="Districts Needing Attention" right={<SectionMeta items={[rmRegional.windowLabel, "below 90%"]} />} />
+      {attention.state === "all-clear" ? (
         <div className="flex items-center gap-2 bg-white px-4 py-5 sm:px-5">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="text-sm font-medium text-emerald-700">Every district in your region is at or above 90%.</p>
+          <p className="text-sm font-medium text-emerald-700">{attention.text}</p>
         </div>
       ) : (
         <div className="space-y-px bg-slate-200">
-          {behind.map((d) => {
-            const pct = Math.max(0, Math.round(d.achievementPercent));
-            const gap = Math.max(0, d.totalTarget * 0.9 - d.totalSales);
-            const tone = pct >= 70 ? "text-orange-600" : "text-rose-600";
-            return (
-              <div key={d.hrId || d.name} className="flex items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">{d.name}</p>
-                  <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-                    {egpCompact(d.totalSales)} of {egpCompact(d.totalTarget)}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className={`text-lg font-black tabular-nums ${tone}`}>{pct}%</p>
-                  <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold uppercase tracking-wide text-slate-400">
-                    {egpCompact(gap)} to 90%
-                  </p>
-                </div>
+          {attention.behind.map((d) => (
+            <div key={d.key} className="flex items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-semibold text-slate-800">{d.name}</p>
+                <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{d.salesText}</p>
               </div>
-            );
-          })}
-          {unmeasured.length > 0 && (
+              <div className="shrink-0 text-right">
+                <p className={`text-lg font-black tabular-nums ${ATTENTION_INK[d.band]}`}>{d.percent}%</p>
+                <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold uppercase tracking-wide text-slate-400">
+                  {d.gapText}
+                </p>
+              </div>
+            </div>
+          ))}
+          {attention.unmeasuredText ? (
             <div className="flex items-start gap-2 bg-white px-4 py-3 sm:px-5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <p className="text-sm text-slate-500">
-                {unmeasured.length} {unmeasured.length === 1 ? "district has" : "districts have"} no target loaded for this
-                period, so {unmeasured.length === 1 ? "its" : "their"} achievement cannot be measured:{" "}
-                <span className="font-semibold text-slate-700">{unmeasured.map((d) => d.name).join(", ")}</span>.
-              </p>
+              <p className="break-words text-sm text-slate-500">{attention.unmeasuredText}</p>
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>
@@ -317,11 +316,6 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         </Suspense>
       ) : null}
 
-      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-        Incentives shown below are not yet confirmed by HR.
-      </div>
-
       <Suspense fallback={<MmSectionSkeleton title="My Districts" />}>
         <AwaitRoleExtras extras={extras}>
           {({ rmRegional }) => (
@@ -378,8 +372,9 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       </Suspense>
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
-          <LineSalesPacingSection access={access} />
+        <Suspense fallback={<MmSectionSkeleton title="Region Sales Pacing" />}>
+          {/* Scoped to the region's areas (loadPortalClosingTrend), so it is never called the line's. */}
+          <LineSalesPacingSection access={access} title="Region Sales Pacing" />
         </Suspense>
       ) : null}
 
@@ -403,11 +398,10 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
           {
             icon: CalendarX2,
             value: pendingCountsAvailable ? String(pendingVacationCount + pendingExcuseCount) : "—",
-            label:
-              pendingCountsAvailable && pendingVacationCount + pendingExcuseCount === 1
-                ? "my pending request"
-                : "my pending requests",
-            href: "/employee-portals/approvals-hub",
+            // The viewer's OWN vacation and excuse requests, waiting on a manager or HR: they open the
+            // viewer's own request page, where they are, never the Approvals Hub (rsm-home-summary.ts).
+            label: ownRequestsLabel(pendingCountsAvailable ? pendingVacationCount + pendingExcuseCount : null),
+            href: ownRequestsHref(pendingVacationCount, pendingExcuseCount),
           },
           {
             icon: CalendarDays,

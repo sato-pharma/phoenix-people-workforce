@@ -190,8 +190,9 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <ActionStrip items={ACTIONS} />
 
       {access ? (
-        <Suspense fallback={<MmSectionSkeleton title="Line Sales Pacing" />}>
-          <LineSalesPacingSection access={access} />
+        <Suspense fallback={<MmSectionSkeleton title="District Sales Pacing" />}>
+          {/* The trend is scoped to the district's areas, so it is never called the line's. */}
+          <LineSalesPacingSection access={access} title="District Sales Pacing" />
         </Suspense>
       ) : null}
 

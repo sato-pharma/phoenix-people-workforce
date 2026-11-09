@@ -1253,9 +1253,9 @@ export const MODULES = [
     globs: [
       "src/components/employee-portal/dashboards/**",
       "src/components/employee-portal/team-calendar-view.tsx",
-      "src/lib/employee-portal/{home-snapshot,serving-roster,unranked-managers,team-calendar,team-calendar-cell,team-calendar-weeks}.ts",
+      "src/lib/employee-portal/{home-snapshot,serving-roster,unranked-managers,team-calendar,team-calendar-cell,team-calendar-weeks,rsm-home-summary}.ts",
       "app/employee-portals/team-calendar/**",
-      "tests/{portal-serving-roster,nsm-team-calendar,regional-team-reports,ceo-command-center,business-review-person-names}*",
+      "tests/{portal-serving-roster,nsm-team-calendar,regional-team-reports,ceo-command-center,business-review-person-names,rsm-home-premium}*",
     ],
     keywords: ["my districts", "serving roster", "team roster", "team calendar", "regional manager", "district manager board", "managers on leave"],
     tables: ["phx_monthly_achievement"],
