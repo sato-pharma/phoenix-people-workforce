@@ -120,6 +120,27 @@ function num(value: number | null | undefined): number {
 }
 
 /**
+ * Payroll months whose Part 2 takes NO medical insurance from a two-part employee (owner,
+ * 2026-11-09: "only in oct 2026 payroll part 2 remove all the medical insurance deduction"; asked
+ * who, he chose two-part only). A one-part employee's medical left with Part 1, which was already
+ * paid, and stays taken. Part 1's freeze is untouched — it is executed money. Every other month
+ * charges the employee master's figure exactly as before, and the master itself is not edited.
+ */
+const PART2_MEDICAL_INSURANCE_WAIVED_MONTHS: ReadonlySet<string> = new Set(["2026-10"]);
+
+/** The medical insurance this month's Part 2 assembly charges the row. */
+export function part2MedicalInsurance(
+  masterMedicalInsurance: number | null | undefined,
+  paymentMode: string | null | undefined,
+  period: PayrollPeriod,
+): number {
+  const amount = roundCurrency(num(masterMedicalInsurance));
+  if (normalizePayrollPaymentMode(paymentMode ?? "two_parts") !== "two_parts") return amount;
+  const monthKey = `${period.year}-${String(period.month).padStart(2, "0")}`;
+  return PART2_MEDICAL_INSURANCE_WAIVED_MONTHS.has(monthKey) ? 0 : amount;
+}
+
+/**
  * The Part-1 LOAN repayment, which the sheet shows in its own Loans column (owner, 2026-10-09).
  *
  * It used to be `const loans = 0` with the money folded into Other Deductions, so the September
@@ -410,7 +431,11 @@ export function settlementBasisFor(input: {
       fingerprintValue: num(draft?.fingerprintValue),
       crm: num(draft?.crm),
       unpaidVacations: num(draft?.unpaidVacations),
-      medicalInsurance: roundCurrency(num(input.member.employee.medicalInsurance)),
+      medicalInsurance: part2MedicalInsurance(
+        input.member.employee.medicalInsurance,
+        input.source?.paymentMode,
+        input.period,
+      ),
       p1odCrmValue: num(draft?.p1odCrmValue),
       p1odVacationValue: num(draft?.p1odVacationValue),
       p1odNoRecordValue: num(draft?.p1odNoRecordValue),
@@ -499,7 +524,7 @@ export function assembleRows(input: {
     const fingerprint = num(draft?.fingerprintValue);
     const specialDeduction = specialDeductionAmount(draft);
     const specialAddition = specialAdditionAmount(draft);
-    const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
+    const medicalInsurance = part2MedicalInsurance(employee.medicalInsurance, paymentMode, input.period);
     // Use the frozen First Part after Part-1 confirm; before that, compute live.
     //
     // A MISSING frozen value means two different things, and conflating them was

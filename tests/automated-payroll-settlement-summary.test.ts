@@ -388,4 +388,51 @@ export function runAutomatedPayrollSettlementSummaryTests() {
       `the same employee must show the same full month net on every screen — ${stepKey} disagreed`,
     );
   }
+
+  // ---- 9. October 2026: Part 2 takes no medical insurance from a two-part employee ----
+  //
+  // Owner, 2026-11-09: "only in oct 2026 payroll part 2 remove all the medical insurance
+  // deduction" — two-part only, by his choice. A one-part employee's medical left with the paid
+  // Part 1 and stays taken; every other month is untouched.
+
+  const OCTOBER: PayrollPeriod = { month: 10, year: 2026 };
+  const NOVEMBER: PayrollPeriod = { month: 11, year: 2026 };
+  const assembleOne = (mode: "one_part" | "two_parts", period: PayrollPeriod) => {
+    const insured = member("B-9", { medicalInsurance: 250 });
+    const [row] = assembleRows({
+      members: [insured],
+      sources: sourceMap("B-9", mode),
+      period,
+      draftRows: [draft("B-9", {})],
+    });
+    const basisFor = settlementBasisFor({
+      member: insured,
+      source: sourceMap("B-9", mode).get(compact("B-9")),
+      draft: draft("B-9", {}),
+      period,
+    });
+    assert.ok(row);
+    return { row: row.row, basis: basisFor };
+  };
+
+  const octTwoPart = assembleOne("two_parts", OCTOBER);
+  assert.equal(octTwoPart.row.medicalInsurance, 0, "October 2026 Part 2 must charge a two-part employee no medical insurance");
+  assert.equal(octTwoPart.row.totalDeductions, 0, "the waived medical must leave October's deductions, not just its column");
+  assert.equal(octTwoPart.row.monthSalary, NET, "a two-part employee's October is paid in full, medical not taken");
+  assert.equal(
+    octTwoPart.basis.components.medicalInsurance,
+    0,
+    "the on-screen summary must waive the same medical the paid row waives",
+  );
+
+  const octOnePart = assembleOne("one_part", OCTOBER);
+  assert.equal(
+    octOnePart.row.medicalInsurance,
+    250,
+    "a one-part employee's October medical was taken with the paid Part 1 and stays taken",
+  );
+
+  const novTwoPart = assembleOne("two_parts", NOVEMBER);
+  assert.equal(novTwoPart.row.medicalInsurance, 250, "November charges medical insurance exactly as before");
+  assert.equal(novTwoPart.row.monthSalary, NET - 250, "November's two-part pay still loses the medical");
 }
