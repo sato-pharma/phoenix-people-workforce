@@ -432,6 +432,10 @@ function theScreen() {
   assert.ok(view.includes("<TeamVisitsRollupPanel report={report} />") && view.includes("<TeamVisitsHoursPanel report={report} />") && view.includes("<TeamVisitsAttentionPanel day={day} report={report} show={show} />"));
   assert.ok(view.includes("<TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />"));
   assert.ok(view.includes(">Waiting for validation</span>"), "a waiting visit is tagged in the square");
+  // "the font is fucken small" (owner, 2026-11-09): nothing on this board is set below 11px (text-phx-xs).
+  for (const [name, source] of [["view", view], ["panels", panels]] as const) {
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(source), `${name}: no text below 11px on Visits — Yesterday and Today`);
+  }
   // An Arabic customer name beside "30 m" pulled the number into the Arabic run (owner, 2026-11-09, the polish
   // pass): the name is bidi-isolated and the metres sit in a column of their own.
   assert.ok(view.includes("<bdi>{time.customer ?? \"Customer not recorded\"}</bdi>"), "the customer name is bidi-isolated");
