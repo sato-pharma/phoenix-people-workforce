@@ -63,7 +63,7 @@ export function TicketUploadCard({
   return (
     <section aria-label={badge ?? "Ticket"} className="grid gap-3 border border-slate-200 bg-white p-4">
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+        <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">
           {badge ?? (isTicketBased ? (required ? "Ticket · Required" : "Ticket · Optional") : "Attachment")}
         </p>
         <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>

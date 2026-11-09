@@ -28,7 +28,7 @@ export function ExpenseSavedViews({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-phx-line bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+      <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">
         Saved views
       </span>
 

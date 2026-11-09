@@ -326,7 +326,7 @@ export function OutstationReviewMap({
   return (
     <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="mb-4">
-        <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
+        <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-600">
           Route review
         </span>
         <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
@@ -342,7 +342,7 @@ export function OutstationReviewMap({
           {request ? (
             <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 text-sm sm:grid-cols-3">
               <div className="border-l-2 border-l-emerald-400 px-3 py-3">
-                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
                   Fastest time
                 </p>
                 <p className="mt-1 text-phx-md font-semibold text-slate-800">
@@ -354,7 +354,7 @@ export function OutstationReviewMap({
                 </p>
               </div>
               <div className="border-l-2 border-l-sky-400 px-3 py-3">
-                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
                   Fastest distance
                 </p>
                 <p className="mt-1 text-phx-md font-semibold text-slate-800">
@@ -362,7 +362,7 @@ export function OutstationReviewMap({
                 </p>
               </div>
               <div className="border-l-2 border-l-amber-400 px-3 py-3">
-                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
                   Routes found
                 </p>
                 <p className="mt-1 text-phx-md font-semibold text-slate-800">

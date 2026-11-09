@@ -23,7 +23,7 @@ export type EvidenceRow = { badge?: ReactNode; body: ReactNode; key: string; tim
 export function EvidenceTable({ columns, rows, title }: { columns: ReadonlyArray<EvidenceColumn>; rows: ReadonlyArray<EvidenceRow>; title?: ReactNode }) {
   return (
     <div className="min-w-0" data-evidence-table>
-      {title ? <p className="mb-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{title}</p> : null}
+      {title ? <p className="mb-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{title}</p> : null}
       <ul className="border border-slate-200 bg-white text-xs md:hidden">
         {rows.map((row) => (
           <li className="flex items-start gap-2 border-t border-slate-100 px-2.5 py-1.5 first:border-t-0 even:bg-slate-50" key={row.key}>
@@ -34,7 +34,7 @@ export function EvidenceTable({ columns, rows, title }: { columns: ReadonlyArray
                 </span>
               ) : column.role === "time" ? (
                 <span className="shrink-0 text-right leading-tight" key={column.label}>
-                  <span className="block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">{column.label}</span>
+                  <span className="block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">{column.label}</span>
                   <span className="tabular-nums font-bold text-slate-900">{row[column.role]}</span>
                 </span>
               ) : (
@@ -83,7 +83,7 @@ export function EvidenceTable({ columns, rows, title }: { columns: ReadonlyArray
 export const evidenceRowClassName = "align-top even:bg-slate-50";
 
 const thClassName =
-  "border-b border-slate-200 bg-slate-100 px-2.5 py-1.5 align-bottom whitespace-nowrap text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 bg-slate-100 px-2.5 py-1.5 align-bottom whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 const tdClassName = "border-t border-slate-100 px-2.5 py-1.5 break-words text-slate-700";
 

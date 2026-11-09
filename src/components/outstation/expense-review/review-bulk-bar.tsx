@@ -45,7 +45,7 @@ export function ReviewBulkBar({
     // wraps under the controls.
     <div className="flex min-w-0 flex-1 basis-80 flex-wrap items-center justify-end gap-x-2 gap-y-1" data-bulk-bar>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
           {selectedCount === 0
             ? `Tick trips to approve together (${formatNumberValue(selectableCount)} here)`
             : `${formatNumberValue(selectedCount)} ticked · ${egp(selectedValue)}`}

@@ -317,7 +317,7 @@ export function ExpenseHeatmapLayer({
                 {MODE_OPTIONS.map((option) => (
                   <button
                     key={option.value}
-                    className={`px-3 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                    className={`px-3 py-1 text-phx-sm font-bold uppercase tracking-[0.14em] transition-colors ${
                       mode === option.value ? "bg-phx-accent text-white" : "text-phx-line-strong hover:text-white"
                     }`}
                     onClick={() => setMode(option.value)}
@@ -328,7 +328,7 @@ export function ExpenseHeatmapLayer({
                 ))}
               </div>
             ) : null}
-            <div className="flex items-center gap-2 text-phx-2xs font-bold uppercase tracking-[0.14em] text-phx-line-strong">
+            <div className="flex items-center gap-2 text-phx-sm font-bold uppercase tracking-[0.14em] text-phx-line-strong">
               <span>Low</span>
               <span
                 aria-hidden="true"

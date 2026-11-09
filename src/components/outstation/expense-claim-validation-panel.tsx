@@ -170,7 +170,7 @@ export function ExpenseClaimValidationPanel({
           {bare ? null : (
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 px-2 py-1 text-phx-2xs font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 text-phx-sm font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
               {VERDICT_STYLE[state.data.headline].label}
@@ -194,12 +194,12 @@ export function ExpenseClaimValidationPanel({
                 >
                   <VerdictIcon verdict={check.verdict} />
                   <p className="text-phx-md font-bold text-slate-900">{check.title}</p>
-                  <span className={`px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE.clean.chip}`}>
+                  <span className={`px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-wider ${VERDICT_STYLE.clean.chip}`}>
                     {VERDICT_STYLE.clean.label}
                   </span>
                   {check.facts.map((fact) => (
                     <span className="flex items-baseline gap-1.5" key={`${check.id}-${fact.label}`}>
-                      <span className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">{fact.label}</span>
+                      <span className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">{fact.label}</span>
                       <span className="text-xs font-semibold text-slate-800">{fact.value}</span>
                     </span>
                   ))}
@@ -213,7 +213,7 @@ export function ExpenseClaimValidationPanel({
                   <VerdictIcon verdict={check.verdict} />
                   <p className="text-phx-md font-bold text-slate-900">{check.title}</p>
                   <span
-                    className={`px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
+                    className={`px-1.5 py-0.5 text-phx-xs font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
                   >
                     {VERDICT_STYLE[check.verdict].label}
                   </span>
@@ -225,7 +225,7 @@ export function ExpenseClaimValidationPanel({
                   <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                     {check.facts.map((fact) => (
                       <div className="flex items-baseline gap-1.5" key={`${check.id}-${fact.label}`}>
-                        <dt className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                        <dt className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                           {fact.label}
                         </dt>
                         <dd className="text-xs font-semibold text-slate-800">{fact.value}</dd>

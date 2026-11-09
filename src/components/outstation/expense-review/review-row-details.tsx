@@ -59,7 +59,7 @@ export function ReviewRowDetails({ decision, duplicateOf, record, unsaved }: { d
             <div className="min-w-0 space-y-1 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs">
               {notices.map((notice) => (
                 <p className="break-words text-amber-900" key={notice}>
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">Allowance</span>
+                  <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-amber-700">Allowance</span>
                   {" · "}
                   {notice}
                 </p>

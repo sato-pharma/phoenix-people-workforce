@@ -53,7 +53,7 @@ export function ManagerOutstationReview({
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+            <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
               {submission.employeeName} · {submission.employeeHrId}
             </p>
             <h2 className="mt-1 text-lg font-black text-slate-900">{submission.destination}</h2>

@@ -37,7 +37,7 @@ function FilterSelect({
 }) {
   return (
     <label className="flex min-w-0 flex-col gap-1">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{label}</span>
       <SearchableSelect className={selectClass} value={value} onChange={(event) => onChange(event.target.value || null)}>
         <option value="">{allLabel}</option>
         {options.map((option) => (
@@ -117,7 +117,7 @@ export function ExpenseFilterBar({
       {preset === "custom" ? (
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">From</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">From</span>
             <input
               className={selectClass}
               type="date"
@@ -126,7 +126,7 @@ export function ExpenseFilterBar({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">To</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">To</span>
             <input
               className={selectClass}
               type="date"

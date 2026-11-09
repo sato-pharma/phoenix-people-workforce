@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 /**
  * The Expense Dashboard's trip ledger ("Detailed Trip Table"), pinned against the owner's
@@ -179,4 +179,16 @@ export function runExpenseDashboardTripsTableFitsTheScreenTests() {
       `"relative overflow-hidden". It sits 64px past its parent's right edge by design; only that ` +
       `clip keeps it from widening the page.`,
   );
+
+  // Nothing on an Expenses or outstation screen is drawn below 11px ("raise the expenses and outstation screens'
+  // fonts too", owner, 2026-11-09). Every .tsx under src/components/outstation is read, so a new screen is held to
+  // it as well.
+  let expenseScreens = 0;
+  for (const entry of readdirSync("src/components/outstation", { recursive: true, encoding: "utf8" })) {
+    if (!entry.endsWith(".tsx")) continue;
+    const file = `src/components/outstation/${entry.replace(/\\/g, "/")}`;
+    expenseScreens++;
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(readFileSync(file, "utf8")), `${file}: no text below 11px on an Expenses screen`);
+  }
+  assert.ok(expenseScreens >= 60, `the floor read every Expenses screen (${expenseScreens})`);
 }

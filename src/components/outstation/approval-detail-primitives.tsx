@@ -64,7 +64,7 @@ export function CollapsibleSection({
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
         <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>
         {summary ? <span className={`min-w-0 break-words text-phx-xs font-bold ${toneClass}`}>{summary}</span> : null}
-        <span className="ml-auto text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+        <span className="ml-auto text-phx-sm font-black uppercase tracking-wide text-slate-400">
           <span className="group-open:hidden">Show</span>
           <span className="hidden group-open:inline">Hide</span>
         </span>
@@ -85,7 +85,7 @@ export function CollapsibleSection({
 export function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
       <p className="mt-0.5 break-words text-sm font-semibold text-slate-900" dir="auto">{value || "—"}</p>
     </div>
   );
@@ -107,14 +107,14 @@ export function Fact({ label, value }: { label: string; value: string }) {
 export function RouteFact({ from, to, toTitle }: { from: string; to: string; toTitle?: string }) {
   return (
     <div className="col-span-2 min-w-0 sm:col-span-4">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
       <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-sm font-semibold text-slate-900">
-        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">From</dt>
+        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">From</dt>
         {/* `text-left` beside `dir="auto"` (owner's review, 2026-11-07): an Arabic From still reads
             right to left, but both ends start at the same edge, so the route reads down one line
             instead of zig-zagging — Arabic From on the right, Latin To on the left. */}
         <dd className="m-0 min-w-0 break-words text-left" dir="auto">{from || "—"}</dd>
-        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">To</dt>
+        <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">To</dt>
         <dd title={toTitle || undefined} className="m-0 min-w-0 break-words text-left" dir="auto">{to || "—"}</dd>
       </dl>
     </div>
@@ -139,7 +139,7 @@ export function CostBreakdownFact({
 }) {
   return (
     <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-sm text-slate-700">
         <span>
           Travel <b className="text-slate-900">{formatCurrency(travel)}</b>

@@ -378,7 +378,7 @@ function ExpenseFactLines({ facts }: { facts: ExpenseFact[] }) {
       {facts.map((fact, index) => (
         <p className={cn("min-w-0 break-words", fact.strong && "font-semibold text-text")} key={index}>
           {fact.label ? (
-            <span className="mr-1 text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">{fact.label}</span>
+            <span className="mr-1 text-phx-xs font-semibold uppercase tracking-wide text-text-secondary">{fact.label}</span>
           ) : null}
           {fact.value}
         </p>
@@ -479,7 +479,7 @@ function HrDecisionControls({
           onChange={(checked) => onUpdate({ hrApproved: checked })}
         />
         <div className="flex items-center gap-2">
-          <span className="w-12 shrink-0 text-phx-2xs font-bold uppercase tracking-[0.1em] text-text-secondary">
+          <span className="w-12 shrink-0 text-phx-sm font-bold uppercase tracking-[0.1em] text-text-secondary">
             Amount
           </span>
           <input
@@ -500,7 +500,7 @@ function HrDecisionControls({
         value={approval.hrComment}
       />
       {reasonMissing ? (
-        <p className="text-phx-2xs font-semibold text-rose-600">Add a reason for the changed amount.</p>
+        <p className="text-phx-sm font-semibold text-rose-600">Add a reason for the changed amount.</p>
       ) : null}
     </fieldset>
   );
@@ -797,7 +797,7 @@ export function ExpenseReport({
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
+            <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               AM {formatNumber(record.amWorkload)} · PM {formatNumber(record.pmWorkload)} · Pharmacies{" "}
               {record.pharmacyWorkload === null || record.pharmacyWorkload === undefined
@@ -806,25 +806,25 @@ export function ExpenseReport({
             </p>
           </div>
           <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
+            <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)} ·{" "}
               {formatPharmacyFigure(evidenceSplit(data.amWorkload, data.pmWorkload, actualPharmacies, data.phoenixWorkload), { formatNumber })}
             </p>
             {mismatch ? (
-              <p className="mt-0.5 text-phx-2xs font-semibold text-rose-600">
+              <p className="mt-0.5 text-phx-sm font-semibold text-rose-600">
                 ≠ declared ({formatNumber(actualTotal)} actual vs {formatNumber(declaredTotal)} declared)
               </p>
             ) : null}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
+            <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               Planned {formatNumber(data.regularVisits)} · Unplanned {formatNumber(data.campaignVisits)}
             </p>
             {/* Doctor/pharmacy/institution mix of the regular visits — display-only context so the
                 approver can see WHAT kind of fieldwork justified the trip; no rule consumes it. */}
-            <p className="mt-0.5 text-phx-2xs text-text-secondary">
+            <p className="mt-0.5 text-phx-sm text-text-secondary">
               Doctor {formatNumber(data.doctorVisits)} · Pharmacy {formatNumber(data.pharmacyVisits)} · Institution{" "}
               {formatNumber(data.institutionVisits)}
               {data.regularVisits > data.doctorVisits + data.pharmacyVisits + data.institutionVisits
@@ -878,7 +878,7 @@ export function ExpenseReport({
                   </colgroup>
                 }
               >
-            <thead className="bg-slate-50 text-phx-2xs uppercase tracking-[0.1em] text-text-secondary">
+            <thead className="bg-slate-50 text-phx-sm uppercase tracking-[0.1em] text-text-secondary">
               <tr>
                 <th className="px-3 py-2 font-semibold">Day</th>
                 <th className="px-3 py-2 text-right font-semibold">AM</th>
@@ -1337,7 +1337,7 @@ export function ExpenseReport({
               { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
             ].map((metric) => (
               <div className={cn("rounded-2xl border border-phx-line p-4", metric.tone)} key={metric.label}>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
                 <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
               </div>
             ))}
@@ -1587,7 +1587,7 @@ export function ExpenseReport({
                           />
                         </div>
                         <button
-                          className="mt-3 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600"
+                          className="mt-3 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-phx-sm font-semibold text-slate-600"
                           onClick={() => toggleTripExpand(record)}
                           type="button"
                         >
@@ -1644,7 +1644,7 @@ export function ExpenseReport({
                       ))}
                       <th className="border-b border-phx-line bg-phx-paper px-3 py-3 text-left align-top font-semibold">
                         HR Decision
-                        <span className="mt-1 block text-phx-2xs font-medium normal-case tracking-normal text-text-secondary">
+                        <span className="mt-1 block text-phx-sm font-medium normal-case tracking-normal text-text-secondary">
                           Approve · adjust amount · add reason
                         </span>
                       </th>
@@ -1680,7 +1680,7 @@ export function ExpenseReport({
                               <p className="mt-0.5 break-words text-phx-xs text-text-secondary">Not mapped to an employee</p>
                             )}
                             <button
-                              className="mt-1.5 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-left text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
+                              className="mt-1.5 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-left text-phx-sm font-semibold text-slate-600 hover:bg-slate-50"
                               onClick={() => toggleTripExpand(record)}
                               type="button"
                               {...rowDetailToggleProps(`trip-evidence-${record.tripId}-${record.row}`, isExpanded)}

@@ -41,7 +41,7 @@ export function DeckSubject({
   return (
     <header className="min-w-0 border-b border-slate-200" data-deck-subject>
       <div className="min-w-0 space-y-2 px-5 pb-4 pt-5">
-        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
+        <p className="break-words text-phx-sm font-black uppercase tracking-[0.16em] text-orange-600">
           {valuesOnly ? "Imported trip · values only" : "Outstation trip"}
           <span className="ml-2 font-semibold normal-case tracking-normal text-slate-400">{record.tripId}</span>
         </p>
@@ -52,7 +52,7 @@ export function DeckSubject({
           {/* Left-aligned: under a long name this wraps to its own line, and a right-aligned label
               then sat indented over the amount (live tour of d67cacc). */}
           <p className="shrink-0 text-left" data-subject-claimed>
-            <span className="block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Claimed</span>
+            <span className="block text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Claimed</span>
             <span className="block text-2xl font-black leading-none tabular-nums text-slate-950">{egp(record.total)}</span>
           </p>
         </div>
@@ -83,11 +83,11 @@ export function DeckSubject({
           {/* Both ends in words, each with its own reading direction, both starting at the left. The
               address as Google stored it, plus code and all, is the To's tooltip, never a line. */}
           <span className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">From</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">From</span>
             <span className="min-w-0 break-words text-left" dir="auto">
               {displayPlace(record.from) || "—"}
             </span>
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">To</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">To</span>
             <span className="min-w-0 break-words text-left" dir="auto" title={destination || undefined}>
               {displayPlace(destination) || "—"}
             </span>
@@ -115,7 +115,7 @@ export function DeckSubject({
       {record.capturedLocation ? (
         <div className="min-w-0 space-y-2 border-t border-slate-100 px-5 py-3" data-captured-geography>
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Submitted from</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Submitted from</p>
             {record.capturedLocation.confidence ? (
               <CrmPill tone={PILL_FOR_CONFIDENCE[capturedLocationConfidenceTone(record.capturedLocation.confidence)]}>
                 {record.capturedLocation.confidence}
@@ -137,7 +137,7 @@ export function DeckSubject({
               ] as const
             ).map(([label, value]) => (
               <div className="min-w-0" key={label}>
-                <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
+                <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
                 <dd className="m-0 min-w-0 break-words text-left text-sm font-semibold text-slate-900" dir="auto">
                   {value || "—"}
                 </dd>
@@ -155,7 +155,7 @@ const PILL_FOR_CONFIDENCE = { bad: "bad", good: "good", neutral: "neutral", warn
 function SubjectFact({ children, className, label }: { children: ReactNode; className?: string; label: string }) {
   return (
     <div className={cn("border-b border-r border-slate-100 px-5 py-2.5 even:border-r-0", className)}>
-      <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
+      <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
       <dd className="m-0 mt-0.5 min-w-0 break-words text-left text-sm font-semibold text-slate-900">{children}</dd>
     </div>
   );

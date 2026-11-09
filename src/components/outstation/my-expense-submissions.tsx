@@ -310,7 +310,7 @@ export function rowNowAndNext(
 export function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+      <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
         {icon}
         {label}
       </p>
@@ -401,12 +401,12 @@ export function MyExpenseSubmissions({
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">You claimed</p>
+          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">You claimed</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{money(totals.claimed)}</p>
           <p className="mt-0.5 text-xs text-slate-500">{claimsLabel(submissions.length)}</p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Passed validation</p>
+          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">Passed validation</p>
           <p className="mt-1 text-2xl font-black text-emerald-700">
             {totals.validatedCount > 0 ? money(totals.validatedAmount) : "—"}
           </p>
@@ -417,7 +417,7 @@ export function MyExpenseSubmissions({
           </p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">Still held</p>
+          <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">Still held</p>
           <p className="mt-1 text-2xl font-black text-amber-700">{totals.awaiting}</p>
           <p className="mt-0.5 text-xs text-slate-500">Waiting on evidence or workload</p>
         </div>
@@ -451,16 +451,16 @@ export function MyExpenseSubmissions({
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="bg-slate-900 px-1.5 py-0.5 text-phx-2xs font-black tracking-wider text-white">
+                    <span className="bg-slate-900 px-1.5 py-0.5 text-phx-sm font-black tracking-wider text-white">
                       OUTSTATION-{submission.id}
                     </span>
                     <span
-                      className={`px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${TONE_CLASSES[status.tone]}`}
+                      className={`px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ${TONE_CLASSES[status.tone]}`}
                     >
                       {status.label}
                     </span>
                     {departureDue || ticketDue ? (
-                      <span className="inline-flex items-center gap-1 bg-orange-500 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider text-white">
+                      <span className="inline-flex items-center gap-1 bg-orange-500 px-2 py-0.5 text-phx-sm font-black uppercase tracking-wider text-white">
                         {departureDue ? <Camera className="h-3 w-3" /> : <Ticket className="h-3 w-3" />}
                         Action needed
                       </span>
@@ -505,7 +505,7 @@ export function MyExpenseSubmissions({
                     <p className="text-sm font-black text-slate-900">
                       {money(submission.claimedTotalAmount)}
                     </p>
-                    <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                    <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                       You claimed
                     </p>
                     {submission.decision?.approvedAmount !== null &&
@@ -516,7 +516,7 @@ export function MyExpenseSubmissions({
                         >
                           {money(submission.decision.approvedAmount)}
                         </p>
-                        <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                        <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                           Validated
                         </p>
                       </>
@@ -537,7 +537,7 @@ export function MyExpenseSubmissions({
                       {stages.map((stage) => (
                         <li className="flex items-start gap-3" key={stage.key}>
                           <span
-                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-phx-2xs font-black ${
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center text-phx-sm font-black ${
                               stage.state === "done"
                                 ? "bg-emerald-500 text-white"
                                 : stage.state === "current"
@@ -627,7 +627,7 @@ export function MyExpenseSubmissions({
                         this is what the business calls it, and it is the one an approver argues
                         about. Derived from the coordinates against TODAY's brick tree. */}
                     <div className="mt-4 border border-slate-200 bg-white p-3">
-                      <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                      <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                         Captured location
                       </p>
                       <div className="mt-2 grid gap-4 sm:grid-cols-3">
@@ -703,7 +703,7 @@ export function MyExpenseSubmissions({
                     <SectionTitle>Money</SectionTitle>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div className="border border-slate-200 bg-white p-3">
-                        <p className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                        <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                           <Wallet className="h-3 w-3" />
                           You claimed
                         </p>
@@ -725,7 +725,7 @@ export function MyExpenseSubmissions({
                           adjusted ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
                         }`}
                       >
-                        <p className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                        <p className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                           <CircleDollarSign className="h-3 w-3" />
                           Validated
                         </p>
@@ -749,7 +749,7 @@ export function MyExpenseSubmissions({
 
                         {submission.decision?.hrComment || submission.decision?.hrNotes ? (
                           <div className="mt-3 border border-slate-200 bg-white p-2.5">
-                            <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
+                            <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-500">
                               Note
                             </p>
                             <p className="mt-1 whitespace-pre-line text-phx-md leading-relaxed text-slate-800">

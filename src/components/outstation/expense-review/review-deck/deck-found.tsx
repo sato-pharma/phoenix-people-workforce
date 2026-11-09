@@ -44,9 +44,9 @@ export function DeckFound({
   return (
     <section className="min-w-0 space-y-3 border-b border-slate-100 px-5 py-4" data-deck-found>
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-        <h4 className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">What the system found</h4>
+        <h4 className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">What the system found</h4>
         {daysAwaiting !== null ? (
-          <span className={cn("text-phx-2xs font-black", daysAwaiting >= 7 ? "text-orange-700" : "text-slate-500")}>
+          <span className={cn("text-phx-sm font-black", daysAwaiting >= 7 ? "text-orange-700" : "text-slate-500")}>
             {expenseTripAwaitingLabel(daysAwaiting)}
           </span>
         ) : null}
@@ -86,13 +86,13 @@ export function DeckFound({
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{one.label}</span>
+                  <span className="block text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{one.label}</span>
                   <span className={cn("mt-0.5 flex items-start gap-1.5 break-words text-sm font-bold", tone.text)}>
                     {signal.tone === "loading" ? <Loader2 aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" /> : null}
                     <span className="min-w-0 break-words">{signal.line}</span>
                   </span>
                 </span>
-                <span className="mt-0.5 shrink-0 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
+                <span className="mt-0.5 shrink-0 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">
                   {showing ? "Showing" : <ChevronRight aria-hidden className="h-4 w-4" />}
                 </span>
               </button>
@@ -104,7 +104,7 @@ export function DeckFound({
         <div className="min-w-0 space-y-1 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs" data-allowance-notices>
           {record.allowanceNotices.map((notice) => (
             <p className="break-words text-amber-900" key={notice}>
-              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">Allowance</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-amber-700">Allowance</span>
               {" · "}
               {notice}
             </p>

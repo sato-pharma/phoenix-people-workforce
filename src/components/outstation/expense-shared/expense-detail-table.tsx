@@ -83,7 +83,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 const badgeBase =
-  "inline-flex max-w-full items-center break-words px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ring-1 ring-inset";
+  "inline-flex max-w-full items-center break-words px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ring-1 ring-inset";
 
 function alignClass(align: Column["align"]) {
   return align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
@@ -197,7 +197,7 @@ export function ExpenseDetailTable({
           control. Without it the mobile card list would be permanently stuck on the default
           date-descending order, which is a lost capability rather than a restyle. */}
       <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 md:hidden">
-        <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor="expense-sort">
+        <label className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400" htmlFor="expense-sort">
           Sort
         </label>
         <select
@@ -268,7 +268,7 @@ export function ExpenseDetailTable({
                 return (
                   <th
                     key={column.key}
-                    className={`border-b border-[#1E293B] px-3 py-3 ${alignClass(column.align)} text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-200`}
+                    className={`border-b border-[#1E293B] px-3 py-3 ${alignClass(column.align)} text-phx-sm font-black uppercase tracking-[0.1em] text-slate-200`}
                   >
                     <button
                       type="button"

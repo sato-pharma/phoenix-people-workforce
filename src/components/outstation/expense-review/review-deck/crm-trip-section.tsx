@@ -151,7 +151,7 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
     <li className={cn("border border-l-[3px] border-slate-200 bg-white", TONE_BAR[day.beforePhoenix ? "neutral" : day.nothingInCrm ? "warn" : where.tone])} data-crm-day={day.date}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-50 px-3 py-2">
         {dayCount > 1 ? (
-          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+          <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">
             Day {formatNumberValue(index + 1)} of {formatNumberValue(dayCount)}
           </span>
         ) : null}
@@ -262,7 +262,7 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
 
 function Label({ children, icon: Icon }: { children: ReactNode; icon: typeof MapPin }) {
   return (
-    <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+    <p className="flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
       <Icon className="h-3.5 w-3.5" />
       {children}
     </p>
@@ -272,7 +272,7 @@ function Label({ children, icon: Icon }: { children: ReactNode; icon: typeof Map
 function TripFact({ label, tone, value }: { label: string; tone?: "danger" | "warn"; value: string }) {
   return (
     <div>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
       <p className={cn("mt-0.5 break-words text-sm font-bold", tone ? TONE_TEXT[tone] : "text-slate-900")}>{value}</p>
     </div>
   );

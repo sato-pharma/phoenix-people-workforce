@@ -21,7 +21,7 @@ export function SubmitExpenseMyClaims({
 }) {
   return (
     <section aria-label="My claims" className="scroll-mt-4 space-y-2" id={MY_CLAIMS_ANCHOR}>
-      <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-500">My claims</h2>
+      <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-500">My claims</h2>
       {submissions === null ? (
         <p className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-4 text-phx-md leading-relaxed text-rose-800">
           <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />

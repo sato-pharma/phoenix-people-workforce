@@ -46,7 +46,7 @@ export function ReviewHeader({
           >
             <Layers aria-hidden className="h-4 w-4" />
             Review one by one
-            {canReview ? <span className="bg-white/20 px-1.5 py-0.5 text-phx-2xs tabular-nums">{formatNumberValue(reviewCount)}</span> : null}
+            {canReview ? <span className="bg-white/20 px-1.5 py-0.5 text-phx-sm tabular-nums">{formatNumberValue(reviewCount)}</span> : null}
           </button>
           {loading || exportCount === 0 ? (
             <span className="inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-none border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-400">

@@ -165,7 +165,7 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
         <header className="min-w-0 border-b border-white/10 bg-slate-950">
           <div className="flex min-w-0 items-center gap-3 px-4 pt-3 lg:px-6">
             <div className="min-w-0 flex-1">
-              <p className="break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-400">Expense approvals</p>
+              <p className="break-words text-phx-sm font-black uppercase tracking-[0.18em] text-orange-400">Expense approvals</p>
               <h2 className="break-words text-base font-black text-white lg:text-lg" id={titleId}>
                 Review one by one
               </h2>
@@ -207,7 +207,7 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
                 type="button"
               >
                 <span className="break-words">{REVIEW_TAB_LABELS[one]}</span>
-                <span className={cn("px-1.5 py-0.5 text-phx-2xs tabular-nums", deck.tab === one ? "bg-orange-500 text-white" : "bg-white/10 text-slate-300")}>
+                <span className={cn("px-1.5 py-0.5 text-phx-sm tabular-nums", deck.tab === one ? "bg-orange-500 text-white" : "bg-white/10 text-slate-300")}>
                   {formatNumberValue(review.tabCounts[one])}
                 </span>
               </button>
@@ -215,7 +215,7 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
             {deck.tab === "employee" ? (
               <span aria-selected className="-mb-px inline-flex min-h-11 min-w-0 items-center gap-2 border-b-2 border-orange-500 px-3 py-2 text-sm font-black text-white" role="tab">
                 <span className="break-words">{record ? record.specialist || "One employee" : "One employee"}</span>
-                <span className="bg-orange-500 px-1.5 py-0.5 text-phx-2xs tabular-nums text-white">{formatNumberValue(total)}</span>
+                <span className="bg-orange-500 px-1.5 py-0.5 text-phx-sm tabular-nums text-white">{formatNumberValue(total)}</span>
               </span>
             ) : null}
           </div>

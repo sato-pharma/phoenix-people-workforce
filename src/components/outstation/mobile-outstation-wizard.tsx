@@ -162,7 +162,7 @@ function buildDraftId() {
 function NoTicketFarePanel({ fare }: { fare: OutstationNoTicketFare | null }) {
   return (
     <section aria-label="Train fare" className="grid gap-2 border border-slate-200 bg-slate-50 p-4" data-no-ticket-fare>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Train fare · Fixed</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">Train fare · Fixed</p>
       {fare ? (
         <>
           <p className="text-sm font-bold text-slate-900">
@@ -1898,7 +1898,7 @@ export function MobileOutstationWizard({
       {!arrivalPhotoOwed ? null : (
         <section aria-label={arrivalPhotoBadge} className="grid gap-3 border border-slate-200 bg-white p-4">
           <div>
-            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">{arrivalPhotoBadge}</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">{arrivalPhotoBadge}</p>
             <h3 className="mt-1 text-base font-black text-slate-900">{arrivalPhotoHeading}</h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">{arrivalPhotoHint}</p>
           </div>
@@ -1974,7 +1974,7 @@ export function MobileOutstationWizard({
           ) : null}
 
           <div className="border border-slate-200 bg-slate-50 p-3">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Photo</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Photo</p>
             <p className="mt-1 text-sm font-bold text-slate-900">{arrivalPhotoStatusLabel}</p>
             {carEvidence ? (
               <p className="mt-1 break-words text-sm text-slate-700" dir="auto">{carEvidence.capturedLocationLabel}</p>
@@ -2264,7 +2264,7 @@ export function MobileOutstationWizard({
       {isNonTravel ? null : <RouteMapPreview request={calculation} />}
 
       <section aria-label="After you submit" className="border border-slate-200 bg-white p-4">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">After you submit</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">After you submit</p>
         <NextSteps items={preview.slice(1, 3)} />
       </section>
     </div>
@@ -2304,7 +2304,7 @@ export function MobileOutstationWizard({
     >
       <ArrowRight aria-hidden className={cn("mt-0.5 h-4 w-4 shrink-0", tried ? "text-rose-600" : "text-orange-600")} />
       <span className="min-w-0">
-        <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
+        <span className={cn("block text-phx-sm font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
           {tried ? "Still needed" : "Now"}
         </span>
         <span className={cn("block break-words text-sm font-black", tried ? "text-rose-700" : "text-slate-950")}>{barProblem}</span>
@@ -2326,7 +2326,7 @@ export function MobileOutstationWizard({
     <p className="flex min-w-0 items-start gap-2">
       <CircleCheck aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
       <span className="min-w-0">
-        <span className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-emerald-700">Done · Next</span>
+        <span className="block text-phx-sm font-black uppercase tracking-[0.16em] text-emerald-700">Done · Next</span>
         <span className="block break-words text-sm font-black text-slate-950">
           {nextStep.label} — {nextStep.description}
         </span>
@@ -2360,7 +2360,7 @@ export function MobileOutstationWizard({
       ) : (
         <FormWizard
           badge={
-            <span className="inline-flex max-w-full items-center gap-1.5 break-words border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+            <span className="inline-flex max-w-full items-center gap-1.5 break-words border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
               {expenseTypeOptions.find((option) => option.value === expenseType)?.label ?? "Expense"}
               {isNonTravel ? "" : ` · ${transportOptions.find((option) => option.value === transportationType)?.label ?? ""}`}
             </span>
@@ -2525,7 +2525,7 @@ function ReviewRow({
 }) {
   return (
     <div className="min-w-0 border-b border-slate-100 px-3 py-2.5 sm:odd:border-r">
-      <dt className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
+      <dt className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
       <dd className={cn("mt-0.5 break-words", strong ? "text-lg font-black" : "text-sm font-bold", REVIEW_TONES[tone])} dir="auto">
         {value}
       </dd>
@@ -2555,7 +2555,7 @@ function NextSteps({ items }: { items: ReadonlyArray<AfterSubmitItem> }) {
             {item.state === "done" ? <Check className="h-4 w-4" /> : index + 1}
           </span>
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+            <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">
               {item.state === "done"
                 ? "Done"
                 : item.state === "now"
@@ -2602,7 +2602,7 @@ function SubmittedClaimPanel({
   return (
     <section aria-label="Claim submitted" className="border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
-        <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-emerald-700">
+        <p className="flex items-center gap-2 text-phx-sm font-black uppercase tracking-[0.18em] text-emerald-700">
           <CircleCheck aria-hidden className="h-4 w-4" />
           Submitted
         </p>
@@ -2642,7 +2642,7 @@ function TestClaimPanel({
   return (
     <section aria-label="Test claim checked" className="border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
-        <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <p className="flex items-center gap-2 text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
           <CircleCheck aria-hidden className="h-4 w-4" />
           Test account
         </p>
@@ -2757,7 +2757,7 @@ function PermissionPromptModal({
       role="dialog"
     >
       <div className="w-full max-w-md border border-slate-200 bg-white p-5">
-        <span className="inline-flex bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+        <span className="inline-flex bg-orange-50 px-2 py-1 text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
           {copy.badge}
         </span>
         <h2 id="outstation-permission-title" className="mt-3 text-lg font-bold text-slate-900">

@@ -698,7 +698,7 @@ export function AdminManagerExpenseModal({
                       <span className="shrink-0 font-black uppercase tracking-[0.08em] text-phx-ink-soft">
                         {match.hrId}
                         {!match.isActive ? (
-                          <span className="ml-1.5 rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-[10px] text-phx-accent-hover">
+                          <span className="ml-1.5 rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-phx-sm text-phx-accent-hover">
                             inactive
                           </span>
                         ) : null}
@@ -1146,7 +1146,7 @@ export function AdminManagerExpenseModal({
                   Calculation preview
                 </p>
                 {calcPreview.eligibilityStatus === "not_eligible" ? (
-                  <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-[#B91C1C]">
+                  <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] text-[#B91C1C]">
                     Not eligible
                   </span>
                 ) : null}
@@ -1155,7 +1155,7 @@ export function AdminManagerExpenseModal({
                 {isMeeting ? null : (
                   <>
                     <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                         {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
                       </p>
                       <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -1163,7 +1163,7 @@ export function AdminManagerExpenseModal({
                       </p>
                     </div>
                     <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                         Allowance
                       </p>
                       <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -1174,7 +1174,7 @@ export function AdminManagerExpenseModal({
                 )}
                 {calcPreview.meetingAmount > 0 ? (
                   <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                    <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                       Meeting
                     </p>
                     <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -1184,7 +1184,7 @@ export function AdminManagerExpenseModal({
                 ) : null}
                 {calcPreview.otherAmount > 0 ? (
                   <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                    <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                       Other
                     </p>
                     <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -1194,7 +1194,7 @@ export function AdminManagerExpenseModal({
                 ) : null}
               </div>
               <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-phx-accent-soft px-3 py-2.5">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-hover">
+                <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-accent-hover">
                   Total
                 </p>
                 <p className="text-sm font-black text-phx-accent-hover">

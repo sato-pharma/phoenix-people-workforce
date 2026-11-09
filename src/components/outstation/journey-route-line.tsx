@@ -70,7 +70,7 @@ export function JourneyRouteLine({ legs }: { legs: JourneyRouteLeg[] }) {
           <col className="w-28" />
         </colgroup>
         <thead>
-          <tr className="border-b border-slate-200 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-500">
+          <tr className="border-b border-slate-200 text-left text-phx-sm font-black uppercase tracking-wider text-slate-500">
             <th className="py-1.5 pr-3 font-black" scope="col">
               Drive
             </th>
