@@ -14,7 +14,7 @@ import { getHeadwindCommandHistory, getHeadwindDeviceDetail } from "@/lib/device
 import { getHeadwindLocation, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { getHeadwindFleet } from "@/lib/devices/headwind/fleet";
 import { headwindErrorResponse } from "@/lib/devices/headwind/http";
-import { getHeadwindLocationHistory } from "@/lib/devices/headwind/locations";
+import { getHeadwindLocationHistory, switchOnHeadwindLocationCollection } from "@/lib/devices/headwind/locations";
 import { listRecordings } from "@/lib/devices/headwind/recordings";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 import { isRustDeskSessionMode, rustDeskTarget } from "@/lib/devices/rustdesk/session";
@@ -143,6 +143,16 @@ export async function POST(request: Request) {
     await assertPermission(access, "company_devices", "approve");
 
     const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const actor =
+      hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+
+    // 🔴 SWITCHING MOVEMENT HISTORY ON IS A SERVER-WIDE WRITE, SO IT LIVES HERE — behind the CSRF check,
+    // the permission and an audit row — and never in the GET that reads a tablet's movements, which is
+    // where it used to happen as a side effect of opening the panel.
+    if (payload.action === "location-history-on") {
+      return NextResponse.json(await switchOnHeadwindLocationCollection(actor));
+    }
+
     const deviceNumber = typeof payload.deviceNumber === "string" ? payload.deviceNumber.trim() : "";
     if (!deviceNumber) throw new HeadwindCommandInputError("Say which tablet to act on.");
     if (!isHeadwindCommandId(payload.command)) {
@@ -150,9 +160,6 @@ export async function POST(request: Request) {
         "Unknown action — expected apply settings, wake the remote app, restart, lock, locate, kiosk mode or factory reset.",
       );
     }
-
-    const actor =
-      hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
 
     return NextResponse.json(await issueHeadwindCommand({ command: payload.command, deviceNumber }, actor));
   } catch (error) {

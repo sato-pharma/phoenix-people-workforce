@@ -7,6 +7,7 @@ import { HeadwindNotConfiguredError } from "@/lib/devices/headwind/auth";
 import { HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, HeadwindCommandUnconfirmedError } from "@/lib/devices/headwind/commands";
 import { HeadwindConfigurationError } from "@/lib/devices/headwind/configurations";
+import { HeadwindDeviceNotFoundError } from "@/lib/devices/headwind/devices";
 import { HeadwindEnrollmentError } from "@/lib/devices/headwind/enrollment";
 import { HeadwindLocationError } from "@/lib/devices/headwind/locations";
 import { HeadwindUploadError } from "@/lib/devices/headwind/uploads";
@@ -48,6 +49,7 @@ export function headwindErrorResponse(error: unknown, fallback: string): NextRes
     error instanceof HeadwindWipeError ||
     error instanceof HeadwindActionError ||
     error instanceof HeadwindConfigurationError ||
+    error instanceof HeadwindDeviceNotFoundError ||
     error instanceof HeadwindEnrollmentError ||
     error instanceof HeadwindLocationError ||
     error instanceof HeadwindUploadError ||

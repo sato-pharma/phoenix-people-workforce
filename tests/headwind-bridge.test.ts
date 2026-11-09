@@ -70,10 +70,18 @@ import {
   HeadwindEnrollmentError,
 } from "../src/lib/devices/headwind/enrollment.ts";
 import {
+  asMoment,
+  collapseRepeatedFixes,
+  describeAge,
+  describeNoFix,
   getHeadwindLocationHistory,
   locationFixesFromPlugin,
   locateHeadwindDevice,
+  readHeadwindLocationCollection,
+  switchOnHeadwindLocationCollection,
+  HEADWIND_HISTORY_PAGE_SIZE,
   HeadwindLocationError,
+  type HeadwindLocationFix,
 } from "../src/lib/devices/headwind/locations.ts";
 import {
   clampRecordingDuration,
@@ -116,6 +124,7 @@ import {
   configurationNamesFromSearch,
   deviceRecordsFromSearch,
   getHeadwindLocation,
+  HeadwindDeviceNotFoundError,
   listHeadwindDevices,
   matchHeadwindToRegister,
   matchHeadwindToRegisterDetailed,
@@ -636,6 +645,62 @@ async function runDeviceTests() {
     ENV,
   );
   assert.deepEqual(noFix, { address: null, latitude: null, locatedAt: null, longitude: null });
+
+  // 🔴 A NUMBER NOT IN THE FLEET IS NOT "A TABLET WITH NO POSITION". It used to answer all-nulls, so a
+  // removed or mistyped tablet read exactly like a real one that had never been outdoors.
+  resetHeadwindTokenCache();
+  await assert.rejects(
+    getHeadwindLocation(
+      "NOT-HERE",
+      makeFetch({ api: [{ body: { data: { items: [{ number: "C" }] }, status: "OK" }, status: 200 }] }).fetch,
+      ENV,
+    ),
+    HeadwindDeviceNotFoundError,
+    "a tablet that is not in the fleet is refused, never answered with an empty position",
+  );
+
+  // 🔴 THE FIX'S OWN TIME, NEVER THE CHECK-IN'S. Falling back to `lastUpdate` made a days-old fix read as
+  // "less than two minutes old" right after a Locate-now wake. And a 0/0 pair is no fix at all.
+  resetHeadwindTokenCache();
+  const located = await listHeadwindDevices(
+    makeFetch({
+      api: [
+        {
+          body: {
+            data: {
+              items: [
+                { info: { lat: 30.05, lon: 31.24 }, lastUpdate: 1_762_650_000_000, number: "UNDATED" },
+                { info: { location: { lat: 30.06, lon: 31.25, ts: 1_762_600_000_000 } }, lastUpdate: 1_762_650_000_000, number: "NESTED" },
+                { info: { location: { lat: 0, lon: 0, ts: 1_762_600_000_000 } }, lastUpdate: 1_762_650_000_000, number: "ISLAND" },
+              ],
+            },
+            status: "OK",
+          },
+          status: 200,
+        },
+      ],
+    }).fetch,
+    ENV,
+  );
+  const byNumber = new Map(located.map((device) => [device.deviceNumber, device]));
+  assert.equal(byNumber.get("UNDATED")?.latitude, 30.05, "a position with no time of its own is still a position");
+  assert.equal(byNumber.get("UNDATED")?.locatedAt, null, "🔴 and it is dated by nothing — never by the check-in");
+  resetHeadwindTokenCache();
+  const undated = await getHeadwindLocation(
+    "UNDATED",
+    makeFetch({
+      api: [{ body: { data: { items: [{ info: { lat: 30.05, lon: 31.24 }, lastUpdate: 1_762_650_000_000, number: "UNDATED" }] }, status: "OK" }, status: 200 }],
+    }).fetch,
+    ENV,
+  );
+  assert.equal(undated.locatedAt, null, "🔴 the position read never borrows the check-in time for a fix that carries none");
+  assert.equal(byNumber.get("NESTED")?.latitude, 30.06, "the launcher's nested `location: {lat, lon, ts}` is read");
+  assert.equal(byNumber.get("NESTED")?.locatedAt, new Date(1_762_600_000_000).toISOString(), "with the fix's own time");
+  assert.deepEqual(
+    [byNumber.get("ISLAND")?.latitude, byNumber.get("ISLAND")?.longitude, byNumber.get("ISLAND")?.locatedAt],
+    [null, null, null],
+    "🔴 a 0/0 check-in is no fix — no pin in the Gulf of Guinea, no Location tick, no time",
+  );
 
   // 🔴 An unreadable device list must not throw away a movement trail the plugin already answered with —
   // and the refusal it raises no longer claims "nothing was changed", since it can follow a write.
@@ -1405,6 +1470,117 @@ async function runLocationTests() {
   // open-source agent — so the note must say so rather than imply a tablet stayed still.
   assert.match(locations, /unproven until a tablet does it/, "and the note says plainly that an empty trail may mean the free agent never feeds it");
   assert.doesNotMatch(locations, /has not moved"/, "it never reports an empty history as a tablet that did not move");
+
+  await runLocationHonestyTests();
+}
+
+/**
+ * The location findings of 9 Nov 2026 — every way the movements read used to say something it did not
+ * know. Each block was break-tested: undo the fix in `locations.ts` and its own assertion fires.
+ */
+async function runLocationHonestyTests() {
+  const ok = (data: unknown) => ({ body: { data, status: "OK" }, status: 200 });
+  const fleet = ok({ items: [{ info: { location: { lat: 30.07, lon: 31.26, ts: 1_762_600_000_000 } }, number: "H" }] });
+
+  // 🔴 A REFUSAL IS NOT AN EMPTY HISTORY. `catch { fixes = [] }` hid the 1 Nov refusal for weeks.
+  resetHeadwindTokenCache();
+  const refused = await getHeadwindLocationHistory(
+    "H",
+    makeFetch({ api: [ok({ sendData: true }), { body: { message: "error.notfound.device", status: "ERROR" }, status: 200 }, fleet] }).fetch,
+    ENV,
+  );
+  assert.match(refused.note, /refused the read: error\.notfound\.device/, "the plugin's refusal is said, word for word");
+  assert.match(refused.note, /NOT an empty history/);
+  assert.equal(refused.fixes.length, 1, "and the check-in position is still shown");
+
+  // Records with no position are said so, not called "nothing recorded".
+  resetHeadwindTokenCache();
+  const blind = await getHeadwindLocationHistory(
+    "H",
+    makeFetch({ api: [ok({ sendData: true }), ok({ items: [{ gpsLat: 0, gpsLon: 0 }, { deviceBatteryLevel: 50 }], totalItemsCount: 2 }), fleet] }).fetch,
+    ENV,
+  );
+  assert.match(blind.note, /holds 2 records for this tablet, but none carries a position/);
+
+  // No sort field (the server has none and orders newest first), and the cap is said.
+  resetHeadwindTokenCache();
+  const capped = makeFetch({
+    api: [ok({ sendData: true }), ok({ items: [{ gpsLat: 30.1, gpsLon: 31.2, latestUpdateTime: 1_762_600_000_000 }], totalItemsCount: 350 }), fleet],
+  });
+  const cappedRead = await getHeadwindLocationHistory("H", capped.fetch, ENV);
+  const searchCall = capped.calls.find((call) => call.url.includes("/search/dynamic"));
+  const searchBody = JSON.parse(String(searchCall?.init.body));
+  assert.equal(searchBody.sortValue, undefined, "🔴 no sortValue — the server ignores it, and sending it implies an order it never applied");
+  assert.equal(searchBody.pageSize, HEADWIND_HISTORY_PAGE_SIZE);
+  assert.match(cappedRead.note, /Showing the latest 1 of 350 history records/, "a capped read says it is capped");
+
+  // 🔴 READING NEVER WRITES. Collection off is reported, and no PUT is sent from the read.
+  resetHeadwindTokenCache();
+  const off = makeFetch({ api: [ok({ intervalMins: 15, sendData: false }), ok({ items: [] }), fleet] });
+  const offRead = await getHeadwindLocationHistory("H", off.fetch, ENV);
+  assert.equal(offRead.collection, "off");
+  assert.equal(offRead.pluginEnabled, false);
+  assert.match(offRead.note, /switched off on the tablet server/);
+  assert.equal(off.calls.filter((call) => call.init.method === "PUT").length, 0, "🔴 opening the movements panel changes no server setting");
+  resetHeadwindTokenCache();
+  const unknown = await readHeadwindLocationCollection(
+    makeFetch({ api: [{ body: { message: "timeout", status: "ERROR" }, status: 200 }] }).fetch,
+    ENV,
+  );
+  assert.equal(unknown.state, "unknown", "a failed settings read is 'could not read', never 'switched off'");
+  // The switch: refuses to write blind, and does nothing when it is already on.
+  resetHeadwindTokenCache();
+  const empty = makeFetch({ api: [ok({})] });
+  await assert.rejects(switchOnHeadwindLocationCollection("B-10", empty.fetch, ENV), HeadwindLocationError, "an empty settings reply is never written back");
+  assert.equal(empty.calls.filter((call) => call.init.method === "PUT").length, 0);
+  resetHeadwindTokenCache();
+  const already = makeFetch({ api: [ok({ intervalMins: 15, sendData: true })] });
+  assert.match((await switchOnHeadwindLocationCollection("B-10", already.fetch, ENV)).message, /already switched on/);
+  assert.equal(already.calls.filter((call) => call.init.method === "PUT").length, 0);
+  resetHeadwindTokenCache();
+  const locations = stripComments(source("src/lib/devices/headwind/locations.ts"));
+  assert.match(locations, /\{ \.\.\.current, sendData: true \}/, "the switch writes the LIVE settings back with only sendData changed");
+  assert.match(locations, /change: "location-history-on"/, "and the switch is audited");
+  const route = stripComments(source("app/api/devices/headwind/route.ts"));
+  const post = route.slice(route.indexOf("export async function POST"));
+  assert.match(post, /assertSameOriginMutation[\s\S]*assertPermission[\s\S]*location-history-on/, "switch-on is a CSRF-guarded, permission-checked POST");
+  assert.doesNotMatch(route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST")), /switchOnHeadwindLocationCollection/, "and never reached from the GET");
+
+  // The same position repeated is one row, with how many times and from when to when.
+  const fix = (recordedAt: string, latitude = 30.1): HeadwindLocationFix => ({
+    batteryLevel: null, firstRecordedAt: recordedAt, latitude, longitude: 31.2, recordedAt, reports: 1, source: "plugin",
+  });
+  const folded = collapseRepeatedFixes([
+    fix("2026-11-09T03:00:00.000Z"),
+    fix("2026-11-09T02:00:00.000Z"),
+    fix("2026-11-09T01:00:00.000Z"),
+    fix("2026-11-09T00:00:00.000Z", 30.2),
+  ]);
+  assert.equal(folded.length, 2, "three identical consecutive reports fold into one row");
+  assert.deepEqual(
+    [folded[0].reports, folded[0].firstRecordedAt, folded[0].recordedAt],
+    [3, "2026-11-09T01:00:00.000Z", "2026-11-09T03:00:00.000Z"],
+    "reported 3 times, from the oldest to the newest",
+  );
+  assert.equal(folded[1].reports, 1, "a different position stays its own row");
+
+  // Seconds are seconds; a string must parse; the age is floored; a clock ahead is said.
+  assert.equal(asMoment(1_762_600_000), new Date(1_762_600_000_000).toISOString(), "a seconds stamp is not read as 1970");
+  assert.equal(asMoment("not a date"), null, "an unparseable string is no time, never a raw string sorted by its letters");
+  assert.equal(describeAge(Math.round(23.6 * 3600)), "That position is 23 hours old.", "🔴 23.6 hours is 23 hours, never rounded up to 24");
+  assert.match(describeAge(-600), /clock is ahead/, "a fix dated in the future says the tablet's clock is wrong");
+  assert.match(locations, /const ageSeconds = locatedAt \? Math\.round\(/, "and the age is no longer clamped at zero");
+
+  // The measured cause is named first.
+  assert.match(describeNoFix("PHX-TAB-0008", "6.39"), /launcher is 6\.39, and only 6\.45 or later sends one/);
+  assert.doesNotMatch(describeNoFix("PHX-TAB-0008", "6.48"), /only 6\.45/, "a current launcher is not blamed");
+
+  // The position "Locate now" read back reaches the console.
+  const commands = stripComments(source("src/lib/devices/headwind/commands.ts"));
+  assert.match(commands, /latitude: located\.latitude,[\s\S]*locatedAt: located\.locatedAt,[\s\S]*longitude: located\.longitude,/, "LOCATE_NOW returns the coordinates it read");
+  const fleetScreen = stripComments(source("src/components/devices/headwind-fleet.tsx"));
+  assert.match(fleetScreen, /if \(result\.latitude !== undefined\)[\s\S]*?setLocations/, "and the fleet row shows them at once");
+  assert.match(fleetScreen, /time of fix not reported/, "a position with no time says so");
 }
 
 /**
@@ -3598,12 +3774,19 @@ function runDashboardTests() {
   // The fleet map: one point per tablet that has a position, labelled with its tag/holder.
   const held = repRow({ assetTag: "PHX-TAB-0007", deviceNumber: "E", holderName: "Gannatullah Amer", latitude: 30.1, longitude: 31.2 });
   const unregisteredRow = repRow({ assetTag: null, deviceNumber: "F", latitude: 30.2, longitude: 31.3, unregistered: true });
-  const points = fleetRowsToPoints([held, unregisteredRow, repRow({ deviceNumber: "G" })]);
+  const points = fleetRowsToPoints([held, unregisteredRow, repRow({ deviceNumber: "G" })], now);
   assert.equal(points.length, 2, "a tablet with no coordinates is left off the map, never plotted at (0,0)");
   assert.equal(points[0].label, "PHX-TAB-0007", "a placed tablet is labelled with its asset tag");
   assert.equal(points[0].sublabel, "Gannatullah Amer", "and the holder rides in the tooltip — a name, never an id");
   assert.equal(points[0].order, null, "a fleet marker has no trail number");
   assert.equal(points[1].sublabel, "Not in the custody register", "a tablet nobody holds says which it is rather than reading blank");
+  // 🔴 A PIN CARRIES ITS AGE. A position with no time, or older than the no-fix limit, is marked stale.
+  assert.equal(points[0].stale, true, "a pin with no time of its own is stale, never 'here now'");
+  const fresh = fleetRowsToPoints([{ ...held, locatedAt: new Date(now - 3_600_000).toISOString() }], now)[0];
+  assert.equal(fresh.stale, false, "an hour-old position is not stale");
+  assert.equal(fresh.recordedAt, new Date(now - 3_600_000).toISOString(), "and the pin carries its time for the tooltip");
+  const old = fleetRowsToPoints([{ ...held, locatedAt: new Date(now - 73 * 3_600_000).toISOString() }], now)[0];
+  assert.equal(old.stale, true, "73 hours is past the 72-hour limit");
 
   // The trail: fixes numbered oldest-first, joined in time order, unplaceable ones dropped.
   const t0 = "2026-10-20T08:00:00.000Z";
@@ -3611,12 +3794,18 @@ function runDashboardTests() {
   const t2 = "2026-10-20T10:00:00.000Z";
   const fixes: DashboardLocationFix[] = [
     { batteryLevel: 70, latitude: 30.2, longitude: 31.3, recordedAt: t2, source: "check-in" },
-    { batteryLevel: 80, latitude: 30.0, longitude: 31.1, recordedAt: t0, source: "plugin" },
+    { batteryLevel: 80, latitude: 30.0, longitude: 31.1, recordedAt: t0, source: "check-in" },
     { batteryLevel: 75, latitude: 30.1, longitude: 31.2, recordedAt: t1, source: "check-in" },
-    { batteryLevel: null, latitude: Number.NaN, longitude: 31.0, recordedAt: null, source: "plugin" },
+    { batteryLevel: null, latitude: Number.NaN, longitude: 31.0, recordedAt: t1, source: "check-in" },
+    // 🔴 A fix with no time used to sort FIRST and become stop 1; it is now left off the line.
+    { batteryLevel: null, latitude: 29.9, longitude: 31.0, recordedAt: null, source: "check-in" },
   ];
   const trail = fixesToPoints(fixes);
-  assert.equal(trail.length, 3, "the fix with no usable coordinates is dropped");
+  assert.equal(trail.length, 3, "the fix with no usable coordinates and the fix with no time are both left off the line");
+  // 🔴 ONE SOURCE PER LINE. With any plugin fix, the line is the plugin's alone — never a plugin fix
+  // joined to a check-in fix, which draws a route nobody reported.
+  const mixed = fixesToPoints([...fixes, { batteryLevel: 60, latitude: 30.5, longitude: 31.5, recordedAt: t1, source: "plugin" }]);
+  assert.deepEqual(mixed.map((point) => point.latitude), [30.5], "the plugin's fixes alone make the line when it has any");
   // 🔴 OLDEST FIRST. The read hands fixes back newest-first; a trail reads in time order. BREAK-TEST:
   // remove the sort in dashboard.ts and the order below is [t2, t0, t1].
   assert.deepEqual(trail.map((point) => point.sublabel), [t0, t1, t2], "sorted oldest-first by recorded time");

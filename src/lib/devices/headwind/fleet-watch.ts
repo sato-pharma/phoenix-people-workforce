@@ -30,7 +30,7 @@ export const FLEET_READ_BLIND_LIMIT_MS = 3 * HOUR_MS;
 
 export type FleetWatchRow = Pick<
   RepHeadwindRow,
-  "assetTag" | "deviceNumber" | "holderName" | "lastContactAt" | "locatedAt" | "name" | "registerStatus"
+  "assetTag" | "deviceNumber" | "holderName" | "lastContactAt" | "latitude" | "locatedAt" | "longitude" | "name" | "registerStatus"
 >;
 
 export type FleetWatchRead =
@@ -77,7 +77,10 @@ export function findFleetFaults(rows: readonly FleetWatchRow[], nowMs: number): 
     const label = row.assetTag ?? row.name;
     if (olderThan(row.lastContactAt, nowMs, TABLET_SILENT_LIMIT_HOURS)) {
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "silent", label, lastAt: row.lastContactAt });
-    } else if (!row.locatedAt) {
+    } else if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) {
+      // 🔴 "NEVER FIXED" IS DECIDED BY THE COORDINATES, NOT THE TIME. A tablet that sent a position
+      // without a time of its own HAS reported one; reading the missing time as "never" filed a located
+      // tablet under the once-a-month line, where it was not looked at.
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "never_fixed", label, lastAt: null });
     } else if (olderThan(row.locatedAt, nowMs, TABLET_NO_FIX_LIMIT_HOURS)) {
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "no_fix", label, lastAt: row.locatedAt });
@@ -165,7 +168,7 @@ export function buildFleetWatchMessage(verdict: Pick<FleetWatchVerdict, "faults"
     if (lines.length > 0) lines.push("");
     lines.push(`Checks in, but no location fix for over ${TABLET_NO_FIX_LIMIT_HOURS} hours:`);
     for (const fault of noFix) {
-      lines.push(`• ${fault.label}, held by ${fault.holderName}: last fix ${fault.lastAt ? `${cairoStamp(fault.lastAt)} Cairo` : "not recorded"}.`);
+      lines.push(`• ${fault.label}, held by ${fault.holderName}: last fix ${fault.lastAt ? `${cairoStamp(fault.lastAt)} Cairo` : "time not reported by the tablet"}.`);
     }
   }
   if (neverFixed.length > 0) {

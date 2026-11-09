@@ -148,7 +148,15 @@ type FleetState = {
   assignable: AssignableEmployee[];
 };
 type LocationResult = { latitude: number | null; longitude: number | null; address: string | null; locatedAt: string | null };
-type CommandResult = { command: string; assetTag: string | null; message: string };
+type CommandResult = {
+  command: string;
+  assetTag: string | null;
+  message: string;
+  // "Locate now" only — the position it read back.
+  latitude?: number | null;
+  longitude?: number | null;
+  locatedAt?: string | null;
+};
 type ScreenTarget = {
   // 🔴 `relayLabel`, never `relayHost` — the host is null on RustDesk's public relay and a toast
   // built from it reads "through null". The label is always a phrase.
@@ -211,6 +219,16 @@ async function requestJson<T>(url: string, body?: unknown): Promise<T> {
 
 function messageOf(caught: unknown, fallback: string): string {
   return caught instanceof Error && caught.message ? caught.message : fallback;
+}
+
+/**
+ * A position and WHEN it was taken. 🔴 A position with no time of its own says so — it used to print
+ * bare, and a days-old fix read like a current one.
+ */
+function positionLine(location: LocationResult): string {
+  if (location.latitude === null || location.longitude === null) return locationText(location);
+  const when = location.locatedAt ? cairoDateTime(location.locatedAt) : "time of fix not reported";
+  return `${locationText(location)} · ${when}`;
 }
 
 function locationText(location: LocationResult): string {
@@ -315,6 +333,17 @@ export function HeadwindFleet() {
           deviceNumber: row.deviceNumber,
         });
         setNotices((previous) => ({ ...previous, [row.deviceNumber]: result.message }));
+        // 🔴 THE POSITION "LOCATE NOW" READ BACK IS SHOWN AT ONCE — it used to be dropped on the server,
+        // so the row kept the old position after a successful locate.
+        if (result.latitude !== undefined) {
+          const located: LocationResult = {
+            address: null,
+            latitude: result.latitude ?? null,
+            locatedAt: result.locatedAt ?? null,
+            longitude: result.longitude ?? null,
+          };
+          setLocations((previous) => ({ ...previous, [row.deviceNumber]: positionLine(located) }));
+        }
         await load(() => true);
       } catch (caught) {
         setErrors((previous) => ({ ...previous, [row.deviceNumber]: messageOf(caught, "Could not take that action.") }));
@@ -333,8 +362,7 @@ export function HeadwindFleet() {
       const result = await requestJson<LocationResult>(
         `/api/devices/headwind?deviceNumber=${encodeURIComponent(row.deviceNumber)}`,
       );
-      const when = result.locatedAt ? ` · ${cairoDateTime(result.locatedAt)}` : "";
-      setLocations((previous) => ({ ...previous, [row.deviceNumber]: `${locationText(result)}${when}` }));
+      setLocations((previous) => ({ ...previous, [row.deviceNumber]: positionLine(result) }));
     } catch (caught) {
       setErrors((previous) => ({ ...previous, [row.deviceNumber]: messageOf(caught, "Could not read the tablet's position.") }));
     } finally {
@@ -737,6 +765,12 @@ function StatusCell({ row, location, readiness }: { row: FleetRow; location?: st
       <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
         {row.lastContactAt ? `Last seen ${cairoDateTime(row.lastContactAt)}` : "Not heard from yet"}
       </p>
+      {/* The check-in time is not the fix time — a tablet can check in every hour for days with one old fix. */}
+      {!location && row.latitude !== null && row.longitude !== null ? (
+        <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
+          {row.locatedAt ? `Last position ${cairoDateTime(row.locatedAt)}` : "Last position: time of fix not reported"}
+        </p>
+      ) : null}
       {location ? (
         <p className="mt-1 flex items-start gap-1 break-words text-[11px] font-bold text-slate-700">
           <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden /> {location}

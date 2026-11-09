@@ -13,6 +13,7 @@
  */
 
 import type { RepHeadwindRow } from "@/lib/devices/headwind/fleet";
+import { TABLET_NO_FIX_LIMIT_HOURS } from "@/lib/devices/headwind/fleet-watch";
 
 /** A tablet's last check-in older than this reads as "not online now", never as lost. */
 export const DASHBOARD_ONLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -132,6 +133,13 @@ export type MapPoint = {
   sublabel: string | null;
   /** The stop's order on a trail (1-based); null for a fleet marker. */
   order: number | null;
+  /** When the position was taken — null when the tablet did not say. */
+  recordedAt?: string | null;
+  /**
+   * A fleet pin whose position is older than `TABLET_NO_FIX_LIMIT_HOURS`, or carries no time at all.
+   * 🔴 It is drawn faded and its tooltip says "old position" — a pin with no age reads as "is here now".
+   */
+  stale?: boolean;
 };
 
 /** The shape the movements read hands over — kept local so this file imports no server module. */
@@ -139,6 +147,8 @@ export type DashboardLocationFix = {
   latitude: number;
   longitude: number;
   recordedAt: string | null;
+  firstRecordedAt?: string | null;
+  reports?: number;
   batteryLevel: number | null;
   source: "check-in" | "plugin";
 };
@@ -171,11 +181,15 @@ export function summarizeFleet(rows: readonly RepHeadwindRow[], now: number = Da
 }
 
 /** One marker per tablet that has reported a position — labelled with its asset tag, holder in the tooltip. */
-export function fleetRowsToPoints(rows: readonly RepHeadwindRow[]): MapPoint[] {
+export function fleetRowsToPoints(rows: readonly RepHeadwindRow[], now: number = Date.now()): MapPoint[] {
   const points: MapPoint[] = [];
+  const limitMs = TABLET_NO_FIX_LIMIT_HOURS * 3_600_000;
   for (const row of rows) {
     if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) continue;
+    const taken = row.locatedAt ? Date.parse(row.locatedAt) : Number.NaN;
     points.push({
+      recordedAt: row.locatedAt,
+      stale: !Number.isFinite(taken) || now - taken > limitMs,
       id: row.deviceNumber,
       label: row.assetTag ?? row.name ?? row.deviceNumber,
       latitude: row.latitude as number,
@@ -191,21 +205,32 @@ export function fleetRowsToPoints(rows: readonly RepHeadwindRow[]): MapPoint[] {
 /**
  * One tablet's fixes as a numbered trail, oldest first.
  *
- * The movements read hands the fixes back newest-first; a trail reads in time order, so they are
- * sorted ascending here and numbered from 1. A fix with no coordinates is dropped — it cannot be
- * drawn — and a fix with no time still takes its place in the order it arrived.
+ * 🔴 ONE SOURCE PER LINE, AND ONLY TIMED FIXES ON IT. The movements read hands back two sources that
+ * are never blended — the history plugin's record and the position riding on each check-in — and a
+ * line joining a plugin fix to a check-in fix draws a route nobody reported. So the trail is drawn from
+ * the plugin's fixes when it has any, and from the check-ins otherwise. A fix with no time cannot be
+ * placed in order: it used to sort FIRST (an empty string) and became stop 1; it is now left off the
+ * line and stays in the list below the map.
  */
 export function fixesToPoints(fixes: readonly DashboardLocationFix[]): MapPoint[] {
-  const usable = fixes.filter((fix) => Number.isFinite(fix.latitude) && Number.isFinite(fix.longitude));
-  const ordered = usable
-    .slice()
-    .sort((left, right) => String(left.recordedAt ?? "").localeCompare(String(right.recordedAt ?? "")));
+  const timed = fixes.filter(
+    (fix) =>
+      Number.isFinite(fix.latitude) &&
+      Number.isFinite(fix.longitude) &&
+      typeof fix.recordedAt === "string" &&
+      Number.isFinite(Date.parse(fix.recordedAt)),
+  );
+  const source = timed.some((fix) => fix.source === "plugin") ? "plugin" : "check-in";
+  const ordered = timed
+    .filter((fix) => fix.source === source)
+    .sort((left, right) => Date.parse(left.recordedAt as string) - Date.parse(right.recordedAt as string));
   return ordered.map((fix, index) => ({
-    id: `${fix.source}:${fix.recordedAt ?? index}:${fix.latitude},${fix.longitude}`,
+    id: `${fix.source}:${fix.recordedAt}:${fix.latitude},${fix.longitude}`,
     label: String(index + 1),
     latitude: fix.latitude,
     longitude: fix.longitude,
     order: index + 1,
+    recordedAt: fix.recordedAt,
     sublabel: fix.recordedAt,
   }));
 }

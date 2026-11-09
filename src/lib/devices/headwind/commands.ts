@@ -280,6 +280,13 @@ export type HeadwindCommandResult = {
   command: HeadwindCommandId;
   assetTag: string | null;
   message: string;
+  /**
+   * "Locate now" only — the position it read back, so the console can show it at once. 🔴 These were
+   * dropped here, so the fleet row kept showing the OLD position after a successful locate.
+   */
+  latitude?: number | null;
+  longitude?: number | null;
+  locatedAt?: string | null;
 };
 
 function resultMessage(def: HeadwindCommandDef, subject: string): string {
@@ -339,7 +346,14 @@ export async function issueHeadwindCommand(
   const delegate = DELEGATED[def.id];
   if (delegate === "locate") {
     const located = await locateHeadwindDevice({ deviceNumber }, actor, fetchImpl, env);
-    return { assetTag: located.assetTag, command: def.id, message: located.message };
+    return {
+      assetTag: located.assetTag,
+      command: def.id,
+      latitude: located.latitude,
+      locatedAt: located.locatedAt,
+      longitude: located.longitude,
+      message: located.message,
+    };
   }
   if (delegate === "action") {
     const taken = await takeHeadwindAction({ action: def.id, deviceNumber }, actor, fetchImpl, env);
