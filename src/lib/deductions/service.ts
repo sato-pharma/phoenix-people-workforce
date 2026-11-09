@@ -730,8 +730,8 @@ export async function reconcileCandidateDrafts(input: {
     const scoped = live
       .filter((candidate) => !input.scope.sourceSystems || input.scope.sourceSystems.includes(candidate.sourceSystem))
       .filter((candidate) => !employeeFilter || employeeFilter(candidate.employeeHrIdCompact ?? ""))
-      .filter((candidate) => candidateInsideDateWindow(candidate.dates, input.scope.dateWindow))
-      .filter((candidate) => !input.scope.onlyCandidateIds || input.scope.onlyCandidateIds.has(candidate.id));
+      .filter((candidate) => !input.scope.onlyCandidateIds || input.scope.onlyCandidateIds.has(candidate.id))
+      .filter((candidate) => candidateInsideDateWindow(candidate.dates, input.scope.dateWindow));
 
     // A SOURCE THAT PRODUCED NOTHING DOES NOT GET TO RETIRE EVERYTHING.
     //
