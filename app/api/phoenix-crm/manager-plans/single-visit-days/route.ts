@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { readWorldFor, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { resolvePhoenixCrmViewer, testModeFor } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { askSingleVisitDay, loadSingleVisitDaysView } from "@/lib/phoenix-crm/server/manager-single-visit-days";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
-    const days = await loadSingleVisitDaysView(viewer, readWorldFor(viewer, searchOf(request).get("test")));
+    const days = await loadSingleVisitDaysView(viewer, testModeFor(viewer, searchOf(request).get("test")));
     return NextResponse.json({ days, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load your asks for a day of single visits.");

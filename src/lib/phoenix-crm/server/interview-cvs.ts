@@ -254,7 +254,9 @@ export async function signedDayInterviewCvUrl(viewer: PhoenixCrmViewer, raw: { i
   const path = textOrNull(row?.cv_path);
   if (!row || !path) throw notFoundError("That CV is not on record.");
   // The row's own world must be the one asked for; territoryForRead then decides the territory.
-  if ((row.is_test === true) !== readTestFlag(raw.test)) throw notFoundError("That CV is not on record.");
+  // A test account also opens a real day's CV, the days it now reads (owner, 2026-11-09).
+  const rowIsTest = row.is_test === true;
+  if (rowIsTest !== readTestFlag(raw.test) && !(viewer.isTestPersona && !rowIsTest)) throw notFoundError("That CV is not on record.");
   territoryForRead(viewer, row.seat_id, row.is_test === true);
   const { data: signed, error: signError } = await getSupabaseAdmin()
     .storage.from(PHOENIX_CRM_INTERVIEW_CV_BUCKET)

@@ -19,10 +19,10 @@
  *     the write is refused by name (`superAdminHasNoFieldWrite`) — the earlier rule, that his every
  *     entry was a test entry (owner, 2026-09-16), is history and not guidance;
  *   - a TEST ACCOUNT (owner, 2026-09-27; src/lib/auth/test-persona.ts) is the employee it mirrors, with
- *     that person's own territories, scope and authority. It READS the real field force, exactly as that
- *     person does (owner, 2026-11-09, "Real data everywhere": `territoryForView`, `readWorldFor`), and
- *     every SAVE it makes is in the test world, always, whatever flag the screen sends, so its own new
- *     entries sit apart from what it reads. It never DECIDES an approval: since
+ *     that person's own territories, scope and authority. It READS other people's real entries exactly
+ *     as that person does (owner, 2026-11-09, "Real data everywhere": `territoryForView`, `readWorldFor`),
+ *     while its OWN screens and every SAVE it makes stay in the test world, whatever flag the screen
+ *     sends ("Own screens stay test"). It never DECIDES an approval: since
  *     2026-10-22 every step a test entry waits at — the manager's, SFE's, HR's — is the Super Admin's,
  *     taken step by step from his own "Test accounts" tab (`assertTestWorldDecider`). A test person
  *     still answers a double-visit request or a visit ask addressed to him.
@@ -277,8 +277,10 @@ export function worldFor(viewer: PhoenixCrmViewer, flag: unknown, read?: TestWor
  * because each read was forced into the test world, which holds next to nothing. Asked what a test
  * account should read, he picked "Real data everywhere": it reads what the person it mirrors reads.
  *
- * Only a READ takes this. A save, and a decision, keep `testModeFor` / `worldFor`: a test account
- * still writes nothing but test entries, so a test rep's own new saves sit apart from what he reads.
+ * Only a READ about OTHER people takes this: reports, team boards, the reviews of reps' plans. A test
+ * account's own screens (its own territory, week board, own list and own day) keep its test world so
+ * it can still rehearse (owner, the same night: "Own screens stay test"), and a save or a decision
+ * keeps `testModeFor` / `worldFor`: a test account writes nothing but test entries.
  * The "Test accounts" tab's explicit request for the test world is still honoured for its decider alone.
  */
 export function readWorldFor(viewer: PhoenixCrmViewer, flag: unknown, read?: TestWorldRead): boolean {
@@ -325,13 +327,17 @@ export function territoryForRead(viewer: PhoenixCrmViewer, seatId: unknown, test
 }
 
 /**
- * READING a territory on a screen — the same reach and the same refusals as {@link territoryForRead},
- * in the REAL world for everybody, a test account included (`readWorldFor`, owner 2026-11-09). A pure
- * read takes this one; anything that goes on to save or decide keeps `territoryForRead`, whose test
- * account stays in the test world, so a test login can never write onto a real row through it.
+ * READING a territory on a screen — the same reach and the same refusals as {@link territoryForRead}.
+ * Somebody else's territory is read in the REAL world, a test account included (`readWorldFor`, owner
+ * 2026-11-09). A test account's OWN territory stays in its test world (owner, the same night: "Own
+ * screens stay test"), so a test rep still adds visits, plans and list changes and the Super Admin's
+ * "Test accounts" tab still receives them. Anything that goes on to save or decide keeps
+ * `territoryForRead`, so a test login can never write onto a real row through this one.
  */
 export function territoryForView(viewer: PhoenixCrmViewer, seatId: unknown, test: boolean): TerritoryAccess {
-  return { seat: territoryForRead(viewer, seatId, test).seat, isTest: false };
+  const access = territoryForRead(viewer, seatId, test);
+  const own = viewer.ownTerritories.some((entry) => entry.seatId === access.seat.seatId);
+  return { seat: access.seat, isTest: own ? access.isTest : false };
 }
 
 /** Changing a territory's list or plan: its own rep, and nobody else since test mode was retired. */

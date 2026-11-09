@@ -533,7 +533,7 @@ export async function runPhoenixCrmVisitAsksTests(): Promise<void> {
     assert.deepEqual(visitAskInboxReach(owner, true), { mode: "all", canAnswer: true }, "and answers in the test world");
     assert.equal(visitAskInboxReach(dm, true), null, "a real person is in the real world only");
     assert.deepEqual(visitAskInboxReach(testDm, true), { mode: "own", canAnswer: true }, "a test account in the test world only");
-    assert.deepEqual(visitAskInboxReach(testDm, false), { mode: "own", canAnswer: false }, "it reads the real asks of the person it mirrors and answers none (owner, 2026-11-09)");
+    assert.equal(visitAskInboxReach(testDm, false), null);
     assert.deepEqual(visitAskInboxReach(testRasha, true), { mode: "own", canAnswer: true });
 
     // Asking: the territory's own rep, in his world; the Super Admin and a test account in the test world.

@@ -120,25 +120,35 @@ How it is built (`src/lib/phoenix-crm/server/test-approvals.ts`):
   already counts for him; the monthly plans, place checks and managers' items show in the list but not
   in the badge.
 
-## A test account reads the real field force (2026-11-09)
+## A test account reads other people's real entries; its own screens stay test (2026-11-09)
 
 The owner, signed in as Hany Saad's test account, found every Phoenix CRM report empty: each read was
 forced into the test world, which holds next to nothing. Asked what a test account should read, he
-picked **"Real data everywhere"**, a test rep's own visit and plan screens included.
+picked **"Real data everywhere"**. The risk review then showed that reading its OWN screens in the
+real world too would take away every Add and Save button, so the Test accounts tab would receive
+nothing new. Asked again, he picked **"Own screens stay test"**.
 
-- **Reads** go through `readWorldFor(viewer, flag, read?)` (cross-territory loaders) and
-  `territoryForView(viewer, seatId, flag)` (one territory). Both answer the real world for everybody;
-  only the Super Admin's "Test accounts" tab can still ask for the test world (`{ testWorld: true }`).
-- **Saves and decisions** keep `testModeFor`, `worldFor` and `territoryForRead`, which still put a test
-  account in the test world. `territoryForRead` is deliberately left that way: SFE's drop, bring-back
-  and move, and the place moves, go through it before they write.
-- So a test rep's own new saves sit apart from what he reads. A real row carries no edit control for him
-  (`canWriteAsRep` answers false for a test account on a real row), the inboxes read with
-  `canAnswer: false` / `canWrite: false`, and `managerPlanDeciderRole` gives him no step on a real week.
-  The approvals detail opens a real record read only (`opensWorld`, `manager-plan-hub.ts`), and a real
-  visit's recording plays.
-- The entry forms stay in the test world: Add Visit (`territoryForVisit`), the forecast form and the
-  copy-a-week source.
-- A test account's read of a real territory **mints nothing** (`ensureReferenceCustomersForView`); the
-  territory's own people mint on their next open.
+- **Reads about other people** go through `readWorldFor(viewer, flag, read?)` (reports, Team,
+  Calendar, the reviews of reps' plans, another manager's day) and `territoryForView(viewer, seatId,
+  flag)` (one territory). Both answer the real world. Only the Super Admin's "Test accounts" tab can
+  still ask for the test world (`{ testWorld: true }`).
+- **A test account's own screens stay in the test world:**
+  - `territoryForView` keeps the account's OWN territory in its test world: List, Today, the planners,
+    the visit day and Add Visit.
+  - The manager's own week board, own list, area-customer picker, own day, double-visit plan, asks
+    inbox and single-visit days keep `testModeFor`.
+  - So a test rep or manager still adds visits, plans and list changes, and the tab still receives them.
+- **Saves and decisions** keep `testModeFor`, `worldFor` and `territoryForRead`. `territoryForRead`
+  is deliberately left that way, because SFE's drop, bring-back and move, and the place moves, go
+  through it before they write.
+- **A real row is read only for a test account:**
+  - `canWriteAsRep` answers false for a test account on a real row.
+  - `managerPlanDeciderRole` gives it no step on a real week.
+  - The approvals detail opens a real record read only (`opensWorld`, `manager-plan-hub.ts`), and
+    its conversation reads but posts only in the test world.
+  - A real visit's recording plays, and a real day's interview CV opens.
+- Regional Sales Manager reports (Visits — Yesterday and Today, District Managers' Plans, the Weekly
+  Sheet) read the real team **and** the account's own test work beside it (`regionalReportWorlds`,
+  PRs 163 and 164).
+- A test account's read of a real territory **mints nothing** (`ensureReferenceCustomersForView`).
 - Pinned by `tests/phoenix-crm-admin-surface.test.ts` (section 2).
