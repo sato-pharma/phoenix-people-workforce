@@ -362,7 +362,7 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
                   { key: "holder", label: "Last held by" },
                   { key: "until", label: "Until" },
                   { key: "status", label: "What the seat holds" },
-                  // Never summed: an inherited list can share doctors with the team's own, so a total would double them.
+                  // Never summed: an inherited list can share doctors with the team list, so a total would double them.
                   { excludeFromTotal: true, key: "contacts", label: "Contacts left", numeric: true },
                   { excludeFromTotal: true, key: "pharmacies", label: "Pharmacies left", numeric: true },
                 ]}
