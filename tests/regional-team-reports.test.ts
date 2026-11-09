@@ -8,7 +8,7 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
-import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, sumTeamVisitDays } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -52,6 +52,7 @@ function gate() {
 function visitsYesterdayAndToday() {
   const row = (over: Record<string, unknown>) => ({
     captured_at: "2026-11-08T07:42:00Z",
+    customer_id: "C1",
     customer_validated: true,
     id: String(Math.random()),
     imported_from_ireports360_at: null,
@@ -68,7 +69,7 @@ function visitsYesterdayAndToday() {
     row({ list_type: "Pharmacy", pharmacy_name: "Pharmacy Nour" }),
     row({ customer_validated: false }),
     row({ imported_from_ireports360_at: "2026-11-08T10:00:00Z" }),
-  ]);
+  ], new Map([["C1", "Dr. Sample Name"]]));
   // AM · PM · Pharmacies apart; the unvalidated visit is waiting, never in a figure.
   assert.equal(day.am, 1);
   assert.equal(day.pm, 2, "the copied visit still counts — only its time is unknown");
@@ -78,6 +79,19 @@ function visitsYesterdayAndToday() {
   assert.equal(day.times.length, 6);
   assert.equal(day.times[0].savedAt, "08:10 AM");
   assert.equal(day.times.filter((time) => time.savedAt === null).length, 1);
+  // The customer rides beside each time (owner, 2026-11-09): the customer's name, a pharmacy visit's pharmacy.
+  assert.equal(day.times[0].customer, "Dr. Sample Name", "a visit carries its customer's name");
+  assert.equal(day.times.find((time) => time.list === "Pharmacy")?.customer, "Pharmacy Nour", "a pharmacy visit carries the pharmacy");
+  const grouped = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
+  assert.ok(grouped.includes('{ label: "AM", list: "AM" },') && grouped.includes('{ label: "PM", list: "PM" },'), "the square groups its times AM, then PM");
+  assert.ok(grouped.includes('{time.customer ?? "Customer not recorded"}'), "the customer's name sits beside the time");
+  // The district manager's count is the total of his reps' visits (owner, 2026-11-09), three figures still apart.
+  const other = foldTeamVisitDay([row({ list_type: "AM", seat_id: "R2" }), row({ seat_id: "R2" })], new Map());
+  const total = sumTeamVisitDays([day, other]);
+  assert.deepEqual([total.am, total.pm, total.pharmacies, total.waiting], [2, 3, 1, 1], "the district manager's count adds up every rep's visits");
+  assert.equal(total.times.length, 0, "the total carries counts, never a second copy of the times");
+  assert.ok(source0().includes("repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },"), "every district carries its reps' total");
+  assert.ok(grouped.includes("<RepsTotal day={district.repsTotal.yesterday} />") && grouped.includes("<RepsTotal day={district.repsTotal.today} />"), "the manager's row prints his reps' total");
   // No location column is read by the report.
   const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
   const select = /\.select\("([^"]+)"\)/.exec(source)?.[1] ?? "";
@@ -388,6 +402,10 @@ function boardAndApprovalReadTheRealTeam() {
     [week("D1", "draft"), week("D2", "submitted"), week("D3", null)],
   ]);
   assert.deepEqual(merged.map((entry) => `${entry.dmSeatId}:${entry.status}`), ["D1:approved", "D2:submitted", "D3:null"]);
+}
+
+function source0(): string {
+  return readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
 }
 
 export function runRegionalTeamReportsTests() {
