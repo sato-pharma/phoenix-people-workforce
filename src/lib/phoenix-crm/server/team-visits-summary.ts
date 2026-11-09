@@ -1,7 +1,7 @@
 import { isCallRateWorkingDay } from "@/lib/crm/call-rate";
 import { cairoWallClock } from "@/lib/format/cairo-zone";
 import { cairoBusinessDay, VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
-import type { TeamVisitDay, TeamVisitDistrict, TeamVisitRep, TeamVisitTime, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
+import type { TeamVisitDay, TeamVisitDistrict, TeamVisitOrigin, TeamVisitRep, TeamVisitTime, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
 
 /**
  * Visits — Yesterday and Today, read at a glance (owner, 9 Nov 2026: "eyeball every report in My Team's Reports,
@@ -27,6 +27,32 @@ export const TEAM_VISITS_NONE_SAVED = "No visits saved";
 
 /** A copied old-CRM visit, which recorded no time. */
 export const TEAM_VISITS_NO_TIME = "No time recorded";
+
+/**
+ * Planned, unplanned and entered by the Super Admin, each in a colour of its own (owner, 2026-11-09: "give planned
+ * visit a color and unplanned a color and logged by admin another color"). Violet is the leave and admin-day line
+ * and amber the waiting and vacant marks, so neither is used here.
+ */
+export const TEAM_VISIT_ORIGINS: ReadonlyArray<TeamVisitOrigin> = ["planned", "unplanned", "admin"];
+export const TEAM_VISIT_ORIGIN_LABEL: Record<TeamVisitOrigin, string> = { admin: "Logged by admin", planned: "Planned", unplanned: "Unplanned" };
+/** The visit line's left edge. */
+export const TEAM_VISIT_ORIGIN_EDGE: Record<TeamVisitOrigin, string> = {
+  admin: "border-l-indigo-700",
+  planned: "border-l-emerald-700",
+  unplanned: "border-l-orange-600",
+};
+/** The key's swatch and the label's ink. */
+export const TEAM_VISIT_ORIGIN_SWATCH: Record<TeamVisitOrigin, string> = { admin: "bg-indigo-700", planned: "bg-emerald-700", unplanned: "bg-orange-600" };
+export const TEAM_VISIT_ORIGIN_INK: Record<TeamVisitOrigin, string> = { admin: "text-indigo-800", planned: "text-emerald-800", unplanned: "text-orange-800" };
+
+/**
+ * The distance printed beside the customer (owner, 2026-11-09: "beside every customer write the distance in m the
+ * visit was logged vs validation live photo"): "197 m from the live photo", or why there is none. Null prints nothing.
+ */
+export function teamVisitDistanceText(time: Pick<TeamVisitTime, "metres" | "distanceNote">): string | null {
+  if (typeof time.metres === "number") return `${time.metres.toLocaleString("en-US")} m from the live photo`;
+  return time.distanceNote ?? null;
+}
 
 /** The two days the report covers, in the order the screen reads them. */
 export const TEAM_VISIT_DAYS = ["yesterday", "today"] as const;

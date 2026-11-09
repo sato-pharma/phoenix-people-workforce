@@ -82,7 +82,7 @@ function at(hour: number, minute = 0, date = "2026-11-08"): string {
 function time(list: TeamVisitTime["list"], iso: string | null, over: Partial<TeamVisitTime> = {}): TeamVisitTime {
   const clock = cairoClockOf(iso);
   const savedAt = clock ? `${String(clock.hour % 12 === 0 ? 12 : clock.hour % 12).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")} ${clock.hour < 12 ? "AM" : "PM"}` : null;
-  return { at: iso, customer: "Dr. Sample", list, savedAt, waiting: false, ...over };
+  return { at: iso, customer: "Dr. Sample", distanceNote: null, list, metres: null, origin: "planned", savedAt, waiting: false, ...over };
 }
 
 function day(over: Partial<TeamVisitDay> = {}): TeamVisitDay {
@@ -381,7 +381,8 @@ async function theWorkbook() {
   const visitSheet = workbook.getWorksheet("Visits")!;
   let customerRows = 0;
   visitSheet.eachRow((row) => {
-    const counted = String(row.getCell(9).value ?? "");
+    // "In the figures" is the eleventh column, after "Planned or not" and "From the live photo" (owner, 2026-11-09).
+    const counted = String(row.getCell(11).value ?? "");
     if (counted === "Counted" || counted === "Waiting for validation" || counted === "Own visit — in no rep's figure") customerRows += 1;
   });
   assert.equal(customerRows, repVisits + ownVisits, "one row per visit, none lost and none doubled");

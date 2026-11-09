@@ -588,6 +588,26 @@ export async function loadManagerOwnVisitRows(input: {
 }
 
 /**
+ * Where each of his own visits was logged, by visit id: the visit's own fix and the rep-list customer it went to, and
+ * nothing else — for the metres from that customer's live photo on Visits — Yesterday and Today (owner, 2026-11-09:
+ * "beside every customer write the distance in m the visit was logged vs validation live photo"). No count, no flag.
+ * A failed read throws; the caller says so on the page.
+ */
+export async function loadManagerVisitFixes(
+  visitIds: ReadonlyArray<string>,
+): Promise<Array<{ id: string; lat: number | null; lon: number | null; customerId: string | null }>> {
+  const out: Array<{ id: string; lat: number | null; lon: number | null; customerId: string | null }> = [];
+  for (const part of chunk(dedupeIds(visitIds), 100)) {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_manager_visits").select("id, lat, lon, customer_id").in("id", part);
+    if (error) throw new Error(`Could not read where the district managers' visits were logged: ${error.message}`);
+    for (const row of (data ?? []) as Array<{ id: string; lat: number | null; lon: number | null; customer_id: string | null }>) {
+      out.push({ customerId: row.customer_id ? String(row.customer_id) : null, id: String(row.id), lat: row.lat, lon: row.lon });
+    }
+  }
+  return out;
+}
+
+/**
  * Every manager's own visit on an empty territory since a day, as the seat it fell on and its date, and nothing
  * else: no manager, no customer, no verdict. For the Empty Seats board, which asks only whether anybody is going
  * there, so unlike the rest of this file it is keyed by TERRITORY. It is no KPI: the board prints it as "logged".

@@ -8,7 +8,8 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
-import { foldTeamVisitDay, sumTeamVisitDays, teamVisitAway, teamVisitManagerDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, sumTeamVisitDays, teamVisitAway, teamVisitManagerDay, teamVisitOrigin, visitPhotoDistance } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { teamVisitDistanceText } from "../src/lib/phoenix-crm/server/team-visits-summary.ts";
 import type { DistrictManagerDay, DistrictManagerDayHalf } from "../src/lib/phoenix-crm/server/manager-dm-day.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
@@ -128,14 +129,74 @@ function visitsYesterdayAndToday() {
   // A vacant seat wears a light colour of its own (owner, 2026-11-09).
   assert.ok(source0().includes("vacant: people.length === 0,"), "a rep seat with nobody in it is marked vacant");
   assert.ok(grouped.includes('const VACANT_ROW = "bg-amber-50";') && grouped.includes("rep.vacant ? VACANT_ROW") && grouped.includes("district.managerHrId ? MANAGER_ROW : VACANT_ROW"), "vacant seats, rep and manager, wear the light colour");
-  // No location column is read by the report.
+  // The visit read names the visit's own fix and place for the distance from the live photo (owner, 2026-11-09) —
+  // and still no flag, accuracy or stored verdict: the far-visit evidence stays off the Regional Sales Manager.
   const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
-  // The visit read's own select — the one naming the visit date (the hire-date and customer-name reads have their own).
-  const select = [...source.matchAll(/\.select\("([^"]+)"\)/g)].map((match) => match[1]).find((columns) => columns.includes("visit_date")) ?? "";
-  assert.ok(select.includes("captured_at"));
-  for (const banned of ["lat", "lon", "distance", "location", "far"]) {
-    assert.ok(!select.split(/,\s*/).some((column) => column.includes(banned)), `team visits must not read ${banned}`);
+  const select = [...source.matchAll(/\.select\(\s*"([^"]+)",?\s*\)/g)].map((match) => match[1]).find((columns) => columns.includes("visit_date")) ?? "";
+  const columns = select.split(/,\s*/);
+  assert.ok(columns.includes("captured_at"));
+  for (const needed of ["lat", "lon", "place_id", "is_unplanned", "entered_by_hr_id"]) assert.ok(columns.includes(needed), `team visits read ${needed}`);
+  for (const banned of ["distance", "location", "far", "accuracy", "flag"]) {
+    assert.ok(!columns.some((column) => column.includes(banned)), `team visits must not read ${banned}`);
   }
+}
+
+/**
+ * Beside every customer, the metres from where the visit was logged to the place's validated live photo; and each
+ * visit planned, unplanned or logged by admin in a colour of its own (owner, 2026-11-09).
+ */
+function visitPhotoDistanceAndOrigin() {
+  // Alexandria, about 197 m apart along a street.
+  const photo = { lat: 31.2001, lon: 29.9187 };
+  const visit = { lat: 31.20187, lon: 29.9187 };
+  const measured = visitPhotoDistance(visit, photo);
+  assert.ok(measured.metres !== null && measured.metres >= 195 && measured.metres <= 210, `the haversine metres (${measured.metres})`);
+  assert.equal(measured.distanceNote, null);
+  assert.equal(teamVisitDistanceText(measured), `${measured.metres} m from the live photo`);
+  assert.deepEqual(visitPhotoDistance({ lat: null, lon: null }, photo), { distanceNote: "No location on the visit", metres: null }, "a visit with no fix says so");
+  assert.deepEqual(visitPhotoDistance(visit, null), { distanceNote: "No live photo for this place", metres: null }, "a place with no live photo says so — never a zero");
+  assert.deepEqual(visitPhotoDistance(visit, photo, false), { distanceNote: null, metres: null }, "a seat the viewer is blind on prints nothing");
+  assert.equal(teamVisitDistanceText({ distanceNote: null, metres: null }), null);
+  // The fold measures each visit against its own place's photo.
+  const row = (over: Record<string, unknown>) => ({
+    captured_at: "2026-11-08T07:42:00Z",
+    customer_id: "C1",
+    customer_validated: true,
+    entered_by_hr_id: "SR-1",
+    id: String(Math.random()),
+    imported_from_ireports360_at: null,
+    is_unplanned: false,
+    lat: visit.lat,
+    list_type: "PM",
+    lon: visit.lon,
+    manager_hr_id: "DM-1",
+    pharmacy_name: null,
+    place_id: "P1",
+    rep_hr_id: "SR-1",
+    seat_id: "R1",
+    senior_hr_id: null,
+    visit_date: "2026-11-08",
+    ...over,
+  });
+  const day = foldTeamVisitDay([row({}), row({ place_id: "P2" })], new Map(), new Map([["P1", photo]]));
+  assert.equal(day.times[0].metres, measured.metres, "the visit beside its own place's photo");
+  assert.equal(day.times[1].distanceNote, "No live photo for this place");
+  // Planned, unplanned, logged by admin — admin wins over unplanned.
+  assert.equal(teamVisitOrigin(row({})), "planned");
+  assert.equal(teamVisitOrigin(row({ is_unplanned: true })), "unplanned");
+  assert.equal(teamVisitOrigin(row({ entered_by_hr_id: "B-10", is_unplanned: true })), "admin", "entered by somebody who is not on the visit is the Super Admin");
+  assert.equal(teamVisitOrigin(row({ entered_by_hr_id: "DM-1" })), "planned", "the district manager on the visit is not admin");
+  // The loader only measures a seat the viewer may see a distance on, and the screen paints and keys the three colours.
+  assert.ok(source0().includes('const shown = locationSight(viewer, seat) !== "none";'), "a rep's own seat stays blind (Golden Rule #1)");
+  assert.ok(source0().includes('origin: visit.enteredByAdmin ? "admin" : visit.planned ? "planned" : "unplanned",'), "the district manager's own visits wear the colours too");
+  const view = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
+  assert.ok(view.includes("TEAM_VISIT_ORIGIN_EDGE[time.origin]") && view.includes("teamVisitDistanceText(time)"), "each visit line wears its colour and its metres");
+  const panels = readFileSync("src/components/crm/regional/team-visits-panels.tsx", "utf8");
+  assert.ok(panels.includes('aria-label="Visit colours"') && panels.includes("TEAM_VISIT_ORIGINS.map"), "the key names the three colours");
+  const summary = readFileSync("src/lib/phoenix-crm/server/team-visits-summary.ts", "utf8");
+  for (const edge of ["border-l-emerald-700", "border-l-orange-600", "border-l-indigo-700"]) assert.ok(summary.includes(edge), `${edge} is one of the three`);
+  const workbook = readFileSync("src/lib/phoenix-crm/server/team-visits-workbook.ts", "utf8");
+  assert.ok(workbook.includes('{ label: "From the live photo", width: 28 },') && workbook.includes('{ label: "Planned or not", width: 16 },'), "the Excel carries both");
 }
 
 /**
@@ -454,6 +515,7 @@ export function runRegionalTeamReportsTests() {
   districtsWithoutPublishedMonth();
   gate();
   visitsYesterdayAndToday();
+  visitPhotoDistanceAndOrigin();
   teamVisitsTestAccountAndColours();
   chainVisits();
   commentDoctors();
