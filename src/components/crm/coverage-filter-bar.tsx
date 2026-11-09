@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 // browser was already handed.
 
 const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 export const COVERAGE_SELECT_CLASS = SELECT_CLASS;
 export const COVERAGE_LABEL_CLASS = LABEL_CLASS;

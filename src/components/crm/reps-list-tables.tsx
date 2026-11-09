@@ -59,8 +59,8 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // would also make "find this doctor" a hunt through fifteen boxes. Group headings stay visible while
 // a filter is active, minus any group the filter empties.
 
-const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500";
+const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
+const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
 
@@ -70,7 +70,7 @@ const SELECT_CLASS =
  * phone's native select draws its own. My List, the manager Reps List and the admin board keep the
  * two classes above byte for byte.
  */
-const FIELD_LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400";
+const FIELD_LABEL_CLASS = "block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-400";
 const FIELD_SELECT_CLASS =
   "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
 
@@ -342,7 +342,7 @@ function BrickCoverageBar({ coverage, monthLabel }: { coverage: ReturnType<typeo
         <span className="h-full bg-emerald-600" style={{ width: width(coverage.visited) }} />
         <span className="h-full bg-amber-500" style={{ width: width(coverage.unvisited) }} />
       </div>
-      <span className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 tabular-nums">
+      <span className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 tabular-nums">
         {`${coverage.visited} visited · ${coverage.unvisited} not visited${coverage.notDue > 0 ? ` · ${coverage.notDue} not due yet` : ""} in ${monthLabel}`}
       </span>
     </div>
@@ -398,18 +398,18 @@ function GroupHeading({
         {/* The brick's area and the area's region, from the sales master (owner, 2026-10-31: "get the
             brick area and region"). */}
         {group.mapped && (group.areaName || group.regionName) ? (
-          <span className="text-phx-2xs font-semibold text-slate-500">
+          <span className="text-phx-sm font-semibold text-slate-500">
             {[group.areaName, group.regionName].filter(Boolean).join(" · ")}
           </span>
         ) : null}
         {/* "No location yet" already says it all; a named locality says which step is missing. */}
         {group.mapped || group.heading === REPS_LIST_NO_LOCATION ? null : (
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+          <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
             Locality not yet mapped to a brick
           </span>
         )}
       </div>
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
         {shown === group.rows.length ? describeMix(group.rows) : `${shown} of ${group.rows.length} shown`}
         {validated ? ` · ${validated}` : ""}
       </span>
@@ -528,7 +528,7 @@ function ConfidenceChip({ onOpen, row }: { onOpen: () => void; row: RepsListCont
   if (!confidence) {
     // No check-in has ever been made, so there is nothing to score. Said in words: a 0% here would
     // read as "this location is wrong", when the truth is that nobody has been to it yet.
-    return <span className="text-phx-2xs font-semibold text-slate-400">No visit yet</span>;
+    return <span className="text-phx-sm font-semibold text-slate-400">No visit yet</span>;
   }
   return (
     <button
@@ -540,7 +540,7 @@ function ConfidenceChip({ onOpen, row }: { onOpen: () => void; row: RepsListCont
       <span className={`block font-bold underline decoration-dotted underline-offset-2 ${BAND_TEXT[confidence.band]}`}>
         {confidenceLabel(confidence)}
       </span>
-      <span className="mt-0.5 block text-phx-3xs font-semibold uppercase tracking-[0.1em] text-slate-400">
+      <span className="mt-0.5 block text-phx-xs font-semibold uppercase tracking-[0.1em] text-slate-400">
         {BAND_WORD[confidence.band]}
       </span>
       <span aria-hidden className="mt-1 block h-1 w-full bg-slate-100">
@@ -602,7 +602,7 @@ function DialogShell({
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{eyebrow}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{eyebrow}</p>
             <p className="break-words text-sm font-bold text-white" dir="auto">
               {subject}
             </p>
@@ -638,7 +638,7 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
     <DialogShell eyebrow="Location confidence" onClose={onClose} subject={row.name}>
       <div className="flex items-baseline gap-2 border-b border-slate-100 px-4 py-3">
         <span className={`text-3xl font-black ${BAND_TEXT[confidence.band]}`}>{confidence.score}%</span>
-        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
           {BAND_WORD[confidence.band]}
         </span>
       </div>
@@ -657,9 +657,9 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
         {confidence.reasons.map((reason) => (
           <li className="border border-slate-100 bg-slate-50/60 px-3 py-2" key={reason.label}>
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{reason.label}</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">{reason.label}</span>
               {reason.points == null ? null : (
-                <span className="shrink-0 text-phx-2xs font-black text-slate-700">
+                <span className="shrink-0 text-phx-sm font-black text-slate-700">
                   {reason.points > 0 ? `+${reason.points}` : reason.points} pts
                 </span>
               )}
@@ -689,7 +689,7 @@ function InsightsChip({ onOpen, row }: { onOpen: () => void; row: RepsListContac
   return (
     <button
       className={`mt-1 bg-slate-900 font-black uppercase tracking-[0.08em] text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
-        field ? "inline-flex min-h-8 items-center px-2 text-phx-2xs" : "inline-block px-1.5 py-0.5 text-phx-3xs"
+        field ? "inline-flex min-h-8 items-center px-2 text-phx-sm" : "inline-block px-1.5 py-0.5 text-phx-xs"
       }`}
       onClick={onOpen}
       title="Something about this record looks wrong"
@@ -723,7 +723,7 @@ function InsightsDialog({ onClose, row }: { onClose: () => void; row: RepsListCo
       <ul className="space-y-2 p-4">
         {insights.map((insight: PhoenixInsight) => (
           <li className="border border-slate-200 bg-slate-50/60 px-3 py-2" key={insight.kind}>
-            <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{insight.title}</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">{insight.title}</span>
             <p className="mt-1 break-words text-xs text-slate-600">{insight.detail}</p>
           </li>
         ))}
@@ -745,7 +745,7 @@ function SharedLine({ row }: { row: RepsListContact }) {
   const shared = row.sharedWith ?? null;
   if (!shared || shared.length === 0) return null;
   return (
-    <span className="mt-1 block break-words text-phx-3xs font-semibold text-violet-700" dir="auto">
+    <span className="mt-1 block break-words text-phx-xs font-semibold text-violet-700" dir="auto">
       {describeSharing(shared)}
     </span>
   );
@@ -792,7 +792,7 @@ function TradeLine({ row }: { row: RepsListContact }) {
   // No `dir` — this is an English sentence made of digits and English words, and a `dir="auto"`
   // block here would take its direction from whatever followed it in the DOM (AGENTS.md §2.1).
   return (
-    <span className="mt-1 block break-words text-phx-3xs font-semibold text-emerald-700">
+    <span className="mt-1 block break-words text-phx-xs font-semibold text-emerald-700">
       {parts.join(" · ")}
     </span>
   );
@@ -847,9 +847,9 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
           check-in may be from March. Its absence is also the only thing separating an observation
           from the CRM's own record now that the "Old" label is gone. */}
       {place?.validatedAt ? (
-        <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">validated {cairoDay(place.validatedAt)}</span>
+        <span className="ml-1.5 text-phx-xs font-semibold text-slate-400">validated {cairoDay(place.validatedAt)}</span>
       ) : observed?.at ? (
-        <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">seen {cairoDay(observed.at)}</span>
+        <span className="ml-1.5 text-phx-xs font-semibold text-slate-400">seen {cairoDay(observed.at)}</span>
       ) : null}
       <NearbyLine row={row} />
     </div>
@@ -946,7 +946,7 @@ function NearbyLine({ row }: { row: RepsListContact }) {
   const tint = tintFor(row);
   return (
     <span
-      className={`mt-1 block break-words text-phx-3xs font-semibold ${tint?.ink ?? "text-slate-500"}`}
+      className={`mt-1 block break-words text-phx-xs font-semibold ${tint?.ink ?? "text-slate-500"}`}
       dir="auto"
     >
       {`Same address (within ${NEIGHBOUR_M} m): ${names}${rest > 0 ? ` and ${rest} more` : ""}`}
@@ -967,7 +967,7 @@ function ActivityChip({ activity }: { activity: RepsListActivity | null | undefi
   const count = activityCountLabel(activity);
   return (
     <span
-      className={`mt-0.5 inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] ring-1 ring-inset ${ACTIVITY_CLASS[activity.status]}`}
+      className={`mt-0.5 inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] ring-1 ring-inset ${ACTIVITY_CLASS[activity.status]}`}
       title={ACTIVITY_MEANING[activity.status]}
     >
       {ACTIVITY_LABEL[activity.status]}
@@ -1014,12 +1014,12 @@ function matchesActivity(row: RepsListContact, choice: string): boolean {
 function ValidationChip({ row }: { row: RepsListContact }) {
   const at = row.validatedAt ? cairoDay(row.validatedAt) : "";
   return row.validatedAt ? (
-    <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 bg-white px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-900 ring-1 ring-inset ring-slate-400">
+    <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 bg-white px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-900 ring-1 ring-inset ring-slate-400">
       Validated
       {at ? <span className="font-semibold text-slate-500">{at}</span> : null}
     </span>
   ) : (
-    <span className="mt-0.5 inline-flex px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-400 ring-1 ring-inset ring-slate-200">
+    <span className="mt-0.5 inline-flex px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-400 ring-1 ring-inset ring-slate-200">
       Not validated yet
     </span>
   );
@@ -1076,7 +1076,7 @@ function ContactCell({
           <ValidationChip row={row} />
         </span>
       ) : null}
-      <span className="mt-0.5 block text-phx-2xs font-semibold">
+      <span className="mt-0.5 block text-phx-sm font-semibold">
         <span className={gradeClass(row.grade)}>{row.grade ?? "No grade"}</span>
         <span className="text-slate-400">{phone ? ` · ${phone}` : " · no phone"}</span>
       </span>
@@ -1149,7 +1149,7 @@ function GroupTable({
             </>
           }
           status={
-            <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
+            <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">
               {LIST_LABEL[row.listType]}
             </span>
           }
@@ -1605,10 +1605,10 @@ export function RepsListContacts({
               role="tab"
               type="button"
             >
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.12em]">
+              <span className="block text-phx-sm font-black uppercase tracking-[0.12em]">
                 {`${entry.label} · ${tabCounts[entry.key]}`}
               </span>
-              <span className="block text-phx-3xs font-semibold text-slate-400">{entry.sub}</span>
+              <span className="block text-phx-xs font-semibold text-slate-400">{entry.sub}</span>
             </button>
           );
         })}
@@ -1621,7 +1621,7 @@ export function RepsListContacts({
           <button
             aria-controls={filtersId}
             aria-expanded={filtersOpen}
-            className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
+            className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
             onClick={() => setFiltersOpen((open) => !open)}
             type="button"
           >
@@ -1759,7 +1759,7 @@ export function RepsListContacts({
           )}
           {filtersOn > 0 ? (
             <button
-              className="min-h-11 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              className="min-h-11 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
               onClick={clearFilters}
               type="button"
             >
@@ -1818,7 +1818,7 @@ export function RepsListContacts({
         />
       </div>
 
-      <p className="text-phx-2xs font-semibold text-slate-500">
+      <p className="text-phx-sm font-semibold text-slate-500">
         {totalCount === 0
           ? held
           : shownCount === totalCount
@@ -1827,7 +1827,7 @@ export function RepsListContacts({
         {showValidation && totalCount > 0 ? ` · ${validatedLine(tabRows)}` : ""}
       </p>
       {validationRead === false ? (
-        <p className="text-phx-2xs font-semibold text-amber-700">
+        <p className="text-phx-sm font-semibold text-amber-700">
           Phoenix CRM could not be read just now, so this list does not say which contacts are validated. The list itself is complete.
         </p>
       ) : null}
@@ -1856,7 +1856,7 @@ export function RepsListContacts({
           </p>
           {totalCount > 0 && filtersOn > 0 ? (
             <button
-              className="mt-3 min-h-11 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
+              className="mt-3 min-h-11 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-9"
               onClick={clearFilters}
               type="button"
             >
@@ -1958,7 +1958,7 @@ function VerdictChip({ verdict }: { verdict: PlanRowVerdict }) {
   if (!label) return null;
   return (
     <span
-      className={`mt-0.5 inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${VERDICT_CLASS[verdict]}`}
+      className={`mt-0.5 inline-block border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${VERDICT_CLASS[verdict]}`}
       title={PLAN_VERDICT_MEANING[verdict] ?? undefined}
     >
       {label}
@@ -1996,7 +1996,7 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">{day.label}</h3>
         {dated ? null : (
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+          <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
             The CRM recorded no date on these rows
           </span>
         )}
@@ -2012,7 +2012,7 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
           The CAMPAIGN count is printed whenever there is one, because a campaign call names no
           doctor and can therefore satisfy no planned row: without it, a rep who spent the whole day
           on a campaign reads as a rep who did nothing. */}
-      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
         <span>
           {`${day.rows.length} ${day.rows.length === 1 ? "call" : "calls"} · ${doctors} ${
             doctors === 1 ? "doctor" : "doctors"
@@ -2040,7 +2040,7 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
 function ShiftLine({ ampm }: { ampm: string | null }) {
   if (!ampm?.trim()) return null;
   return (
-    <span className="mt-0.5 block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">
+    <span className="mt-0.5 block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">
       {ampm.trim()}
     </span>
   );
@@ -2060,7 +2060,7 @@ function OffListContactCell({ row }: { row: PlanDoctorRow }) {
       <span className="block font-semibold text-slate-900" dir="auto">
         {row.entry.contactName}
       </span>
-      <span className="mt-0.5 block text-phx-2xs font-semibold">
+      <span className="mt-0.5 block text-phx-sm font-semibold">
         <span className={gradeClass(row.entry.grade)}>{row.entry.grade ?? NO_GRADE}</span>
         <span className="text-slate-400"> · not on their list</span>
       </span>
@@ -2102,7 +2102,7 @@ function PlanDayTable({
               }
               status={
                 <span className="flex flex-col items-end gap-1">
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+                  <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
                     Not on their list
                   </span>
                   <VerdictChip verdict={row.verdict} />
@@ -2137,7 +2137,7 @@ function PlanDayTable({
             }
             status={
               <span className="flex flex-col items-end gap-1">
-                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
+                <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">
                   {LIST_LABEL[contact.listType]}
                 </span>
                 <VerdictChip verdict={row.verdict} />
@@ -2229,7 +2229,7 @@ function PlanDayTable({
                       {contact ? (
                         <ConfidenceChip onOpen={() => onOpenConfidence(contact)} row={contact} />
                       ) : (
-                        <span className="text-phx-2xs font-semibold text-slate-400">No contact record</span>
+                        <span className="text-phx-sm font-semibold text-slate-400">No contact record</span>
                       )}
                     </td>
                     <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>

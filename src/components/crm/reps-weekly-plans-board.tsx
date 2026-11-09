@@ -317,7 +317,7 @@ function DayStrip({ days }: { days: RepsWeeklyPlansBoard["days"] }) {
   if (dated.length < 2) return null;
   return (
     <nav aria-label="Days on this plan" className="border-t border-slate-100 px-5 py-3">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">Days on this plan</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Days on this plan</p>
       <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {dated.map((day) => {
           const tone = dayTone(day);
@@ -327,8 +327,8 @@ function DayStrip({ days }: { days: RepsWeeklyPlansBoard["days"] }) {
                 className={`flex min-h-11 flex-col justify-center border border-l-[3px] border-slate-200 ${TONE_LEFT_RULE[tone]} bg-white px-3 py-1.5 transition-colors hover:border-y-orange-400 hover:border-r-orange-400 hover:bg-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400`}
                 href={`#plan-day-${day.date}`}
               >
-                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-900">{day.label}</span>
-                <span className="text-phx-3xs font-semibold text-slate-500 tabular-nums">{dayStripLine(day)}</span>
+                <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-900">{day.label}</span>
+                <span className="text-phx-xs font-semibold text-slate-500 tabular-nums">{dayStripLine(day)}</span>
               </a>
             </li>
           );
@@ -443,7 +443,7 @@ function PlanPanel({
       >
         <div className="min-w-0 flex-1">
           <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">{board.week.label}</p>
-          <p className="mt-0.5 text-phx-2xs leading-relaxed text-slate-600">
+          <p className="mt-0.5 text-phx-sm leading-relaxed text-slate-600">
             {/* Said in words rather than left to the button's absence. A manager who cannot approve
                 is told why here; the decide route refuses the write independently, which is the boundary. */}
             {planPanelSentence(plan, canApprove)}
@@ -456,7 +456,7 @@ function PlanPanel({
           one — it usually means the week was re-filed. Both are offered by name. */}
       {board.plans.length > 1 ? (
         <div className="mt-4 border-t border-slate-100 px-5 py-3">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             {board.plans.length} plans filed for this week
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -464,8 +464,8 @@ function PlanPanel({
               <Link
                 className={
                   option.crmPlanId === plan.crmPlanId
-                    ? "inline-flex min-h-11 items-center border border-orange-500 bg-orange-50 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-900 md:min-h-0"
-                    : "inline-flex min-h-11 items-center border border-slate-200 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500 hover:border-orange-400 md:min-h-0"
+                    ? "inline-flex min-h-11 items-center border border-orange-500 bg-orange-50 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-900 md:min-h-0"
+                    : "inline-flex min-h-11 items-center border border-slate-200 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500 hover:border-orange-400 md:min-h-0"
                 }
                 href={hrefWithPlan(basePath, board, option.crmPlanId)}
                 key={option.crmPlanId}
@@ -593,7 +593,7 @@ export function RepsWeeklyPlansBoardView({
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
               href={hrefWithRep(basePath, board, null)}
             >
               Back to all reps

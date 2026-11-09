@@ -33,7 +33,7 @@ import type { CoverageFilterVacancy } from "@/lib/crm/coverage-filters";
 // container that gave no hint it could scroll. Card and desktop row both read their tone from the
 // one `toneOf`, so the two halves cannot disagree about where 50% and 80% sit.
 
-const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
 
 /** Shared with the rep table's bar: 80+ good, 50+ watch, below that a real gap. */
 function toneOf(pctValue: number): { accent: "amber" | "emerald" | "rose"; bar: string; text: string } {
@@ -212,7 +212,7 @@ export function BrickCoverageRepTable({
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="break-words px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
-                    <span className="ml-2 text-phx-2xs font-normal text-slate-400">{row.areaNames}</span>
+                    <span className="ml-2 text-phx-sm font-normal text-slate-400">{row.areaNames}</span>
                   </td>
                   <td className="break-words px-3 py-2 text-slate-600">{row.line}</td>
                   <td className="px-3 py-2">
@@ -328,7 +328,7 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
                 <tr className="bg-white hover:bg-slate-50" key={`${row.repKey}-${row.brickName}-${index}`}>
                   <td className="break-words px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
-                    <span className="ml-2 text-phx-2xs font-normal text-slate-400">{row.line}</span>
+                    <span className="ml-2 text-phx-sm font-normal text-slate-400">{row.line}</span>
                   </td>
                   <td className="break-words px-3 py-2 font-semibold text-slate-900">{row.brickName}</td>
                   <td className="break-words px-3 py-2 text-slate-600">{row.areaName}</td>

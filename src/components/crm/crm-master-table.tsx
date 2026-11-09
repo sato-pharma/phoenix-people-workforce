@@ -44,7 +44,7 @@ function VisitTimeCell({ source, value, wrap = false }: { source: unknown; value
     <span className={wrap ? "inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5" : "inline-flex items-center gap-1.5"}>
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
-        className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${
+        className={`rounded px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide ${
           isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
         }`}
         title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}

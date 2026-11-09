@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
@@ -461,6 +461,16 @@ function theScreen() {
   for (const file of reportFiles) {
     assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(stripComments(readFileSync(file, "utf8"))), `${file}: no text below 11px on the regional reports or the KPIs pages`);
   }
+  // "raise the rest of the CRM screens' fonts too" (owner, 2026-11-09): every screen under src/components/crm is
+  // read — the reps list, plan verification, brick coverage, the mapping panels — so a new one is held to it too.
+  let crmScreens = 0;
+  for (const entry of readdirSync("src/components/crm", { recursive: true, encoding: "utf8" })) {
+    if (!entry.endsWith(".tsx")) continue;
+    const file = `src/components/crm/${entry.replace(/\\/g, "/")}`;
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(stripComments(readFileSync(file, "utf8"))), `${file}: no text below 11px on any CRM screen`);
+    crmScreens++;
+  }
+  assert.ok(crmScreens >= 40, `the floor read every CRM screen (${crmScreens})`);
   // An Arabic customer name beside "30 m" pulled the number into the Arabic run (owner, 2026-11-09, the polish
   // pass): the name is bidi-isolated and the metres sit in a column of their own.
   assert.ok(view.includes("<bdi>{time.customer ?? \"Customer not recorded\"}</bdi>"), "the customer name is bidi-isolated");

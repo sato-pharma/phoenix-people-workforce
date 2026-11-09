@@ -334,14 +334,14 @@ export function CrmUnmappedIdentitiesPanel({
             >
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM ID</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Name</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Seen As</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Unmapped Visits</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">First Seen</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Resolution</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Action</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">CRM ID</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">CRM Name</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Seen As</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Unmapped Visits</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-phx-sm font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">

@@ -91,9 +91,9 @@ function VacancyCard({ area, href }: { area: VacantArea; href: string }) {
   const tone = statusTone(area);
   return (
     <RepCardFrame href={href} monogramMuted name={area.areaName} places={`${area.lineName} · ${area.regionName}`} tone={tone}>
-      {holder ? <p className="text-phx-2xs font-semibold text-slate-500 [overflow-wrap:anywhere]">{holder}</p> : null}
+      {holder ? <p className="text-phx-sm font-semibold text-slate-500 [overflow-wrap:anywhere]">{holder}</p> : null}
       {area.status === "list" ? (
-        <p className="mt-1 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">{statusLine(area)}</p>
+        <p className="mt-1 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">{statusLine(area)}</p>
       ) : (
         <div className="mt-1">
           <StatusMark text={statusLine(area)} tone={tone} />
@@ -140,7 +140,7 @@ function vacancyColumns(basePath: string, board: VacantAreasBoard, largestLeft: 
     {
       cell: (area) =>
         area.status === "list" ? (
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">Open the list</span>
+          <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600">Open the list</span>
         ) : (
           <StatusMark text={statusLine(area)} tone={statusTone(area)} />
         ),
@@ -254,7 +254,7 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
               href={hrefWithVacancy(basePath, board, null)}
             >
               Back to all vacant areas

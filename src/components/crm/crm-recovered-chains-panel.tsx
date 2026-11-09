@@ -40,7 +40,7 @@ function ResolvedChain({ chain }: { chain: DoubleVisitRecoveredChain }) {
         </span>
       </div>
       {chain.customerSample.length > 0 && (
-        <p className="mt-1 text-phx-2xs text-slate-400">{chain.customerSample.join(" · ")}</p>
+        <p className="mt-1 text-phx-sm text-slate-400">{chain.customerSample.join(" · ")}</p>
       )}
     </>
   );
@@ -138,12 +138,12 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
             >
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>
-                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Credited Manager</th>
-                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Resolved Chain</th>
-                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Area</th>
-                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Line</th>
-                  <th className="px-3 py-3 text-right text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visits</th>
+                  <th className="px-3 py-3 text-left text-phx-sm font-black uppercase tracking-wider text-slate-300">Date</th>
+                  <th className="px-3 py-3 text-left text-phx-sm font-black uppercase tracking-wider text-slate-300">Credited Manager</th>
+                  <th className="px-3 py-3 text-left text-phx-sm font-black uppercase tracking-wider text-slate-300">Resolved Chain</th>
+                  <th className="px-3 py-3 text-left text-phx-sm font-black uppercase tracking-wider text-slate-300">Area</th>
+                  <th className="px-3 py-3 text-left text-phx-sm font-black uppercase tracking-wider text-slate-300">Line</th>
+                  <th className="px-3 py-3 text-right text-phx-sm font-black uppercase tracking-wider text-slate-300">Visits</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">

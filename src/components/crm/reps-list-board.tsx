@@ -92,7 +92,7 @@ function RepCard({ href, largest, rep }: { href: string; largest: number; rep: R
           holds nothing for them, which is a sync or account problem, not a rep with no doctors. */}
       {hasList ? (
         <>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">
+          <p className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">
             {listLabel(rep.contactCount, rep.pharmacyCount)}
           </p>
           {/* The list's size against the largest list in view — contacts only, a pharmacy is not a contact. */}
@@ -385,7 +385,7 @@ export function RepsListListBody({
           options={board.monthOptions}
           preserve={monthPreserve}
         />
-        <p className="max-w-[80ch] pb-2 text-phx-2xs font-semibold leading-relaxed text-slate-500">
+        <p className="max-w-[80ch] pb-2 text-phx-sm font-semibold leading-relaxed text-slate-500">
           {board.activityAvailable
             ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
             : (activityUnavailableNote ??
@@ -555,7 +555,7 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
         <Section
           action={
             <Link
-              className="border border-slate-600 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
+              className="border border-slate-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white transition-colors hover:border-orange-400 hover:text-orange-300"
               href={hrefWithRep(basePath, board, null)}
             >
               Back to all reps

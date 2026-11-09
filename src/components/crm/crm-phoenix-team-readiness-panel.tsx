@@ -22,7 +22,7 @@ import type { PhoenixTeamReadinessPanelData, PhoenixTeamReadinessRow } from "@/l
  * wrapping. Nothing is ever truncated with an ellipsis.
  */
 
-const THEAD = "px-3 py-2.5 text-left align-bottom text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-left align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-white";
 const CELL = "break-words px-3 py-2.5 align-top text-xs leading-5 text-slate-700";
 const NUMBER = "break-words px-3 py-2.5 align-top text-right text-xs font-bold leading-5 tabular-nums text-slate-900";
 
@@ -102,7 +102,7 @@ export function CrmPhoenixTeamReadinessPanel({ data }: { data: PhoenixTeamReadin
   return (
     <div className="scroll-mt-4 border border-slate-200 bg-white" id="phoenix-team-readiness">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Ready to start in Phoenix CRM</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Ready to start in Phoenix CRM</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
 

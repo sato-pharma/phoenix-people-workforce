@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 // slate-500, not slate-400: the label is the only name a control has, and 400 on white read as disabled (premium
 // pass, 2026-11-09). The same string in all three Reps List control files, so a row of them never mixes two greys.
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500";
+const LABEL_CLASS = "block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
 /**
  * `text-sm`, matching the cascade selects exactly. Do NOT shrink it: `app/globals.css` RULE 3
  * floors every form control inside the admin and portal shells at `max(16px, 1em)` below 768px, so

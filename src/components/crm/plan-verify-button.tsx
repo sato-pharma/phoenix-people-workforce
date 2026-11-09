@@ -87,13 +87,13 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
     return (
       <div className="space-y-1">
         {words ? (
-          <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${words.className}`}>{words.words}</span>
+          <span className={`text-phx-sm font-black uppercase tracking-[0.1em] ${words.className}`}>{words.words}</span>
         ) : (
-          <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
+          <span className={`text-phx-sm font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
             {planStatusLabel(plan.status)}
           </span>
         )}
-        {error ? <p className="text-phx-2xs font-semibold text-rose-700">{error}</p> : null}
+        {error ? <p className="text-phx-sm font-semibold text-rose-700">{error}</p> : null}
       </div>
     );
   }
@@ -104,8 +104,8 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
         <button
           className={
             armed
-              ? "h-8 border border-orange-500 bg-orange-500 px-3 text-phx-2xs font-black uppercase tracking-[0.1em] text-white disabled:opacity-60"
-              : "h-8 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400 disabled:opacity-60"
+              ? "h-8 border border-orange-500 bg-orange-500 px-3 text-phx-sm font-black uppercase tracking-[0.1em] text-white disabled:opacity-60"
+              : "h-8 border border-slate-300 bg-white px-3 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400 disabled:opacity-60"
           }
           disabled={busy || pending}
           onClick={() => {
@@ -118,7 +118,7 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
         </button>
         {armed && !busy ? (
           <button
-            className="h-8 px-2 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400 hover:text-slate-700"
+            className="h-8 px-2 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400 hover:text-slate-700"
             onClick={() => setArmed(false)}
             type="button"
           >
@@ -126,7 +126,7 @@ export function PlanApproveButton({ canApprove, plan }: { canApprove: boolean; p
           </button>
         ) : null}
       </div>
-      {error ? <p className="text-phx-2xs font-semibold text-rose-700">{error}</p> : null}
+      {error ? <p className="text-phx-sm font-semibold text-rose-700">{error}</p> : null}
     </div>
   );
 }
