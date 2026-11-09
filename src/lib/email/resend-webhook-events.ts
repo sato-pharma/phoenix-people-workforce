@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { redactCredentialLinksInJson } from "@/lib/email/credential-redaction";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -197,7 +198,8 @@ export function parseResendWebhookEvent(payload: ResendWebhookPayload, providerE
     provider: "resend",
     provider_event_id: providerEventId,
     provider_message_id: firstText(data.email_id, data.id, data.message_id),
-    raw_event: payload,
+    // A click on a set-your-password link carries the link; its token is never stored.
+    raw_event: redactCredentialLinksInJson(payload),
     recipients: stringArray(data.to),
     sender: textOrNull(data.from),
     status: deliveryStatus(eventType),

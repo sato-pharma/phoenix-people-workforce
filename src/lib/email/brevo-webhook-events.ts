@@ -1,5 +1,6 @@
 import crypto from "crypto";
 
+import { redactCredentialLinksInJson } from "@/lib/email/credential-redaction";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -194,7 +195,8 @@ export function parseBrevoWebhookEvent(payload: BrevoWebhookPayload): BrevoDeliv
     provider: "brevo",
     provider_event_id: brevoProviderEventId(payload),
     provider_message_id: firstText(payload["message-id"], payload.messageId),
-    raw_event: payload,
+    // A click on a set-your-password link carries the link; its token is never stored.
+    raw_event: redactCredentialLinksInJson(payload),
     recipients: recipient ? [recipient] : [],
     sender: firstText(payload["sender_email"], payload.sender),
     status: brevoStatus(event),

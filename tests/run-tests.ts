@@ -2974,6 +2974,7 @@ import { runMemoryRateBucketsTests } from "./memory-rate-buckets.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import { runCredentialOutboxSealTests } from "./credential-outbox-seal.test.ts";
+import { runCredentialRedactionTests } from "./credential-redaction.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
   runCsvFormulaNeutraliserTests,
@@ -11898,6 +11899,10 @@ await runTest(
 await runTest(
   "a reset code or a set-your-password link never sits readable in the email outbox: both are sealed before the row is written, opened only in memory to send, deleted once the row is sent, skipped or out of retries, and keyed out of the dedupe hash; every other email is stored as before",
   runCredentialOutboxSealTests,
+);
+await runTest(
+  "no record keeps a usable password code or set-your-password link: the review queue's copy of the email, the notification's own row and the provider's click events are stripped before they are stored, a held credential email is never re-sent from review, and every other email is stored as it was",
+  runCredentialRedactionTests,
 );
 await runTest(
   "the Sato email body is sanitised AGAIN after the house's regex rewrites, so a body they re-arm leaves with no event handler and no javascript: link — and the house's own cell class, presentation tables, spacer entities and Outlook declarations survive byte for byte",
