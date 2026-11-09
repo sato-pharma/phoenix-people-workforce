@@ -541,20 +541,29 @@ async function run() {
   // 16. 🔴 A PHONE THAT REFUSES THE GALLERY LEAVES THE CANDIDATE A WAY FORWARD (9 Nov 2026: Chrome on a
   //     candidate's phone flashed "Unable to select media because permissions were denied" and the tile
   //     stayed empty — the national ID photos are required, so the offer could not be accepted). The
-  //     chooser closing with nothing chosen is Chrome's `cancel` event; the tile then says what happened
-  //     and offers the camera on a second input. The first input keeps its one tap for camera OR gallery.
+  //     first fix waited for Chrome's `cancel` event and the candidate saw only the toast: Chrome does
+  //     not report a refused chooser to the page. So "Trouble choosing a photo?" is ALWAYS under an
+  //     empty tile, and opens the help, the camera on a `capture` input and the system file picker on
+  //     an input with no `accept` (opened without any Photos permission). `cancel` only opens it early.
+  //     The first input keeps its one tap for camera OR gallery.
   const tileStart = pageSource.indexOf("function IdPhotoTile(");
   const tileEnd = pageSource.indexOf("async function looksLikeHeic(");
   assert.ok(tileStart > 0 && tileEnd > tileStart, "the tile is found");
   const tile = pageSource.slice(tileStart, tileEnd);
-  assert.match(tile, /addEventListener\("cancel", /, "a chooser that closes empty is heard");
-  assert.match(tile, /stalled && !photo && !busy/, "and the help shows only while the tile is empty");
+  assert.match(tile, /\{!photo && !busy \? \(/, "the help line is there for any empty tile, whether or not the phone says anything");
+  assert.ok(!/stalled/.test(tile), "and it is never waiting on a signal Chrome does not send");
+  assert.match(tile, /addEventListener\("cancel", /, "a phone that does send `cancel` opens it early");
+  assert.match(tile, /onClick=\{\(\) => setHelpOpen\(\(open\) => !open\)\}/, "and a tap opens and closes it");
   assert.equal((tile.match(/capture=\{portrait \? "user" : "environment"\}/g) ?? []).length, 1, "one camera input: the selfie camera for the face, the back camera for a card");
   assert.equal((tile.match(/capture=/g) ?? []).length, 1, "the main input stays camera-or-gallery, with no capture of its own");
-  assert.equal((tile.match(/onChange=\{take\}/g) ?? []).length, 2, "both inputs file the photo through the same handler");
+  const fileInputs = tile.match(/<input[^>]*type="file"[^>]*\/>/g) ?? [];
+  assert.equal(fileInputs.length, 3, "three file inputs: the tile's own, the camera, the system file picker");
+  const filesInput = fileInputs.find((input) => input.includes("-files"));
+  assert.ok(filesInput && !/accept=|capture=/.test(filesInput), "the file-picker input has no accept and no capture, so Android opens it with no Photos permission");
+  assert.equal((tile.match(/onChange=\{take\}/g) ?? []).length, 3, "all three file the photo through the same handler");
   for (const lang of ["en", "ar"] as const) {
     const photos = copy.JOINING_COPY[lang].photos;
-    assert.ok(photos.blocked.length > 40 && photos.camera.length > 8, `${lang}: the help and the camera button are written`);
+    assert.ok(photos.blocked.length > 40 && photos.camera.length > 8 && photos.files.length > 8 && photos.trouble.length > 8, `${lang}: the help line, the help and both buttons are written`);
   }
   assert.match(copy.JOINING_COPY.en.photos.blocked, /Chrome.+Permissions/, "the English names where the permission lives");
   assert.match(copy.JOINING_COPY.ar.photos.blocked, /[؀-ۿ]/, "and the Arabic is Arabic");
