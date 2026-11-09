@@ -286,6 +286,35 @@ export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   return flags;
 }
 
+/**
+ * THE FLAGS THAT BELONG TO ANOTHER REPORT, per report (premium pass, 9 Nov 2026). The Coverage report's
+ * table prints planned, covered, not reached, off plan and coverage — nothing about how OFTEN a doctor was
+ * seen, nothing about campaign calls, nothing about AM and PM. So a frequency flag ("More below-plan doctors
+ * than above") or a call-rate flag on its rows answered a question the page does not ask, and on most boards
+ * every rep wore one. They stay on the Summary and on their own reports, and the flag FILTER still finds them
+ * everywhere: this decides what a row SHOWS, never what a filter matches.
+ *
+ * Keyed by the tab's name as a plain string so this file keeps importing nothing (see the header).
+ */
+export const KPI_FLAGS_OFF_REPORT: Readonly<Record<string, readonly KpiFlag[]>> = {
+  coverage: [
+    "under-visiting",
+    "over-visiting",
+    "perfect-frequency",
+    "campaign-heavy",
+    "campaign-only-days",
+    "below-am-target",
+    "below-pm-target",
+  ],
+};
+
+/** The flags a row shows on `report`: every flag true of it, less the ones that report leaves to others. */
+export function kpiFlagsShownOn(row: KpiFilterableRow, report?: string): KpiFlag[] {
+  const off = report ? KPI_FLAGS_OFF_REPORT[report] : undefined;
+  const flags = kpiFlagsOf(row);
+  return off ? flags.filter((flag) => !off.includes(flag)) : flags;
+}
+
 // ── Sorting ───────────────────────────────────────────────────────────────────────────────────
 
 export const KPI_SORT_FIELDS = [

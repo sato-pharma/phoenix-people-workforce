@@ -60,7 +60,7 @@ import {
   pmBandOf,
   hasActiveKpiFilters,
   kpiBandOf,
-  kpiFlagsOf,
+  kpiFlagsShownOn,
   KPI_BAND_LABEL,
   KPI_RANGE_FIELDS,
   KPI_RANGE_LABEL,
@@ -83,9 +83,11 @@ import {
   EMPTY_KPI_DOCTOR_FILTER,
   filterKpiDoctors,
   hasActiveKpiDoctorFilter,
+  KPI_DOCTOR_NO_SPECIALITY,
   KPI_DOCTOR_NOT_VALIDATED,
   KPI_DOCTOR_SORT_LABEL,
   kpiDoctorBrickLabel,
+  type KpiDoctorFilter,
   type KpiDoctorStatus,
 } from "@/lib/crm/kpis-doctor-filters";
 import { buildKpiBrickRows, KPI_FREQUENCY_STATUS_LABEL, kpiBrickFrequencyColumns, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
@@ -93,6 +95,36 @@ import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerMeasure, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
+import { groupKpiRepsByTeam } from "@/lib/crm/kpi-coverage-teams";
+import {
+  KpiBrickGlance,
+  KpiCoverageStanding,
+  KpiTeamCoverageRollup,
+  KpiTeamHeadingBand,
+  KpiTeamHeadingRow,
+  kpiCoverageExtraTiles,
+  kpiTeamsWithCoverage,
+  type KpiTeamWithCoverage,
+} from "@/components/crm/kpi-coverage-panels";
+import {
+  KpiCoverageGroupTable,
+  KpiCoverageWeekTable,
+  KpiFloorPathPanel,
+  KpiFloorTrack,
+  KpiLateAgeingPanel,
+  KpiRepCoverageTiles,
+  KpiRepVisitDepth,
+  type KpiCoverageGroupLinks,
+} from "@/components/crm/kpi-coverage-rep-panels";
+import {
+  KPI_NO_SPECIALITY,
+  kpiCoverageByGrade,
+  kpiCoverageBySpeciality,
+  kpiCoverageByWeek,
+  kpiFloorPath,
+  kpiLateAgeing,
+  kpiRepCoverageSummary,
+} from "@/lib/crm/kpi-coverage-rep-detail";
 import type { DoctorFrequencyStatus } from "@/lib/crm/phoenix-kpi-rules";
 import type { KpiTrend } from "@/lib/crm/kpis-trend";
 import { KPI_TREND_METRICS, KPI_TREND_SCALES, type KpiTrendMetric, type KpiTrendScale } from "@/lib/crm/kpis-trend-options";
@@ -558,14 +590,13 @@ function KpiHero({ board, showTitle, solo }: { board: KpisBoard; showTitle: bool
           </p>
         </div>
         <div className="min-w-0">
-          {/* The team-standing signal. Premium pass: a live tone pip haloed in white and a hairline
-              contact shadow, so the one verdict on this board reads as a lit status light rather
-              than a printed label. The tone colours are unchanged — `tone.chip` still carries the
-              band, and `noplan` stays the quietest light on the board. */}
-          <div className={`flex items-center gap-2.5 border px-3.5 py-2.5 ${tone.chip} shadow-[0_1px_2px_rgba(15,23,42,0.06)]`}>
+          {/* The team-standing signal: a flat tone pip beside the verdict. Flat colour only (owner, 22 Oct
+              2026: nothing may look machine-made) — `tone.chip` carries the band, and `noplan` stays the
+              quietest on the board. */}
+          <div className={`flex items-center gap-2.5 border px-3.5 py-2.5 ${tone.chip}`}>
             <span
               aria-hidden
-              className={`h-2.5 w-2.5 shrink-0 ${tone.bar} shadow-[0_0_0_3px_rgba(255,255,255,0.65)]`}
+              className={`h-2.5 w-2.5 shrink-0 ${tone.bar}`}
             />
             <span className="min-w-0">
               {/* A medical rep's own board has no team to stand in — the pill says "Standing". */}
@@ -609,11 +640,10 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
   const tone = toneOf(band);
   return (
     <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
-      {/* THE ONE NUMBER, given the board's most premium frame: a lit gradient surface, a left tonal
-          accent stripe in the overall band's own colour, and real depth — the figure a manager reads
-          first should look like the headline it is. Every string below is unchanged. */}
-      <div className="relative overflow-hidden border border-slate-200 bg-gradient-to-br from-white to-slate-50 px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_30px_rgba(15,23,42,0.07)]">
-        <span aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${tone.grad}`} />
+      {/* THE ONE NUMBER, framed flat: a white face and a left rule in the overall band's own colour. No
+          gradient, glow or shadow (owner, 22 Oct 2026). Every string below is unchanged. */}
+      <div className="relative overflow-hidden border border-slate-200 bg-white px-4 py-4">
+        <span aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-1 ${tone.bar}`} />
         <div className="flex flex-wrap items-start gap-x-6 gap-y-3 pl-2">
           <div className="min-w-0">
             <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Overall KPI</p>
@@ -760,7 +790,7 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5${spanLast}${rowLine}`
+                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-orange-50 px-3 py-2.5 sm:px-5${spanLast}${rowLine}`
                 : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${spanLast}${rowLine}`
             }
             href={hrefWith(context, { tab })}
@@ -769,7 +799,7 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
             {current ? (
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-orange-400 to-orange-500"
+                className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-orange-500"
               />
             ) : null}
             <span
@@ -955,16 +985,19 @@ function coverageFloorBadge(row: Pick<KpiRepRow, "meetsCoverageFloor">): React.R
 function RepCell({
   action,
   rank,
+  report,
   row,
   rules,
 }: {
   /** A control under the name — the Coverage tab's "Show doctors". */
   action?: React.ReactNode;
   rank?: number;
+  /** The report the row sits on, so it leaves another report's flags to that report (`KPI_FLAGS_OFF_REPORT`). */
+  report?: KpiTab;
   row: KpiRepRow;
   rules?: KpisBoard["kpiRules"];
 }) {
-  const flags = kpiFlagsOf(row).filter(
+  const flags = kpiFlagsShownOn(row, report).filter(
     (flag) =>
       flag !== "below-am-target" &&
       flag !== "below-pm-target" &&
@@ -1055,7 +1088,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
         <col style={{ width: "12%" }} />
         <col style={{ width: "17%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -1190,7 +1223,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
         <col style={{ width: "19%" }} />
         <col style={{ width: "19%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -1769,8 +1802,38 @@ function CoverageDoctors({
   );
 }
 
-function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
+/** One slot in the phone list: a team's heading, or one rep with his place on the whole board. */
+type CardSlot = { heading: KpiTeamWithCoverage | null; row: KpiRepRow | null; index: number };
+
+/**
+ * The phone list's slots. With two teams or more (the Coverage tab only), each team's heading and then its
+ * reps; otherwise the board's rows as they come. Every rep appears exactly once, either way.
+ */
+function cardSlots(teams: readonly KpiTeamWithCoverage[], reps: readonly KpiRepRow[]): CardSlot[] {
+  if (teams.length < 2) return reps.map((row, index) => ({ heading: null, row, index }));
+  return teams.flatMap((entry) => [
+    { heading: entry, row: null, index: -1 },
+    ...entry.team.members.map((member) => ({ heading: null, row: member.row, index: member.boardIndex })),
+  ]);
+}
+
+function CoverageTable({
+  context,
+  rows,
+  teams,
+}: {
+  context: ViewContext;
+  rows: KpiRepRow[];
+  /** The reps filed under their region and direct manager (`groupKpiRepsByTeam`), headed from two teams up. */
+  teams: readonly KpiTeamWithCoverage[];
+}) {
   const { coverageDetail: detail, filters } = context.board;
+  // A heading per team only when there is more than one: a single team is the board itself. Each row keeps
+  // its place on the WHOLE board, so a rank disc reads the board's own number under every heading.
+  const sections: ReadonlyArray<{ entry: KpiTeamWithCoverage | null; members: ReadonlyArray<{ row: KpiRepRow; boardIndex: number }> }> =
+    teams.length >= 2
+      ? teams.map((entry) => ({ entry, members: entry.team.members }))
+      : [{ entry: null, members: rows.map((row, boardIndex) => ({ row, boardIndex })) }];
   return (
     <table className="hidden w-full table-fixed md:table">
       {/* The detail row below spans every column: its colSpan moves with this colgroup. */}
@@ -1782,7 +1845,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
         <col style={{ width: "11%" }} />
         <col style={{ width: "18%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -1823,8 +1886,10 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
           />
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
-        {rows.map((row, index) => (
+      {sections.map((section) => (
+        <tbody className="divide-y divide-slate-100" key={section.entry?.team.key ?? "all"}>
+          {section.entry ? <KpiTeamHeadingRow columns={6} entry={section.entry} /> : null}
+          {section.members.map(({ boardIndex: index, row }) => (
           <Fragment key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <tr
               className="scroll-mt-20"
@@ -1833,6 +1898,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               <RepCell
                 action={coverageDoctorsToggle(context, row, "desktop")}
                 rank={context.showRank ? index + 1 : undefined}
+                report="coverage"
                 row={row}
                 rules={context.board.kpiRules}
               />
@@ -1858,8 +1924,9 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
                 </TableRowDetail>
             ) : null}
           </Fragment>
-        ))}
-      </tbody>
+          ))}
+        </tbody>
+      ))}
     </table>
   );
 }
@@ -1878,7 +1945,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
         <col style={{ width: "21%" }} />
         <col style={{ width: "22%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
           {/* THE OWNER'S THREE WORDS, read from ACTIVITY_LABEL rather than repeated here.
@@ -2006,6 +2073,7 @@ function RepCard({
   notValidated,
   pmTarget,
   rank,
+  report,
   row,
   rules,
 }: {
@@ -2016,6 +2084,8 @@ function RepCard({
   notValidated?: React.ReactNode;
   pmTarget: number;
   rank?: number;
+  /** The report the card sits on — the phone half of {@link RepCell}'s `report`, the same rule. */
+  report?: KpiTab;
   row: KpiRepRow;
   rules?: KpisBoard["kpiRules"];
 }) {
@@ -2086,7 +2156,7 @@ function RepCard({
       value: overallValue(overall, row),
     },
   ];
-  const flags = kpiFlagsOf(row).filter(
+  const flags = kpiFlagsShownOn(row, report).filter(
     (flag) =>
       flag !== "below-am-target" &&
       flag !== "below-pm-target" &&
@@ -2165,83 +2235,6 @@ function coverageGroups(doctors: readonly KpiCoverageDoctor[], keyOf: (doctor: K
     groups.set(label, row);
   }
   return [...groups.values()].sort((left, right) => right.planned - left.planned || left.label.localeCompare(right.label));
-}
-
-/**
- * One breakdown of the open rep's doctors — by grade or by speciality. A table from `md`, and plain
- * rows on a phone: four columns do not fit 311px without a head wider than its cell, and the rule is
- * to merge on a phone, never to shrink the type.
- */
-function CoverageBreakdown({ rows, title }: { rows: readonly CoverageGroupRow[]; title: string }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="min-w-0 border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
-      </div>
-      <table className="hidden w-full table-fixed md:table">
-        <colgroup>
-          <col style={{ width: "40%" }} />
-          <col style={{ width: "20%" }} />
-          <col style={{ width: "20%" }} />
-          <col style={{ width: "20%" }} />
-        </colgroup>
-        <thead className="border-b border-slate-100">
-          <tr>
-            <th className={TH} scope="col">
-              Group
-            </th>
-            <th className={TH} scope="col">
-              Planned
-            </th>
-            <th className={TH} scope="col">
-              Covered
-            </th>
-            <th className={TH} scope="col">
-              Rate
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => {
-            const pct = Math.round((row.covered / row.planned) * 100);
-            return (
-              <tr key={row.label}>
-                <td className={TD} dir="auto">
-                  <BreakdownLabel row={row} />
-                </td>
-                <td className={NUM}>{row.planned}</td>
-                <td className={NUM}>{row.covered}</td>
-                <td className={NUM}>
-                  {pct}%
-                  <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <ul className="divide-y divide-slate-100 md:hidden">
-        {rows.map((row) => {
-          const pct = Math.round((row.covered / row.planned) * 100);
-          return (
-            <li className="px-3 py-2.5" key={row.label}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 text-sm font-semibold text-slate-900" dir="auto">
-                  <BreakdownLabel row={row} />
-                </span>
-                <span className={`text-sm font-black tabular-nums ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
-              </div>
-              <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
-              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
-                {row.covered} of {row.planned} planned doctors seen
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
 }
 
 /** A group's name, as a link into the list narrowed to that group when it has one. */
@@ -2398,6 +2391,7 @@ function TeamBricksSection({ context, rows }: { context: ViewContext; rows: read
         description="Every rep's planned doctors, counted by the brick of the doctor's validated live photo. A doctor two reps both plan counts once for each, as Planned does, and reps who have just started are left out, as they are from the totals. Open a rep's doctors to see who is in each brick."
         title="By brick · every rep on this board"
       >
+        {context.tab === "coverage" ? <KpiBrickGlance rows={rows} /> : null}
         <div className="px-4 py-4 sm:px-5">
           <BrickBreakdown context={context} rows={rows} team title="From the validated live photo" />
         </div>
@@ -2412,66 +2406,67 @@ function coverageBandOfPct(pct: number): KpiBand {
 }
 
 /**
- * THE COVERAGE REPORT'S HEADER FOR ONE REP — the four counts the two lists below add up to, the
- * distance to the 95% floor, and the same doctors cut by brick, by grade and by speciality.
+ * THE COVERAGE REPORT'S HEADER FOR ONE REP — premium pass, 9 Nov 2026. The four counts the two lists below
+ * add up to; the planned list as one track against the 95% floor; the doctors to see first to clear it; how
+ * late the late ones are; how often the covered ones were seen; and the same doctors by brick, by the week
+ * planned, by grade and by speciality.
  *
- * Everything here is arithmetic over the two lists the server already built for this rep, so nothing
- * on it can disagree with the Covered and Not reached numbers on his row.
+ * Everything here is crm/kpi-coverage-rep-detail.ts counting the two lists the server already built for
+ * this rep (the WHOLE lists — the doctor filters narrow only the lists below), so nothing on it can disagree
+ * with the Covered and Not reached numbers on the rep's row. Every count that has doctors behind it is a
+ * link into the list narrowed to exactly them, through the doctor filter's own fields.
  */
 function CoverageSummary({ context, detail }: { context: ViewContext; detail: KpiCoverageDetail }) {
   const { board } = context;
+  const summary = kpiRepCoverageSummary(detail, board.coverageFloorPct);
+  if (!summary) return null;
   const all = [...detail.covered, ...detail.notCovered];
-  const planned = all.length;
-  if (planned === 0) return null;
-  const covered = detail.covered.length;
-  const notDue = detail.notCovered.filter((doctor) => !doctor.due).length;
-  const late = detail.notCovered.length - notDue;
-  const pct = Math.round((covered / planned) * 100);
-  const floor = board.coverageFloorPct;
-  // The fewest extra doctors that bring the rep to the floor, counted against the whole list.
-  const needed = Math.max(0, Math.ceil((planned * floor) / 100) - covered);
-  const visits = detail.covered.reduce((sum, doctor) => sum + doctor.visits, 0);
-  const repeat = detail.covered.filter((doctor) => doctor.visits > 1).length;
+  const doctorHref = (patch: Partial<KpiDoctorFilter>) =>
+    hrefWith(context, { filters: { ...board.filters, doctor: { ...board.filters.doctor, ...patch } } });
+  const groupLinks = (patch: Partial<KpiDoctorFilter>): KpiCoverageGroupLinks => ({
+    group: doctorHref({ ...patch, timing: [] }),
+    late: doctorHref({ ...patch, timing: ["late"] }),
+    ahead: doctorHref({ ...patch, timing: ["not-due"] }),
+  });
+  const lateHref = doctorHref({ timing: ["late"] });
+  const aheadHref = doctorHref({ timing: ["not-due"] });
+  const grades = kpiCoverageByGrade(detail).map((row) => ({ ...row, links: groupLinks({ grades: [row.label] }) }));
+  const specialities = kpiCoverageBySpeciality(detail).map((row) => ({
+    ...row,
+    links: groupLinks({ specialities: [row.label === KPI_NO_SPECIALITY ? KPI_DOCTOR_NO_SPECIALITY : row.label] }),
+  }));
+  const steps = kpiFloorPath(detail, summary, board.asOf);
+  const buckets = kpiLateAgeing(detail, board.asOf);
+  const ageing = <KpiLateAgeingPanel asOf={board.asOf} buckets={buckets} lateHref={lateHref} />;
+  const depth = <KpiRepVisitDepth summary={summary} />;
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile
-          band={kpiBandOf(pct)}
-          caption={`${covered} of ${planned} planned doctors seen at least once`}
-          label="Coverage"
-          progress={pct}
-          value={`${pct}%`}
-        />
-        <KpiTile
-          caption={`${visits} visit${visits === 1 ? "" : "s"} in all · ${repeat} doctor${repeat === 1 ? "" : "s"} seen more than once`}
-          label="Covered"
-          value={String(covered)}
-        />
-        <KpiTile
-          band={late > 0 ? "behind" : "elite"}
-          caption={late > 0 ? "Planned day has passed with no visit" : "Nobody is overdue"}
-          label="Late"
-          value={String(late)}
-        />
-        <KpiTile
-          caption="Planned day is still ahead"
-          label="Not due yet"
-          value={String(notDue)}
-        />
-      </div>
-      <p className={`leading-4 ${CAPTION}`}>
-        {needed === 0
-          ? `Clears the ${floor}% floor with ${covered} of ${planned} doctors covered.`
-          : `${needed} more doctor${needed === 1 ? "" : "s"} to cover to clear the ${floor}% floor (${Math.ceil((planned * floor) / 100)} of ${planned}).`}{" "}
-        {board.isCurrentMonth ? "The period is still running, so doctors planned for later days are counted as not covered yet." : ""}
-      </p>
+      <KpiRepCoverageTiles summary={summary} />
+      <KpiFloorTrack aheadHref={aheadHref} lateHref={lateHref} summary={summary} />
+      {board.isCurrentMonth ? (
+        <p className={`leading-4 ${CAPTION}`}>
+          The period is still running, so doctors planned for later days are counted as not covered yet.
+        </p>
+      ) : null}
+      {steps.length > 0 ? (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <KpiFloorPathPanel steps={steps} summary={summary} />
+          <div className="min-w-0 space-y-3">
+            {ageing}
+            {depth}
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {ageing}
+          {depth}
+        </div>
+      )}
       <BrickBreakdown context={context} rows={buildKpiBrickRows([all])} title="By brick · from the validated live photo" />
+      <KpiCoverageWeekTable weeks={kpiCoverageByWeek(detail, board.asOf)} />
       <div className="grid gap-3 lg:grid-cols-2">
-        <CoverageBreakdown rows={coverageGroups(all, (doctor) => gradeGroupOf(doctor.grade)).sort((l, r) => l.label.localeCompare(r.label))} title="By grade" />
-        <CoverageBreakdown
-          rows={coverageGroups(all, (doctor) => doctor.speciality?.trim() || "No speciality on the plan")}
-          title="By speciality"
-        />
+        <KpiCoverageGroupTable groupHeading="Grade" rows={grades} title="By grade" />
+        <KpiCoverageGroupTable groupHeading="Speciality" rows={specialities} title="By speciality" />
       </div>
     </div>
   );
@@ -2900,7 +2895,7 @@ function CallRateViewSwitch({ context }: { context: ViewContext }) {
               aria-current={current ? "page" : undefined}
               className={
                 current
-                  ? "relative min-w-0 border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5"
+                  ? "relative min-w-0 border-b-2 border-b-orange-500 bg-orange-50 px-3 py-2.5 sm:px-5"
                   : "relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5"
               }
               href={hrefWith(context, { view })}
@@ -3049,7 +3044,7 @@ function CallRateSessionTable({
         <col style={{ width: "14%" }} />
         <col style={{ width: "14%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -3284,7 +3279,7 @@ function ManagersTable({ context, rows }: { context: ViewContext; rows: KpiManag
         <col style={{ width: "12%" }} />
         <col style={{ width: "17%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+      <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <th className={TH} scope="col">
             Manager
@@ -3510,7 +3505,7 @@ export function KpisBoardView({
 }) {
   if (board.scopeReason) {
     return (
-      <div className={`${PANEL} shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_44px_rgba(15,23,42,0.07)]`}>
+      <div className={PANEL}>
         <div className="px-5 py-6">
           <p className="text-sm font-semibold text-slate-700">{board.scopeReason}</p>
           <p className={`mt-1 ${CAPTION}`}>
@@ -3571,6 +3566,16 @@ export function KpisBoardView({
     board.workingDays < board.workingDaysInWindow && (board.workingDays > 0 || board.range.todayLeftOut);
   const phoenix = isPhoenix(board);
   const callWord = phoenix ? "visits" : "verified";
+  // THE TEAMS (owner, 9 Nov 2026: "group reps by district manager"). The Coverage tab files every rep under
+  // his region and direct manager: the teams at a glance, a heading per team over the rows and the same
+  // headings over the phone cards. Every other tab keeps its one list. Empty for a board of one rep.
+  const coverageTeams: KpiTeamWithCoverage[] =
+    tab === "coverage" && board.reps.length > 1
+      ? kpiTeamsWithCoverage(groupKpiRepsByTeam(board.reps), board.kpiRules)
+      : [];
+  // A measure with one leaderboard (Coverage, Frequency, one half of Call Rate) draws it across the row,
+  // its three names side by side, instead of one card in a row built for four.
+  const lonePodium = tab === "coverage" || tab === "frequency" || (tab === "call-rate" && callRateView !== "total");
   // A MEDICAL REP'S OWN BOARD: the portal, with one rep in reach. The manager's furniture reads wrong
   // there — "Medical reps in reach: 1", an "Advanced filters" panel over a board of one, "Showing 1 of
   // 1", a "Team standing" pill — so it is relabelled or put away. The admin shell is untouched.
@@ -3580,12 +3585,10 @@ export function KpisBoardView({
     <div className="space-y-4">
       <KpiHero board={board} showTitle={chrome === "admin"} solo={solo} />
 
-      {/* The tab strip and the board below it share ONE floating envelope — a two-layer premium
-          shadow on the wrapper (owner's godmode golden rule) rather than one on each, so they read
-          as a single card lifted off the page. The shadow states its own depth, so the shell's
-          ambient `main` rule leaves it alone; box-shadow moves nothing, so the fits-the-screen rule
-          is untouched. */}
-      <div className="shadow-[0_1px_2px_rgba(15,23,42,0.05),0_20px_48px_rgba(15,23,42,0.08)]">
+      {/* The tab strip and the board below it share ONE frame, flat: no shadow, no lift (owner, 22 Oct
+          2026). The `shadow-none` class tells the shell's ambient `main` rule (`:not([class*="shadow"])`)
+          to leave it alone rather than add a shadow of its own. */}
+      <div className="shadow-none">
         <KpiTabStrip context={context} />
         <div className={PANEL}>
           <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
@@ -3821,6 +3824,14 @@ export function KpisBoardView({
               value={`${totals.frequencyPct}%`}
             />
             ) : null}
+            {/* The Coverage report's own figures beside its tile (premium pass, 9 Nov 2026): what is left to
+                reach, who clears the floor, the off-plan doctors and, when read, the doctors not validated
+                yet — so the row built for six is not two tiles and white space. */}
+            {reportPage && tab === "coverage" && !solo
+              ? kpiCoverageExtraTiles(board).map((tile) => (
+                  <KpiTile band={tile.band} caption={tile.caption} key={tile.key} label={tile.label} value={tile.value} />
+                ))
+              : null}
           </div>
           )}
 
@@ -3896,6 +3907,21 @@ export function KpisBoardView({
             </div>
           ) : (
             <>
+              {/* WHERE THE TEAM STANDS (premium pass, 9 Nov 2026), on the Coverage tab with more than one rep:
+                  the planned list as covered against not reached, the reps by band, and the teams side by
+                  side. Every figure adds up to a tile above it. */}
+              {coverageTeams.length > 0 ? (
+                <div className="border-t border-slate-100">
+                  <KpiSection
+                    description="The planned list as covered against not reached, the reps in the bands their own chips show, and each region and district manager's team side by side. Every figure adds up to the tiles above."
+                    title="Where the team stands"
+                  >
+                    <KpiCoverageStanding board={board} />
+                    <KpiTeamCoverageRollup floorPct={board.coverageFloorPct} teams={coverageTeams} />
+                  </KpiSection>
+                </div>
+              ) : null}
+
               {/* THE LEADERBOARDS. Three, never one — a single "best rep" would need a blended
                   score, and this board adds no fourth measure. They rank the FILTERED rows, so
                   filtering to one line answers "best in that line". Only when there is more than one
@@ -3907,13 +3933,14 @@ export function KpisBoardView({
                   description="Best three on each measure, from the reps currently in view. Separate answers — often different people. The morning and the afternoon are ranked apart, on the uncapped figure, so a rep above target can read over 100% here."
                   title="Standing out"
                 >
-                  <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
+                  <div className={lonePodium ? "px-4 py-4 sm:px-5" : "grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4"}>
                     {tab === "summary" || tab === "coverage" ? (
-                      <KpiPodiumCard entries={podium.coverage} hint="Most of the planned list reached" title="Coverage" />
+                      <KpiPodiumCard entries={podium.coverage} hint="Most of the planned list reached" title="Coverage" wide={lonePodium} />
                     ) : null}
                     {tab === "summary" || tab === "frequency" ? (
                       <KpiPodiumCard
                         entries={podium.frequency}
+                        wide={lonePodium}
                         hint={phoenix ? "Most graded doctors at their grade norm" : "Most doctors seen exactly as planned"}
                         title="Frequency"
                       />
@@ -3921,6 +3948,7 @@ export function KpisBoardView({
                     {tab === "summary" || (tab === "call-rate" && callRateView !== "pm") ? (
                       <KpiPodiumCard
                         entries={podium.amCallRate}
+                        wide={lonePodium}
                         hint={`Closest to ${board.amTarget} ${phoenix ? "AM visits" : "verified AM calls"} a day`}
                         title="AM call rate"
                       />
@@ -3928,6 +3956,7 @@ export function KpisBoardView({
                     {tab === "summary" || (tab === "call-rate" && callRateView !== "am") ? (
                       <KpiPodiumCard
                         entries={podium.pmCallRate}
+                        wide={lonePodium}
                         hint={`Closest to ${board.pmTarget} ${phoenix ? "PM visits" : "verified PM calls"} a day`}
                         title="PM call rate"
                       />
@@ -3951,7 +3980,9 @@ export function KpisBoardView({
 
               <div className="border-t border-slate-100">
                 <div className="divide-y divide-slate-100 md:hidden">
-                  {board.reps.map((row, index) => {
+                  {cardSlots(coverageTeams, board.reps).map(({ heading, index, row }) => {
+                    if (heading) return <KpiTeamHeadingBand entry={heading} key={`team-${heading.team.key}`} />;
+                    if (!row) return null;
                     const doctorsTab = tab === "coverage" || tab === "frequency";
                     const coverageKey = doctorsTab ? row.coverageRepKey : null;
                     const detail =
@@ -3985,6 +4016,7 @@ export function KpisBoardView({
                             notValidated={doctorsTab ? notValidatedLink(context, row, "mobile") : undefined}
                             pmTarget={board.pmTarget}
                             rank={context.showRank ? index + 1 : undefined}
+                            report={tab}
                             row={row}
                             rules={board.kpiRules}
                           />
@@ -4011,7 +4043,7 @@ export function KpisBoardView({
                       <CallRateTable context={context} rows={board.reps} />
                     )
                   ) : null}
-                  {tab === "coverage" ? <CoverageTable context={context} rows={board.reps} /> : null}
+                  {tab === "coverage" ? <CoverageTable context={context} rows={board.reps} teams={coverageTeams} /> : null}
                   {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} /> : null}
                 </div>
               </div>

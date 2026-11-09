@@ -548,6 +548,8 @@ import {
 } from "./kpis-coverage-doctor-lists.test.ts";
 import { runKpisBoardTablesFitTests } from "./kpis-board-tables-fit.test.ts";
 import { runKpisBoardWorkbookTests } from "./kpis-board-workbook.test.ts";
+import { runKpiCoveragePremiumTests } from "./kpi-coverage-premium.test.ts";
+import { runKpiCoverageRepDetailTests } from "./kpi-coverage-rep-detail.test.ts";
 import { runKpisReportsSplitTests } from "./kpis-reports-split.test.ts";
 import {
   runKpiDoctorFilterTests,
@@ -4306,6 +4308,8 @@ await runTest("KPIs coverage doctor lists (newest visit first; late doctors befo
 await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
 await runTest("KPIs board tables fit the screen (every column holds the width its head measured at the portal's 619px table at 1024px; Coverage's 12% columns had pushed Planned, Covered and Not reached past their cells, and Frequency had six columns for five cells)", runKpisBoardTablesFitTests);
 await runTest("KPIs board hire date and XLSX export (the join stamps each rep's hire date from the directory; the workbook writes it as a real date cell, keeps AM and PM as two columns, and prints the screen's marker words instead of a 0)", runKpisBoardWorkbookTests);
+await runTest("KPIs Coverage premium pass (every rep filed once under his region and manager with his board rank kept; each team's coverage is the board's own team arithmetic and the teams add up to the tile; the reps by band, the floor and a not-validated total that prints nothing on a failed read; the bricks at a glance never list a sentinel line; the Coverage export's Teams sheet and Region column; the KPIs kit stays flat)", runKpiCoveragePremiumTests);
+await runTest("KPIs Coverage rep detail (the tiles add up to the rep's row; the floor never rounds in his favour; see-these-first hands over exactly the doctors the floor needs, late grade A first; every late doctor in one age bucket and an unreadable date counts as oldest; each grade and speciality link opens exactly the doctors its row counted; each doctor counted once by the week first planned; the Coverage row leaves other reports' flags to them while the flag filter still finds them; the panel stays flat, square and fixed-layout)", runKpiCoverageRepDetailTests);
 await runTest("the portal KPIs split: a summary page and a Frequency, Coverage and Call Rate report each (the tabs partition with none lost or on both, view and rep ride only where they mean something, a retired ?tab= forwards, every report keeps the KPIs gates, the sidebar heading and its catalog and registry rows agree, and the call rate is never averaged)", runKpisReportsSplitTests);
 await runTest("KPI report filters: a range on any column never swallows an absence and reads the figure as printed", runKpiRangeFilterTests);
 await runTest("KPI report filters: every filter rides the URL, the brick filter pipe-joined, doctor filters only where a doctor list prints, an unreadable value is dropped", runKpiReportFilterUrlTests);
