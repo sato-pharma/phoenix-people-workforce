@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The passcode on a live report share link (Direct Orders and Marketing Requests).
@@ -20,6 +20,17 @@ function scryptHash(passcode: string, token: string, salt: Buffer): Buffer {
   return scryptSync(`${token}:${passcode.trim()}`, salt, SCRYPT_KEY_LENGTH);
 }
 
+/**
+ * The same hash, off the main thread. The link route is PUBLIC, so a guess must never hold the event
+ * loop for the length of an scrypt run — a modest stream of guesses would stall every other request.
+ * Only a new link's one-off hash (`hashPasscode`) stays synchronous.
+ */
+function scryptHashAsync(passcode: string, token: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(`${token}:${passcode.trim()}`, salt, SCRYPT_KEY_LENGTH, (error, key) => (error ? reject(error) : resolve(key)));
+  });
+}
+
 function legacyHash(passcode: string, token: string): Buffer {
   return createHash("sha256").update(`${token}:${passcode.trim()}`).digest();
 }
@@ -31,7 +42,7 @@ export function hashPasscode(passcode: string, token: string): string {
 }
 
 /** Whether a typed passcode matches the stored hash — either format, compared in constant time. */
-export function passcodeMatches(input: string, token: string, expected: string | null): boolean {
+export async function passcodeMatches(input: string, token: string, expected: string | null): Promise<boolean> {
   if (!expected) return true;
   let candidate: Buffer;
   let known: Buffer;
@@ -39,7 +50,7 @@ export function passcodeMatches(input: string, token: string, expected: string |
     const [salt, hash] = expected.slice(SCRYPT_PREFIX.length).split("$");
     if (!salt || !hash) return false;
     known = Buffer.from(hash, "hex");
-    candidate = scryptHash(input, token, Buffer.from(salt, "base64url"));
+    candidate = await scryptHashAsync(input, token, Buffer.from(salt, "base64url"));
   } else {
     known = Buffer.from(expected, "hex");
     candidate = legacyHash(input, token);

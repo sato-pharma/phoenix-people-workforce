@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { isBlockedImageHost, isNonDeliverableEmail, pickDeliverableEmail } from "@/lib/email/email-safety.ts";
+import { isBlockedImageHost, isNonDeliverableEmail, pickDeliverableEmail, resolvesToBlockedAddress } from "@/lib/email/email-safety.ts";
 import { guardAttachments, parseRetryAfter, sendPhoenixEmail } from "@/lib/email/send-phoenix-email.ts";
 import { isDuplicateKeyError, suppressionReasonForEvent } from "@/lib/email/resend-webhook-events.ts";
 import { createUnsubscribeToken, verifyUnsubscribeToken } from "@/lib/email/unsubscribe-token.ts";
@@ -72,6 +72,37 @@ export async function runEmailSendHardeningTests() {
   ]) {
     assert.equal(isBlockedImageHost(new URL(url).hostname), false, `${url} must be allowed`);
   }
+  // Ranges the old text patterns missed: 0.0.0.0/8, CGNAT 100.64/10, all of fe80::/10, and every IPv6
+  // spelling of an IPv4 host (compatible, SIIT, NAT64). The ranges end exactly at their edges.
+  for (const url of [
+    "https://0.1.2.3/signature.png",
+    "https://100.64.0.1/signature.png",
+    "https://100.127.255.255/signature.png",
+    "https://[fe80::1]/signature.png",
+    "https://[febf::1]/signature.png",
+    "https://[::7f00:1]/signature.png",
+    "https://[::ffff:0:7f00:1]/signature.png",
+    "https://[64:ff9b::7f00:1]/signature.png",
+    "https://[fd12:3456::1]/signature.png",
+  ]) {
+    assert.equal(isBlockedImageHost(new URL(url).hostname), true, `${url} must be blocked`);
+  }
+  for (const url of [
+    "https://100.63.255.255/signature.png",
+    "https://100.128.0.1/signature.png",
+    "https://[fec0::1]/signature.png",
+    "https://[::808:808]/signature.png",
+    "https://[64:ff9b::808:808]/signature.png",
+    // A NAME is never matched against an address pattern: these are ordinary public hosts.
+    "https://10.example.com/signature.png",
+    "https://127.cdn.example.net/signature.png",
+  ]) {
+    assert.equal(isBlockedImageHost(new URL(url).hostname), false, `${url} must be allowed`);
+  }
+  // A name is judged by what it resolves to: "localhost" answers loopback, and a literal address is
+  // left to isBlockedImageHost.
+  assert.equal(await resolvesToBlockedAddress("localhost"), true, "a name that resolves to loopback is refused");
+  assert.equal(await resolvesToBlockedAddress("8.8.8.8"), false, "a literal address is not looked up");
 
   // --- Non-deliverable / synthetic recipient guard ---------------------------------
   // The Supabase-auth identity address is a login key, never a mailbox: it must be rejected

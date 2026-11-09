@@ -128,6 +128,12 @@ export function runDirectOrdersShareLinkControlsTests() {
       /scryptSync\(`\$\{token\}:\$\{passcode\.trim\(\)\}`, salt, SCRYPT_KEY_LENGTH\)/,
       "a new passcode is a slow scrypt hash, still salted with the token so two links sharing a passcode do not share a hash",
     );
+    // The check runs on a PUBLIC route: a guess must never hold the event loop for a whole scrypt run.
+    assert.match(
+      passcodeHash,
+      /export async function passcodeMatches[\s\S]*await scryptHashAsync\(/,
+      "the passcode check awaits an async scrypt, never scryptSync, so a stream of guesses cannot stall the server",
+    );
   }
 
   // ── D5c: mandatory expiry, defaulted and capped ────────────────────────────

@@ -128,6 +128,47 @@ export function capSourceText(text: string): { text: string; truncated: boolean 
 }
 
 /**
+ * Every `<script|style|head|template|noscript …>…</same tag>` block, contents included, taken out in
+ * ONE pass. The regex this replaces — `<(tag)\b[^>]*>[\s\S]*?<\/\1\s*>` — re-read to the end of the
+ * text for every opener that never closes, so thousands of unclosed `<script` were quadratic (the
+ * class `dropBlocks` in admin-telegram-mirror.ts fixed). Here a tag with no closer left is never
+ * searched for again, and no `>` left anywhere ends the scan. Same result as the regex.
+ */
+function dropUnsafeBlocks(html: string): string {
+  const open = /<(script|style|head|template|noscript)\b/gi;
+  const closers = new Map<string, RegExp>();
+  const noCloserLeft = new Set<string>();
+  let kept = "";
+  let copiedTo = 0;
+  let next = 0;
+  for (;;) {
+    open.lastIndex = next;
+    const start = open.exec(html);
+    if (!start) break;
+    next = start.index + 1;
+    const tag = start[1].toLowerCase();
+    const tagEnd = html.indexOf(">", start.index + start[0].length);
+    if (tagEnd < 0) break;
+    if (noCloserLeft.has(tag)) continue;
+    let closer = closers.get(tag);
+    if (!closer) {
+      closer = new RegExp(`</${tag}\\s*>`, "gi");
+      closers.set(tag, closer);
+    }
+    closer.lastIndex = tagEnd + 1;
+    const end = closer.exec(html);
+    if (!end) {
+      noCloserLeft.add(tag);
+      continue;
+    }
+    kept += html.slice(copiedTo, start.index);
+    copiedTo = end.index + end[0].length;
+    next = copiedTo;
+  }
+  return kept + html.slice(copiedTo);
+}
+
+/**
  * The inside of an uploaded HTML file, ready to go into the editor UNCHANGED.
  *
  * 🔴 NOTHING HERE REWRITES, TRANSLATES, SUMMARISES OR RE-ORDERS — that is the entire point of this
@@ -150,10 +191,9 @@ export function htmlDocumentBody(raw: string): string {
   // A real file is finished in the first pass, so the second only confirms it.
   for (let previous = ""; previous !== whole; ) {
     previous = whole;
-    whole = whole
-      // A mail client runs neither, and Outlook prints an unrecognised <style> block as text. They
-      // go with their contents: stripping the tags alone would leave the stylesheet as a paragraph.
-      .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    // A mail client runs neither, and Outlook prints an unrecognised <style> block as text. They
+    // go with their contents: stripping the tags alone would leave the stylesheet as a paragraph.
+    whole = dropUnsafeBlocks(whole)
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<!doctype[^>]*>/gi, "");
   }

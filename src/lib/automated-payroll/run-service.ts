@@ -748,18 +748,18 @@ function heldReleaseDueOn(draft: DraftRow): number {
 /** Part 1's Held Salary Release and Defer Pay: their bank files pay what Part 1 confirm froze. */
 const PART1_ONLY_STEP_KEYS: ReadonlySet<StepKey> = new Set<StepKey>(["p1_held_release", "p1_pay_deferral"]);
 
-/**
- * What the Held Salary Release step needs beyond the population: every outstanding held balance from
- * earlier published months, the employee records to pay them to, and the "Part 1 Not Paid" HR has
- * entered against the previous published month. Defer Pay needs the carry-forward debts, so its Part 2
- * column is the same figure the sheet pays. Loaded only for those steps, so no other step pays for the read.
- */
 /** The previous published month's confirmed Part 1 per person; empty when there is no such month. */
 async function lastMonthPart1For(period: PayrollPeriod): Promise<Map<string, number>> {
   const previous = await previousPublishedRun(period);
   return previous ? frozenPart1ForRun(previous.id) : new Map();
 }
 
+/**
+ * What the Held Salary Release step needs beyond the population: every outstanding held balance from
+ * earlier published months, the employee records to pay them to, and the "Part 1 Not Paid" HR has
+ * entered against the previous published month. Defer Pay needs the carry-forward debts, so its Part 2
+ * column is the same figure the sheet pays. Loaded only for those steps, so no other step pays for the read.
+ */
 async function heldReleaseInputs(
   stepKey: StepKey,
   runId: string,
@@ -775,11 +775,14 @@ async function heldReleaseInputs(
   if (stepKey === "p2_pay_deferral") return { carryForwardByCompact: await outstandingCarryForwardFor(runId) };
   if (stepKey !== "p2_held_release" && stepKey !== "p1_held_release") return {};
   const previous = await previousPublishedRun(period);
+  // One read of what HR entered serves both the balances and the added-in-run figure, so the two can
+  // never disagree inside one recommendation.
+  const entered = await loadEnteredHeld();
   return {
-    heldBalances: await outstandingHeldByEmployee(runId),
+    heldBalances: await outstandingHeldByEmployee(runId, entered),
     directory,
     part1Corrections: previous ? await part1CorrectionsForRun(previous.id) : new Map(),
-    addedInRun: enteredHeldAddedInRun(await loadEnteredHeld(), runId),
+    addedInRun: enteredHeldAddedInRun(entered, runId),
   };
 }
 
