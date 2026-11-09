@@ -176,7 +176,7 @@ export function WeeklyBranchMappingManager({
 
   // One definition per control, used by BOTH the desktop row and the mobile card, so the phone
   // can never drift into a read-only copy of an editable table.
-  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const cardLabel = "mb-1 block text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint";
   const controlClass = "h-8 w-full px-2";
   const regionSelect = (row: WeeklyBranchRegionRow) => (
     <SearchableSelect
@@ -541,7 +541,7 @@ function SplitDetail({ split }: { split: WeeklyBranchSplitPreview }) {
       {split.arithmetic.map((entry) => (
         <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
           {showsLineLabels && (
-            <span className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+            <span className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">
               {entry.lines.join(" + ")}
             </span>
           )}
@@ -562,7 +562,7 @@ function SplitDetail({ split }: { split: WeeklyBranchSplitPreview }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

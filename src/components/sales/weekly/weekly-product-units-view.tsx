@@ -117,7 +117,7 @@ function RegionSwatch({ regionCode }: { regionCode: string | null }) {
 }
 
 const headClassName =
-  "break-words px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+  "break-words px-3 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
 
 /** The row's own heading in the frozen left column. A subtotal says what it totals. */
@@ -233,7 +233,7 @@ export function WeeklyProductUnitsView({
             {[3, 6].map((count) => (
               <button
                 className={
-                  "px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide transition " +
+                  "px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition " +
                   (monthsBack === count
                     ? "bg-slate-900 text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200")
@@ -248,7 +248,7 @@ export function WeeklyProductUnitsView({
           </div>
         </div>
 
-        <ul className="mt-3 space-y-1.5 text-phx-2xs font-semibold text-slate-500">
+        <ul className="mt-3 space-y-1.5 text-phx-sm font-semibold text-slate-500">
           <li className="flex items-start gap-2">
             <Layers className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
             <span className="break-words">
@@ -331,7 +331,7 @@ export function WeeklyProductUnitsView({
       {matrix && matrix.columns.length > 0 ? (
         <div className="relative border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
           {loading ? (
-            <div className="absolute right-3 top-3 z-30 flex items-center gap-2 bg-white/90 px-2 py-1 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+            <div className="absolute right-3 top-3 z-30 flex items-center gap-2 bg-white/90 px-2 py-1 text-phx-sm font-black uppercase tracking-wide text-slate-500">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
               Updating
             </div>

@@ -344,12 +344,12 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
         <div className="flex min-w-0 items-center gap-3">
           <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
             <p className="break-words text-sm font-black text-slate-900">{scope.summary}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-slate-600">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide text-slate-600">
             <Clock className="h-3 w-3" />
             Stock as of {formatDate(view.asOfWeekStart)}
           </span>
@@ -357,13 +357,13 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 md:min-h-0"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 md:min-h-0"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
             Sync now
           </button>
           {loading ? (
-            <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
+            <span className="flex items-center gap-1.5 text-phx-sm font-bold uppercase tracking-wide text-orange-600">
               <span className="h-1.5 w-1.5 animate-pulse bg-orange-500" />
               Updating
             </span>
@@ -397,7 +397,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
               aria-expanded={filtersOpen}
-              className="inline-flex min-h-10 items-center gap-1.5 border border-slate-600 bg-white/10 px-2.5 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:hidden"
+              className="inline-flex min-h-10 items-center gap-1.5 border border-slate-600 bg-white/10 px-2.5 text-phx-sm font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:hidden"
             >
               <SlidersHorizontal className="h-3 w-3" />
               {`Filters · ${activeFilterCount}`}
@@ -407,20 +407,20 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:min-h-0"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:min-h-0"
               >
                 <RotateCcw className="h-3 w-3" />
                 Reset {activeFilterCount}
               </button>
             ) : (
-              <span className="hidden text-phx-2xs font-bold uppercase tracking-widest text-slate-400 md:inline">No filters applied</span>
+              <span className="hidden text-phx-sm font-bold uppercase tracking-widest text-slate-400 md:inline">No filters applied</span>
             )}
           </div>
         }
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <label className="flex min-w-0 flex-col gap-1.5 rounded-sm border border-slate-200 bg-white px-3 py-2">
-            <span className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               <CalendarRange className="h-3 w-3" />
               Stock as of
             </span>
@@ -536,7 +536,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                       key={item.key}
                       type="button"
                       onClick={() => setTab(item.key)}
-                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition md:min-h-0 ${
+                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide transition md:min-h-0 ${
                         activeTab === item.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
                       }`}
                     >
@@ -546,7 +546,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                 </div>
                 <a
                   href={exportHref}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600 md:h-7"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-sm font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600 md:h-7"
                 >
                   <Download className="h-3 w-3" />
                   Export
@@ -602,7 +602,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                 <button
                   type="button"
                   onClick={showMore}
-                  className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 md:min-h-0"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 md:min-h-0"
                 >
                   Show {formatUnits(Math.min(PAGE_SIZE, rowCount - limit))} more
                 </button>
@@ -646,7 +646,7 @@ function Panel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
+          <h2 className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
         </div>
         {action}
       </div>
@@ -679,9 +679,9 @@ function Kpi({
         <span className="flex h-7 w-7 items-center justify-center rounded-sm" style={{ backgroundColor: `${accent}1A`, color: accent }}>
           <Icon className="h-3.5 w-3.5" />
         </span>
-        <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+        <p className="mt-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
         <p className="mt-0.5 text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
-        <p className="mt-0.5 text-phx-2xs font-semibold text-slate-400">{sub}</p>
+        <p className="mt-0.5 text-phx-sm font-semibold text-slate-400">{sub}</p>
       </div>
     </>
   );
@@ -698,7 +698,7 @@ function Kpi({
 
 function StatusBadge({ status }: { status: WeeklyStockStatus }) {
   return (
-    <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${STATUS_BADGE[status]}`}>
+    <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide ${STATUS_BADGE[status]}`}>
       {WEEKLY_STOCK_STATUS_LABELS[status]}
     </span>
   );
@@ -707,7 +707,7 @@ function StatusBadge({ status }: { status: WeeklyStockStatus }) {
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="break-words text-phx-2xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="break-words text-phx-sm font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
@@ -734,7 +734,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
             <col className="w-[16%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-sm uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>Branch</th>
               <th className={TH}>Product</th>
               <th className={TH_NUM}>Stock units</th>
@@ -747,22 +747,22 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
               <tr key={`${cell.branchKey}|${cell.productCode}`} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.branchName}</p>
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">
                     {cellPlace(cell)}
                   </p>
                 </td>
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.productName}</p>
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">{cell.line}</p>
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">{cell.line}</p>
                   <div className="mt-1.5">
                     <StatusBadge status={cell.status} />
                   </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(cell.stockUnits)}</td>
-                <td className={TD_NUM}>{cell.priceMissing ? <span className="text-phx-2xs font-bold text-slate-400">No price</span> : formatEgpFull(cell.stockValue)}</td>
+                <td className={TD_NUM}>{cell.priceMissing ? <span className="text-phx-sm font-bold text-slate-400">No price</span> : formatEgpFull(cell.stockValue)}</td>
                 <td className={TD_NUM}>
                   <p>{formatAvgUnits(cell.avgWeeklyUnits)}</p>
-                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(cell.coverWeeks)}</p>
+                  <p className="mt-0.5 text-phx-sm font-semibold text-slate-500">{formatCoverLine(cell.coverWeeks)}</p>
                 </td>
               </tr>
             ))}
@@ -778,7 +778,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
                 <div className="min-w-0">
                   <p className="break-words text-sm font-black text-slate-900">{cell.productName}</p>
                   <p className="break-words text-phx-xs font-bold text-slate-700">{cell.branchName}</p>
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">
                     {cellPlace(cell)}
                   </p>
                 </div>
@@ -821,7 +821,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
             <col className="w-[22%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-sm uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>Product</th>
               <th className={TH_NUM}>Stock units</th>
               <th className={TH_NUM}>Stock value</th>
@@ -834,7 +834,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
               <tr key={row.productCode} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
                   <DrillName name={row.productName} onClick={() => onDrill(row.productCode)} />
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.line}</p>
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">{row.line}</p>
                   <div className="mt-1.5">
                     <StatusBadge status={row.status} />
                   </div>
@@ -843,7 +843,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
                 <td className={TD_NUM}>{formatEgpFull(row.stockValue)}</td>
                 <td className={TD_NUM}>
                   <p>{formatAvgUnits(row.avgWeeklyUnits)}</p>
-                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
+                  <p className="mt-0.5 text-phx-sm font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
                 </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.depotCount)}</p>
@@ -864,7 +864,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <DrillName name={row.productName} onClick={() => onDrill(row.productCode)} />
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">
                     {row.line} · {row.depotCount} branches · {row.outDepots} out · {row.lowDepots} low · {row.overDepots} over
                   </p>
                 </div>
@@ -943,7 +943,7 @@ function GroupTable({
             <col className="w-[20%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-sm uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>{nameLabel}</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg weekly sales</th>
@@ -959,11 +959,11 @@ function GroupTable({
               <tr key={row.code} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
                   <DrillName name={groupName(nameLabel, row)} onClick={onDrill ? () => onDrill(row.code) : undefined} />
-                  {groupSubline(row) ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{groupSubline(row)}</p> : null}
+                  {groupSubline(row) ? <p className="break-words text-phx-sm font-semibold text-slate-500">{groupSubline(row)}</p> : null}
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     <StatusBadge status={row.status} />
                     {"stale" in row && row.stale ? (
-                      <span className="inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-800">
+                      <span className="inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide text-amber-800">
                         Old stock file
                       </span>
                     ) : null}
@@ -972,11 +972,11 @@ function GroupTable({
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatEgpFull(row.stockValue)}</td>
                 <td className={TD_NUM}>
                   <p>{formatEgpFull(row.avgWeeklyValue)}</p>
-                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
+                  <p className="mt-0.5 text-phx-sm font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
                 </td>
                 <td className={TD_NUM}>
                   <p className="font-black text-slate-900">{formatUnits(unitsOf(row.code).stockUnits)}</p>
-                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{`${formatAvgUnits(unitsOf(row.code).avgWeeklyUnits)} / wk`}</p>
+                  <p className="mt-0.5 text-phx-sm font-semibold text-slate-500">{`${formatAvgUnits(unitsOf(row.code).avgWeeklyUnits)} / wk`}</p>
                 </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.productCount)}</p>
@@ -997,11 +997,11 @@ function GroupTable({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <DrillName name={groupName(nameLabel, row)} onClick={onDrill ? () => onDrill(row.code) : undefined} />
-                  <p className="break-words text-phx-2xs font-semibold text-slate-500">
+                  <p className="break-words text-phx-sm font-semibold text-slate-500">
                     {joinParts([groupSubline(row), `${row.productCount} products`, `${row.outOfStockCount} out`, `${row.lowCount} low`, `${row.overCount} over`])}
                   </p>
                   {"stale" in row && row.stale ? (
-                    <span className="mt-1 inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-800">
+                    <span className="mt-1 inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide text-amber-800">
                       Old stock file
                     </span>
                   ) : null}

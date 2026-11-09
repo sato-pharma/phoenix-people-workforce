@@ -150,7 +150,7 @@ function RegionDot({ regionCode }: { regionCode: string }) {
 // MatrixScroller — moved to src/components/ui so the weekly per-product units grid
 // shares the same single permission rather than opening a fourth one.
 const headClassName =
-  "break-words px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+  "break-words px-3 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "break-words px-3 py-2 text-sm text-slate-700";
 
 /**
@@ -678,7 +678,7 @@ export function ClosingPerformanceReviewWorkspace({
           rank of "3rd" always counts the rows the reader can actually see. */}
       <div className="flex flex-col gap-3 rounded-[28px] border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
+          <span className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
           <span className="text-xs font-semibold text-slate-500">
             {filterIsActive
               ? "Showing " + review.areas.length + " " + (review.areas.length === 1 ? "area" : "areas") +
@@ -711,7 +711,7 @@ export function ClosingPerformanceReviewWorkspace({
                 admin always holds three, so this is unchanged there. */}
             {review.availableLines.length > 1 ? (
               <label className="flex flex-col gap-1 sm:w-44">
-                <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+                <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
                 <SearchableSelect
                   className={selectClassName}
                   disabled={isLoading}
@@ -725,7 +725,7 @@ export function ClosingPerformanceReviewWorkspace({
               </label>
             ) : null}
             <label className="flex flex-col gap-1">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">
                 {isMultiPeriod ? "Months" : "Month"}
               </span>
               <ClosingPeriodSelect

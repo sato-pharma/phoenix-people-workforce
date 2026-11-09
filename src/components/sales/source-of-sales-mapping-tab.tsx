@@ -887,9 +887,9 @@ function UnknownTable({
         value={codes[row.raw] ?? ""}
       />
       {codes[row.raw] ? (
-        <span className="shrink-0 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black text-phx-ok">✓</span>
+        <span className="shrink-0 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-sm font-black text-phx-ok">✓</span>
       ) : (
-        <span className="shrink-0 rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black text-phx-danger">○</span>
+        <span className="shrink-0 rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-sm font-black text-phx-danger">○</span>
       )}
     </div>
   );
@@ -955,7 +955,7 @@ const fieldInputClass = phxFieldClassName;
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

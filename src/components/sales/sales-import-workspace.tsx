@@ -146,7 +146,7 @@ function Metric({
   };
   return (
     <Card className={cn(panelClassName, "min-h-[104px] p-4", tones[tone])}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 break-words text-2xl font-black tracking-tight">{value}</p>
     </Card>
   );
@@ -468,7 +468,7 @@ function SummaryTable({
           and the scroll wrapper around it WAS the sideways scroll. */}
       <div className="border border-phx-line md:hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
-          <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
+          <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
           <SearchableSelect
             className="h-8 px-2 text-xs"
             onChange={(event) => table.toggleSort(event.target.value)}
@@ -500,7 +500,7 @@ function SummaryTable({
               <div className="px-3 py-3" key={`card:${entry.display.join(":")}:${entry.index}`}>
                 {entry.display.map((cell, cellIndex) => (
                   <div className="flex gap-2 py-0.5" key={`${cell}:${cellIndex}`}>
-                    <span className="w-20 shrink-0 pt-0.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
+                    <span className="w-20 shrink-0 pt-0.5 text-phx-sm font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
                       {columns[cellIndex]}
                     </span>
                     <span
@@ -1577,7 +1577,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               <div className="border-b border-phx-line bg-phx-paper px-6 py-4">
                 <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
                   <UploadCloud className="h-3 w-3 text-orange-600" />
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
+                  <span className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
                 </div>
                 <p className="mt-1 text-xs text-phx-ink-soft">Pick the distributor, attach its raw export, validate, then confirm — three steps, no surprises.</p>
               </div>
