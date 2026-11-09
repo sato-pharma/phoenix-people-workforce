@@ -53,6 +53,8 @@ export const GITHUB_WORKFLOW_WATCHES: readonly GithubWorkflowWatch[] = [
   { file: "secret-drift-check.yml", label: "Secret drift check", maxAgeHours: 36 },
   { file: "security-scan.yml", label: "Security scan", maxAgeHours: 36 },
   { file: "staging-hr-drift-check.yml", label: "Staging HR drift check", maxAgeHours: 36 },
+  // Weekly, Sunday 23:30 Cairo (owner, 2026-11-09): a week plus the daily checks' 36-hour allowance.
+  { file: "codeql-weekly.yml", label: "CodeQL weekly scan", maxAgeHours: 7 * 24 + 36 },
 ];
 
 export type GithubWorkflowRead =
