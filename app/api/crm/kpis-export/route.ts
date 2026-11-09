@@ -61,7 +61,10 @@ export async function GET(request: NextRequest) {
       coverageDoctors: doctorsTab ? { rep: searchParams.get("rep") || null } : null,
     });
 
-    const buffer = await buildKpisBoardWorkbook(board, new Date().toISOString(), { doctorLists: doctorsTab });
+    const buffer = await buildKpisBoardWorkbook(board, new Date().toISOString(), {
+      doctorLists: doctorsTab,
+      report: tab === "frequency" ? "frequency" : tab === "coverage" ? "coverage" : undefined,
+    });
 
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
