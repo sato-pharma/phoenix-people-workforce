@@ -311,9 +311,17 @@ function checkFlags() {
   assert.ok(coverage.includes("never-reached"), "a coverage flag stays on the Coverage row");
   assert.ok(coverage.includes("below-coverage-floor"), "the floor flag is the Coverage report's own");
   assert.deepEqual(kpiFlagsShownOn(row, "summary"), all, "the Summary shows every flag");
-  assert.deepEqual(kpiFlagsShownOn(row, "frequency"), all, "the Frequency report keeps its own flags");
+  const frequency = kpiFlagsShownOn(row, "frequency");
+  assert.ok(frequency.includes("under-visiting") && frequency.includes("over-visiting"), "the Frequency report keeps its own flags");
+  assert.ok(!frequency.includes("campaign-heavy") && !frequency.includes("campaign-only-days"), "and leaves the campaign flags to the Call Rate report");
+  assert.ok(!frequency.includes("below-am-target") && !frequency.includes("below-pm-target"), "and the AM and PM flags");
+  assert.ok(!frequency.includes("below-coverage-floor"), "and the coverage floor to the Coverage report");
   assert.deepEqual(kpiFlagsShownOn(row), all, "no report named, nothing left out");
-  assert.deepEqual(Object.keys(KPI_FLAGS_OFF_REPORT), ["coverage"], "only the Coverage report leaves flags out — a new entry is a decision, not a tidy-up");
+  assert.deepEqual(
+    Object.keys(KPI_FLAGS_OFF_REPORT),
+    ["coverage", "frequency"],
+    "the Coverage and Frequency reports leave flags out (their premium passes) — a new entry is a decision, not a tidy-up",
+  );
 
   // The flag FILTER is untouched: it still matches through kpiFlagsOf, so a manager asking for under-visiting reps on any tab gets them.
   const filters = stripComments(read("src/lib/crm/kpis-filters.ts"));

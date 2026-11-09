@@ -306,6 +306,10 @@ export const KPI_FLAGS_OFF_REPORT: Readonly<Record<string, readonly KpiFlag[]>> 
     "below-am-target",
     "below-pm-target",
   ],
+  // The Frequency report's table prints exact, below, above and frequency (the Frequency premium pass, 9 Nov
+  // 2026): nothing about campaign calls, AM and PM, or the coverage floor, so those flags stay on their own
+  // reports and on the Summary. "Never reached" stays — a doctor nobody has seen is a frequency of nothing.
+  frequency: ["campaign-heavy", "campaign-only-days", "below-am-target", "below-pm-target", "below-coverage-floor"],
 };
 
 /** The flags a row shows on `report`: every flag true of it, less the ones that report leaves to others. */
