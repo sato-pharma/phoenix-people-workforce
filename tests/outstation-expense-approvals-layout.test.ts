@@ -132,7 +132,8 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.doesNotMatch(table, /<AdminTableShell\b/, "HEADLINE: the trips' table has no three-row section header");
   assert.match(
     table,
-    /data-table-heading>\s*<h2 [^>]*title=\{REVIEW_TAB_DESCRIPTIONS\[tab\]\}>[\s\S]*?<\/h2>\s*\{!loading && !loadError && rows\.length > 0 \? bulkBar : null\}\s*<\/div>/,
+    // Owner, 2026-11-09: "Expand all / Collapse all" joins that same line, between the title and the ticks.
+    /data-table-heading>\s*<h2 [^>]*title=\{REVIEW_TAB_DESCRIPTIONS\[tab\]\}>[\s\S]*?<\/h2>\s*(?:\{!loading && !loadError && rows\.length > 0 \? \(\s*<button[^>]*data-expand-all[\s\S]*?<\/button>\s*\) : null\}\s*)?\{!loading && !loadError && rows\.length > 0 \? bulkBar : null\}\s*<\/div>/,
     "HEADLINE: the tab's title and the tick-and-approve controls share ONE heading line; the tab's sentence is the title's hover",
   );
   assert.doesNotMatch(bulk, /border-b border-slate-200 bg-slate-50 px-4 py-3/, "HEADLINE: the bulk controls are never a band of their own");
