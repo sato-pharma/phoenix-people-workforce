@@ -3,7 +3,7 @@ import { addDaysIso } from "@/lib/crm/dates";
 import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -24,7 +24,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * to 02:00 Cairo) and yesterday is the day before it.
  *
  * 🔴 A TEST ACCOUNT READS THE REAL TEAM AND ITS OWN TEST WORK BESIDE IT, the way every report does for one
- * (`docs/test-accounts.md`, "Reports"). Read in the test world alone, the TEST- login that mirrors the Regional
+ * (`regionalReportWorlds`). Read in the test world alone, the TEST- login that mirrors the Regional
  * Sales Manager showed every rep at zero (owner, 2026-11-09).
  */
 
@@ -147,11 +147,6 @@ export function districtSeatOf(viewer: Pick<PhoenixCrmViewer, "org">, seat: OrgS
   return null;
 }
 
-/** The worlds this viewer's report reads: a real viewer the real one, a test account the real one and its own. */
-export function teamVisitWorlds(isTestPersona: boolean): boolean[] {
-  return isTestPersona ? [false, true] : [false];
-}
-
 async function readVisitRows(seatIds: string[], worlds: boolean[], from: string, to: string): Promise<VisitRow[]> {
   if (seatIds.length === 0) return [];
   return readSeatGroups(seatIds, 150, (part) =>
@@ -175,7 +170,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
   const today = viewer.visitDay;
   const yesterday = addDaysIso(today, -1);
   const seats = regionalTeamRepSeats(viewer);
-  const worlds = teamVisitWorlds(viewer.isTestPersona);
+  const worlds = regionalReportWorlds(viewer);
 
   const rows = await readVisitRows(
     seats.map((seat) => seat.seatId),

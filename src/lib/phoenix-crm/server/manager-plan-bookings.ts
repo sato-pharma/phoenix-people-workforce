@@ -11,7 +11,7 @@ import {
   type ManagerPlannerKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, type ManagerSlotRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
@@ -152,18 +152,44 @@ function halfText(slot: ManagerSlotRow, repName: string | null, names: PeopleNam
 }
 
 /** These district managers' plans for one week, the sent weeks' half-days, and each half's customers by name. */
-async function readDistrictWeeks(managerHrIds: ReadonlyArray<string>, weekStart: string, isTest: boolean) {
+async function readDistrictWeeks(managerHrIds: ReadonlyArray<string>, weekStart: string, worlds: ReadonlyArray<boolean>) {
   const weekEnd = addDaysIso(weekStart, 6);
   const plans = managerHrIds.length
-    ? (await loadManagerPlansInRange({ from: weekStart, isTest, managerHrIds, plannerKinds: ["dm"], to: weekEnd })).filter((plan) => plan.weekStart === weekStart)
+    ? (await Promise.all(worlds.map((isTest) => loadManagerPlansInRange({ from: weekStart, isTest, managerHrIds, plannerKinds: ["dm"], to: weekEnd }))))
+        .flat()
+        .filter((plan) => plan.weekStart === weekStart)
     : [];
   const sentPlans = plans.filter((plan) => isManagerPlanSent(plan.status));
   const slots = sentPlans.length ? await loadManagerSlotRows(sentPlans.map((plan) => plan.planId)) : [];
   const customers = slots.length ? await loadManagerSlotCustomers(slots.filter((slot) => slot.kind !== "admin").map((slot) => slot.slotId)) : [];
   const customersBySlot = new Map<string, string[]>();
   for (const row of customers) customersBySlot.set(row.slotId, [...(customersBySlot.get(row.slotId) ?? []), row.name]);
-  const planOf = (managerHrId: string | null) => (managerHrId ? (plans.find((row) => personKey(row.managerHrId) === personKey(managerHrId)) ?? null) : null);
+  // A test account reads both worlds, so a manager can have a real week and a test one: the sent real week first,
+  // then a sent test week, then whichever is left.
+  const planOf = (managerHrId: string | null) => {
+    if (!managerHrId) return null;
+    const mine = plans.filter((row) => personKey(row.managerHrId) === personKey(managerHrId));
+    return (
+      mine.find((row) => !row.isTest && isManagerPlanSent(row.status)) ??
+      mine.find((row) => isManagerPlanSent(row.status)) ??
+      mine.find((row) => !row.isTest) ??
+      mine[0] ??
+      null
+    );
+  };
   return { customersBySlot, planOf, slots };
+}
+
+/** One rep week per seat across the worlds read: the real week, unless it is "No plan" and a test week is there. */
+export function mergeRepWeeks<T extends { state: RepWeekState }>(maps: ReadonlyArray<Map<string, T>>): Map<string, T> {
+  const out = new Map<string, T>();
+  for (const map of maps) {
+    for (const [seatId, week] of map) {
+      const held = out.get(seatId);
+      if (!held || (held.state === "no_plan" && week.state !== "no_plan")) out.set(seatId, week);
+    }
+  }
+  return out;
 }
 
 function dayText(iso: string): string {
@@ -174,19 +200,16 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
   if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
   const weekStart = fieldWeekStart(anyDayOfWeek);
   const weekEnd = addDaysIso(weekStart, 6);
-  const isTest = viewer.isTestPersona;
+  // A test account reads the real team and its own test work beside it (regionalReportWorlds).
+  const worlds = regionalReportWorlds(viewer);
   const districts = regionalDistrictSeats(viewer);
   const managerHrIds = districts.flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []));
   const repSeats = regionalTeamRepSeats(viewer);
 
   const [{ customersBySlot, planOf, slots }, bookings, repWeeks, leave] = await Promise.all([
-    readDistrictWeeks(managerHrIds, weekStart, isTest),
-    loadRepDayBookings({ from: weekStart, isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }),
-    loadRepWeeks(
-      repSeats.map((seat) => seat.seatId),
-      weekStart,
-      isTest,
-    ),
+    readDistrictWeeks(managerHrIds, weekStart, worlds),
+    Promise.all(worlds.map((isTest) => loadRepDayBookings({ from: weekStart, isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }))).then((parts) => parts.flat()),
+    Promise.all(worlds.map((isTest) => loadRepWeeks(repSeats.map((seat) => seat.seatId), weekStart, isTest))).then(mergeRepWeeks),
     loadSeatLeaveDays(repSeats, { from: weekStart, to: weekEnd }),
   ]);
 
