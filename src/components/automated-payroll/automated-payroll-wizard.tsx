@@ -37,6 +37,7 @@ import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/ce
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
+import { HeldEnteredPanel } from "./held-entered-panel";
 import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
 import { SectionHeading } from "./section-shell";
@@ -120,6 +121,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   /** Whether the currently-open step has unsaved edits — gates the Sheets downloads
    * below, since a downloaded sheet reads saved draft rows only. */
   const [activeStepDirty, setActiveStepDirty] = useState(false);
+  // Bumped when a held amount is entered or removed above Held Salary Release, so the step reloads
+  // and the person shows there with the amount outstanding (it is part of the step's key).
+  const [heldEnteredVersion, setHeldEnteredVersion] = useState(0);
   /** Which installment's Non-Employees Payroll list is open, if any. */
   const [nonEmployeesOpen, setNonEmployeesOpen] = useState<NonEmployeePart | null>(null);
   const [nonEmployeeCount, setNonEmployeeCount] = useState<Record<NonEmployeePart, number>>({
@@ -1528,15 +1532,26 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 onChange={onNonEmployeeCount}
               />
             ) : activeStep ? (
-              <RecommendationStep
-                key={`${run.id}-${activeStep}`}
-                runId={run.id}
-                stepKey={activeStep}
-                confirmed={confirmedSet.has(activeStep)}
-                locked={stepLocked(activeStep)}
-                onConfirmed={() => void onStepConfirmed(activeStep)}
-                onDirtyChange={setActiveStepDirty}
-              />
+              <div className="flex flex-col gap-4">
+                {activeStep === "p1_held_release" || activeStep === "p2_held_release" ? (
+                  <HeldEnteredPanel
+                    key={`${run.id}-held-entered`}
+                    runId={run.id}
+                    locked={stepLocked(activeStep)}
+                    stepDirty={activeStepDirty}
+                    onChanged={() => setHeldEnteredVersion((version) => version + 1)}
+                  />
+                ) : null}
+                <RecommendationStep
+                  key={`${run.id}-${activeStep}-${heldEnteredVersion}`}
+                  runId={run.id}
+                  stepKey={activeStep}
+                  confirmed={confirmedSet.has(activeStep)}
+                  locked={stepLocked(activeStep)}
+                  onConfirmed={() => void onStepConfirmed(activeStep)}
+                  onDirtyChange={setActiveStepDirty}
+                />
+              </div>
             ) : (
               <div className="p-6 text-center text-sm text-slate-500">Select a step above to begin.</div>
             )}

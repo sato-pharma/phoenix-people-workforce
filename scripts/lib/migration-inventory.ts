@@ -2254,6 +2254,11 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // policy, grants for service_role only (none for anon or authenticated); production held 0 rows. Re-applying
   // is a no-op (`if not exists`, `drop policy if exists` then create, the same revoke and grant).
   "20261107202920_ats_mr_area_manager_notices.sql",
+  // Applied 9 Nov 2026 by scripts/apply-sql-file.mjs (production with the aws-1 pooler, then staging) while the
+  // Supabase MCP servers were disconnected from the session. One new table, no function. Read back on production
+  // through PostgREST with the service role: public.automated_payroll_held_entered answers a count of 0 rows.
+  // Re-applying is a no-op (`if not exists`, `drop policy if exists` then create, the same revoke and grant).
+  "20261109085429_automated_payroll_held_entered.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
+import { monthNameAndYear } from "./step-definitions.ts";
 
 /**
  * "This held salary was already transferred outside payroll."
@@ -277,6 +278,11 @@ export function heldBalancesForRun(input: {
   /** Payroll releases, keyed by held run and compact HR id (payrollReleasedByHeldMonth). */
   releasedByPayroll: Map<string, number>;
   corrections: readonly Part1Correction[];
+  /**
+   * Held amounts HR typed for a month published before the payroll kept each held person (July and
+   * August 2026). Counted ONLY when this run's `published` row has no held list; see below.
+   */
+  entered?: readonly EnteredHeld[];
 }): HeldBalance[] {
   type Acc = {
     hrId: string;
@@ -321,6 +327,19 @@ export function heldBalancesForRun(input: {
     acc.firstPartAlreadyPaid = roundCurrency(acc.firstPartAlreadyPaid + num(entry.firstPartAlreadyPaid));
     acc.recordedFirstWithheld = roundCurrency(acc.recordedFirstWithheld + num(entry.firstPartWithheld));
     acc.secondPartWithheld = roundCurrency(acc.secondPartWithheld + num(entry.secondPartWithheld));
+  }
+  // A run that kept only the COUNT of who it held (July and August 2026 were published before the held
+  // list existed) names nobody, so what HR typed on the Held Salary Release step stands in for it. A run
+  // that HAS a held list recorded each person itself, and an entry against it is ignored — so a typed
+  // figure can never double one the system recorded.
+  if (!Array.isArray(input.detail.held)) {
+    for (const entry of input.entered ?? []) {
+      if (entry.heldRunId !== input.runId) continue;
+      const acc = accFor(entry.hrId, entry.name);
+      if (!acc) continue;
+      acc.secondPartWithheld = roundCurrency(acc.secondPartWithheld + num(entry.amount));
+      if (!acc.reason && entry.note) acc.reason = entry.note;
+    }
   }
   for (const entry of list<PublishedPart1UnpaidEntry>(input.detail.part1Unpaid)) {
     const acc = accFor(entry.hrId, entry.name);
@@ -413,53 +432,20 @@ function num(value: unknown): number {
  * debt against themselves.
  */
 export async function loadHeldBalances(options?: { excludeRunId?: string }): Promise<HeldBalance[]> {
-  const admin = getSupabaseAdmin();
-
-  const { data: auditRows, error: auditError } = await admin
-    .from("automated_payroll_audit")
-    .select("run_id,detail,created_at")
-    .eq("action", "published")
-    .order("created_at", { ascending: false });
-  if (auditError) {
-    if (isMissingTableError(auditError)) return [];
-    throw auditError;
-  }
-
-  const runIds = Array.from(
-    new Set(((auditRows ?? []) as Row[]).map((row) => String(row.run_id ?? "")).filter(Boolean)),
-  );
-  if (runIds.length === 0) return [];
-
-  // Chunked: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error.
-  // Run counts are small today, and this is the shape that stays correct when they are not.
-  const runsById = new Map<string, { month: number; year: number }>();
-  for (let index = 0; index < runIds.length; index += 50) {
-    const chunk = runIds.slice(index, index + 50);
-    const { data, error } = await admin
-      .from("automated_payroll_runs")
-      .select("id,month,year")
-      .in("id", chunk);
-    if (error) throw error;
-    for (const row of (data ?? []) as Row[]) {
-      runsById.set(String(row.id), { month: Number(row.month ?? 0), year: Number(row.year ?? 0) });
-    }
-  }
+  const published = await newestPublishedDetailByRun();
+  if (!published || published.size === 0) return [];
+  const runIds = [...published.keys()];
+  const runsById = await runPeriodsById(runIds);
 
   const settlementsByRun = new Map<string, Map<string, HeldSettlement>>();
   for (const runId of runIds) settlementsByRun.set(runId, await getHeldSettlements(runId));
   const releasedByPayroll = payrollReleasedByHeldMonth(await loadPayrollReleases(), options?.excludeRunId);
   const corrections = await loadPart1Corrections();
+  const entered = await loadEnteredHeld();
 
   const balances: HeldBalance[] = [];
-  const seen = new Set<string>();
-  for (const row of (auditRows ?? []) as Row[]) {
-    const runId = String(row.run_id ?? "");
-    if (!runId || runId === options?.excludeRunId) continue;
-    // A run can legitimately have more than one `published` audit row (an interrupted publish that
-    // was retried). Newest first, so the first one seen is the one that stands.
-    if (seen.has(runId)) continue;
-    seen.add(runId);
-
+  for (const [runId, detail] of published) {
+    if (runId === options?.excludeRunId) continue;
     const period = runsById.get(runId);
     if (!period) continue;
     balances.push(
@@ -467,14 +453,59 @@ export async function loadHeldBalances(options?: { excludeRunId?: string }): Pro
         runId,
         month: period.month,
         year: period.year,
-        detail: (row.detail ?? {}) as PublishedHoldDetail,
+        detail,
         settlements: settlementsByRun.get(runId) ?? new Map<string, HeldSettlement>(),
         releasedByPayroll,
         corrections,
+        entered,
       }),
     );
   }
   return balances;
+}
+
+/**
+ * Each published run's NEWEST `published` audit detail, keyed by run id. Null when the audit table is
+ * missing in this environment. A run can legitimately have more than one `published` audit row (an
+ * interrupted publish that was retried); read newest first, so the first one seen is the one that stands.
+ */
+async function newestPublishedDetailByRun(): Promise<Map<string, PublishedHoldDetail> | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_audit")
+    .select("run_id,detail,created_at")
+    .eq("action", "published")
+    .order("created_at", { ascending: false });
+  if (error) {
+    if (isMissingTableError(error)) return null;
+    throw error;
+  }
+  const byRun = new Map<string, PublishedHoldDetail>();
+  for (const row of (data ?? []) as Row[]) {
+    const runId = String(row.run_id ?? "");
+    if (!runId || byRun.has(runId)) continue;
+    byRun.set(runId, (row.detail ?? {}) as PublishedHoldDetail);
+  }
+  return byRun;
+}
+
+/**
+ * Month and year of each run. Chunked: a PostgREST `.in()` carrying several hundred ids returns zero
+ * rows and no error. Run counts are small today, and this is the shape that stays correct when they are not.
+ */
+async function runPeriodsById(runIds: readonly string[]): Promise<Map<string, { month: number; year: number }>> {
+  const runsById = new Map<string, { month: number; year: number }>();
+  const ids = runIds.filter(Boolean);
+  for (let index = 0; index < ids.length; index += 50) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("automated_payroll_runs")
+      .select("id,month,year")
+      .in("id", ids.slice(index, index + 50));
+    if (error) throw error;
+    for (const row of (data ?? []) as Row[]) {
+      runsById.set(String(row.id), { month: Number(row.month ?? 0), year: Number(row.year ?? 0) });
+    }
+  }
+  return runsById;
 }
 
 /**
@@ -832,4 +863,266 @@ export async function recordHeldReleases(input: {
     });
   }
   return planned;
+}
+
+// ─── Held amounts HR enters for a month that did not record names ──────────────────────────────────
+
+/**
+ * The amount an EARLIER published month withheld from one person, typed by HR on the Held Salary
+ * Release step (owner decision, 2026-11-09: HR types the held amount on the step).
+ *
+ * July and August 2026 were published before the payroll kept each held person's amounts: their
+ * `published` audit row carries the COUNT only ({batchId, heldExcluded, publishedCount}), so a person
+ * held in either month had no balance, never appeared on the step, and no release could be saved for
+ * them. One row per (held run, person). It counts ONLY for a run that kept the count alone
+ * (heldBalancesForRun), so it can never double a figure the system recorded.
+ */
+const ENTERED_TABLE = "automated_payroll_held_entered";
+const ENTERED_SELECT =
+  "held_run_id,employee_hr_id,employee_hr_id_compact,employee_name,amount,note,recorded_by,updated_at";
+
+export type EnteredHeld = {
+  heldRunId: string;
+  hrId: string;
+  compact: string;
+  name: string;
+  amount: number;
+  note: string;
+  recordedBy: string;
+  updatedAt: string;
+};
+
+export type EnteredHeldInput = { heldRunId: string; hrId: string; amount: number; note: string };
+
+/** A published month that kept only the count of who it held. */
+export type HeldMonthWithoutRoster = { runId: string; month: number; year: number; label: string };
+
+/** Someone the picker offers: every employee record, resigned included (a leaver is who gets held). */
+export type HeldEntryEmployee = { hrId: string; compact: string; name: string; status: string | null };
+
+/** One entered amount as the panel lists it: named, with its month and who recorded it. */
+export type EnteredHeldListed = EnteredHeld & { month: number; year: number; monthLabel: string; recordedByName: string };
+
+/** The panel's whole read: the months it can enter against, what was entered, and who can be picked. */
+export type EnteredHeldOverview = {
+  months: HeldMonthWithoutRoster[];
+  entries: EnteredHeldListed[];
+  employees: HeldEntryEmployee[];
+};
+
+function mapEnteredRow(row: Row): EnteredHeld {
+  return {
+    heldRunId: String(row.held_run_id ?? ""),
+    hrId: String(row.employee_hr_id ?? ""),
+    compact: String(row.employee_hr_id_compact ?? ""),
+    name: String(row.employee_name ?? ""),
+    amount: num(row.amount),
+    note: String(row.note ?? ""),
+    recordedBy: String(row.recorded_by ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+/**
+ * Every held amount HR has entered. A missing table reads as nothing entered — the same add-only
+ * tolerance as the settlements table, and the state every environment was in before it existed. Any
+ * other read failure throws.
+ */
+export async function loadEnteredHeld(): Promise<EnteredHeld[]> {
+  const { data, error } = await getSupabaseAdmin().from(ENTERED_TABLE).select(ENTERED_SELECT);
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as Row[]).map(mapEnteredRow).filter((entry) => entry.heldRunId && entry.compact);
+}
+
+/**
+ * Published runs EARLIER than the current run's month whose newest `published` audit row has no held
+ * list — the months a held amount can be entered against (on production: July and August 2026).
+ * Oldest first.
+ */
+export async function heldMonthsWithoutRoster(currentRunId: string): Promise<HeldMonthWithoutRoster[]> {
+  const current = (await runPeriodsById([currentRunId])).get(currentRunId);
+  if (!current) throw new Error("Not found: that payroll run.");
+  const published = await newestPublishedDetailByRun();
+  if (!published) return [];
+  const countOnly = [...published.entries()]
+    .filter(([runId, detail]) => runId !== currentRunId && !Array.isArray(detail.held))
+    .map(([runId]) => runId);
+  const periods = await runPeriodsById(countOnly);
+  const target = current.year * 12 + current.month;
+  return countOnly
+    .flatMap((runId) => {
+      const period = periods.get(runId);
+      if (!period || period.year * 12 + period.month >= target) return [];
+      return [{ runId, month: period.month, year: period.year, label: monthNameAndYear(period.month, period.year) }];
+    })
+    .sort((a, b) => a.year - b.year || a.month - b.month);
+}
+
+/** Every employee record, any status, named — for the picker and to check the person exists. */
+async function loadHeldEntryEmployees(): Promise<HeldEntryEmployee[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,full_name,employment_status")
+    .order("full_name", { ascending: true });
+  if (error) throw error;
+  const employees: HeldEntryEmployee[] = [];
+  for (const row of (data ?? []) as Row[]) {
+    const hrId = String(row.hr_id ?? "").trim();
+    const compact = compactHrKey(hrId);
+    const name = String(row.full_name ?? "").trim();
+    if (!compact || !name) continue;
+    employees.push({ hrId, compact, name, status: (row.employment_status as string | null) ?? null });
+  }
+  return employees;
+}
+
+/** What payroll runs that are not cancelled have released against one (held run, person). */
+async function releasedAgainst(heldRunId: string, compact: string): Promise<number> {
+  return roundCurrency(
+    (await loadPayrollReleases())
+      .filter((row) => row.heldRunId === heldRunId && row.compact === compact && row.payingRunPhase !== "cancelled")
+      .reduce((sum, row) => sum + row.amount, 0),
+  );
+}
+
+/** The panel's read, behind the same gate as the wizard: it names people and salary figures. */
+export async function getEnteredHeldOverview(access: AccessContext, currentRunId: string): Promise<EnteredHeldOverview> {
+  assertAutomatedPayrollHrActor(access);
+  const [months, entered, employees] = await Promise.all([
+    heldMonthsWithoutRoster(currentRunId),
+    loadEnteredHeld(),
+    loadHeldEntryEmployees(),
+  ]);
+  const nameByCompact = new Map(employees.map((employee) => [employee.compact, employee.name]));
+  const periods = await runPeriodsById([...new Set(entered.map((entry) => entry.heldRunId))]);
+  const entries = entered
+    .map((entry): EnteredHeldListed => {
+      const period = periods.get(entry.heldRunId) ?? { month: 0, year: 0 };
+      return {
+        ...entry,
+        name: nameByCompact.get(entry.compact) ?? entry.name,
+        month: period.month,
+        year: period.year,
+        monthLabel: period.month ? monthNameAndYear(period.month, period.year) : "",
+        recordedByName: nameByCompact.get(compactHrKey(entry.recordedBy)) ?? entry.recordedBy,
+      };
+    })
+    .sort((a, b) => a.year - b.year || a.month - b.month || a.name.localeCompare(b.name));
+  return { months, entries, employees };
+}
+
+/**
+ * Record (or correct) the amount an earlier month withheld from one person. Upsert on (held run,
+ * person), like the by-hand settlements: a correction updates the one row. Refused for a month that
+ * recorded each held person itself, for an amount below what payroll has already released of it, and
+ * for anyone with no employee record. Audited, because it creates money the company owes.
+ */
+export async function recordEnteredHeld(
+  access: AccessContext,
+  currentRunId: string,
+  input: EnteredHeldInput,
+): Promise<EnteredHeld> {
+  assertAutomatedPayrollHrActor(access);
+  const amount = roundCurrency(Number(input.amount));
+  if (!Number.isFinite(amount) || !(amount > 0)) {
+    throw new Error("Validation: the amount held must be a number above zero.");
+  }
+  const note = String(input.note ?? "").trim();
+  if (!note) throw new Error("Validation: a note is required — say where the held amount comes from.");
+  const compact = compactHrKey(input.hrId);
+  if (!compact) throw new Error("Validation: choose the employee.");
+
+  const months = await heldMonthsWithoutRoster(currentRunId);
+  const month = months.find((candidate) => candidate.runId === input.heldRunId);
+  if (!month) {
+    throw new Error(
+      "Validation: that month recorded each held person itself — use Part 1 Not Paid or the figure it recorded instead.",
+    );
+  }
+  const employee = (await loadHeldEntryEmployees()).find((candidate) => candidate.compact === compact);
+  if (!employee) throw new Error("Validation: there is no employee record for that person.");
+
+  const released = await releasedAgainst(month.runId, compact);
+  if (amount < released) {
+    throw new Error(
+      `Validation: payroll has already released ${released.toFixed(2)} of the ${month.label} amount held from ${employee.name}, so it cannot be lowered to ${amount.toFixed(2)}.`,
+    );
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(ENTERED_TABLE)
+    .upsert(
+      {
+        held_run_id: month.runId,
+        // Storage casing for the human-readable column, compact for every join.
+        employee_hr_id: hrIdForStorage(employee.hrId) ?? employee.hrId,
+        employee_hr_id_compact: compact,
+        employee_name: employee.name,
+        amount,
+        note,
+        recorded_in_run_id: currentRunId,
+        recorded_by: actorId(access),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "held_run_id,employee_hr_id_compact" },
+    )
+    .select(ENTERED_SELECT)
+    .single();
+  if (error) throw error;
+
+  const entry = mapEnteredRow(data as Row);
+  await writeAutomatedPayrollAudit({
+    runId: currentRunId,
+    actorHrId: actorId(access),
+    action: "held_entered_recorded",
+    detail: {
+      heldRunId: month.runId,
+      heldMonth: month.label,
+      hrId: entry.hrId,
+      name: entry.name,
+      amount: entry.amount,
+      note: entry.note,
+    },
+  });
+  return entry;
+}
+
+/**
+ * Withdraw an entered held amount typed in error. Refused once a payroll run that is not cancelled has
+ * released any of it — removing it then would leave money paid against a debt that no longer exists.
+ * Audited, because it changes what the company owes.
+ */
+export async function deleteEnteredHeld(
+  access: AccessContext,
+  currentRunId: string,
+  heldRunId: string,
+  hrId: string,
+): Promise<void> {
+  assertAutomatedPayrollHrActor(access);
+  const compact = compactHrKey(hrId);
+  if (!compact || !heldRunId) throw new Error("Validation: choose the entry to remove.");
+
+  const released = await releasedAgainst(heldRunId, compact);
+  if (released > 0) {
+    throw new Error(
+      `Conflict: payroll has already released ${released.toFixed(2)} of this held amount, so it cannot be removed. Take the release off first.`,
+    );
+  }
+
+  const { error } = await getSupabaseAdmin()
+    .from(ENTERED_TABLE)
+    .delete()
+    .eq("held_run_id", heldRunId)
+    .eq("employee_hr_id_compact", compact);
+  if (error) throw error;
+
+  await writeAutomatedPayrollAudit({
+    runId: currentRunId,
+    actorHrId: actorId(access),
+    action: "held_entered_withdrawn",
+    detail: { heldRunId, hrId, compact },
+  });
 }
