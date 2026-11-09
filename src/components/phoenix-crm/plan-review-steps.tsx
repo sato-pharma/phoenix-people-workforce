@@ -526,7 +526,7 @@ function LeftOutNames({ entries, listType, month }: { entries: ReadonlyArray<Rev
   const shown = all ? entries : entries.slice(0, LEFT_OUT_SHOWN);
   return (
     <div className="mt-2 min-w-0">
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
         {listType} left out of {month} so far
       </p>
       <ul className="mt-1.5 flex min-w-0 flex-wrap gap-1.5">

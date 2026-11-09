@@ -374,7 +374,7 @@ function VisitWriteUp({
             {customer.detailComment}
           </p>
         ) : null}
-        {edited ? <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{edited}</p> : null}
+        {edited ? <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{edited}</p> : null}
         <div>
           <CrmButton onClick={onOpen} size="sm">
             {customer.detailComment ? VISIT_DETAIL_EDIT_AGAIN : VISIT_DETAIL_EDIT_PROMPT}
@@ -431,7 +431,7 @@ function VisitWriteUp({
 function VisitPlace({ place }: { place: string }) {
   return (
     <p className="break-words text-xs font-semibold leading-5 text-slate-600">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Where the customer is </span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Where the customer is </span>
       <span dir="auto">{place}</span>
     </p>
   );
@@ -506,7 +506,7 @@ function FindCustomer({
   if (adding) {
     return (
       <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Add a new customer to Manager&apos;s own list, then log the visit</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Add a new customer to Manager&apos;s own list, then log the visit</p>
         <ManagerCustomerForm
           areas={areas.map((entry) => ({ seatId: entry.seatId, areaName: entry.areaName }))}
           defaultAreaSeatId={areaSeatId}
@@ -580,7 +580,7 @@ function FindCustomer({
       ))}
       {matches === null && ownList.length > 0 ? (
         <div className="grid min-w-0 gap-2">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Or one of Manager&apos;s own list</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Or one of Manager&apos;s own list</p>
           {ownList.slice(0, 20).map((customer) => (
             <CrmCard
               accent="border-l-orange-400"
@@ -632,7 +632,7 @@ function AreaList({ areaSeatId, onPick, test }: { areaSeatId: string; onPick: (l
 
   return (
     <div className="grid min-w-0 gap-3 border border-slate-200 bg-slate-50/60 p-3">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{vacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep list"}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{vacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep list"}</p>
       {vacant ? (
         <p className="break-words text-xs font-semibold leading-5 text-slate-500">
           Logging a visit here needs the customer&apos;s address typed by hand, or Capture location, which fills in the address, area and brick.
@@ -791,7 +791,7 @@ function LogForm({
   return (
     <div className="grid min-w-0 gap-4 border border-orange-200 bg-orange-50/40 p-4">
       <div className="min-w-0">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">{logging.slotId ? "Log a planned visit" : "Log a visit not on the plan"}</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-orange-700">{logging.slotId ? "Log a planned visit" : "Log a visit not on the plan"}</p>
         <p className="mt-1 break-words text-base font-black text-slate-950" dir="auto">
           {logging.name}
         </p>
@@ -843,7 +843,7 @@ function LogForm({
           the same order as `manager-customer-form.tsx`. Optional everywhere but a vacant area, where the
           address or the capture is required (owner, 2026-10-19). */}
       <div className="grid min-w-0 gap-4 border-t border-orange-200 pt-4">
-        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-700">
+        <p className="break-words text-phx-sm font-black uppercase tracking-[0.16em] text-orange-700">
           Where the customer is · {logging.vacant ? "one of the first two is needed" : "optional"}
         </p>
         <CrmField hint="Stand at the customer and press it: the address, area and brick are filled in for you. Or fill them in below. No photo is needed." label="Location">

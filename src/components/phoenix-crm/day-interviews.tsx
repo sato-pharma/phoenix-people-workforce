@@ -27,7 +27,7 @@ type DayInterviews = { date: string; booked: DayInterview[]; added: DayInterview
 const CV_ACCEPT =
   ".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp";
 
-const headingClassName = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const headingClassName = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 /** One interview: the time, the candidate and the CV. Wraps on a phone, never cut short. */
 function InterviewRow({ interview, onRemove, removing = false }: { interview: DayInterview; onRemove?: () => void; removing?: boolean }) {

@@ -13,7 +13,7 @@ export function PhoenixCrmNewBadge({ count }: { count: number }) {
   return (
     <span className="relative inline-flex shrink-0 items-center">
       <span aria-hidden className="absolute inset-0 rounded-none bg-red-500/60 motion-safe:animate-ping" />
-      <span className="relative inline-flex items-center rounded-none border border-red-700 bg-red-600 px-1.5 py-px text-phx-2xs font-black uppercase tracking-[0.08em] text-white">
+      <span className="relative inline-flex items-center rounded-none border border-red-700 bg-red-600 px-1.5 py-px text-phx-sm font-black uppercase tracking-[0.08em] text-white">
         {newBadgeText(count)}
         <span className="sr-only"> notice{count === 1 ? "" : "s"} for you</span>
       </span>

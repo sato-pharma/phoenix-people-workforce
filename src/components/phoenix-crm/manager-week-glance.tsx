@@ -40,10 +40,10 @@ import { CrmTable } from "@/components/phoenix-crm/ui";
  */
 
 const TILE = "grid min-w-0 content-start gap-1 border border-slate-200 bg-white px-3 py-3";
-const TILE_LABEL = "text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500";
+const TILE_LABEL = "text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500";
 const TILE_VALUE = "text-xl font-black tabular-nums text-slate-900";
 const TILE_NOTE = "break-words text-xs font-semibold leading-5 text-slate-600";
-const SECTION_TITLE = "text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500";
+const SECTION_TITLE = "text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500";
 
 function Tile({ label, note, value }: { label: string; note: string | null; value: string }) {
   return (
@@ -83,7 +83,7 @@ function KindBar({ glance, view }: { glance: ManagerGlance; view: ManagerPlanBoa
 function CellBody({ cell, view }: { cell: ManagerGlanceCell; view: ManagerPlanBoardView }) {
   return (
     <>
-      <span className="block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+      <span className="block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
         {cell.half}
         {cell.kind ? ` · ${managerGlanceKindLabel(view, cell.kind)}` : ""}
       </span>
@@ -135,7 +135,7 @@ function DayLabel({ row }: { row: ManagerGlanceDayRow }) {
   return (
     <>
       <span className="block text-sm font-black text-slate-900">{row.shortDay}</span>
-      <span className="block break-words text-phx-3xs font-semibold text-slate-500">
+      <span className="block break-words text-phx-xs font-semibold text-slate-500">
         {managerGlanceDayState(row)}
       </span>
     </>
@@ -153,7 +153,7 @@ function WeekGrid({ canOpen, glance, onOpenHalf, view }: { canOpen: boolean; gla
       <div className="hidden min-w-0 lg:block">
         <CrmTable className="border-separate border-spacing-y-1.5 text-base" columns={WEEK_GRID_COLUMNS} desktopOnly={false}>
         <thead>
-          <tr className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <tr className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
             <th className="pb-1" scope="col">Day</th>
             <th className="px-1 pb-1" scope="col">Morning</th>
             <th className="px-1 pb-1" scope="col">Afternoon</th>
@@ -261,7 +261,7 @@ function People({ glance }: { glance: ManagerGlance }) {
           <bdi>{managers}</bdi>
         </p>
       ) : null}
-      <p className="text-phx-3xs font-semibold text-slate-500">Half-days with each, most first.</p>
+      <p className="text-phx-xs font-semibold text-slate-500">Half-days with each, most first.</p>
     </div>
   );
 }

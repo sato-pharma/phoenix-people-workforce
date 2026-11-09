@@ -107,7 +107,7 @@ function Pips({ insight }: { insight: CustomerInsight }) {
           key={index}
         />
       ))}
-      {more > 0 ? <span className="text-phx-2xs font-black text-slate-500">{`+${more}`}</span> : null}
+      {more > 0 ? <span className="text-phx-sm font-black text-slate-500">{`+${more}`}</span> : null}
     </span>
   );
 }
@@ -121,7 +121,7 @@ export function CustomerMarks({ insight, monthName, suggested }: { insight: Cust
   return (
     <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       {insight.grade ? (
-        <span className={cn("inline-flex h-4 min-w-4 items-center justify-center border px-1 text-phx-2xs font-black", GRADE_CHIP[insight.grade])}>{insight.grade}</span>
+        <span className={cn("inline-flex h-4 min-w-4 items-center justify-center border px-1 text-phx-sm font-black", GRADE_CHIP[insight.grade])}>{insight.grade}</span>
       ) : null}
       {!isOwnList ? (
         <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -137,18 +137,18 @@ export function CustomerMarks({ insight, monthName, suggested }: { insight: Cust
         </span>
       ) : null}
       {insight.withYou > 0 ? (
-        <span className="border border-emerald-300 bg-emerald-50 px-1.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-emerald-800">
+        <span className="border border-emerald-300 bg-emerald-50 px-1.5 text-phx-sm font-black uppercase tracking-[0.06em] text-emerald-800">
           {insight.withYou === 1 ? "With you" : `With you ×${insight.withYou}`}
         </span>
       ) : null}
       {insight.yourOwn > 0 ? (
-        <span className="border border-teal-300 bg-teal-50 px-1.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-teal-800">
+        <span className="border border-teal-300 bg-teal-50 px-1.5 text-phx-sm font-black uppercase tracking-[0.06em] text-teal-800">
           {insight.yourOwn === 1 ? "Your single visit" : `Your single visits ×${insight.yourOwn}`}
         </span>
       ) : null}
       {insight.marketing.map((mark) => (
         <a
-          className="border border-violet-300 bg-violet-50 px-1.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-violet-800 underline-offset-2 hover:underline"
+          className="border border-violet-300 bg-violet-50 px-1.5 text-phx-sm font-black uppercase tracking-[0.06em] text-violet-800 underline-offset-2 hover:underline"
           href={resolveMarketingRequestDestination({ navigationMode: surface === "admin" ? "admin" : "employee-portal", requestId: mark.requestId })}
           key={mark.requestId}
           onClick={(event) => event.stopPropagation()}
@@ -160,7 +160,7 @@ export function CustomerMarks({ insight, monthName, suggested }: { insight: Cust
         </a>
       ))}
       {suggested ? (
-        <span className="border border-orange-300 bg-orange-50 px-1.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-orange-800" title={suggestionReason(insight)}>
+        <span className="border border-orange-300 bg-orange-50 px-1.5 text-phx-sm font-black uppercase tracking-[0.06em] text-orange-800" title={suggestionReason(insight)}>
           Go first
         </span>
       ) : null}
@@ -212,7 +212,7 @@ function GroupChip({ active, group, onPress }: { active: boolean; group: Custome
       <span className="break-words" dir="auto">
         {group.label}
       </span>
-      <span className={cn("text-phx-2xs font-black", active ? "text-white" : "text-slate-500")}>{group.ids.length}</span>
+      <span className={cn("text-phx-sm font-black", active ? "text-white" : "text-slate-500")}>{group.ids.length}</span>
     </button>
   );
 }

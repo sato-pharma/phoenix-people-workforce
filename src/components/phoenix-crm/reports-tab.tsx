@@ -1685,12 +1685,12 @@ function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: C
           <CrmTable columns={["26%", ...report.days.map(() => `${74 / Math.max(1, report.days.length)}%`)]} desktopOnly={false}>
             <thead>
               <tr>
-                <th className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+                <th className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
                   Customer
                 </th>
                 {dayNumbers.map((number, index) => (
                   <th
-                    className="border border-slate-200 bg-slate-50 px-0 py-1.5 text-center text-phx-3xs font-black tabular-nums text-slate-500"
+                    className="border border-slate-200 bg-slate-50 px-0 py-1.5 text-center text-phx-xs font-black tabular-nums text-slate-500"
                     key={report.days[index]}
                     scope="col"
                   >
@@ -1709,13 +1709,13 @@ function TrackingSection({ idPrefix, resource }: { idPrefix: string; resource: C
                         {row.name}
                       </span>
                       {row.spacing ? (
-                        <span className="block break-words text-phx-3xs font-semibold leading-4 text-amber-700">{row.spacing}</span>
+                        <span className="block break-words text-phx-xs font-semibold leading-4 text-amber-700">{row.spacing}</span>
                       ) : null}
                     </th>
                     {report.days.map((day) => (
                       <td
                         className={cn(
-                          "border border-slate-200 px-0 py-1.5 text-center text-phx-3xs font-black",
+                          "border border-slate-200 px-0 py-1.5 text-center text-phx-xs font-black",
                           marked.has(day) ? "bg-emerald-100 text-emerald-900" : "bg-white text-slate-300",
                         )}
                         key={day}

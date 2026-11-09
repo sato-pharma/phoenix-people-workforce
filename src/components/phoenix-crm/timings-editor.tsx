@@ -122,11 +122,11 @@ export function TimingsReadout({ timings }: { timings: ReadonlyArray<PhoenixCrmT
   return (
     <div className="grid min-w-0 gap-3">
       <div className="grid gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Receives visits</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Receives visits</p>
         <SeasonTimings season="normal" timings={timings} />
       </div>
       <div className="grid gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">In Ramadan</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">In Ramadan</p>
         <SeasonTimings season="ramadan" timings={timings} />
       </div>
     </div>
@@ -211,11 +211,11 @@ export function TimingsEditor({
   return (
     <div className="grid min-w-0 gap-4">
       <div className="grid gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Receives visits</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Receives visits</p>
         <SeasonTimings disabled={disabled} onRemove={remove} season="normal" timings={value} />
       </div>
       <div className="grid gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">In Ramadan</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">In Ramadan</p>
         <SeasonTimings disabled={disabled} onRemove={remove} season="ramadan" timings={value} />
         {ramadanNote ? <p className="text-xs font-medium text-slate-500">{ramadanNote}</p> : null}
       </div>
@@ -244,7 +244,7 @@ export function TimingsEditor({
         </div>
 
         <div className="grid gap-1.5">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Days that share this hour</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Days that share this hour</p>
           <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
             {PHOENIX_CRM_WEEKDAY_ORDER.map((weekday) => {
               const selected = days.includes(weekday);

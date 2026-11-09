@@ -190,7 +190,7 @@ function DetailForm({
 
       {form.doorComment ? (
         <div className="min-w-0 border border-slate-200 bg-white px-3 py-2">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">What you wrote at the door</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">What you wrote at the door</p>
           <p className="mt-1 whitespace-pre-line break-words text-sm font-semibold text-slate-700" dir="auto">
             {form.doorComment}
           </p>
