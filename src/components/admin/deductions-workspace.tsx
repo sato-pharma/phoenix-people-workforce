@@ -363,8 +363,7 @@ function DeductionDaysEditor({
     try {
       // Carry the existing decision forward untouched. This control edits the
       // days, not the verdict — re-sending the status and reason keeps a row
-      // that was already "Approved for Payroll" approved, and keeps the DB's
-      // reason-required-when-decided constraint satisfied.
+      // that was already "Approved for Payroll" approved, and keeps its comment.
       const status = row.decision?.decisionStatus ?? "Pending";
       const payload = await fetchJson<{
         decision: CandidateApiRow["decision"] & { payrollNotices?: string[] };
@@ -720,17 +719,9 @@ function CandidateDecideRow({
   const [payrollNotice, setPayrollNotice] = useState<string | null>(null);
 
   async function decide(status: (typeof DECISION_STATUSES)[number]) {
-    // Every non-Pending decision needs a reason — the server enforces this
-    // (service.ts's validation) and so does a DB CHECK constraint. The UI used
-    // to exempt "Approved for Payroll", which meant clicking Approve with an
-    // empty box failed server-side every single time. Prefill a sensible
-    // default for approvals rather than blocking on an empty field.
-    const effectiveReason =
-      reason.trim() || (status === "Approved for Payroll" ? `Approved for payroll after review (${row.monthKey})` : "");
-    if (!effectiveReason) {
-      setError("A decision reason is required.");
-      return;
-    }
+    // The comment is optional (owner, 2026-11-09) — a blank box saves a decision with no comment,
+    // and the employee portal then shows no HR answer on that deduction.
+    const effectiveReason = reason.trim();
     setSubmitting(true);
     setError(null);
     setPayrollNotice(null);
@@ -765,7 +756,7 @@ function CandidateDecideRow({
           <input
             className={phxFieldClassName}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="Decision reason"
+            placeholder="Comment (optional)"
             value={reason}
           />
           {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
@@ -1096,14 +1087,8 @@ function BulkDecideBar({
 
   async function apply(status: (typeof DECISION_STATUSES)[number]) {
     const rows = selectedRows;
-    // Same default the single Decide button prefills: the server refuses a decision with no reason.
-    const effectiveReason =
-      reason.trim() || (status === "Approved for Payroll" ? `Approved for payroll after review (${rows[0]?.monthKey ?? ""})` : "");
-    if (!effectiveReason) {
-      setSummary({ ok: 0, failed: [{ name: "Nothing was changed", message: "A decision reason is required." }], notices: 0 });
-      setPendingStatus(null);
-      return;
-    }
+    // The comment is optional (owner, 2026-11-09), exactly as on the single Decide button.
+    const effectiveReason = reason.trim();
     setRunning(true);
     setSummary(null);
     setProgress(0);
@@ -1157,7 +1142,7 @@ function BulkDecideBar({
             className={phxFieldClassName}
             disabled={running}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="Decision reason (applied to all selected)"
+            placeholder="Comment (optional, applied to all selected)"
             value={reason}
           />
           {pendingStatus ? (

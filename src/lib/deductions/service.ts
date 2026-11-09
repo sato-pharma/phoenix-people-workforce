@@ -1743,9 +1743,10 @@ export async function recordDecision(input: {
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
     throw new Error(`Validation: decisionStatus "${input.decisionStatus}" is not recognized`);
   }
-  if (input.decisionStatus !== "Pending" && !input.decisionReason.trim()) {
-    throw new Error("Validation: decisionReason is required for a non-Pending decision");
-  }
+  // The comment on a decision is OPTIONAL (owner, 2026-11-09: "in deductions module make comment for
+  // decision optional"). A blank one is stored as '' — the employee portal shows no HR answer for it
+  // (meaningfulHrText), and the DB CHECK that refused it was dropped by
+  // 20261109031727_deductions_decision_comment_optional.sql.
 
   const supabase = getSupabaseAdmin();
   const candidate = await supabase
