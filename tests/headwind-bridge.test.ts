@@ -2338,12 +2338,12 @@ function runServerImageTests() {
   // not be able to take the whole MDM down.
   assert.match(
     entrypoint,
-    /hmdm-phoenix-6\.50\.apk/,
+    /hmdm-phoenix-6\.51\.apk/,
     "the entrypoint re-provisions the Phoenix custom launcher by its exact filename — the name the launcher version url is pointed at",
   );
   assert.match(
     entrypoint,
-    /releases\/download\/launcher-6\.50-r1\//,
+    /releases\/download\/launcher-6\.51-r1\//,
     "fetched from the immutable fork release asset, the public URL a bare Railway container can reach",
   );
   assert.match(
@@ -2438,19 +2438,19 @@ function runServerImageTests() {
   for (const app of ['WHATSAPP_APK="WhatsApp.apk"', 'provision_official_apk "Telegram.apk"', 'provision_official_apk "wps_']) {
     assert.ok(background[1].includes(app), `${app} is fetched in the background, so Tomcat starts at once`);
   }
-  for (const enrolment of ["RUSTDESK_APK=", "PHX_LAUNCHER_APK=", 'provision_official_apk "hmdm-phoenix-6.49.apk"']) {
+  for (const enrolment of ["RUSTDESK_APK=", "PHX_LAUNCHER_APK=", 'provision_official_apk "hmdm-phoenix-6.50.apk"']) {
     assert.ok(!background[1].includes(enrolment), `${enrolment} stays in the foreground, because enrolment needs it`);
   }
 
-  // 🔴 AND 6.49 KEEPS BEING SERVED UNTIL THE LAUNCHER'S URL HAS MOVED. The rep configurations point the launcher
-  // (app 46 / version 10045) at /files/hmdm-phoenix-6.49.apk, and the url moves to 6.50 by hand only after
-  // the server is up — so a redeploy serving 6.50 alone would 404 every enrolment in between.
+  // 🔴 AND 6.50 KEEPS BEING SERVED UNTIL THE LAUNCHER'S URL HAS MOVED. The rep configurations point the launcher
+  // (app 46 / version 10045) at /files/hmdm-phoenix-6.50.apk, and the url moves to 6.51 by hand only after
+  // the server is up — so a redeploy serving 6.51 alone would 404 every enrolment in between.
   assert.match(
     entrypoint,
-    /provision_official_apk "hmdm-phoenix-6\.49\.apk" \\\n\s+"https:\/\/github\.com\/Omar-3-xx\/hmdm-android\/releases\/download\/launcher-6\.49-r1\/hmdm-phoenix-6\.49\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
-    "the previous launcher is re-provisioned from its own pinned release beside 6.50",
+    /provision_official_apk "hmdm-phoenix-6\.50\.apk" \\\n\s+"https:\/\/github\.com\/Omar-3-xx\/hmdm-android\/releases\/download\/launcher-6\.50-r1\/hmdm-phoenix-6\.50\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
+    "the previous launcher is re-provisioned from its own pinned release beside 6.51",
   );
-  assert.match(entrypoint, /^PHX_LAUNCHER_PREVIOUS_SIZE=6466497\b/m, "pinned to the 6.49 asset's exact size");
+  assert.match(entrypoint, /^PHX_LAUNCHER_PREVIOUS_SIZE=6466497\b/m, "pinned to the 6.50 asset's exact size");
 
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
