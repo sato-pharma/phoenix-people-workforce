@@ -333,7 +333,8 @@ export async function sendPasswordSetupLink(input: {
   const emailResult =
     deliveryMode === "email"
       ? await createSystemNotification({
-          actionUrl: setupPath,
+          // No actionUrl: it is stored on the notification's own row (action_url, metadata.href), and
+          // a link that sets a password is never stored. The email's button reads ctaHref below.
           actorId: input.actorLoginId ?? "system",
           channels: ["email"],
           email: {
