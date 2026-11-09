@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Check, Eye, ShieldCheck, Undo2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { AlertTriangle, ArrowRight, Check, ChevronsDownUp, ChevronsUpDown, Eye, ShieldCheck, Undo2 } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
 
 import {
   CrmButton,
@@ -16,6 +16,7 @@ import {
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { expenseTripAwaitingLabel, expenseTripDaysAwaiting, expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
@@ -34,6 +35,7 @@ import {
   rowApproveBlock,
 } from "./review-model";
 import { DecisionPill, DistanceChip, DuplicateTripFlag, MoneyFigure } from "./review-parts";
+import { ReviewRowDetails, RowExpandToggle } from "./review-row-details";
 
 /** Rows drawn at a time; "Show 20 more" under the list reaches the rest (Place checks pages the same way). */
 const PAGE_ROWS = 20;
@@ -48,8 +50,11 @@ type RowActions = {
   canDecide: boolean;
   decisionFor: (record: LoadedRecord) => Decision;
   duplicateFlags: Map<string, string[]>;
+  /** Trips opened in place — every row starts collapsed (owner, 2026-11-09). */
+  expanded: ReadonlySet<string>;
   isUnsaved: (record: LoadedRecord) => boolean;
   now: number;
+  onExpand: (tripId: string) => void;
   onOpen: (tripId: string) => void;
   onQuickApprove: (record: LoadedRecord) => void;
   onToggle: (tripId: string) => void;
@@ -77,7 +82,7 @@ export function ReviewQueueTable({
   sessionExpired,
   tab,
   ...actions
-}: RowActions & {
+}: Omit<RowActions, "expanded" | "onExpand"> & {
   allSelectableSelected: boolean;
   bulkBar?: ReactNode;
   loadError: string | null;
@@ -91,7 +96,21 @@ export function ReviewQueueTable({
   tab: TripTab;
 }) {
   const [shown, setShown] = useState(PAGE_ROWS);
+  // Which trips are open in place (owner, 2026-11-09: "I EXPAND, THE DETAILS AND PICS APPEAR; I
+  // COLLAPSE, COLLAPSED"). Screen state only — every decision lives in use-expense-review.ts, so
+  // collapsing a row never touches an Approve, a Reject or a typed amount.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const page = rows.slice(0, shown);
+  const allPageExpanded = page.length > 0 && page.every((record) => expanded.has(record.tripId));
+  const onExpand = (tripId: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(tripId)) next.delete(tripId);
+      else next.add(tripId);
+      return next;
+    });
+  const expandOrCollapseAll = () => setExpanded(allPageExpanded ? new Set() : new Set(page.map((record) => record.tripId)));
+  const rowActions: RowActions = { ...actions, expanded, onExpand };
   const title =
     tab === "look" || tab === "clean" || tab === "awaiting"
       ? `Waiting for your decision · ${REVIEW_TAB_LABELS[tab]} (${formatNumberValue(rows.length)})`
@@ -110,6 +129,18 @@ export function ReviewQueueTable({
             <span aria-hidden className="mr-2 inline-block h-2 w-2 bg-orange-500 align-middle" />
             {loading ? REVIEW_TAB_LABELS[tab] : title}
           </h2>
+          {!loading && !loadError && rows.length > 0 ? (
+            <button
+              aria-pressed={allPageExpanded}
+              className="inline-flex min-h-8 shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-black text-slate-700 transition hover:border-orange-400 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+              data-expand-all={allPageExpanded ? "collapse" : "expand"}
+              onClick={expandOrCollapseAll}
+              type="button"
+            >
+              {allPageExpanded ? <ChevronsDownUp aria-hidden className="h-3.5 w-3.5" /> : <ChevronsUpDown aria-hidden className="h-3.5 w-3.5" />}
+              {allPageExpanded ? "Collapse all" : "Expand all"}
+            </button>
+          ) : null}
           {!loading && !loadError && rows.length > 0 ? bulkBar : null}
         </div>
         {loading ? (
@@ -143,7 +174,7 @@ export function ReviewQueueTable({
           <>
             <CrmCardsOnPhone>
               {page.map((record) => (
-                <QueueCard actions={actions} key={record.tripId} record={record} />
+                <QueueCard actions={rowActions} key={record.tripId} record={record} />
               ))}
             </CrmCardsOnPhone>
             <CrmTable columns={["3rem", "30%", null, "15%", "19%"]}>
@@ -170,7 +201,7 @@ export function ReviewQueueTable({
               </thead>
               <tbody>
                 {page.map((record) => (
-                  <QueueRow actions={actions} key={record.tripId} record={record} />
+                  <QueueRow actions={rowActions} key={record.tripId} record={record} />
                 ))}
               </tbody>
             </CrmTable>
@@ -317,38 +348,51 @@ function QueueRow({ actions, record }: { actions: RowActions; record: LoadedReco
   const decision = actions.decisionFor(record);
   const state = expenseApprovalState(decision);
   const ticked = actions.selectedTripIds.has(record.tripId);
+  const open = actions.expanded.has(record.tripId);
   return (
-    <tr className={cn("transition-colors", ticked ? "bg-orange-50/70" : "hover:bg-slate-50")} data-trip-id={record.tripId}>
-      <td className={cn(crmTdClassName, "border-l-[3px]", STATE_ACCENT[state])}>
-        <RowTick actions={actions} record={record} />
-      </td>
-      <td className={crmTdClassName}>
-        <button
-          className="block w-full min-w-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
-          onClick={() => actions.onOpen(record.tripId)}
-          type="button"
-        >
-          <span className="block break-words text-sm font-black text-slate-950 hover:text-orange-700">{record.specialist || "Unassigned"}</span>
-          <span className="block text-phx-2xs font-bold tracking-wide text-slate-400">{record.tripId}</span>
-          <TripLine record={record} />
-        </button>
-      </td>
-      <td className={crmTdClassName}>
-        <FoundCell actions={actions} record={record} />
-      </td>
-      <td className={cn(crmTdClassName, "text-right")}>
-        <MoneyFigure approved={decision.approvedAmount} claimed={record.total} />
-      </td>
-      <td className={crmTdClassName}>
-        <DecisionCell actions={actions} record={record} />
-      </td>
-    </tr>
+    <Fragment>
+      <tr className={cn("transition-colors", ticked ? "bg-orange-50/70" : "hover:bg-slate-50")} data-trip-id={record.tripId}>
+        <td className={cn(crmTdClassName, "border-l-[3px]", STATE_ACCENT[state])}>
+          <RowTick actions={actions} record={record} />
+        </td>
+        <td className={crmTdClassName}>
+          <div className="flex min-w-0 items-start gap-2">
+            <RowExpandToggle expanded={open} onToggle={() => actions.onExpand(record.tripId)} tripId={record.tripId} />
+            <button
+              className="block w-full min-w-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+              onClick={() => actions.onOpen(record.tripId)}
+              type="button"
+            >
+              <span className="block break-words text-sm font-black text-slate-950 hover:text-orange-700">{record.specialist || "Unassigned"}</span>
+              <span className="block text-phx-2xs font-bold tracking-wide text-slate-400">{record.tripId}</span>
+              <TripLine record={record} />
+            </button>
+          </div>
+        </td>
+        <td className={crmTdClassName}>
+          <FoundCell actions={actions} record={record} />
+        </td>
+        <td className={cn(crmTdClassName, "text-right")}>
+          <MoneyFigure approved={decision.approvedAmount} claimed={record.total} />
+        </td>
+        <td className={crmTdClassName}>
+          <DecisionCell actions={actions} record={record} />
+        </td>
+      </tr>
+      {/* Mounted only while open, so a collapsed list fetches no photos. */}
+      {open ? (
+        <TableRowDetail className="p-0" colSpan={5}>
+          <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} unsaved={actions.isUnsaved(record)} />
+        </TableRowDetail>
+      ) : null}
+    </Fragment>
   );
 }
 
 function QueueCard({ actions, record }: { actions: RowActions; record: LoadedRecord }) {
   const decision = actions.decisionFor(record);
   const state = expenseApprovalState(decision);
+  const open = actions.expanded.has(record.tripId);
   return (
     <CrmCard
       accent={STATE_ACCENT[state]}
@@ -367,6 +411,7 @@ function QueueCard({ actions, record }: { actions: RowActions; record: LoadedRec
       title={
         <span className="flex min-w-0 items-start gap-2">
           <RowTick actions={actions} record={record} />
+          <RowExpandToggle expanded={open} onToggle={() => actions.onExpand(record.tripId)} tripId={record.tripId} />
           <button className="min-w-0 break-words text-left hover:text-orange-700" onClick={() => actions.onOpen(record.tripId)} type="button">
             {record.specialist || "Unassigned"}
           </button>
@@ -376,6 +421,11 @@ function QueueCard({ actions, record }: { actions: RowActions; record: LoadedRec
       <div className="space-y-2">
         <FoundCell actions={actions} record={record} />
         <DecisionCell actions={actions} record={record} />
+        {open ? (
+          <div className="-mx-4 min-w-0">
+            <ReviewRowDetails decision={decision} duplicateOf={actions.duplicateFlags.get(record.tripId)} record={record} unsaved={actions.isUnsaved(record)} />
+          </div>
+        ) : null}
       </div>
     </CrmCard>
   );
