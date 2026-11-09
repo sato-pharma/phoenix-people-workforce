@@ -7,7 +7,7 @@ import { previousMonthKey, regionalTeamReportLinks } from "../src/lib/employee-p
 import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib/marketing-requests/roi-report-scope.ts";
 import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
-import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, teamVisitWorlds } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 
 /**
@@ -80,6 +80,24 @@ function visitsYesterdayAndToday() {
   for (const banned of ["lat", "lon", "distance", "location", "far"]) {
     assert.ok(!select.split(/,\s*/).some((column) => column.includes(banned)), `team visits must not read ${banned}`);
   }
+}
+
+/**
+ * A test account reads the real team beside its own test work (docs/test-accounts.md, "Reports"). Read in the test
+ * world alone, the TEST- login mirroring the Regional Sales Manager showed every rep at zero (owner, 2026-11-09).
+ * The district manager's own row wears its own colour, never the reps' white.
+ */
+function teamVisitsTestAccountAndColours() {
+  assert.deepEqual(teamVisitWorlds(false), [false], "a real viewer reads the real world only");
+  assert.deepEqual(teamVisitWorlds(true), [false, true], "a test account reads the real team AND its own test work");
+  const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
+  assert.ok(source.includes('.in("is_test", worlds)'), "the visit read takes every world the viewer reads");
+  assert.ok(!source.includes('.eq("is_test", isTest)'), "never the test world alone");
+  assert.ok(source.includes("worlds.map((isTest) => loadManagerOwnVisitRows"), "the managers' own visits read every world too");
+  const view = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
+  const managerRow = /const MANAGER_ROW = "([^"]+)"/.exec(view)?.[1] ?? "";
+  assert.ok(managerRow.includes("bg-sky-50") && managerRow.includes("border-l-sky-700"), "a manager's row has a colour of its own");
+  assert.equal(view.split("${MANAGER_ROW}").length - 1, 2, "both the desktop row and the phone card wear it");
 }
 
 function chainVisits() {
@@ -241,6 +259,7 @@ export function runRegionalTeamReportsTests() {
   districtsWithoutPublishedMonth();
   gate();
   visitsYesterdayAndToday();
+  teamVisitsTestAccountAndColours();
   chainVisits();
   commentDoctors();
   weeklySheet();
