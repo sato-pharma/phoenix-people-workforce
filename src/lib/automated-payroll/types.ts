@@ -891,4 +891,9 @@ export type ManualRowCandidate = {
   line: string | null;
   /** employment_status — set on the Held Salary Release steps, which list leavers too, so the picker can say "(resigned)". */
   status?: string | null;
+  /**
+   * Held Salary Release only: the Part 1 the previous published month confirmed for them (0 when they were
+   * not on it). "Part 1 Not Paid" can never exceed it, so the picker offers that choice only when it is above 0.
+   */
+  lastMonthPart1?: number;
 };
