@@ -66,18 +66,18 @@ export function districtPlansExportHref(weekStart: string): string {
   return `${DISTRICT_PLANS_EXPORT_PATH}?week=${encodeURIComponent(weekStart)}`;
 }
 
-export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
-export const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-white";
-export const LABEL = "text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
+export const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
+export const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-white";
+export const LABEL = "text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 /** A quiet name link to a manager's section, only when that section is on the page. */
 function ManagerName({ anchor, listed, name }: { anchor: string; listed: boolean; name: string }) {
   return listed ? (
-    <a className="text-phx-2xs font-black text-slate-900 hover:underline" href={`#${anchor}`}>
+    <a className="text-phx-sm font-black text-slate-900 hover:underline" href={`#${anchor}`}>
       {name}
     </a>
   ) : (
-    <span className="text-phx-2xs font-black text-slate-900">{name}</span>
+    <span className="text-phx-sm font-black text-slate-900">{name}</span>
   );
 }
 
@@ -93,15 +93,15 @@ export function DistrictPlansToolbar({ report, show }: { report: DistrictManager
     <div className="grid gap-3 border border-slate-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-phx-xs font-black text-slate-900">
+          <p className="text-phx-md font-black text-slate-900">
             Week · {districtPlanDayLabel(report.weekStart)} – {districtPlanDayLabel(report.weekEnd)}
           </p>
-          <p className="text-phx-2xs text-slate-500">
+          <p className="text-phx-sm text-slate-500">
             {districtPlanWeekPositionLine(report)} Only sent weeks are shown, half by half; a draft is never read.
           </p>
           <ul aria-label="Half-day colours" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
             {DISTRICT_PLAN_KINDS.filter((kind) => kind !== "with_dm").map((kind) => (
-              <li className="flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-700" key={kind}>
+              <li className="flex items-center gap-1.5 text-phx-sm font-semibold text-slate-700" key={kind}>
                 <span aria-hidden className={`inline-block h-3 w-[3px] ${DISTRICT_PLAN_KIND_SWATCH[kind]}`} />
                 {DISTRICT_PLAN_KIND_LABEL[kind]}
               </li>
@@ -171,7 +171,7 @@ function Bar<K extends string>({ label, parts, whole }: { label: string; parts: 
         {label} · {whole}
       </p>
       {parts.length === 0 ? (
-        <p className="text-phx-2xs text-slate-400">Nothing to show</p>
+        <p className="text-phx-sm text-slate-400">Nothing to show</p>
       ) : (
         <>
           <div aria-hidden className="flex h-3 w-full border border-slate-200 bg-slate-50">
@@ -181,7 +181,7 @@ function Bar<K extends string>({ label, parts, whole }: { label: string; parts: 
           </div>
           <ul className="flex flex-wrap gap-x-4 gap-y-1">
             {parts.map((part) => (
-              <li className="flex items-center gap-1.5 text-phx-2xs font-semibold tabular-nums text-slate-700" key={part.key}>
+              <li className="flex items-center gap-1.5 text-phx-sm font-semibold tabular-nums text-slate-700" key={part.key}>
                 <span aria-hidden className={`inline-block h-2.5 w-2.5 border border-slate-300 ${part.swatch}`} />
                 {part.label} · {part.count}
               </li>
@@ -207,7 +207,7 @@ export function DistrictPlansStandPanel({ report }: { report: DistrictManagersPl
           <div className="bg-white p-4">
             <Bar label="Every planned half-day of the sent weeks" parts={districtPlanKindBar(totals)} whole={halfDaysWord(totals.halves)} />
             {totals.openHalves > 0 ? (
-              <p className="mt-2 text-phx-2xs text-slate-500">
+              <p className="mt-2 text-phx-sm text-slate-500">
                 {halfDaysWord(totals.openHalves)} from Saturday to Thursday have nothing planned, the managers&apos; own leave left out.
               </p>
             ) : null}
@@ -219,11 +219,11 @@ export function DistrictPlansStandPanel({ report }: { report: DistrictManagersPl
 }
 
 function GridCell({ cell }: { cell: DistrictPlanGridCell }) {
-  if (cell.state === "unsent") return <span className="text-phx-3xs font-semibold text-slate-400">Not sent</span>;
-  if (cell.state === "leave") return <span className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">On leave</span>;
-  if (cell.state === "open") return <span className="text-phx-3xs text-slate-300">Nothing</span>;
+  if (cell.state === "unsent") return <span className="text-phx-xs font-semibold text-slate-400">Not sent</span>;
+  if (cell.state === "leave") return <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-sky-800">On leave</span>;
+  if (cell.state === "open") return <span className="text-phx-xs text-slate-300">Nothing</span>;
   return (
-    <span className={`block break-words border-l-2 pl-1.5 text-phx-3xs font-semibold leading-4 text-slate-800 ${DISTRICT_PLAN_KIND_EDGE[cell.kind]}`}>
+    <span className={`block break-words border-l-2 pl-1.5 text-phx-xs font-semibold leading-4 text-slate-800 ${DISTRICT_PLAN_KIND_EDGE[cell.kind]}`}>
       {cell.text}
       {cell.repOnLeave ? <span className="block font-black text-amber-800">Rep on leave</span> : null}
       {cell.chainVisit ? <Users aria-label="Chain visit" className="ml-1 inline h-3 w-3 text-sky-800" /> : null}
@@ -252,7 +252,7 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
             ))}
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <th className="px-3 py-2" scope="col">District manager</th>
               {grid.days.map((date) => (
                 <th className={`px-2 py-2 ${date === report.cairoToday ? "bg-slate-900 text-white" : ""}`} key={date} scope="col">
@@ -269,7 +269,7 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
                     <span aria-hidden className={`mt-1 inline-block h-2.5 w-2.5 shrink-0 ${DISTRICT_PLAN_STATE_SWATCH[row.state]}`} />
                     <span className="min-w-0">
                       <ManagerName anchor={districtPlanAnchor(row.week)} listed={listed.has(row.week.districtSeatId)} name={row.week.managerName} />
-                      <span className="block text-phx-3xs text-slate-500">{DISTRICT_PLAN_STATE_LABEL[row.state]}</span>
+                      <span className="block text-phx-xs text-slate-500">{DISTRICT_PLAN_STATE_LABEL[row.state]}</span>
                     </span>
                   </span>
                 </th>
@@ -280,7 +280,7 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
                         .filter((entry) => entry.date === date)
                         .map((entry) => (
                           <div className="grid gap-0.5" key={entry.half}>
-                            <span className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-400">{entry.half}</span>
+                            <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">{entry.half}</span>
                             <GridCell cell={entry.cell} />
                           </div>
                         ))}
@@ -297,21 +297,21 @@ export function DistrictPlansGridPanel({ report, show }: { report: DistrictManag
               <p className="flex items-center gap-1.5">
                 <span aria-hidden className={`inline-block h-2.5 w-2.5 ${DISTRICT_PLAN_STATE_SWATCH[row.state]}`} />
                 <ManagerName anchor={districtPlanAnchor(row.week)} listed={listed.has(row.week.districtSeatId)} name={row.week.managerName} />
-                <span className="text-phx-3xs text-slate-500">· {DISTRICT_PLAN_STATE_LABEL[row.state]}</span>
+                <span className="text-phx-xs text-slate-500">· {DISTRICT_PLAN_STATE_LABEL[row.state]}</span>
               </p>
               {row.cells.every((entry) => entry.cell.state === "unsent") ? (
-                <p className="text-phx-2xs text-slate-500">Not sent yet</p>
+                <p className="text-phx-sm text-slate-500">Not sent yet</p>
               ) : (
-                <dl className="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1">
+                <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1">
                   {grid.days.map((date) => (
                     <div className="contents" key={date}>
-                      <dt className={`text-phx-3xs font-black uppercase tracking-[0.1em] ${date === report.cairoToday ? "text-slate-900" : "text-slate-500"}`}>{districtPlanShortDay(date)}</dt>
+                      <dt className={`text-phx-xs font-black uppercase tracking-[0.1em] ${date === report.cairoToday ? "text-slate-900" : "text-slate-500"}`}>{districtPlanShortDay(date)}</dt>
                       <dd className="grid min-w-0 gap-1 sm:grid-cols-2">
                         {row.cells
                           .filter((entry) => entry.date === date)
                           .map((entry) => (
                             <span className="flex min-w-0 items-start gap-1.5" key={entry.half}>
-                              <span className="text-phx-3xs font-black text-slate-400">{entry.half}</span>
+                              <span className="text-phx-xs font-black text-slate-400">{entry.half}</span>
                               <span className="min-w-0">
                                 <GridCell cell={entry.cell} />
                               </span>
@@ -341,7 +341,7 @@ export function DistrictPlansAttentionPanel({ report, show }: { report: District
       <KpiSection description="Plain facts about each week, never a judgement. A vacant seat is listed with its team, never here." title="Weeks to look at">
         <ul aria-label="Reasons" className="flex flex-wrap gap-x-4 gap-y-1 border-b border-slate-100 px-4 py-2">
           {DISTRICT_PLAN_ATTENTION.filter((reason) => counts[reason] > 0).map((reason) => (
-            <li className="text-phx-2xs font-semibold tabular-nums text-slate-700" key={reason}>
+            <li className="text-phx-sm font-semibold tabular-nums text-slate-700" key={reason}>
               {DISTRICT_PLAN_ATTENTION_LABEL[reason]} · {counts[reason]}
             </li>
           ))}
@@ -351,10 +351,10 @@ export function DistrictPlansAttentionPanel({ report, show }: { report: District
             <li className="grid gap-0.5 px-4 py-2.5 md:grid-cols-[14rem_12rem_1fr] md:gap-3" key={`${item.week.districtSeatId}-${item.reason}`}>
               <p className="min-w-0 break-words">
                 <ManagerName anchor={districtPlanAnchor(item.week)} listed={listed.has(item.week.districtSeatId)} name={item.week.managerName} />
-                <span className="block text-phx-3xs text-slate-500">{item.week.regionName}</span>
+                <span className="block text-phx-xs text-slate-500">{item.week.regionName}</span>
               </p>
               <p className={LABEL}>{DISTRICT_PLAN_ATTENTION_LABEL[item.reason]}</p>
-              <p className="min-w-0 break-words text-phx-2xs text-slate-700">{item.line}</p>
+              <p className="min-w-0 break-words text-phx-sm text-slate-700">{item.line}</p>
             </li>
           ))}
         </ul>
@@ -384,8 +384,8 @@ export function DistrictPlansRepsAlonePanel({ report, show }: { report: District
               <ul className="grid gap-1">
                 {entry.reps.map((rep) => (
                   <li className="border border-slate-200 bg-slate-50 px-2 py-1" key={rep.seatId}>
-                    <p className="break-words text-phx-2xs font-black text-slate-900">{rep.name}</p>
-                    <p className="break-words text-phx-3xs text-slate-500">
+                    <p className="break-words text-phx-sm font-black text-slate-900">{rep.name}</p>
+                    <p className="break-words text-phx-xs text-slate-500">
                       {rep.territory}
                       {districtRepLeaveLine(rep, report.weekStart) ? ` · ${districtRepLeaveLine(rep, report.weekStart)}` : ""}
                     </p>
@@ -413,9 +413,9 @@ export function DistrictPlansChainVisitsPanel({ report }: { report: DistrictMana
               <p className={LABEL}>
                 {districtPlanShortDay(chain.date)} {chain.half}
               </p>
-              <p className="min-w-0 break-words text-phx-2xs font-black text-slate-900">{chain.week.managerName}</p>
+              <p className="min-w-0 break-words text-phx-sm font-black text-slate-900">{chain.week.managerName}</p>
               {chain.lines.map((line) => (
-                <p className="flex min-w-0 items-start gap-1.5 break-words text-phx-2xs font-semibold text-sky-800 md:col-start-3" key={line}>
+                <p className="flex min-w-0 items-start gap-1.5 break-words text-phx-sm font-semibold text-sky-800 md:col-start-3" key={line}>
                   <Users aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{line}</span>
                 </p>
@@ -458,7 +458,7 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
             <col className="w-[32%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <th className="px-4 py-2" scope="col">District manager</th>
               <th className="px-4 py-2" scope="col">Customers</th>
               <th className="px-4 py-2" scope="col">By grade</th>
@@ -473,14 +473,14 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
                 <tr className="border-b border-slate-100 align-top last:border-b-0" key={week.districtSeatId}>
                   <th className="break-words px-4 py-2.5 text-left font-normal" scope="row">
                     <ManagerName anchor={districtPlanAnchor(week)} listed={listed.has(week.districtSeatId)} name={week.managerName} />
-                    <span className="block text-phx-3xs text-slate-500">{week.regionName}</span>
+                    <span className="block text-phx-xs text-slate-500">{week.regionName}</span>
                   </th>
-                  <td className="break-words px-4 py-2.5 text-phx-2xs tabular-nums text-slate-700">
+                  <td className="break-words px-4 py-2.5 text-phx-sm tabular-nums text-slate-700">
                     {districtCustomerCountLine(mix)}
                     {mix.gone > 0 ? <span className="block text-slate-500">{mix.gone} no longer on file</span> : null}
                   </td>
-                  <td className="break-words px-4 py-2.5 text-phx-2xs tabular-nums text-slate-700">{cells.grades}</td>
-                  <td className="break-words px-4 py-2.5 text-phx-2xs text-slate-700">
+                  <td className="break-words px-4 py-2.5 text-phx-sm tabular-nums text-slate-700">{cells.grades}</td>
+                  <td className="break-words px-4 py-2.5 text-phx-sm text-slate-700">
                     {cells.specialities}
                     {repeated ? <span className="block text-slate-500">{repeated}</span> : null}
                   </td>
@@ -490,10 +490,10 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-300 bg-slate-50 align-top">
-              <th className="px-4 py-2.5 text-left text-phx-2xs font-black text-slate-900" scope="row">The whole team</th>
-              <td className="break-words px-4 py-2.5 text-phx-2xs font-semibold tabular-nums text-slate-900">{districtCustomerCountLine(team)}</td>
-              <td className="break-words px-4 py-2.5 text-phx-2xs font-semibold tabular-nums text-slate-900">{teamCells.grades}</td>
-              <td className="break-words px-4 py-2.5 text-phx-2xs font-semibold text-slate-900">{teamCells.specialities}</td>
+              <th className="px-4 py-2.5 text-left text-phx-sm font-black text-slate-900" scope="row">The whole team</th>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-slate-900">{districtCustomerCountLine(team)}</td>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold tabular-nums text-slate-900">{teamCells.grades}</td>
+              <td className="break-words px-4 py-2.5 text-phx-sm font-semibold text-slate-900">{teamCells.specialities}</td>
             </tr>
           </tfoot>
         </table>
@@ -505,19 +505,19 @@ export function DistrictPlansCustomersPanel({ report, show }: { report: District
               <li className="grid gap-0.5 px-4 py-2.5" key={week.districtSeatId}>
                 <p className="min-w-0 break-words">
                   <ManagerName anchor={districtPlanAnchor(week)} listed={listed.has(week.districtSeatId)} name={week.managerName} />
-                  <span className="text-phx-3xs text-slate-500"> · {week.regionName}</span>
+                  <span className="text-phx-xs text-slate-500"> · {week.regionName}</span>
                 </p>
-                <p className="break-words text-phx-2xs tabular-nums text-slate-700">{districtCustomerCountLine(mix)}</p>
-                <p className="break-words text-phx-2xs tabular-nums text-slate-600">Grades: {cells.grades}</p>
-                <p className="break-words text-phx-2xs text-slate-600">Specialities: {cells.specialities}</p>
-                {repeated ? <p className="break-words text-phx-2xs text-slate-500">{repeated}</p> : null}
+                <p className="break-words text-phx-sm tabular-nums text-slate-700">{districtCustomerCountLine(mix)}</p>
+                <p className="break-words text-phx-sm tabular-nums text-slate-600">Grades: {cells.grades}</p>
+                <p className="break-words text-phx-sm text-slate-600">Specialities: {cells.specialities}</p>
+                {repeated ? <p className="break-words text-phx-sm text-slate-500">{repeated}</p> : null}
               </li>
             );
           })}
           <li className="grid gap-0.5 bg-slate-50 px-4 py-2.5">
-            <p className="text-phx-2xs font-black text-slate-900">The whole team</p>
-            <p className="break-words text-phx-2xs tabular-nums text-slate-700">{districtCustomerCountLine(team)}</p>
-            <p className="break-words text-phx-2xs tabular-nums text-slate-600">Grades: {teamCells.grades}</p>
+            <p className="text-phx-sm font-black text-slate-900">The whole team</p>
+            <p className="break-words text-phx-sm tabular-nums text-slate-700">{districtCustomerCountLine(team)}</p>
+            <p className="break-words text-phx-sm tabular-nums text-slate-600">Grades: {teamCells.grades}</p>
           </li>
         </ul>
       </KpiSection>

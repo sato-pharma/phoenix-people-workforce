@@ -135,7 +135,7 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
         <>
           <KeycardGrid cards={cards} />
           {!published && (
-            <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
+            <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
           )}
           {/* Region Sales counts vacant-district reps + in-region direct orders no DSM row below carries */}
           <PerformanceReconciliationNote
@@ -175,7 +175,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead
         title="Districts Needing Attention"
-        right={<span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
+        right={<span className="whitespace-nowrap text-phx-sm font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
       />
       {behind.length === 0 && unmeasured.length === 0 ? (
         <div className="flex items-center gap-2 bg-white px-4 py-5 sm:px-5">
@@ -198,7 +198,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
                 </div>
                 <div className="shrink-0 text-right">
                   <p className={`text-lg font-black tabular-nums ${tone}`}>{pct}%</p>
-                  <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-wide text-slate-400">
+                  <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold uppercase tracking-wide text-slate-400">
                     {egpCompact(gap)} to 90%
                   </p>
                 </div>

@@ -28,7 +28,7 @@
  *
  * ## text-phx-* never goes through cn()
  *
- * tailwind-merge SILENTLY strips custom named font sizes, so a `text-phx-2xs` handed to `cn()`
+ * tailwind-merge SILENTLY strips custom named font sizes, so a `text-phx-sm` handed to `cn()`
  * disappears and only `getComputedStyle` in a real browser can see that it did. Every class string
  * in this file is a plain template literal for that reason.
  */
@@ -110,8 +110,8 @@ export const PANEL = "border border-slate-200 bg-white";
 // One step larger BELOW `sm` only (11px on a phone, 10px from 640px up). Every table on this board
 // renders from `md`, where the `sm:` size applies, so the measured desktop tables
 // (tests/kpis-board-tables-fit.test.ts) are unchanged; only the phone cards and captions grow.
-export const CAPTION = "text-phx-xs text-slate-500 sm:text-phx-2xs";
-export const TH = "px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+export const CAPTION = "text-phx-md text-slate-500 sm:text-phx-sm";
+export const TH = "px-3 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 export const TD = "px-3 py-3 align-top text-sm text-slate-700";
 export const NUM = "px-3 py-3 align-top text-sm font-semibold tabular-nums text-slate-900";
 
@@ -140,8 +140,8 @@ export function KpiSection({
       <div className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden border-b border-slate-200 bg-slate-900 px-4 py-3 pl-5 sm:px-5 sm:pl-6">
         <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-orange-500" />
         <div className="min-w-0 flex-1">
-          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-phx-2xs leading-4 text-slate-400">{description}</p> : null}
+          <h2 className="text-phx-md font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+          {description ? <p className="mt-0.5 text-phx-sm leading-4 text-slate-400">{description}</p> : null}
         </div>
         {action ? <div className="min-w-0">{action}</div> : null}
       </div>
@@ -175,7 +175,7 @@ export function KpiBandChip({ band }: { band: KpiBand }) {
   const tone = toneOf(band);
   return (
     <span
-      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
     >
       <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
       {KPI_BAND_SHORT[band]}
@@ -214,7 +214,7 @@ export function KpiTile({
   return (
     <div className={`relative overflow-hidden border border-slate-200 bg-white px-4 pb-3.5 pt-4 ${FLAT}`}>
       <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${cap}`} />
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:text-phx-3xs">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400 sm:text-phx-xs">{label}</p>
       <p className={`mt-1 text-[1.7rem] font-black leading-none tabular-nums ${tone ? tone.text : "text-slate-900"}`}>
         {value}
       </p>
@@ -245,7 +245,7 @@ export function KpiRank({ rank }: { rank: number }) {
           : "border-transparent bg-transparent text-slate-400";
   return (
     <span
-      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center border text-phx-3xs font-black tabular-nums ${style}`}
+      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center border text-phx-xs font-black tabular-nums ${style}`}
     >
       {rank}
     </span>
@@ -292,11 +292,11 @@ export function KpiPodiumCard({
     <div className={`relative overflow-hidden border border-slate-200 bg-white ${FLAT}`}>
       <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-orange-500" />
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600 sm:text-phx-3xs">{title}</p>
-        <p className="mt-0.5 text-phx-2xs leading-4 text-slate-400 sm:text-phx-3xs">{hint}</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-600 sm:text-phx-xs">{title}</p>
+        <p className="mt-0.5 text-phx-sm leading-4 text-slate-400 sm:text-phx-xs">{hint}</p>
       </div>
       {entries.length === 0 ? (
-        <p className="px-3 py-3 text-phx-2xs text-slate-500">
+        <p className="px-3 py-3 text-phx-sm text-slate-500">
           Nobody in view can be ranked on this measure yet.
         </p>
       ) : (
@@ -316,10 +316,10 @@ export function KpiPodiumCard({
             >
               <KpiRank rank={index + 1} />
               <span className="min-w-0 flex-1">
-                <span className="block text-phx-xs font-bold leading-4 text-slate-900" dir="auto">
+                <span className="block text-phx-md font-bold leading-4 text-slate-900" dir="auto">
                   {entry.repName}
                 </span>
-                <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{entry.caption}</span>
+                <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{entry.caption}</span>
               </span>
               <span className="shrink-0 text-base font-black tabular-nums text-slate-900">
                 {entry.value}
@@ -377,7 +377,7 @@ export function KpiSortableTh({
         <span>{label}</span>
         {arrow ? <span aria-hidden>{arrow}</span> : null}
       </Link>
-      {sub ? <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">{sub}</span> : null}
+      {sub ? <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">{sub}</span> : null}
     </th>
   );
 }
@@ -418,12 +418,12 @@ export function KpiRepName({
           {name || "Unnamed rep"}
         </span>
         {/* Phone-only step up; from `sm` (and so in every desktop table) it is the measured 9px. */}
-        {where ? <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where}</span> : null}
+        {where ? <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{where}</span> : null}
         {!where && jobTitle ? (
-          <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{jobTitle}</span>
+          <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{jobTitle}</span>
         ) : null}
         {hired && hired !== "—" ? (
-          <span className="block text-phx-2xs leading-4 text-slate-500 tabular-nums sm:text-phx-3xs">Hired {hired}</span>
+          <span className="block text-phx-sm leading-4 text-slate-500 tabular-nums sm:text-phx-xs">Hired {hired}</span>
         ) : null}
       </span>
     </span>

@@ -612,7 +612,7 @@ function theScreen() {
   }
   assert.ok(view.includes("title={regionManagerTitle(week.regionName, week.managerName)}"), "each section is headed by its region and manager");
   assert.ok(view.includes("id={districtPlanAnchor(week)}"), "each section carries the anchor the panels link to");
-  assert.ok(view.includes('!figures.sent ? (\n          <p className="px-4 py-3 text-phx-xs font-semibold text-slate-600">Not sent yet</p>'), "a week not sent shows none of its draft");
+  assert.ok(view.includes('!figures.sent ? (\n          <p className="px-4 py-3 text-phx-md font-semibold text-slate-600">Not sent yet</p>'), "a week not sent shows none of its draft");
   assert.ok(view.includes("day.managerOnLeave ?"), "a day on leave reads On leave");
   assert.ok(view.includes('text-sky-800" key={line}'), "a chain visit is a neutral sky line");
   assert.ok(view.includes("const open = figures.sent ? week.planHref : null;"), "only a sent week offers to open");
