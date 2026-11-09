@@ -22,7 +22,9 @@ function tablet(overrides: Partial<FleetWatchRow> & { deviceNumber: string }): F
     assetTag: `PHX-${overrides.deviceNumber}`,
     holderName: "A Rep",
     lastContactAt: ago(1),
+    latitude: 30.05,
     locatedAt: ago(1),
+    longitude: 31.24,
     name: overrides.deviceNumber,
     registerStatus: "assigned",
     ...overrides,
@@ -43,18 +45,20 @@ export function runTabletFleetWatchTests() {
     [
       tablet({ deviceNumber: "fine" }),
       tablet({ deviceNumber: "silent", lastContactAt: ago(73), locatedAt: ago(73) }),
-      tablet({ deviceNumber: "never", lastContactAt: null, locatedAt: null }),
+      tablet({ deviceNumber: "never", lastContactAt: null, latitude: null, locatedAt: null, longitude: null }),
       tablet({ deviceNumber: "nofix", locatedAt: ago(73) }),
-      tablet({ deviceNumber: "nofix-ever", locatedAt: null }),
+      tablet({ deviceNumber: "nofix-ever", latitude: null, locatedAt: null, longitude: null }),
+      // 🔴 A position with no time of its own HAS been reported — it is an old fix, never "never fixed".
+      tablet({ deviceNumber: "undated", locatedAt: null }),
       tablet({ deviceNumber: "edge", lastContactAt: ago(71), locatedAt: ago(71) }),
-      tablet({ deviceNumber: "cupboard", holderName: null, lastContactAt: ago(500), locatedAt: null, registerStatus: "in_stock" }),
+      tablet({ deviceNumber: "cupboard", holderName: null, lastContactAt: ago(500), latitude: null, locatedAt: null, longitude: null, registerStatus: "in_stock" }),
       tablet({ deviceNumber: "reserved", lastContactAt: ago(500), registerStatus: "reserved" }),
     ],
     NOW,
   );
   assert.deepEqual(
     faults.map((fault) => `${fault.deviceNumber}:${fault.kind}`),
-    ["never:silent", "nofix:no_fix", "nofix-ever:never_fixed", "silent:silent"],
+    ["never:silent", "nofix:no_fix", "nofix-ever:never_fixed", "silent:silent", "undated:no_fix"],
     "a tablet held by a person, silent or fixless past 72 hours; a tablet in a cupboard is meant to be quiet",
   );
 
@@ -91,7 +95,7 @@ export function runTabletFleetWatchTests() {
   assert.doesNotMatch(message, /switched off|disabled|tamper|refus/i);
 
   // A tablet that never reported a location says so, once a month rather than every day.
-  const neverFixed = assess(answered([tablet({ deviceNumber: "n", locatedAt: null })]));
+  const neverFixed = assess(answered([tablet({ deviceNumber: "n", latitude: null, locatedAt: null, longitude: null })]));
   assert.match(neverFixed.detail, /0 lost their location fix, 1 never reported one/);
   assert.match(buildFleetWatchMessage(neverFixed), /has never reported a location:\n• PHX-n, held by A Rep\./);
   assert.doesNotMatch(buildFleetWatchMessage(neverFixed), /switched off|disabled|tamper|refus/i);

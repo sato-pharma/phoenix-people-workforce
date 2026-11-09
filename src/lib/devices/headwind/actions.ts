@@ -82,6 +82,11 @@ export type HeadwindActionDef = {
   id: HeadwindActionId;
   label: string;
   description: string;
+  /**
+   * The audit row's verb, which is also the tablet's command history. 🔴 It says what Phoenix DID —
+   * queued or sent — never what the tablet did: "Locked PHX-TAB-0007" was written the moment the
+   * add-on accepted the row, before any tablet had seen it (9 Nov 2026 audit).
+   */
   pastTense: string;
   carrier: HeadwindActionCarrier;
   /** Needs the second press and a named tablet before it will run. */
@@ -117,7 +122,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "LOCK",
     label: "Lock the tablet",
     needsMessage: false,
-    pastTense: "Locked",
+    pastTense: "Queued a lock for",
   },
   {
     carrier: "add-on",
@@ -126,18 +131,18 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "UNLOCK",
     label: "Unlock the tablet",
     needsMessage: false,
-    pastTense: "Unlocked",
+    pastTense: "Queued an unlock for",
   },
   {
     carrier: "add-on",
     description:
       "Locks the tablet and prints your own words across the screen — for a lost one, whoever finds " +
-      "it reads how to return it. The words show above the tablet's own id.",
+      "it reads how to return it. The tablet's own id is shown with them.",
     destructive: false,
     id: "LOST_MODE_ON",
     label: "Lost mode on",
     needsMessage: true,
-    pastTense: "Put lost mode on",
+    pastTense: "Queued lost mode for",
   },
   {
     carrier: "add-on",
@@ -146,7 +151,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "LOST_MODE_OFF",
     label: "Lost mode off",
     needsMessage: false,
-    pastTense: "Took lost mode off",
+    pastTense: "Queued lost mode off for",
   },
   {
     carrier: "add-on",
@@ -157,7 +162,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "FACTORY_RESET",
     label: "Factory reset",
     needsMessage: false,
-    pastTense: "Factory reset",
+    pastTense: "Queued a factory reset for",
   },
   {
     carrier: "add-on",
@@ -168,7 +173,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "RESET_SCREEN_LOCK",
     label: "Reset the screen lock",
     needsMessage: false,
-    pastTense: "Reset the screen lock on",
+    pastTense: "Queued a screen-lock reset for",
   },
   {
     carrier: "phoenix-app",
@@ -179,7 +184,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "RING_ALARM",
     label: "Ring the alarm",
     needsMessage: false,
-    pastTense: "Rang the alarm on",
+    pastTense: "Sent the alarm to",
   },
   {
     carrier: "phoenix-app",
@@ -188,7 +193,7 @@ export const HEADWIND_ACTIONS: readonly HeadwindActionDef[] = [
     id: "SHOW_MESSAGE",
     label: "Show a message",
     needsMessage: true,
-    pastTense: "Showed a message on",
+    pastTense: "Sent a message to",
   },
   {
     carrier: "impossible",
@@ -219,6 +224,11 @@ export type HeadwindActionAvailability = HeadwindActionDef & {
  * 🔴 ASKED, NEVER ASSUMED. The add-on is built into the box's own image by a Dockerfile the owner
  * runs; a box built before it, or rebuilt without it, answers 404 here. Assuming it is present would
  * turn four actions into buttons that report success against an endpoint that does not exist.
+ *
+ * 🔴 AND ONLY A 404 MEANS "NOT INSTALLED" (9 Nov 2026 audit, F16). This used to swallow every error,
+ * so a timeout, a refused sign-in, a Cloudflare Access fault or a box that was simply down all read
+ * "the add-on is not installed — rebuild the Headwind box", which sends a person to rebuild a server
+ * that has the add-on and is merely unreachable. Anything but a 404 now surfaces as itself.
  */
 export async function headwindAddonInstalled(
   fetchImpl: typeof fetch = fetch,
@@ -232,8 +242,9 @@ export async function headwindAddonInstalled(
       env,
     );
     return status?.ready === true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof HeadwindRequestError && error.status === 404) return false;
+    throw error;
   }
 }
 
@@ -356,6 +367,8 @@ export async function takeHeadwindAction(
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
+  // The audit writer is a parameter only so a test can read the row without a database.
+  audit: typeof writeRequiredAuditLog = writeRequiredAuditLog,
 ): Promise<HeadwindActionResult> {
   const deviceNumber = input.deviceNumber.trim();
   if (!deviceNumber) throw new HeadwindActionError("Say which tablet.");
@@ -409,7 +422,7 @@ export async function takeHeadwindAction(
     );
   }
 
-  await writeRequiredAuditLog({
+  await audit({
     actorLoginId: actor,
     entityId: target.deviceNumber,
     entityType: "headwind_device_command",
@@ -432,17 +445,26 @@ export async function takeHeadwindAction(
   };
 }
 
+/**
+ * 🔴 THE ADD-ON QUEUES; IT DOES NOT ACT, AND NOTHING WAKES THE TABLET (9 Nov 2026 audit). The add-on
+ * writes a row the tablet picks up at its NEXT check-in, and its own reply says `queued: true,
+ * confirmed: false`. Phoenix sends no wake push after it, so "will lock at its next check-in, usually
+ * within a minute or two" promised a timing nobody had measured — for a lost tablet, the one moment
+ * that sentence is read most carefully. Each sentence now says what is known: it is queued, and
+ * Phoenix has not seen it happen.
+ */
 function resultMessage(def: HeadwindActionDef, subject: string, pin: string | null = null): string {
+  const unseen = "Phoenix has not seen the tablet do it yet.";
   switch (def.id) {
     case "LOCK":
-      return `${subject} will lock at its next check-in, usually within a minute or two. Nothing on it can be used until it is unlocked from here.`;
+      return `A lock is queued for ${subject}. The tablet locks when it next checks in with the tablet server, and stays usable until then — a tablet with no signal does not check in. ${unseen}`;
     case "UNLOCK":
     case "LOST_MODE_OFF":
-      return `${subject} will unlock at its next check-in. If it has no signal it stays locked until it does.`;
+      return `An unlock is queued for ${subject}. The tablet unlocks when it next checks in with the tablet server; until then it stays locked. ${unseen}`;
     case "LOST_MODE_ON":
-      return `${subject} will lock and show your words at its next check-in. Whoever is holding it reads them above the tablet's own id.`;
+      return `Lost mode is queued for ${subject}. When it next checks in with the tablet server it locks and shows your words with its own id; until then it is usable — a tablet with no signal does not check in. ${unseen}`;
     case "FACTORY_RESET":
-      return `${subject} will erase itself at its next check-in. 🔴 It also stops being managed at that moment, so nothing here can reach it again — and nothing on it can be recovered.`;
+      return `A factory reset is queued for ${subject}. It erases itself when it next checks in with the tablet server. 🔴 It also stops being managed at that moment, so nothing here can reach it again — and nothing on it can be recovered. ${unseen}`;
     case "RESET_SCREEN_LOCK":
       return `${subject} will take the temporary PIN ${pin ?? ""} as its screen lock at its next check-in. Give it to the rep now — Phoenix does not show it again or keep it. Nothing on the tablet is erased, and the rep can change the PIN in the tablet's own settings once they are in.`;
     case "RING_ALARM":

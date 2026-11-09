@@ -27,7 +27,7 @@
  */
 
 import { deviceActorNames } from "@/lib/devices/actor-names";
-import { listHeadwindDevices } from "@/lib/devices/headwind/devices";
+import { HeadwindDeviceNotFoundError, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -169,8 +169,12 @@ export async function getHeadwindDeviceDetail(
 ): Promise<HeadwindDeviceDetail> {
   const devices = await listHeadwindDevices(fetchImpl, env);
   const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
+  // 🔴 A NUMBER THAT IS NOT IN THE FLEET IS NOT "A TABLET WITH NOTHING TO SAY". An empty answer drew an
+  // empty panel for a removed or mistyped tablet, exactly like a real one that had reported nothing.
   if (!device) {
-    return { deviceNumber, headline: [], sections: [] };
+    throw new HeadwindDeviceNotFoundError(
+      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
+    );
   }
 
   const headline: DeviceFact[] = [];
@@ -185,13 +189,24 @@ export async function getHeadwindDeviceDetail(
   push("IMEI", device.imei);
   push("Phone number", device.phone);
   push("Rules it runs", device.configurationName);
-  push("Headwind agent", device.agentVersion);
+  // 🔴 TWO VERSIONS, AND ONLY ONE IS THE TABLET'S. `agentVersion` is the record's top-level
+  // `launcherVersion` — the version the server WANTS it on — and it read 6.48 for a tablet still running
+  // 6.39. It was shown as "Headwind agent", i.e. as the tablet's own. The running version is the one in
+  // the tablet's app list (`launcherVersion`), and a tablet that does not report it says so.
+  push("Launcher running", device.launcherVersion ?? "Not reported by the tablet");
+  push("Launcher its rules want", device.agentVersion);
   push("Remote screen ID", device.rustDeskId);
 
   const sections: DeviceFactSection[] = [];
+  // A position never without its own time (devices rule, 9 Nov 2026) — the time rides on the same line.
   const position =
     device.latitude !== null && device.longitude !== null
-      ? [{ label: "Last position", value: `${device.latitude}, ${device.longitude}` }]
+      ? [
+          {
+            label: "Last position",
+            value: `${device.latitude}, ${device.longitude} · ${device.locatedAt ? `taken ${cairoDateTime(device.locatedAt)}` : "time of fix not reported"}`,
+          },
+        ]
       : [];
   if (position.length > 0) sections.push({ facts: position, title: "Where it was last seen" });
 

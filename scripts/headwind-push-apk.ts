@@ -21,7 +21,7 @@
  *   railway run --service phoenix-people-workforce -- \
  *     node --experimental-strip-types --experimental-specifier-resolution=node \
  *          --experimental-loader ./tests/alias-loader.mjs \
- *          scripts/headwind-push-apk.ts --apk ./phoenix.apk --config 3
+ *          scripts/headwind-push-apk.ts --apk ./phoenix.apk --config rep
  *
  * 🔴 `railway run` RESOLVES ITS LINK FROM THE CURRENT DIRECTORY, and a worktree answers
  * "No linked project found" — run it from the primary checkout. And always pass
@@ -31,16 +31,20 @@
  * 🔴 INSTALLING IS WHAT BEING IN THE RULES MEANS. Headwind has no "install now" command. The app
  * reaches each tablet at its next check-in, which is minutes, not seconds.
  *
- *   --apk <path>      the .apk to send (required)
- *   --config <id>     the configuration to put it on; 3 is "Rep tablets"
- *   --actor <id>      who to record in the audit row (default: "system")
- *   --dry-run         sign in and report the current state, then stop without changing anything
+ * 🔴 THERE IS NO DEFAULT SET OF RULES. The rep tablets follow "Rep tablets" AND each line's copy of it
+ * (runbook §8.17), so the old default — configuration 3 alone — silently left every line tablet without
+ * the app. `--config rep` reaches every rep set (found by name, never by id); a comma list names sets.
+ *
+ *   --apk <path>        the .apk to send (required)
+ *   --config <which>    required: `rep` for every rep set of rules, or ids separated by commas (3,4,5)
+ *   --actor <id>        who to record in the audit row (default: "system")
+ *   --dry-run           sign in and report the current state, then stop without changing anything
  */
 import { basename } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import process from "node:process";
 
-import { listHeadwindConfigurations } from "@/lib/devices/headwind/configurations";
+import { type HeadwindRulesTarget, resolveHeadwindRules } from "@/lib/devices/headwind/configurations";
 import { uploadHeadwindApp } from "@/lib/devices/headwind/uploads";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -61,16 +65,18 @@ const value = (name: string): string | null => {
 };
 
 const apkPath = value("apk");
-const configurationId = Number(value("config") ?? "3");
+const configArg = value("config");
 const actor = value("actor") ?? "system";
 const dryRun = args.includes("--dry-run");
 
-if (!apkPath) {
-  console.error("Say which APK to send:  --apk <path to .apk>  [--config 3] [--dry-run]");
+if (!apkPath || !configArg) {
+  console.error("Say which APK to send and which rules:  --apk <path to .apk>  --config rep|<id,id,...>  [--dry-run]");
   process.exit(2);
 }
-if (!Number.isInteger(configurationId)) {
-  console.error("--config takes a whole number, e.g. 3 for the rep tablets.");
+const rules: HeadwindRulesTarget =
+  configArg.trim() === "rep" ? "rep" : configArg.split(",").map((part) => (part.trim() ? Number(part.trim()) : Number.NaN));
+if (rules !== "rep" && !rules.every((id) => Number.isInteger(id))) {
+  console.error("--config takes `rep` (every rep set of rules) or whole numbers separated by commas, e.g. 3,4,5.");
   process.exit(2);
 }
 
@@ -81,21 +87,16 @@ if (!fileInfo?.isFile()) {
 }
 
 console.log(`apk        : ${apkPath}  (${(fileInfo.size / 1048576).toFixed(1)} MB)`);
-console.log(`configuration: ${configurationId}`);
+console.log(`rules      : ${rules === "rep" ? "every rep set of rules" : rules.join(", ")}`);
 console.log(`mode       : ${dryRun ? "DRY RUN — reads only" : "LIVE — this changes what the tablets install"}\n`);
 
-// A read first, so the run says out loud which set of rules it is about to touch, and so a bad
+// A read first, so the run says out loud which sets of rules it is about to touch, and so a bad
 // credential or a wrong service fails here rather than half way through a 150 MB upload.
-const { configurations } = await listHeadwindConfigurations();
-const target = configurations.find((entry) => entry.id === configurationId);
-if (!target) {
-  console.error(
-    `There is no configuration ${configurationId} on that server. It has: ` +
-      configurations.map((entry) => `${entry.id} (${entry.name})`).join(", "),
-  );
+const targets = await resolveHeadwindRules(rules).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(3);
-}
-console.log(`signed in — target configuration is "${target.name}"`);
+});
+console.log(`signed in — the rules are: ${targets.map((entry) => `"${entry.name}"`).join(", ")}`);
 
 if (dryRun) {
   console.log("\nDRY RUN — nothing was changed. Drop --dry-run to send it.");
@@ -106,11 +107,11 @@ if (dryRun) {
 const bytes = await readFile(apkPath);
 const file = new File([bytes], basename(apkPath), { type: "application/vnd.android.package-archive" });
 
-const result = await uploadHeadwindApp({ configurationId, file, showIcon: true }, actor);
+const result = await uploadHeadwindApp({ file, rules: targets.map((entry) => entry.id), showIcon: true }, actor);
 
 console.log(`\npackage : ${result.packageName ?? "(server did not name it)"}`);
 console.log(`version : ${result.version ?? "(server did not name it)"}`);
-console.log(`on rules: ${result.installed ? "yes" : "NO"}`);
+console.log(`on rules: ${result.rules.length ? result.rules.join(", ") : "NO"}`);
 console.log(`\n${result.message}`);
 
 if (!result.installed) process.exit(4);

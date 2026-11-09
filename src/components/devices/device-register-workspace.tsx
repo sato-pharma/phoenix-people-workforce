@@ -1821,9 +1821,22 @@ function DeviceActions({
             Record a return
           </button>
         ) : null}
-        <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "mark")} type="button">
-          Change state
-        </button>
+        {/*
+          NOT OFFERED ON A RESERVED DEVICE. Its reservation is a live claim the register's own rows
+          do not show, and changing the device's state under it left the reservation stranded — the
+          route now refuses it (`markRefusal`). The reservation is ended where it is kept, on the
+          tablet's custody panel, and then the state can change here.
+        */}
+        {device.status === "reserved" ? (
+          <p className="break-words text-[11px] font-semibold leading-relaxed text-violet-800">
+            Reserved for a new starter. Revoke the reservation, or hand it over on their first day, from the
+            tablet&rsquo;s custody panel on the Tablet Dashboard before changing its state.
+          </p>
+        ) : (
+          <button className={buttonClass} disabled={busy} onClick={() => onOpen(device.id, "mark")} type="button">
+            Change state
+          </button>
+        )}
         {/*
           The receipt for THIS device and THIS holder — the point where the register pays for
           itself. `deviceId` carries the register row into the print, so the serial and IMEI on the

@@ -14,14 +14,22 @@
  * `pendingRegistration` counts the ones a person could add — those carrying a serial or an IMEI. A
  * person adds each from its own row through `/api/devices/headwind/register`; this read only reads.
  *
- * THE FIELD NAMES MATCH THE MANAGEENGINE FLEET'S WHERE THEY STILL MEAN THE SAME THING — `rows`,
- * `registerError`, `imeisToRecord`. `pendingRegistration` is this section's own: the ManageEngine half
- * still auto-registers (it is being retired, not changed) and keeps `autoRegistered` /
- * `autoRegisterError`, so forcing one vocabulary across a rule that now differs would hide the change.
+ * A tablet with NEITHER is counted on its own (`awaitingHardwareReport`) and its row says why: it enrolled
+ * but its first update run never got as far as the hardware report, so there is nothing to add it by.
+ *
+ * Each row also carries `tagWarning` when the Headwind device number and the custody tag (or the tag the
+ * next press would give it) name the tablet differently — said, never corrected here.
  */
 
 import { listHeadwindDevices, matchHeadwindToRegister, type HeadwindDevice } from "@/lib/devices/headwind/devices";
-import { headwindImeisToRecord, headwindTabletsToRegister } from "@/lib/devices/headwind/register-sync";
+import {
+  headwindImeisToRecord,
+  headwindNextAssetTag,
+  headwindTabletCanBeTold,
+  headwindTabletsAwaitingHardwareReport,
+  headwindTabletsToRegister,
+  headwindTagDrift,
+} from "@/lib/devices/headwind/register-sync";
 import { isRustDeskConfigured } from "@/lib/devices/rustdesk/config";
 import { getDeviceRegisterData, loadReservedAssignments } from "@/lib/devices/service";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
@@ -74,6 +82,18 @@ export type RepHeadwindRow = {
   placeholderName: string | null;
   /** The register was read and does not know this managed tablet. False when the register could not be read. */
   unregistered: boolean;
+  /**
+   * Not in the register AND carrying a serial number or IMEI the register can tell it apart by — the
+   * server's own answer to "can Add to custody work", so the button never offers what the route refuses.
+   */
+  canAddToCustody: boolean;
+  /**
+   * Not in the register, and enrolled without ever sending its hardware report (no serial number, no
+   * IMEI) — its first update run probably stalled on an install link. It cannot be added until it does.
+   */
+  awaitingHardwareReport: boolean;
+  /** The Headwind device number and the custody tag (or the tag a press would give it) read differently. */
+  tagWarning: string | null;
 };
 
 export type HeadwindFleetState = {
@@ -86,6 +106,11 @@ export type HeadwindFleetState = {
    * told apart, so it is not offered. The count, never the act — nothing is added on this read.
    */
   pendingRegistration: number;
+  /**
+   * Managed tablets the register has never seen that carry NEITHER a serial nor an IMEI — enrolled, but
+   * the hardware report never came. Counted apart from `pendingRegistration`, which cannot take them.
+   */
+  awaitingHardwareReport: number;
   /** Register entries holding no IMEI whose tablet reports one — what the copy would write. */
   imeisToRecord: number;
   /** Whether the company's RustDesk relay is set up, so the screen buttons can be offered. */
@@ -94,21 +119,31 @@ export type HeadwindFleetState = {
   assignable: AssignableEmployee[];
 };
 
-function toRow(
+/** One fleet row — exported so the row's readiness fields are proven without a database. */
+export function headwindFleetRow(
   device: HeadwindDevice,
   register: Parameters<typeof matchHeadwindToRegister>[1],
   reservations: ReservationByDevice,
   registerError: boolean,
+  nextTag: string | null,
 ): RepHeadwindRow {
   const entry = matchHeadwindToRegister(device, register);
   const reservation = entry ? reservations.get(entry.id) ?? null : null;
+  // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE. With no register read, every tablet matches nothing,
+  // and flagging them all "not in the custody register" offered an Add to custody on tablets that are
+  // in it — a duplicate row a click away. Unknown stays unknown: the page says the register could not
+  // be read, and offers nothing to add.
+  const unregistered = !registerError && entry === null;
+  const told = headwindTabletCanBeTold(device);
   return {
     agentVersion: device.agentVersion,
     assetTag: entry?.assetTag ?? null,
     // The live custody record. The register match carries no assignment id, so the reservation lookup
     // is the source when reserved; an assigned tablet shows its holder read-only and needs none.
     assignmentId: reservation?.assignmentId ?? null,
+    awaitingHardwareReport: unregistered && !told,
     batteryCharging: device.batteryCharging,
+    canAddToCustody: unregistered && told,
     batteryLevel: device.batteryLevel,
     configurationName: device.configurationName,
     deviceNumber: device.deviceNumber,
@@ -134,11 +169,12 @@ function toRow(
     rustDeskId: device.rustDeskId,
     serialNumber: device.serialNumber,
     simNumber: entry?.simNumber ?? null,
-    // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE. With no register read, every tablet matches nothing,
-    // and flagging them all "not in the custody register" offered an Add to custody on tablets that are
-    // in it — a duplicate row a click away. Unknown stays unknown: the page says the register could not
-    // be read, and offers nothing to add.
-    unregistered: !registerError && entry === null,
+    // Unknown custody has nothing to compare, so it warns of nothing; only a tablet that could be added
+    // is compared with the tag a press would give it.
+    tagWarning: registerError
+      ? null
+      : headwindTagDrift(device.deviceNumber, entry?.assetTag ?? null, unregistered && told ? nextTag : null),
+    unregistered,
   };
 }
 
@@ -183,7 +219,8 @@ export async function getHeadwindFleet(
     }
   }
 
-  const rows = devices.map((device) => toRow(device, register.devices, reservations, registerError));
+  const nextTag = registerError ? null : headwindNextAssetTag(register.devices);
+  const rows = devices.map((device) => headwindFleetRow(device, register.devices, reservations, registerError, nextTag));
   rows.sort((left, right) => {
     if (left.unregistered !== right.unregistered) return left.unregistered ? -1 : 1;
     return (left.assetTag ?? left.name).localeCompare(right.assetTag ?? right.name);
@@ -191,6 +228,7 @@ export async function getHeadwindFleet(
 
   return {
     assignable: register.assignable ?? [],
+    awaitingHardwareReport: registerError ? 0 : headwindTabletsAwaitingHardwareReport(devices, register.devices).length,
     imeisToRecord: registerError ? 0 : headwindImeisToRecord(devices, register.devices).length,
     pendingRegistration: registerError ? 0 : headwindTabletsToRegister(devices, register.devices).length,
     registerError,

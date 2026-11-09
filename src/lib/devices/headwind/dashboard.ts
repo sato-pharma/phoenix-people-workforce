@@ -13,6 +13,10 @@
  */
 
 import type { RepHeadwindRow } from "@/lib/devices/headwind/fleet";
+import { launcherRank, TABLET_NO_FIX_LIMIT_HOURS } from "@/lib/devices/headwind/fleet-watch";
+
+// One copy of the version arithmetic, shared with the fleet watch (it lives there to avoid an import cycle).
+export { launcherRank };
 
 /** A tablet's last check-in older than this reads as "not online now", never as lost. */
 export const DASHBOARD_ONLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -32,9 +36,19 @@ export type FleetSummary = {
   lowBattery: number;
   /** Managed by the server but not confirmed into the custody register yet. */
   notInRegister: number;
+  /** Of those, the ones that never sent their hardware report (no serial, no IMEI), so cannot be added yet. */
+  awaitingHardwareReport: number;
   /** Every provisioning step done — in custody, SIM recorded, screen ID, a location fix, launcher current. */
   fullySetUp: number;
 };
+
+/**
+ * Where a tablet's launcher stands against the fleet's target.
+ *
+ * 🔴 "not_reported" IS ITS OWN ANSWER, NEVER "current". A tablet whose app list names no launcher has
+ * told us nothing; counting it current hid exactly the tablets that had stopped reporting.
+ */
+export type LauncherStanding = "current" | "behind" | "not_reported";
 
 /**
  * How far one tablet's PROVISIONING has got — the one-time setup that makes it reachable on its own.
@@ -42,80 +56,75 @@ export type FleetSummary = {
  * Each flag is a step the owner drives a tablet through before it is "fully set up"; `ready` is all
  * five together. `online` and `batteryLevel` are deliberately NOT here — a finished tablet can be
  * briefly off or flat, and calling that "not set up" would send someone chasing a step already done.
+ *
+ * 🔴 NULL MEANS "THE REGISTER COULD NOT BE READ". Custody and the SIM come from the register; when it did
+ * not answer, a tick on "In custody" and a cross on "SIM" were both invented. They read null, and a
+ * tablet with an unknown step is never counted fully set up.
  */
 export type TabletReadiness = {
-  /** Confirmed into the custody register (a person added it) — `!unregistered`. */
-  inCustody: boolean;
-  /** A SIM or line is recorded, so the tablet stays online on its own and never waits for a rep's Wi-Fi. */
-  simRecorded: boolean;
+  /** Confirmed into the custody register (a person added it). Null when the register could not be read. */
+  inCustody: boolean | null;
+  /** A SIM or line is recorded, so the tablet stays online on its own. Null when the register could not be read. */
+  simRecorded: boolean | null;
   /** A RustDesk screen ID has been reported, so the screen can be viewed remotely. */
   screenIdReported: boolean;
   /** The tablet has reported at least one position (0/0 is nulled upstream, so a fix here is real). */
   locationReported: boolean;
-  /** Running the newest launcher the fleet reports, or no target to compare against yet. */
+  /** Running at least the fleet's target launcher. False when behind AND when the tablet reports none. */
   launcherCurrent: boolean;
+  /** The launcher step in full — current, behind, or not reported by the tablet. */
+  launcher: LauncherStanding;
   /** All five provisioning steps above are done. */
   ready: boolean;
 };
 
 /**
- * A launcher version string as one comparable number, or null when there is nothing to parse.
+ * The launcher every tablet is measured against, as a rank: the HIGHER of the newest version any tablet
+ * RUNS and the newest version the server WANTS a tablet on.
  *
- * 🔴 WHY NOT STRING COMPARE. These are `6.<build>` versions, so 6.39 is newer than 6.9 (build 39 beats
- * build 9) — but "6.39" < "6.9" as strings, which would call the newer tablet behind. The version is
- * split into its numeric segments and each weighted by position, so the order comes out 6.48 > 6.39 >
- * 6.9. A large per-segment base keeps the segments from colliding; launcher builds never approach it.
- * The running version comes from the tablet's app list, not the server's target field (see `devices.ts`
- * `runningLauncherVersion`), so the comparison is honest.
- */
-export function launcherRank(version: string | null): number | null {
-  if (!version) return null;
-  const segments = version.split(/[^0-9]+/).filter((part) => part.length > 0);
-  if (segments.length === 0) return null;
-  const BASE = 1_000_000;
-  let rank = 0;
-  for (let index = 0; index < 3; index += 1) {
-    const value = index < segments.length ? Number(segments[index]) : 0;
-    if (!Number.isFinite(value)) return null;
-    rank = rank * BASE + Math.min(value, BASE - 1);
-  }
-  return rank;
-}
-
-/**
- * The newest launcher the fleet is on, as a rank — the target every tablet is measured against.
- *
- * Self-maintaining on purpose: "current" means "level with the newest tablet in the fleet", so no
- * hard-coded version constant can go stale as the launcher is updated. Null when no tablet reports a
- * version — then no tablet is flagged behind, because there is nothing to be behind.
+ * 🔴 THE RUNNING VERSIONS ALONE TRUSTED A STALLED FLEET. "Current" used to mean "level with the newest
+ * tablet", so when every tablet's update run stopped at the same dead install link (9 Nov 2026: 6.39 for
+ * 17 days while the rules wanted 6.48) they were all level with each other and all read current. The
+ * wanted version is the row's `agentVersion` — the device record's top-level `launcherVersion`, which is
+ * the server's target (`devices.ts`), never the tablet's own word. Running stays in the bar so a tablet
+ * updated ahead of a stale target still sets it. Null only when nobody reports either.
  */
 export function fleetLauncherTarget(rows: readonly RepHeadwindRow[]): number | null {
   let target: number | null = null;
   for (const row of rows) {
-    const rank = launcherRank(row.launcherVersion);
-    if (rank !== null && (target === null || rank > target)) target = rank;
+    for (const version of [row.launcherVersion, row.agentVersion]) {
+      const rank = launcherRank(version);
+      if (rank !== null && (target === null || rank > target)) target = rank;
+    }
   }
   return target;
 }
 
-/** One tablet's provisioning state. `launcherTarget` defaults to the whole fleet's newest if omitted elsewhere. */
+/** One tablet's provisioning state, measured against `launcherTarget` (`fleetLauncherTarget` of the fleet). */
 export function tabletSetupReadiness(
   row: RepHeadwindRow,
   opts: { launcherTarget?: number | null } = {},
 ): TabletReadiness {
   const launcherTarget = opts.launcherTarget ?? null;
   const myRank = launcherRank(row.launcherVersion);
-  const inCustody = !row.unregistered;
-  const simRecorded = Boolean(row.simNumber || row.lineNumber);
+  // The register answered for this row when it either matched it or said it does not know it; neither
+  // is true of a row read while the register was down (`fleet.ts` leaves both unset then).
+  const registerKnown = row.unregistered || row.registerDeviceId !== null;
+  const inCustody = registerKnown ? !row.unregistered : null;
+  const simRecorded = registerKnown ? Boolean(row.simNumber || row.lineNumber) : null;
   const screenIdReported = Boolean(row.rustDeskId);
   const locationReported = Number.isFinite(row.latitude) && Number.isFinite(row.longitude);
-  // No target, or this tablet has not reported a version, cannot be read as "behind" — it reads current.
-  const launcherCurrent = launcherTarget === null || myRank === null || myRank >= launcherTarget;
+  // A tablet that reports no launcher is "not reported", never current. One that reports a version with
+  // nothing to measure it against cannot be behind anything.
+  const launcher: LauncherStanding =
+    myRank === null ? "not_reported" : launcherTarget === null || myRank >= launcherTarget ? "current" : "behind";
+  const launcherCurrent = launcher === "current";
   return {
     inCustody,
+    launcher,
     launcherCurrent,
     locationReported,
-    ready: inCustody && simRecorded && screenIdReported && locationReported && launcherCurrent,
+    ready: inCustody === true && simRecorded === true && screenIdReported && locationReported && launcherCurrent,
     screenIdReported,
     simRecorded,
   };
@@ -132,6 +141,13 @@ export type MapPoint = {
   sublabel: string | null;
   /** The stop's order on a trail (1-based); null for a fleet marker. */
   order: number | null;
+  /** When the position was taken — null when the tablet did not say. */
+  recordedAt?: string | null;
+  /**
+   * A fleet pin whose position is older than `TABLET_NO_FIX_LIMIT_HOURS`, or carries no time at all.
+   * 🔴 It is drawn faded and its tooltip says "old position" — a pin with no age reads as "is here now".
+   */
+  stale?: boolean;
 };
 
 /** The shape the movements read hands over — kept local so this file imports no server module. */
@@ -139,6 +155,8 @@ export type DashboardLocationFix = {
   latitude: number;
   longitude: number;
   recordedAt: string | null;
+  firstRecordedAt?: string | null;
+  reports?: number;
   batteryLevel: number | null;
   source: "check-in" | "plugin";
 };
@@ -150,9 +168,9 @@ export function summarizeFleet(rows: readonly RepHeadwindRow[], now: number = Da
   let screenReady = 0;
   let lowBattery = 0;
   let notInRegister = 0;
+  let awaitingHardwareReport = 0;
   let fullySetUp = 0;
-  // The target is the fleet's own newest launcher, so each tablet's "current?" is measured once against
-  // the same bar — computed here, before the loop, rather than re-derived per row.
+  // One bar for every tablet's "current?" — computed here, before the loop, rather than re-derived per row.
   const launcherTarget = fleetLauncherTarget(rows);
   for (const row of rows) {
     if (row.lastContactAt) {
@@ -165,17 +183,31 @@ export function summarizeFleet(rows: readonly RepHeadwindRow[], now: number = Da
       lowBattery += 1;
     }
     if (row.unregistered) notInRegister += 1;
+    if (row.awaitingHardwareReport) awaitingHardwareReport += 1;
     if (tabletSetupReadiness(row, { launcherTarget }).ready) fullySetUp += 1;
   }
-  return { fullySetUp, lowBattery, notInRegister, online, reportingLocation, screenReady, total: rows.length };
+  return {
+    awaitingHardwareReport,
+    fullySetUp,
+    lowBattery,
+    notInRegister,
+    online,
+    reportingLocation,
+    screenReady,
+    total: rows.length,
+  };
 }
 
 /** One marker per tablet that has reported a position — labelled with its asset tag, holder in the tooltip. */
-export function fleetRowsToPoints(rows: readonly RepHeadwindRow[]): MapPoint[] {
+export function fleetRowsToPoints(rows: readonly RepHeadwindRow[], now: number = Date.now()): MapPoint[] {
   const points: MapPoint[] = [];
+  const limitMs = TABLET_NO_FIX_LIMIT_HOURS * 3_600_000;
   for (const row of rows) {
     if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) continue;
+    const taken = row.locatedAt ? Date.parse(row.locatedAt) : Number.NaN;
     points.push({
+      recordedAt: row.locatedAt,
+      stale: !Number.isFinite(taken) || now - taken > limitMs,
       id: row.deviceNumber,
       label: row.assetTag ?? row.name ?? row.deviceNumber,
       latitude: row.latitude as number,
@@ -191,21 +223,32 @@ export function fleetRowsToPoints(rows: readonly RepHeadwindRow[]): MapPoint[] {
 /**
  * One tablet's fixes as a numbered trail, oldest first.
  *
- * The movements read hands the fixes back newest-first; a trail reads in time order, so they are
- * sorted ascending here and numbered from 1. A fix with no coordinates is dropped — it cannot be
- * drawn — and a fix with no time still takes its place in the order it arrived.
+ * 🔴 ONE SOURCE PER LINE, AND ONLY TIMED FIXES ON IT. The movements read hands back two sources that
+ * are never blended — the history plugin's record and the position riding on each check-in — and a
+ * line joining a plugin fix to a check-in fix draws a route nobody reported. So the trail is drawn from
+ * the plugin's fixes when it has any, and from the check-ins otherwise. A fix with no time cannot be
+ * placed in order: it used to sort FIRST (an empty string) and became stop 1; it is now left off the
+ * line and stays in the list below the map.
  */
 export function fixesToPoints(fixes: readonly DashboardLocationFix[]): MapPoint[] {
-  const usable = fixes.filter((fix) => Number.isFinite(fix.latitude) && Number.isFinite(fix.longitude));
-  const ordered = usable
-    .slice()
-    .sort((left, right) => String(left.recordedAt ?? "").localeCompare(String(right.recordedAt ?? "")));
+  const timed = fixes.filter(
+    (fix) =>
+      Number.isFinite(fix.latitude) &&
+      Number.isFinite(fix.longitude) &&
+      typeof fix.recordedAt === "string" &&
+      Number.isFinite(Date.parse(fix.recordedAt)),
+  );
+  const source = timed.some((fix) => fix.source === "plugin") ? "plugin" : "check-in";
+  const ordered = timed
+    .filter((fix) => fix.source === source)
+    .sort((left, right) => Date.parse(left.recordedAt as string) - Date.parse(right.recordedAt as string));
   return ordered.map((fix, index) => ({
-    id: `${fix.source}:${fix.recordedAt ?? index}:${fix.latitude},${fix.longitude}`,
+    id: `${fix.source}:${fix.recordedAt}:${fix.latitude},${fix.longitude}`,
     label: String(index + 1),
     latitude: fix.latitude,
     longitude: fix.longitude,
     order: index + 1,
+    recordedAt: fix.recordedAt,
     sublabel: fix.recordedAt,
   }));
 }

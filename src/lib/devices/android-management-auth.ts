@@ -27,6 +27,13 @@ import type { GoogleTokenProvider } from "@/lib/devices/android-web-app";
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
+/**
+ * The token exchange's deadline — the same 30 s every Android Management call has. It had none, so a
+ * Google token endpoint that accepted the connection and never answered held the Super Admin's
+ * request open with no end, while every call made WITH the token was already bounded.
+ */
+export const GOOGLE_TOKEN_TIMEOUT_MS = 30_000;
+
 type ServiceAccountKey = {
   client_email: string;
   private_key: string;
@@ -71,6 +78,7 @@ export async function mintAndroidManagementToken(
     }),
     headers: { "content-type": "application/x-www-form-urlencoded" },
     method: "POST",
+    signal: AbortSignal.timeout(GOOGLE_TOKEN_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`Google token exchange failed (${response.status}): ${await response.text()}`);

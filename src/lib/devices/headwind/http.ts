@@ -7,8 +7,10 @@ import { HeadwindNotConfiguredError } from "@/lib/devices/headwind/auth";
 import { HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, HeadwindCommandUnconfirmedError } from "@/lib/devices/headwind/commands";
 import { HeadwindConfigurationError } from "@/lib/devices/headwind/configurations";
+import { HeadwindDeviceNotFoundError } from "@/lib/devices/headwind/devices";
 import { HeadwindEnrollmentError } from "@/lib/devices/headwind/enrollment";
 import { HeadwindLocationError } from "@/lib/devices/headwind/locations";
+import { HeadwindRemoteScreenIdError } from "@/lib/devices/headwind/remote-screen-id";
 import { HeadwindUploadError } from "@/lib/devices/headwind/uploads";
 import { HeadwindUserError } from "@/lib/devices/headwind/users";
 import { HeadwindWipeError } from "@/lib/devices/headwind/wipe";
@@ -48,8 +50,12 @@ export function headwindErrorResponse(error: unknown, fallback: string): NextRes
     error instanceof HeadwindWipeError ||
     error instanceof HeadwindActionError ||
     error instanceof HeadwindConfigurationError ||
+    error instanceof HeadwindDeviceNotFoundError ||
     error instanceof HeadwindEnrollmentError ||
     error instanceof HeadwindLocationError ||
+    // 🔴 It was missing until 9 Nov 2026 (F15): a remote screen ID that is a sentence, or a tablet
+    // nobody named, answered 500 — "the server broke" — for the person's own typo.
+    error instanceof HeadwindRemoteScreenIdError ||
     error instanceof HeadwindUploadError ||
     error instanceof HeadwindUserError
   ) {

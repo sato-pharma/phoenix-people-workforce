@@ -137,7 +137,11 @@ export type HeadwindDevice = {
   /** Battery charge as a percentage, where the agent reported one. */
   batteryLevel: number | null;
   batteryCharging: boolean | null;
-  /** The Headwind agent's own version — a tablet far behind the fleet is worth seeing. */
+  /**
+   * The launcher version the tablet's RULES WANT — the record's top-level `launcherVersion`, set by the
+   * server. 🔴 Never the tablet's own word: it used to fall back to the version the tablet reported, which
+   * made "wanted" equal "running" whenever the server field was absent, so a tablet left behind read level.
+   */
   agentVersion: string | null;
   /**
    * The launcher version the tablet is ACTUALLY running, read from its reported app list.
@@ -182,12 +186,16 @@ function normalizeDevice(record: RawRecord, configurationNames: Map<string, stri
   const deviceNumber = pickString(record, ["number", "deviceNumber", "deviceId"]);
   if (!deviceNumber) return null;
 
-  const latitude = pickNumber(info, ["lat", "latitude"]);
-  const longitude = pickNumber(info, ["lon", "lng", "longitude"]);
   const location = info.location && typeof info.location === "object" ? (info.location as RawRecord) : {};
+  const rawLatitude = pickNumber(info, ["lat", "latitude"]) ?? pickNumber(location, ["lat", "latitude"]);
+  const rawLongitude = pickNumber(info, ["lon", "lng", "longitude"]) ?? pickNumber(location, ["lon", "lng", "longitude"]);
+  // 🔴 A ZERO IS NULL ISLAND, NOT A PLACE — the same rule the history plugin's rows already follow
+  // (`locations.ts`). Without it a check-in carrying 0/0 put a pin in the Gulf of Guinea, ticked the
+  // "Location" setup chip and showed in the detail panel as if the tablet had been found.
+  const hasFix = rawLatitude !== null && rawLongitude !== null && rawLatitude !== 0 && rawLongitude !== 0;
 
   return {
-    agentVersion: pickString(record, ["launcherVersion", "agentVersion"]) ?? pickString(info, ["launcherVersion", "version"]),
+    agentVersion: pickString(record, ["launcherVersion", "agentVersion"]),
     batteryCharging: pickBoolean(info, ["batteryCharging", "charging", "isCharging"]),
     batteryLevel: pickNumber(info, ["batteryLevel", "battery"]),
     configurationId: pickString(record, ["configurationId", "configId"]),
@@ -212,9 +220,9 @@ function normalizeDevice(record: RawRecord, configurationNames: Map<string, stri
     isAndroid: true,
     lastContactAt: isoTime(record, ["lastUpdate", "lastContact", "lastSeen"]),
     launcherVersion: runningLauncherVersion(info),
-    latitude: latitude ?? pickNumber(location, ["lat", "latitude"]),
-    locatedAt: isoTime(location, ["ts", "time", "timestamp"]) ?? isoTime(info, ["locationTs"]),
-    longitude: longitude ?? pickNumber(location, ["lon", "lng", "longitude"]),
+    latitude: hasFix ? rawLatitude : null,
+    locatedAt: hasFix ? (isoTime(location, ["ts", "time", "timestamp"]) ?? isoTime(info, ["locationTs"])) : null,
+    longitude: hasFix ? rawLongitude : null,
     manufacturer: pickString(info, ["manufacturer", "brand", "vendor"]),
     model: pickString(info, ["model", "deviceModel"]) ?? pickString(record, ["model"]),
     name: pickString(record, ["description", "name"]) ?? deviceNumber,
@@ -413,8 +421,16 @@ export type HeadwindLocation = {
   latitude: number | null;
   longitude: number | null;
   address: string | null;
+  /** When the tablet TOOK the fix — never when it last checked in. Null when the tablet did not say. */
   locatedAt: string | null;
 };
+
+export class HeadwindDeviceNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HeadwindDeviceNotFoundError";
+  }
+}
 
 /**
  * A tablet's last known position.
@@ -433,10 +449,20 @@ export async function getHeadwindLocation(
 ): Promise<HeadwindLocation> {
   const devices = await listHeadwindDevices(fetchImpl, env);
   const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
+  // 🔴 A NUMBER THAT IS NOT IN THE FLEET IS NOT "A TABLET WITH NO POSITION". Answering all-nulls made a
+  // mistyped or removed tablet read exactly like a real one that had never been outdoors.
+  if (!device) {
+    throw new HeadwindDeviceNotFoundError(
+      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
+    );
+  }
   return {
     address: null,
-    latitude: device?.latitude ?? null,
-    locatedAt: device?.locatedAt ?? device?.lastContactAt ?? null,
-    longitude: device?.longitude ?? null,
+    latitude: device.latitude,
+    // 🔴 THE FIX TIME, NEVER THE CHECK-IN TIME. Falling back to `lastContactAt` dated an old position by
+    // the tablet's latest check-in — right after a "Locate now" wake that made a days-old fix read as
+    // "less than two minutes old", which is the one lie this read exists to prevent.
+    locatedAt: device.locatedAt,
+    longitude: device.longitude,
   };
 }

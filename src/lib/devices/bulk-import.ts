@@ -40,6 +40,7 @@ import {
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { imeiDuplicateKey, serialDuplicateKey } from "./device-identity";
 import { createDevice, deviceErrorMessage, issueDevice, isDeviceCategory, readAllRegisterRows } from "./service";
 import type { DeviceCategory } from "./types";
 
@@ -496,8 +497,16 @@ function cellNumber(value: ExcelJS.CellValue): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** A date column, normalised to YYYY-MM-DD. Returns the raw text when it cannot be read as a date. */
-function cellDate(value: ExcelJS.CellValue): string | null {
+/**
+ * A date column, normalised to YYYY-MM-DD. Returns the raw text when it cannot be read as a date, so
+ * the preview refuses the row by name.
+ *
+ * ONLY A REAL DATE CELL OR TYPED `YYYY-MM-DD` IS READ. Text such as "03/10/2026" used to go through
+ * `new Date(text)`, which reads it month-first — 10 March, where an Egyptian sheet means 3 October —
+ * and at the server's local midnight, which can land on the day before. A custody receipt's handover
+ * date guessed wrong is worse than a row sent back with "Use YYYY-MM-DD".
+ */
+export function cellDate(value: ExcelJS.CellValue): string | null {
   if (value instanceof Date) {
     // DATE-ONLY on purpose. An Excel date cell is midnight in the reader's own zone; taking the UTC
     // parts is what stops "2026-09-01" becoming "2026-08-31" for anyone east of Greenwich.
@@ -505,11 +514,16 @@ function cellDate(value: ExcelJS.CellValue): string | null {
   }
   const text = cellText(value);
   if (!text) return null;
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
   return text;
+}
+
+/** `YYYY-MM-DD` that names a day on the calendar — "2026-02-30" is not one. */
+export function isCalendarDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 /**
@@ -701,19 +715,30 @@ export function buildDeviceImportPreviewFrom(
   // Collisions WITHIN the file, which the database cannot see until the second row hits it. Counted
   // rather than flagged on sight, so both halves of a duplicate pair are reported — telling
   // somebody row 40 is a duplicate without telling them of what is half an answer.
+  //
+  // SERIALS AND IMEIS ARE COMPARED ON THEIR LETTERS AND DIGITS (`serialDuplicateKey`,
+  // `imeiDuplicateKey`), not as typed. Compared as text, "HA255LN1" and "ha255-ln1", or an IMEI typed
+  // with dashes and the same IMEI without, passed both this check and the database's unique indexes
+  // (which see `lower(text)`), and one machine entered the register twice.
+  const tagKey = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase() || null;
   const tagCounts = new Map<string, number>();
   const serialCounts = new Map<string, number>();
   const imeiCounts = new Map<string, number>();
-  const bump = (map: Map<string, number>, value: string | null) => {
-    const key = String(value ?? "").trim().toLowerCase();
+  const bump = (map: Map<string, number>, key: string | null) => {
     if (!key) return;
     map.set(key, (map.get(key) ?? 0) + 1);
   };
   for (const row of rows) {
-    bump(tagCounts, row.assetTag);
-    bump(serialCounts, row.serialNumber);
-    bump(imeiCounts, row.imei);
+    bump(tagCounts, tagKey(row.assetTag));
+    bump(serialCounts, serialDuplicateKey(row.serialNumber));
+    bump(imeiCounts, imeiDuplicateKey(row.imei));
   }
+  const existingSerials = new Set(
+    [...existing.serials].map((value) => serialDuplicateKey(value)).filter((key): key is string => Boolean(key)),
+  );
+  const existingImeis = new Set(
+    [...existing.imeis].map((value) => imeiDuplicateKey(value)).filter((key): key is string => Boolean(key)),
+  );
 
   const previewRows: DeviceImportPreviewRow[] = rows.map((row) => {
     const errors: string[] = [];
@@ -738,22 +763,24 @@ export function buildDeviceImportPreviewFrom(
       );
     }
 
+    const serialKey = serialDuplicateKey(serial);
+    const imeiKey = imeiDuplicateKey(imei);
     if (tag && (tagCounts.get(tag.toLowerCase()) ?? 0) > 1) {
       errors.push(`The asset tag "${tag}" is used on more than one row of this file.`);
     }
     if (tag && existing.tags.has(tag.toLowerCase())) {
       errors.push(`The asset tag "${tag}" is already in the register.`);
     }
-    if (serial && (serialCounts.get(serial.toLowerCase()) ?? 0) > 1) {
+    if (serialKey && (serialCounts.get(serialKey) ?? 0) > 1) {
       errors.push(`The serial "${serial}" is used on more than one row of this file.`);
     }
-    if (serial && existing.serials.has(serial.toLowerCase())) {
+    if (serialKey && existingSerials.has(serialKey)) {
       errors.push(`The serial "${serial}" is already in the register.`);
     }
-    if (imei && (imeiCounts.get(imei.toLowerCase()) ?? 0) > 1) {
+    if (imeiKey && (imeiCounts.get(imeiKey) ?? 0) > 1) {
       errors.push(`The IMEI "${imei}" is used on more than one row of this file.`);
     }
-    if (imei && existing.imeis.has(imei.toLowerCase())) {
+    if (imeiKey && existingImeis.has(imeiKey)) {
       errors.push(`The IMEI "${imei}" is already in the register.`);
     }
 
@@ -771,7 +798,7 @@ export function buildDeviceImportPreviewFrom(
       ["Purchased on", row.purchasedOn],
       ["Issued on", row.issuedOn],
     ] as const) {
-      if (value && !ISO_DATE.test(value)) {
+      if (value && !isCalendarDate(value)) {
         errors.push(`${label} "${value}" is not a date. Use YYYY-MM-DD.`);
       }
     }
@@ -915,6 +942,9 @@ export async function executeDeviceImport(
               issuedOn: row.issuedOn,
             },
             actor,
+            // The one door that may name a leaver: this records custody that ALREADY exists, and a
+            // device still out with somebody who has gone is what the register exists to surface.
+            { allowLeaver: true },
           );
           issuedTo = row.resolvedHolderName ?? row.resolvedHolderHrId;
         } catch (issueError) {

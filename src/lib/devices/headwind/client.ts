@@ -26,18 +26,13 @@ import {
   headwindAccessHeaders,
   headwindAuthConfig,
   HeadwindNotConfiguredError,
+  HeadwindRequestError,
+  isHeadwindTimeout,
   resetHeadwindTokenCache,
 } from "@/lib/devices/headwind/auth";
 
-export class HeadwindRequestError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "HeadwindRequestError";
-    this.status = status;
-  }
-}
+// The class lives in auth.ts so the sign-in can throw it; every importer keeps reading it from here.
+export { HeadwindRequestError, isHeadwindTimeout };
 
 export function headwindApiBase(env: NodeJS.ProcessEnv = process.env): string {
   return headwindAuthConfig(env).baseUrl;
@@ -49,7 +44,7 @@ function isEnvelope(body: unknown): body is Envelope {
   return Boolean(body && typeof body === "object" && !Array.isArray(body) && "status" in (body as object));
 }
 
-function messageFromBody(body: unknown, status: number): string {
+function messageFromBody(body: unknown, status: number, env: NodeJS.ProcessEnv): string {
   if (isEnvelope(body) && typeof body.message === "string" && body.message.trim()) return body.message.trim();
   if (body && typeof body === "object") {
     const record = body as Record<string, unknown>;
@@ -58,15 +53,24 @@ function messageFromBody(body: unknown, status: number): string {
       if (typeof value === "string" && value.trim()) return value.trim();
     }
   }
-  // 🔴 NO READABLE BODY AT ALL MEANS THE ANSWER WAS NOT HEADWIND'S. With the console behind a
-  // Cloudflare Tunnel, an Access sign-in PAGE comes back in place of an answer — so the honest
-  // sentence names that door rather than leaving a person to suspect the server.
   if (body === null) {
-    return (
-      `The Headwind server answered HTTP ${status} with no readable reply. That is what a Cloudflare ` +
-      "Access sign-in page looks like from here — check HEADWIND_MDM_ACCESS_CLIENT_ID and " +
-      "HEADWIND_MDM_ACCESS_CLIENT_SECRET before suspecting the server."
-    );
+    // 🔴 A 5xx WITH NO BODY IS THE SERVER FAILING, NOT CLOUDFLARE (9 Nov 2026 audit). The Phoenix
+    // add-on answers a fault it cannot handle with an empty 500, and Tomcat's own 5xx pages are HTML;
+    // both used to be reported as "what a Cloudflare Access sign-in page looks like", pointing at two
+    // variables that may not even be set while the Headwind box itself was down.
+    if (status >= 500) {
+      return `The Headwind server failed (HTTP ${status}) and gave no reason. This is the server itself — look at its logs before changing any Phoenix setting.`;
+    }
+    // A non-JSON answer below 500 is not Headwind's — Headwind answers in JSON. With a service token
+    // configured the likeliest door is Cloudflare Access; without one, it is the address.
+    const accessConfigured = Boolean(env.HEADWIND_MDM_ACCESS_CLIENT_ID?.trim() && env.HEADWIND_MDM_ACCESS_CLIENT_SECRET?.trim());
+    return accessConfigured
+      ? `The Headwind server answered HTTP ${status} with no readable reply. That is what a Cloudflare ` +
+          "Access sign-in page looks like from here — check HEADWIND_MDM_ACCESS_CLIENT_ID and " +
+          "HEADWIND_MDM_ACCESS_CLIENT_SECRET before suspecting the server."
+      : `The Headwind server answered HTTP ${status} with a reply that is not JSON, which Headwind never ` +
+          "sends. Check HEADWIND_MDM_BASE_URL, and if Cloudflare Access is in front of that address, set the " +
+          "two HEADWIND_MDM_ACCESS_* values.";
   }
   return `The Headwind server answered HTTP ${status}.`;
 }
@@ -129,15 +133,6 @@ function withDeadline(init: RequestInit): AbortSignal {
   return init.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
 }
 
-/** A fetch that ran out of time — DOMException "TimeoutError" from AbortSignal.timeout, however it is wrapped. */
-export function isHeadwindTimeout(error: unknown): boolean {
-  for (let current: unknown = error, depth = 0; current && depth < 4; depth += 1) {
-    if (typeof current === "object" && (current as { name?: unknown }).name === "TimeoutError") return true;
-    current = typeof current === "object" ? (current as { cause?: unknown }).cause : null;
-  }
-  return false;
-}
-
 /**
  * 🔴 A TIMED-OUT REQUEST IS NOT ONE THAT "NEVER REACHED A SERVER". The request may well have arrived
  * and done its work — locked the tablet, pushed the configuration — with only the reply lost. The
@@ -187,7 +182,7 @@ async function once(
 
   let envelopeError: string | null = null;
   if (isEnvelope(body) && typeof body.status === "string" && body.status.toUpperCase() !== "OK") {
-    envelopeError = messageFromBody(body, response.status);
+    envelopeError = messageFromBody(body, response.status, env);
   }
   return { body, envelopeError, ok: response.ok, status: response.status };
 }
@@ -221,8 +216,8 @@ export async function callHeadwind<T = unknown>(
   } catch (error) {
     // 🔴 ONLY A REAL TRANSPORT FAILURE MAY BE BLAMED ON THE ADDRESS, AND THIS BRANCH GOT THAT WRONG
     // ON THE FIRST REAL SIGN-IN FAILURE IT EVER SAW (production, 2026-09-26). `once()` mints the token
-    // first, so a REFUSED sign-in — the wrong login or password — throws HeadwindNotConfiguredError
-    // from inside this try, and it was being rewrapped as "the request never reached a server, so this
+    // first, so a REFUSED sign-in — the wrong login or password — throws from inside this try (a
+    // HeadwindRequestError since 9 Nov 2026; a missing setting is still NotConfigured), and it was being rewrapped as "the request never reached a server, so this
     // is the address, DNS or the network — not Headwind refusing anything. Check HEADWIND_MDM_BASE_URL
     // first." The page therefore printed the correct diagnosis and then flatly contradicted it, and the
     // advice it ended on pointed at the one value that was right. An error that already carries
@@ -237,7 +232,7 @@ export async function callHeadwind<T = unknown>(
     throw new HeadwindRequestError(502, unreachableMessage(error, env));
   }
   if (!result.ok) {
-    throw new HeadwindRequestError(result.status, messageFromBody(result.body, result.status));
+    throw new HeadwindRequestError(result.status, messageFromBody(result.body, result.status, env));
   }
   if (result.envelopeError !== null) {
     throw new HeadwindRequestError(result.status, result.envelopeError);

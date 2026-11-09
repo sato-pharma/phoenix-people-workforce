@@ -12,8 +12,10 @@ export const dynamic = "force-dynamic";
 /**
  * Everything the Rep Tablets page shows: the tablet rules and app list as Google holds them, the
  * enrolled tablets matched to the custody register, and the register tablets a code can be made for.
- * An enrolled tablet the register does not know yet is added to it on this read, in the caller's
- * name, under the next PHX-TAB number — the owner's "no manual work" rule (2026-09-18).
+ * 🔒 THIS READ ADDS NOTHING TO THE CUSTODY REGISTER (owner, 2026-10-22: a new tablet enters Device
+ * Custody only when a person confirms it). An enrolled tablet the register does not know is COUNTED
+ * (`pendingRegistration`) and a person adds it; never restore the auto-create this comment once
+ * described.
  *
  * 🔴 GATED ON `company_devices:approve` — Super Admin only, like Managed Google Play. The register's
  * own `read` is HR Operations' paperwork permission; this page is the door to every rep's tablet,

@@ -6,6 +6,7 @@ import { headwindErrorResponse } from "@/lib/devices/headwind/http";
 import { requestRecording } from "@/lib/devices/headwind/recordings";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { trustedOriginForRedirect } from "@/lib/security/origins";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +17,14 @@ export const dynamic = "force-dynamic";
  * The route is the security boundary; `requestRecording` opens the slot, pushes the record intent to
  * the tablet's launcher and audits it. Calls and messages are never recorded — only the screen.
  *
- * The tablet uploads its capture back to THIS origin, so the record request carries the origin it was
- * made from — in production that is the public domain the console runs on.
+ * The tablet uploads its capture back to THIS environment's public origin.
+ *
+ * 🔴 NEVER `new URL(request.url).origin` (audit, 9 Nov 2026, F13a). Behind Railway's proxy that is the
+ * container's own bind address, `https://0.0.0.0:8080`, so every tablet was handed an upload address it
+ * could not reach and no recording could ever land — the same bug the premium closing export and both
+ * share feeds hit first. `trustedOriginForRedirect` reads the forwarded public host but honours it only
+ * when it is already an allowed Phoenix origin, so a caller's header cannot aim a tablet's upload (and
+ * its token) at a host Phoenix does not serve; anything unrecognised falls back to the production domain.
  */
 export async function POST(request: Request) {
   try {
@@ -37,7 +44,7 @@ export async function POST(request: Request) {
       actor,
       deviceNumber,
       durationSeconds: body?.durationSeconds,
-      uploadBaseUrl: new URL(request.url).origin,
+      uploadBaseUrl: trustedOriginForRedirect(request),
     });
 
     return NextResponse.json({

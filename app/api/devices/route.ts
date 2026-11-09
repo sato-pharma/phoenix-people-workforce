@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   createDevice,
   deviceErrorMessage,
+  deviceRegisterErrorStatus,
   getDeviceRegisterData,
   isDeviceCategory,
   isDeviceRegisterSchemaMissing,
@@ -52,10 +53,7 @@ function deviceApiError(error: unknown) {
    * under a generic failure and send somebody looking at logs for a working guard.
    */
   const message = deviceErrorMessage(error);
-  if (/^(Device|No employee|A device|A return|A write-off|This custody|Unknown device|Issuing|Marking|A settlement|Reserving|A reservation|Only a reservation|Revoking|Reconciling)\b/.test(message)) {
-    return { message, status: 400 };
-  }
-  return { message, status: 500 };
+  return { message, status: deviceRegisterErrorStatus(message) };
 }
 
 export async function GET(request: Request) {

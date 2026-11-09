@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
+  checkHeadwindInstallLinks,
   getHeadwindConfiguration,
   HeadwindConfigurationError,
   linkHeadwindApp,
+  linkHeadwindAppToRules,
   linkHeadwindFile,
   listHeadwindConfigurations,
   moveHeadwindDeviceToConfiguration,
@@ -22,19 +24,33 @@ export const dynamic = "force-dynamic";
  * The sets of rules the tablets follow.
  *
  * GET lists them, or with `?configurationId=` reads one — the FACTS and the home-screen look only.
+ * `?view=install-links` checks every install link the way a tablet meets it (https, 200 on its own,
+ * no redirect followed) — for the one set named by `configurationId`, else for every rep set.
  * 🔴 The whole configuration object is never returned to a browser: it carries the tablet's admin
  * password in clear text, and an admin screen that ships it to the front end has published it to
  * everything between here and there.
  *
  * POST does one of four things, named by `change`: `branding`, `app`, `file`, `device`. Each writes
- * its own required audit row naming what changed and never the object.
+ * its own required audit row naming what changed and never the object. `app` takes `action` 1
+ * (install), 2 (remove) or "hide" (install with the icon off), and `configurationId: "rep"` for every
+ * rep set of rules at once — one audit row per set.
  */
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
 
-    const raw = new URL(request.url).searchParams.get("configurationId");
+    const params = new URL(request.url).searchParams;
+    const raw = params.get("configurationId");
+    if (params.get("view") === "install-links") {
+      const configurationId = raw ? Number(raw) : null;
+      if (configurationId !== null && !Number.isInteger(configurationId)) {
+        throw new HeadwindConfigurationError("That is not a set of tablet rules.");
+      }
+      return NextResponse.json(await checkHeadwindInstallLinks(configurationId === null ? "rep" : [configurationId]), {
+        headers: { "cache-control": "no-store" },
+      });
+    }
     if (raw) {
       const configurationId = Number(raw);
       if (!Number.isInteger(configurationId)) {
@@ -83,18 +99,21 @@ export async function POST(request: Request) {
           ),
           { headers },
         );
-      case "app":
-        return NextResponse.json(
-          await linkHeadwindApp(
-            {
-              action: (payload.action === 0 || payload.action === 2 ? payload.action : 1) as 0 | 1 | 2,
-              applicationId: Number(payload.applicationId),
-              configurationId,
-            },
-            actor,
-          ),
-          { headers },
-        );
+      case "app": {
+        // 🔴 THE ACTION IS READ AS SENT, NEVER DEFAULTED. Anything that was not 0 or 2 used to become 1,
+        // so a misspelt "remove" INSTALLED the app on every tablet on those rules. "hide" is installing
+        // with the icon off; 0 reaches `linkHeadwindApp`, which refuses it with the reason.
+        const hide = payload.action === "hide";
+        const link = {
+          action: (hide ? 1 : payload.action) as 0 | 1 | 2,
+          applicationId: Number(payload.applicationId),
+          showIcon: hide || payload.showIcon === false ? false : undefined,
+        };
+        if (payload.configurationId === "rep") {
+          return NextResponse.json(await linkHeadwindAppToRules({ ...link, target: "rep" }, actor), { headers });
+        }
+        return NextResponse.json(await linkHeadwindApp({ ...link, configurationId }, actor), { headers });
+      }
       case "file":
         return NextResponse.json(
           await linkHeadwindFile(

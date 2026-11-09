@@ -458,6 +458,31 @@ async function resolveOrganizationId(config: Action1Config, token: string): Prom
 }
 
 /**
+ * The next page's address, only when it is on the Action1 server Phoenix was configured with.
+ *
+ * Every page request carries the company's Action1 bearer token. The next-page link comes out of the
+ * response body, so an absolute link to any other host — a proxy, a tampered reply, a misconfigured
+ * region — would have been sent that token as it stood. A link off the configured origin is refused
+ * instead of followed, and the pull stops rather than show a partial fleet.
+ */
+export function resolveAction1NextPage(next: string, baseUrl: string): string {
+  const base = new URL(`${baseUrl.replace(/\/+$/, "")}/`);
+  let resolved: URL;
+  try {
+    resolved = new URL(next, base);
+  } catch {
+    throw new Action1RequestError("Action1 answered with a next-page link Phoenix cannot read, so the pull stops here.", 502);
+  }
+  if (resolved.origin !== base.origin) {
+    throw new Action1RequestError(
+      `Action1 pointed the next page at ${resolved.origin}, which is not the configured Action1 server (${base.origin}). Phoenix does not send the Action1 credentials anywhere else, so the pull stops here.`,
+      502,
+    );
+  }
+  return resolved.toString();
+}
+
+/**
  * The managed endpoints, all pages of them.
  *
  * `?fields=*` is the documented way to get the extended detail — without it the response carries
@@ -475,7 +500,7 @@ export async function fetchAction1Endpoints(): Promise<Action1Fetch> {
     const payload: unknown = await getJson(url, token, "list your managed endpoints");
     records.push(...extractRecords(payload));
     const next = nextPageUrl(payload);
-    url = next ? new URL(next, `${config.baseUrl}/`).toString() : null;
+    url = next ? resolveAction1NextPage(next, config.baseUrl) : null;
   }
   // The guard tripped with a next page still on offer: refuse rather than register a part of the fleet.
   if (url) {

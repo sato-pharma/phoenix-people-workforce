@@ -17,6 +17,7 @@ import { HeadwindFleet } from "@/components/devices/headwind-fleet";
 import { TabletFleetMap } from "@/components/devices/tablet-fleet-map";
 import { TabletFleetOverview } from "@/components/devices/tablet-fleet-overview";
 import { fleetRowsToPoints } from "@/lib/devices/headwind/dashboard";
+import { TABLET_NO_FIX_LIMIT_HOURS } from "@/lib/devices/headwind/fleet-watch";
 import type { RepHeadwindRow } from "@/lib/devices/headwind/fleet";
 
 type FleetHead = { rows: RepHeadwindRow[]; registerError: boolean };
@@ -49,7 +50,7 @@ export function TabletDashboard() {
         <>
           <TabletFleetOverview registerError={head.registerError} rows={head.rows} />
           <TabletFleetMap
-            caption="Each pin is a tablet's last-known position; hover one for the tablet and who holds it. A tablet with no pin has not reported a position since location was switched on."
+            caption={`Each pin is a tablet's last-known position; hover one for the tablet, who holds it and when the position was taken. A faded pin is older than ${TABLET_NO_FIX_LIMIT_HOURS} hours or carries no time — it is where the tablet was, not where it is. A tablet with no pin has not reported a position.`}
             kind="fleet"
             points={fleetRowsToPoints(head.rows)}
             title="Where the tablets are"

@@ -33,11 +33,76 @@ import { listHeadwindDevices, matchHeadwindToRegisterDetailed, type HeadwindDevi
 import { HeadwindCommandInputError } from "@/lib/devices/headwind/target";
 import { normalizeImei, normalizeSerial, type RegisterTablet } from "@/lib/devices/managed-tablets";
 import { deviceErrorMessage, getDeviceRegisterData, recordReportedImei } from "@/lib/devices/service";
-import { registerTablet, type TabletFacts } from "@/lib/devices/tablet-auto-register";
+import { nextTabletAssetTag, registerTablet, type TabletFacts } from "@/lib/devices/tablet-auto-register";
 
 function clean(value: string | null | undefined): string | null {
   const text = String(value ?? "").trim();
   return text ? text : null;
+}
+
+/** Whether the tablet carries something the register can tell it apart by — the register's own bar. */
+export function headwindTabletCanBeTold(device: Pick<HeadwindDevice, "imei" | "serialNumber">): boolean {
+  return normalizeSerial(clean(device.serialNumber)) !== null || normalizeImei(clean(device.imei)) !== null;
+}
+
+/**
+ * The managed tablets the register has never seen that CANNOT be added yet: enrolled, but carrying
+ * neither a serial number nor an IMEI.
+ *
+ * 🔴 THEY WERE LEFT OUT OF EVERY COUNT. `headwindTabletsToRegister` skips them (correctly — nothing tells
+ * them apart), so "waiting to be added" read one short and nothing on the page said a tablet was stuck.
+ * A Headwind tablet sends its serial and IMEI in the hardware report at the end of its first update run,
+ * and a run that stops at an install link that does not answer never gets there (memory note
+ * `a-stalled-enrolment-run-never-sends-the-tablets-hardware-report`). So these are counted on their own,
+ * and each row says why — never folded into the waiting count, where a press would only be refused.
+ */
+export function headwindTabletsAwaitingHardwareReport(
+  devices: readonly HeadwindDevice[],
+  register: readonly RegisterTablet[],
+): HeadwindDevice[] {
+  return devices.filter((device) => !matchHeadwindToRegisterDetailed(device, register) && !headwindTabletCanBeTold(device));
+}
+
+const TAG_NUMBER = /^PHX-TAB-(\d+)$/i;
+
+function tagNumber(value: string | null | undefined): number | null {
+  const match = TAG_NUMBER.exec(String(value ?? "").trim());
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * A warning when the Headwind device number and the custody tag name the tablet differently.
+ *
+ * 🔴 THE TWO NUMBERS ARE MINTED APART. A tablet is enrolled in Headwind under a `PHX-TAB-n` number a
+ * person types, and its custody tag is minted as "the highest PHX-TAB in the register, plus one"
+ * (`nextTabletAssetTag`) — so a retired tablet, a test row (PHX-TAB-0003..0006 are dev rows) or an
+ * enrolment out of order leaves the two pointing at different numbers, and "PHX-TAB-0009" then means
+ * two different tablets depending on the screen. This only SAYS so; how tags are minted is unchanged.
+ *
+ * A tablet in the register is compared with its own tag. One not in it yet is compared with the tag
+ * the next press would give it, so the person sees the mismatch BEFORE adding it, not after. A device
+ * number that is not a PHX-TAB number has nothing to compare and says nothing.
+ */
+export function headwindTagDrift(
+  deviceNumber: string,
+  assetTag: string | null,
+  nextTag: string | null,
+): string | null {
+  const headwindNumber = tagNumber(deviceNumber);
+  if (headwindNumber === null) return null;
+  const device = clean(deviceNumber) as string;
+  if (assetTag) {
+    const custody = tagNumber(assetTag);
+    if (custody === headwindNumber) return null;
+    return `Headwind numbers this tablet ${device}, but its custody tag is ${assetTag}. Check the label on the tablet before acting on it by number.`;
+  }
+  if (!nextTag || tagNumber(nextTag) === headwindNumber) return null;
+  return `Headwind numbers this tablet ${device}, but adding it to custody now gives it the tag ${nextTag}, the next free number in the register. The two will read differently.`;
+}
+
+/** The tag the next press would mint, against the register as it stands. */
+export function headwindNextAssetTag(register: readonly RegisterTablet[]): string {
+  return nextTabletAssetTag(register.map((entry) => entry.assetTag));
 }
 
 /**
@@ -161,17 +226,22 @@ export function headwindRegisterOneDecision(
     model: clean(device.model),
     serialNumber: clean(device.serialNumber),
   };
-  if (!normalizeSerial(facts.serialNumber) && !normalizeImei(facts.imei)) {
+  if (!headwindTabletCanBeTold(facts)) {
     return {
       message:
-        "This tablet reports neither a serial number nor an IMEI, so nothing would tell it apart from another tablet. It cannot be added to custody until it reports one.",
+        "This tablet is enrolled but has never sent its hardware report — neither a serial number nor an IMEI — so nothing would tell it apart from another tablet. Its first update run probably stalled on an install link; once every link on its rules answers, restart it and it sends the report.",
       ok: false,
     };
   }
   return { facts, ok: true };
 }
 
-export type HeadwindRegisterOneResult = { assetTag: string; created: boolean };
+export type HeadwindRegisterOneResult = {
+  assetTag: string;
+  created: boolean;
+  /** Set when the Headwind device number and the custody tag now read differently (`headwindTagDrift`). */
+  tagWarning: string | null;
+};
 
 /**
  * Add ONE named Headwind tablet to the custody register, in the actor's name — the person-confirmed
@@ -200,7 +270,11 @@ export async function registerOneHeadwindTablet(
 
   const facts = decision.facts;
   const added = await registerTablet(facts, "headwind", actor, register);
-  return { assetTag: added.assetTag, created: added.created };
+  return {
+    assetTag: added.assetTag,
+    created: added.created,
+    tagWarning: headwindTagDrift(deviceNumber, added.assetTag, null),
+  };
 }
 
 export type HeadwindImeiRecordResult = {

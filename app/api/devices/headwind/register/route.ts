@@ -33,7 +33,10 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
 
-    const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    // A body of `null`, a number or a list is not an object — reading `.deviceNumber` off `null` threw a
+    // TypeError that answered 500 "server error" for what is the caller's own malformed request.
+    const body: unknown = await request.json().catch(() => null);
+    const payload = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
     const deviceNumber = typeof payload.deviceNumber === "string" ? payload.deviceNumber : "";
     if (!deviceNumber.trim()) throw new HeadwindCommandInputError("Say which tablet to add to the custody register.");
 

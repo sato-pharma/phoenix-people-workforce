@@ -3,23 +3,20 @@
 /**
  * Remote control of the rep tablets, through the company's OWN Headwind MDM server.
  *
- * WHY THERE ARE TWO OF THESE SECTIONS. ManageEngine's free edition caps the fleet at 25 tablets and
- * its screen sharing is a paid add-on; the owner expects about a hundred tablets. Headwind MDM
- * Community, on a small server of the company's own, has no device cap at all — so the fleet moves
- * onto it, one tablet at a time. Android allows only ONE device owner per tablet, so a tablet is in
- * exactly one of the two sections, never both, and this one grows as the other empties.
+ * WHY HEADWIND. ManageEngine's free edition capped the fleet at 25 tablets and charged for screen
+ * sharing; the owner expects about a hundred. Headwind MDM Community, on a small server of the
+ * company's own, has no device cap, so the whole fleet runs on it (the ManageEngine bridge was deleted
+ * on 2026-10-23).
  *
- * 🔴 VIEWING AND TAKING OVER A SCREEN ARE FREE HERE, AND THAT IS THE WHOLE POINT OF THE PAIR. They do
- * not go through the MDM at all: the company's own RustDesk relay carries them, and the RustDesk app
- * on the Super Admin's computer is what draws the screen. So those two buttons carry no amber mark
- * and no "Paid" chip — the contrast with the ManageEngine section above is deliberate and visible.
+ * 🔴 VIEWING AND TAKING OVER A SCREEN ARE FREE HERE. They do not go through the MDM at all: the
+ * company's own RustDesk relay carries them, and the RustDesk app on the Super Admin's computer is what
+ * draws the screen. So those two buttons carry a FREE chip and no amber mark.
  *
  * 🔴 AN ACTION PHOENIX CANNOT YET SEND IS SHOWN, GREYED, WITH THE REASON — never hidden and never
- * offered as if it worked. Headwind drives every action down one push channel, and it publishes the
- * word for only two of them; the rest are read off the server's own API list once it is up. A button
- * that reported success while reaching nothing would be the worst outcome on a custody console, so
- * those are disabled here and refused by the server too. The chip says PENDING — colour is never the
- * only signal.
+ * offered as if it worked. The server's catalogue (`headwindCommandCatalogue`) says which actions are
+ * ready and, for one that is not, why; the console never decides that itself. A button that reported
+ * success while reaching nothing would be the worst outcome on a custody console, so such an action is
+ * disabled here and refused by the server too. The chip says PENDING — colour is never the only signal.
  *
  * DESIGN IDENTITY is the Rep Tablets page it sits under — the same slate borders, square corners and
  * 9px micro-labels. IT FITS THE SCREEN: the desktop table is `table-fixed` with four columns, the
@@ -27,7 +24,7 @@
  * get cards. Nothing truncates — every line wraps. The factory reset asks twice before it fires.
  */
 
-import { Check, ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Loader2, MapPin, Minus, Monitor, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useDisarmAfterWindow } from "@/components/devices/headwind-panel-kit";
@@ -127,6 +124,12 @@ type FleetRow = {
   assignmentId: string | null;
   placeholderName: string | null;
   unregistered: boolean;
+  /** The server's answer to "can Add to custody work" — never re-derived here. */
+  canAddToCustody: boolean;
+  /** Enrolled, not in the register, and never sent its serial number or IMEI. */
+  awaitingHardwareReport: boolean;
+  /** The Headwind device number and the custody tag read differently. */
+  tagWarning: string | null;
 };
 type CommandDef = {
   id: string;
@@ -142,13 +145,23 @@ type FleetState = {
   registerError: boolean;
   /** Managed tablets not in the custody register yet that a person could confirm — the count, never the act. */
   pendingRegistration: number;
+  /** Managed tablets not in the register that never sent a serial or IMEI, so cannot be added yet. */
+  awaitingHardwareReport: number;
   imeisToRecord: number;
   remoteScreenReady: boolean;
   commands: CommandDef[];
   assignable: AssignableEmployee[];
 };
 type LocationResult = { latitude: number | null; longitude: number | null; address: string | null; locatedAt: string | null };
-type CommandResult = { command: string; assetTag: string | null; message: string };
+type CommandResult = {
+  command: string;
+  assetTag: string | null;
+  message: string;
+  // "Locate now" only — the position it read back.
+  latitude?: number | null;
+  longitude?: number | null;
+  locatedAt?: string | null;
+};
 type ScreenTarget = {
   // 🔴 `relayLabel`, never `relayHost` — the host is null on RustDesk's public relay and a toast
   // built from it reads "through null". The label is always a phrase.
@@ -161,7 +174,7 @@ type ImeiRecordResult = {
   failed: Array<{ assetTag: string; message: string }>;
 };
 /** The custody entry a person confirmed into the register from a tablet's row. */
-type RegisterResult = { assetTag: string; created: boolean };
+type RegisterResult = { assetTag: string; created: boolean; tagWarning?: string | null };
 
 function imeiCopiedText(result: ImeiRecordResult): string | null {
   const tags = result.recorded.map((entry) => entry.assetTag);
@@ -211,6 +224,16 @@ async function requestJson<T>(url: string, body?: unknown): Promise<T> {
 
 function messageOf(caught: unknown, fallback: string): string {
   return caught instanceof Error && caught.message ? caught.message : fallback;
+}
+
+/**
+ * A position and WHEN it was taken. 🔴 A position with no time of its own says so — it used to print
+ * bare, and a days-old fix read like a current one.
+ */
+function positionLine(location: LocationResult): string {
+  if (location.latitude === null || location.longitude === null) return locationText(location);
+  const when = location.locatedAt ? cairoDateTime(location.locatedAt) : "time of fix not reported";
+  return `${locationText(location)} · ${when}`;
 }
 
 function locationText(location: LocationResult): string {
@@ -315,6 +338,17 @@ export function HeadwindFleet() {
           deviceNumber: row.deviceNumber,
         });
         setNotices((previous) => ({ ...previous, [row.deviceNumber]: result.message }));
+        // 🔴 THE POSITION "LOCATE NOW" READ BACK IS SHOWN AT ONCE — it used to be dropped on the server,
+        // so the row kept the old position after a successful locate.
+        if (result.latitude !== undefined) {
+          const located: LocationResult = {
+            address: null,
+            latitude: result.latitude ?? null,
+            locatedAt: result.locatedAt ?? null,
+            longitude: result.longitude ?? null,
+          };
+          setLocations((previous) => ({ ...previous, [row.deviceNumber]: positionLine(located) }));
+        }
         await load(() => true);
       } catch (caught) {
         setErrors((previous) => ({ ...previous, [row.deviceNumber]: messageOf(caught, "Could not take that action.") }));
@@ -333,8 +367,7 @@ export function HeadwindFleet() {
       const result = await requestJson<LocationResult>(
         `/api/devices/headwind?deviceNumber=${encodeURIComponent(row.deviceNumber)}`,
       );
-      const when = result.locatedAt ? ` · ${cairoDateTime(result.locatedAt)}` : "";
-      setLocations((previous) => ({ ...previous, [row.deviceNumber]: `${locationText(result)}${when}` }));
+      setLocations((previous) => ({ ...previous, [row.deviceNumber]: positionLine(result) }));
     } catch (caught) {
       setErrors((previous) => ({ ...previous, [row.deviceNumber]: messageOf(caught, "Could not read the tablet's position.") }));
     } finally {
@@ -393,9 +426,14 @@ export function HeadwindFleet() {
         });
         setNotices((previous) => ({
           ...previous,
-          [row.deviceNumber]: result.created
-            ? `Added ${result.assetTag} to the custody register.`
-            : `This tablet is already in the custody register as ${result.assetTag}.`,
+          [row.deviceNumber]: [
+            result.created
+              ? `Added ${result.assetTag} to the custody register.`
+              : `This tablet is already in the custody register as ${result.assetTag}.`,
+            result.tagWarning ?? "",
+          ]
+            .filter(Boolean)
+            .join(" "),
         }));
         await load(() => true);
       } catch (caught) {
@@ -415,8 +453,8 @@ export function HeadwindFleet() {
   }, []);
 
   const rows = data?.rows ?? [];
-  // The newest launcher the fleet runs, computed once so every row's "launcher current?" chip is
-  // measured against the same bar rather than re-derived per row.
+  // The launcher bar — the newest the fleet runs or its rules want — computed once so every row's
+  // "launcher current?" chip is measured against the same bar rather than re-derived per row.
   const launcherTarget = fleetLauncherTarget(rows);
   const commands = data?.commands ?? [];
   const pendingCommands = commands.filter((command) => !command.ready);
@@ -505,6 +543,16 @@ export function HeadwindFleet() {
           {data.pendingRegistration === 1
             ? "One managed tablet is not in the custody register yet. Add it to custody from its row below."
             : `${data.pendingRegistration} managed tablets are not in the custody register yet. Add each to custody from its row below.`}
+        </div>
+      ) : null}
+
+      {data && data.awaitingHardwareReport > 0 ? (
+        <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
+          {data.awaitingHardwareReport === 1
+            ? "One enrolled tablet has never sent its hardware report — no serial number and no IMEI — so it cannot be added to custody yet."
+            : `${data.awaitingHardwareReport} enrolled tablets have never sent their hardware report — no serial number and no IMEI — so they cannot be added to custody yet.`}{" "}
+          The first update run probably stalled on an install link: once every link on the rules answers, restart the
+          tablet and it sends the report.
         </div>
       ) : null}
       {imeiNotice ? (
@@ -651,6 +699,11 @@ function TabletCell({ row }: { row: FleetRow }) {
           IMEI {row.imei}
         </p>
       ) : null}
+      {row.tagWarning ? (
+        <p className="mt-1 flex items-start gap-1 break-words text-[11px] font-bold text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /> {row.tagWarning}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -662,9 +715,11 @@ function HolderCell({ row }: { row: FleetRow }) {
     }
     return (
       <p className="break-words text-[11px] font-semibold text-slate-400">
-        {row.serialNumber || row.imei
+        {row.canAddToCustody
           ? "Nobody yet — add it to custody from this row"
-          : "Nobody yet — it can be added to custody once it reports its serial number or IMEI"}
+          : row.awaitingHardwareReport
+            ? "Nobody yet — enrolled, but it has never sent its hardware report (no serial number, no IMEI), so it cannot be added to custody. Its first update run probably stalled on an install link; once every link on its rules answers, restart it."
+            : "Nobody yet — it can be added to custody once it reports a full serial number or IMEI"}
       </p>
     );
   }
@@ -681,12 +736,21 @@ function HolderCell({ row }: { row: FleetRow }) {
 }
 
 /**
- * One provisioning step's chip — a tick when done, a cross when still to do.
+ * One provisioning step's chip — a tick when done, a cross when still to do, a dash when not known.
  *
- * 🔴 COLOUR IS NEVER THE ONLY SIGNAL: the tick/cross glyph and the label both carry the state, so it
- * reads the same to someone who cannot tell emerald from amber. Square border, no rounded corners.
+ * 🔴 COLOUR IS NEVER THE ONLY SIGNAL: the glyph and the label both carry the state, so it reads the same
+ * to someone who cannot tell emerald from amber. `null` is "the register could not be read" — a tick or
+ * a cross there would be invented, so it is grey and says so. Square border, no rounded corners.
  */
-function SetupChip({ done, label }: { done: boolean; label: string }) {
+function SetupChip({ done, label }: { done: boolean | null; label: string }) {
+  if (done === null) {
+    return (
+      <span className="inline-flex items-center gap-1 border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+        <Minus className="h-3 w-3 shrink-0" aria-hidden />
+        {label}: not known
+      </span>
+    );
+  }
   return (
     <span
       className={
@@ -699,6 +763,13 @@ function SetupChip({ done, label }: { done: boolean; label: string }) {
       {label}
     </span>
   );
+}
+
+/** The launcher chip's words: the version it runs, and whether that is behind or not reported at all. */
+function launcherChipLabel(row: FleetRow, readiness: TabletReadiness): string {
+  if (readiness.launcher === "not_reported") return "Launcher not reported";
+  if (readiness.launcher === "behind") return `Launcher ${row.launcherVersion} · behind`;
+  return `Launcher ${row.launcherVersion}`;
 }
 
 function StatusCell({ row, location, readiness }: { row: FleetRow; location?: string; readiness: TabletReadiness }) {
@@ -732,11 +803,17 @@ function StatusCell({ row, location, readiness }: { row: FleetRow; location?: st
         <SetupChip done={readiness.simRecorded} label="SIM" />
         <SetupChip done={readiness.screenIdReported} label="Screen" />
         <SetupChip done={readiness.locationReported} label="Location" />
-        <SetupChip done={readiness.launcherCurrent} label={row.launcherVersion ? `Launcher ${row.launcherVersion}` : "Launcher"} />
+        <SetupChip done={readiness.launcherCurrent} label={launcherChipLabel(row, readiness)} />
       </div>
       <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
         {row.lastContactAt ? `Last seen ${cairoDateTime(row.lastContactAt)}` : "Not heard from yet"}
       </p>
+      {/* The check-in time is not the fix time — a tablet can check in every hour for days with one old fix. */}
+      {!location && row.latitude !== null && row.longitude !== null ? (
+        <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
+          {row.locatedAt ? `Last position ${cairoDateTime(row.locatedAt)}` : "Last position: time of fix not reported"}
+        </p>
+      ) : null}
       {location ? (
         <p className="mt-1 flex items-start gap-1 break-words text-[11px] font-bold text-slate-700">
           <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden /> {location}
@@ -763,9 +840,10 @@ function FleetActions({
   const anyBusy = busyKey !== null && busyKey.startsWith(`${row.deviceNumber}:`);
   const normal = commands.filter((command) => !command.destructive);
   const destructive = commands.filter((command) => command.destructive);
-  // A tablet the register has never seen can be confirmed into custody here — but only if it reports a
-  // serial or an IMEI, since a row with neither cannot be told apart and the server would refuse it.
-  const canAddToCustody = row.unregistered && Boolean(row.serialNumber ?? row.imei);
+  // A tablet the register has never seen can be confirmed into custody here — but only when the SERVER
+  // says it carries a serial or IMEI the register can tell it apart by. The old check here (any serial
+  // or IMEI text at all) offered the button on a 12-digit IMEI the route then refused.
+  const canAddToCustody = row.canAddToCustody;
   return (
     <div className="flex flex-wrap gap-2">
       <button

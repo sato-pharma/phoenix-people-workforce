@@ -248,10 +248,29 @@ type LocationFix = {
   latitude: number;
   longitude: number;
   recordedAt: string | null;
+  firstRecordedAt: string | null;
+  reports: number;
   batteryLevel: number | null;
   source: "check-in" | "plugin";
 };
-type LocationRead = { fixes: LocationFix[]; pluginEnabled: boolean; note: string };
+type LocationRead = {
+  fixes: LocationFix[];
+  pluginEnabled: boolean;
+  collection: "on" | "off" | "unknown";
+  note: string;
+};
+
+/**
+ * When a row's position was reported. 🔴 A run of identical reports is ONE row that says so — a tablet
+ * sitting indoors re-sends its last fix with every report, and fifty rows of it read as fifty sightings.
+ */
+function fixWhen(fix: LocationFix): string {
+  if (!fix.recordedAt) return "No time given";
+  if (fix.reports > 1 && fix.firstRecordedAt && fix.firstRecordedAt !== fix.recordedAt) {
+    return `Same position reported ${fix.reports} times, ${cairoDateTime(fix.firstRecordedAt)} to ${cairoDateTime(fix.recordedAt)}`;
+  }
+  return cairoDateTime(fix.recordedAt);
+}
 
 const SOURCE_CHIP = "border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500";
 
@@ -261,6 +280,24 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
   const movements = useRead<LocationRead>(
     `/api/devices/headwind?deviceNumber=${query}&view=locations&round=${round}`,
   );
+  const [switching, setSwitching] = useState(false);
+  const [switchResult, setSwitchResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // 🔴 A PERSON'S PRESS, NEVER A SIDE EFFECT OF READING. Opening this panel used to switch collection on
+  // for the whole server from inside the read; it is now this button, CSRF-guarded and audited.
+  async function switchOnHistory() {
+    setSwitching(true);
+    setSwitchResult(null);
+    try {
+      const result = await postJson<{ message: string }>("/api/devices/headwind", { action: "location-history-on" });
+      setSwitchResult({ message: result.message, ok: true });
+      setRound((current) => current + 1);
+    } catch (caught) {
+      setSwitchResult({ message: caught instanceof Error ? caught.message : "Could not switch movement history on.", ok: false });
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   return (
     <Panel title="Where this tablet has been">
@@ -276,6 +313,13 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
             where that difference decides whether somebody goes looking for a tablet.
           */}
           <p className="break-words text-[11px] font-semibold text-slate-500">{movements.data.note}</p>
+          {movements.data.collection === "off" ? (
+            <button className={PANEL_ACTION} disabled={switching} onClick={() => void switchOnHistory()} type="button">
+              {switching ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <MapPin className="h-3.5 w-3.5" aria-hidden />}
+              Switch on movement history for every tablet
+            </button>
+          ) : null}
+          {switchResult ? (switchResult.ok ? <Done message={switchResult.message} /> : <Failed message={switchResult.message} />) : null}
           {/*
             The trail before the list. Each fix is a numbered stop joined in time order, so a route
             reads at a glance where the list reads as a log. The map draws only when there is a fix to
@@ -284,7 +328,7 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
           */}
           {movements.data.fixes.length > 0 ? (
             <TabletFleetMap
-              caption="Each numbered stop is one reported position, joined oldest to newest. The trail is only as dense as the tablet's check-ins — a straight line between two stops is not a road, only the two points we were told."
+              caption="Each numbered stop is one reported position with a time, joined oldest to newest, from one source only: the history plugin when it has positions, the check-ins otherwise. A straight line between two stops is not a road, only the two points we were told; a position with no time is listed below but not drawn."
               kind="trail"
               points={fixesToPoints(movements.data.fixes)}
               title="This tablet's trail"
@@ -295,11 +339,11 @@ function MovementsPanel({ deviceNumber }: { deviceNumber: string }) {
               {movements.data.fixes.map((fix) => (
                 <li
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
-                  key={`${fix.source}:${fix.recordedAt ?? "unknown"}:${fix.latitude},${fix.longitude}`}
+                  key={`${fix.source}:${fix.recordedAt ?? "unknown"}:${fix.firstRecordedAt ?? ""}:${fix.latitude},${fix.longitude}`}
                 >
                   <span className={SOURCE_CHIP}>{fix.source === "check-in" ? "Check-in" : "History plugin"}</span>
                   <span className="break-words text-[11px] font-bold text-slate-900">
-                    {fix.recordedAt ? cairoDateTime(fix.recordedAt) : "No time given"}
+                    {fixWhen(fix)}
                   </span>
                   <a
                     className="inline-flex items-center gap-1 break-all text-[11px] font-semibold text-slate-600 underline"
@@ -675,6 +719,21 @@ function RecordingsPanel({ deviceNumber }: { deviceNumber: string }) {
             {own.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
             Record this screen
           </button>
+          {/*
+            🔴 THE LIST IS READ ONCE, SO IT NEEDS A WAY TO BE READ AGAIN (audit, 9 Nov 2026). The notice
+            after Record says the file "appears below once the tablet uploads it", and nothing ever
+            re-read the list: the capture landed and the row kept saying "Recording…" until the whole
+            page was reloaded.
+          */}
+          <button
+            className={PANEL_ACTION}
+            disabled={own.busy || recordings.loading}
+            onClick={() => setState({ ...own, round: own.round + 1 })}
+            type="button"
+          >
+            {recordings.loading ? <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> : null}
+            Check for new recordings
+          </button>
         </div>
 
         {own.notice ? <Done message={own.notice} /> : null}
@@ -705,6 +764,12 @@ function RecordingsPanel({ deviceNumber }: { deviceNumber: string }) {
                       preload="metadata"
                       src={recording.playbackUrl}
                     />
+                  ) : null}
+                  {/* A ready file whose playback link could not be made used to show nothing at all — read as no file. */}
+                  {recording.status === "ready" && !recording.playbackUrl ? (
+                    <p className="break-words text-[10px] font-semibold text-rose-600">
+                      The file is filed, but a playback link could not be made just now. Press Check for new recordings to try again.
+                    </p>
                   ) : null}
                   {recording.status === "failed" && recording.error ? (
                     <p className="break-words text-[10px] font-semibold text-rose-600">{recording.error}</p>
@@ -1005,6 +1070,8 @@ function RemoteScreenIdPanel({
           <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
           <input
             className={cn(phxFieldClassName, "mt-1")}
+            // Held while it saves: the saved value replaces the box, so a keystroke typed meanwhile was lost.
+            disabled={own.busy}
             inputMode="numeric"
             onChange={(event) => setState({ ...own, failure: null, notice: null, value: event.target.value })}
             placeholder="123 456 789"
