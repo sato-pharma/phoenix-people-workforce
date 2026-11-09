@@ -2042,3 +2042,84 @@ without an id. A link read that is not a list refuses the write. `remove: false`
 every entry (Headwind throws a NullPointerException under an HTTP 200 without them). Both callers, the
 configurations route (`case "app"`) and the APK upload, go through it. Pinned by
 `tests/headwind-bridge.test.ts`.
+
+### 8.16 🔴 Every install file lives on the tablet server's own disk — a dead link stops the whole run
+
+Measured on production, 9 Nov 2026, from both tablets' device logs. The agent installs configuration
+3's apps one by one and **stops the run at the first download that fails**: nothing after it is
+installed, and the agent's own update (it comes last) never starts. On 23 Oct the separate download
+host `phoenix-tablet-apps.fly.dev` was rebuilt to ship launcher 6.48, and the rebuild kept only the
+launcher APKs — Outlook, LinkedIn, Facebook, Waze, ChatGPT and TapScanner (`.xapk`) answered 404 from
+then on. Every hourly run on PHX-TAB-0007 stopped at Outlook, so it stayed on launcher 6.39 for 17
+days: no location ever sent, no remote-screen ID. A factory-fresh tablet would stall the same way in
+its first run, before the hardware report that "Add to custody" needs (memory note
+`a-stalled-enrolment-run-never-sends-the-tablets-hardware-report`).
+
+The fix, 9 Nov: the six apps and the 6.48 launcher were copied onto the Railway volume mounted at
+`/usr/local/tomcat/work/files` (46 GB, survives every redeploy — WhatsApp, Telegram and WPS were
+already there), each SHA-256-checked against the laptop copy in `F:\Phoenix Workforce\tablet-apps\apps`,
+and the seven application-version rows were edited **in place** (`PUT /rest/private/applications/versions`,
+id kept — never a configuration PUT, §8.14) to `https://mdm.satopharma.com/files/<name>`.
+
+**Rules from here:** an app or launcher file for the rep tablets goes on that volume, never on the Fly
+host. Before enrolling a tablet or linking a new app, HEAD every install URL in ids 3, 4 and 5 **without
+following redirects** and expect 200 (§8.18 — a 301 is as dead as a 404 to a tablet).
+
+### 8.17 One set of rules per line — each tablet gets its line's app (owner, 9 Nov 2026)
+
+The owner's word: "based on the line push the line app". Headwind installs apps per configuration, never
+per device, so each line has its own copy of "Rep tablets" (id 3) with that line's app linked:
+
+| Id | Configuration | Line app | Tablets |
+|---|---|---|---|
+| 3 | Rep tablets | — (the base the copies came from) | none after the move |
+| 4 | Rep tablets — Anti Infective | Sato Anti-Infective (`com.satopharma.antiinfective`) 1.0.18 | PHX-TAB-0008 (Ahmed Abd-Elnaim), PHX-TAB-0009 (Mohamed Hamed) |
+| 5 | Rep tablets — Pedia | Pedia Line (`com.satopharma.pedia`) 1.3.4 | PHX-TAB-0007 (Gannatullah Amer) |
+
+The copies were made with `PUT /rest/private/configurations/copy` (`{ id: 3, name, description }`;
+upstream `ConfigurationResource.copyConfiguration` carries every setting via `Configuration.newCopy()`
+plus the plain app links). Read back on production: zero setting differences against id 3, the same 11
+app links, and a QR key of their own. Each line app went in through Phoenix's `uploadHeadwindApp`
+(audited), byte-identical to the build the line's own site publishes.
+
+🔴 **A change to the shared rules — a restriction, an app, the launcher row — must now be made on ids 3,
+4 and 5**, or two lines silently miss it. A version row (`applicationversions`) is shared, so a repointed
+download link reaches all three at once; a link or a setting is not. A new tablet is enrolled with **its
+line's** QR, never id 3's. CNS gets the same treatment (id 6) the day a CNS rep holds a tablet.
+
+**The upload fix that came with it.** `uploadHeadwindApp` registered an APK with only `filePath`, so the
+insert hit `null value in column "name" of relation "applications"` and the server answered
+`error.internal.server` under an HTTP 200 — every upload from Phoenix's tablet page failed this way. The
+register body is now `applicationRegisterBody`, which copies the server's own `fileDetails` (package,
+label, version, version code, architecture) the way the Headwind console does. Pinned in
+`tests/headwind-bridge.test.ts`.
+
+### 8.18 🔴 A tablet will not follow a redirect — every install link must be `https://` and answer 200 itself
+
+Measured on production, 9 Nov 2026, in PHX-TAB-0007's device log, after §8.16 had fixed the six 404s:
+`Failed to download app com.satopharma.pedia: Bad server response for http://mdm.satopharma.com/files/Sato-Pedia-1.3.4.apk: 301`.
+Headwind writes an uploaded app's link from its own base address, which is plain `http` behind
+Railway's TLS. That address answers 301 to `https`, and the agent counts the 301 as a failed download.
+Both line apps from §8.17 were registered this way, so the update run on every line tablet stopped at
+its line app — before the launcher, which is listed after it. That is why PHX-TAB-0007 was still on
+launcher 6.39 (which sends no location) even after every other link answered 200: the earlier check
+followed redirects and reported 200 for the 301 links.
+
+**The fix, 9 Nov:** version rows 10089 (Sato Anti-Infective 1.0.18) and 10090 (Pedia Line 1.3.4) edited
+in place to their `https://` twins, each read back answering 200 with no redirect. `uploadHeadwindApp`
+now moves every version of a just-registered app onto `https://` (`tabletFollowableUrl`) before the app
+is linked to any rules, so the next upload cannot reintroduce it. Pinned in `tests/headwind-bridge.test.ts`.
+
+**The check, from here:** HEAD every install link in ids 3, 4 and 5 with redirects **not followed**
+(`fetch(url, { method: "HEAD", redirect: "manual" })`) and expect 200 — a 301 or 302 is a dead link to
+a tablet.
+
+**Why location never appeared — the chain, as measured.** The launcher that sends location (6.45 and
+later, live row 6.48) is the last thing in the update run. PHX-TAB-0007 never got past the first dead
+link (the Fly 404s, then the line app's 301), so it ran 6.39 and never sent a position. PHX-TAB-0008
+did reach 6.45 on 22 Oct and its own log shows network fixes near 27.189, 31.180 and "posted device
+info with fresh location" every ten minutes from 13:42 to 15:52 Cairo — yet neither its stored report
+nor the device-info history holds a position, and it has been switched off since 16:02 that day, so
+why those posts left nothing is unproven until a tablet on 6.48 is online. The server side is not the
+gap: `SyncResource.updateDeviceInfo` stores `DeviceInfo.location` (`lat`, `lon`, `ts`) and the
+`deviceinfo` plugin is registered and not switched off server-wide (`/rest/plugin/main/public/registered`).

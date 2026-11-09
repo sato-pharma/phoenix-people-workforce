@@ -35,7 +35,83 @@ export class HeadwindUploadError extends Error {
 /** 300 MB — above any APK this fleet carries, and below what the route's 300-second budget can move. */
 export const HEADWIND_MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 
-type FileUploadResult = { serverPath?: string; [field: string]: unknown };
+type FileUploadResult = { serverPath?: string; fileDetails?: unknown; [field: string]: unknown };
+
+/**
+ * The body that registers an uploaded APK as an application.
+ *
+ * 🔴 THE NAME, PACKAGE AND VERSION COME FROM THE SERVER'S OWN READING OF THE FILE, AND LEAVING THEM
+ * OUT FAILS AS A 200. `POST /rest/private/web-ui-files` answers `{ serverPath, fileDetails }`, where
+ * `fileDetails` is what the server read out of the APK — `pkg`, `name` (the label), `version`,
+ * `versionCode`, `arch`. The Headwind console copies those onto the application before it calls
+ * `PUT /rest/private/applications/android` (`applications.controller.js`). Sending only `filePath`
+ * makes the insert hit `null value in column "name" of relation "applications"` and the server answers
+ * `{"status":"ERROR","message":"error.internal.server"}` under an HTTP 200 — measured on production,
+ * 9 Nov 2026, uploading the Sato Anti-Infective line app. A label the server could not read falls back
+ * to the package name, so the NOT NULL column is never sent empty.
+ */
+export function applicationRegisterBody(
+  serverPath: string,
+  fileDetails: unknown,
+  showIcon: boolean,
+): Record<string, unknown> {
+  const details = fileDetails && typeof fileDetails === "object" ? (fileDetails as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const pkg = text(details.pkg);
+  const body: Record<string, unknown> = { filePath: serverPath, showIcon, type: "app" };
+  if (pkg) body.pkg = pkg;
+  const name = text(details.name) ?? pkg;
+  if (name) body.name = name;
+  const version = text(details.version);
+  if (version) body.version = version;
+  if (typeof details.versionCode === "number") body.versionCode = details.versionCode;
+  const arch = text(details.arch);
+  if (arch) body.arch = arch;
+  return body;
+}
+
+/**
+ * The download link a tablet can actually follow.
+ *
+ * 🔴 THE SERVER WRITES AN UPLOADED APP'S LINK AS `http://`, AND A TABLET WILL NOT FOLLOW THE REDIRECT.
+ * Headwind builds the link from its own base address, which is plain http behind Railway's TLS, so a
+ * fresh upload is registered as `http://mdm.satopharma.com/files/<name>`. That address answers 301 to
+ * https, and the agent treats the 301 as a failed download ("Bad server response … 301"). One dead link
+ * stops the tablet's whole update run, so every app listed after it — the launcher included — never
+ * arrives. Measured on production, 9 Nov 2026: both line apps were registered on http, PHX-TAB-0007
+ * stopped at the Pedia app on every check-in and stayed on launcher 6.39, which sends no location.
+ * The https twin is the same file on the same server.
+ */
+export function tabletFollowableUrl(url: unknown): string | null {
+  if (typeof url !== "string" || !url.startsWith("http://")) return null;
+  return `https://${url.slice("http://".length)}`;
+}
+
+/** Step 2b — move every version of a just-registered app onto its https link (see `tabletFollowableUrl`). */
+async function secureVersionLinks(
+  applicationId: number,
+  fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const versions = await callHeadwind<Array<Record<string, unknown>>>(
+    `/rest/private/applications/${applicationId}/versions`,
+    { method: "GET" },
+    fetchImpl,
+    env,
+  );
+  for (const version of Array.isArray(versions) ? versions : []) {
+    const url = tabletFollowableUrl(version.url);
+    if (!url) continue;
+    // The live version object goes back whole with only the link changed: its id is kept, so the server
+    // edits the row in place rather than adding a second version.
+    await callHeadwind(
+      "/rest/private/applications/versions",
+      { body: JSON.stringify({ ...version, url }), method: "PUT" },
+      fetchImpl,
+      env,
+    );
+  }
+}
 
 /**
  * Step 1 — send the bytes up.
@@ -49,7 +125,7 @@ async function uploadBytes(
   file: File,
   fetchImpl: typeof fetch,
   env: NodeJS.ProcessEnv,
-): Promise<string> {
+): Promise<{ serverPath: string; fileDetails: unknown }> {
   const form = new FormData();
   form.append("file", file, file.name);
   const result = await callHeadwind<FileUploadResult>(
@@ -65,7 +141,7 @@ async function uploadBytes(
         "Nothing reached any tablet. Check the server has disk space left and try again.",
     );
   }
-  return serverPath;
+  return { fileDetails: result?.fileDetails ?? null, serverPath };
 }
 
 function checkFile(file: unknown, what: string): File {
@@ -111,7 +187,7 @@ export async function uploadHeadwindApp(
     );
   }
 
-  const serverPath = await uploadBytes(file, fetchImpl, env);
+  const { fileDetails, serverPath } = await uploadBytes(file, fetchImpl, env);
 
   // 🔴 `type: "app"` IS NOT OPTIONAL, AND LEAVING IT OUT FAILS AS A 200. Headwind's `applications`
   // table has NOT NULL on `type`, so without it the insert throws and the server answers
@@ -128,7 +204,7 @@ export async function uploadHeadwindApp(
   const application = await callHeadwind<Record<string, unknown>>(
     "/rest/private/applications/android",
     {
-      body: JSON.stringify({ filePath: serverPath, showIcon: input.showIcon !== false, type: "app" }),
+      body: JSON.stringify(applicationRegisterBody(serverPath, fileDetails, input.showIcon !== false)),
       method: "PUT",
     },
     fetchImpl,
@@ -138,6 +214,8 @@ export async function uploadHeadwindApp(
   const applicationId = typeof application?.id === "number" ? application.id : null;
   const packageName = typeof application?.pkg === "string" ? application.pkg : null;
   const version = typeof application?.version === "string" ? application.version : null;
+
+  if (applicationId !== null) await secureVersionLinks(applicationId, fetchImpl, env);
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
@@ -202,7 +280,7 @@ export async function uploadHeadwindFile(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<HeadwindFileUploadResult> {
   const file = checkFile(input.file, "a file");
-  const serverPath = await uploadBytes(file, fetchImpl, env);
+  const { serverPath } = await uploadBytes(file, fetchImpl, env);
 
   const saved = await callHeadwind<Record<string, unknown>>(
     "/rest/private/web-ui-files",
