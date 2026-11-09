@@ -8,7 +8,8 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
-import { foldTeamVisitDay, sumTeamVisitDays } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, sumTeamVisitDays, teamVisitManagerDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import type { DistrictManagerDay, DistrictManagerDayHalf } from "../src/lib/phoenix-crm/server/manager-dm-day.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -92,9 +93,34 @@ function visitsYesterdayAndToday() {
   assert.equal(total.times.length, 0, "the total carries counts, never a second copy of the times");
   assert.ok(source0().includes("repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },"), "every district carries its reps' total");
   assert.ok(grouped.includes("<RepsTotal day={district.repsTotal.yesterday} />") && grouped.includes("<RepsTotal day={district.repsTotal.today} />"), "the manager's row prints his reps' total");
+  // Was the district manager's day double or single — double with whom, single where (owner, 2026-11-09).
+  const half = (over: Partial<DistrictManagerDayHalf>): DistrictManagerDayHalf => ({ half: "AM", kindLabel: "Single visit", repName: null, areaName: null, detail: null, customers: [], ...over });
+  const dmDay = (halves: DistrictManagerDayHalf[], sent = true): DistrictManagerDay => ({ dmSeatId: "D1", dmName: "District One", statusLabel: sent ? "Approved" : "Draft", sent, halves });
+  const double = teamVisitManagerDay(dmDay([half({ kindLabel: "Double visit", repName: "Rep Sample", areaName: "Area North" }), half({ half: "PM", kindLabel: "Double visit", repName: "Rep Sample", areaName: "Area North" })]));
+  assert.equal(double.headline, "Double visit day");
+  assert.deepEqual(double.halves, ["AM · Double with Rep Sample · Area North", "PM · Double with Rep Sample · Area North"], "a double names the rep beside him");
+  const single = teamVisitManagerDay(dmDay([half({ areaName: "Area South" })]));
+  assert.equal(single.headline, "Single visit day");
+  assert.deepEqual(single.halves, ["AM · Single in Area South"], "a single names where");
+  assert.equal(teamVisitManagerDay(dmDay([half({ kindLabel: "Double visit", repName: "Rep Sample" }), half({ half: "PM", areaName: "Area South" })])).headline, "Double and single");
+  assert.equal(teamVisitManagerDay(dmDay([])).headline, "Nothing planned");
+  const adminSingle = teamVisitManagerDay(dmDay([half({ kindLabel: "Admin", detail: "Training" }), half({ half: "PM", areaName: "Area West" })]));
+  assert.equal(adminSingle.headline, "Single and admin", "an admin half is named beside the visit half");
+  assert.deepEqual(adminSingle.halves, ["AM · Admin — Training", "PM · Single in Area West"]);
+  assert.equal(teamVisitManagerDay(dmDay([half({ areaName: "Area South" })], false)).unsent, "Draft", "a week not sent says so");
+  assert.equal(teamVisitManagerDay(null, true).headline, "Plan could not be read", "a failed read is said, never nothing planned");
+  assert.ok(grouped.includes("<ManagerDayPlan day={district.managerDay.yesterday} />") && grouped.includes("<ManagerDayPlan day={district.managerDay.today} />"), "the manager's row prints the day planned");
+  // Every rep and every district manager shows the hire date (owner, 2026-11-09: "also show hiring date").
+  assert.ok(source0().includes("hireDates: people.flatMap((hrId) => hireDateOf(hrId) ?? []),") && source0().includes("managerHireDate: managerHrId ? hireDateOf(managerHrId) : null,"), "the loader carries each person's hire date");
+  assert.equal(grouped.split("<Hired dates={rep.hireDates} />").length - 1, 2, "each rep's row and card print the hire date");
+  assert.equal(grouped.split("<Hired dates={[district.managerHireDate]} />").length - 1, 2, "each manager's row and card print the hire date");
+  // A vacant seat wears a light colour of its own (owner, 2026-11-09).
+  assert.ok(source0().includes("vacant: people.length === 0,"), "a rep seat with nobody in it is marked vacant");
+  assert.ok(grouped.includes('const VACANT_ROW = "bg-amber-50";') && grouped.includes("rep.vacant ? VACANT_ROW") && grouped.includes("district.managerHrId ? MANAGER_ROW : VACANT_ROW"), "vacant seats, rep and manager, wear the light colour");
   // No location column is read by the report.
   const source = readFileSync("src/lib/phoenix-crm/server/team-visits.ts", "utf8");
-  const select = /\.select\("([^"]+)"\)/.exec(source)?.[1] ?? "";
+  // The visit read's own select — the one naming the visit date (the hire-date and customer-name reads have their own).
+  const select = [...source.matchAll(/\.select\("([^"]+)"\)/g)].map((match) => match[1]).find((columns) => columns.includes("visit_date")) ?? "";
   assert.ok(select.includes("captured_at"));
   for (const banned of ["lat", "lon", "distance", "location", "far"]) {
     assert.ok(!select.split(/,\s*/).some((column) => column.includes(banned)), `team visits must not read ${banned}`);
@@ -134,7 +160,7 @@ function teamVisitsTestAccountAndColours() {
   const view = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
   const managerRow = /const MANAGER_ROW = "([^"]+)"/.exec(view)?.[1] ?? "";
   assert.ok(managerRow.includes("bg-sky-50") && managerRow.includes("border-l-sky-700"), "a manager's row has a colour of its own");
-  assert.equal(view.split("${MANAGER_ROW}").length - 1, 2, "both the desktop row and the phone card wear it");
+  assert.equal(view.split("district.managerHrId ? MANAGER_ROW : VACANT_ROW").length - 1, 2, "both the desktop row and the phone card wear it");
 }
 
 function chainVisits() {
