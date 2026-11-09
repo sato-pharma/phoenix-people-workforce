@@ -1448,8 +1448,9 @@ export function releaseOnlyMembersFor(input: {
  *
  * Most of these people are no longer in the population (they resigned, and that is why they were
  * held), so the row is built from the employee record rather than from `members`. The recommended
- * figure is everything due now — the outstanding balance less pay deferred to a LATER month
- * (owner, 2026-10-26); the step can lower it, never raise it above the outstanding (saveStep).
+ * figure is ZERO — nobody is released unless HR enters an amount (owner, 2026-11-09). What is due now —
+ * the outstanding balance less pay deferred to a LATER month (owner, 2026-10-26) — shows as "Due Now";
+ * an entered amount can never be raised above the outstanding (saveStep).
  *
  * `part1Corrections` is what HR has entered as "Part 1 Not Paid" against the previous published month,
  * by compact HR id: shown in that column, and anyone with an entry is listed even once it is paid off,
@@ -1524,9 +1525,14 @@ export function recommendHeldRelease(
       ...(part === 2 ? { "Released In Part 1": releasedInPart1 } : {}),
       Outstanding: outstanding,
       "Not Yet Due": notDue,
+      "Due Now": dueNow,
     };
-    row.recommended = { [field]: dueNow, part1NotPaid };
-    row.values = { [field]: pick(draft?.[field], dueNow), part1NotPaid };
+    // NOTHING IS RELEASED UNLESS HR CHOOSES IT (owner, 2026-11-09: "only who i choose because u were
+    // gonna make me mistake"). This used to pre-fill every held person with dueNow, so confirming the
+    // step paid all of them — October 2026 released four 30 September leavers he never picked. The
+    // amount owed now shows as "Due Now"; the box stays 0 until he types a figure into it.
+    row.recommended = { [field]: 0, part1NotPaid };
+    row.values = { [field]: pick(draft?.[field], 0), part1NotPaid };
     rows.push(row);
   }
   return rows.sort((left, right) => left.fullName.localeCompare(right.fullName));
