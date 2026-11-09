@@ -1,4 +1,3 @@
-import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -9,6 +8,7 @@ import {
   parseDeviceImportFile,
 } from "@/lib/devices/bulk-import";
 import {
+  importActor,
   recordDeviceImportAttempt,
   recordDeviceImportGateRejection,
 } from "@/lib/devices/import-attempt-log";
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     // before the permission check.
     // Same expression the confirm route uses. HR ids are stored mixed-case, so the two presses
     // must canonicalise identically or one person appears in the log as two.
-    const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? access.role;
+    const actor = importActor(access);
     logAttempt = (fields) =>
       recordDeviceImportAttempt({ stage: "check", actor, fileName, fileBytes, rowsRead, ...fields });
 

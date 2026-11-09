@@ -3006,6 +3006,7 @@ import { runHeadwindReadinessTests } from "./headwind-readiness.test.ts";
 import { runHeadwindUsersActionsTests } from "./headwind-users-actions.test.ts";
 import { runHeadwindInstallLinksTests } from "./headwind-install-links.test.ts";
 import { runHeadwindRecordingsAuditTests } from "./headwind-recordings-audit.test.ts";
+import { runDeviceRegisterAuditTests } from "./device-register-audit.test.ts";
 import { runEmailBlockScreenTests } from "./email-block-screen.test.ts";
 import { runOperatorWatchChannelGuardTests } from "./operator-watch-channel-guard.test.ts";
 import { runMarketingVendorAndCustomerMergeTests } from "./marketing-vendor-and-customer-merge.test.ts";
@@ -12020,6 +12021,7 @@ await runTest("tablet state honesty (9 Nov 2026): a launcher is measured against
 await runTest("the Headwind bridge audit (9 Nov 2026): console logins follow the measured contract and are read back, only a 404 means no add-on, only a missing setting is not-configured, every error class is mapped, custody actions say queued, and a wipe says how far it got", runHeadwindUsersActionsTests);
 await runTest("the rep tablets' install links (9 Nov 2026): checked as a tablet meets them, never linked dead, every rep set of rules reached, hide is not delete", runHeadwindInstallLinksTests);
 await runTest("the screen-recording and remote-screen audit (9 Nov 2026): the tablet uploads to the public domain, a dead slot reads expired, a failed push closes its slot, a mistyped ID is 400, and an unreadable answer is said", runHeadwindRecordingsAuditTests);
+await runTest("the device register audit (9 Nov 2026): no new custody for a leaver, a reserved device is never marked, one machine never enters twice, and Action1 credentials never leave Action1", runDeviceRegisterAuditTests);
 await runTest("blocked work emails (3 Nov 2026): who is refused, a lift sends nothing, a complaint stays, and old blocks page nobody", runEmailBlockScreenTests);
 await runTest("alarms that never email (3 Nov 2026): a failed Telegram send on any listed alarm is not re-sent as email, each name is the sender's real one, and a new system sender must be decided", runOperatorWatchChannelGuardTests);
 await runTest("marketing vendors and the customer merge (3 Nov 2026): a merged vendor stays hidden, a merge refuses what it should, and only customer_id moves on a request", runMarketingVendorAndCustomerMergeTests);

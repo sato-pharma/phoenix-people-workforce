@@ -114,8 +114,10 @@ export async function runDeviceReservationTests(): Promise<void> {
   for (const action of ["reserve", "reassign_placeholder", "revoke", "reconcile"]) {
     assert.match(route, new RegExp(`payload\\.action === "${action}"`), `the API handles the ${action} action`);
   }
-  // The RPCs' own readable sentences must map to 400, not a generic 500.
-  assert.match(route, /Reserving\|A reservation\|Only a reservation\|Revoking\|Reconciling/, "reservation errors return 400");
+  // The RPCs' own readable sentences must map to 400, not a generic 500. The list lives in the
+  // service (`deviceRegisterErrorStatus`), and the route answers through it.
+  assert.match(route, /status: deviceRegisterErrorStatus\(message\)/, "the route answers through deviceRegisterErrorStatus");
+  assert.match(service, /Reserving\|A reservation\|Only a reservation\|Revoking\|Reconciling/, "reservation errors return 400");
 
   // The Rep Tablets fleet row carries what the controls target.
   const fleet = source(FLEET);

@@ -19,8 +19,31 @@
  * table, not a way of learning anything.
  */
 import { writeAuditLog } from "@/lib/admin/audit";
+import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { hrIdForStorage } from "@/lib/hr-id";
+
+/**
+ * WHO pressed an import button, as every import press records it — the check, the import, the two
+ * Action1 presses and a press refused at the gate.
+ *
+ * ONE EXPRESSION, because the two dry runs and the gate log each said "the same canonicalisation as
+ * the confirm route" while leaving out `resolveEmployeeIdentityId`. A caller with no HR id was then
+ * filed under his raw login on the check and under his normalised id on the import — one person, two
+ * actors, which is the exact ambiguity this log exists to remove.
+ */
+export function importActor(access: {
+  hrId?: string | null;
+  loginId?: string | null;
+  role?: string | null;
+}): string {
+  return (
+    hrIdForStorage(access.hrId) ??
+    resolveEmployeeIdentityId({ hrId: access.hrId ?? null, loginId: access.loginId ?? null }) ??
+    access.loginId ??
+    String(access.role ?? "")
+  );
+}
 
 /** Which of the two presses this was. `check` writes nothing to the register; `import` does. */
 export type DeviceImportStage = "check" | "import";
@@ -201,7 +224,7 @@ export async function recordDeviceImportGateRejection(
     const access = await resolveAccessContext(request);
     if (!access || access.source === "guest") return;
 
-    const actor = hrIdForStorage(access.hrId) ?? access.loginId ?? access.role;
+    const actor = importActor(access);
     if (!shouldLogGateRejection(gateRejectionKey(actor, stage, outcome), Date.now())) return;
 
     await recordDeviceImportAttempt({
