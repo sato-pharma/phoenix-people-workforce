@@ -92,6 +92,7 @@ import {
 } from "../src/lib/devices/headwind/recordings.ts";
 import {
   applicationRegisterBody,
+  tabletFollowableUrl,
   uploadHeadwindApp,
   HEADWIND_MAX_UPLOAD_BYTES,
   HeadwindUploadError,
@@ -1327,6 +1328,21 @@ async function runUploadTests() {
     "a label the server could not read falls back to the package, so the NOT NULL name is never sent empty",
   );
   assert.match(uploads, /applicationRegisterBody\(serverPath, fileDetails,/, "and uploadHeadwindApp sends exactly that body");
+  // 🔴 THE SERVER REGISTERS AN UPLOAD ON `http://`, WHICH ANSWERS 301, AND THE TABLET REFUSES A 301 —
+  // so the dead link stops the whole update run and the launcher after it never installs (production,
+  // 9 Nov 2026: PHX-TAB-0007 stuck on launcher 6.39 behind the Pedia app's http link).
+  assert.equal(
+    tabletFollowableUrl("http://mdm.satopharma.com/files/Sato-Pedia-1.3.4.apk"),
+    "https://mdm.satopharma.com/files/Sato-Pedia-1.3.4.apk",
+    "an http link becomes its https twin",
+  );
+  assert.equal(tabletFollowableUrl("https://mdm.satopharma.com/files/a.apk"), null, "an https link is left alone");
+  assert.equal(tabletFollowableUrl(null), null, "a built-in app with no link is left alone");
+  assert.match(
+    uploads,
+    /if \(applicationId !== null\) await secureVersionLinks\(applicationId, fetchImpl, env\);/,
+    "and every upload moves its new version onto the https link before any tablet is told about it",
+  );
 
   const route = stripComments(source("app/api/devices/headwind/upload/route.ts"));
   assert.match(route, /export const maxDuration = 300/, "a multipart route gets its own ceiling, like the ManageEngine one");

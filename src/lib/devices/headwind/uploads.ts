@@ -71,6 +71,49 @@ export function applicationRegisterBody(
 }
 
 /**
+ * The download link a tablet can actually follow.
+ *
+ * 🔴 THE SERVER WRITES AN UPLOADED APP'S LINK AS `http://`, AND A TABLET WILL NOT FOLLOW THE REDIRECT.
+ * Headwind builds the link from its own base address, which is plain http behind Railway's TLS, so a
+ * fresh upload is registered as `http://mdm.satopharma.com/files/<name>`. That address answers 301 to
+ * https, and the agent treats the 301 as a failed download ("Bad server response … 301"). One dead link
+ * stops the tablet's whole update run, so every app listed after it — the launcher included — never
+ * arrives. Measured on production, 9 Nov 2026: both line apps were registered on http, PHX-TAB-0007
+ * stopped at the Pedia app on every check-in and stayed on launcher 6.39, which sends no location.
+ * The https twin is the same file on the same server.
+ */
+export function tabletFollowableUrl(url: unknown): string | null {
+  if (typeof url !== "string" || !url.startsWith("http://")) return null;
+  return `https://${url.slice("http://".length)}`;
+}
+
+/** Step 2b — move every version of a just-registered app onto its https link (see `tabletFollowableUrl`). */
+async function secureVersionLinks(
+  applicationId: number,
+  fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const versions = await callHeadwind<Array<Record<string, unknown>>>(
+    `/rest/private/applications/${applicationId}/versions`,
+    { method: "GET" },
+    fetchImpl,
+    env,
+  );
+  for (const version of Array.isArray(versions) ? versions : []) {
+    const url = tabletFollowableUrl(version.url);
+    if (!url) continue;
+    // The live version object goes back whole with only the link changed: its id is kept, so the server
+    // edits the row in place rather than adding a second version.
+    await callHeadwind(
+      "/rest/private/applications/versions",
+      { body: JSON.stringify({ ...version, url }), method: "PUT" },
+      fetchImpl,
+      env,
+    );
+  }
+}
+
+/**
  * Step 1 — send the bytes up.
  *
  * 🔴 `FormData` IS PASSED THROUGH UNTOUCHED AND THAT IS DELIBERATE. `callHeadwind` recognises a
@@ -171,6 +214,8 @@ export async function uploadHeadwindApp(
   const applicationId = typeof application?.id === "number" ? application.id : null;
   const packageName = typeof application?.pkg === "string" ? application.pkg : null;
   const version = typeof application?.version === "string" ? application.version : null;
+
+  if (applicationId !== null) await secureVersionLinks(applicationId, fetchImpl, env);
 
   await writeRequiredAuditLog({
     actorLoginId: actor,

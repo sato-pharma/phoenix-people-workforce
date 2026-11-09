@@ -2062,7 +2062,8 @@ and the seven application-version rows were edited **in place** (`PUT /rest/priv
 id kept — never a configuration PUT, §8.14) to `https://mdm.satopharma.com/files/<name>`.
 
 **Rules from here:** an app or launcher file for the rep tablets goes on that volume, never on the Fly
-host. Before enrolling a tablet or linking a new app, HEAD every config-3 install URL and expect 200.
+host. Before enrolling a tablet or linking a new app, HEAD every install URL in ids 3, 4 and 5 **without
+following redirects** and expect 200 (§8.18 — a 301 is as dead as a 404 to a tablet).
 
 ### 8.17 One set of rules per line — each tablet gets its line's app (owner, 9 Nov 2026)
 
@@ -2092,3 +2093,33 @@ insert hit `null value in column "name" of relation "applications"` and the serv
 register body is now `applicationRegisterBody`, which copies the server's own `fileDetails` (package,
 label, version, version code, architecture) the way the Headwind console does. Pinned in
 `tests/headwind-bridge.test.ts`.
+
+### 8.18 🔴 A tablet will not follow a redirect — every install link must be `https://` and answer 200 itself
+
+Measured on production, 9 Nov 2026, in PHX-TAB-0007's device log, after §8.16 had fixed the six 404s:
+`Failed to download app com.satopharma.pedia: Bad server response for http://mdm.satopharma.com/files/Sato-Pedia-1.3.4.apk: 301`.
+Headwind writes an uploaded app's link from its own base address, which is plain `http` behind
+Railway's TLS. That address answers 301 to `https`, and the agent counts the 301 as a failed download.
+Both line apps from §8.17 were registered this way, so the update run on every line tablet stopped at
+its line app — before the launcher, which is listed after it. That is why PHX-TAB-0007 was still on
+launcher 6.39 (which sends no location) even after every other link answered 200: the earlier check
+followed redirects and reported 200 for the 301 links.
+
+**The fix, 9 Nov:** version rows 10089 (Sato Anti-Infective 1.0.18) and 10090 (Pedia Line 1.3.4) edited
+in place to their `https://` twins, each read back answering 200 with no redirect. `uploadHeadwindApp`
+now moves every version of a just-registered app onto `https://` (`tabletFollowableUrl`) before the app
+is linked to any rules, so the next upload cannot reintroduce it. Pinned in `tests/headwind-bridge.test.ts`.
+
+**The check, from here:** HEAD every install link in ids 3, 4 and 5 with redirects **not followed**
+(`fetch(url, { method: "HEAD", redirect: "manual" })`) and expect 200 — a 301 or 302 is a dead link to
+a tablet.
+
+**Why location never appeared — the chain, as measured.** The launcher that sends location (6.45 and
+later, live row 6.48) is the last thing in the update run. PHX-TAB-0007 never got past the first dead
+link (the Fly 404s, then the line app's 301), so it ran 6.39 and never sent a position. PHX-TAB-0008
+did reach 6.45 on 22 Oct and its own log shows network fixes near 27.189, 31.180 and "posted device
+info with fresh location" every ten minutes from 13:42 to 15:52 Cairo — yet neither its stored report
+nor the device-info history holds a position, and it has been switched off since 16:02 that day, so
+why those posts left nothing is unproven until a tablet on 6.48 is online. The server side is not the
+gap: `SyncResource.updateDeviceInfo` stores `DeviceInfo.location` (`lat`, `lon`, `ts`) and the
+`deviceinfo` plugin is registered and not switched off server-wide (`/rest/plugin/main/public/registered`).
