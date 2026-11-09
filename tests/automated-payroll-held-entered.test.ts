@@ -210,7 +210,7 @@ export function runAutomatedPayrollHeldEnteredTests() {
   assert.match(candidatesBody, /status: employee\.employmentStatus/, "each offered employee carries their status");
   assert.match(
     runService,
-    /candidates: manualRowCandidates\(stepKey, members, rows, directory\)/,
+    /candidates: manualRowCandidates\(\s*stepKey,\s*members,\s*rows,\s*directory,/,
     "the step view hands the directory (resigned included) to the picker",
   );
   const step = stripComments(
@@ -218,4 +218,19 @@ export function runAutomatedPayrollHeldEnteredTests() {
   );
   assert.match(step, /\/held-entered`, \{\s*method: "POST"/, "Add employee records a held month through held-entered");
   assert.match(step, /Held in \{month\.label\}/, "Add employee offers the count-only months");
+
+  // "Part 1 Not Paid" is offered only for someone last month's Part 1 actually paid (owner, 2026-11-09: the
+  // default choice refused Ahmed Helal, who was not on that month, with a 0.00 cap and no way forward).
+  assert.match(candidatesBody, /lastMonthPart1: lastMonthPart1\.get\(compact\) \?\? 0/, "each offered leaver carries last month's Part 1");
+  assert.match(runService, /await lastMonthPart1For\(\{ month: run\.month, year: run\.year \}\)/, "the step view reads last month's Part 1");
+  assert.match(
+    step,
+    /\{picked === null \|\| part1Possible \? \(\s*<option value="">Last month&apos;s Part 1 not paid<\/option>/,
+    "the Part 1 Not Paid choice is hidden for someone last month did not pay a Part 1",
+  );
+  assert.match(
+    step,
+    /\(candidate\.lastMonthPart1 \?\? 0\) <= 0 && months\.length > 0[\s\S]{0,120}setHeldRunId/,
+    "picking such a person moves For to a held month by itself",
+  );
 }

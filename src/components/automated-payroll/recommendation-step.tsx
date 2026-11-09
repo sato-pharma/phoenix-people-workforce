@@ -251,7 +251,20 @@ function AddEmployeePanel({
     Number.isFinite(amountValue) &&
     amountValue > 0 &&
     !saving &&
-    (!forHeldMonth || (note.trim() !== "" && !heldBlocked));
+    (forHeldMonth
+      ? note.trim() !== "" && !heldBlocked
+      : !heldMode || picked === null || amountValue <= (picked.lastMonthPart1 ?? 0));
+  // "Part 1 Not Paid" is only possible for someone last month's Part 1 actually paid (owner, 2026-11-09: it
+  // refused a leaver who was not on that month, and the default sent him straight into the refusal).
+  const part1Possible = (picked?.lastMonthPart1 ?? 0) > 0;
+  const pickCandidate = (candidate: ManualRowCandidate) => {
+    setPicked(candidate);
+    setAddError(null);
+    const months = heldMonths ?? [];
+    if (heldMode && (candidate.lastMonthPart1 ?? 0) <= 0 && months.length > 0) {
+      setHeldRunId((current) => current || months[months.length - 1].runId);
+    }
+  };
   const statusLabel = (candidate: ManualRowCandidate) =>
     candidate.status && !/^active$/i.test(candidate.status) ? ` (${candidate.status.replace(/_/g, " ")})` : "";
 
@@ -313,7 +326,7 @@ function AddEmployeePanel({
                     // preventDefault on mousedown: a blur would unmount this
                     // list before the click could land on it.
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => setPicked(candidate)}
+                    onClick={() => pickCandidate(candidate)}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-orange-50"
                   >
                     <span className="min-w-0 whitespace-normal break-words text-slate-800">
@@ -336,7 +349,9 @@ function AddEmployeePanel({
               onChange={(event) => setHeldRunId(event.target.value)}
               className={selectClassName}
             >
-              <option value="">Last month&apos;s Part 1 not paid</option>
+              {picked === null || part1Possible ? (
+                <option value="">Last month&apos;s Part 1 not paid</option>
+              ) : null}
               {(heldMonths ?? []).map((month) => (
                 <option key={month.runId} value={month.runId}>
                   Held in {month.label}
@@ -421,6 +436,12 @@ function AddEmployeePanel({
 
       {addError ? <p className="text-xs font-semibold text-rose-700">{addError}</p> : null}
       {forHeldMonth && heldBlocked ? <p className="text-xs font-semibold text-amber-800">{heldBlocked}</p> : null}
+      {heldMode && picked !== null && !forHeldMonth && part1Possible && amountValue > (picked.lastMonthPart1 ?? 0) ? (
+        <p className="text-xs font-semibold text-amber-800">
+          Last month&apos;s Part 1 for {picked.fullName} was {formatPayrollMoney(picked.lastMonthPart1 ?? 0)} — more than
+          that is held pay: set For to the month it was held.
+        </p>
+      ) : null}
       <p className="text-xs text-slate-500">
         {forHeldMonth
           ? "A held month is recorded as soon as you add it, and the step reloads with the person listed."
