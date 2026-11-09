@@ -369,7 +369,8 @@ async function runAuthTests() {
   await assert.rejects(
     () => getHeadwindToken(makeFetch({ login: [{ body: { message: "Wrong password", status: "ERROR" }, status: 200 }] }).fetch, ENV),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError && /Wrong password/.test(error.message) && /HEADWIND_MDM_LOGIN/.test(error.message),
+      // A refusal is the server ANSWERING, so it is a request error (401), never "not configured" (F17).
+      error instanceof HeadwindRequestError && error.status === 401 && /Wrong password/.test(error.message) && /HEADWIND_MDM_LOGIN/.test(error.message),
     "a refusal names what the server said AND which settings to check",
   );
   resetHeadwindTokenCache();
@@ -491,7 +492,8 @@ async function runClientTests() {
   await assert.rejects(
     () => callHeadwind("/rest/private/devices/search", {}, refusedSignIn.fetch, ENV),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError &&
+      error instanceof HeadwindRequestError &&
+      error.status === 401 &&
       /HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD/.test(error.message) &&
       !/never reached a server/.test(error.message) &&
       !/Check HEADWIND_MDM_BASE_URL first/.test(error.message),
@@ -1853,12 +1855,18 @@ async function runConsoleUserTests() {
   assert.ok(HEADWIND_MIN_PASSWORD >= 12, "the minimum is set by what this login can do, not by habit");
 
   const usersSource = stripComments(source("src/lib/devices/headwind/users.ts"));
-  assert.match(usersSource, /newPassword: input\.password/, "the password goes up to the server, plaintext over HTTPS — the server's own contract");
+  // 🔴 REVERSED 9 Nov 2026 (F14): this pinned the plain-text password as "the server's own contract",
+  // and it was the opposite — the server MD5-hashes whatever arrives and the sign-in sends the MD5, so a
+  // plain-text password made a login that could never sign in. The measured contract is
+  // scripts/headwind-bootstrap.mjs: upper-case MD5 in newPassword. Behaviour is pinned in
+  // tests/headwind-users-actions.test.ts.
+  assert.match(usersSource, /newPassword: wire/, "the password goes up as its upper-case MD5, as the bootstrap measured");
+  assert.doesNotMatch(usersSource, /newPassword: input\.password/, "never as the password itself");
   // 🔴 AND IT STOPS THERE. Never in the audit row, never in the returned message, never in a log.
   assert.doesNotMatch(usersSource, /newValues: \{[^}]*[Pp]assword/, "it is never written into an audit row");
   assert.doesNotMatch(usersSource, /message:[\s\S]{0,200}input\.password/, "nor into the sentence handed back to the browser");
   assert.doesNotMatch(usersSource, /console\.(log|info|warn|error|debug)/, "nor logged");
-  assert.match(usersSource, /"\/rest\/private\/roles"/, "roles come from the server, never a hard-coded list that drifts");
+  assert.match(usersSource, /"\/rest\/private\/users\/roles"/, "roles come from the server's /users/roles, never a hard-coded list that drifts");
 }
 
 function runRemoteScreenTests() {
@@ -3021,7 +3029,7 @@ async function runCloudflareAccessTests() {
   await assert.rejects(
     () => getHeadwindToken(signInPage.fetch, behindTunnel),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError &&
+      error instanceof HeadwindRequestError &&
       /HEADWIND_MDM_ACCESS_CLIENT_ID/.test(error.message) &&
       /not JSON/.test(error.message),
     "a sign-in page names the Cloudflare door first, not the Headwind password",
@@ -3040,7 +3048,8 @@ async function runCloudflareAccessTests() {
   await assert.rejects(
     () => getHeadwindToken(tomcatErrorPage.fetch, ENV),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError &&
+      error instanceof HeadwindRequestError &&
+      error.status === 401 &&
       /HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD/.test(error.message) &&
       /Tomcat/.test(error.message) &&
       !/HEADWIND_MDM_ACCESS_CLIENT_ID/.test(error.message),
@@ -3061,7 +3070,8 @@ async function runCloudflareAccessTests() {
   await assert.rejects(
     () => getHeadwindToken(mustChange.fetch, ENV),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError &&
+      error instanceof HeadwindRequestError &&
+      error.status === 403 &&
       /accepted the sign-in/.test(error.message) &&
       /password change/.test(error.message) &&
       !/refused/.test(error.message),
@@ -3072,7 +3082,7 @@ async function runCloudflareAccessTests() {
   await assert.rejects(
     () => getHeadwindToken(twoFactor.fetch, ENV),
     (error: unknown) =>
-      error instanceof HeadwindNotConfiguredError &&
+      error instanceof HeadwindRequestError &&
       /two-factor/.test(error.message) &&
       !/refused/.test(error.message),
     "and a two-factor account is named as such rather than reported as a bad password",
@@ -3084,7 +3094,7 @@ async function runCloudflareAccessTests() {
   const refused = makeFetch({ login: [{ body: { message: "Wrong password", status: "ERROR" }, status: 200 }] });
   await assert.rejects(
     () => getHeadwindToken(refused.fetch, behindTunnel),
-    (error: unknown) => error instanceof HeadwindNotConfiguredError && !error.message.includes("the-service-token-secret"),
+    (error: unknown) => error instanceof HeadwindRequestError && !error.message.includes("the-service-token-secret"),
     "the service-token secret never reaches an error message",
   );
   resetHeadwindTokenCache();
