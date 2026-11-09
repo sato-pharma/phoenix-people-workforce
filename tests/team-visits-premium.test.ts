@@ -443,9 +443,22 @@ function theScreen() {
     "src/components/crm/regional/weekly-sheet-view.tsx",
     "src/components/crm/kpis-chrome.tsx",
     "src/components/employee-portal/dashboards/rm-command-center.tsx",
+    // "audit the KPIs pages font too" (owner, 2026-11-09): the KPIs board, its three reports and their rep pages.
+    "src/components/crm/kpi-coverage-panels.tsx",
+    "src/components/crm/kpi-coverage-rep-panels.tsx",
+    "src/components/crm/kpi-frequency-panels.tsx",
+    "src/components/crm/kpi-frequency-rep-panels.tsx",
+    "src/components/crm/kpi-reports-tables.tsx",
+    "src/components/crm/kpis-board-view.tsx",
+    "src/components/crm/kpis-doctor-filter-bar.tsx",
+    "src/components/crm/kpis-filter-bar.tsx",
+    "src/components/crm/kpis-period-picker.tsx",
+    "src/components/crm/kpis-trend-view.tsx",
+    "src/components/crm/rep-visits-detail.tsx",
+    "src/components/crm/rep-visits-page.tsx",
   ];
   for (const file of reportFiles) {
-    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(stripComments(readFileSync(file, "utf8"))), `${file}: no text below 11px on the regional reports`);
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(stripComments(readFileSync(file, "utf8"))), `${file}: no text below 11px on the regional reports or the KPIs pages`);
   }
   // An Arabic customer name beside "30 m" pulled the number into the Arabic run (owner, 2026-11-09, the polish
   // pass): the name is bidi-isolated and the metres sit in a column of their own.

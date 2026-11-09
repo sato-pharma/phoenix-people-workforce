@@ -36,10 +36,10 @@ import { cn } from "@/lib/utils";
  * allows no horizontal scroll, and under 16px iOS zooms the page when a field is focused.
  */
 
-const LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const LABEL = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 const SEND =
-  "border border-slate-900 bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700";
+  "border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700";
 
 type ChipGroup = "bricks" | "statuses" | "seen" | "timing" | "grades" | "specialities";
 
@@ -130,15 +130,15 @@ export function KpisDoctorFilterBar({
   return (
     <div className="border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           Filter this list
           {activeCount > 0 ? (
-            <span className="ml-2 inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-3xs font-black tabular-nums text-white">
+            <span className="ml-2 inline-flex h-4 min-w-4 items-center justify-center bg-orange-600 px-1 text-phx-xs font-black tabular-nums text-white">
               {activeCount}
             </span>
           ) : null}
         </p>
-        <p className="text-phx-2xs font-semibold text-slate-500">
+        <p className="text-phx-sm font-semibold text-slate-500">
           Showing <span className="tabular-nums text-slate-900">{shown}</span> of{" "}
           <span className="tabular-nums text-slate-900">{total}</span> doctors
           {pending ? " · updating…" : ""}
@@ -229,7 +229,7 @@ export function KpisDoctorFilterBar({
             </button>
             {active ? (
               <button
-                className="border border-slate-300 bg-white px-4 py-2 text-phx-xs font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
+                className="border border-slate-300 bg-white px-4 py-2 text-phx-md font-bold text-slate-600 transition-colors hover:border-rose-400 hover:text-rose-700"
                 disabled={pending}
                 onClick={clearAll}
                 type="button"
@@ -249,7 +249,7 @@ export function KpisDoctorFilterBar({
             return (
               <fieldset className="min-w-0 border border-slate-200 px-3 py-2" key={group.key}>
                 <legend className={`px-1 ${LABEL}`}>{group.title}</legend>
-                <p className="text-phx-3xs leading-4 text-slate-400">{group.hint}</p>
+                <p className="text-phx-xs leading-4 text-slate-400">{group.hint}</p>
                 <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
                   {options.map((option) => {
                     const on = selected.includes(option.value);
@@ -257,8 +257,8 @@ export function KpisDoctorFilterBar({
                       <label
                         className={
                           on
-                            ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900"
-                            : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                            ? "inline-flex cursor-pointer items-center gap-1.5 border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
+                            : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
                         }
                         key={option.value}
                       >
@@ -295,8 +295,8 @@ export function KpisDoctorFilterBar({
                   aria-pressed={on}
                   className={
                     on
-                      ? "border border-orange-500 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900"
-                      : "border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-semibold text-slate-700 transition-colors hover:border-slate-400"
+                      ? "border border-orange-500 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900"
+                      : "border border-slate-200 bg-white px-2 py-1 text-phx-sm font-semibold text-slate-700 transition-colors hover:border-slate-400"
                   }
                   disabled={pending}
                   key={sort}

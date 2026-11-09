@@ -611,7 +611,7 @@ function KpiHero({ board, showTitle, solo }: { board: KpisBoard; showTitle: bool
           ) : null}
           <p className={pageHeaderDescriptionClassName}>{verdict.headline}</p>
           {/* On the scale (was an off-scale 11px), and one step larger on a phone only. */}
-          <p className="text-phx-sm font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-phx-xs">
+          <p className="text-phx-lg font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-phx-md">
             {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
           </p>
         </div>
@@ -626,7 +626,7 @@ function KpiHero({ board, showTitle, solo }: { board: KpisBoard; showTitle: bool
             />
             <span className="min-w-0">
               {/* A medical rep's own board has no team to stand in — the pill says "Standing". */}
-              <span className="block text-phx-xs font-black uppercase tracking-[0.16em] sm:text-phx-2xs">
+              <span className="block text-phx-md font-black uppercase tracking-[0.16em] sm:text-phx-sm">
                 {solo ? "Standing" : "Team standing"}
               </span>
               <span className="mt-0.5 block text-phx-md font-black leading-tight">
@@ -672,7 +672,7 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
         <span aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-1 ${tone.bar}`} />
         <div className="flex flex-wrap items-start gap-x-6 gap-y-3 pl-2">
           <div className="min-w-0">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Overall KPI</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Overall KPI</p>
             <p className={`mt-1 text-[2.6rem] font-black leading-none tabular-nums ${tone.text}`}>{overallValue(index)}</p>
             <div className="mt-1.5 w-44 max-w-full">
               <KpiMeter band={band} value={index.overallPct} />
@@ -683,12 +683,12 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
           <div className="min-w-0 flex-1 basis-full sm:basis-0">
             {/* One step larger below `sm` only: at 9–10px the arithmetic was the hardest line on a
                 phone to read, and it is the line the owner asked for. Desktop is unchanged. */}
-            <p className="text-phx-xs font-bold leading-4 text-slate-800 sm:text-phx-2xs">{index.formula}</p>
-            <p className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{index.method}</p>
+            <p className="text-phx-md font-bold leading-4 text-slate-800 sm:text-phx-sm">{index.formula}</p>
+            <p className="mt-1 text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{index.method}</p>
             {partial ? (
               // A single number is the easiest thing on this board to misread mid-month — the four
               // tiles at least carry their own counts. So the caveat travels with it.
-              <p className="mt-1 text-phx-2xs font-semibold leading-4 text-slate-600 sm:text-phx-3xs">
+              <p className="mt-1 text-phx-sm font-semibold leading-4 text-slate-600 sm:text-phx-xs">
                 {board.workingDays} of {board.workingDaysInWindow} working days are in, so this is a position in the
                 period rather than a finished score.
               </p>
@@ -831,8 +831,8 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
             <span
               className={
                 current
-                  ? "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900"
-                  : "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                  ? "block text-phx-md font-black uppercase tracking-[0.14em] text-slate-900"
+                  : "block text-phx-md font-black uppercase tracking-[0.14em] text-slate-400"
               }
             >
               {KPI_TAB_LABEL[tab]}
@@ -928,7 +928,7 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
     <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50 px-4 py-2.5 sm:px-5">
       {chips.map((chip) => (
         <Link
-          className="inline-flex items-center gap-1.5 border border-orange-300 bg-white px-2 py-1 text-phx-2xs font-bold text-orange-900 transition-colors hover:border-rose-400 hover:text-rose-800"
+          className="inline-flex items-center gap-1.5 border border-orange-300 bg-white px-2 py-1 text-phx-sm font-bold text-orange-900 transition-colors hover:border-rose-400 hover:text-rose-800"
           href={hrefWith(context, { filters: chip.next })}
           key={chip.key}
         >
@@ -938,7 +938,7 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
         </Link>
       ))}
       <Link
-        className="border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500"
+        className="border border-slate-300 bg-white px-2 py-1 text-phx-sm font-bold text-slate-600 transition-colors hover:border-slate-500"
         href={hrefWith(context, { filters: { ...EMPTY_KPI_FILTERS, sort: filters.sort, direction: filters.direction } })}
       >
         Clear all
@@ -977,7 +977,7 @@ function MeasureCell({
     <td className={NUM}>
       <span className={`block text-base font-black ${toneOf(band).text}`}>{value}</span>
       <KpiMeter band={band} value={fill} />
-      <span className="mt-1 block text-phx-3xs font-semibold leading-4 text-slate-500">{caption}</span>
+      <span className="mt-1 block text-phx-xs font-semibold leading-4 text-slate-500">{caption}</span>
       {extra ? <span className="mt-1 block">{extra}</span> : null}
     </td>
   );
@@ -993,7 +993,7 @@ function coverageFloorBadge(row: Pick<KpiRepRow, "meetsCoverageFloor">): React.R
   // top of kpis-chrome.tsx.
   const chip = toneOf(row.meetsCoverageFloor ? "elite" : "behind").chip;
   return (
-    <span className={`inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${chip}`}>
+    <span className={`inline-block border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${chip}`}>
       {row.meetsCoverageFloor ? "Floor met · 95%" : "Below floor · 95%"}
     </span>
   );
@@ -1044,7 +1044,7 @@ function RepCell({
         <span className="mt-1 flex flex-wrap gap-1">
           {flags.map((flag) => (
             <span
-              className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
+              className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
               {repFlagLabel(row, flag, rules)}
@@ -1152,7 +1152,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
               still a ranking on something real. */}
           <th className={TH} scope="col">
             Overall
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Average of 4
             </span>
           </th>
@@ -1304,8 +1304,8 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             />
             <td className={NUM}>{row.workingDays}</td>
             <td className={NUM}>
-              {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
-              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+              {rate(row.amRate)} <span className="text-phx-xs font-bold text-slate-400">of {board.amTarget}</span>
+              <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                 {amPct(row)} ·{" "}
                 {row.noGpsFeed
                   ? `${row.amReported} reported, none provable`
@@ -1314,8 +1314,8 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               </span>
             </td>
             <td className={NUM}>
-              {rate(row.pmRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.pmTarget}</span>
-              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+              {rate(row.pmRate)} <span className="text-phx-xs font-bold text-slate-400">of {board.pmTarget}</span>
+              <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                 {pmPct(row)} ·{" "}
                 {row.noGpsFeed
                   ? `${row.pmReported} reported, none provable`
@@ -1325,7 +1325,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             </td>
             <td className={NUM}>
               {pharmacyValue(row)}
-              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+              <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                 {row.noGpsFeed
                   ? `${row.pharmacyReported} reported`
                   : `${row.pharmacyVerified} ${phoenix ? "visits" : "verified"}`}
@@ -1333,7 +1333,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             </td>
             <td className={NUM}>
               {Math.round(row.campaignShare * 100)}%
-              <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+              <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                 {row.campaignCalls} calls
                 {!phoenix && row.campaignOnlyDays > 0 ? ` · ${row.campaignOnlyDays} day(s) campaign only` : ""}
               </span>
@@ -1341,7 +1341,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
                   rule 10 (owner, 2026-09-20) requires this identified on its own, never read as part
                   of Campaign, even though it shares this merged column. */}
               {phoenix && row.phoenix && row.phoenix.regularNoCheckin > 0 ? (
-                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                   {row.phoenix.regularNoCheckin} Regular, no check-in
                 </span>
               ) : null}
@@ -1413,8 +1413,8 @@ function coverageDoctorsToggle(context: ViewContext, row: KpiRepRow, surface: "d
       {...rowDetailToggleProps(coverageDetailId(key), open)}
       className={
         open
-          ? "inline-flex items-center gap-1.5 border border-orange-300 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900 transition-colors hover:border-orange-400"
-          : "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+          ? "inline-flex items-center gap-1.5 border border-orange-300 bg-orange-50 px-2 py-1 text-phx-sm font-bold text-orange-900 transition-colors hover:border-orange-400"
+          : "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2 py-1 text-phx-sm font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
       }
       href={`${hrefWith(context, { rep: open ? null : key })}#${coverageAnchor(surface, key)}`}
     >
@@ -1436,7 +1436,7 @@ function notValidatedLink(context: ViewContext, row: KpiRepRow, surface: "deskto
   const { board } = context;
   return (
     <Link
-      className="text-phx-3xs font-bold leading-4 text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
+      className="text-phx-xs font-bold leading-4 text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
       href={`${hrefWith(context, {
         // A board of one rep opens that rep's list unasked, so the rep's key never rides in the URL.
         rep: board.reps.length === 1 ? null : key,
@@ -1477,7 +1477,7 @@ function callRateVisitsLink(context: ViewContext, row: KpiRepRow): React.ReactNo
   if (context.board.range.periodKey !== "month") query.set("period", context.board.range.periodKey);
   return (
     <Link
-      className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+      className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-sm font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
       href={`${kpiCallRateRepPath(context.rootPath, key)}?${query.toString()}`}
     >
       <span>Open visits</span>
@@ -1502,7 +1502,7 @@ function summaryReportLinks(context: ViewContext, row: KpiRepRow): React.ReactNo
   const visits = callRateVisitsLink(context, row);
   if (!plan && !visits) return null;
   const className =
-    "inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900";
+    "inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-sm font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900";
   const reportHref = (tab: "coverage" | "frequency") =>
     `${PORTAL_KPI_REPORT_PATH[tab]}?${buildKpisQuery({
       month: context.board.month,
@@ -1548,14 +1548,14 @@ function CoverageDoctorName({ doctor }: { doctor: KpiCoverageDoctor }) {
       ) : (
         <span className="block font-semibold leading-5 text-slate-500">Name not on the plan</span>
       )}
-      {meta ? <span className="block text-phx-3xs leading-4 text-slate-500">{meta}</span> : null}
+      {meta ? <span className="block text-phx-xs leading-4 text-slate-500">{meta}</span> : null}
     </span>
   );
 }
 
 function CoverageNotDueChip() {
   return (
-    <span className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600">
+    <span className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold leading-4 text-slate-600">
       Not due yet
     </span>
   );
@@ -1588,12 +1588,12 @@ function CoverageListCard({
   return (
     <div className="min-w-0 border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           {title} · <span className="tabular-nums">{count}</span>
         </p>
-        <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{hint}</p>
+        <p className="mt-0.5 text-phx-xs leading-4 text-slate-400">{hint}</p>
       </div>
-      {count === 0 ? <p className="px-3 py-3 text-phx-2xs text-slate-500">{empty}</p> : children}
+      {count === 0 ? <p className="px-3 py-3 text-phx-sm text-slate-500">{empty}</p> : children}
     </div>
   );
 }
@@ -1704,7 +1704,7 @@ function CoverageDoctors({
                   <span className="block font-semibold tabular-nums text-slate-900">
                     {dayLabel(doctor.lastVisitDate) ?? "—"}
                   </span>
-                  <span className="block text-phx-3xs leading-4 text-slate-500">
+                  <span className="block text-phx-xs leading-4 text-slate-500">
                     {doctor.visits} visit{doctor.visits === 1 ? "" : "s"} in the period
                   </span>
                 </td>
@@ -1717,7 +1717,7 @@ function CoverageDoctors({
           {detail.covered.map((doctor) => (
             <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
               <CoverageDoctorName doctor={doctor} />
-              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+              <span className="mt-1 block text-phx-xs leading-4 text-slate-500">
                 Last visit{" "}
                 <span className="font-bold tabular-nums text-slate-900">{dayLabel(doctor.lastVisitDate) ?? "—"}</span> ·{" "}
                 {doctor.visits} visit{doctor.visits === 1 ? "" : "s"}
@@ -1778,7 +1778,7 @@ function CoverageDoctors({
           {detail.notCovered.map((doctor) => (
             <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
               <CoverageDoctorName doctor={doctor} />
-              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+              <span className="mt-1 block text-phx-xs leading-4 text-slate-500">
                 Planned for <span className="font-bold tabular-nums text-slate-900">{planDaysLabel(doctor)}</span>
               </span>
               {doctor.due ? null : (
@@ -1797,7 +1797,7 @@ function CoverageDoctors({
     <div className="space-y-3">
       <CoverageSummary context={context} detail={full} />
       <div className="min-w-0">
-        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
           Doctors planned in {period}
         </p>
         <p className={`mt-0.5 leading-4 ${CAPTION}`}>
@@ -1916,7 +1916,7 @@ function CoverageTable({
               board ranks anybody on. A sort control on it would imply otherwise. */}
           <th className={TH} scope="col">
             Off plan
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Not on the list
             </span>
           </th>
@@ -2054,7 +2054,7 @@ function FrequencyTable({
           {phoenix ? (
             <th className={TH} scope="col">
               Ungraded
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                 Left out
               </span>
             </th>
@@ -2241,18 +2241,18 @@ function RepCard({
           <div className="min-w-0" key={measure.label}>
             {/* The card is phone-only (md:hidden), and at 9px its labels and captions were the
                 smallest type on the board — one step up below `sm`, unchanged from `sm`. */}
-            <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
+            <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-xs">{measure.label}</dt>
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
             {measure.caption ? (
-              <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+              <dd className="mt-1 text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{measure.caption}</dd>
             ) : null}
             {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
         ))}
       </dl>
       {row.hasCallRate ? (
-        <p className="mt-1.5 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">
+        <p className="mt-1.5 text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">
           <span className="font-black uppercase tracking-[0.1em] text-slate-400">Reported</span>{" "}
           <span className="tabular-nums">
             {rate(row.amReportedRate)} AM · {rate(row.pmReportedRate)} PM
@@ -2263,7 +2263,7 @@ function RepCard({
         <div className="mt-2 flex flex-wrap gap-1">
           {flags.map((flag) => (
             <span
-              className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
+              className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
               {repFlagLabel(row, flag, rules)}
@@ -2338,8 +2338,8 @@ function BrickBreakdown({
   return (
     <div className="min-w-0 border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
-        {caption ? <p className="mt-0.5 text-phx-3xs leading-4 text-slate-500">{caption}</p> : null}
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
+        {caption ? <p className="mt-0.5 text-phx-xs leading-4 text-slate-500">{caption}</p> : null}
       </div>
       <table className="hidden w-full table-fixed md:table">
         <colgroup>
@@ -2356,14 +2356,14 @@ function BrickBreakdown({
             </th>
             <th className={TH} scope="col">
               Coverage
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                 Covered ÷ planned
               </span>
             </th>
             {columns.map((column) => (
               <th className={TH} key={column.label} scope="col">
                 {column.label}
-                <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+                <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                   {column.sub}
                 </span>
               </th>
@@ -2377,12 +2377,12 @@ function BrickBreakdown({
               <tr key={row.brick}>
                 <td className={TD} dir="auto">
                   <BreakdownLabel row={{ label: row.label, planned: row.planned, covered: row.covered, href: hrefFor(row) }} />
-                  {team ? <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-500">{repsText(row)}</span> : null}
+                  {team ? <span className="mt-0.5 block text-phx-xs leading-4 text-slate-500">{repsText(row)}</span> : null}
                 </td>
                 <td className={NUM}>
                   <span className={`block font-black ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
                   <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
-                  <span className="mt-1 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  <span className="mt-1 block text-phx-xs font-semibold leading-4 text-slate-500">
                     {row.covered} of {row.planned} seen
                   </span>
                 </td>
@@ -2408,10 +2408,10 @@ function BrickBreakdown({
                 <span className={`text-sm font-black tabular-nums ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
               </div>
               <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
-              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+              <span className="mt-1 block text-phx-xs leading-4 text-slate-500">
                 {row.covered} of {row.planned} planned doctors seen{team ? ` · ${repsText(row)}` : ""}
               </span>
-              <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-500">
+              <span className="mt-0.5 block text-phx-xs leading-4 text-slate-500">
                 {columns.map((column) => `${column.count(row)} ${column.label.toLowerCase()}`).join(" · ")}
               </span>
             </li>
@@ -2543,7 +2543,7 @@ function FrequencyStatusChip({ status }: { status: DoctorFrequencyStatus }) {
   const tone = toneOf(FREQUENCY_STATUS_BAND[status]);
   return (
     <span
-      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
     >
       <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
       {KPI_FREQUENCY_STATUS_LABEL[status]}
@@ -2588,7 +2588,7 @@ function FrequencyDoctorName({ doctor }: { doctor: KpiCoverageDoctor }) {
   return (
     <span className="block min-w-0">
       <CoverageDoctorName doctor={doctor} />
-      <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-400">
+      <span className="mt-0.5 block text-phx-xs leading-4 text-slate-400">
         Planned {doctor.planDates.length > 0 ? planDaysLabel(doctor) : "on no day"}
       </span>
     </span>
@@ -2625,7 +2625,7 @@ function FrequencyDoctors({
   if (rows.length === 0) {
     return (
       <div className="min-w-0">
-        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">Doctors planned in {period}</p>
+        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">Doctors planned in {period}</p>
         <p className={`mt-0.5 leading-4 ${CAPTION}`}>No doctor was planned for {detail.repName} in this period.</p>
       </div>
     );
@@ -2706,13 +2706,13 @@ function FrequencyDoctors({
               </td>
               <td className={NUM}>
                 {requiredText(frequency)}
-                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                   {requiredCaption(frequency, phoenix)}
                 </span>
               </td>
               <td className={NUM}>
                 {frequency.actual}
-                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                   {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
                 </span>
                 {visitFill(frequency) == null ? null : (
@@ -2737,14 +2737,14 @@ function FrequencyDoctors({
             </div>
             <dl className="mt-2 grid grid-cols-3 gap-2">
               <div className="min-w-0">
-                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Should visit</dt>
+                <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Should visit</dt>
                 <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{requiredText(frequency)}</dd>
-                <dd className="text-phx-2xs leading-4 text-slate-500">{requiredCaption(frequency, phoenix)}</dd>
+                <dd className="text-phx-sm leading-4 text-slate-500">{requiredCaption(frequency, phoenix)}</dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Visited</dt>
+                <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Visited</dt>
                 <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{frequency.actual}</dd>
-                <dd className="text-phx-2xs leading-4 text-slate-500">
+                <dd className="text-phx-sm leading-4 text-slate-500">
                   {doctor.lastVisitDate ? `Last ${dayLabel(doctor.lastVisitDate, false)}` : "Never this period"}
                 </dd>
                 {visitFill(frequency) == null ? null : (
@@ -2754,7 +2754,7 @@ function FrequencyDoctors({
                 )}
               </div>
               <div className="min-w-0">
-                <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Gap</dt>
+                <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Gap</dt>
                 <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{kpiFrequencyGapText(frequency)}</dd>
               </div>
             </dl>
@@ -2766,7 +2766,7 @@ function FrequencyDoctors({
   return (
     <div className="space-y-3">
       <div className="min-w-0">
-        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
           How often each doctor was visited in {period}
         </p>
         <p className={`mt-0.5 leading-4 ${CAPTION}`}>
@@ -2819,7 +2819,7 @@ function FrequencyDoctors({
               key={status}
             >
               <FrequencyStatusChip status={status} />
-              <span className="text-phx-2xs font-black tabular-nums text-slate-700">{byStatus.get(status)}</span>
+              <span className="text-phx-sm font-black tabular-nums text-slate-700">{byStatus.get(status)}</span>
             </Link>
           );
         })}
@@ -2848,12 +2848,12 @@ function FrequencyDoctors({
 
       <div className="min-w-0 border border-slate-200 bg-white">
         <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             {narrowing ? "Matching doctors" : "Every planned doctor"} ·{" "}
             <span className="tabular-nums">{visible.length}</span>
             {narrowing ? <span className="tabular-nums"> of {rows.length}</span> : null}
           </p>
-          <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{sortNote ?? "Furthest from target first"}</p>
+          <p className="mt-0.5 text-phx-xs leading-4 text-slate-400">{sortNote ?? "Furthest from target first"}</p>
         </div>
         {visible.length === 0 ? (
           <p className={`px-3 py-4 leading-4 ${CAPTION}`}>No doctor matches these filters. Clear a filter above to see more.</p>
@@ -2904,8 +2904,8 @@ function CallRateViewSwitch({ context }: { context: ViewContext }) {
               <span
                 className={
                   current
-                    ? "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900"
-                    : "block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400"
+                    ? "block text-phx-md font-black uppercase tracking-[0.14em] text-slate-900"
+                    : "block text-phx-md font-black uppercase tracking-[0.14em] text-slate-400"
                 }
               >
                 {KPI_CALL_RATE_VIEW_LABEL[view]}
@@ -3056,7 +3056,7 @@ function CallRateSessionTable({
           />
           <th className={TH} scope="col">
             Calls
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               {phoenix ? "Visits made" : "Verified"}
             </span>
           </th>
@@ -3069,13 +3069,13 @@ function CallRateSessionTable({
           />
           <th className={TH} scope="col">
             Score
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Of target
             </span>
           </th>
           <th className={TH} scope="col">
             Short
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Calls owed
             </span>
           </th>
@@ -3095,7 +3095,7 @@ function CallRateSessionTable({
               <td className={NUM}>{row.workingDays}</td>
               <td className={NUM}>
                 {row.noGpsFeed ? "—" : figures.verified}
-                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                   {row.noGpsFeed
                     ? `${figures.reported} reported, none provable`
                     : `of ${figures.asked} asked for${figures.reported !== figures.verified ? ` · ${figures.reported} reported` : ""}`}
@@ -3112,7 +3112,7 @@ function CallRateSessionTable({
               <td className={`${NUM} ${toneOf(figures.band).text}`}>{figures.pct}</td>
               <td className={NUM}>
                 {figures.short == null ? "—" : figures.short}
-                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                <span className="mt-0.5 block text-phx-xs font-semibold leading-4 text-slate-500">
                   {figures.short == null ? "No GPS feed" : figures.short === 0 ? "At or above target" : "to reach the target"}
                 </span>
               </td>
@@ -3152,32 +3152,32 @@ function SessionCard({
       <div className="mt-2.5">
         <div className="flex items-baseline justify-between gap-3">
           <span className={`text-lg font-black tabular-nums ${toneOf(figures.band).text}`}>{rate(figures.perDay)}</span>
-          <span className="text-phx-2xs font-black tabular-nums text-slate-500">
+          <span className="text-phx-sm font-black tabular-nums text-slate-500">
             of {figures.target} a day · {figures.pct}
           </span>
         </div>
         <KpiMeter band={figures.band} value={figures.fill} />
-        <p className="mt-1 text-phx-2xs leading-4 text-slate-500">
+        <p className="mt-1 text-phx-sm leading-4 text-slate-500">
           {sessionCaption(row, session, figures.target, "No calls")}
           {followUpText(row, session)}
         </p>
       </div>
       <dl className="mt-2.5 grid grid-cols-3 gap-2">
         <div className="min-w-0">
-          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Days</dt>
+          <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Days</dt>
           <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">{row.workingDays}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Calls</dt>
+          <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Calls</dt>
           <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">
             {row.noGpsFeed ? "—" : figures.verified}
           </dd>
-          <dd className="text-phx-2xs leading-4 text-slate-500">
+          <dd className="text-phx-sm leading-4 text-slate-500">
             {row.noGpsFeed ? `${figures.reported} reported` : `of ${figures.asked} asked for`}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Short</dt>
+          <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Short</dt>
           <dd className="mt-0.5 text-sm font-black tabular-nums text-slate-900">
             {figures.short == null ? "—" : figures.short}
           </dd>
@@ -3202,7 +3202,7 @@ function SessionCard({
  */
 
 /** The sub-line under a plain (unsortable) head — the Summary table's own Overall spelling. */
-const HEAD_SUB = "mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400";
+const HEAD_SUB = "mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400";
 
 /** "reps", "managers" or "rows" — what a manager's figures are averages OF. */
 function averagedNoun(row: KpiManagerRow, count: number): string {
@@ -3248,13 +3248,13 @@ function ManagerName({ row }: { row: KpiManagerRow }) {
       <span className="block font-semibold leading-5 text-slate-900" dir="auto">
         {row.name}
       </span>
-      <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where ? `${seat} · ${where}` : seat}</span>
-      <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">
+      <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{where ? `${seat} · ${where}` : seat}</span>
+      <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">
         {row.repsBeneath} medical {row.repsBeneath === 1 ? "rep" : "reps"} beneath · averages {row.averagedRows}{" "}
         {averagedNoun(row, row.averagedRows)}
       </span>
       {row.reportsTo ? (
-        <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs" dir="auto">
+        <span className="block text-phx-sm leading-4 text-slate-500 sm:text-phx-xs" dir="auto">
           Reports to {row.reportsTo}
         </span>
       ) : null}
@@ -3416,11 +3416,11 @@ function ManagerCard({ board, row }: { board: KpisBoard; row: KpiManagerRow }) {
       <dl className="mt-2.5 grid grid-cols-3 gap-2">
         {measures.map((measure) => (
           <div className="min-w-0" key={measure.label}>
-            <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
+            <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-xs">{measure.label}</dt>
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
             {measure.caption ? (
-              <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
+              <dd className="mt-1 text-phx-sm leading-4 text-slate-500 sm:text-phx-xs">{measure.caption}</dd>
             ) : null}
             {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
@@ -3601,7 +3601,7 @@ export function KpisBoardView({
         <div className={PANEL}>
           <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
             <div className="min-w-0">
-              <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">{KPI_TAB_LABEL[tab]}</p>
+              <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">{KPI_TAB_LABEL[tab]}</p>
               <p className={`mt-0.5 leading-4 ${CAPTION}`}>
                 {(phoenix ? KPI_TAB_HINT_PHOENIX[tab] : undefined) ?? KPI_TAB_HINT[tab]}
               </p>
@@ -3676,10 +3676,10 @@ export function KpisBoardView({
               an unexplained dip reads as the field force under-calling. */}
           {board.holidaysComplete ? null : (
             <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
-              <p className="text-phx-xs font-bold text-amber-900">
+              <p className="text-phx-md font-bold text-amber-900">
                 The national holiday calendar could not be read for this period.
               </p>
-              <p className="mt-0.5 text-phx-2xs leading-4 text-amber-800">
+              <p className="mt-0.5 text-phx-sm leading-4 text-amber-800">
                 Any public holiday it did not return is still counted as a working day, so the call rates below may be
                 lower than the real figure. Coverage and frequency are unaffected.
               </p>
@@ -3694,12 +3694,12 @@ export function KpisBoardView({
               that change what the call-rate tiles mean. */}
           {board.noGpsFeedShown > 0 ? (
             <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
-              <p className="text-phx-xs font-bold text-amber-900">
+              <p className="text-phx-md font-bold text-amber-900">
                 {board.noGpsFeedShown} of {totals.reps} {totals.reps === 1 ? "rep" : "reps"} logged visits in{" "}
                 {board.range.isWholeMonth ? board.monthLabel : board.range.periodLabel} with no GPS check-in at all from{" "}
                 {board.noGpsFeedShown === 1 ? "that CRM account" : "their CRM accounts"}.
               </p>
-              <p className="mt-0.5 text-phx-2xs leading-4 text-amber-800">
+              <p className="mt-0.5 text-phx-sm leading-4 text-amber-800">
                 No visit could be proved, so {board.noGpsFeedShown === 1 ? "the row reads" : "those rows read"}{" "}
                 {NO_GPS_FEED} instead of 0%, and {board.noGpsFeedShown === 1 ? "its calls are" : "their calls are"} left
                 out of the AM, PM and pharmacy call rates below. Coverage and frequency are unaffected.
@@ -3876,7 +3876,7 @@ export function KpisBoardView({
                 <KpiEmptyState
                   action={
                     <Link
-                      className="inline-block border border-slate-900 bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-white"
+                      className="inline-block border border-slate-900 bg-slate-900 px-4 py-2 text-phx-md font-black uppercase tracking-[0.12em] text-white"
                       href={hrefWith(context, { filters: EMPTY_KPI_FILTERS })}
                     >
                       Clear the filters
