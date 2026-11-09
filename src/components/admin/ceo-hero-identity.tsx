@@ -127,7 +127,7 @@ export function CeoHeroIdentity({
         {/* ── Identity + greeting ───────────────────────────────────────────── */}
         <div className="min-w-0 flex-1">
           {/* Role label */}
-          <p className="text-phx-4xs font-black uppercase tracking-[0.32em] text-orange-300/80">
+          <p className="text-phx-xs font-black uppercase tracking-[0.32em] text-orange-300/80">
             {roleLabel}
           </p>
 

@@ -67,7 +67,7 @@ function Destination({ row }: { row: NeedsYouRow }) {
 function OverdueMark({ row }: { row: NeedsYouRow }) {
   if (!row.overdueLabel) return null;
   return (
-    <span className="mt-1 block break-words text-phx-3xs font-black uppercase tracking-[0.1em] text-rose-700">
+    <span className="mt-1 block break-words text-phx-xs font-black uppercase tracking-[0.1em] text-rose-700">
       {row.overdueLabel}
     </span>
   );
@@ -107,7 +107,7 @@ function RowTable({ rows }: { rows: readonly NeedsYouRow[] }) {
           <col className="w-[30%]" />
         </colgroup>
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">
+          <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             {COLUMN_HEADS.map((head) => (
               <th className="break-words px-4 py-2.5 align-bottom font-black" key={head}>
                 {head}

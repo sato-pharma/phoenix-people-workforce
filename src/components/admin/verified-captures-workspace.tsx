@@ -97,7 +97,7 @@ function PhotoTile({ alt, caption, label, src }: { alt: string; caption?: string
   const [failed, setFailed] = useState(false);
   return (
     <div className="min-w-0">
-      <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mb-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       {src && !failed ? (
         <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-50">
           <ZoomablePhoto
@@ -112,7 +112,7 @@ function PhotoTile({ alt, caption, label, src }: { alt: string; caption?: string
       ) : (
         <div className="flex h-40 w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-slate-200 bg-slate-50 text-slate-400">
           <ImageOff className="h-5 w-5" />
-          <span className="text-phx-2xs font-black uppercase tracking-[0.14em]">No photo on file</span>
+          <span className="text-phx-sm font-black uppercase tracking-[0.14em]">No photo on file</span>
         </div>
       )}
     </div>
@@ -124,7 +124,7 @@ function LocationDetail({ label, value }: { label: string; value: string | null 
   if (!value) return null;
   return (
     <div className="min-w-0">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">{label} </span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">{label} </span>
       <span className="break-words text-xs font-bold text-slate-800">{value}</span>
     </div>
   );
@@ -179,7 +179,7 @@ function PhotoTrustBlock({ trust }: { trust: CaptureTrustAssessment }) {
       : Math.round(Math.abs(trust.gapSeconds) / 60) + " min between the location and the photo";
   return (
     <div className="space-y-0.5 rounded-none border-l-2 border-slate-200 pl-2">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Photo vs location</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Photo vs location</p>
       {/* Wrapped, never truncated: an owner rule, and these lines are the whole point of the panel. */}
       <p className={`break-words text-xs font-bold ${ink}`}>{text}</p>
       {metres ? <p className="break-words text-xs text-slate-600">{metres}</p> : null}
@@ -197,13 +197,13 @@ function LocationBlock({ heading = "Location", location }: { heading?: string; l
   const nothing = !location.rawLocation && !location.address && !hasParts && !hasPin;
   return (
     <div className="space-y-1.5 rounded border border-slate-100 bg-slate-50 px-3 py-2">
-      <p className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+      <p className="flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">
         <MapPin className="h-3 w-3" />
         {heading}
       </p>
       {location.rawLocation ? (
         <div className="min-w-0">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Raw </span>
+          <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-400">Raw </span>
           <span className="break-words text-xs font-bold text-slate-800">{location.rawLocation}</span>
         </div>
       ) : null}
@@ -234,7 +234,7 @@ function LocationBlock({ heading = "Location", location }: { heading?: string; l
 function FieldPair({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2">
-      <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
+      <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
       <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">{value ?? "—"}</dd>
     </div>
   );
@@ -265,7 +265,7 @@ function PersonField({
     >
       <dt
         className={cn(
-          "flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em]",
+          "flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.12em]",
           highlight ? "text-orange-600" : "text-slate-400",
         )}
       >
@@ -280,7 +280,7 @@ function PersonField({
       >
         {name ?? "—"}
       </dd>
-      <dd className="min-w-0 break-words text-phx-2xs font-bold text-slate-500">{title ?? "Title not on file"}</dd>
+      <dd className="min-w-0 break-words text-phx-sm font-bold text-slate-500">{title ?? "Title not on file"}</dd>
     </div>
   );
 }
@@ -290,7 +290,7 @@ function DatabaseBadge({ inDatabase }: { inDatabase: boolean }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]",
+        "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]",
         inDatabase ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
       )}
     >
@@ -313,7 +313,7 @@ function DistributorCodes({
 }) {
   return (
     <div className="space-y-2 rounded border border-slate-100 bg-slate-50 px-3 py-2">
-      <p className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <p className="flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
         <Database className="h-3 w-3" />
         Codes
       </p>
@@ -360,7 +360,7 @@ function DistributorCodes({
 }
 
 function FilterFieldLabel({ children }: { children: ReactNode }) {
-  return <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{children}</span>;
+  return <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{children}</span>;
 }
 
 /** A single-value dropdown, rendered only when there is something to choose. */
@@ -598,7 +598,7 @@ function MarketingCaptureBody({ row }: { row: VerifiedMarketingCaptureRow }) {
       </div>
 
       <div className="space-y-2">
-        <p className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
           <Store className="h-3 w-3" />
           Pharmacies ({row.pharmacyCount})
         </p>
@@ -740,7 +740,7 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {row.route === "invoice" ? (
           <div className="min-w-0">
-            <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Distributor invoice</p>
+            <p className="mb-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Distributor invoice</p>
             {row.invoiceUrl ? (
               row.invoiceIsPdf ? (
                 <a
@@ -750,7 +750,7 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
                   target="_blank"
                 >
                   <ShoppingBag className="h-5 w-5" />
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.14em]">Open invoice PDF</span>
+                  <span className="text-phx-sm font-black uppercase tracking-[0.14em]">Open invoice PDF</span>
                 </a>
               ) : (
                 <div className="overflow-hidden rounded border border-slate-200 bg-slate-50">
@@ -760,7 +760,7 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
             ) : (
               <div className="flex h-40 w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-slate-200 bg-slate-50 text-slate-400">
                 <ImageOff className="h-5 w-5" />
-                <span className="text-phx-2xs font-black uppercase tracking-[0.14em]">No invoice on file</span>
+                <span className="text-phx-sm font-black uppercase tracking-[0.14em]">No invoice on file</span>
               </div>
             )}
           </div>

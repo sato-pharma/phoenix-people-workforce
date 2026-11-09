@@ -270,17 +270,17 @@ function HeatmapCalendar({ calendar }: { calendar: LoginCalendar }) {
 
   return (
     <div>
-      <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
+      <p className="mb-0.5 text-phx-sm font-bold uppercase tracking-wide text-phx-ink-faint">
         Login frequency — last {calendar.days} days (Cairo)
       </p>
-      <p className="mb-2 text-phx-2xs text-phx-ink-faint">
+      <p className="mb-2 text-phx-sm text-phx-ink-faint">
         This calendar keeps its own {calendar.days}-day window and does not follow the range picker above.
       </p>
       <div className="flex gap-0.5">
         {/* Day labels */}
         <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
           {WEEKDAY_LABELS.map((d) => (
-            <div key={d} className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">{d}</div>
+            <div key={d} className="h-3 text-phx-xs leading-3 text-phx-ink-faint">{d}</div>
           ))}
         </div>
         {/* Week columns */}
@@ -288,7 +288,7 @@ function HeatmapCalendar({ calendar }: { calendar: LoginCalendar }) {
           const monthStart = week.find((cell) => cell && cell.dayOfMonth <= 7);
           return (
             <div key={week.find(Boolean)?.dateIso ?? `week-${wi}`} className="flex flex-col gap-0.5">
-              <div className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">
+              <div className="h-3 text-phx-xs leading-3 text-phx-ink-faint">
                 {monthStart ? formatStableEnGb(monthStart.carrier, { month: "short", timeZone: "UTC" }) : ""}
               </div>
               {Array.from({ length: 7 }, (_, index) => {
@@ -307,7 +307,7 @@ function HeatmapCalendar({ calendar }: { calendar: LoginCalendar }) {
           );
         })}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-phx-sm text-phx-ink-faint">
         <span>Less</span>
         {["bg-slate-100", "bg-orange-200", "bg-orange-300", "bg-orange-400", "bg-orange-600"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -345,7 +345,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
             text inside it appears or not. */}
         <div />
         {Array.from({ length: 24 }, (_, h) => (
-          <div key={`hour-${h}`} className="text-center text-phx-4xs leading-3 text-phx-ink-faint">
+          <div key={`hour-${h}`} className="text-center text-phx-xs leading-3 text-phx-ink-faint">
             <span className={h % 6 === 0 ? "" : "hidden sm:inline"}>
               {h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
             </span>
@@ -354,7 +354,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
         {/* Rows */}
         {WEEKDAY_LABELS.map((day, wi) => (
           <Fragment key={day}>
-            <div className="self-center pr-1 text-right text-phx-2xs text-phx-ink-soft">{day}</div>
+            <div className="self-center pr-1 text-right text-phx-sm text-phx-ink-soft">{day}</div>
             {hourlyHeatmap[wi].map((count, h) => (
               <div
                 key={`${day}-${h}`}
@@ -365,7 +365,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
           </Fragment>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-phx-sm text-phx-ink-faint">
         <span>Quiet</span>
         {["bg-slate-100", "bg-blue-100", "bg-blue-200", "bg-blue-400", "bg-blue-700"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -488,7 +488,7 @@ function OnlineCards({ users, onForceLogout }: { users: OnlineUser[]; onForceLog
       {users.map((user) => (
         <li key={`${user.key}-${user.startedAt}`} className="min-w-0 px-4 py-3">
           <div className="flex items-start gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-sm font-bold text-white">
               {initialsFor(user.name)}
             </span>
             <div className="min-w-0 flex-1">
@@ -535,7 +535,7 @@ function OnlineTable({ users, onForceLogout }: { users: OnlineUser[]; onForceLog
             <tr key={`${user.key}-${user.startedAt}`} className="align-top">
               <td className="px-4 py-2">
                 <div className="flex items-start gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-sm font-bold text-white">
                     {initialsFor(user.name)}
                   </span>
                   <div className="min-w-0">
@@ -768,7 +768,7 @@ function ForceLogoutDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-[14px] bg-white shadow-2xl">
         <div className="border-b border-[#EEF2F7] px-5 py-4">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
           <h3 className="mt-0.5 text-base font-black text-phx-ink">{name}</h3>
           <p className="mt-1 text-xs text-phx-ink-soft">
             All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action. The Phoenix app on their phone stops showing notifications until they sign in again.
@@ -1358,7 +1358,7 @@ export function ActivityControlDashboard({
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#EEF2F7] bg-phx-ink px-5 py-4 text-white">
               <div>
-                <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-300">Activity timeline</p>
+                <p className="text-phx-sm font-black uppercase tracking-[0.2em] text-orange-300">Activity timeline</p>
                 <h3 className="text-lg font-black">{selectedUser.name}</h3>
                 <p className="text-xs text-slate-300">{selectedUser.role}{selectedUser.team ? ` · ${selectedUser.team}` : ""} · last {rangeLabel.toLowerCase()}</p>
               </div>
@@ -1539,7 +1539,7 @@ function SessionTimelineCard({ session }: { session: TimelineSession }) {
                       <span className="font-semibold text-phx-ink">{formatDateTime(event.atIso)}</span> ·{" "}
                       {event.moduleLabel} · {formatSeconds(event.dwellSeconds)}
                     </p>
-                    <p className="block w-full break-all font-mono text-phx-2xs text-phx-ink-soft">{event.path}</p>
+                    <p className="block w-full break-all font-mono text-phx-sm text-phx-ink-soft">{event.path}</p>
                   </li>
                 ))}
               </ol>
@@ -1613,7 +1613,7 @@ function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
           <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
             Modules — where the time went
           </p>
-          <p className="mt-0.5 break-words text-phx-2xs text-phx-ink-soft">
+          <p className="mt-0.5 break-words text-phx-sm text-phx-ink-soft">
             {journey.totals.length} {journey.totals.length === 1 ? "module" : "modules"} entered. Share is of this
             person&apos;s own active time, so these rows add up to the Active figure above.
           </p>
@@ -1632,7 +1632,7 @@ function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
               <div className="mt-1.5 h-1.5 w-full bg-phx-paper-2">
                 <div className="h-full bg-phx-accent" style={{ width: `${Math.min(Math.max(total.sharePct, 1), 100)}%` }} />
               </div>
-              <p className="mt-1 break-words text-phx-2xs text-phx-ink-soft">
+              <p className="mt-1 break-words text-phx-sm text-phx-ink-soft">
                 {total.visits} {total.visits === 1 ? "visit" : "visits"} · {total.views}{" "}
                 {total.views === 1 ? "page" : "pages"} · first {formatDateTime(total.firstAtIso)} · last{" "}
                 {formatDateTime(total.lastAtIso)}
@@ -1648,7 +1648,7 @@ function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
             <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
               Movement between modules
             </p>
-            <p className="mt-0.5 break-words text-phx-2xs text-phx-ink-soft">
+            <p className="mt-0.5 break-words text-phx-sm text-phx-ink-soft">
               How often they went straight from one module into the next, most frequent first.
             </p>
           </div>
@@ -1687,7 +1687,7 @@ function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
                     <span className="font-semibold text-phx-ink">{formatDateTime(visit.startedAtIso)}</span> ·{" "}
                     {visit.moduleLabel}
                   </p>
-                  <p className="break-words text-phx-2xs text-phx-ink-soft">
+                  <p className="break-words text-phx-sm text-phx-ink-soft">
                     stayed {formatSeconds(visit.seconds)} · {visit.views} {visit.views === 1 ? "page" : "pages"} ·
                     left {formatDateTime(visit.endedAtIso)}
                   </p>
@@ -1721,7 +1721,7 @@ function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
 function SummaryTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[12px] border border-phx-line bg-white px-3 py-2.5 text-center">
-      <p className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <p className="text-phx-sm font-bold uppercase tracking-wide text-phx-ink-faint">{label}</p>
       <p className="text-lg font-black text-phx-ink">{value}</p>
     </div>
   );
