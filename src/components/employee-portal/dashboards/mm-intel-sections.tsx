@@ -21,18 +21,19 @@ import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/servic
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
 import { getSalesMarketingDashboard } from "@/lib/sales-marketing-intelligence/service";
 import { loadPortalClosingTrend, loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
+import { salesPacing, type AchievementBand } from "@/lib/employee-portal/rsm-home-summary";
 
 /* ── Shared shells (premium skin: slate-900 header + orange rule, square corners) ── */
 
 function Shell({ title, icon: Icon, children }: { title: string; icon: typeof Activity; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden border border-slate-200">
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="flex items-center gap-2 text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
-          <Icon className="h-3.5 w-3.5 text-orange-400" />
+      <div className="flex items-center justify-between gap-3 bg-slate-900 px-4 py-3 sm:px-5">
+        <h2 className="flex min-w-0 items-center gap-2 break-words text-phx-xs font-bold uppercase tracking-widest text-slate-300">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-orange-400" />
           {title}
         </h2>
-        <div className="h-1.5 w-12 bg-orange-500" />
+        <div className="h-1.5 w-12 shrink-0 bg-orange-500" />
       </div>
       {children}
     </div>
@@ -98,9 +99,9 @@ function DeltaPts({ value, goodWhenUp = true }: { value: number | null; goodWhen
 export function MmSectionSkeleton({ title }: { title: string }) {
   return (
     <div className="overflow-hidden border border-slate-200">
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
-        <div className="h-1.5 w-12 bg-slate-700" />
+      <div className="flex items-center justify-between gap-3 bg-slate-900 px-4 py-3 sm:px-5">
+        <h2 className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <div className="h-1.5 w-12 shrink-0 bg-slate-700" />
       </div>
       <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
         {[0, 1, 2].map((i) => (
@@ -203,7 +204,26 @@ export async function MmFieldHealthSection({ access }: { access: AccessContext }
 
 /* ── Line Sales Pacing (published monthly closing, confidential-stripped at source) ── */
 
-export async function LineSalesPacingSection({ access }: { access: AccessContext }) {
+const PACING_INK: Record<AchievementBand, string> = {
+  met: "text-emerald-600",
+  near: "text-amber-600",
+  behind: "text-orange-600",
+  far: "text-rose-600",
+};
+
+/**
+ * The viewer's published closing, month by month (premium pass, 9 Nov 2026; docs/rsm-home.md).
+ *
+ * The figures are the published Monthly Closing's, scoped exactly as `loadPortalClosingTrend`
+ * scopes them: the whole line for a National Sales Manager or a Marketing Manager, the region's
+ * areas for a Regional Manager, the district's for a District Manager. So the caller names the scope
+ * in `title`; "Line" on a Regional Manager's region figures was the wrong word.
+ *
+ * `salesPacing` (rsm-home-summary.ts) decides every word: the latest month is named, the change is a
+ * percent of the named month before (never "pts"), and each month carries its sales and its
+ * achievement under the bar, so a phone needs no hover to read it.
+ */
+export async function LineSalesPacingSection({ access, title = "Line Sales Pacing" }: { access: AccessContext; title?: string }) {
   let monthly: Awaited<ReturnType<typeof loadPortalMonthlyClosing>>;
   let trend: Awaited<ReturnType<typeof loadPortalClosingTrend>>;
   try {
@@ -213,7 +233,7 @@ export async function LineSalesPacingSection({ access }: { access: AccessContext
     ]);
   } catch {
     return (
-      <Shell title="Line Sales Pacing" icon={BarChart3}>
+      <Shell title={title} icon={BarChart3}>
         <Note tone="warn">Couldn&apos;t load sales pacing right now — refresh to try again.</Note>
       </Shell>
     );
@@ -221,43 +241,67 @@ export async function LineSalesPacingSection({ access }: { access: AccessContext
 
   if (!monthly.line) {
     return (
-      <Shell title="Line Sales Pacing" icon={BarChart3}>
+      <Shell title={title} icon={BarChart3}>
         <Note>No line mapped to your profile — contact an administrator.</Note>
       </Shell>
     );
   }
-  if (monthly.awaitingPublish || trend.length === 0) {
+  const pacing = salesPacing(trend);
+  if (monthly.awaitingPublish || pacing.state === "empty") {
     return (
-      <Shell title="Line Sales Pacing" icon={BarChart3}>
-        <Note>Closing not published yet for {monthly.line}.</Note>
+      <Shell title={title} icon={BarChart3}>
+        <Note>No Monthly Closing is published for {monthly.line} yet, so there is nothing to pace against.</Note>
       </Shell>
     );
   }
 
-  const latest = trend[trend.length - 1];
-  const prev = trend.length >= 2 ? trend[trend.length - 2] : null;
-  const momPct = prev && prev.salesValue > 0 ? Math.round(((latest.salesValue - prev.salesValue) / prev.salesValue) * 100) : null;
-  const maxVal = Math.max(...trend.map((t) => t.salesValue), 1);
+  const { latest, months, change } = pacing;
+  const changeInk =
+    change == null ? "text-slate-500" : change.direction === "up" ? "text-emerald-600" : change.direction === "down" ? "text-rose-600" : "text-slate-600";
+  const ChangeIcon = change == null ? Minus : change.direction === "up" ? ArrowUpRight : change.direction === "down" ? ArrowDownRight : Minus;
 
   return (
-    <Shell title="Line Sales Pacing" icon={BarChart3}>
-      <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
-        <Stat
-          label="Latest month sales"
-          value={egp(latest.salesValue)}
-          sub={momPct == null ? <span className="text-phx-xs text-slate-400 whitespace-nowrap">no prior month</span> : <DeltaPts value={momPct} goodWhenUp />}
-        />
-        <Stat label="Published months" value={String(trend.length)} sub={<span className="text-phx-xs text-slate-400 whitespace-nowrap">{monthly.line}</span>} />
-        <div className="bg-white px-4 py-3">
-          <p className="text-phx-xs font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">Trend</p>
-          <div className="mt-2 flex items-end gap-1.5" style={{ height: 40 }}>
-            {trend.map((t, i) => (
-              <div
-                key={t.period}
-                title={`${t.period}: ${egp(t.salesValue)}`}
-                className={i === trend.length - 1 ? "flex-1 bg-orange-500" : "flex-1 bg-slate-300"}
-                style={{ height: `${Math.max(6, Math.round((t.salesValue / maxVal) * 100))}%` }}
-              />
+    <Shell title={title} icon={BarChart3}>
+      <div className="grid grid-cols-1 gap-px bg-slate-200 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0 bg-white px-4 py-4 sm:px-5">
+          <p className="break-words text-phx-xs font-bold uppercase tracking-widest text-slate-500">{pacing.headline}</p>
+          <p className="mt-1 break-words text-2xl font-black leading-tight tabular-nums text-slate-900">{latest.salesText}</p>
+          <p className={`mt-1 break-words text-sm font-semibold ${latest.band ? PACING_INK[latest.band] : "text-slate-500"}`}>
+            {pacing.targetText}
+          </p>
+          {change ? (
+            <p className={`mt-2 flex items-center gap-1 text-sm font-semibold ${changeInk}`}>
+              <ChangeIcon className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 break-words">{change.text}</span>
+            </p>
+          ) : (
+            <p className="mt-2 break-words text-phx-sm text-slate-500">{pacing.changeNote}</p>
+          )}
+          <p className="mt-3 break-words text-phx-xs font-medium text-slate-400">
+            {monthly.line} · published closings only
+          </p>
+        </div>
+        <div className="min-w-0 bg-white px-4 py-4 sm:px-5">
+          <p className="break-words text-phx-xs font-bold uppercase tracking-widest text-slate-500">
+            {months.length === 1 ? "The published month" : `The last ${months.length} published months`}
+          </p>
+          <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(${months.length}, minmax(0, 1fr))` }}>
+            {months.map((month) => (
+              <div key={month.period} className="flex min-w-0 flex-col">
+                <div className="flex h-16 items-end bg-slate-50">
+                  <div
+                    className={`w-full ${month.latest ? "bg-orange-500" : "bg-slate-300"}`}
+                    style={{ height: `${month.barHeight}%` }}
+                  />
+                </div>
+                <p className={`mt-1.5 text-phx-xs font-black uppercase tracking-wide ${month.latest ? "text-slate-900" : "text-slate-500"}`}>
+                  {month.label}
+                </p>
+                <p className="break-words text-phx-xs font-semibold tabular-nums text-slate-700">{month.salesText}</p>
+                <p className={`break-words text-phx-xs font-semibold ${month.band ? PACING_INK[month.band] : "text-slate-400"}`}>
+                  {month.achievementText}
+                </p>
+              </div>
             ))}
           </div>
         </div>

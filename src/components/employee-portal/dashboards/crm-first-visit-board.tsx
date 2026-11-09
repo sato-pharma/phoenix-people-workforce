@@ -66,7 +66,7 @@ function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: str
   return (
     <div className="flex flex-wrap gap-1.5">
       {people.map((p) => (
-        <span key={p.hrId || p.name} className={`whitespace-nowrap border px-2 py-1 text-phx-xs font-semibold ${cls}`}>
+        <span key={p.hrId || p.name} dir="auto" className={`max-w-full break-words border px-2 py-1 text-phx-xs font-semibold ${cls}`}>
           {p.name}
         </span>
       ))}
@@ -114,9 +114,9 @@ export function CrmFirstVisitBoard({
       <SectionHead
         title="CRM First Visit"
         right={
-          <span className="flex items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
             <span
-              className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400"
+              className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-widest text-slate-400"
               title={crm?.lastSyncAt ? `Newest visit mirrored at ${cairoTime(crm.lastSyncAt)}` : undefined}
             >
               {syncLabel}
@@ -169,12 +169,12 @@ export function CrmFirstVisitBoard({
             ].map((s) => {
               const complete = s.total > 0 && s.submitted >= s.total;
               return (
-                <div key={s.label} className="bg-white px-4 py-3">
+                <div key={s.label} className="min-w-0 bg-white px-4 py-3">
                   <p className={`text-xl font-black tabular-nums ${complete ? "text-emerald-600" : "text-slate-900"}`}>
                     {s.submitted}
                     <span className="text-sm font-bold text-slate-400">/{s.total}</span>
                   </p>
-                  <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">{s.label}</p>
+                  <p className="mt-0.5 break-words text-phx-xs font-semibold uppercase leading-snug tracking-widest text-slate-400">{s.label}</p>
                 </div>
               );
             })}
@@ -182,13 +182,13 @@ export function CrmFirstVisitBoard({
 
           {/* Early birds */}
           <div className="bg-white px-4 py-3 sm:px-5">
-            <div className="mb-2 flex items-center gap-2">
-              <Sunrise className="h-4 w-4 text-emerald-600" />
-              <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-500">Early birds</p>
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Sunrise className="h-4 w-4 shrink-0 text-emerald-600" />
+              <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-500">Early birds</p>
               {crm.earlyBirds.length > 0 && (
                 // State what the list contains out loud: N chips on their own cannot be told apart
                 // from "only N people submitted today".
-                <span className="ml-auto whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">
+                <span className="ml-auto break-words text-phx-xs font-semibold uppercase tracking-widest text-slate-400">
                   {rankHint}
                 </span>
               )}
@@ -202,11 +202,11 @@ export function CrmFirstVisitBoard({
                   return (
                     <span
                       key={b.hrId || b.name}
-                      className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-semibold text-emerald-700"
+                      className="inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 break-words border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-semibold text-emerald-700"
                     >
                       <span className="font-black text-emerald-600">{i + 1}</span>
                       {b.name}
-                      <span className="border border-emerald-200 bg-white px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide text-emerald-700/80">
+                      <span className="border border-emerald-200 bg-white px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide text-emerald-700/80">
                         {b.visitType}
                       </span>
                       {showAccount && (
@@ -219,7 +219,7 @@ export function CrmFirstVisitBoard({
                       )}
                       <span className="font-normal tabular-nums text-emerald-600/70">{vendorLocalTime(b.at)}</span>
                       <span
-                        className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${badge.className}`}
+                        className={`px-1 py-0.5 text-phx-xs font-bold uppercase tracking-wide ${badge.className}`}
                         title={badge.title}
                       >
                         {badge.label}
@@ -242,13 +242,13 @@ export function CrmFirstVisitBoard({
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <AlarmClock className="h-4 w-4 shrink-0 text-rose-600" />
-                  <p className="text-phx-2xs font-bold uppercase tracking-widest text-rose-600">
+                  <p className="text-phx-xs font-bold uppercase tracking-widest text-rose-600">
                     {crm.reps.missing.length + crm.dsms.missing.length} not yet submitted
                   </p>
                 </div>
                 {crm.dsms.missing.length > 0 && (
                   <div>
-                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-400">
                       <AlertTriangle className="h-3 w-3 text-rose-500" /> Managers ({crm.dsms.missing.length})
                     </p>
                     <PersonChips people={crm.dsms.missing} tone="danger" />
@@ -256,7 +256,7 @@ export function CrmFirstVisitBoard({
                 )}
                 {crm.reps.missing.length > 0 && (
                   <div>
-                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-400">
                       <AlertTriangle className="h-3 w-3 text-rose-500" /> Med reps ({crm.reps.missing.length})
                     </p>
                     <PersonChips people={crm.reps.missing} tone="danger" />
