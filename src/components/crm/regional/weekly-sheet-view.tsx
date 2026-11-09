@@ -4,6 +4,7 @@ import { KpiSection } from "@/components/crm/kpis-chrome";
 import { DOCTOR_FAMILY_LABEL, DOCTORS_PER_SPECIALITY } from "@/lib/crm/account-doctor-notes";
 import { addDaysIso } from "@/lib/crm/dates";
 import { weeklySheetResult, type WeeklySheet, type WeeklySheetAccount, type WeeklySheetRep } from "@/lib/crm/weekly-sheet";
+import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 
 /**
  * The Weekly Sheet, the Regional Sales Manager's screen. Server-rendered; each rep's accounts open under the rep
@@ -199,8 +200,8 @@ export function WeeklySheetView({ sheet }: { sheet: WeeklySheet }) {
       ) : null}
       {sheet.districts.length === 0 ? <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No reps under your district managers yet.</p> : null}
       {sheet.districts.map((district) => (
-        <div className="border border-slate-200" key={`${district.districtName}|${district.managerName}`}>
-          <KpiSection description={district.districtName} title={district.managerName}>
+        <div className="border border-slate-200" key={`${district.regionName}|${district.districtName}|${district.managerName}`}>
+          <KpiSection description={regionGroupCaption(district.reps.length, district.vacantSeats)} title={regionManagerTitle(district.regionName, district.managerName)}>
             <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid">
               <span>Rep</span>
               <span>PM</span>

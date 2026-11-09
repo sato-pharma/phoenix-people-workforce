@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PlanStatusPicker } from "@/components/crm/plan-status-picker";
 import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
 import { PlanApproveButton } from "@/components/crm/plan-verify-button";
-import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
+import { BackToAllReps, cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
 import { PlanDoctorsTable } from "@/components/crm/reps-list-tables";
 import type { PlanSummary } from "@/lib/crm/plan-board";
@@ -71,6 +71,16 @@ function hrefWithStatus(basePath: string, board: RepsWeeklyPlansBoard, status: P
   if (board.selection.region) query.set("region", board.selection.region);
   if (board.selection.area) query.set("area", board.selection.area);
   if (status !== "all") query.set("status", status);
+  return `${basePath}?${query.toString()}`;
+}
+
+/** The Vacant Areas tab under the same cascade — where the "Vacant seats" key card opens. */
+function hrefToVacant(basePath: string, board: RepsWeeklyPlansBoard): string {
+  const query = new URLSearchParams();
+  query.set("tab", "vacant");
+  if (board.selection.line) query.set("line", board.selection.line);
+  if (board.selection.region) query.set("region", board.selection.region);
+  if (board.selection.area) query.set("area", board.selection.area);
   return `${basePath}?${query.toString()}`;
 }
 
@@ -208,7 +218,7 @@ function PlanPanel({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-3 lg:grid-cols-5">
         {/* The status is the tile this tab exists for, so it leads and it is the one that carries a
             colour. The three beside it are the size of what is being signed — a manager asked to
             verify a week is entitled to see it is a real week's work before he does. */}
@@ -281,11 +291,17 @@ export function RepsWeeklyPlansBoardView({
   basePath,
   board,
   canApprove,
+  vacantSeats,
 }: {
   basePath: string;
   board: RepsWeeklyPlansBoard;
   /** Whether this viewer holds `phoenix_crm:approve`. UX only — the decide route re-checks it server-side. */
   canApprove: boolean;
+  /**
+   * The vacant areas the Vacant Areas tab lists under this cascade (`countVacantAreas`); null when that read
+   * failed, which the card says in words rather than printing a zero (owner, 2026-11-09).
+   */
+  vacantSeats: number | null;
 }) {
   const { counts, options, reps, scopeLabel, scopeReason, selected, selectedPlan, selection, statusFilter, syncedAt, week, weeks } =
     board;
@@ -357,6 +373,7 @@ export function RepsWeeklyPlansBoardView({
         </div>
       </Section>
 
+      {selected ? <BackToAllReps href={hrefWithRep(basePath, board, null)} /> : null}
       {selected ? (
         <Section
           action={
@@ -446,6 +463,15 @@ export function RepsWeeklyPlansBoardView({
               }
               tone={week.offset > 0 ? undefined : counts.missing > 0 ? "rose" : "emerald"}
               value={String(counts.missing)}
+            />
+            {/* The fifth card: the seats with nobody in them, so "13 reps" is read against the structure
+                and not mistaken for it. It opens the Vacant Areas tab, which lists exactly these. */}
+            <Tile
+              href={hrefToVacant(basePath, board)}
+              label="Vacant seats"
+              sub={vacantSeats == null ? "could not be read just now" : vacantSeats > 0 ? "no rep in the seat · open the list" : "every seat is filled"}
+              tone={vacantSeats == null ? undefined : vacantSeats > 0 ? "amber" : "emerald"}
+              value={vacantSeats == null ? "–" : String(vacantSeats)}
             />
           </div>
           {reps.length === 0 ? (

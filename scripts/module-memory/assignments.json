@@ -549,6 +549,7 @@
   "dm-test-accounts-see-a-copy-of-the-real-rep-plans": "org",
   "docker-desktop-force-kill-breaks-af-unix-sockets": "engineering",
   "doctor-coverage-scores-only-doctors-already-visited": "crm",
+  "donot-use-dev-for-the-look": "sessions",
   "dont-foreground-watch-long-pipelines": "global",
   "dont-skip-validation-for-ram-wait-instead": "sessions",
   "double-visit-analytics-live-rebuild": "crm",

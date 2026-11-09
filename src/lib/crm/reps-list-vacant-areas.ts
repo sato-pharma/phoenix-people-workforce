@@ -460,6 +460,21 @@ export async function loadLastHolders(
 const EMPTY_OPTIONS: CoverageFilterOptions = { areas: [], lines: [], regions: [], reps: [] };
 
 /** Assembles tab three — the vacancy cascade plus the selected area's inherited contact list. */
+/**
+ * How many vacant areas the Vacant Areas tab would list under this scope and cascade — the "Vacant seats"
+ * key card on Reps Weekly Plans (owner, 2026-11-09: "also a key card for vacants number"). The SAME
+ * restrict → prune → match → fold as `getVacantAreasBoard`, so the card and the tab it opens never disagree.
+ */
+export async function countVacantAreas(input: {
+  scope: CrmManagerScope;
+  params: { area?: string; line?: string; region?: string };
+}): Promise<number> {
+  if (input.scope.kind === "none") return 0;
+  const tree = vacancyCascadeTree(restrictCoverageFilterTree(await loadCoverageFilterTree(), allowedHrIdsFor(input.scope)));
+  const selection = pruneLineFirst(tree, resolveCoverageSelection(input.params));
+  return foldVacancyCells(vacanciesMatching(tree, { area: selection.area, line: selection.line, region: selection.region })).length;
+}
+
 export async function getVacantAreasBoard(input: {
   scope: CrmManagerScope;
   params: { area?: string; line?: string; month?: string; region?: string; vacancy?: string };

@@ -5,6 +5,7 @@ import { KpiSection } from "@/components/crm/kpis-chrome";
 import { addDaysIso } from "@/lib/crm/dates";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import type { DistrictManagersPlans, DistrictPlanHalf } from "@/lib/phoenix-crm/server/manager-plan-bookings";
+import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 
 /**
  * District Managers' Plans, the Regional Sales Manager's screen. Server-rendered. One section per district
@@ -68,8 +69,8 @@ export function DistrictManagerPlansView({ report }: { report: DistrictManagersP
         <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No district managers under you yet.</p>
       ) : null}
       {report.weeks.map((week) => (
-        <div className="border border-slate-200" key={`${week.districtName}|${week.managerName}`}>
-          <KpiSection description={`${week.districtName} · ${week.statusText}`} title={week.managerName}>
+        <div className="border border-slate-200" key={`${week.regionName}|${week.districtName}|${week.managerName}`}>
+          <KpiSection description={`${regionGroupCaption(week.repSeats, week.vacantSeats)} · ${week.statusText}`} title={regionManagerTitle(week.regionName, week.managerName)}>
             {!week.sent ? (
               <p className="px-4 py-3 text-phx-xs font-semibold text-slate-600">Not sent yet</p>
             ) : (
