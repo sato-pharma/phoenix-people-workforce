@@ -1246,15 +1246,16 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
   // The seventeenth: the marks on each doctor he plans with, a GET (owner, 2026-10-23). The eighteenth: the week's conversation, a GET and a POST (owner, 2026-11-01).
-  // The nineteenth: "Show visit times" on each customer he plans with, a GET (owner, 2026-11-05).
-  assert.equal(routeFiles.length, 19, "the nineteen manager-plan routes");
+  // The nineteenth: "Show visit times" on each customer he plans with, a GET (owner, 2026-11-05). The twentieth: the
+  // week as Excel, a GET with two doors — the board's and the Approvals Hub's (owner, 2026-11-09, the premium pass).
+  assert.equal(routeFiles.length, 20, "the twenty manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 25, "twenty-five declarations across the nineteen routes");
+  assert.equal(registry.length, 26, "twenty-six declarations across the twenty routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
@@ -1442,7 +1443,14 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.ok(nextFlow.includes("void saveWaiting();"), "a half-day that can be saved goes as he presses, and a failed save is tried again");
   assert.match(functionBody(planBoard, "function HalfStep("), /nextHoldMessage \? <CrmNote tone="warn">\{nextHoldMessage\}<\/CrmNote> : null/, "the reason is on the page, right above the button");
 
-  assert.match(sendFlow, /if \(waiting\) return waiting\.kind !== null && !problemOf\(waiting\);/, "Send counts a half-day still missing something as not planned");
+  // The count itself moved into `managerSendTally` (2026-11-09, the premium pass), so the Send step and the week at a
+  // glance read one module: the board hands it each typed half's kind and problem, the lib decides.
+  assert.match(sendFlow, /return waiting \? \{ kind: waiting\.kind, problem: problemOf\(waiting\) \} : null;/, "Send hands the count each typed half's problem");
+  assert.match(
+    source("src/lib/phoenix-crm/manager-week-glance.ts"),
+    /if \(waiting\) return waiting\.kind !== null && !waiting\.problem;/,
+    "Send counts a half-day still missing something as not planned",
+  );
   assert.match(sendFlow, /problem \? `Not saved: \$\{problem\}`/, "and names what is missing on its row");
   assert.match(sendFlow, /onClick=\{\(\) => onOpenHalf\(day\.date, half\)\}/, "with the way back to it");
   assert.match(sendFlow, /disabled=\{waitingProblems\.length > 0 \|\|/, "and nothing is sent until it is finished or cleared");

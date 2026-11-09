@@ -1199,6 +1199,10 @@ export const accessRegistry = [
   // The whole reports pack as one workbook (C1). Same "read" gate as the screen — it can never be a
   // way round a refusal, because the sections a viewer may not read are never loaded and write no
   // sheet. Audited as an export: a workbook naming individual employees leaves the building.
+  // A manager's own week as XLSX (owner, 2026-11-09, the premium pass of Plan your week in Phoenix CRM): the board's
+  // own door — "read", then loadManagerPlanBoard's reader rule (the manager and the people who read the week; a rep
+  // is refused). Reads only; rate-limited and audited as an export, because the file names reps and customers.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/manager-plans/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/reports/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The Visit report generator (owner, 2026-10-15): the module's "read" gate, narrowed in the service to the
   // Super Admin and the SFE Manager (a 404 for anybody else). The data answer is a read sent as a POST — the

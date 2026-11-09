@@ -223,6 +223,9 @@ export type AuditEntityType =
   // The KPIs board downloaded as a workbook: every rep in the viewer's scope with his hire date.
   | "crm_kpis_export"
   | "crm_weekly_sheet_export"
+  // A manager's own week downloaded from Plan your week in Phoenix CRM (2026-11-09, the premium pass): whose week, and
+  // which. The manager himself or a reader of the week; no migration — audit_logs has no CHECK on entity_type.
+  | "crm_manager_week_export"
   // Visits — Yesterday and Today downloaded as a workbook: every rep under the Regional Sales Manager, each visit's time.
   | "crm_team_visits_export"
   // District Managers' Plans downloaded as a workbook: every district manager's week under the Regional Sales Manager.

@@ -95,8 +95,8 @@ function visitsYesterdayAndToday() {
   assert.ok(source0().includes("repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },"), "every district carries its reps' total");
   assert.ok(grouped.includes("<RepsTotal day={district.repsTotal.yesterday} />") && grouped.includes("<RepsTotal day={district.repsTotal.today} />"), "the manager's row prints his reps' total");
   // Was the district manager's day double or single — double with whom, single where (owner, 2026-11-09).
-  const half = (over: Partial<DistrictManagerDayHalf>): DistrictManagerDayHalf => ({ half: "AM", kindLabel: "Single visit", repName: null, areaName: null, detail: null, customers: [], ...over });
-  const dmDay = (halves: DistrictManagerDayHalf[], sent = true): DistrictManagerDay => ({ dmSeatId: "D1", dmName: "District One", statusLabel: sent ? "Approved" : "Draft", sent, halves });
+  const half = (over: Partial<DistrictManagerDayHalf>): DistrictManagerDayHalf => ({ half: "AM", kindLabel: "Single visit", admin: false, repName: null, areaName: null, detail: null, customers: [], ...over });
+  const dmDay = (halves: DistrictManagerDayHalf[], sent = true): DistrictManagerDay => ({ dmSeatId: "D1", dmName: "District One", statusLabel: sent ? "Approved" : "Draft", sent, standing: sent ? "approved" : "draft", halves });
   const double = teamVisitManagerDay(dmDay([half({ kindLabel: "Double visit", repName: "Rep Sample", areaName: "Area North" }), half({ half: "PM", kindLabel: "Double visit", repName: "Rep Sample", areaName: "Area North" })]));
   assert.equal(double.headline, "Double visit day");
   assert.deepEqual(double.halves, ["AM · Double with Rep Sample · Area North", "PM · Double with Rep Sample · Area North"], "a double names the rep beside him");
