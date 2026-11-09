@@ -168,12 +168,12 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
                             Feedback {index + 1} — {optional ? "optional" : "missing"}
                           </span>
                           {optional ? (
-                            <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                            <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                               Optional
                             </span>
                           ) : (
                             <span
-                              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-phx-2xs font-medium ${SLA_STYLE[t.slaState]}`}
+                              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-phx-sm font-medium ${SLA_STYLE[t.slaState]}`}
                             >
                               {SLA_LABEL[t.slaState]} · {timing(t)}
                             </span>

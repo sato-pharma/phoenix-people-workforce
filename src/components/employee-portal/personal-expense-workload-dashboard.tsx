@@ -163,7 +163,7 @@ const cardShadow = adminPanelDepthClassName;
 const inputClass  = phxFieldClassName;
 
 const labelClass =
-  "text-phx-2xs font-bold uppercase tracking-wider text-slate-500";
+  "text-phx-sm font-bold uppercase tracking-wider text-slate-500";
 
 /* ------------------------------------------------------------------ */
 /*  Color insight palette — degrading scale for chart bars            */
@@ -273,7 +273,7 @@ function StatusPill({ category }: { category: string }) {
   const styles = STATUS_PILL_STYLES[category] ?? STATUS_PILL_STYLES.Other;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ring-1 ${styles}`}
+      className={`inline-flex items-center px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ring-1 ${styles}`}
     >
       {category}
     </span>
@@ -575,7 +575,7 @@ function StatCard({
       )}
       {showDelta && (
         <span
-          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-phx-2xs font-bold ${
+          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-phx-sm font-bold ${
             isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
           }`}
         >
@@ -1288,12 +1288,12 @@ export function PersonalExpenseWorkloadDashboard({
 
   const header = (field: SortField, title: string) => (
     <button
-      className="inline-flex items-center gap-1 text-left text-phx-2xs font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
+      className="inline-flex items-center gap-1 text-left text-phx-sm font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
       onClick={() => onSort(field)}
       type="button"
     >
       <span>{title}</span>
-      <span className="text-phx-3xs opacity-60">
+      <span className="text-phx-xs opacity-60">
         {searchSortField === field ? (searchSortDirection === "desc" ? "▼" : "▲") : "↕"}
       </span>
     </button>
@@ -2388,7 +2388,7 @@ export function PersonalExpenseWorkloadDashboard({
               <tfoot className="border-t-2 border-slate-900">
                 <tr className="bg-slate-50">
                   <td
-                    className={`${cellPaddingClass} text-phx-2xs font-bold uppercase tracking-wider text-slate-500`}
+                    className={`${cellPaddingClass} text-phx-sm font-bold uppercase tracking-wider text-slate-500`}
                     colSpan={4}
                   >
                     {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}

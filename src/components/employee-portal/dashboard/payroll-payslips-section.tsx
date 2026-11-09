@@ -85,7 +85,7 @@ function PayrollStat({
   return (
     <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-150 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <p className="min-w-0 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
         <button
           aria-label={toggleLabel}
           aria-pressed={isValueVisible}
@@ -367,7 +367,7 @@ export function PayrollPayslipsSection({
                       <div className="min-w-0">
                         <p className="break-words text-sm font-semibold text-slate-900">{row.label}</p>
                         <Badge
-                          className="mt-1 whitespace-nowrap px-2 py-0.5 text-phx-2xs"
+                          className="mt-1 whitespace-nowrap px-2 py-0.5 text-phx-sm"
                           variant={payrollStatusTone(row.status)}
                         >
                           {payrollStatusLabel(row.status)}
@@ -400,9 +400,9 @@ export function PayrollPayslipsSection({
                   </colgroup>
                   <thead>
                     <tr>
-                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Month</th>
-                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Status</th>
-                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-right text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Action</th>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Month</th>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Status</th>
+                      <th className="border border-slate-100 bg-slate-50 px-2 py-2 text-right text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500 sm:px-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -417,7 +417,7 @@ export function PayrollPayslipsSection({
                         <tr className="transition hover:bg-slate-50/60" key={row.id}>
                           <td className="border border-slate-100 px-2 py-2.5 font-medium text-slate-900 sm:px-3">{row.label}</td>
                           <td className="border border-slate-100 px-2 py-2.5 sm:px-3">
-                            <Badge className="max-w-full break-words px-2 py-0.5 text-phx-2xs sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
+                            <Badge className="max-w-full break-words px-2 py-0.5 text-phx-sm sm:px-2.5 sm:text-xs" variant={payrollStatusTone(row.status)}>
                               {payrollStatusLabel(row.status)}
                             </Badge>
                           </td>

@@ -926,7 +926,7 @@ function MetricCard({
         <Icon className={`h-3.5 w-3.5 shrink-0 ${iconStyles[accent]}`} />
         {/* Wraps, never runs past the card: "SYSTEM VALIDATED" in tracked capitals is wider than
             a card on a narrow row. */}
-        <p className="min-w-0 break-words text-phx-2xs font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
+        <p className="min-w-0 break-words text-phx-sm font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
           {label}
         </p>
       </div>
@@ -1055,7 +1055,7 @@ function ReusablePharmacyPicker({
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               Vendor codes that will be attached
             </p>
             {/*
@@ -1131,7 +1131,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${styles[variant]}`}>
+    <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${styles[variant]}`}>
       {VALIDATION_STATUS_LABEL[status] ?? "Unknown"}
     </span>
   );
@@ -1140,7 +1140,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
 /** Marks a customer a Super Admin validated at the desk, so it is never mistaken for a field capture. */
 function AdminValidatedBadge() {
   return (
-    <span className="inline-flex items-center rounded-none border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
+    <span className="inline-flex items-center rounded-none border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-sky-700">
       Admin validated
     </span>
   );
@@ -1155,7 +1155,7 @@ function AdminValidatedBadge() {
  */
 function UntrackedCodeBadge() {
   return (
-    <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
+    <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-amber-700">
       Sales not trackable
     </span>
   );
@@ -1246,7 +1246,7 @@ function PharmacyLicensePanel({
     <div
       className={`rounded-none border border-slate-200 bg-slate-50 p-3 ${adminSoftDepthClassName}`}
     >
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
         Pharmacy Licence · رخصة الصيدلية (optional)
       </p>
       <p className="mt-1 text-phx-xs font-semibold text-slate-500" dir="auto">
@@ -1376,10 +1376,10 @@ function CapturePanel({
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
-        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasLocation ? "Location captured" : "Location required"}
         </span>
-        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasPhoto ? "Live photo captured" : "Live photo required"}
         </span>
       </div>
@@ -1560,7 +1560,7 @@ function PlaceSearchPanel({
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
+          className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${
             hasLocation
               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
               : "border-amber-200 bg-amber-50 text-amber-700"
@@ -1609,7 +1609,7 @@ function ValidatedPharmaciesModal({
       <div className="max-h-[88dvh] w-full max-w-3xl overflow-hidden rounded-none border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Linked venues</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Linked venues</p>
             <h3 className="mt-1 break-words text-lg font-black text-slate-900">{group.customerName}</h3>
           </div>
           <Button
@@ -1678,7 +1678,7 @@ function ValidatedPharmaciesModal({
                   <col style={{ width: "18%" }} />
                   <col style={{ width: "30%" }} />
                 </colgroup>
-                <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                   <tr>
                     <th className="border-r border-slate-100 px-3 py-2.5">Venue</th>
                     <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
@@ -3115,7 +3115,7 @@ export function MarketingValidationWorkspace() {
           took width the labels needed. */}
       <div className="rounded-none border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
         <div className="mb-2.5 flex items-center justify-between gap-3">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Validation summary</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Validation summary</p>
           <button
             aria-label="Refresh data"
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 md:h-9 md:w-9 ${adminControlDepthClassName}`}
@@ -3217,7 +3217,7 @@ export function MarketingValidationWorkspace() {
                   <ClipboardCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">
+                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">
                     Customer Validation
                   </p>
                   <h2 className="text-lg font-black tracking-tight text-slate-900">
@@ -3235,7 +3235,7 @@ export function MarketingValidationWorkspace() {
                     <ShieldCheck className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
+                    <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
                     <p className="text-phx-md font-bold text-slate-800">Validate on behalf of an employee</p>
                   </div>
                 </div>
@@ -3266,10 +3266,10 @@ export function MarketingValidationWorkspace() {
                 </div>
                 {isDeskMode ? (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center rounded-none border border-sky-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
+                    <span className="inline-flex items-center rounded-none border border-sky-200 bg-white px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-sky-700">
                       Desk mode — map search, no live photo
                     </span>
-                    <span className={`inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600 ${adminChipDepthClassName}`}>
+                    <span className={`inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-slate-600 ${adminChipDepthClassName}`}>
                       Saved as admin validated
                     </span>
                   </div>
@@ -3526,7 +3526,7 @@ export function MarketingValidationWorkspace() {
                     <div className="min-w-0 md:col-span-6">
                       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 break-words">
-                          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
+                          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
                           <p className="mt-0.5 text-phx-sm font-medium text-slate-500">
                             Capture a new venue, or attach one you already validated.
                           </p>
@@ -3729,7 +3729,7 @@ export function MarketingValidationWorkspace() {
                                       : "rounded-none border border-orange-300 bg-orange-50/60 p-2"
                                   }
                                 >
-                                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
                                     What is this? *
                                   </p>
                                   <div className="mt-1.5 flex items-center gap-2">
@@ -3774,7 +3774,7 @@ export function MarketingValidationWorkspace() {
                                       : "hidden"
                                   }
                                 >
-                                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
                                     Vendor Codes
                                   </p>
                                   <Button
@@ -3881,7 +3881,7 @@ export function MarketingValidationWorkspace() {
                                               ) : null}
                                             </span>
                                             <span
-                                              className={`shrink-0 text-phx-2xs font-black uppercase tracking-[0.1em] ${
+                                              className={`shrink-0 text-phx-sm font-black uppercase tracking-[0.1em] ${
                                                 suggestion.proximity === "same_area"
                                                   ? "text-emerald-700"
                                                   : suggestion.proximity === "same_governorate"
@@ -4001,7 +4001,7 @@ export function MarketingValidationWorkspace() {
         <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
+              <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Captured but not in your request list</h2>
             </div>
             <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700">
@@ -4089,7 +4089,7 @@ export function MarketingValidationWorkspace() {
                       <col className="w-[10%]" />
                       <col className="w-[20%]" />
                     </colgroup>
-                    <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
@@ -4160,7 +4160,7 @@ export function MarketingValidationWorkspace() {
         <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
+              <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Ready customer list</h2>
             </div>
             <span className="inline-flex items-center rounded-none border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700">
@@ -4231,7 +4231,7 @@ export function MarketingValidationWorkspace() {
                       <col className="w-[25%]" />
                       <col className="w-[10%]" />
                     </colgroup>
-                    <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="bg-slate-50 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Area</th>

@@ -408,7 +408,7 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
 
   return (
     <div className="mt-2 border border-slate-100 bg-slate-50 p-2">
-      <p className="mb-1 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
+      <p className="mb-1 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-400">
         Cost Trend (last {Math.min(drafts.length, 12)} drafts)
       </p>
       <svg
@@ -476,7 +476,7 @@ function MetricCard({
     >
       <div className="flex items-center gap-1.5">
         <Icon className={`h-3 w-3 ${iconColors[accent]}`} />
-        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+        <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
           {label}
         </p>
       </div>
@@ -488,7 +488,7 @@ function MetricCard({
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+      <span className="mb-1.5 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </span>
       {children}
@@ -522,7 +522,7 @@ function SelectField({
 function RoiMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-2 border border-slate-100 bg-slate-50 px-3 py-2">
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+      <span className="text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
         {label}
       </span>
       <span className="text-phx-md font-black text-slate-950">{value}</span>
@@ -533,7 +533,7 @@ function RoiMetric({ label, value }: { label: string; value: string }) {
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
   return (
     <div className={`flex h-10 min-w-0 flex-col justify-center border border-slate-200 bg-white px-3 ${adminSoftDepthClassName}`}>
-      <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-slate-400">
+      <span className="text-phx-xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </span>
       <span className="text-phx-md font-black text-slate-800">{value}</span>
@@ -647,15 +647,15 @@ function DirectOrderSettleControl({
         <p className="text-phx-xs font-bold text-emerald-800">
           Settled against a direct order — no transfer
         </p>
-        <p className="mt-0.5 break-words text-phx-2xs font-medium text-emerald-900">
+        <p className="mt-0.5 break-words text-phx-sm font-medium text-emerald-900">
           {row.directOrderOffset.orderLabel} · {egp(row.directOrderOffset.amount)}
         </p>
         {row.directOrderOffset.note ? (
-          <p className="mt-0.5 break-words text-phx-2xs font-medium text-slate-600">{row.directOrderOffset.note}</p>
+          <p className="mt-0.5 break-words text-phx-sm font-medium text-slate-600">{row.directOrderOffset.note}</p>
         ) : null}
         {canSettle ? (
           <button
-            className="mt-1 text-phx-2xs font-bold text-rose-700 underline disabled:opacity-50"
+            className="mt-1 text-phx-sm font-bold text-rose-700 underline disabled:opacity-50"
             disabled={isBusy}
             onClick={() => void remove()}
             type="button"
@@ -683,7 +683,7 @@ function DirectOrderSettleControl({
 
   return (
     <div className={`mt-1.5 min-w-0 space-y-1.5 border border-slate-200 bg-white p-2.5 ${adminSoftDepthClassName}`}>
-      <p className="text-phx-2xs font-medium text-slate-500">
+      <p className="text-phx-sm font-medium text-slate-500">
         No cash moves. The order&apos;s outstanding amount falls by this sum and no transfer proof is needed.
       </p>
       {options === null ? (
@@ -764,7 +764,7 @@ function EvidenceUpload({
         )}
         {isUploading ? "Uploading..." : label}
       </span>
-      <span className="break-all text-phx-2xs font-medium text-slate-500">
+      <span className="break-all text-phx-sm font-medium text-slate-500">
         {fileName ?? "No file yet"}
       </span>
       <input
@@ -790,7 +790,7 @@ function EvidenceOnFile({ fileName, label }: { fileName: string | null; label: s
   return (
     <div className={`flex min-w-0 flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 ${adminControlDepthClassName}`}>
       <span className="text-phx-xs font-bold text-slate-700">{label}</span>
-      <span className="break-all text-phx-2xs font-medium text-slate-500">
+      <span className="break-all text-phx-sm font-medium text-slate-500">
         {fileName ?? "Finance attaches it"}
       </span>
     </div>
@@ -853,7 +853,7 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
           />
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-phx-2xs font-medium text-slate-500">
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-phx-sm font-medium text-slate-500">
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 bg-emerald-500" />
           Covers ROI {covers}
@@ -1718,7 +1718,7 @@ function MarketingRequestDraftWorkspaceInner() {
       {!isLoading && workspace.drafts.length > 0 && (
         <div className={`border border-slate-200 bg-white px-4 py-3 ${adminSoftDepthClassName}`}>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+            <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
               Draft ROI Health
             </span>
             <span className="text-phx-xs font-bold text-slate-600">
@@ -1764,7 +1764,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Create</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
                 activeView === "create"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1787,7 +1787,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Approved</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
                 activeView === "approved"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1810,7 +1810,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Tracking</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 px-1.5 py-0.5 text-phx-2xs font-black ${
+              className={`ml-0.5 px-1.5 py-0.5 text-phx-sm font-black ${
                 activeView === "tracking"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1873,7 +1873,7 @@ function MarketingRequestDraftWorkspaceInner() {
               <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+                    <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
                       {resubmitRequestId ? "Edit & Resubmit" : "Create Draft"}
                     </p>
                     <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -2162,7 +2162,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                        <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
                           Products
                         </p>
                         {/* A null requesterLineId means BOTH "oversight role, every line" and
@@ -2450,7 +2450,7 @@ function MarketingRequestDraftWorkspaceInner() {
               <p className="text-phx-md font-black text-slate-950">
                 ROI Preview
               </p>
-              <p className="text-phx-2xs font-medium text-slate-400">
+              <p className="text-phx-sm font-medium text-slate-400">
                 Recalculates on save
               </p>
             </div>
@@ -2492,13 +2492,13 @@ function MarketingRequestDraftWorkspaceInner() {
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.10em]">
+              <span className="text-phx-sm font-bold uppercase tracking-[0.10em]">
                 Capture Quality
               </span>
               {captureHasInput ? (
                 <span className="text-phx-md font-black">
                   {captureConfidence.score}
-                  <span className="text-phx-2xs font-bold">/100</span>
+                  <span className="text-phx-sm font-bold">/100</span>
                 </span>
               ) : (
                 <span className="text-phx-xs font-bold">Not scored yet</span>
@@ -2526,7 +2526,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   <col className="w-[20%]" />
                   <col className="w-[16%]" />
                 </colgroup>
-                <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+                <thead className="bg-slate-50 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
                     <th className="border-b border-r border-slate-100 px-3 py-2">
                       Product
@@ -2610,7 +2610,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       }}
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-1 text-phx-2xs">
+                  <div className="grid grid-cols-3 gap-1 text-phx-sm">
                     <div>
                       <span className="font-medium text-slate-400">
                         Qty
@@ -2653,7 +2653,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 Draft Rows
               </p>
               {workspace.drafts.length > 0 ? (
-                <p className="text-phx-2xs font-medium text-slate-400">
+                <p className="text-phx-sm font-medium text-slate-400">
                   {`${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`}
                 </p>
               ) : null}
@@ -2689,7 +2689,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
+                        <p className="font-mono text-phx-sm font-bold text-slate-500">
                           {draft.requestCode}
                         </p>
                         <p className="mt-0.5 text-phx-md font-black text-slate-950">
@@ -2703,11 +2703,11 @@ function MarketingRequestDraftWorkspaceInner() {
                       </Badge>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1 text-phx-2xs font-medium text-slate-400">
+                      <span className="flex items-center gap-1 text-phx-sm font-medium text-slate-400">
                         <CalendarDays className="h-2.5 w-2.5" />
                         {draft.requestDate}
                       </span>
-                      <span className="text-phx-2xs font-bold text-slate-500">
+                      <span className="text-phx-sm font-bold text-slate-500">
                         {Math.round(draft.roiCoverageRatio * 100)}%
                         {" "}forecast coverage
                       </span>
@@ -2719,7 +2719,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     No draft rows yet.
                   </p>
                 ) : (
-                  <p className="mt-1 text-center text-phx-2xs font-semibold text-slate-400">
+                  <p className="mt-1 text-center text-phx-sm font-semibold text-slate-400">
                     Forecast only — {ROI_ACTUAL_IN_TRACKING_NOTE}.
                   </p>
                 )}
@@ -2740,7 +2740,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
                   Finance Evidence
                 </p>
                 <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -2785,7 +2785,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     <col className="w-[17%]" />
                     <col className="w-[17%]" />
                   </colgroup>
-                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <thead className="bg-slate-50 text-phx-sm font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
                         Customer &amp; Contact
@@ -2834,7 +2834,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             src/lib/marketing-requests/invoice-obligation.ts. */}
                         <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
                           {row.invoiceDaysOverdue > 0 ? (
-                            <span className="inline-block border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
+                            <span className="inline-block border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-sm font-bold text-rose-700">
                               {row.invoiceDueLabel}
                             </span>
                           ) : (
@@ -2926,7 +2926,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           <p className="text-phx-md font-bold text-slate-950" dir="auto">
                             {row.customerName}
                           </p>
-                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400" dir="auto">
+                          <p className="mt-0.5 text-phx-sm font-medium text-slate-400" dir="auto">
                             {row.contactForMoneyTransfer}
                           </p>
                         </div>
@@ -2935,7 +2935,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-phx-2xs">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-phx-sm">
                         <span className="font-medium text-slate-400">
                           Transfer
                         </span>
@@ -2963,7 +2963,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
 
                       {row.notes ? (
-                        <p className="text-phx-2xs font-medium text-slate-500 break-words" dir="auto">
+                        <p className="text-phx-sm font-medium text-slate-500 break-words" dir="auto">
                           {row.notes}
                         </p>
                       ) : null}
@@ -3036,7 +3036,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-amber-600">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-amber-600">
                   Action Needed
                 </p>
                 <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -3075,7 +3075,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
                           Ref {request.requestCode}
                         </p>
                       </div>
@@ -3106,7 +3106,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
                   In Flight
                 </p>
                 <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -3147,7 +3147,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
                           Ref {request.requestCode}
                         </p>
                       </div>
@@ -3233,7 +3233,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-rose-50/60 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-rose-600">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-rose-600">
                   Not Proceeding
                 </p>
                 <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -3272,11 +3272,11 @@ function MarketingRequestDraftWorkspaceInner() {
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
                         </p>
-                        <p className="mt-0.5 font-mono text-phx-3xs font-medium text-slate-400">
+                        <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-400">
                           Ref {request.requestCode}
                         </p>
                       </div>
-                      <span className="shrink-0 border border-rose-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-rose-700">
+                      <span className="shrink-0 border border-rose-200 bg-white px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-[0.06em] text-rose-700">
                         Rejected
                       </span>
                     </div>
@@ -3300,7 +3300,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               .filter(([, value]) => Boolean(value))
                               .map(([label, value]) => (
                                 <div className="flex items-baseline gap-2" key={label}>
-                                  <dt className="w-[66px] shrink-0 text-phx-3xs font-bold uppercase tracking-[0.08em] text-rose-700/70">
+                                  <dt className="w-[66px] shrink-0 text-phx-xs font-bold uppercase tracking-[0.08em] text-rose-700/70">
                                     {label}
                                   </dt>
                                   <dd className="min-w-0 text-phx-xs font-bold text-slate-700">
@@ -3371,7 +3371,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">
                   Not Submitted
                 </p>
                 <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
@@ -3395,7 +3395,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   key={draft.id}
                 >
                   <div className="min-w-0">
-                    <p className="font-mono text-phx-2xs font-bold text-slate-500">
+                    <p className="font-mono text-phx-sm font-bold text-slate-500">
                       {draft.requestCode}
                     </p>
                     <p className="mt-0.5 text-phx-md font-black text-slate-950">

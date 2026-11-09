@@ -636,7 +636,7 @@ export function PlanningCalendar({
               identical on the header row and the day grid below or the columns misalign. */}
           <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] border-b-2 border-orange-500 bg-slate-900">
             {weekdays.map((weekday) => (
-              <div className="px-2 py-2.5 text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
+              <div className="px-2 py-2.5 text-center text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
                 {weekday}
               </div>
             ))}
@@ -677,7 +677,7 @@ export function PlanningCalendar({
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-phx-2xs font-black text-sky-700">
+                      <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-phx-sm font-black text-sky-700">
                         {dayConflicts.length}
                       </span>
                     ) : null}
@@ -686,7 +686,7 @@ export function PlanningCalendar({
                   <span className="mt-1.5 block space-y-1">
                     {dayHolidays.map((holiday) => (
                       <span
-                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-phx-2xs font-normal text-emerald-700"
+                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-phx-sm font-normal text-emerald-700"
                         key={holiday.id}
                       >
                         {holiday.title}
@@ -694,7 +694,7 @@ export function PlanningCalendar({
                     ))}
                     {dayRegions.map((region) => (
                       <span className="block" key={region.key || "no-region"}>
-                        <span className="block bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-slate-300">{region.label}</span>
+                        <span className="block bg-slate-900 px-1.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-slate-300">{region.label}</span>
                         <span className="mt-0.5 block space-y-1">
                           {/* Each person once per region; their AM and PM read "AM · PM" (planningTilePeople). */}
                           {planningTilePeople(region.items).map(({ items: personItems, key, slots }) => {
@@ -702,7 +702,7 @@ export function PlanningCalendar({
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
-                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-phx-2xs font-normal leading-tight ${planChipTone(item, hue)}`}
+                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-phx-sm font-normal leading-tight ${planChipTone(item, hue)}`}
                                 key={key}
                                 title={personItems.map((personItem) => personItem.title).join("\n")}
                               >
@@ -803,7 +803,7 @@ function AgendaDayBlock({
                 <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ok">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide text-phx-ok">
                     National vacation
                   </span>
                 </div>
@@ -819,7 +819,7 @@ function AgendaDayBlock({
                     className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide text-phx-ink-soft">
                     {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>
@@ -931,7 +931,7 @@ function PlanningCalendarDetailsTable({
               {section.areas.map((area) => (
                 <div key={`${section.key}-${area.key}-mobile`}>
                   {area.label ? (
-                    <p className="border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600">
+                    <p className="border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-600">
                       {area.label}
                     </p>
                   ) : null}
@@ -942,7 +942,7 @@ function PlanningCalendarDetailsTable({
                         key={`${row.id}-mobile`}
                         meta={row.employee}
                         status={
-                          <span className={`inline-flex border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                          <span className={`inline-flex border px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                             {row.status}
                           </span>
                         }
@@ -992,7 +992,7 @@ function PlanningCalendarDetailsTable({
             <tr className="border-b-2 border-orange-500 bg-slate-950">
               {["Employee", "Activity", "Medical Rep", "Time", "Plan Status", "Chain Visit"].map((column) => (
                 <th
-                  className="border-r border-slate-800 px-3 py-3 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
+                  className="border-r border-slate-800 px-3 py-3 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
                 >
                   {column}
@@ -1022,7 +1022,7 @@ function PlanningCalendarDetailsTable({
                 ...(area.label
                   ? [
                       <tr className="bg-slate-100" key={`${section.key}-${area.key}-header`}>
-                        <td className="px-3 py-1.5 pl-6 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600" colSpan={6}>
+                        <td className="px-3 py-1.5 pl-6 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-600" colSpan={6}>
                           {area.label}
                         </td>
                       </tr>,
@@ -1040,7 +1040,7 @@ function PlanningCalendarDetailsTable({
                   <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{cellText(row.medicalRep)}</td>
                   <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={`inline-block max-w-full break-words border px-2 py-0.5 text-phx-2xs font-black uppercase leading-snug tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                    <span className={`inline-block max-w-full break-words border px-2 py-0.5 text-phx-sm font-black uppercase leading-snug tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>

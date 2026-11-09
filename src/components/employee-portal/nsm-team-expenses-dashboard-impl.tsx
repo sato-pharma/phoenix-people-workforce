@@ -342,7 +342,7 @@ export function NsmTeamExpensesDashboard({
                       <p className="break-words text-sm font-semibold leading-tight text-slate-900">
                         {formatEmployeeDisplayName(dsm.name)}
                       </p>
-                      <p className="mt-0.5 break-words text-phx-2xs text-slate-400">
+                      <p className="mt-0.5 break-words text-phx-sm text-slate-400">
                         {dsm.lineName}
                       </p>
                     </div>
@@ -361,18 +361,18 @@ export function NsmTeamExpensesDashboard({
 
                   {/* Metadata pills */}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-medium text-emerald-700">
+                    <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-phx-sm font-medium text-emerald-700">
                       Approved: {compactEgp(dsm.approvedAmount)}
                     </span>
                     {dsm.pendingAmount > 0 && (
-                      <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-medium text-amber-700">
+                      <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-phx-sm font-medium text-amber-700">
                         Pending: {compactEgp(dsm.pendingAmount)}
                       </span>
                     )}
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                       {dsm.totalTrips} trips
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                       Avg: {egp(dsm.avgCostPerTrip)}
                     </span>
                   </div>
@@ -410,18 +410,18 @@ export function NsmTeamExpensesDashboard({
                 <tr key={dsm.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                     <p className="break-words font-medium leading-tight text-slate-900">{formatEmployeeDisplayName(dsm.name)}</p>
-                    {dsm.lineName ? <p className="break-words text-phx-2xs text-slate-400">{dsm.lineName}</p> : null}
+                    {dsm.lineName ? <p className="break-words text-phx-sm text-slate-400">{dsm.lineName}</p> : null}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100 text-slate-700">
                     {dsm.totalTrips.toLocaleString()}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <p className="font-medium text-slate-900">{egp(dsm.approvedAmount)}</p>
-                    <p className="text-phx-2xs text-slate-400">{dsm.approvedTrips} trips</p>
+                    <p className="text-phx-sm text-slate-400">{dsm.approvedTrips} trips</p>
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <p className="font-medium text-slate-900">{egp(dsm.pendingAmount)}</p>
-                    <p className="text-phx-2xs text-slate-400">{dsm.pendingTrips} trips</p>
+                    <p className="text-phx-sm text-slate-400">{dsm.pendingTrips} trips</p>
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100 text-slate-700">
                     {formatKm(dsm.totalDistance)}
@@ -471,7 +471,7 @@ export function NsmTeamExpensesDashboard({
                       <p className="break-words text-sm font-semibold leading-tight text-slate-900">
                         {expense.dsmName}
                       </p>
-                      <p className="mt-0.5 text-phx-2xs text-slate-400">
+                      <p className="mt-0.5 text-phx-sm text-slate-400">
                         {formatDate(expense.date)}{expense.tripId ? ` · Trip #${expense.tripId}` : ""}
                       </p>
                     </div>
@@ -482,20 +482,20 @@ export function NsmTeamExpensesDashboard({
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span
-                      className="inline-flex items-center rounded px-1.5 py-0.5 text-phx-2xs font-medium"
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-phx-sm font-medium"
                       style={{ backgroundColor: tone.background, color: tone.text }}
                     >
                       {EXPENSE_STATE_LABEL[state]}
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                       {expense.requestType || "Other"}
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                       {formatKm(expense.km)}
                     </span>
                   </div>
 
-                  <p className="mt-1.5 break-words text-phx-2xs text-slate-400">
+                  <p className="mt-1.5 break-words text-phx-sm text-slate-400">
                     {formatRoute(expense.from, expense.to)}
                   </p>
                 </div>

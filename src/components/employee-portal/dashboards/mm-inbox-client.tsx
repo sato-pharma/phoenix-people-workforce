@@ -103,9 +103,9 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
         {visibleRows.length > 0 && oldestAge > 0 ? (
-          <span className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">
+          <span className="text-phx-sm font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">
             oldest {oldestAge}d waiting
           </span>
         ) : (

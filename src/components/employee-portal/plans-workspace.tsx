@@ -418,7 +418,7 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
 function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketingDoubleVisit?: boolean }) {
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
-      <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
+      <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
       {LEGEND_ACTIVITIES.map((type) => (
         <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600" key={type}>
           <span className={`inline-block h-2 w-2 rounded-full ${activityAccent(type).dot}`} aria-hidden="true" />
@@ -439,8 +439,8 @@ function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketin
         </span>
       ) : null}
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("am")}`}>AM</span>
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("pm")}`}>PM</span>
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase ${slotPillClass("am")}`}>AM</span>
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase ${slotPillClass("pm")}`}>PM</span>
       </span>
     </div>
   );
@@ -498,7 +498,7 @@ export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDec
   if (decisions.length === 0) return null;
   return (
     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
       <ol className="space-y-2">
         {decisions.map((d) => (
           <li className="group flex items-start gap-2.5 rounded-sm transition-colors duration-150 hover:bg-orange-50/60" key={d.id}>
@@ -513,7 +513,7 @@ export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDec
                   </span>
                 ) : null}
               </p>
-              <p className="text-phx-2xs text-slate-500">
+              <p className="text-phx-sm text-slate-500">
                 {statusLabels[d.fromStatus]} → {statusLabels[d.toStatus]}
                 {" · "}
                 {/*
@@ -543,7 +543,7 @@ export function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDec
                 */}
                 {cairoDate(d.createdAt)}
               </p>
-              {d.comment ? <p className="mt-0.5 text-phx-2xs italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
+              {d.comment ? <p className="mt-0.5 text-phx-sm italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
             </div>
           </li>
         ))}
@@ -2115,12 +2115,12 @@ export function PlansWorkspace({
       <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
       <span className="whitespace-nowrap">Auto-synced into this plan:</span>
       {lockedSyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-sm font-black uppercase text-white">
           {lockedSyncCount} approved leave
         </span>
       ) : null}
       {weeklySyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-sm font-black uppercase text-white">
           {weeklySyncCount} from weekly plan
         </span>
       ) : null}
@@ -2833,13 +2833,13 @@ export function PlansWorkspace({
                                     title={group.activityDate}
                                   >
                                     <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-orange-50">
-                                      <span className="text-phx-2xs font-black uppercase tracking-wide text-orange-500">
+                                      <span className="text-phx-sm font-black uppercase tracking-wide text-orange-500">
                                         {formatDayName(group.activityDate)}
                                       </span>
                                       <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
                                         {formatDayNumber(group.activityDate)}
                                       </span>
-                                      <span className="mt-1 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+                                      <span className="mt-1 text-phx-sm font-black uppercase tracking-wide text-slate-500">
                                         {formatMonthYear(group.activityDate)}
                                       </span>
                                     </span>
@@ -2920,13 +2920,13 @@ export function PlansWorkspace({
                                 <div className="mb-1 flex items-center gap-1.5">
                                   <span className={`inline-block h-2 w-2 shrink-0 ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
                                   <span
-                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
                                   >
                                     {slotLabel(row)}
                                   </span>
                                   {row.sourceLabel ? (
                                     <span
-                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${
+                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${
                                         locked
                                           ? "border-violet-300 bg-violet-50 text-violet-700"
                                           : "border-sky-300 bg-sky-50 text-sky-700"
@@ -3291,7 +3291,7 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_28px_rgba(15,23,42,0.07)]">
-      <span className="block text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+      <span className="block text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
       <span className="mt-0.5 block whitespace-nowrap text-xs font-black text-slate-700">{value}</span>
     </div>
   );
@@ -3338,7 +3338,7 @@ function MobileDayCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="flex h-11 w-12 flex-col items-center justify-center border border-slate-200 bg-slate-900">
-            <span className="text-phx-2xs font-black uppercase leading-none text-orange-400">
+            <span className="text-phx-sm font-black uppercase leading-none text-orange-400">
               {formatDayName(row.activityDate)}
             </span>
             <span className="mt-0.5 text-sm font-black leading-none text-white">
@@ -3350,7 +3350,7 @@ function MobileDayCard({
               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${accent.dot}`} aria-hidden="true" />
               {rule.label}
               <span
-                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
               >
                 {slotLabel(row)}
               </span>
@@ -3361,7 +3361,7 @@ function MobileDayCard({
         <div className="flex items-center gap-1.5">
           {row.sourceLabel ? (
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-phx-3xs font-black uppercase ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-phx-xs font-black uppercase ${
                 locked ? "bg-violet-500 text-white" : "bg-sky-500 text-white"
               }`}
             >
@@ -3369,7 +3369,7 @@ function MobileDayCard({
             </span>
           ) : null}
           {hasReturnNotes ? (
-            <span className="rounded-full bg-phx-warn px-1.5 py-0.5 text-phx-3xs font-black uppercase text-white">
+            <span className="rounded-full bg-phx-warn px-1.5 py-0.5 text-phx-xs font-black uppercase text-white">
               Feedback
             </span>
           ) : null}
@@ -3821,7 +3821,7 @@ function Kpi({
   }[tone];
   return (
     <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-150 ${toneClass}`}>
-      <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
+      <p className="text-phx-sm font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
       <p className="mt-1 text-xl font-black">
         <CountUpNumber durationSeconds={0.5} value={value} />
       </p>
@@ -3971,7 +3971,7 @@ function VisitDetailsModal({
                       {(entries[item.id] ?? []).length > 1 && (
                         <button
                           onClick={() => removeEntry(item.id, entry.key)}
-                          className="text-phx-2xs font-bold text-red-500 hover:text-red-700"
+                          className="text-phx-sm font-bold text-red-500 hover:text-red-700"
                           type="button"
                         >
                           Remove
@@ -3980,7 +3980,7 @@ function VisitDetailsModal({
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="col-span-2">
-                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Dr. Name <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -3991,7 +3991,7 @@ function VisitDetailsModal({
                         />
                       </div>
                       <div>
-                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Speciality <span className="text-red-500">*</span>
                         </label>
                         <select
@@ -4006,7 +4006,7 @@ function VisitDetailsModal({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Address <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -4017,7 +4017,7 @@ function VisitDetailsModal({
                         />
                       </div>
                       <div className="col-span-2">
-                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-sm font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Objective of Visit
                         </label>
                         <input

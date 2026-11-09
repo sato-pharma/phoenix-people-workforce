@@ -348,7 +348,7 @@ function ProductRow({ product }: { product: DsmTeamMemberProductData }) {
             style={{ width: `${barWidth}%`, backgroundColor: color }}
           />
         </div>
-        <span className="text-phx-2xs text-slate-400 sm:shrink-0 sm:w-20 sm:text-right">
+        <span className="text-phx-sm text-slate-400 sm:shrink-0 sm:w-20 sm:text-right">
           {egp(product.sales)} / {egp(product.target)}
         </span>
       </div>
@@ -386,7 +386,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
             <p className="break-words text-sm font-semibold leading-tight text-slate-900">{formatEmployeeDisplayName(member.name)}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span
-                className="text-phx-2xs font-medium px-1.5 py-0.5 rounded"
+                className="text-phx-sm font-medium px-1.5 py-0.5 rounded"
                 style={{
                   backgroundColor: isEligible ? "#dcfce7" : "#fef3c7",
                   color: isEligible ? "#15803d" : "#92400e",
@@ -394,7 +394,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
               >
                 {incentiveLineLabel(member.achievementPercent)}
               </span>
-              <span className="text-phx-2xs text-slate-400">
+              <span className="text-phx-sm text-slate-400">
                 {member.products.length} products
               </span>
             </div>
@@ -405,7 +405,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
             <p className="text-lg font-bold sm:text-xl" style={{ color }}>
               {pct(member.achievementPercent)}
             </p>
-            <p className="min-w-0 break-words text-right text-phx-2xs text-slate-400 sm:text-right" title={`${egp(member.totalSales)} / ${egp(member.totalTarget)}`}>
+            <p className="min-w-0 break-words text-right text-phx-sm text-slate-400 sm:text-right" title={`${egp(member.totalSales)} / ${egp(member.totalTarget)}`}>
               {compactEgp(member.totalSales)} / {compactEgp(member.totalTarget)}
             </p>
           </div>
@@ -437,7 +437,7 @@ function RepCard({ member, rank }: { member: DsmTeamMemberData; rank: number }) 
       {/* Product breakdown (expanded) */}
       {expanded && member.products.length > 0 && (
         <div className="px-4 pb-4 border-t border-slate-50">
-          <p className="text-phx-2xs uppercase tracking-widest text-slate-400 pt-3 pb-1">
+          <p className="text-phx-sm uppercase tracking-widest text-slate-400 pt-3 pb-1">
             Product Breakdown
           </p>
           {member.products.map((product) => (
@@ -510,7 +510,7 @@ export function TeamLeaderboardTable({
                       {formatEmployeeDisplayName(member.name)}
                     </p>
                     {showProductCount ? (
-                      <p className="mt-0.5 text-phx-2xs text-slate-400">{member.products.length} products</p>
+                      <p className="mt-0.5 text-phx-sm text-slate-400">{member.products.length} products</p>
                     ) : null}
                   </div>
                   <p className="shrink-0 text-base font-bold" style={{ color }}>
@@ -528,18 +528,18 @@ export function TeamLeaderboardTable({
 
                 {/* Metadata pills */}
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                     Sales: {compactEgp(member.totalSales)}
                   </span>
-                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
+                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-600">
                     Target: {compactEgp(member.totalTarget)}
                   </span>
                   {!isAchieved ? (
-                    <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-phx-2xs font-medium text-red-600">
+                    <span className="inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-phx-sm font-medium text-red-600">
                       Gap: {compactEgp(gap)}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-phx-2xs font-medium text-green-700">
+                    <span className="inline-flex items-center rounded bg-green-50 px-1.5 py-0.5 text-phx-sm font-medium text-green-700">
                       Achieved
                     </span>
                   )}
@@ -594,7 +594,7 @@ export function TeamLeaderboardTable({
                   </td>
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                     <p className={`break-words font-medium leading-tight ${member.isRegionWithoutManager ? "italic text-slate-500" : "text-slate-900"}`}>{formatEmployeeDisplayName(member.name)}</p>
-                    {showProductCount ? <p className="text-phx-2xs text-slate-400">{member.products.length} products</p> : null}
+                    {showProductCount ? <p className="text-phx-sm text-slate-400">{member.products.length} products</p> : null}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <span className="font-bold" style={{ color }}>
