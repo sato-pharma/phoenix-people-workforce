@@ -289,4 +289,21 @@ export async function runMarketingCeoApprovalsTests() {
   const component = readFileSync(new URL("../src/components/marketing-requests/marketing-ceo-approvals-report.tsx", import.meta.url), "utf8");
   assert.match(component, /useState<Set<string>>\(\(\) => new Set\(allIds\)\)/, "every row starts ticked");
   assert.match(component, /summarizeCeoApprovals\(rows, selected\)/, "the tiles and footer read the ticked set");
+
+  // "Show report" must never look dead (owner, 2026-11-09: "when I filter and press, nothing happens").
+  // The date inputs carry no min/max — they made the browser refuse a To date picked before the From
+  // date with a bubble that vanishes in seconds — and the press is a transition that says "Loading…"
+  // until the new range arrives. Reversed dates are swapped by the resolver, pinned here too.
+  {
+    const component = readFileSync(new URL("../src/components/marketing-requests/marketing-ceo-approvals-report.tsx", import.meta.url), "utf8");
+    const form = component.slice(component.indexOf("function RangeForm("), component.indexOf("export function MarketingCeoApprovalsReport("));
+    assert.ok(form.length > 0, "the range form is found");
+    assert.doesNotMatch(form, /\b(min|max)=\{/, "the date inputs carry no min/max that silently blocks the press");
+    assert.match(form, /useTransition\(\)/, "the press runs as a transition");
+    assert.match(form, /disabled=\{pending\}/, "the button is disabled while the new range loads");
+    assert.match(form, /pending \? "Loading…" : "Show report"/, "the button says it is loading");
+    assert.match(form, /router\.refresh\(\)/, "the same dates again re-read the page");
+    assert.match(component, /aria-busy=\{loading\}/, "the report dims while the new range loads");
+    assert.deepEqual(resolveCeoApprovalsRange({ from: "2026-10-31", to: "2026-10-01" }, TODAY), { from: "2026-10-01", to: "2026-10-31" });
+  }
 }
