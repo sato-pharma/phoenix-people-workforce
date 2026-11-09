@@ -1102,6 +1102,7 @@ import { runEmployeePortalBottomNavBadgesTests } from "./employee-portal-bottom-
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
 import { runRegionalTeamReportsTests } from "./regional-team-reports.test.ts";
+import { runTeamVisitsPremiumTests } from "./team-visits-premium.test.ts";
 import { runRepsListPremiumTests } from "./reps-list-premium.test.ts";
 import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-portal-nav-permission-matches-page.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
@@ -12056,6 +12057,7 @@ await runTest("no read stops silently at 1,000 rows (7 Nov 2026): a read cut at 
 await runTest("a recruitment offer letter reuses this candidate's older draft even beyond the newest 200 offers (7 Nov 2026): the route asks the database by email and pages to the last row, the exact title-and-email match is kept, and a blank email never matches", runOfferDraftLookupTests);
 await runTest("the Phoenix CRM visits archive screen (owner, 7 Nov 2026): only the Super Admin and the SFE Manager read it, reasons read as words, the page cursor survives the address bar, a plain date is never shifted, and the screen reads only the archive by keyset", runPhoenixCrmVisitArchiveScreenTests);
 await runTest("Dr. Hany Saad's team reports (owner, 8 Nov 2026): only the Regional Sales Manager opens them, visits counted AM · PM · Pharmacies apart with each Saved-at time and no location read, a chain visit in neutral words, the doctors read from the AM comments, 50 PM and 10 AM a week less leave, the ROI region route needs his area AND his line, and one landing shortcut per report", runRegionalTeamReportsTests);
+await runTest("Visits — Yesterday and Today premium pass (every saved time in exactly one Cairo two-hour block, a copied visit never midnight; first and last saved times; a vacant seat is never a rep; the teams add up to the tiles with AM · PM · Pharmacies apart; the filter narrows rows, never a figure; the Excel file holds every visit once, no location; the export is the Regional Sales Manager's alone, rate-limited and audited)", runTeamVisitsPremiumTests);
 await runTest("the code-scanning alerts that were real (9 Nov 2026): a sign-in returns only to a path on this site, a share-link passcode is a slow hash and old links still open, the email image check never reaches an internal host, seven slow text reads finish at once, and HTML is stripped whole and decoded once", runCodeqlRealAlertsTests);
 await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups its cards by region and district manager through the one shared rule, the meters and share bars add up, and the shared chrome stays flat, square and free of sideways scroll", runRepsListPremiumTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
