@@ -889,4 +889,6 @@ export type ManualRowCandidate = {
   fullName: string;
   jobTitle: string | null;
   line: string | null;
+  /** employment_status — set on the Held Salary Release steps, which list leavers too, so the picker can say "(resigned)". */
+  status?: string | null;
 };

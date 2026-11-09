@@ -49,6 +49,8 @@ type Props = {
    * unsaved edits — otherwise the export reads the last-saved draft row and silently
    * omits whatever is only sitting in this screen's local state. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Held Salary Release: a held month was recorded from Add employee — the wizard reloads this step and its panel. */
+  onHeldEntered?: () => void;
 };
 
 const money = formatPayrollMoney;
@@ -191,12 +193,28 @@ function AddEmployeePanel({
   moneyLabel,
   noteLabel,
   onAdd,
+  heldMonths,
+  heldBlocked,
+  onAddHeld,
 }: {
   candidates: ManualRowCandidate[];
   moneyLabel: string;
   noteLabel: string | null;
   onAdd: (candidate: ManualRowCandidate, amount: number, note: string) => void;
+  /**
+   * Held Salary Release only: the published months that kept a held COUNT and no names (July and August
+   * 2026). Picking one records the amount HR types as held that month (held-entered route) instead of a
+   * Part 1 Not Paid row — the only way a leaver held then can be listed at all (owner, 2026-11-09).
+   */
+  heldMonths?: { runId: string; label: string }[];
+  /** Why recording a held month must wait (the step has unsaved edits), or null. */
+  heldBlocked?: string | null;
+  onAddHeld?: (candidate: ManualRowCandidate, heldRunId: string, amount: number, note: string) => Promise<void>;
 }) {
+  const heldMode = heldMonths !== undefined;
+  const [heldRunId, setHeldRunId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<ManualRowCandidate | null>(null);
@@ -222,10 +240,20 @@ function AddEmployeePanel({
     setPicked(null);
     setAmount("");
     setNote("");
+    setHeldRunId("");
+    setAddError(null);
   };
 
   const amountValue = Number(amount);
-  const canAdd = picked !== null && Number.isFinite(amountValue) && amountValue > 0;
+  const forHeldMonth = heldMode && heldRunId !== "";
+  const canAdd =
+    picked !== null &&
+    Number.isFinite(amountValue) &&
+    amountValue > 0 &&
+    !saving &&
+    (!forHeldMonth || (note.trim() !== "" && !heldBlocked));
+  const statusLabel = (candidate: ManualRowCandidate) =>
+    candidate.status && !/^active$/i.test(candidate.status) ? ` (${candidate.status.replace(/_/g, " ")})` : "";
 
   if (!open) {
     return (
@@ -240,18 +268,26 @@ function AddEmployeePanel({
     <div className="flex flex-col gap-3 border-l-4 border-amber-400 bg-amber-50/60 px-4 py-3">
       <div>
         <div className="text-sm font-black text-slate-900">Add an employee by hand</div>
-        <p className="mt-0.5 text-xs text-slate-600">
-          For someone whose trip never reached the expense table. Pick the employee, type what to reimburse, and say
-          why — the amount is paid exactly like a system-recommended one, so the note is the only record of where it
-          came from.
-        </p>
+        {heldMode ? (
+          <p className="mt-0.5 text-xs text-slate-600">
+            Every employee is listed, including people who have resigned. For pay held in a month that did not record
+            names (July or August 2026), choose that month and type the amount held — the person then appears below with
+            it outstanding, ready to release. Otherwise the amount is last month&apos;s Part 1 that was not paid.
+          </p>
+        ) : (
+          <p className="mt-0.5 text-xs text-slate-600">
+            For someone whose trip never reached the expense table. Pick the employee, type what to reimburse, and say
+            why — the amount is paid exactly like a system-recommended one, so the note is the only record of where it
+            came from.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="relative flex flex-col gap-1 lg:w-80">
           <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">Employee</span>
           <Input
-            value={picked ? `${picked.fullName} (${picked.hrId})` : query}
+            value={picked ? `${picked.fullName}${statusLabel(picked)}` : query}
             placeholder="Search by name or HR_ID…"
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -280,8 +316,11 @@ function AddEmployeePanel({
                     onClick={() => setPicked(candidate)}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-orange-50"
                   >
-                    <span className="overflow-hidden whitespace-nowrap text-slate-800">{candidate.fullName}</span>
-                    <span className="shrink-0 font-mono text-slate-500">{candidate.hrId}</span>
+                    <span className="min-w-0 whitespace-normal break-words text-slate-800">
+                      {candidate.fullName}
+                      {statusLabel(candidate)}
+                    </span>
+                    <span className="shrink-0 text-slate-500">{candidate.jobTitle ?? ""}</span>
                   </button>
                 ))
               )}
@@ -289,8 +328,28 @@ function AddEmployeePanel({
           ) : null}
         </div>
 
+        {heldMode ? (
+          <label className="flex flex-col gap-1 lg:w-52">
+            <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">For</span>
+            <select
+              value={heldRunId}
+              onChange={(event) => setHeldRunId(event.target.value)}
+              className={selectClassName}
+            >
+              <option value="">Last month&apos;s Part 1 not paid</option>
+              {(heldMonths ?? []).map((month) => (
+                <option key={month.runId} value={month.runId}>
+                  Held in {month.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         <label className="flex flex-col gap-1 lg:w-40">
-          <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{moneyLabel}</span>
+          <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">
+            {forHeldMonth ? "Amount held" : moneyLabel}
+          </span>
           <Input
             type="number"
             value={amount}
@@ -300,7 +359,17 @@ function AddEmployeePanel({
           />
         </label>
 
-        {noteLabel ? (
+        {forHeldMonth ? (
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">Note (required)</span>
+            <Input
+              value={note}
+              placeholder="Where the held amount comes from"
+              onChange={(event) => setNote(event.target.value)}
+              className={fieldClassName}
+            />
+          </label>
+        ) : noteLabel ? (
           <label className="flex flex-1 flex-col gap-1">
             <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{noteLabel}</span>
             <Input
@@ -318,6 +387,17 @@ function AddEmployeePanel({
             disabled={!canAdd}
             onClick={() => {
               if (!picked) return;
+              if (forHeldMonth && onAddHeld) {
+                setSaving(true);
+                setAddError(null);
+                onAddHeld(picked, heldRunId, amountValue, note.trim())
+                  .then(() => reset())
+                  .catch((failure: unknown) =>
+                    setAddError(failure instanceof Error ? failure.message : "Failed to record the held amount."),
+                  )
+                  .finally(() => setSaving(false));
+                return;
+              }
               onAdd(picked, amountValue, note.trim());
               reset();
             }}
@@ -339,8 +419,12 @@ function AddEmployeePanel({
         </div>
       </div>
 
+      {addError ? <p className="text-xs font-semibold text-rose-700">{addError}</p> : null}
+      {forHeldMonth && heldBlocked ? <p className="text-xs font-semibold text-amber-800">{heldBlocked}</p> : null}
       <p className="text-xs text-slate-500">
-        Added rows are not saved until you press Save or Confirm below.
+        {forHeldMonth
+          ? "A held month is recorded as soon as you add it, and the step reloads with the person listed."
+          : "Added rows are not saved until you press Save or Confirm below."}
       </p>
     </div>
   );
@@ -366,8 +450,12 @@ export function RecommendationStep({
   locked,
   onConfirmed,
   onDirtyChange,
+  onHeldEntered,
 }: Props) {
   const definition = stepDefinition(stepKey);
+  const isHeldRelease = stepKey === "p1_held_release" || stepKey === "p2_held_release";
+  /** Held Salary Release: the months that kept a held count and no names — see AddEmployeePanel. */
+  const [heldMonths, setHeldMonths] = useState<{ runId: string; label: string }[]>([]);
   const [rows, setRows] = useState<StepRow[]>([]);
   const [period, setPeriod] = useState<PayrollPeriod | null>(null);
   const [loading, setLoading] = useState(true);
@@ -426,6 +514,34 @@ export function RecommendationStep({
       setLoading(false);
     }
   }, [runId, stepKey]);
+
+  useEffect(() => {
+    if (!isHeldRelease) return;
+    let cancelled = false;
+    fetch(`/api/automated-payroll/runs/${runId}/held-entered`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { months?: { runId: string; label: string }[] } | null) => {
+        if (!cancelled && data?.months) setHeldMonths(data.months.map((m) => ({ runId: m.runId, label: m.label })));
+      })
+      // The months only add a choice to the picker; without them it still records Part 1 Not Paid.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isHeldRelease, runId]);
+
+  /** Record a held month's amount for someone (held-entered route); the wizard then reloads this step. */
+  const addHeldMonth = async (candidate: ManualRowCandidate, heldRunId: string, amount: number, note: string) => {
+    const res = await fetch(`/api/automated-payroll/runs/${runId}/held-entered`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ heldRunId, hrId: candidate.hrId, amount, note }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(data.error ?? "Failed to record the held amount.");
+    if (onHeldEntered) onHeldEntered();
+    else await load();
+  };
 
   const toggleExpanded = (hrId: string) => {
     setExpanded((prev) => {
@@ -1056,6 +1172,13 @@ export function RecommendationStep({
           moneyLabel={definition.fields.find((field) => field.kind === "money")?.label ?? "Value"}
           noteLabel={definition.fields.find((field) => field.kind === "text")?.label ?? null}
           onAdd={addManualRow}
+          {...(isHeldRelease
+            ? {
+                heldMonths,
+                heldBlocked: dirty ? "Save the changes on this step first — recording a held month reloads it." : null,
+                onAddHeld: addHeldMonth,
+              }
+            : {})}
         />
       ) : null}
 
