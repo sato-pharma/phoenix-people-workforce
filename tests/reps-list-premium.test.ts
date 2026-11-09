@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { brickCoverage, groupRepsByTeam, listMix, meterPercent, repInitials, shareSlices, teamHeading, type TeamOfRep } from "../src/lib/crm/reps-list-groups.ts";
+import { brickCoverage, groupRepsByTeam, listMix, listMonthMix, listValidationMix, meterPercent, repInitials, shareSlices, teamHeading, type TeamOfRep } from "../src/lib/crm/reps-list-groups.ts";
 import { planWeekMix } from "../src/lib/crm/plan-week-mix.ts";
 import { districtSeatAbove, groupByRegionAndManager } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -193,8 +193,8 @@ function theFinish() {
       assert.ok(column.includes("excludeFromTotal: true"), `${board}: ${column} is never added into a TOTAL row`);
     }
   }
-  assert.ok(chrome.includes('`space-y-6 p-5 ${phoneOnly ? "md:hidden" : ""}`'), "the cards step aside from md up when a table draws them");
-  assert.ok(chrome.includes('<div className="hidden p-5 md:block">'), "and the table is the desktop's alone");
+  assert.ok(chrome.includes('`space-y-6 p-5 ${phoneOnly ? "md:hidden print:hidden" : ""}`'), "the cards step aside from md up when a table draws them");
+  assert.ok(chrome.includes('<div className="hidden p-5 md:block print:block">'), "and the table is the desktop's alone");
   assert.ok(chrome.includes('<table className="w-full table-fixed border border-slate-200 text-left">'), "the table fits by its colgroup");
   assert.ok(chrome.includes("<col className={column.width}"), "every column is a share of the whole");
   const lib = readFileSync("src/lib/crm/reps-list-board.ts", "utf8");
@@ -325,6 +325,41 @@ function theListMix() {
   assert.equal(mix.grades.reduce((sum, entry) => sum + entry.count, 0), contacts, "the grade bar adds up to the Contacts tile");
   assert.equal(mix.specialties.reduce((sum, entry) => sum + entry.count, 0), contacts, "and so do the specialty bars");
   assert.deepEqual(listMix([]), { grades: [], specialties: [] });
+
+  // The month bar: contacts in each status, in the table filter's order and the chips' words; pharmacies and rows the
+  // month could not score stay out.
+  const scored = (status: string | null, listType = "PM") => ({ activity: status ? ({ status } as never) : null, listType });
+  const month = listMonthMix([scored("on_plan"), scored("on_plan"), scored("untouched"), scored("missed", "AM"), scored("not_due"), scored(null), scored("missed", "Pharmacy")]);
+  assert.deepEqual(
+    month.map((entry) => [entry.status, entry.label, entry.count]),
+    [
+      ["untouched", "No activity", 1],
+      ["missed", "Missed", 1],
+      ["under", "Below", 0],
+      ["on_plan", "Exact", 2],
+      ["over", "Above", 0],
+      ["off_plan", "Off plan", 0],
+      ["not_due", "Not due yet", 1],
+    ],
+  );
+  assert.deepEqual(
+    listValidationMix([
+      { listType: "PM", validatedAt: "2026-11-02T08:00:00Z" },
+      { listType: "AM", validatedAt: null },
+      { listType: "PM" },
+      { listType: "Pharmacy", validatedAt: "2026-11-02T08:00:00Z" },
+    ]),
+    { notYet: 2, validated: 1 },
+    "validated against not yet, over the contacts",
+  );
+  const board = codeOnly(readFileSync("src/components/crm/reps-list-board.tsx", "utf8"));
+  assert.ok(board.includes("const month = activityAvailable ? listMonthMix(rows) : [];"), "no month bar on a month that could not be read");
+  assert.ok(board.includes("const validation = list.validationRead ? listValidationMix(rows) : null;"), "no validation bar on a failed read");
+
+  // On paper the team is the table, without the buttons that do nothing there.
+  const chrome = readFileSync(CHROME, "utf8");
+  assert.ok(chrome.includes('"md:hidden print:hidden"') && chrome.includes('"hidden p-5 md:block print:block"'), "a printed board is the team table");
+  assert.ok(chrome.includes("px-5 py-3 print:hidden") && chrome.includes("px-5 pt-4 print:hidden"), "the back bar and the download stay off paper");
 
   const vacant = codeOnly(readFileSync("src/components/crm/reps-list-vacant-areas.tsx", "utf8"));
   const widths = [...vacant.slice(vacant.indexOf("function vacancyColumns"), vacant.indexOf("function TeamVacancyLine")).matchAll(/width: "w-\[(\d+)%\]"/g)].map(

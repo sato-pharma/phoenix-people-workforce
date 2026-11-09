@@ -7,7 +7,7 @@
  */
 
 import type { RepsListContact } from "@/lib/crm/reps-list";
-import { UNVISITED_STATUSES } from "@/lib/crm/reps-list-activity";
+import { ACTIVITY_FILTER_ORDER, ACTIVITY_LABEL, UNVISITED_STATUSES, type RepsListActivityStatus } from "@/lib/crm/reps-list-activity";
 import { regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 
 /** A group's heading: "Delta (2) · Sahar El Gallad", or the region alone when the manager is not known. */
@@ -170,4 +170,38 @@ export function listMix(
       .sort((left, right) => listGradeRank(left.grade) - listGradeRank(right.grade) || left.grade.localeCompare(right.grade)),
     specialties: rest > 0 ? [...shown, { count: rest, label: "Other specialties", other: true }] : shown,
   };
+}
+
+/** One contact's month, as the table's activity chip reads it, or null when the month could not score him. */
+type ActivityStatusOf = { activity?: { status: RepsListActivityStatus } | null; listType: string };
+
+/**
+ * The opened list's month in one bar: how many CONTACTS sit in each activity status, in the table filter's own order
+ * (`ACTIVITY_FILTER_ORDER` — action first) and under the chips' own words (`ACTIVITY_LABEL`), so the bar, the chips
+ * and the Activity filter speak one language. Contacts only — a pharmacy is not a contact — and a contact the month
+ * could not score is left out rather than counted as unvisited.
+ */
+export function listMonthMix(rows: readonly ActivityStatusOf[]): { count: number; label: string; status: RepsListActivityStatus }[] {
+  const counts = new Map<RepsListActivityStatus, number>();
+  for (const row of rows) {
+    if (row.listType === "Pharmacy" || !row.activity) continue;
+    counts.set(row.activity.status, (counts.get(row.activity.status) ?? 0) + 1);
+  }
+  return ACTIVITY_FILTER_ORDER.map((status) => ({ count: counts.get(status) ?? 0, label: ACTIVITY_LABEL[status], status }));
+}
+
+/**
+ * Validated against not yet, over the CONTACTS of an opened list — the owner's "in rep list show what's validated"
+ * (2026-11-09) as one bar. Only when Phoenix CRM's validations were read; the caller draws nothing otherwise, because
+ * "not validated yet" on the strength of a failed read would be an accusation.
+ */
+export function listValidationMix(rows: readonly { listType: string; validatedAt?: string | null }[]): { notYet: number; validated: number } {
+  let validated = 0;
+  let notYet = 0;
+  for (const row of rows) {
+    if (row.listType === "Pharmacy") continue;
+    if (row.validatedAt) validated += 1;
+    else notYet += 1;
+  }
+  return { notYet, validated };
 }

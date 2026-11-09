@@ -29,7 +29,8 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
 import { awaitingBrickSub } from "@/lib/crm/reps-list-labels";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
-import { groupRepsByTeam, listMix, teamHeading } from "@/lib/crm/reps-list-groups";
+import { groupRepsByTeam, listMix, listMonthMix, listValidationMix, teamHeading } from "@/lib/crm/reps-list-groups";
+import type { RepsListActivityStatus } from "@/lib/crm/reps-list-activity";
 
 // Server half of Reps List. The Section/Tile vocabulary comes from reps-list-chrome.tsx, shared by all
 // three tabs — flat borders, slate-900 header bar with its orange keyline, KPI tiles with a tone rule,
@@ -223,6 +224,60 @@ function ListMixCharts({ list }: { list: RepsListForRep }) {
   );
 }
 
+/** The tone each activity status reads in on the month bar — action in warm tones, a visit in green. */
+const MONTH_TONE: Record<RepsListActivityStatus, "amber" | "emerald" | "rose" | "sky" | "slate"> = {
+  missed: "rose",
+  not_due: "slate",
+  off_plan: "slate",
+  on_plan: "emerald",
+  over: "emerald",
+  under: "sky",
+  untouched: "amber",
+};
+
+/**
+ * The list's month and its validation, as two bars under the PM and AM split: every contact in its activity status
+ * (`listMonthMix`, in the chips' own words), and validated against not yet (`listValidationMix`). Each is drawn only
+ * when its source was read — a bar built on a failed read would score every doctor as neglected or unvalidated.
+ */
+function ListMonthCharts({
+  activityAvailable,
+  list,
+  monthLabel,
+}: {
+  activityAvailable: boolean;
+  list: RepsListForRep;
+  monthLabel: string;
+}) {
+  const rows = list.groups.flatMap((group) => group.rows);
+  const month = activityAvailable ? listMonthMix(rows) : [];
+  const validation = list.validationRead ? listValidationMix(rows) : null;
+  return (
+    <>
+      {month.some((entry) => entry.count > 0) ? (
+        <ShareBar
+          caption={`The contacts' month · ${monthLabel}`}
+          segments={month.map((entry) => ({
+            key: entry.status,
+            label: entry.label,
+            tone: MONTH_TONE[entry.status],
+            value: entry.count,
+          }))}
+        />
+      ) : null}
+      {validation && validation.validated + validation.notYet > 0 ? (
+        <ShareBar
+          caption="Contacts validated in Phoenix CRM"
+          segments={[
+            { key: "validated", label: "Validated", tone: "emerald", value: validation.validated },
+            { key: "not-yet", label: "Not validated yet", tone: "slate", value: validation.notYet },
+          ]}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /** Whether the CRM mirrors a list for the rep — pharmacies count towards HAVING one, as on the card. */
 function hasListOf(rep: RepsListRep): boolean {
   return rep.contactCount + rep.pharmacyCount > 0;
@@ -349,6 +404,7 @@ export function RepsListListBody({
           ]}
         />
       ) : null}
+      <ListMonthCharts activityAvailable={board.activityAvailable} list={list} monthLabel={board.activityMonthLabel} />
       <BrickBars list={list} />
       <ListMixCharts list={list} />
       <div aria-hidden className="h-5" />

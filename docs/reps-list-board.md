@@ -62,6 +62,10 @@ Manager rule that every screen built for him follows.
   - "Contacts by specialty" (the largest eight, with the rest folded into "Other specialties" so the bars add up
     to the Contacts tile).
 
+  Two more bars come before those, each drawn only when its source was read: "The contacts' month"
+  (`listMonthMix` — every contact in its activity status, in the chips' own words and the Activity filter's order)
+  and "Contacts validated in Phoenix CRM" (`listValidationMix`).
+
   Below the charts sits the contact table, grouped by brick.
 - **The brick month bar** (`brickCoverage`): on this board alone, each brick heading carries the month's visited,
   not visited and not due yet, counted with the Not visited tile's own `UNVISITED_STATUSES`. Phoenix CRM's List tab
@@ -88,6 +92,12 @@ Manager rule that every screen built for him follows.
   "Contacts left" with a meter. Only a list still on the seat has contacts to count; every other state shows a dash.
 - **An opened seat:** the back bar, the profile band with a dashed monogram, then either the inherited list
   (through the Contact list tab's own `RepsListListBody`) or the reason there is none, in words.
+
+## On paper
+
+A printed board shows each team as the table at every width (`print:block`). The phone cards, the back bar and
+the download bar are left off the page (`print:hidden`), since a button does nothing on paper. The filters stay
+on, because the selected values are what tell the reader whose team the page shows.
 
 ## The downloads
 

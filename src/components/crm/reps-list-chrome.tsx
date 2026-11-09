@@ -90,7 +90,7 @@ export function toneFromTextClass(textClass: string): ChromeTone {
  */
 export function BackToAllReps({ href, label = "Back to all reps" }: { href: string; label?: string }) {
   return (
-    <div className="border-b border-slate-200 bg-white px-5 py-3">
+    <div className="border-b border-slate-200 bg-white px-5 py-3 print:hidden">
       <Link
         className="inline-flex min-h-11 items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-orange-800 transition-colors hover:bg-orange-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 md:min-h-0"
         href={href}
@@ -336,7 +336,7 @@ export function GroupedCardGrid<T>({
   renderGroupMeta?: (items: readonly T[]) => React.ReactNode;
 }) {
   return (
-    <div className={`space-y-6 p-5 ${phoneOnly ? "md:hidden" : ""}`}>
+    <div className={`space-y-6 p-5 ${phoneOnly ? "md:hidden print:hidden" : ""}`}>
       {groups.map((group) => (
         <div key={group.key ?? group.label}>
           <RegionHeading
@@ -483,7 +483,7 @@ export function TeamTable<T>({
   rowKey: (item: T) => string;
 }) {
   return (
-    <div className="hidden p-5 md:block">
+    <div className="hidden p-5 md:block print:block">
       <table className="w-full table-fixed border border-slate-200 text-left">
         <caption className="sr-only">{caption}</caption>
         <colgroup>
@@ -650,7 +650,7 @@ export function RankedBars({
 /** The row a board's download button sits in, under its tiles — a sentence saying what it holds, then the button. */
 export function ExportRowBar({ children, note }: { children: React.ReactNode; note: string }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4 print:hidden">
       <p className="text-phx-2xs leading-relaxed text-slate-500">{note}</p>
       {children}
     </div>
