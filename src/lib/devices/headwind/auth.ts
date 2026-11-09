@@ -41,11 +41,44 @@ const LOGIN_PATH = "/rest/public/jwt/login";
  */
 const TOKEN_LIFETIME_MS = 30 * 60_000;
 
+/**
+ * A setting Phoenix needs is not there: a missing credential, or half a Cloudflare Access pair.
+ *
+ * 🔴 ONLY THAT. A server that answered — refused the credential, failed with a 5xx, or sent a page
+ * that is not Headwind's — is a `HeadwindRequestError` (9 Nov 2026 audit, F17). This class used to
+ * carry all of those, so a Headwind box answering 503 put the page into "connect the bridge" and the
+ * hourly fleet watch reported "the Headwind settings are not set" about settings that were set.
+ */
 export class HeadwindNotConfiguredError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "HeadwindNotConfiguredError";
   }
+}
+
+/**
+ * The Headwind server answered, and the answer was a refusal or a failure — or nothing answered.
+ *
+ * Defined here rather than in `client.ts`, which re-exports it, because the sign-in has to throw it
+ * too and `client.ts` already imports this module (a class cannot cross a circular import safely).
+ */
+export class HeadwindRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HeadwindRequestError";
+    this.status = status;
+  }
+}
+
+/** A fetch that ran out of time — DOMException "TimeoutError" from AbortSignal.timeout, however it is wrapped. */
+export function isHeadwindTimeout(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && depth < 4; depth += 1) {
+    if (typeof current === "object" && (current as { name?: unknown }).name === "TimeoutError") return true;
+    current = typeof current === "object" ? (current as { cause?: unknown }).cause : null;
+  }
+  return false;
 }
 
 export type HeadwindAuthConfig = {
@@ -253,9 +286,9 @@ function tokenFromLogin(payload: LoginResponse): string | null {
 /**
  * A valid Headwind JWT, minted from the admin login and cached until it nears expiry.
  *
- * Concurrent callers share one in-flight sign-in. A refusal is surfaced as a NotConfigured error
- * naming what the server said, because on our own server a refused login means the credential is
- * wrong — there is no rate limit or vendor throttle to confuse it with.
+ * Concurrent callers share one in-flight sign-in. A missing setting is `HeadwindNotConfiguredError`;
+ * everything the server answered — a refused credential, a 5xx, a page that is not Headwind's — is a
+ * `HeadwindRequestError` naming what came back and what to check.
  */
 export const HEADWIND_LOGIN_TIMEOUT_MS = 30_000;
 
@@ -271,35 +304,87 @@ export async function getHeadwindToken(
   return pending;
 }
 
+/**
+ * 🔴 A SIGN-IN THAT RAN OUT OF TIME SENT NOTHING ELSE (9 Nov 2026 audit). The sign-in is minted inside
+ * `callHeadwind`, so its timeout used to reach the caller's deadline sentence — and on a lock or a wipe
+ * that sentence says "the request may have reached Headwind and taken effect — check the device
+ * before repeating it", about an action that was never sent. So the sign-in says what is known.
+ */
+function signInTimeoutError(config: HeadwindAuthConfig): HeadwindRequestError {
+  return new HeadwindRequestError(
+    504,
+    `The Headwind server at ${config.baseUrl} did not answer Phoenix's sign-in within ` +
+      `${Math.round(HEADWIND_LOGIN_TIMEOUT_MS / 1000)} seconds, so Phoenix stopped waiting. Nothing else was ` +
+      "sent: no action reached the server or any tablet, and it is safe to try again.",
+  );
+}
+
 async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv): Promise<string> {
   const config = headwindAuthConfig(env);
 
-  const response = await fetchImpl(`${config.baseUrl}${LOGIN_PATH}`, {
-    body: JSON.stringify({ login: config.login, password: headwindPasswordHash(config.password) }),
-    cache: "no-store",
-    // The Access headers go on the sign-in too — it is the FIRST request Cloudflare sees, so a
-    // tunnel would otherwise turn every other call into a failure that blames the credential.
-    headers: { accept: "application/json", "content-type": "application/json", ...headwindAccessHeaders(env) },
-    method: "POST",
-    // The same 30-second deadline as every other call (client.ts HEADWIND_REQUEST_TIMEOUT_MS) — a
-    // sign-in that hangs would otherwise hold every call queued behind it on `pending`.
-    signal: AbortSignal.timeout(HEADWIND_LOGIN_TIMEOUT_MS),
-  });
-
+  let response: Response;
   let payload: LoginResponse = {};
   let answeredJson = true;
   try {
-    payload = (await response.json()) as LoginResponse;
-  } catch {
-    payload = {};
-    answeredJson = false;
+    response = await fetchImpl(`${config.baseUrl}${LOGIN_PATH}`, {
+      body: JSON.stringify({ login: config.login, password: headwindPasswordHash(config.password) }),
+      cache: "no-store",
+      // The Access headers go on the sign-in too — it is the FIRST request Cloudflare sees, so a
+      // tunnel would otherwise turn every other call into a failure that blames the credential.
+      headers: { accept: "application/json", "content-type": "application/json", ...headwindAccessHeaders(env) },
+      method: "POST",
+      // The same 30-second deadline as every other call (client.ts HEADWIND_REQUEST_TIMEOUT_MS) — a
+      // sign-in that hangs would otherwise hold every call queued behind it on `pending`.
+      signal: AbortSignal.timeout(HEADWIND_LOGIN_TIMEOUT_MS),
+    });
+    try {
+      payload = (await response.json()) as LoginResponse;
+    } catch (error) {
+      // The deadline covers reading the reply too; a reply cut off by it is a timeout, not HTML.
+      if (isHeadwindTimeout(error)) throw error;
+      payload = {};
+      answeredJson = false;
+    }
+  } catch (error) {
+    if (isHeadwindTimeout(error)) throw signInTimeoutError(config);
+    // A transport failure keeps its own sentence in `callHeadwind` ("never reached a server").
+    throw error;
+  }
+
+  // 🔴 A 5xx AT SIGN-IN IS THE SERVER FAILING, NOT A SETTING THAT IS MISSING (F17). It used to come
+  // out as HeadwindNotConfiguredError, which the page draws as "connect the bridge" and the fleet
+  // watch reads as "the Headwind settings are not set". The credential was never looked at.
+  if (response.status >= 500) {
+    const said = typeof payload.message === "string" && payload.message ? ` It said: ${payload.message}.` : "";
+    throw new HeadwindRequestError(
+      502,
+      `The Headwind server at ${config.baseUrl} failed while signing Phoenix in (HTTP ${response.status}).${said} ` +
+        "This is the server, not the login or the password — nothing else was sent.",
+    );
   }
 
   const token = response.ok ? tokenFromLogin(payload) : null;
   if (!token) {
+    // 🔴 A 2xx THAT IS NOT JSON IS NOT HEADWIND REFUSING ANYTHING. Headwind refuses a sign-in with a
+    // JSON envelope or with Tomcat's HTML 401 — never with a 200 page. A 200 page is a door in front
+    // of it (a Cloudflare Access sign-in page answers 200 text/html) or an address that is not the
+    // Headwind server at all, and naming the password there sends the reader to the one thing that
+    // is right.
+    if (response.ok && !answeredJson) {
+      const accessConfigured = Object.keys(headwindAccessHeaders(env)).length > 0;
+      throw new HeadwindRequestError(
+        502,
+        `The sign-in at ${config.baseUrl} was answered HTTP ${response.status} with a page that is not ` +
+          "Headwind's — Headwind itself always answers a sign-in in JSON. " +
+          (accessConfigured
+            ? "A Cloudflare Access service token is set, so check HEADWIND_MDM_ACCESS_CLIENT_ID and HEADWIND_MDM_ACCESS_CLIENT_SECRET, then HEADWIND_MDM_BASE_URL."
+            : "That is what a Cloudflare Access sign-in page, or an address that is not the Headwind server, looks like: check HEADWIND_MDM_BASE_URL, and set the two HEADWIND_MDM_ACCESS_* values if Access is in front of it."),
+      );
+    }
     // Before blaming the credential: the server may have ACCEPTED it and be demanding something else.
+    // 403, not 401: the credential is right and the account is held back from use.
     const demand = response.ok ? demandFromLogin(payload) : null;
-    if (demand) throw new HeadwindNotConfiguredError(`The Headwind server accepted the sign-in, but ${demand}`);
+    if (demand) throw new HeadwindRequestError(403, `The Headwind server accepted the sign-in, but ${demand}`);
     const said = typeof payload.message === "string" && payload.message ? ` (${payload.message})` : "";
     // 🔴 A NON-JSON REPLY IS NOT EVIDENCE OF CLOUDFLARE. This branch used to say it was, and it was
     // measured wrong on 2026-09-26: `POST /rest/public/jwt/login` on the live server, with a login
@@ -320,7 +405,10 @@ async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv
           " refuses a sign-in — measured on this server, a login that does not exist comes back as an" +
           " HTML 401 page. No Cloudflare Access service token is set, so nothing else is in the path." +
           credentialAdvice;
-    throw new HeadwindNotConfiguredError(
+    // A refusal is the server ANSWERING — a HeadwindRequestError, never "not configured" (F17). A
+    // refusal inside a 200 envelope is carried as 401, which is what it means.
+    throw new HeadwindRequestError(
+      response.ok ? 401 : response.status,
       `The Headwind server refused the Phoenix sign-in${said}.${wrongDoor} (HTTP ${response.status}.)`,
     );
   }
