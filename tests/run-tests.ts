@@ -486,6 +486,7 @@ import { runDeductionsSourceScopedSelfClaimTests } from "./deductions-source-sco
 import { runDeductionsCrmSuspectDateWeightingTests } from "./deductions-crm-suspect-date-weighting.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
+import { runDeductionsPreHireTests } from "./deductions-pre-hire.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
 import { runDeductionsCycleTests } from "./deductions-cycle.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
@@ -4199,6 +4200,10 @@ await runTest(
 await runTest(
   "deductions holiday bridge (nearest WORKING day either side of a governmental holiday, never double-charged)",
   runDeductionsHolidayBridgeTests,
+);
+await runTest(
+  "deductions pre-hire (a hire date moved later retires every unlocked line wholly before it and narrows a straddling one, through every save path that writes a hire date)",
+  runDeductionsPreHireTests,
 );
 await runTest(
   "deductions current-month guard (an unfinished month is never collectable, on Cairo boundaries)",

@@ -669,6 +669,11 @@ export async function reconcileCandidateDrafts(input: {
     employeeFilter?: (employeeHrIdCompact: string) => boolean;
     /** Only rows whose days ALL sit inside the office run's window may be retired. */
     dateWindow?: { start: string; end: string };
+    /** Only these candidates may be retired (pre-hire.ts names the exact lines holding a day before
+     *  the hire date). The caller built its drafts from the ledger itself, so an EMPTY set is a
+     *  deliberate "retire every named line", never a failed source read — the empty-set guard below
+     *  stands down when this is given. */
+    onlyCandidateIds?: ReadonlySet<string>;
   };
   autoDecideStatus?: DeductionsDecisionStatus;
   autoDecideReason?: string;
@@ -725,7 +730,8 @@ export async function reconcileCandidateDrafts(input: {
     const scoped = live
       .filter((candidate) => !input.scope.sourceSystems || input.scope.sourceSystems.includes(candidate.sourceSystem))
       .filter((candidate) => !employeeFilter || employeeFilter(candidate.employeeHrIdCompact ?? ""))
-      .filter((candidate) => candidateInsideDateWindow(candidate.dates, input.scope.dateWindow));
+      .filter((candidate) => candidateInsideDateWindow(candidate.dates, input.scope.dateWindow))
+      .filter((candidate) => !input.scope.onlyCandidateIds || input.scope.onlyCandidateIds.has(candidate.id));
 
     // A SOURCE THAT PRODUCED NOTHING DOES NOT GET TO RETIRE EVERYTHING.
     //
@@ -742,7 +748,7 @@ export async function reconcileCandidateDrafts(input: {
     //
     // The connector's own read errors already throw, and collect.ts turns those into a warning
     // without reconciling. This is the backstop for a read that returns empty WITHOUT throwing.
-    if (input.drafts.length === 0 && scoped.length > 0) {
+    if (input.drafts.length === 0 && scoped.length > 0 && !input.scope.onlyCandidateIds) {
       warnings.push(
         `${input.sourceLabel}: produced no candidates at all while ${scoped.length} live one(s) exist for ` +
           `${input.scope.category} ${input.scope.monthKey}. Nothing was retired — a source that returns ` +
@@ -887,7 +893,7 @@ export async function reconcileCandidateDrafts(input: {
   return { ...insertResult, decisionsCarried, decisionsReset, superseded, warnings };
 }
 
-function mapCandidateRow(row: Record<string, unknown>): DeductionsCandidate {
+export function mapCandidateRow(row: Record<string, unknown>): DeductionsCandidate {
   return {
     id: String(row.id),
     category: row.category as DeductionsCandidate["category"],

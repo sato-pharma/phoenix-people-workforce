@@ -1315,9 +1315,9 @@ export function resolveFactsCompensationFields(
 export async function saveHiringPackEmployeeFacts(
   hrIdInput: string,
   input: HiringPackEmployeeFactsInput,
-  // Kept for signature parity with `saveHiringPackProfile`/`saveOffboardingProfile` — `employees`
-  // has no `updated_by_hr_id` column to stamp, unlike those two satellite tables.
-  _actorHrId?: string | null,
+  // `employees` has no `updated_by_hr_id` column to stamp, unlike `saveHiringPackProfile`'s and
+  // `saveOffboardingProfile`'s satellite tables — it names who re-stated any pre-hire deduction lines.
+  actorHrId?: string | null,
 ): Promise<HiringPackData> {
   const hrId = requireHrId(hrIdInput);
   const employee = await loadEmployeeFacts(hrId);
@@ -1343,6 +1343,14 @@ export async function saveHiringPackEmployeeFacts(
       })
       .eq("hr_id", hrId);
     if (error) throw new Error(error.message);
+    // A leaver's hire date moved later strands his pre-hire lines just the same (pre-hire.ts).
+    const { restatePreHireDeductionsAfterHireDateSave } = await import("@/lib/deductions/pre-hire");
+    await restatePreHireDeductionsAfterHireDateSave({
+      employeeHrId: hrId,
+      previousHireDate: employee.hireDate,
+      savedHireDate: cleanText(input.hireDate),
+      actorHrId: hrIdForStorage(actorHrId),
+    });
     return getHiringPack(hrId);
   }
 
