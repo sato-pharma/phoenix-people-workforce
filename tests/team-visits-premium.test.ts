@@ -431,7 +431,12 @@ function theScreen() {
   assert.ok(view.includes("<RepsTotal day={district.repsTotal.yesterday} />"), "a district manager's total is the whole team's, filter or not");
   assert.ok(view.includes("<TeamVisitsRollupPanel report={report} />") && view.includes("<TeamVisitsHoursPanel report={report} />") && view.includes("<TeamVisitsAttentionPanel day={day} report={report} show={show} />"));
   assert.ok(view.includes("<TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />"));
-  assert.ok(view.includes('· Waiting for validation'), "a waiting visit is tagged in the square");
+  assert.ok(view.includes(">Waiting for validation</span>"), "a waiting visit is tagged in the square");
+  // An Arabic customer name beside "30 m" pulled the number into the Arabic run (owner, 2026-11-09, the polish
+  // pass): the name is bidi-isolated and the metres sit in a column of their own.
+  assert.ok(view.includes("<bdi>{time.customer ?? \"Customer not recorded\"}</bdi>"), "the customer name is bidi-isolated");
+  assert.ok(!view.includes("{day.am} AM · {day.pm} PM"),"the counts never print as \"2 AM · 10 PM\", which reads as two clock times");
+  assert.ok(view.includes("{ key: \"pharmacies\", label: \"Pharmacies\" },"), "AM · PM · Pharmacies stay three counted boxes apart");
   // A vacant seat keeps its row in the light colour (owner, 2026-11-09), after the reps, with no figures to read.
   assert.ok(view.includes("const vacantRows = filtered ? [] : teamVisitVacantRows(district.reps);"), "vacant seats are their own rows, and a filter lists reps only");
   assert.equal(view.split("{TEAM_VISIT_VACANT_CELL}").length - 1, 2, "the vacant row and card say the seat is vacant, never a row of zeros");
