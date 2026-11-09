@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { formatEgp } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
-import { periodProseLabel } from "@/lib/sales/periods";
+import { countOf, pharmacyCount, pharmacySheetsLine, structureLine } from "@/lib/sales/territory/drilldown-words";
 import type {
   TerritoryAreaNode,
   TerritoryBlockNode,
@@ -16,33 +16,52 @@ import type {
 
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
 import { TerritoryClosingTotal } from "./territory-closing-total";
+import { MonthChipLegend, MonthChipRow } from "./territory-month-chips";
 import type { UseTerritoryTreeResult } from "./use-territory-tree";
 
-/** "12 pharmacies" / "1 pharmacy" — a pharmacy count is spelled out, never abbreviated (AGENTS.md §4). */
-function pharmacyCount(count: number): string {
-  return `${count} ${count === 1 ? "pharmacy" : "pharmacies"}`;
-}
+// The look, one place: flat fills, square edges, no shadows and no gradients (the square-edge
+// golden rule and the house's flat-colour rule). Dark slate heads the region, area and block
+// tiers; orange marks a region lane. 11px (`text-phx-xs`) is the smallest type on the page.
+const ROOT_CARD = "w-full max-w-md border border-slate-900 bg-slate-900 px-5 py-3.5 text-center text-white";
+const ROOT_CARD_ORANGE = "w-full max-w-md border border-orange-300 bg-orange-50 px-5 py-3.5 text-center text-slate-900";
+const LANE = "border border-slate-200 bg-white";
+const DARK_HEAD = "flex w-full flex-col gap-1 bg-slate-900 px-3 py-2.5 text-left text-white";
+const TIER_LABEL = "text-phx-xs font-bold uppercase tracking-[0.14em]";
+const EMPTY = "border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-600";
 
 /** A block by its name; the code only when the block has no description on file. */
 function blockLabel(block: TerritoryBlockNode): string {
   return block.blockName || block.blockCode;
 }
 
+/** The trunk and branch bar under a root card — a square node, never a round dot. */
+function Spine() {
+  return (
+    <>
+      <div aria-hidden className="h-5 w-0.5 bg-orange-300" />
+      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300">
+        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 bg-orange-500" />
+      </div>
+    </>
+  );
+}
+
 function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
   const [showTrend, setShowTrend] = useState(false);
   return (
-    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
+    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200">
+      <div className="border border-slate-200 bg-white px-3 py-2.5">
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 break-words text-phx-sm font-bold leading-tight text-slate-900">
             {pharmacy.clientName}
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-phx-xs font-black tabular-nums text-slate-500">
+            <span className="text-phx-xs font-bold tabular-nums text-slate-700">
               {formatEgp(pharmacy.totalValue)}
             </span>
             <button
-              className="rounded-md border border-slate-200 px-1.5 py-1 text-phx-2xs font-bold text-slate-500 transition hover:border-orange-300 hover:text-orange-600"
+              aria-expanded={showTrend}
+              className="border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-orange-400 hover:text-orange-700"
               onClick={() => setShowTrend((value) => !value)}
               type="button"
             >
@@ -50,22 +69,7 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
             </button>
           </div>
         </div>
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {pharmacy.months.map((month) => (
-            <span
-              className={cn(
-                "rounded px-1.5 py-0.5 text-phx-2xs font-black",
-                month.hasSales
-                  ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
-                  : "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
-              )}
-              key={month.period}
-              title={periodProseLabel(month.period)}
-            >
-              {periodProseLabel(month.period).slice(0, 3)}
-            </span>
-          ))}
-        </div>
+        <MonthChipRow className="mt-1.5" pharmacy={pharmacy} />
         {showTrend ? (
           <div className="mt-2 border-t border-slate-100 pt-2">
             <PharmacyTrendSparkline months={pharmacy.months} />
@@ -87,39 +91,42 @@ function BrickBranch({
   const total = (pharmacies ?? []).reduce((sum, pharmacy) => sum + pharmacy.totalValue, 0);
 
   return (
-    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
+    <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200">
       <button
         aria-expanded={open}
-        className="group relative flex w-full flex-col gap-1 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition hover:border-slate-300"
+        className="group relative flex w-full flex-col gap-1 overflow-hidden border border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left transition hover:border-slate-400"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-slate-300" />
+        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", open ? "bg-orange-500" : "bg-slate-300")} />
         {/* Line 1: the brick name gets the FULL row width, always — never squeezed by the
             stats, which move to their own line below. Wraps rather than truncates. The brick is
             named, never shown by its ID. */}
         <span className="flex items-center gap-2">
-          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-90 text-orange-500")} />
+          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform", open && "rotate-90 text-orange-600")} />
           <span className="min-w-0 flex-1 break-words text-phx-sm font-bold leading-snug text-slate-900">
             {brick.brickName}
           </span>
         </span>
         {pharmacies ? (
-          <span className="break-words pl-[22px] text-phx-2xs font-black tabular-nums text-slate-500">
+          <span className="break-words pl-[22px] text-phx-xs font-bold tabular-nums text-slate-600">
             {pharmacyCount(pharmacies.length)} · {formatEgp(total)}
           </span>
         ) : null}
       </button>
       {open ? (
-        <ul className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4" role="group">
-          {pharmacies === null ? (
-            <li className="py-1 text-phx-xs font-semibold text-slate-400">Loading…</li>
-          ) : pharmacies.length === 0 ? (
-            <li className="py-1 text-phx-xs font-semibold text-slate-400">No pharmacies with sales in your line here yet.</li>
-          ) : (
-            pharmacies.map((pharmacy) => <PharmacyCard key={pharmacy.clientCode} pharmacy={pharmacy} />)
-          )}
-        </ul>
+        <div className="ml-4 mt-2 border-l-2 border-orange-200 pl-4">
+          {pharmacies && pharmacies.length > 0 ? <MonthChipLegend className="mb-2" /> : null}
+          <ul className="space-y-2" role="group">
+            {pharmacies === null ? (
+              <li className="py-1 text-phx-xs font-semibold text-slate-600">Loading the pharmacies…</li>
+            ) : pharmacies.length === 0 ? (
+              <li className="py-1 text-phx-xs font-semibold text-slate-600">No pharmacy in this brick has a sale in your line yet.</li>
+            ) : (
+              pharmacies.map((pharmacy) => <PharmacyCard key={pharmacy.clientCode} pharmacy={pharmacy} />)
+            )}
+          </ul>
+        </div>
       ) : null}
     </li>
   );
@@ -153,23 +160,22 @@ function BlockLane({
   const blockTotal = pharmaciesByBrick ? brickStats.reduce((sum, stat) => sum + stat.total, 0) : null;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className={LANE}>
       <button
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
+        className="flex w-full items-start gap-2.5 bg-slate-900 px-3 py-2.5 text-left text-white"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
+        <ChevronRight className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
         <span className="min-w-0 flex-1">
-          <span className="block text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
-          <span className="block break-words text-phx-base font-black leading-snug">{blockLabel(block)}</span>
+          <span className={cn("block text-orange-300", TIER_LABEL)}>Block</span>
+          <span className="block break-words text-phx-base font-bold leading-snug">{blockLabel(block)}</span>
         </span>
-        <span className="shrink-0 text-right text-phx-2xs font-black tabular-nums text-white/80">
-          <span className="block">
-            {bricks.length} brick{bricks.length === 1 ? "" : "s"}
-            {blockPharmacyCount !== null ? ` · ${pharmacyCount(blockPharmacyCount)}` : ""}
-          </span>
-          <span className="block text-white">{blockTotal !== null ? formatEgp(blockTotal) : "—"}</span>
+        <span className="shrink-0 text-right text-phx-xs font-bold tabular-nums text-slate-200">
+          <span className="block">{structureLine({ bricks: bricks.length, pharmacies: blockPharmacyCount })}</span>
+          {/* Nothing until the pharmacies arrive: a missing figure is never a dash or a zero. */}
+          {blockTotal !== null ? <span className="block text-white">{formatEgp(blockTotal)}</span> : null}
         </span>
       </button>
       {open ? (
@@ -204,7 +210,7 @@ function AreaBody({
   }
 
   if (blocks.length === 0) {
-    return <p className="text-sm font-semibold text-slate-400">No blocks found for this area yet.</p>;
+    return <p className="text-sm font-semibold text-slate-600">No block is on file for this area yet.</p>;
   }
 
   // A vertical stack, not a multi-column grid: a CSS grid row's height is shared by every
@@ -250,8 +256,6 @@ function AreaRoot({
     state.status === "loaded"
       ? new Map(state.payload.bricks.map((brick) => [brick.brickId, brick.pharmacies]))
       : null;
-  const totalValue = state.status === "loaded" ? state.payload.totalValue : null;
-  const reconciled = state.status === "loaded" ? state.payload.reconciled : null;
   const pharmacyTotal =
     state.status === "loaded"
       ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
@@ -259,29 +263,26 @@ function AreaRoot({
 
   return (
     <div className="flex flex-col items-center">
-      <div className="w-full max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
-          <MapPin className="h-3.5 w-3.5" />
+      <div className={ROOT_CARD}>
+        <div className={cn("flex items-center justify-center gap-1.5 text-orange-300", TIER_LABEL)}>
+          <MapPin aria-hidden className="h-3.5 w-3.5" />
           Your area
         </div>
         <p className="mt-1 break-words text-sm font-bold leading-snug">{area.areaName}</p>
-        <p className="mt-1 text-phx-xs font-semibold text-white/70">
+        <div aria-live="polite" className="mt-1 space-y-0.5 text-phx-xs font-semibold text-slate-200">
           {state.status === "loading" ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading your territory…
-            </span>
+            <p className="inline-flex items-center gap-1">
+              <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> Loading your territory…
+            </p>
           ) : state.status === "error" ? (
-            <span className="text-rose-300">{state.message}</span>
-          ) : totalValue !== null ? (
+            <p className="text-rose-200">{state.message}</p>
+          ) : state.status === "loaded" ? (
             <>
-              {blocks.length} block{blocks.length === 1 ? "" : "s"}
-              {pharmacyTotal !== null ? ` · ${pharmacyCount(pharmacyTotal)}` : ""}
-              {" · "}
-              {formatEgp(totalValue)}
-              {reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
+              <p>{structureLine({ blocks: blocks.length, pharmacies: pharmacyTotal })}</p>
+              <p className="tabular-nums">{pharmacySheetsLine(formatEgp(state.payload.totalValue), state.payload.reconciled)}</p>
             </>
           ) : null}
-        </p>
+        </div>
         <TerritoryClosingTotal
           className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
           code={area.areaCode}
@@ -289,10 +290,7 @@ function AreaRoot({
           tree={tree}
         />
       </div>
-      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
-      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
-        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
-      </div>
+      <Spine />
 
       <div className="mt-6 w-full">
         <AreaBody blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
@@ -337,31 +335,23 @@ function AreaLane({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
-      <button
-        aria-expanded={open}
-        className="flex w-full flex-col gap-1 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
-        onClick={handleToggle}
-        type="button"
-      >
+    <div className={LANE}>
+      <button aria-expanded={open} className={DARK_HEAD} onClick={handleToggle} type="button">
         <span className="flex items-center gap-2">
           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
-          <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
+          <span className={cn("text-orange-300", TIER_LABEL)}>Area</span>
         </span>
-        <span className="break-words pl-[22px] text-phx-base font-black leading-snug">{area.areaName}</span>
-        <span className="pl-[22px] text-phx-2xs font-black tabular-nums text-white/80">
-          {blocks.length} block{blocks.length === 1 ? "" : "s"}
-          {pharmacyTotal !== null ? ` · ${pharmacyCount(pharmacyTotal)}` : ""}
-          {state.status === "loaded" ? (
-            <>
-              {" · "}
-              {formatEgp(state.payload.totalValue)}
-              {state.payload.reconciled ? <>{" · "}<span className="text-emerald-300">Reconciled ✓</span></> : null}
-            </>
-          ) : null}
+        <span className="break-words pl-[22px] text-phx-base font-bold leading-snug">{area.areaName}</span>
+        <span className="pl-[22px] text-phx-xs font-bold tabular-nums text-slate-200">
+          {structureLine({ blocks: blocks.length, pharmacies: pharmacyTotal })}
         </span>
+        {state.status === "loaded" ? (
+          <span className="pl-[22px] text-phx-xs font-semibold tabular-nums text-slate-200">
+            {pharmacySheetsLine(formatEgp(state.payload.totalValue), state.payload.reconciled)}
+          </span>
+        ) : null}
         <TerritoryClosingTotal
-          className="pl-[22px] text-phx-2xs font-black tabular-nums text-white"
+          className="pl-[22px] text-phx-xs font-bold tabular-nums text-white"
           code={area.areaCode}
           kind="area"
           tree={tree}
@@ -370,11 +360,11 @@ function AreaLane({
       {open ? (
         <div className="px-3 py-3">
           {state.status === "loading" ? (
-            <p className="flex items-center gap-1 text-phx-xs font-semibold text-slate-400">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading this area…
+            <p className="flex items-center gap-1 text-phx-xs font-semibold text-slate-600">
+              <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> Loading this area…
             </p>
           ) : state.status === "error" ? (
-            <p className="text-phx-xs font-semibold text-rose-500">{state.message}</p>
+            <p className="text-phx-xs font-semibold text-rose-700" role="alert">{state.message}</p>
           ) : (
             <AreaBody blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
           )}
@@ -404,14 +394,14 @@ function RegionRoot({
 }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="w-full max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
-          <MapPin className="h-3.5 w-3.5" />
+      <div className={ROOT_CARD}>
+        <div className={cn("flex items-center justify-center gap-1.5 text-orange-300", TIER_LABEL)}>
+          <MapPin aria-hidden className="h-3.5 w-3.5" />
           Your region
         </div>
         <p className="mt-1 break-words text-sm font-bold leading-snug">{region.regionName}</p>
-        <p className="mt-1 text-phx-xs font-semibold text-white/70">
-          {areas.length} area{areas.length === 1 ? "" : "s"} — expand any to load its sales
+        <p className="mt-1 text-phx-xs font-semibold text-slate-200">
+          {countOf(areas.length, "area")}. Open any area to load its pharmacies.
         </p>
         <TerritoryClosingTotal
           className="mt-1 block text-phx-xs font-bold tabular-nums text-white"
@@ -420,13 +410,10 @@ function RegionRoot({
           tree={tree}
         />
       </div>
-      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
-      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
-        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
-      </div>
+      <Spine />
 
       {areas.length === 0 ? (
-        <p className="mt-8 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
+        <p className="mt-8 text-sm font-semibold text-slate-600">No area is on file for this region yet.</p>
       ) : (
         // A vertical stack, not a multi-column grid — see AreaBody's comment: a shared grid
         // row would stretch every area in it to match whichever one happens to be expanded
@@ -450,8 +437,8 @@ function RegionRoot({
 /** A Region as a collapsible lane — used only when the viewer's subtree spans more than one
  *  region (a Regional Manager). Nothing to fetch on expand: opening a region just reveals its
  *  own (already-in-skeleton) Area lanes, each of which lazy-loads independently exactly like
- *  under a single-region root — see AreaLane. Same dark-slate header every other tier uses;
- *  the uppercase "Region" label is what tells it apart, not a competing accent color. */
+ *  under a single-region root — see AreaLane. A flat orange head, so a region is told from the
+ *  dark area and block heads beneath it at a glance. */
 function RegionLane({
   region,
   areas,
@@ -468,23 +455,21 @@ function RegionLane({
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className="border border-orange-200 bg-white">
       <button
         aria-expanded={open}
-        className="flex w-full flex-col gap-1 bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-left text-slate-900"
+        className="flex w-full flex-col gap-1 border-b border-orange-200 bg-orange-50 px-4 py-3 text-left text-slate-900"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
         <span className="flex items-center gap-2">
-          <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-600 transition-transform", open && "rotate-90")} />
-          <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
+          <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-700 transition-transform", open && "rotate-90")} />
+          <span className={cn("text-orange-700", TIER_LABEL)}>Region</span>
         </span>
-        <span className="break-words pl-6 text-phx-lg font-black leading-snug">{region.regionName}</span>
-        <span className="pl-6 text-phx-2xs font-black tabular-nums text-slate-700">
-          {areas.length} area{areas.length === 1 ? "" : "s"}
-        </span>
+        <span className="break-words pl-6 text-phx-lg font-bold leading-snug">{region.regionName}</span>
+        <span className="pl-6 text-phx-xs font-bold tabular-nums text-slate-700">{countOf(areas.length, "area")}</span>
         <TerritoryClosingTotal
-          className="pl-6 text-phx-2xs font-black tabular-nums text-slate-900"
+          className="pl-6 text-phx-xs font-bold tabular-nums text-slate-900"
           code={region.regionCode}
           kind="region"
           tree={tree}
@@ -492,7 +477,7 @@ function RegionLane({
       </button>
       {open ? (
         areas.length === 0 ? (
-          <p className="p-4 text-sm font-semibold text-slate-400">No areas found for this region yet.</p>
+          <p className="p-4 text-sm font-semibold text-slate-600">No area is on file for this region yet.</p>
         ) : (
           // A vertical stack, not a multi-column grid — see AreaBody's comment: a shared grid
           // row would stretch every area in it to match whichever one happens to be expanded
@@ -534,20 +519,17 @@ function RegionsRoot({
 }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="w-full max-w-md rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 px-5 py-3.5 text-center text-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
-        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
-          <MapPin className="h-3.5 w-3.5" />
+      <div className={ROOT_CARD_ORANGE}>
+        <div className={cn("flex items-center justify-center gap-1.5 text-orange-700", TIER_LABEL)}>
+          <MapPin aria-hidden className="h-3.5 w-3.5" />
           My regions
         </div>
         <p className="mt-1 text-sm font-bold leading-snug">
-          {regions.length} regions — expand any to see its areas
+          {structureLine({ areas: skeletonAreas.length })} in {countOf(regions.length, "region")}. Open any region to see its areas.
         </p>
         <TerritoryClosingTotal className="mt-1 block text-phx-xs font-bold tabular-nums text-slate-900" kind="all" tree={tree} />
       </div>
-      <div aria-hidden className="h-5 w-0.5 bg-orange-300/80" />
-      <div aria-hidden className="relative h-0.5 w-[92%] max-w-3xl bg-orange-300/70">
-        <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500" />
-      </div>
+      <Spine />
 
       <div className="mt-6 w-full space-y-4">
         {regions.map((region) => (
@@ -570,16 +552,12 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
 
   if (skeleton.rootLevel === "area") {
     if (skeleton.areas.length === 0) {
-      return (
-        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-          No area is on file for you yet.
-        </p>
-      );
+      return <p className={EMPTY}>No area is on file for your account yet.</p>;
     }
     // No overflow-x-auto and no width floor on a rep's own tree (fits-the-screen rule): it opens at
     // 768px, where its column is at least ~586px, and every card in it wraps rather than widening.
     return (
-      <div className="space-y-10 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+      <div className="space-y-10 border border-slate-200 bg-slate-50 px-3 py-8 sm:px-6">
         {skeleton.areas.map((area) => (
           <AreaRoot
             area={area}
@@ -595,11 +573,7 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
 
   if (skeleton.rootLevel === "region" || skeleton.rootLevel === "nationwide") {
     if (skeleton.regions.length === 0) {
-      return (
-        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-          No region is on file for you yet.
-        </p>
-      );
+      return <p className={EMPTY}>No region is on file for your account yet.</p>;
     }
     // Exactly one region (District Manager): that region IS the chart root. More than one
     // (Regional Manager's reporting subtree, or a National Sales Manager's whole line
@@ -610,7 +584,7 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
       return (
         // No overflow-x-auto and no width floor on a manager's tree (fits-the-screen rule):
         // every card in it wraps rather than widening past the viewport — see AreaRoot.
-        <div className="space-y-10 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+        <div className="space-y-10 border border-slate-200 bg-slate-50 px-3 py-8 sm:px-6">
           <RegionRoot
             areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
             blocks={skeleton.blocks}
@@ -622,7 +596,7 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
       );
     }
     return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+      <div className="border border-slate-200 bg-slate-50 px-3 py-8 sm:px-6">
         <RegionsRoot
           blocks={skeleton.blocks}
           bricks={skeleton.bricks}
@@ -634,9 +608,5 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
     );
   }
 
-  return (
-    <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-      This role&apos;s territory view isn&apos;t available yet.
-    </p>
-  );
+  return <p className={EMPTY}>This view of the territory is not open to your role yet.</p>;
 }

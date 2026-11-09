@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, RefreshCcw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { TerritorySyncReconciliationRow, TerritorySyncReport, TerritorySyncStatus } from "@/lib/sales/territory/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { lineSummaryDetail, SYNC_DESCRIPTION, syncRunLine, syncVerdict } from "@/lib/sales/territory/drilldown-words";
 
 const SYNC_ENDPOINT = "/api/employee-portals/territory-drilldown/sync";
 
@@ -16,6 +17,7 @@ function formatDateTime(iso: string | null): string | null {
     timeZone: "Africa/Cairo",
     day: "2-digit",
     month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -56,18 +58,6 @@ function summarizeByLine(rows: TerritorySyncReconciliationRow[]): LineSummary[] 
   return [...byLine.values()].sort((a, b) => a.officialLine.localeCompare(b.officialLine));
 }
 
-/** What the badge says after the line name. Spelled out rather than a bare count, because "3 off"
- * gave the operator no way to tell a dropped row from a row sitting on the wrong area — and the
- * geography half was invisible entirely until 2026-08-31. Never truncated. */
-function summaryDetail(line: LineSummary): string {
-  if (!line.geographyChecked) return " · geography not checked";
-  const parts: string[] = [];
-  if (line.geoMismatchRows > 0) parts.push(`${line.geoMismatchRows.toLocaleString()} row(s) on the wrong area`);
-  if (line.unrollupRows > 0) parts.push(`${line.unrollupRows.toLocaleString()} row(s) with no rollup row`);
-  if (parts.length === 0 && line.mismatched > 0) parts.push(`${line.mismatched} period(s) off`);
-  return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
-}
-
 /**
  * Territory data sync. `canRun` is true for every role the Territory Drilldown page serves — the
  * sync is corrective and idempotent (only rows whose brick actually moved are written), so by
@@ -76,7 +66,11 @@ function summaryDetail(line: LineSummary): string {
  * by role is `showReconciliation`: the per-line reconciliation chips below cover EVERY line the
  * sync touched, not just the viewer's own, so only a viewer who already sees every line company-
  * wide (Super Admin, CEO — see isTerritoryLinePickerRole) sees them; everyone else still sees the
- * freshness badge and the button.
+ * freshness line and the button.
+ *
+ * Every sentence comes from `drilldown-words.ts`: a Medical Rep presses this button too, so it
+ * says what the sync does in plain words ("puts every sale on the area its pharmacy belongs to
+ * today"), never "re-stamps", "batches" or a bare plural in brackets. Flat and square like every card on the page.
  */
 export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boolean; showReconciliation: boolean }) {
   const [status, setStatus] = useState<TerritorySyncStatus | null>(null);
@@ -122,7 +116,7 @@ export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boo
         publishedPeriodsSkipped?: string[];
       };
       if (!res.ok || !data.success) {
-        setError(data.message ?? data.error ?? "Sync failed — try again.");
+        setError(data.message ?? "The sync did not finish. Try again in a minute.");
         return;
       }
       // A run that withheld a published month, or that had nothing left to sync at all, returns no
@@ -134,7 +128,7 @@ export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boo
       }
       await loadStatus();
     } catch {
-      setError("Request failed — check your connection and try again.");
+      setError("The sync could not reach the server. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -144,92 +138,99 @@ export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boo
   const lastSyncedAt = formatDateTime(status?.lastSyncedAt ?? null);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Territory data sync</h3>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Re-stamps every sale to today&apos;s area and rebuilds the drilldown&apos;s figures, then proves each line reconciles to source.
-          </p>
+    <section
+      aria-labelledby="territory-sync-heading"
+      className="border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 id="territory-sync-heading" className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Data sync
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">{SYNC_DESCRIPTION}</p>
         </div>
         <Button disabled={!canRun || busy} size="sm" type="button" variant="outline" onClick={() => void runSync()}>
-          <RefreshCcw className={`mr-1.5 h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
+          <RefreshCcw aria-hidden className={`mr-1.5 h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
           {busy ? "Syncing…" : "Sync now"}
         </Button>
       </div>
 
-      <div className="mt-2 text-xs">
+      <div aria-live="polite" className="mt-3 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
         {lastSyncedAt ? (
-          <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+          <p className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
             {status?.lastAllReconciled === false ? (
-              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+              <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             ) : (
-              <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+              <CheckCircle2 aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
             )}
-            Last synced {lastSyncedAt}
-            {status?.lastSyncedBy ? ` by ${status.lastSyncedBy}` : ""}
-          </span>
+            <span>
+              Last synced {lastSyncedAt}, Cairo time
+              {status?.lastSyncedBy ? `, by ${status.lastSyncedBy}` : ""}
+              {status?.lastAllReconciled === false ? `. ${syncVerdict(false)}` : ""}
+            </span>
+          </p>
         ) : (
-          <span className="text-slate-400 dark:text-slate-500">Not synced yet.</span>
+          <p className="text-slate-600 dark:text-slate-300">Not synced yet.</p>
         )}
-        {!canRun && (
-          <span className="ml-1 text-slate-400 dark:text-slate-500">Only the admin account can run a sync.</span>
+        {!canRun && <p className="mt-1 text-slate-600 dark:text-slate-300">Your account cannot run a sync.</p>}
+
+        {error && (
+          <p role="alert" className="mt-2 flex items-start gap-1.5 text-red-700 dark:text-red-300">
+            <XCircle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{error}</span>
+          </p>
+        )}
+
+        {notice && !error && (
+          <p className="mt-2 flex items-start gap-1.5 text-slate-700 dark:text-slate-200">
+            <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <span>{notice}</span>
+          </p>
         )}
       </div>
 
-      {error && (
-        <p className="mt-3 flex items-center gap-1 text-xs text-red-500">
-          <XCircle className="h-3.5 w-3.5 shrink-0" />
-          {error}
-        </p>
-      )}
-
-      {notice && !error && (
-        <p className="mt-3 flex items-start gap-1 text-xs text-slate-600 dark:text-slate-300">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-          <span>{notice}</span>
-        </p>
-      )}
-
       {report && (
-        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs dark:border-slate-800 dark:bg-slate-950">
-          <p className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200">
+        <div className="mt-3 border-l-2 border-slate-900 bg-slate-50 py-2 pl-3 pr-2 text-xs dark:border-slate-100 dark:bg-slate-950">
+          <p className="flex items-start gap-1.5 font-semibold text-slate-900 dark:text-slate-100">
             {report.allReconciled ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+              <CheckCircle2 aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
             ) : (
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+              <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             )}
-            {report.allReconciled ? "All lines reconcile to source." : "Some line-months did not reconcile."}
+            <span>{syncVerdict(report.allReconciled)}</span>
           </p>
-          <p className="mt-1 text-slate-500 dark:text-slate-400">
-            Re-stamped {report.restampedRows.toLocaleString()} row(s) · rebuilt {report.refreshedBatches} batch(es) · {(report.durationMs / 1000).toFixed(1)}s
-          </p>
+          <p className="mt-1 tabular-nums text-slate-600 dark:text-slate-300">{syncRunLine(report)}</p>
           {showReconciliation && (
             // Every line the sync touched, not just the viewer's own — gated to roles that already
             // see every line company-wide (see the component doc comment above).
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {lineSummaries.map((line) => (
-                <span
-                  key={line.officialLine}
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                    line.mismatched === 0 && line.geographyChecked
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                      : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                  }`}
-                >
-                  {line.mismatched === 0 && line.geographyChecked ? (
-                    <CheckCircle2 className="h-3 w-3" />
-                  ) : (
-                    <AlertTriangle className="h-3 w-3" />
-                  )}
-                  {line.officialLine}
-                  {summaryDetail(line)}
-                </span>
-              ))}
-            </div>
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {lineSummaries.map((line) => {
+                const clean = line.mismatched === 0 && line.geographyChecked;
+                return (
+                  <li
+                    key={line.officialLine}
+                    className={`inline-flex items-start gap-1 border px-2 py-0.5 ${
+                      clean
+                        ? "border-emerald-200 bg-white text-emerald-800 dark:border-emerald-900 dark:bg-slate-900 dark:text-emerald-300"
+                        : "border-amber-300 bg-white text-amber-800 dark:border-amber-900 dark:bg-slate-900 dark:text-amber-300"
+                    }`}
+                  >
+                    {clean ? (
+                      <CheckCircle2 aria-hidden className="mt-0.5 h-3 w-3 shrink-0" />
+                    ) : (
+                      <AlertTriangle aria-hidden className="mt-0.5 h-3 w-3 shrink-0" />
+                    )}
+                    <span>
+                      {line.officialLine}
+                      {lineSummaryDetail(line)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

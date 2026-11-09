@@ -35,7 +35,7 @@ async function TerritoryDrilldownContent({
 
   if (skeleton.diagnostic) {
     return (
-      <EmployeePortalEmptyState message={skeleton.diagnostic.message} title="Territory not available yet" />
+      <EmployeePortalEmptyState message={skeleton.diagnostic.message} title="Sales Drilldown not available yet" />
     );
   }
 
