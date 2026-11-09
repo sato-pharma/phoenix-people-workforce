@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
+import { BackToPreviousPage } from "@/components/crm/back-to-previous-page";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { ManagerDayView } from "@/components/phoenix-crm/manager-day-view";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
@@ -47,6 +48,8 @@ export default async function PhoenixCrmManagerDayPage({
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description="Phoenix CRM · the manager's day in full" title="The manager's day in full">
+        {/* "Back" to the page the manager was pressed on (owner, 2026-11-09). */}
+        <BackToPreviousPage fallbackHref="/employee-portals/team-calendar" />
         <ManagerDayView view={load.view} />
       </EmployeePortalPageShell>
     );
