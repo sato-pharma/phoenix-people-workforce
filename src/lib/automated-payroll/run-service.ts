@@ -1380,7 +1380,9 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
     const snapshot = snapshotFromSummary(state.summary);
     if (!snapshot) continue;
     const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
-    reports.push(detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact }));
+    reports.push(
+      detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact, part1Confirmed: run.part1ConfirmedAt != null }),
+    );
   }
   const merged = mergeModuleDrift(reports);
   return attachChargeSources(runId, merged);
