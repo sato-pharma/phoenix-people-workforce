@@ -1,4 +1,4 @@
-import { managerAdminActivityLabel, managerPlanStatusLabel, type ManagerHalf, type ManagerPlanStatus } from "@/lib/phoenix-crm/manager-plan-rules";
+import { isManagerPlanSent, managerAdminActivityLabel, managerPlanStatusLabel, type ManagerHalf, type ManagerPlanStatus } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { dedupeIds } from "@/lib/phoenix-crm/server/db";
 import {
@@ -31,6 +31,8 @@ export type DistrictManagerDayHalf = {
   half: ManagerHalf;
   /** "Double visit", "Single visit", "Double visit with a manager", "Admin". */
   kindLabel: string;
+  /** An Admin half: no customers are asked of it, so the panel never says "No customers chosen". */
+  admin: boolean;
   /** The rep he goes with on a double visit; null otherwise. */
   repName: string | null;
   /** The area — or the areas, joined — the half is spent in; null on Admin. */
@@ -47,8 +49,13 @@ export type DistrictManagerDay = {
   dmName: string;
   /** His week's status in words: "Draft", "Waiting for approval", "Approved", "Not started". */
   statusLabel: string;
-  /** False while his week is a draft or not started — the day may still change. */
+  /** True only once his week is sent for review: waiting or approved. A draft, a returned week or none is not sent. */
   sent: boolean;
+  /**
+   * Where his week stands, for the pill's colour (premium pass, 2026-11-09): a returned week read as sent before,
+   * because `sent` was "anything but a draft". Never read off `statusLabel`.
+   */
+  standing: "approved" | "waiting" | "returned" | "draft" | "not_started";
   /** Only the halves he has planned, AM first. Empty: nothing planned for the date yet. */
   halves: DistrictManagerDayHalf[];
 };
@@ -105,6 +112,7 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
     return {
       half: slot.half,
       kindLabel: "Double visit",
+      admin: false,
       repName: slot.repHrId ? nameOf(names, slot.repHrId) : "No rep in this territory",
       areaName: repSeat ? (repSeat.areaName ?? territoryName(repSeat)) : null,
       detail: null,
@@ -112,7 +120,7 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
     };
   }
   if (slot.kind === "single_visit") {
-    return { half: slot.half, kindLabel: "Single visit", repName: null, areaName: slot.areaName, detail: null, customers: planned };
+    return { half: slot.half, kindLabel: "Single visit", admin: false, repName: null, areaName: slot.areaName, detail: null, customers: planned };
   }
   if (slot.kind === "with_senior") {
     const senior = slot.seniorVisit;
@@ -120,6 +128,7 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
     return {
       half: slot.half,
       kindLabel: senior?.role === "product_manager" ? "Double visit with a product manager" : "Double visit with a manager",
+      admin: false,
       repName: null,
       areaName: joinedAreas(senior?.areas) ?? slot.areaName,
       detail: who ? (senior?.title ? `${who} · ${senior.title}` : who) : null,
@@ -130,11 +139,21 @@ export function districtManagerHalfOf(slot: ManagerSlotRow, customers: ReadonlyA
   return {
     half: slot.half,
     kindLabel: "Admin",
+    admin: true,
     repName: null,
     areaName: null,
     detail: slot.kind === "admin" ? managerAdminActivityLabel(slot.activityType) : null,
     customers: planned,
   };
+}
+
+/** Where his week stands — approved, waiting (an ended week included: it was sent), returned, a draft, or none. */
+export function districtManagerWeekStanding(status: ManagerPlanStatus | null): DistrictManagerDay["standing"] {
+  if (status === "approved") return "approved";
+  if (status === "submitted" || status === "first_approved") return "waiting";
+  if (status === "returned") return "returned";
+  if (status === "draft") return "draft";
+  return "not_started";
 }
 
 /** His day on one date: the halves he planned, AM first. */
@@ -147,7 +166,8 @@ export function districtManagerDayOn(week: DistrictManagerWeek, date: string, se
     dmSeatId: week.dmSeatId,
     dmName: week.dmName,
     statusLabel: week.statusLabel,
-    sent: week.status !== null && week.status !== "draft",
+    sent: isManagerPlanSent(week.status),
+    standing: districtManagerWeekStanding(week.status),
     halves,
   };
 }

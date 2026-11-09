@@ -4,6 +4,14 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { ManagerPlanDecisionActions } from "@/components/approvals-hub/manager-plan-decision-actions";
 import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
+import { ManagerWeekGlancePanel } from "@/components/phoenix-crm/manager-week-glance";
+import {
+  MANAGER_GLANCE_KIND_EDGE,
+  MANAGER_HUB_EMPTY_HALF_WORDS,
+  managerGlanceGrade,
+  managerHubWeekExportHref,
+  managerSavedSlot,
+} from "@/lib/phoenix-crm/manager-week-glance";
 import type {
   ManagerHubDetail,
   ManagerHubPlanDetail,
@@ -116,8 +124,23 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
               ) : null}
             </div>
             <div className="divide-y divide-slate-100">
-              {day.slots.map((slot) => (
-                <div key={slot.half} className="px-3 py-2">
+              {/* Every half the day holds, an empty one included: the approver reads what was left empty too, where the
+                  list of saved halves alone hid it (premium pass, 2026-11-09). A planned half wears its kind's edge,
+                  as on the week at a glance. */}
+              {day.halves.map((half) => {
+                const slot = managerSavedSlot(day, half);
+                if (!slot) {
+                  return (
+                    <div key={half} className="px-3 py-2">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{half}</span>
+                        <span className="break-words text-sm font-semibold text-slate-500">{MANAGER_HUB_EMPTY_HALF_WORDS}</span>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                <div key={slot.half} className={`border-l-4 ${slot.kind ? MANAGER_GLANCE_KIND_EDGE[slot.kind] : "border-l-transparent"} px-3 py-2`}>
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{slot.half}</span>
                     {slot.kind === "with_senior" ? (
@@ -159,7 +182,7 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                           <span className="break-words font-semibold" dir="auto">
                             {customer.name}
                           </span>
-                          {customer.grade ? <span className="text-slate-500"> · {customer.grade}</span> : null}
+                          {managerGlanceGrade(customer.grade) !== "none" ? <span className="text-slate-500"> · {managerGlanceGrade(customer.grade)}</span> : null}
                           {customer.own ? <span className="text-slate-500"> · Manager&apos;s own list</span> : null}
                           {customer.flagLabel ? <span className="font-bold"> · {customer.flagLabel}</span> : null}
                         </li>
@@ -167,7 +190,8 @@ function WeekDays({ detail }: { detail: ManagerHubPlanDetail }) {
                     </ul>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -200,6 +224,12 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
           <ExternalLink className="h-4 w-4" /> Open my plan in Phoenix CRM
         </a>
       ) : null}
+
+      {/* The same week at a glance as on the planner's own board — the same figures, read from the same module — so the
+          approver sees the week whole before reading it half by half. Text only: nothing here opens a half. */}
+      <div className={adminPanelClassName}>
+        <ManagerWeekGlancePanel canOpen={false} exportHref={managerHubWeekExportHref(detail.planId)} view={detail.board} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">

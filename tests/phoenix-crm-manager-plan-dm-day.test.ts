@@ -109,6 +109,19 @@ export async function runPhoenixCrmManagerPlanDmDayTests(): Promise<void> {
 
   const admin = districtManagerDayOn(week, "2026-11-16", seatOf);
   assert.equal(admin.halves[0]?.kindLabel, "Admin", "an Admin half says Admin");
+  // The premium pass (2026-11-09): the panel asks `admin`, never the words, whether to say "No customers chosen".
+  assert.equal(admin.halves[0]?.admin, true, "an Admin half is marked as one");
+  assert.deepEqual(day.halves.map((half) => half.admin), [false, false], "a double and a single visit are not Admin");
+
+  // Where the week stands: a returned week used to read as sent, because sent was "anything but a draft".
+  assert.equal(day.standing, "waiting", "a submitted week is waiting");
+  const returned = districtManagerDayOn({ ...week, status: "returned", statusLabel: "Returned for changes" }, "2026-11-15", seatOf);
+  assert.equal(returned.sent, false, "a week returned for changes is not sent");
+  assert.equal(returned.standing, "returned");
+  assert.equal(districtManagerDayOn({ ...week, status: "first_approved" }, "2026-11-15", seatOf).standing, "waiting", "a first approval is still waiting");
+  assert.equal(districtManagerDayOn({ ...week, status: "approved" }, "2026-11-15", seatOf).standing, "approved");
+  assert.equal(draft.standing, "draft");
+  assert.equal(nothing.standing, "not_started");
 
   // The board reads the district manager's week for a senior manager only, and the With a district manager half
   // shows it; a read that fails is said on the board.
