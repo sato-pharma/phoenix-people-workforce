@@ -35,7 +35,7 @@ export function DistanceChip({ km, withLabel = false }: { km: number; withLabel?
     >
       {flag.tone === "fail" ? <AlertTriangle aria-hidden className="h-3 w-3 shrink-0" /> : null}
       <span className="whitespace-nowrap">{formatNumberValue(km)} km</span>
-      {withLabel && flag.label ? <span className="text-phx-2xs font-bold">· {flag.label}</span> : null}
+      {withLabel && flag.label ? <span className="text-phx-sm font-bold">· {flag.label}</span> : null}
     </span>
   );
 }
@@ -58,7 +58,7 @@ export function EmployeeNote({ note, wide = false }: { note?: string | null; wid
   if (!note) return null;
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Employee&apos;s note</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Employee&apos;s note</p>
       <p className={cn("mt-1 flex items-start gap-1.5 font-semibold text-slate-900", wide ? "text-sm" : "text-xs")}>
         <MessageSquareText aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
         <span className="min-w-0 whitespace-pre-wrap break-words" dir="auto">
@@ -76,7 +76,7 @@ export function DuplicateTripFlag({ copies, wide = false }: { copies?: string[];
     <p
       className={cn(
         "inline-flex max-w-full items-start gap-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800",
-        wide ? "text-phx-xs" : "text-phx-2xs",
+        wide ? "text-phx-xs" : "text-phx-sm",
       )}
       data-duplicate-flag
     >
@@ -107,7 +107,7 @@ export function MoneyFigure({ approved, claimed, size = "sm" }: { approved: numb
     <span className="block min-w-0">
       <span className={cn("block font-black tabular-nums text-slate-950", size === "lg" ? "text-2xl leading-tight" : "text-sm")}>{egp(approved)}</span>
       {adjusted ? (
-        <span className="block text-phx-2xs font-bold tabular-nums text-orange-700">
+        <span className="block text-phx-sm font-bold tabular-nums text-orange-700">
           claimed <span className="line-through">{egp(claimed)}</span> · {egp(claimed - approved)} less
         </span>
       ) : null}

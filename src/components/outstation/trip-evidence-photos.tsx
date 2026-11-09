@@ -94,7 +94,7 @@ function TripEvidencePhoto({
                   captured time at arrival and departure … any information or data you have"). */}
               {capturedAt ? (
                 <p className="text-xs font-semibold text-slate-900">
-                  <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">Captured </span>
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-400">Captured </span>
                   {capturedAt}
                 </p>
               ) : null}
@@ -109,7 +109,7 @@ function TripEvidencePhoto({
               {/* The point itself, one click from Google Maps (owner's review, 2026-11-07). */}
               {photo.latitude !== null && photo.longitude !== null ? (
                 <p className="text-xs tabular-nums text-slate-500">
-                  <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">GPS </span>
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-400">GPS </span>
                   <a
                     className="text-orange-700 underline-offset-2 hover:underline"
                     data-photo-gps-link

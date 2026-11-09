@@ -13,8 +13,8 @@ import type { ExpensePeriod, ExpenseReconciliationResult } from "@/lib/automated
  * wrapping, no sideways scroll and no ellipsis.
  */
 
-const THEAD = "px-3 py-2.5 text-left align-bottom text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-const THEAD_NUMBER = "px-3 py-2.5 text-right align-bottom text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-left align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-white";
+const THEAD_NUMBER = "px-3 py-2.5 text-right align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-white";
 const CELL = "break-words px-3 py-2.5 align-top text-xs leading-5 text-slate-700";
 const NUMBER = "break-words px-3 py-2.5 align-top text-right text-xs font-bold leading-5 tabular-nums text-slate-900";
 
@@ -65,7 +65,7 @@ function MonthPicker({ months, selected }: { months: readonly ExpensePeriod[]; s
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border border-phx-line bg-white px-3 py-2.5">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-1 break-words text-base font-black tabular-nums text-slate-950">{value}</p>
     </div>
   );

@@ -100,7 +100,7 @@ export function Stat({
 }) {
   return (
     <div className="px-3 py-3">
-      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p
@@ -128,7 +128,7 @@ export function FieldValue({
 }) {
   return (
     <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p
@@ -156,7 +156,7 @@ export function SummaryValue({
 }) {
   return (
     <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p

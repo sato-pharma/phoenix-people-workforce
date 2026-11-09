@@ -16,7 +16,7 @@ export function ApprovalRecommendationBadge({
 }) {
   return (
     <span
-      className={`inline-flex rounded-md px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider ring-1 ${tones[value]}`}
+      className={`inline-flex rounded-md px-2 py-1 text-phx-sm font-bold uppercase tracking-wider ring-1 ${tones[value]}`}
     >
       {value.replace(/_/g, " ")}
     </span>

@@ -338,7 +338,7 @@ export function JourneyStopCard({
 
   return (
     <section aria-label="The next place" className="border border-slate-200 bg-white p-4 sm:p-5">
-      <p className="flex flex-wrap items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+      <p className="flex flex-wrap items-center gap-2 text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">
         <MapPin aria-hidden className="h-3.5 w-3.5" />
         The next place
         {rehearsal ? <span className="text-slate-500">Test account · not saved</span> : null}

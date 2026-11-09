@@ -36,7 +36,7 @@ export function PendingReviewRequestsCard({
     <section className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50/60 p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="flex items-center gap-2">
         <Clock className="h-4 w-4 text-amber-600" />
-        <span className="rounded-md bg-amber-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-amber-700">
+        <span className="rounded-md bg-amber-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-amber-700">
           Pending Super Admin review
         </span>
       </div>
@@ -62,7 +62,7 @@ export function PendingReviewRequestsCard({
               </div>
               <div className="text-right">
                 <p className="text-sm font-bold text-slate-900">{formatEgp(request.amount)}</p>
-                <span className="mt-1 inline-flex items-center px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ring-1 bg-amber-50 text-amber-700 ring-amber-200">
+                <span className="mt-1 inline-flex items-center px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ring-1 bg-amber-50 text-amber-700 ring-amber-200">
                   Pending review
                 </span>
               </div>

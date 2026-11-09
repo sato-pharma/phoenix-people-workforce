@@ -141,7 +141,7 @@ export function DeckFieldWork({
             <li className="border border-slate-200 bg-white" key={dayKey}>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2.5">
                 {dayKeys.length > 1 ? (
-                  <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+                  <span className="text-phx-sm font-black uppercase tracking-wide text-slate-400">
                     Day {formatNumberValue(index + 1)} of {formatNumberValue(dayKeys.length)}
                   </span>
                 ) : null}
@@ -443,7 +443,7 @@ function DayMap({
   const legendHalf = legendRows.length > 3 ? Math.ceil(legendRows.length / 2) : legendRows.length;
   return (
     <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey} data-map-drawn={seen ? "yes" : "no"} ref={ref}>
-      <p className="mb-2 flex flex-wrap items-center gap-x-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+      <p className="mb-2 flex flex-wrap items-center gap-x-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
         <MapPin aria-hidden className="h-3.5 w-3.5" />
         This day on a map
         <span className="normal-case tracking-normal tabular-nums text-slate-400">
@@ -536,7 +536,7 @@ function PinBadge({ label, tone }: { label: string; tone: "checkin" | "photo" | 
   return (
     <span
       className={cn(
-        "mt-px inline-flex h-4 min-w-5 shrink-0 items-center justify-center px-1 text-phx-3xs font-black tabular-nums",
+        "mt-px inline-flex h-4 min-w-5 shrink-0 items-center justify-center px-1 text-phx-xs font-black tabular-nums",
         tone === "photo"
           ? "bg-orange-100 text-orange-900 ring-1 ring-inset ring-orange-400"
           : tone === "submitted"

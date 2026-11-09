@@ -99,7 +99,7 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
   return (
     <section aria-label="Rehearse the next place" className="mt-5 space-y-4 border-t border-slate-200 pt-5">
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Rehearse the next places</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Rehearse the next places</p>
         <p className="mt-1 text-sm leading-6 text-slate-600">
           On a real trip the person captures the next place at the top of this page when they move on to
           another governorate. Capture each place here to see how Phoenix measures and pays the journey.
@@ -124,7 +124,7 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
 
       {pricing ? (
         <div className="border border-slate-200 bg-slate-50 p-4">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+          <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
             {pricing.mode === "chained"
               ? "Paid drive by drive"
               : pricing.mode === "ticket_journey"

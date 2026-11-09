@@ -44,7 +44,7 @@ function KpiValue({
   return (
     <span className="flex flex-col gap-0.5">
       <span>{primary}</span>
-      <span className={`inline-flex items-center gap-1 text-phx-2xs font-bold ${tone}`}>
+      <span className={`inline-flex items-center gap-1 text-phx-sm font-bold ${tone}`}>
         {Icon ? <Icon className="h-2.5 w-2.5" /> : null}
         <span>{flat ? "≈ flat" : pct(deltaPct)}</span>
         <span className="font-semibold text-slate-400">{previousLabel}</span>

@@ -84,7 +84,7 @@ function cairoDateTime(value: string): string {
 function TripJourney({ journey }: { journey: ApproverJourney }) {
   return (
     <div className="border border-phx-line bg-white p-3">
-      <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+      <p className="flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
         <Route className="h-3.5 w-3.5" /> Journey with {journey.stops.length} added{" "}
         {journey.stops.length === 1 ? "stop" : "stops"}
       </p>
@@ -215,7 +215,7 @@ function MissedStopForm({
 
   return (
     <div className="border border-slate-200 bg-white p-4">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
         Add stop {offer.nextStopNumber}, missed by the employee
       </p>
       <p className="mt-1 text-xs leading-relaxed text-slate-600">
@@ -331,13 +331,13 @@ function TicketTile({ kind, label, large, name, url }: { kind: TicketTileKind; l
           title={title}
         >
           {failed ? <ImageOff className="h-7 w-7" /> : <FileText className="h-7 w-7" />}
-          <span className="text-phx-2xs font-bold uppercase tracking-wide">
+          <span className="text-phx-sm font-bold uppercase tracking-wide">
             {failed ? "Could not load — open the file" : kind === "pdf" ? "PDF" : "File · open it"}
           </span>
         </a>
       )}
       {blank && !failed ? (
-        <p className="flex items-center gap-1 border-t border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-bold text-amber-900" data-ticket-blank>
+        <p className="flex items-center gap-1 border-t border-amber-200 bg-amber-50 px-2 py-1 text-phx-sm font-bold text-amber-900" data-ticket-blank>
           <ImageOff className="h-3 w-3 shrink-0" />
           Blank image
         </p>
@@ -364,7 +364,7 @@ export function UploadedPictures({ large, tickets }: { large: boolean; tickets: 
   if (tickets.length === 0) return null;
   return (
     <div data-uploaded-pictures={large ? "large" : "compact"}>
-      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+      <p className="mb-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
         Uploaded with this claim{" "}
         <span className="tabular-nums text-slate-400">
           · {tickets.length} {tickets.length === 1 ? "picture or file" : "pictures and files"}
