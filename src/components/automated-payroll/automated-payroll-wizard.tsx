@@ -25,6 +25,7 @@ import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-pay
 import type { PopulationDiff } from "@/lib/automated-payroll/population-diff";
 import type { HoldReview } from "@/lib/automated-payroll/hold-review";
 import {
+  PAYROLL_DATA_ISSUE_AFFECTS_PAY,
   PAYROLL_DATA_ISSUE_LABELS,
   type PayrollDataIssue,
   type PayrollDataQualityReport,
@@ -224,13 +225,30 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * in its own words — and when NOBODY has a genuine gap the whole callout drops
    * from danger to warning, because nothing on the sheet is actually wrong yet.
    */
+  // A third population, same reasoning (owner, 2026-11-09): a person whose only gap is the social
+  // insurance wage is a FILING gap — PAYROLL_DATA_ISSUE_AFFECTS_PAY says it moves nobody's money —
+  // so they are never counted under "missing payroll data that decides their pay".
   const dataQualitySplit = useMemo(() => {
-    const rows = dataQuality?.rows ?? [];
-    const baseOnly = rows.filter(
-      (row) => row.issues.length === 1 && row.issues[0] === "zero_base_after_allowances",
-    ).length;
-    return { baseOnly, missing: rows.length - baseOnly };
+    let missing = 0;
+    let baseOnly = 0;
+    let filingOnly = 0;
+    for (const row of dataQuality?.rows ?? []) {
+      const payIssues = row.issues.filter((issue) => PAYROLL_DATA_ISSUE_AFFECTS_PAY[issue]);
+      if (payIssues.length === 0) filingOnly += 1;
+      else if (payIssues.every((issue) => issue === "zero_base_after_allowances")) baseOnly += 1;
+      else missing += 1;
+    }
+    return { missing, baseOnly, filingOnly };
   }, [dataQuality]);
+  const dataQualityHeadline = [
+    dataQualitySplit.missing > 0 ? `${people(dataQualitySplit.missing)} missing payroll data that decides their pay` : null,
+    dataQualitySplit.baseOnly > 0 ? `${people(dataQualitySplit.baseOnly)} with no base salary on record` : null,
+    dataQualitySplit.filingOnly > 0
+      ? `${people(dataQualitySplit.filingOnly)} with no social insurance wage (pay not affected)`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   /** Same rows, pivoted issue-first so each explanation is written once and the
    * names sit under it as a plain list. A person with two issues appears in both
@@ -891,13 +909,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         <AdminCallout tone={dataQualitySplit.missing > 0 ? "danger" : "warning"}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <div className="font-black">
-                {dataQualitySplit.missing > 0 && dataQualitySplit.baseOnly > 0
-                  ? `${people(dataQualitySplit.missing)} missing payroll data, ${dataQualitySplit.baseOnly} with no base salary`
-                  : dataQualitySplit.missing > 0
-                    ? `${people(dataQualitySplit.missing)} missing payroll data that decides their pay`
-                    : `${people(dataQualitySplit.baseOnly)} with no base salary on record`}
-              </div>
+              <div className="font-black">{dataQualityHeadline}</div>
               <button
                 type="button"
                 onClick={() => setDataQualityOpen((open) => !open)}

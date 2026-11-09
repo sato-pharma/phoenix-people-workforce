@@ -186,6 +186,37 @@ export async function runAutomatedPayrollInsuranceWageTests() {
     "exactly the person with no wage on file is named, so the carried fallback is never silent",
   );
 
+  // ...unless the employee record says the company does not insure them at all. A government
+  // secondment is insured through the government, so no wage is missing (owner, 2026-11-09: three
+  // such people were listed as "missing payroll data that decides their pay").
+  const secondedReport = auditPayrollDataQuality({
+    members,
+    sources: sources([withWage, overCeiling, noWage], CARRIED),
+    draftRows: [],
+    part1Confirmed: false,
+    insuranceWages,
+    notCompanyInsured: new Set([compact(noWage)]),
+  });
+  assert.equal(
+    secondedReport.rows.filter((row) => row.issues.includes("missing_insurance_wage")).length,
+    0,
+    "a person the company does not insure has no missing insurance wage to report",
+  );
+  // A wage on file still files them — the status never decides the filing, only the flag.
+  const insuredElsewhereWithWage = auditPayrollDataQuality({
+    members,
+    sources: sources([withWage, overCeiling, noWage], CARRIED),
+    draftRows: [],
+    part1Confirmed: false,
+    insuranceWages,
+    notCompanyInsured: new Set([compact(withWage)]),
+  });
+  assert.deepEqual(
+    insuredElsewhereWithWage.rows.filter((row) => row.issues.includes("missing_insurance_wage")).map((row) => row.hrId),
+    [noWage],
+    "the exemption is keyed per person — marking someone else leaves the real gap flagged",
+  );
+
   // ...but it does not hold up a confirm, because it moves nobody's money.
   assert.equal(
     payAffectingIssues(report).total,

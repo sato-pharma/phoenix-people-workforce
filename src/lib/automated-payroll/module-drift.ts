@@ -221,6 +221,14 @@ export function detectModuleDrift(input: {
    * recommendation `row.values` falls back to. Omitting it keeps the pre-2026-10-06 reading.
    */
   chargedByCompact?: Record<string, Record<string, number>>;
+  /**
+   * Whether the run's Part 1 is confirmed. Once it is, a LOAN typed on Part 1 with no module line
+   * behind it is never reported as unbacked: it is already inside the frozen first part, paid, and
+   * nothing is left to clear (owner, 2026-11-09, of Mahmoud Ibrahim Ahmed Mohamed's 1,250.00:
+   * "already deducted from him first part"). The LOAN column only — a typed "Other" figure is still
+   * reported, because that is the shape of September's double-charged lateness.
+   */
+  part1Confirmed?: boolean;
 }): ModuleDriftReport {
   const rows: ModuleDriftRow[] = [];
   if (!input.snapshot) return tally(rows);
@@ -302,6 +310,16 @@ export function detectModuleDrift(input: {
       // as a literal 0 for the whole population. See `canBeUnbackedCharge`.
       const unbacked = now === 0 && charged > 0 && canBeUnbackedCharge(input.stepKey, field);
       if (now === atConfirm && !unbacked) continue;
+      // A typed Part 1 loan once Part 1 is paid — see `part1Confirmed` above.
+      if (
+        unbacked &&
+        atConfirm === 0 &&
+        input.part1Confirmed &&
+        input.stepKey === "p1_other_deductions" &&
+        field === "p1odLoanValue"
+      ) {
+        continue;
+      }
 
       rows.push({
         hrId: row.hrId,

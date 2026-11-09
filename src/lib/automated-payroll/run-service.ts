@@ -11,7 +11,7 @@ import {
   replaceSalaryBatch,
 } from "@/lib/payroll/service";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
-import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages.ts";
+import { loadInsuranceWages, loadNotCompanyInsured } from "@/lib/payroll/statutory/insurance-wages.ts";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -1380,7 +1380,9 @@ export async function getModuleDrift(access: AccessContext, runId: string): Prom
     const snapshot = snapshotFromSummary(state.summary);
     if (!snapshot) continue;
     const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
-    reports.push(detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact }));
+    reports.push(
+      detectModuleDrift({ stepKey, rows, snapshot, chargedByCompact, part1Confirmed: run.part1ConfirmedAt != null }),
+    );
   }
   const merged = mergeModuleDrift(reports);
   return attachChargeSources(runId, merged);
@@ -2395,9 +2397,10 @@ export async function getPayrollDataQuality(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
-  const [{ members, sources, draftRows }, insuranceWages] = await Promise.all([
+  const [{ members, sources, draftRows }, insuranceWages, notCompanyInsured] = await Promise.all([
     loadRunContext(period, runId),
     loadInsuranceWages(),
+    loadNotCompanyInsured(),
   ]);
   return auditPayrollDataQuality({
     members,
@@ -2405,6 +2408,7 @@ export async function getPayrollDataQuality(
     draftRows,
     part1Confirmed: run.part1ConfirmedAt != null,
     insuranceWages,
+    notCompanyInsured,
   });
 }
 
