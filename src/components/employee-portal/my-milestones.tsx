@@ -389,7 +389,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                 `${entries.length} milestone${entries.length === 1 ? "" : "s"}`
               )}
             </p>
-            <div className="flex items-center gap-x-4 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
+            <div className="flex items-center gap-x-4 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">
               <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-orange-500" aria-hidden /> Anniversary</span>
               <span className="inline-flex items-center gap-1.5"><span className="size-2.5 bg-rose-500" aria-hidden /> Birthday</span>
             </div>
@@ -401,7 +401,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
               <div key={year} className="mb-6 last:mb-0">
                 <div className="mb-2.5 flex items-center gap-2">
                   <p className="text-base font-black tracking-tight text-slate-900">{year}</p>
-                  <span className="inline-flex items-center justify-center bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums text-slate-500">
+                  <span className="inline-flex items-center justify-center bg-slate-100 px-1.5 py-0.5 text-phx-sm font-black tabular-nums text-slate-500">
                     {group.length}
                   </span>
                   <span aria-hidden className="h-px flex-1 bg-slate-100" />
@@ -443,14 +443,14 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                         >
                           <span className={`flex size-10 shrink-0 flex-col items-center justify-center border border-black/5 ${accent.tint} ${accent.ink}`}>
                             <span className="text-base font-black leading-none">{badge.day}</span>
-                            <span className="text-[9px] font-bold uppercase leading-none">{badge.month}</span>
+                            <span className="text-phx-xs font-bold uppercase leading-none">{badge.month}</span>
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-1.5">
                               <Icon className={`size-3.5 shrink-0 ${accent.ink}`} aria-hidden />
                               <span className="break-words text-sm font-black text-slate-900">{entry.label}</span>
                               {isNext ? (
-                                <span className="bg-orange-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">Next</span>
+                                <span className="bg-orange-500 px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide text-white">Next</span>
                               ) : null}
                             </span>
                             <span className="mt-0.5 block text-phx-xs font-semibold text-slate-500">
@@ -511,7 +511,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       />
                     </div>
                   </div>
-                  <p className="text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+                  <p className="text-center text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">
                     Drag the photo to frame it
                   </p>
                   {/* The zoom slider ran edge to edge as a raw browser control with a round blue
@@ -520,7 +520,7 @@ export function MyMilestones({ entries, photoUrl }: Props) {
                       into the portal's orange by globals.css RULE 1d (the browser draws them from its
                       own shadow tree, so no class on this element can reach them). */}
                   <label className={`flex items-center gap-3 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Zoom</span>
+                    <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Zoom</span>
                     <input
                       type="range"
                       min={1}

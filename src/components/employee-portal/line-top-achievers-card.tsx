@@ -27,7 +27,7 @@ export function LineTopAchieversCard({
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`} role="region" aria-label="Top medical rep achievers per line">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       <div className="divide-y divide-slate-200">

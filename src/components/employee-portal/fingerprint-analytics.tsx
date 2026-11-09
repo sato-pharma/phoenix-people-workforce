@@ -235,7 +235,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                 <Users className="h-4 w-4" />
               </span>
               <div className="min-w-0">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Whose report</p>
+                <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">Whose report</p>
                 <p className="break-words text-phx-md font-semibold text-slate-800">
                   {selectedTarget?.isSelf
                     ? "Your own attendance"
@@ -300,7 +300,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
         {activeFilter === "custom" && (
           <div className="mt-3 border-t border-slate-100 pt-3">
             <label className="block max-w-xs space-y-1.5">
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Month</span>
+              <span className="block text-phx-sm font-black uppercase tracking-[0.18em] text-slate-400">Month</span>
               <SearchableSelect
                 className={`${FIELD} w-full`}
                 onChange={(e) => handleCustomMonth(e.target.value)}
@@ -371,15 +371,15 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                       </div>
                       <dl className="mt-2.5 grid grid-cols-3 gap-2">
                         <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
                           <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
                         </div>
                         <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
                           <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
                         </div>
                         <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
+                          <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
                           <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{workedHoursLabel(row.timeLong) || "—"}</dd>
                         </div>
                       </dl>

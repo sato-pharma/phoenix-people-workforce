@@ -27,7 +27,7 @@ function DvTrendBlock({ trend, reportHref }: { trend: DoubleVisitFocusTrendPoint
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Your Double-Visit Trend</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Your Double-Visit Trend</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       {total === 0 ? (
@@ -53,7 +53,7 @@ function DvTrendBlock({ trend, reportHref }: { trend: DoubleVisitFocusTrendPoint
                 </div>
                 {/* Wraps to "Jul" / "26" in a narrow column rather than running out of the card.
                     Never truncated — the month is the whole point of the label. */}
-                <span className="break-words text-center text-phx-2xs font-semibold uppercase leading-tight tracking-widest text-slate-400">
+                <span className="break-words text-center text-phx-sm font-semibold uppercase leading-tight tracking-widest text-slate-400">
                   {point.label}
                 </span>
               </div>
@@ -128,7 +128,7 @@ function ScopeFocusPanel({
           <span className="inline-block h-4 w-[3px] bg-[#f47b20]" />
           <div>
             <h2 className="text-phx-xs font-black uppercase tracking-[0.22em] text-white">Scope Focus</h2>
-            <p className="mt-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-white/40">
+            <p className="mt-0.5 text-phx-xs font-semibold uppercase tracking-wider text-white/40">
               {formatDate(periodFrom)} – {formatDate(periodTo)}
             </p>
           </div>
@@ -170,7 +170,7 @@ function ScopeFocusPanel({
                 </div>
                 <span
                   className={cn(
-                    "shrink-0 text-phx-2xs font-bold uppercase tracking-wider",
+                    "shrink-0 text-phx-sm font-bold uppercase tracking-wider",
                     entry.flagged ? "text-rose-600" : "text-slate-400",
                   )}
                 >
@@ -179,7 +179,7 @@ function ScopeFocusPanel({
               </div>
             ))}
             {scope.neglectedTruncated && (
-              <p className="pt-1 text-center text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
+              <p className="pt-1 text-center text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
                 +{scope.neglectedCount - scope.neglected.length} more in the full report
               </p>
             )}
@@ -210,7 +210,7 @@ function ProbationWatchlistBlock({
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Probation Watchlist</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Probation Watchlist</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       {probation.length === 0 ? (
@@ -230,18 +230,18 @@ function ProbationWatchlistBlock({
                   {entry.dvCount} DV{entry.dvCount === 1 ? "" : "s"}
                 </span>
               ) : entry.dvDone ? (
-                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold uppercase text-emerald-700">
+                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-sm font-bold uppercase text-emerald-700">
                   <CheckCircle2 className="h-3 w-3" /> DV done
                 </span>
               ) : (
-                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-phx-2xs font-bold uppercase text-rose-700">
+                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-phx-sm font-bold uppercase text-rose-700">
                   <AlertTriangle className="h-3 w-3" /> DV pending
                 </span>
               )}
             </div>
           ))}
           {probationTruncated && (
-            <p className="px-5 py-2 text-center text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
+            <p className="px-5 py-2 text-center text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
               More in the full report
             </p>
           )}

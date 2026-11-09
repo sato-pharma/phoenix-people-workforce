@@ -411,7 +411,7 @@ export default async function EmployeePortalVacanciesPage({
                             {formatVacancyLabel(vacancy.vacancyCode)}
                           </p>
                           {vacancy.lineName ? (
-                            <span className="mt-1 inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                            <span className="mt-1 inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-sm font-medium text-slate-500">
                               {vacancy.lineName}
                             </span>
                           ) : null}
@@ -428,12 +428,12 @@ export default async function EmployeePortalVacanciesPage({
                             </p>
                           ) : null}
                           {canSeeVacancyJournal && vacancy.note ? (
-                            <p className="mt-0.5 text-phx-2xs text-slate-400">
+                            <p className="mt-0.5 text-phx-sm text-slate-400">
                               {vacancy.note}
                             </p>
                           ) : null}
                           {vacancy.isDistrictManagerVacancy ? (
-                            <span className="mt-1 inline-block border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
+                            <span className="mt-1 inline-block border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-sm font-semibold text-amber-700">
                               DSM Vacancy
                             </span>
                           ) : null}
@@ -461,7 +461,7 @@ export default async function EmployeePortalVacanciesPage({
                           </span>
                           {canAddEmployee && vacancy.status === "open" ? (
                             <a
-                              className="mt-1.5 flex w-full items-center justify-center border border-phx-accent bg-phx-accent px-2 py-1 text-center text-phx-2xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                              className="mt-1.5 flex w-full items-center justify-center border border-phx-accent bg-phx-accent px-2 py-1 text-center text-phx-sm font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
                               href={buildSeatHireHref("/employee-portals/employees", vacancy, vacancy.pendingOffer)}
                             >
                               Add employee to this seat
@@ -499,7 +499,7 @@ export default async function EmployeePortalVacanciesPage({
                         </p>
                       </div>
                       <span
-                        className={`shrink-0 border ${style.border} ${style.bg} px-2 py-0.5 text-phx-2xs font-semibold ${style.text}`}
+                        className={`shrink-0 border ${style.border} ${style.bg} px-2 py-0.5 text-phx-sm font-semibold ${style.text}`}
                       >
                         {titleCaseWords(vacancy.status)}
                       </span>
@@ -507,22 +507,22 @@ export default async function EmployeePortalVacanciesPage({
 
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {vacancy.areaName ? (
-                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-sm font-medium text-slate-500">
                           {vacancy.areaName}
                         </span>
                       ) : null}
                       {vacancy.regionName ? (
-                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-sm font-medium text-slate-500">
                           {vacancy.regionName}
                         </span>
                       ) : null}
                       {vacancy.lineName ? (
-                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-sm font-medium text-slate-500">
                           {vacancy.lineName}
                         </span>
                       ) : null}
                       {vacancy.isDistrictManagerVacancy ? (
-                        <span className="border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
+                        <span className="border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-sm font-semibold text-amber-700">
                           DSM
                         </span>
                       ) : null}
@@ -542,7 +542,7 @@ export default async function EmployeePortalVacanciesPage({
                     ) : null}
 
                     {canSeeVacancyJournal && vacancy.note ? (
-                      <p className="mt-1 text-phx-2xs text-slate-400">
+                      <p className="mt-1 text-phx-sm text-slate-400">
                         {vacancy.note}
                       </p>
                     ) : null}

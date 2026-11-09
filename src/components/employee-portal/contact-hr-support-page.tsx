@@ -317,7 +317,7 @@ export function ContactHRSupportPage({
   const descriptionOverSoftLimit = descriptionCount > DESCRIPTION_SOFT_LIMIT;
 
   const inputClass  = phxFieldClassName;
-  const labelClass = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+  const labelClass = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500";
 
   return (
     <div className="space-y-5" dir="auto">
@@ -453,7 +453,7 @@ export function ContactHRSupportPage({
                 <span className={labelClass}>Description</span>
                 <span
                   aria-live="polite"
-                  className={`text-phx-2xs font-semibold tabular-nums ${
+                  className={`text-phx-sm font-semibold tabular-nums ${
                     descriptionOverSoftLimit ? "text-rose-600" : "text-slate-400"
                   }`}
                 >
@@ -470,7 +470,7 @@ export function ContactHRSupportPage({
                 value={description}
               />
               {descriptionOverSoftLimit && (
-                <p className="mt-1 text-phx-2xs font-semibold text-rose-600">
+                <p className="mt-1 text-phx-sm font-semibold text-rose-600">
                   Tip: keep the description under {DESCRIPTION_SOFT_LIMIT} characters
                   so it&apos;s easier to triage.
                 </p>
@@ -500,7 +500,7 @@ export function ContactHRSupportPage({
                 <p className="text-phx-xs font-semibold text-slate-600">
                   Tap to choose files
                 </p>
-                <p className="text-phx-2xs text-slate-400">
+                <p className="text-phx-sm text-slate-400">
                   Max 10 MB each &middot; up to 10 files &middot; PDF, PNG, JPG
                 </p>
               </button>
@@ -516,7 +516,7 @@ export function ContactHRSupportPage({
                       <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                         {file.name}
                       </span>
-                      <span className="shrink-0 text-phx-2xs tabular-nums text-orange-600">
+                      <span className="shrink-0 text-phx-sm tabular-nums text-orange-600">
                         {formatFileSize(file.size)}
                       </span>
                       <button
@@ -650,7 +650,7 @@ export function ContactHRSupportPage({
                           </p>
                         ) : null}
                         {request.attachments.length > 0 ? (
-                          <p className="mt-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+                          <p className="mt-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
                             {request.attachments.length} attachment{request.attachments.length === 1 ? "" : "s"}
                           </p>
                         ) : null}
@@ -689,7 +689,7 @@ export function ContactHRSupportPage({
                     </p>
                   ) : null}
                   {request.attachments.length > 0 ? (
-                    <p className="mt-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+                    <p className="mt-1.5 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
                       {request.attachments.length} attachment{request.attachments.length === 1 ? "" : "s"}
                     </p>
                   ) : null}
@@ -720,7 +720,7 @@ function SupportStatusChip({ status }: { status: string }) {
           ? "border-sky-200 bg-sky-50 text-sky-700"
           : "border-slate-200 bg-slate-100 text-slate-600";
   return (
-    <span className={`inline-flex max-w-full break-words border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
+    <span className={`inline-flex max-w-full break-words border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wider ${tone}`}>
       {status}
     </span>
   );

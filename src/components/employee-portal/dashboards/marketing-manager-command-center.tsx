@@ -124,7 +124,7 @@ function UpcomingPayDates({ mmOverview }: { mmOverview: PortalHomeSnapshot["mmOv
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="bg-slate-900 px-5 py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
+        <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
       </div>
       {mmOverview && mmOverview.upcoming.length > 0 ? (
         <div className="divide-y divide-slate-100 bg-white">
@@ -235,7 +235,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
 
       <div className="overflow-hidden border border-slate-200">
         <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Commercial &amp; Field Intelligence</h2>
+          <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">Commercial &amp; Field Intelligence</h2>
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2 lg:grid-cols-3">

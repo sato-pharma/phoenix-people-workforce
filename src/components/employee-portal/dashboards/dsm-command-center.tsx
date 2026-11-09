@@ -108,7 +108,7 @@ function DistrictPerformanceCard({ dsmTeam }: { dsmTeam: PortalHomeSnapshot["dsm
         <>
           <KeycardGrid cards={cards} />
           {!published && (
-            <p className="bg-white px-5 pb-4 text-phx-2xs text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
+            <p className="bg-white px-5 pb-4 text-phx-sm text-slate-500">{NO_PUBLISHED_CLOSING_NOTE}</p>
           )}
         </>
       ) : (

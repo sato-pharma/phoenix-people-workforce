@@ -10,7 +10,7 @@ import { DAY_PLAN_ACTUAL_NOT_ON_PLAN, type DayPlanActualRow } from "@/lib/privat
 import { cn } from "@/lib/utils";
 
 const TH_CLASS =
-  "border-b border-slate-200 border-t-2 border-t-slate-900 bg-slate-50 px-3 py-2.5 align-bottom text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 border-t-2 border-t-slate-900 bg-slate-50 px-3 py-2.5 align-bottom text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 const MARK_CLASS: Record<DayPlanActualRow["match"], string> = {
   match: "text-emerald-700",
@@ -25,7 +25,7 @@ function markText(row: DayPlanActualRow): string {
 }
 
 function HalfText({ half }: { half: DayPlanActualRow["half"] }) {
-  return <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</p>;
+  return <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{half}</p>;
 }
 
 function PlanCell({ row }: { row: DayPlanActualRow }) {
@@ -60,11 +60,11 @@ function PlanActualCards({ className, rows }: { className: string; rows: readonl
         <article className={`grid min-w-0 gap-2 border border-slate-200 bg-white px-3 py-3 ${adminSoftDepthClassName}`} key={row.key}>
           <HalfText half={row.half} />
           <div className="grid min-w-0 gap-1">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Plan</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Plan</p>
             <PlanCell row={row} />
           </div>
           <div className="grid min-w-0 gap-1 border-t border-slate-100 pt-2">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Actual</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">Actual</p>
             <ActualCell row={row} />
           </div>
         </article>

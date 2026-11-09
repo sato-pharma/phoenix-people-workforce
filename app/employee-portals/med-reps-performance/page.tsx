@@ -299,7 +299,7 @@ export default async function MedRepsPerformancePage({
                 <TrendingUp className="h-4.5 w-4.5 text-orange-400" />
               </div>
               <div className="min-w-0">
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-400">
+                <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-400">
                   Field Performance
                 </p>
                 <h3 className="break-words text-base font-black text-white sm:text-lg">
@@ -313,7 +313,7 @@ export default async function MedRepsPerformancePage({
                 <div className="flex items-center gap-2">
                   <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-400" />
                   <div className="min-w-0 text-left">
-                    <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
+                    <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                       Top rep
                     </p>
                     <p className="max-w-[10rem] break-words text-xs font-bold leading-snug text-white">
@@ -326,7 +326,7 @@ export default async function MedRepsPerformancePage({
                 </div>
               )}
               <div className="text-right">
-                <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   {scopeWord} achievement
                 </p>
                 <p className={`text-sm font-black ${achievementColorOnDark(teamAchievementPercent)}`}>
@@ -334,7 +334,7 @@ export default async function MedRepsPerformancePage({
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   Gap to target
                 </p>
                 <p className="text-sm font-black text-white">{egp(totalGap)}</p>
@@ -389,14 +389,14 @@ export default async function MedRepsPerformancePage({
 
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-phx-2xs font-bold text-white">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-phx-sm font-bold text-white">
                       <Users className="h-3.5 w-3.5" />
                     </span>
                     <div className="min-w-0">
                       <p className="break-words text-sm font-bold text-slate-900">
                         {formatEmployeeDisplayName(group.managerName)}
                       </p>
-                      <p className="text-phx-2xs font-medium text-slate-400">
+                      <p className="text-phx-sm font-medium text-slate-400">
                         {/* A vacant district has no manager to title (owner, 2026-10-20). */}
                         {group.isVacantSeat ? "Vacant seat" : "District Manager"} &middot; {medicalRepCountLabel(group.members.length)}
                       </p>

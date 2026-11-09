@@ -190,7 +190,7 @@ export function NativeVisitVacationDaysWorkspace() {
         >
           <div className="grid min-w-0 gap-4 px-4 py-4 sm:px-5">
             <label className="grid gap-1">
-              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Day</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Day</span>
               {/* One date needs no full-width bar on a desk; a phone keeps the whole width. */}
               <input
                 className={`${portalInputClassName} sm:max-w-xs`}
@@ -200,7 +200,7 @@ export function NativeVisitVacationDaysWorkspace() {
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Why you need to work</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Why you need to work</span>
               <textarea
                 className={`${portalInputClassName} min-h-24`}
                 maxLength={1000}

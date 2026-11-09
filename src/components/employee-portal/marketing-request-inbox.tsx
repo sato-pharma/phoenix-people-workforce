@@ -131,7 +131,7 @@ function WaitPill({ days }: { days: number | null }) {
   if (days === null) return null;
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-phx-sm font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
     >
       <Timer className="h-3 w-3" />
       {waitLabel(days)}
@@ -208,7 +208,7 @@ function InboxRowCard({
         className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${tone.header}`}
       >
         <div className="min-w-0">
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
+          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-orange-600">
             {row.requestCode}
           </p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
@@ -243,7 +243,7 @@ function InboxRowCard({
           product line and every pharmacy on the request. */}
       <div className="grid gap-3 border-b border-slate-100 px-4 py-3 sm:grid-cols-4">
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Estimated Cost
           </span>
           <span className="text-phx-md font-black text-slate-950">
@@ -251,7 +251,7 @@ function InboxRowCard({
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Pay Date
           </span>
           <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
@@ -260,7 +260,7 @@ function InboxRowCard({
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Submitted
           </span>
           <span className="text-phx-md font-bold text-slate-700">
@@ -268,7 +268,7 @@ function InboxRowCard({
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Waiting
           </span>
           <span className="whitespace-nowrap text-phx-md font-bold text-slate-700">
@@ -306,7 +306,7 @@ function InboxRowCard({
           onClick={onToggleDetail}
           type="button"
         >
-          <span className="inline-flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <span className="inline-flex items-center gap-1.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
             {isDetailOpen ? (
               <ChevronDown className="h-3.5 w-3.5" />
             ) : (
@@ -314,7 +314,7 @@ function InboxRowCard({
             )}
             Full request detail
           </span>
-          <span className="whitespace-nowrap text-phx-2xs font-bold text-slate-400">
+          <span className="whitespace-nowrap text-phx-sm font-bold text-slate-400">
             {isDetailOpen ? "Hide" : "Show"}
           </span>
         </button>
@@ -401,7 +401,7 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
     <Card className="rounded-sm border border-l-[3px] border-sky-200 border-l-sky-500 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-sky-50/40 to-white px-4 py-3">
         <div className="min-w-0">
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
+          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
           {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
               second line" and only the first half is the owner's rule — AGENTS.md §4 says that where
               the no-ellipsis rule meets the no-horizontal-scroll rule, WRAPPING WINS. The measurement
@@ -705,7 +705,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span>{segment.label}</span>
                 <span
-                  className={`rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
+                  className={`rounded-sm px-1.5 py-0.5 text-phx-sm font-black ${
                     isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"
                   }`}
                 >
@@ -990,7 +990,7 @@ function ChainWatchList({
                 {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(
                   (heading, index) => (
                     <th
-                      className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                      className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
                       key={`${heading}-${index}`}
                       scope="col"
                     >

@@ -72,7 +72,7 @@ export function BottomNavCustomizer({
             >
               <Icon className="h-3.5 w-3.5" />
               {entry.fullLabel}
-              <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">Always</span>
+              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-400">Always</span>
             </span>
           );
         })}

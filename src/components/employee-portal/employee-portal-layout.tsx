@@ -810,7 +810,7 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
 
   if (!online) {
     return (
-      <p className="flex items-center gap-1 text-phx-4xs font-black uppercase tracking-[0.14em] text-red-600 sm:text-phx-3xs" role="status">
+      <p className="flex items-center gap-1 text-phx-xs font-black uppercase tracking-[0.14em] text-red-600 sm:text-phx-xs" role="status">
         <WifiOff className="h-3 w-3 shrink-0" />
         {/* 🔴 Never "nothing will save" above "Saved on this phone": the press on staging showed the two together, and a rep who reads this line may not press at all. */}
         {visitsCanBeHeld ? "Offline — only visits will save" : "Offline — nothing will save"}
@@ -819,7 +819,7 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
   }
 
   return (
-    <p className="text-phx-4xs font-black uppercase tracking-[0.22em] text-orange-600 sm:text-phx-3xs sm:tracking-[0.26em]">
+    <p className="text-phx-xs font-black uppercase tracking-[0.22em] text-orange-600 sm:text-phx-xs sm:tracking-[0.26em]">
       <span className={greeting ? "sm:hidden" : undefined}>Employee Portal</span>
       {greeting ? (
         <span className="hidden normal-case tracking-[0.02em] sm:inline">
@@ -935,7 +935,7 @@ function EmployeePortalInbox({ mailboxConnected }: { mailboxConnected: boolean }
         {total > 0 ? (
           <span
             aria-hidden="true"
-            className="nav-badge-alarm absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center bg-phx-accent px-1 text-phx-3xs font-black text-white"
+            className="nav-badge-alarm absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center bg-phx-accent px-1 text-phx-xs font-black text-white"
             ref={alarmGlowRef}
           >
             {total > 99 ? "99+" : total}
@@ -968,7 +968,7 @@ function EmployeePortalInbox({ mailboxConnected }: { mailboxConnected: boolean }
             >
               {entry.label}
               {entry.count > 0 ? (
-                <span className="flex h-4 min-w-4 items-center justify-center bg-[#F05A1A] px-1 text-phx-3xs font-black leading-none text-white">
+                <span className="flex h-4 min-w-4 items-center justify-center bg-[#F05A1A] px-1 text-phx-xs font-black leading-none text-white">
                   {entry.count > 99 ? "99+" : entry.count}
                 </span>
               ) : null}
@@ -1027,7 +1027,7 @@ function PortalQuickActions({
       </button>
       {open ? (
         <div className="absolute right-0 top-full z-50 mt-1.5 w-60 border border-slate-200 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.16)]" role="menu">
-          <p className="border-b border-slate-100 px-3.5 py-2 text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-400">Start something</p>
+          <p className="border-b border-slate-100 px-3.5 py-2 text-phx-xs font-black uppercase tracking-[0.18em] text-slate-400">Start something</p>
           {actions.map((action) => {
             const ActionIcon = PORTAL_QUICK_ACTION_ICONS[action.id];
             return (
@@ -1237,8 +1237,8 @@ function EmployeePortalMenu({
                     <span
                       className={
                         isMobile
-                          ? "text-phx-2xs font-black uppercase tracking-[0.16em] text-[#1D2B42]"
-                          : "text-phx-3xs font-black uppercase tracking-[0.18em] text-[#344073]"
+                          ? "text-phx-sm font-black uppercase tracking-[0.16em] text-[#1D2B42]"
+                          : "text-phx-xs font-black uppercase tracking-[0.18em] text-[#344073]"
                       }
                     >
                       {section.title}
@@ -1246,7 +1246,7 @@ function EmployeePortalMenu({
                     {folded && badged.length > 0 ? <PortalPendingCount navBadges={badged} tone="inline" /> : null}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    <span className="text-phx-3xs font-black tabular-nums text-slate-400">{section.items.length}</span>
+                    <span className="text-phx-xs font-black tabular-nums text-slate-400">{section.items.length}</span>
                     {isActiveSection ? (
                       <span aria-hidden="true" className="h-1.5 w-1.5 bg-[#F05A1A] shadow-[0_0_8px_rgba(240,90,26,0.9)]" />
                     ) : (
@@ -1568,7 +1568,7 @@ export function EmployeePortalTopNav({
           <div className="flex min-w-0 flex-1 items-center md:flex-none">
             <div className="min-w-0">
               <EmployeePortalGreeting firstName={firstName} />
-              <p className="text-phx-2xs font-bold leading-tight text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
+              <p className="text-phx-sm font-bold leading-tight text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
             </div>
           </div>
 
@@ -1633,7 +1633,7 @@ export function EmployeePortalTopNav({
             {onOpenCommandBar ? (
               <button
                 aria-label="Open the command bar (Ctrl K)"
-                className={`absolute right-1.5 hidden h-7 items-center gap-1 border border-slate-200 bg-white px-1.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:border-orange-300 hover:text-orange-700 md:flex ${adminControlDepthClassName}`}
+                className={`absolute right-1.5 hidden h-7 items-center gap-1 border border-slate-200 bg-white px-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:border-orange-300 hover:text-orange-700 md:flex ${adminControlDepthClassName}`}
                 onMouseDown={(event) => {
                   event.preventDefault();
                   onOpenCommandBar();
@@ -1751,7 +1751,7 @@ export function EmployeePortalTopNav({
                   <div className="min-w-0">
                     <p className="text-sm font-black text-slate-900">{data.employee.fullName}</p>
                     <p className="mt-0.5 text-xs font-semibold text-slate-500">{data.employee.roleLabel}</p>
-                    <p className="mt-0.5 font-mono text-phx-2xs font-bold uppercase tracking-[0.10em] text-orange-600">
+                    <p className="mt-0.5 font-mono text-phx-sm font-bold uppercase tracking-[0.10em] text-orange-600">
                       {data.employee.hrId}
                     </p>
                   </div>
@@ -1832,7 +1832,7 @@ export function EmployeePortalTopNav({
             <PortalAvatar fullName={employeeName} photoSrc={photoSrc} size="h-11 w-11" />
             <div className="min-w-0">
               <p className="text-sm font-black text-slate-900">{data.employee.fullName}</p>
-              <p className="mt-0.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-600">{data.employee.roleLabel}</p>
+              <p className="mt-0.5 text-phx-sm font-bold uppercase tracking-[0.12em] text-orange-600">{data.employee.roleLabel}</p>
             </div>
           </div>
           <button
@@ -2235,7 +2235,7 @@ export function EmployeePortalSidebar({
           role="menu"
           style={{ left: flyout.left, maxHeight: `calc(100vh - ${flyout.top}px - 16px)`, top: flyout.top }}
         >
-          <p className="flex items-center justify-between gap-2 px-4 pb-1.5 pt-1 text-phx-3xs font-black uppercase tracking-[0.18em] text-[#344073]">
+          <p className="flex items-center justify-between gap-2 px-4 pb-1.5 pt-1 text-phx-xs font-black uppercase tracking-[0.18em] text-[#344073]">
             {flyoutSection.title}
             <span className="tabular-nums text-slate-400">{flyoutSection.items.length}</span>
           </p>
@@ -2553,7 +2553,7 @@ export function EmployeePortalChrome({
           >
             <Minimize2 className="h-3.5 w-3.5 text-[#FF8A4C]" />
             Exit focus mode
-            <kbd className="border border-white/20 px-1 text-phx-3xs font-black text-white/60">Esc</kbd>
+            <kbd className="border border-white/20 px-1 text-phx-xs font-black text-white/60">Esc</kbd>
           </button>
         ) : null}
         {commandOpen ? (

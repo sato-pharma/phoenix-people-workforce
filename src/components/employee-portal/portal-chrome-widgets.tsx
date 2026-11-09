@@ -72,7 +72,7 @@ export function PortalAvatar({
   return (
     <span
       aria-hidden="true"
-      className={`flex ${size} shrink-0 items-center justify-center bg-gradient-to-br from-[#F05A1A] to-[#F59E0B] text-phx-2xs font-black tracking-[0.04em] text-white ${className ?? ""}`}
+      className={`flex ${size} shrink-0 items-center justify-center bg-gradient-to-br from-[#F05A1A] to-[#F59E0B] text-phx-sm font-black tracking-[0.04em] text-white ${className ?? ""}`}
     >
       {initialsFor(fullName)}
     </span>
@@ -103,7 +103,7 @@ export function PortalPendingCount({
     return (
       <span
         aria-label={label}
-        className={`absolute flex h-4 min-w-4 items-center justify-center px-1 text-phx-3xs font-black leading-none tabular-nums text-white ring-2 ${
+        className={`absolute flex h-4 min-w-4 items-center justify-center px-1 text-phx-xs font-black leading-none tabular-nums text-white ring-2 ${
           tone === "rail" ? "-right-2.5 -top-2 ring-[#101a31]" : "-right-1.5 -top-1.5 ring-white"
         } ${
           overdue ? "bg-red-600 nav-badge-alarm-overdue" : "bg-[#F05A1A] nav-badge-alarm"
@@ -118,7 +118,7 @@ export function PortalPendingCount({
   return (
     <span
       aria-label={label}
-      className={`inline-flex h-4 min-w-4 items-center justify-center px-1 text-phx-3xs font-black leading-none tabular-nums text-white ${
+      className={`inline-flex h-4 min-w-4 items-center justify-center px-1 text-phx-xs font-black leading-none tabular-nums text-white ${
         overdue ? "bg-red-600" : "bg-[#F05A1A]"
       }`}
       role="status"
@@ -211,13 +211,13 @@ export function WaitingOnYouChip({
                 <span className="min-w-0">
                   <span className="block">{queue.label}</span>
                   {queue.navBadge === "approvals-hub-pending" && queues.some((other) => COVERED_BY_HUB.has(other.navBadge ?? "")) ? (
-                    <span className="mt-0.5 block text-phx-2xs font-semibold text-slate-400">
+                    <span className="mt-0.5 block text-phx-sm font-semibold text-slate-400">
                       Includes the leave, excuse and plan requests listed here
                     </span>
                   ) : null}
                 </span>
                 <span
-                  className={`shrink-0 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${queuePillClass(
+                  className={`shrink-0 px-1.5 py-0.5 text-phx-sm font-black tabular-nums ${queuePillClass(
                     count,
                     Boolean(reading?.overdue),
                     hubShown && COVERED_BY_HUB.has(queue.navBadge ?? ""),
@@ -439,7 +439,7 @@ export function PortalCommandBar({
               return (
                 <div key={entry.id}>
                   {header ? (
-                    <p className="px-4 pb-1 pt-3 text-phx-3xs font-black uppercase tracking-[0.18em] text-white/40">{header}</p>
+                    <p className="px-4 pb-1 pt-3 text-phx-xs font-black uppercase tracking-[0.18em] text-white/40">{header}</p>
                   ) : null}
                   <button
                     aria-label={entry.locked ? `${entry.label} — locked` : undefined}
@@ -461,7 +461,7 @@ export function PortalCommandBar({
                     <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${entry.locked ? "text-amber-400" : active ? "text-[#FF8A4C]" : "text-white/55"}`} />
                     <span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                       <span className={`text-sm font-bold ${entry.locked ? "text-white/60" : "text-white"}`}>{entry.label}</span>
-                      <span className="text-phx-2xs font-semibold uppercase tracking-[0.12em] text-white/40">{entry.hint}</span>
+                      <span className="text-phx-sm font-semibold uppercase tracking-[0.12em] text-white/40">{entry.hint}</span>
                     </span>
                     {active ? <CornerDownLeft className="mt-0.5 hidden h-4 w-4 shrink-0 text-[#FF8A4C] sm:block" /> : null}
                   </button>
@@ -472,7 +472,7 @@ export function PortalCommandBar({
         </div>
 
         {/* Keyboard help only where there is a keyboard — on a phone these keys do not exist. */}
-        <div className="hidden shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/10 px-4 py-2.5 text-phx-2xs font-semibold text-white/45 md:flex">
+        <div className="hidden shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/10 px-4 py-2.5 text-phx-sm font-semibold text-white/45 md:flex">
           <span>
             <kbd className="border border-white/15 px-1 font-black text-white/70">↑</kbd>{" "}
             <kbd className="border border-white/15 px-1 font-black text-white/70">↓</kbd> move
@@ -538,18 +538,18 @@ export function PortalShortcutsCard({ onClose, sections }: { onClose: () => void
         <div className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">
           {rows.map(([keys, what]) => (
             <div className="flex items-start gap-3" key={keys}>
-              <kbd className="shrink-0 border border-white/20 bg-white/[0.06] px-1.5 py-0.5 text-phx-2xs font-black text-[#FFB27F]">{keys}</kbd>
+              <kbd className="shrink-0 border border-white/20 bg-white/[0.06] px-1.5 py-0.5 text-phx-sm font-black text-[#FFB27F]">{keys}</kbd>
               <span className="text-sm font-semibold text-white/80">{what}</span>
             </div>
           ))}
         </div>
         {goShortcuts.length > 0 ? (
           <div className="border-t border-white/10 px-5 py-4">
-            <p className="mb-2.5 text-phx-3xs font-black uppercase tracking-[0.18em] text-white/45">Press G, then</p>
+            <p className="mb-2.5 text-phx-xs font-black uppercase tracking-[0.18em] text-white/45">Press G, then</p>
             <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
               {goShortcuts.map((shortcut) => (
                 <div className="flex items-start gap-3" key={shortcut.key}>
-                  <kbd className="shrink-0 border border-white/20 bg-white/[0.06] px-1.5 py-0.5 text-phx-2xs font-black uppercase text-[#FFB27F]">
+                  <kbd className="shrink-0 border border-white/20 bg-white/[0.06] px-1.5 py-0.5 text-phx-sm font-black uppercase text-[#FFB27F]">
                     {shortcut.key}
                   </kbd>
                   <span className="text-sm font-semibold text-white/80">{shortcut.label}</span>

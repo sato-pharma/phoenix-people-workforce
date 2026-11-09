@@ -205,7 +205,7 @@ export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading =
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+      <div className="flex items-center gap-2 text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
         <Share2 aria-hidden className="size-3.5 text-orange-500" />
         {heading}
       </div>

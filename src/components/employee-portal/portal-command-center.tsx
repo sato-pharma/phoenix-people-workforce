@@ -93,7 +93,7 @@ export function PremiumNavTile({
       className="group relative flex min-h-[52px] bg-white transition-colors hover:bg-orange-50 active:bg-orange-100 sm:min-h-[72px]"
     >
       {badge != null && badge > 0 && (
-        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-phx-3xs font-black text-white">
+        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-phx-xs font-black text-white">
           {badge}
         </span>
       )}
@@ -103,7 +103,7 @@ export function PremiumNavTile({
           <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 transition-colors group-hover:text-orange-600">
+          <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500 transition-colors group-hover:text-orange-600">
             {label}
           </p>
           <p className="mt-0.5 hidden text-sm font-semibold leading-snug text-slate-800 sm:block">{description}</p>
@@ -242,7 +242,7 @@ function IntelField({
     <div className={`flex min-w-0 flex-col gap-1 bg-white px-3 py-3 sm:px-7 sm:py-4 ${className}`}>
       <div className="flex items-center gap-1.5">
         <Icon className="h-3 w-3 shrink-0 text-orange-600" />
-        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
       </div>
       {/* Wraps rather than clips. The old value carried `whitespace-nowrap` inside an
           `overflow-hidden` band, which is the blindness the golden rule names: a long manager name
@@ -984,9 +984,9 @@ function RepTile({
       {/* A container, so what fits in the tile is decided by the TILE's width, not the window's. */}
       <div className="@container flex flex-1 flex-col p-3">
         <div className="flex items-baseline gap-2">
-          <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+          <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
           {meta && (
-            <span className="ml-auto whitespace-nowrap text-phx-3xs font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
+            <span className="ml-auto whitespace-nowrap text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
           )}
         </div>
         <div className="mt-2">{children}</div>
@@ -1083,7 +1083,7 @@ function RepCallHalf({
         </span>
         {/* Only where the tile itself has room for it (a container query on RepTile's body): the
             window's width said nothing about the tile once the sidebar opened at lg. */}
-        <span className="ml-auto hidden text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400 @[13rem]:inline">
+        <span className="ml-auto hidden text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400 @[13rem]:inline">
           {label}
         </span>
       </p>
@@ -1154,7 +1154,7 @@ function RepFact({ label, value, tone }: { label: string; value: string; tone?: 
   // and on a fixed grid an odd count left a solid grey cell — the "empty square" the owner banned.
   return (
     <div className="min-w-0 grow basis-[calc(50%-1px)] bg-white px-3 py-2 sm:basis-[calc(33.333%-1px)]">
-      <dt className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dt className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
       <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</dd>
     </div>
   );
@@ -1616,7 +1616,7 @@ async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<Porta
   return (
     <RepPanel
       right={
-        <span className="text-right text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+        <span className="text-right text-phx-sm font-semibold uppercase tracking-[0.08em] text-slate-400">
           {noTarget.length > 0
             ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
             : "Uploaded months"}
@@ -1638,7 +1638,7 @@ async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<Porta
           />
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute right-0 text-phx-3xs font-bold tabular-nums text-slate-400"
+            className="pointer-events-none absolute right-0 text-phx-xs font-bold tabular-nums text-slate-400"
             style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
           >
             100%
@@ -1656,7 +1656,7 @@ async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<Porta
                   style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
                 >
                   <p
-                    className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-2xs font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
+                    className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-sm font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
                   >
                     {pct}%
                   </p>
@@ -1668,8 +1668,8 @@ async function RepAchievementByMonth({ sales, kpiMonth }: { sales: Promise<Porta
         <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
           {closed.map((t) => (
             <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
-              <p className="text-phx-2xs font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
-              <p className="text-phx-3xs uppercase tracking-[0.04em] text-slate-400">
+              <p className="text-phx-sm font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
+              <p className="text-phx-xs uppercase tracking-[0.04em] text-slate-400">
                 {egpCompact(t.salesValue)}
               </p>
             </div>
@@ -1704,7 +1704,7 @@ async function RepNeedsYou({
       right={
         pendingCountsAvailable ? (
           <span
-            className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
+            className={`border px-1.5 py-px text-phx-sm font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
           >
             {openCount} open
           </span>
@@ -1904,7 +1904,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       {ach && pct !== null && (
         <div className="overflow-hidden border border-slate-200">
           <div className="bg-slate-900 px-5 py-3">
-            <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
+            <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">
               This Month | Achievement
             </h2>
           </div>
@@ -1929,7 +1929,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
       <div className="overflow-hidden border border-slate-200">
         <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
+          <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">

@@ -60,7 +60,7 @@ export function RepKpiMonthPicker({
 
   return (
     <label className={`flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-3 py-2 ${adminSoftDepthClassName}`}>
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">KPI month</span>
+      <span className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">KPI month</span>
       <select
         // `text-base` and `font-semibold` are this screen's own, kept through `cn()` so
         // tailwind-merge drops the token's `text-sm`: a native select under 16px makes iOS

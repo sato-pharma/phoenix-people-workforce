@@ -228,7 +228,7 @@ export function EmployeeOrganogramDashboard({
         <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-600">
                 Filters
               </span>
               <span className="text-phx-xs font-medium text-slate-500">
@@ -270,18 +270,18 @@ export function EmployeeOrganogramDashboard({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-slate-600">
                     {counts.seats.filled} of {counts.seats.total} sales seats filled
                   </span>
                   {counts.seats.open > 0 && (
-                    <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
+                    <span className="rounded bg-orange-50 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-orange-600">
                       {counts.seats.open} open {counts.seats.open === 1 ? "seat" : "seats"}
                     </span>
                   )}
-                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-slate-600">
                     {counts.people.shown} {counts.people.shown === 1 ? "person" : "people"} shown
                   </span>
-                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-sm font-bold uppercase tracking-wider text-slate-600">
                     {formatDistrictLaneCount(counts.lanes.district)}
                   </span>
                 </div>

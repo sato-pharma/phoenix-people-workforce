@@ -177,7 +177,7 @@ function PortalBottomNavTabEditor({
               >
                 <span className="min-w-0 text-sm font-bold text-slate-800">{entry.fullLabel}</span>
                 {onBar ? (
-                  <span className="shrink-0 text-phx-2xs font-black uppercase tracking-[0.1em] text-orange-600">
+                  <span className="shrink-0 text-phx-sm font-black uppercase tracking-[0.1em] text-orange-600">
                     On the bar
                   </span>
                 ) : null}
@@ -191,7 +191,7 @@ function PortalBottomNavTabEditor({
 
   return (
     <>
-      <p className="px-4 pt-3 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">
+      <p className="px-4 pt-3 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400">
         Choose the tab to change
       </p>
       <ul className="divide-y divide-slate-100">
@@ -207,7 +207,7 @@ function PortalBottomNavTabEditor({
           </li>
         ))}
       </ul>
-      <p className="border-t border-slate-100 px-4 py-3 text-phx-2xs font-bold text-slate-400">
+      <p className="border-t border-slate-100 px-4 py-3 text-phx-sm font-bold text-slate-400">
         Home and Profile always stay.
       </p>
     </>
@@ -292,7 +292,7 @@ export function PortalBottomNavQuickActions({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-black text-slate-900">{action.label}</span>
-                          <span className="block text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">
+                          <span className="block text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-400">
                             {action.hint}
                           </span>
                         </span>

@@ -108,13 +108,13 @@ export function MarketingProgressStrip({
         )}
       </p>
       {progress.returnReason ? (
-        <p className="rounded-sm border border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-medium text-amber-800">
+        <p className="rounded-sm border border-amber-200 bg-amber-50 px-2 py-1 text-phx-sm font-medium text-amber-800">
           Returned: {progress.returnReason}
         </p>
       ) : null}
       {requestId ? (
         <a
-          className="inline-block text-phx-2xs font-bold text-orange-700 underline underline-offset-2 hover:text-orange-800"
+          className="inline-block text-phx-sm font-bold text-orange-700 underline underline-offset-2 hover:text-orange-800"
           href={`/marketing-requests/${requestId}`}
         >
           Open the full record
@@ -193,19 +193,19 @@ export function MarketingApprovalTimeline({
                   >
                     {step.stepName}
                     {step.isCc ? (
-                      <span className="ml-1.5 rounded-sm bg-slate-200/70 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-500">
+                      <span className="ml-1.5 rounded-sm bg-slate-200/70 px-1 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
                         CC
                       </span>
                     ) : null}
                   </p>
-                  <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
+                  <p className="mt-0.5 text-phx-sm font-medium text-slate-400">
                     {step.assignedRole}
                     {step.assignedName ? ` · ${step.assignedName}` : ""}
                   </p>
                 </div>
               </div>
               <span
-                className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] ${pillClasses(
+                className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-[0.06em] ${pillClasses(
                   step.status,
                 )}`}
               >
@@ -214,7 +214,7 @@ export function MarketingApprovalTimeline({
             </div>
 
             {step.decisionAt || step.decisionByName || step.decisionNote ? (
-              <div className="mt-1.5 border-t border-slate-100 pt-1.5 text-phx-2xs font-medium text-slate-500">
+              <div className="mt-1.5 border-t border-slate-100 pt-1.5 text-phx-sm font-medium text-slate-500">
                 {step.decisionByName ? (
                   <span className="font-bold text-slate-600">
                     {step.decisionByName}

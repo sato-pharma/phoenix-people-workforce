@@ -292,7 +292,7 @@ export function DeductionsPortalWorkspace({
           </p>
           {filtered ? (
             <button
-              className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+              className="whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
               onClick={() => {
                 setMonthFilter(PORTAL_LEDGER_ANY);
                 setCategoryFilter(PORTAL_LEDGER_ANY);

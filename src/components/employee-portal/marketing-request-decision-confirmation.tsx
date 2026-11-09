@@ -28,7 +28,7 @@ import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-phar
 function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="bg-slate-50 px-3 py-2.5">
-      <p className="text-phx-2xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-phx-sm uppercase tracking-wide text-slate-400">{label}</p>
       <p className={`text-phx-md font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
         {value || "Not captured"}
       </p>
@@ -244,22 +244,22 @@ export function MarketingRequestDecisionConfirmation({
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Estimated cost</p>
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Estimated cost</p>
               <p className="text-base font-medium text-slate-950">{egp(summary.estimatedCost)}</p>
             </div>
             <div className="bg-orange-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-orange-700">
+              <p className="text-phx-sm uppercase tracking-wide text-orange-700">
                 Required ROI{summary.roiDurationMonths ? ` · ${summary.roiDurationMonths} mo` : ""}
               </p>
               <p className="text-base font-medium text-orange-800">{egp(summary.requiredRoiValue)}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
               <p className="whitespace-nowrap text-phx-md font-medium text-slate-950">{summary.customerName ?? "—"}</p>
               <NotOnCrmListFlag compact flag={summary.customerCrmListFlag} />
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
+              <p className="text-phx-sm uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
               <p className="text-phx-md font-medium text-slate-950">{summary.payDate}</p>
             </div>
           </div>
@@ -325,7 +325,7 @@ export function MarketingRequestDecisionConfirmation({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-phx-md font-medium text-slate-950">{pharmacy.pharmacyName}</p>
                     <span
-                      className={`px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
+                      className={`px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide ${
                         pharmacy.referenceStatus === "matched"
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-amber-100 text-amber-800"

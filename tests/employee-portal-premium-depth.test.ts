@@ -333,4 +333,24 @@ export function runEmployeePortalPremiumDepthTests() {
       `${redefined.join(" | ")}. Import the five from ${TOKENS}; a second definition is a second ` +
       `material, which is what the four cardShadow constants already cost.`,
   );
+
+  // "raise the employee portal screens' fonts too" (owner, 2026-11-09): nothing on a portal screen is drawn below
+  // 11px. Every .tsx under the portal's components and pages is read, so a new screen is held to it too. Three are
+  // left as measured: the honour strip's line labels, sized to fit the owner's own locked strip (tests/rep-rank-
+  // badges.test.ts); the phone bottom bar, whose label widths are measured at 10px (src/config/sidebar-metrics.ts,
+  // tests/sidebar-label-width.test.ts) and would need a fresh browser measurement to move; and the WORKFORCE word
+  // under the Phoenix bird, which is the logo lockup.
+  const wordmark = "mt-1 text-phx-4xs font-black leading-none tracking-[0.34em] text-[#F05A1A]";
+  let screens = 0;
+  for (const folder of ["src/components/employee-portal", "app/employee-portals"]) {
+    for (const entry of readdirSync(folder, { recursive: true, encoding: "utf8" })) {
+      if (!entry.endsWith(".tsx")) continue;
+      const file = `${folder}/${entry.replace(/\\/g, "/")}`;
+      screens++;
+      if (file.endsWith("/rep-honour-strip.tsx") || file.endsWith("/employee-portal-bottom-nav.tsx")) continue;
+      const text = readFileSync(file, "utf8").split(wordmark).join("");
+      assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(text), `${file}: no text below 11px on a portal screen`);
+    }
+  }
+  assert.ok(screens >= 300, `the floor read every portal screen (${screens})`);
 }

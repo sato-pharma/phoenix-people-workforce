@@ -144,7 +144,7 @@ export function EmployeePortalPageShell({
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-200">
+                <span className="inline-flex items-center gap-2 rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.18em] text-orange-200">
                   <span aria-hidden className="h-1 w-1 bg-orange-400 shadow-[0_0_6px_rgba(249,115,22,0.9)]" />
                   {badge ?? "Employee Portal"}
                 </span>

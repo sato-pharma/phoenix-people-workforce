@@ -126,7 +126,7 @@ export function ProbationScorecardLauncher({
                         </div>
                         <span className="flex items-center gap-2">
                           {probationer.submittedCount > 0 && (
-                            <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-medium text-phx-ok">
+                            <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-sm font-medium text-phx-ok">
                               {probationer.submittedCount} of {Math.max(probationer.requiredCount, probationer.submittedCount)} submitted
                             </span>
                           )}

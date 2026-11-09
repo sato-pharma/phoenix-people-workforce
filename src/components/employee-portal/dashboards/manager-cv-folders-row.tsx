@@ -35,7 +35,7 @@ export function ManagerCvFoldersRow({ summary }: { summary: ManagerFolderSummary
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <FolderOpen aria-hidden className="h-4 w-4 shrink-0 text-[#f47b20]" />
-        <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+        <h2 className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
           CV Folders
         </h2>
         <span className={`min-w-0 break-words text-sm ${unseenCandidates > 0 ? "font-bold text-slate-900" : "text-slate-600"}`}>

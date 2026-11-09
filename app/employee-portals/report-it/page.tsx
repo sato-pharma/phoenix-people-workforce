@@ -39,7 +39,7 @@ export default async function ReportItPage() {
         <ReportItForm />
         {own && own.rows.length > 0 ? (
           <section className="mt-4 space-y-2">
-            <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-500">My Reports</h2>
+            <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-500">My Reports</h2>
             <ReportItEmployeeDashboard initialRows={own.rows} initialTotal={own.total} />
           </section>
         ) : null}

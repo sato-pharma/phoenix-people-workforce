@@ -927,7 +927,7 @@ export async function runPrivateCalendarTests() {
   // month read as "chaos"; a two-line Office entry drawn as a four-row ruled table was most of it).
   assert.match(
     privateCalendarUiSource,
-    /"block space-y-0\.5 px-1\.5 py-1 text-phx-2xs font-semibold leading-tight text-slate-600 \[&>span:first-child\]:font-black \[&>span:first-child\]:text-slate-900"/,
+    /"block space-y-0\.5 px-1\.5 py-1 text-phx-sm font-semibold leading-tight text-slate-600 \[&>span:first-child\]:font-black \[&>span:first-child\]:text-slate-900"/,
     "stacked chip lines (the entry's name, then its detail) must stay visibly apart from the line below them",
   );
   assert.doesNotMatch(privateCalendarUiSource, /divide-y divide-black\/15/, "no ruled line between a chip's lines");

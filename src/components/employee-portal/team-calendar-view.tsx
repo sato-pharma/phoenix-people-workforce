@@ -126,7 +126,7 @@ const PHARMACY_FIGURE_INK = "bg-violet-600 text-white";
  */
 function SplitFigures({ split }: { split: { am: number; pm: number; pharmacies: number } }) {
   return (
-    <span className="flex w-full flex-col items-stretch gap-px text-center text-phx-3xs leading-tight">
+    <span className="flex w-full flex-col items-stretch gap-px text-center text-phx-xs leading-tight">
       {split.am > 0 ? <span title={`AM ${split.am}`}>{split.am}</span> : null}
       {split.pm > 0 ? <span title={`PM ${split.pm}`}>{split.pm}</span> : null}
       {split.pharmacies > 0 ? (
@@ -296,7 +296,7 @@ function RepMonthRow({
           {weekCells.map((cell, index) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
+                "rounded-md py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
                 cell.isFriday ? "bg-slate-100" : "",
                 cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
               )}
@@ -326,7 +326,7 @@ function RepMonthRow({
           {employee.timeline.map((cell) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
+                "rounded-md py-1 text-center text-phx-xs font-black uppercase tracking-tight text-slate-500",
                 cell.isFriday ? "bg-slate-100" : "",
                 cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
               )}
