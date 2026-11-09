@@ -2,14 +2,14 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { hireDateMovedLater, planPreHireRetirement } from "../src/lib/deductions/pre-hire.ts";
-import type { DeductionsCandidate } from "../src/lib/deductions/types.ts";
+import type { PreHireRow } from "../src/lib/deductions/pre-hire.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // Owner, 2026-11-09: "stop hire-date edits from leaving pre-hire deductions behind". A rep's
 // August unpaid-vacation lines were collected on 8 October; his hire date was set to 1 October on the
 // 12th, and six lines for days before he joined stayed Pending.
 
-function row(overrides: Partial<DeductionsCandidate>): DeductionsCandidate {
+function row(overrides: Partial<PreHireRow>): PreHireRow {
   return {
     id: "id",
     category: "unpaid_vacation",
@@ -49,6 +49,33 @@ export async function runDeductionsPreHireTests(): Promise<void> {
     assert.equal(hireDateMovedLater("2026-10-01", "2026-10-01"), false, "an unchanged hire date does nothing");
     assert.equal(hireDateMovedLater("2026-10-01", "2026-08-01"), false, "an earlier hire date strands nothing");
     assert.equal(hireDateMovedLater("2026-10-01", null), false, "a cleared hire date does nothing");
+    assert.equal(hireDateMovedLater("2026-08-01", "1/10/2026"), false, "a date not written YYYY-MM-DD retires nothing");
+    assert.equal(hireDateMovedLater("2026-08-01", "2026-10-01T00:00:00Z"), false, "only a bare calendar date counts");
+    assert.equal(hireDateMovedLater("01/08/2026", "2026-10-01"), false, "a malformed previous date cannot be compared, so nothing moves");
+  }
+
+  // ── PENDING ONLY (owner, 2026-11-09): a decided line is his, left as it is and reported ───────
+  {
+    const plan = planPreHireRetirement({
+      hireDate: "2026-10-01",
+      rows: [
+        row({ id: "pending", dates: ["2026-08-03"] }),
+        row({ id: "undecided", dates: ["2026-08-04"], decisionStatus: null }),
+        row({ id: "approved", dates: ["2026-08-05"], decisionStatus: "Approved for Payroll" }),
+        row({ id: "waived", dates: ["2026-08-06"], decisionStatus: "Do Not Take Action" }),
+        row({ id: "explicit-pending", dates: ["2026-08-07"], decisionStatus: "Pending" }),
+      ],
+    });
+    assert.deepEqual(
+      plan.groups.flatMap((group) => group.candidateIds).sort(),
+      ["explicit-pending", "pending", "undecided"],
+      "only a Pending or undecided line may be retired",
+    );
+    assert.deepEqual(
+      plan.decided.map((line) => line.id).sort(),
+      ["approved", "waived"],
+      "a decided line is reported for the screen, never retired",
+    );
   }
 
   // ── Every line wholly before the hire date is retired; a later one is left alone ─────────────
@@ -125,6 +152,15 @@ export async function runDeductionsPreHireTests(): Promise<void> {
     assert.ok(
       service.includes("input.drafts.length === 0 && scoped.length > 0 && !input.scope.onlyCandidateIds"),
       "the empty-set guard must stand down only for a caller that named its lines",
+    );
+    assert.ok(
+      service.includes("if (input.scope.onlyCandidateIds && !replacementCandidateId && datesByIdentity.has(identity)) {"),
+      "a named line whose drafted replacement was not written must be kept, not retired",
+    );
+    const preHire = stripComments(readFileSync("src/lib/deductions/pre-hire.ts", "utf8"));
+    assert.ok(
+      preHire.includes('.select("*, deductions_decisions(decision_status)")'),
+      "the pre-hire read must fetch each line's decision, or every decided line reads as Pending",
     );
   }
 

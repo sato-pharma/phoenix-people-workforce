@@ -1422,7 +1422,7 @@ export async function saveHiringPackEmployeeFacts(
     workEmail: cleanText(input.workEmail)?.toLowerCase() ?? null,
   };
 
-  await upsertEmployee(merged);
+  await upsertEmployee(merged, { actorHrId: hrIdForStorage(actorHrId) });
   return getHiringPack(hrId);
 }
 

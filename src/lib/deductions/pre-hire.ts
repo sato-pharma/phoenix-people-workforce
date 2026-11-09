@@ -6,16 +6,21 @@
 // and six lines for days before he joined stayed Pending (owner, 2026-11-09: "stop hire-date edits
 // from leaving pre-hire deductions behind").
 //
-// So when a hire date moves later, this re-states the employee's unlocked lines against it, through
-// the same reconcile pass a re-collect uses — a line wholly before the hire date is retired, a line
-// that straddles it is replaced by one holding only the days from the hire date on (its decision
-// carried onto the replacement), and an approved figure that moved re-opens its payroll step.
+// So when a hire date moves later, this re-states the employee's PENDING lines against it, through
+// the same reconcile pass a re-collect uses — a line wholly before the hire date is retired, and a
+// line that straddles it is replaced by one holding only the days from the hire date on.
 //
-// Never touched: a LOCKED (published) line — reconcile refuses those by design and reports them; a
-// `manual_hr` line or any non-day line — a loan or an "other" amount is dated on the 1st of its month
-// as a placeholder, not on a day he worked, so the hire date says nothing about it; and a multi-day
-// line whose day count is not one per date (a vacation request lists calendar days but charges
-// working days), which cannot be narrowed exactly and is reported instead.
+// 🔴 PENDING ONLY (owner, 2026-11-09, "Pending only"). A line the Super Admin already decided is his:
+// deciding a deduction is Super Admin only, while HR Operations and HR Administration can edit a hire
+// date, so touching a decided line would let them undo his decision. A decided line can also carry a
+// typed day count or annual-leave days charged against it that reconcile's carry does not move — a
+// narrowed approval re-priced at the full replacement, and leave days stranded on a retired row (risk
+// review, 2026-11-09). So a decided line is left exactly as it is and reported for the screen.
+//
+// Never touched either: a LOCKED (published) line; a `manual_hr` line or any non-day line — a loan or
+// an "other" amount is dated on the 1st of its month as a placeholder, not on a day he worked; and a
+// multi-day line whose day count is not one per date (a vacation request lists calendar days but
+// charges working days), which cannot be narrowed exactly and is reported instead.
 
 import { daysForTickedDates, scaleDeductionAmountToKeptDates } from "./calculations.ts";
 import { compactDeductionsHrId } from "./candidate-key.ts";
@@ -41,7 +46,16 @@ export type PreHirePlan = {
   groups: PreHireGroup[];
   /** Lines that hold a pre-hire day but cannot be re-stated exactly. */
   notNarrowable: Array<{ id: string; reason: string }>;
+  /** Lines that hold a pre-hire day but are already decided — the Super Admin's, left for the screen. */
+  decided: Array<{ id: string; decisionStatus: string }>;
 };
+
+/** A live line plus its decision's status; no decision row reads as Pending. */
+export type PreHireRow = DeductionsCandidate & { decisionStatus?: string | null };
+
+function isPending(row: PreHireRow): boolean {
+  return !row.decisionStatus || row.decisionStatus === "Pending";
+}
 
 function toDraft(row: DeductionsCandidate, override?: Partial<DeductionsCandidateDraft>): DeductionsCandidateDraft {
   return {
@@ -71,12 +85,17 @@ function toDraft(row: DeductionsCandidate, override?: Partial<DeductionsCandidat
  * re-state. A group is (category, month, source) — reconcile's own unit of authority — and only a
  * group holding at least one line that can be re-stated is returned.
  */
-export function planPreHireRetirement(input: { rows: readonly DeductionsCandidate[]; hireDate: string }): PreHirePlan {
+export function planPreHireRetirement(input: { rows: readonly PreHireRow[]; hireDate: string }): PreHirePlan {
   const hireDate = input.hireDate.slice(0, 10);
-  const eligible = input.rows.filter(
+  const inScope = input.rows.filter(
     (row) => !row.supersededAt && !row.lockedAt && row.unit === "days" && row.sourceSystem !== MANUAL_SOURCE_SYSTEM,
   );
-  const byGroup = new Map<string, DeductionsCandidate[]>();
+  const holdsPreHireDay = (row: PreHireRow) => row.dates.some((date) => date.slice(0, 10) < hireDate);
+  const decided = inScope
+    .filter((row) => !isPending(row) && holdsPreHireDay(row))
+    .map((row) => ({ id: row.id, decisionStatus: String(row.decisionStatus) }));
+  const eligible = inScope.filter(isPending);
+  const byGroup = new Map<string, PreHireRow[]>();
   for (const row of eligible) {
     const key = `${row.category}|${row.monthKey}|${row.sourceSystem}`;
     const list = byGroup.get(key) ?? [];
@@ -130,15 +149,21 @@ export function planPreHireRetirement(input: { rows: readonly DeductionsCandidat
     const first = rows[0]!;
     groups.push({ category: first.category, monthKey: first.monthKey, sourceSystem: first.sourceSystem, candidateIds, drafts, retired, narrowed });
   }
-  return { groups, notNarrowable };
+  return { groups, notNarrowable, decided };
 }
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** True when a hire date moved LATER (or was set for the first time) — the only edit that can strand a line. */
 export function hireDateMovedLater(previous: string | null | undefined, next: string | null | undefined): boolean {
-  const after = String(next ?? "").slice(0, 10);
-  if (!after) return false;
-  const before = String(previous ?? "").slice(0, 10);
-  return !before || after > before;
+  const after = String(next ?? "").trim();
+  // Only a real calendar date may retire anything: a typo or a "1/10/2026" compared as text would
+  // sort before every line and retire them all.
+  if (!ISO_DATE.test(after)) return false;
+  const before = String(previous ?? "").trim();
+  if (!before) return true;
+  if (!ISO_DATE.test(before)) return false;
+  return after > before;
 }
 
 /**
@@ -174,7 +199,7 @@ export async function restatePreHireDeductionsAfterHireDateSave(input: {
 }
 
 /**
- * Re-states one employee's unlocked deduction lines against his hire date. Returns what it did; never
+ * Re-states one employee's PENDING, unlocked deduction lines against his hire date. Returns what it did; never
  * throws for a reconcile warning (those are returned), only for a failed read.
  */
 export async function retirePreHireDeductions(input: {
@@ -193,15 +218,25 @@ export async function retirePreHireDeductions(input: {
     () =>
       getSupabaseAdmin()
         .from("deductions_candidates")
-        .select("*")
+        .select("*, deductions_decisions(decision_status)")
         .eq("employee_hr_id_compact", compact)
         .is("superseded_at", null)
         .is("locked_at", null),
     "id",
   );
-  const plan = planPreHireRetirement({ rows: rows.map(mapCandidateRow), hireDate: input.hireDate });
+  const preHireRows: PreHireRow[] = rows.map((row) => {
+    const { deductions_decisions: decisionRaw, ...candidateRow } = row;
+    const decision = (Array.isArray(decisionRaw) ? decisionRaw[0] : decisionRaw) as { decision_status?: string | null } | null | undefined;
+    return { ...mapCandidateRow(candidateRow), decisionStatus: decision?.decision_status ?? null };
+  });
+  const plan = planPreHireRetirement({ rows: preHireRows, hireDate: input.hireDate });
 
-  const warnings = plan.notNarrowable.map((line) => `Pre-hire line ${line.id} left as it is: ${line.reason}.`);
+  const warnings = [
+    ...plan.notNarrowable.map((line) => `Pre-hire line ${line.id} left as it is: ${line.reason}.`),
+    ...plan.decided.map(
+      (line) => `Pre-hire line ${line.id} is already "${line.decisionStatus}" and was left as it is — decide it on the Deductions screen.`,
+    ),
+  ];
   let retired = 0;
   let narrowed = 0;
   for (const group of plan.groups) {

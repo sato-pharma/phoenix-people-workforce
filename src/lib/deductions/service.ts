@@ -778,6 +778,14 @@ export async function reconcileCandidateDrafts(input: {
       // why superseded_by_candidate_id was NULL on every row and 21 approvals were lost.
       const identity = deductionsCandidateIdentityKey(candidate.candidateKey);
       const replacementCandidateId = insertResult.insertedByIdentity?.get(identity) ?? null;
+      // A caller that named its lines and drafted a replacement for this one: if the replacement
+      // was not written, retiring the line would delete days that should have stayed charged.
+      if (input.scope.onlyCandidateIds && !replacementCandidateId && datesByIdentity.has(identity)) {
+        warnings.push(
+          `${input.sourceLabel}: the narrowed replacement for ${candidate.employeeName ?? candidate.employeeHrId} (${candidate.employeeHrId}) was not written, so the line was left as it is.`,
+        );
+        continue;
+      }
 
       await supersedeCandidate({
         candidateId: candidate.id,
