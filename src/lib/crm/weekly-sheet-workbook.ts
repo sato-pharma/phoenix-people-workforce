@@ -37,9 +37,10 @@ export async function buildWeeklySheetWorkbook(sheet: WeeklySheet, generatedAtIs
 
   const repSheet = workbook.addWorksheet("Reps", { properties: { defaultRowHeight: 18 } });
   repSheet.views = [{ showGridLines: false }];
-  const repStart = writeHouseMasthead(workbook, repSheet, { columns: 11, provenance: [houseGeneratedAt(generatedAtIso), sheet.label], subtitle: `Weekly Sheet · ${sheet.label}`, title: "Reps" });
+  const repStart = writeHouseMasthead(workbook, repSheet, { columns: 12, provenance: [houseGeneratedAt(generatedAtIso), sheet.label], subtitle: `Weekly Sheet · ${sheet.label}`, title: "Reps" });
   const repRows: CellValue[][] = sheet.districts.flatMap((district) =>
     district.reps.map((rep) => [
+      district.regionName,
       district.managerName,
       rep.person,
       rep.territory,
@@ -55,6 +56,7 @@ export async function buildWeeklySheetWorkbook(sheet: WeeklySheet, generatedAtIs
   );
   writeHouseTable(repSheet, repStart, {
     columns: [
+      { label: "Region", width: 14 },
       { label: "District manager", width: 24 },
       { label: "Rep", width: 26 },
       { label: "Territory", width: 22 },
@@ -73,21 +75,28 @@ export async function buildWeeklySheetWorkbook(sheet: WeeklySheet, generatedAtIs
 
   const accountSheet = workbook.addWorksheet("Accounts", { properties: { defaultRowHeight: 18 } });
   accountSheet.views = [{ showGridLines: false }];
-  const accountStart = writeHouseMasthead(workbook, accountSheet, { columns: 8, provenance: [houseGeneratedAt(generatedAtIso), sheet.label], subtitle: `Weekly Sheet · ${sheet.label}`, title: "Accounts" });
-  const accountRows: CellValue[][] = reps.flatMap((rep) =>
-    rep.accounts.map((account) => [
-      rep.person,
-      account.name,
-      account.visits,
-      account.depth.noDoctorsWritten ? NO_DOCTORS : account.depth.pediatrics,
-      account.depth.noDoctorsWritten ? "" : account.depth.internal,
-      account.depth.noDoctorsWritten ? "" : account.depth.ent,
-      account.depth.named,
-      result(account.depth.met),
-    ]),
+  const accountStart = writeHouseMasthead(workbook, accountSheet, { columns: 10, provenance: [houseGeneratedAt(generatedAtIso), sheet.label], subtitle: `Weekly Sheet · ${sheet.label}`, title: "Accounts" });
+  // Region and district manager on every row (owner, 2026-11-09), as on the Reps sheet.
+  const accountRows: CellValue[][] = sheet.districts.flatMap((district) =>
+    district.reps.flatMap((rep) =>
+      rep.accounts.map((account) => [
+        district.regionName,
+        district.managerName,
+        rep.person,
+        account.name,
+        account.visits,
+        account.depth.noDoctorsWritten ? NO_DOCTORS : account.depth.pediatrics,
+        account.depth.noDoctorsWritten ? "" : account.depth.internal,
+        account.depth.noDoctorsWritten ? "" : account.depth.ent,
+        account.depth.named,
+        result(account.depth.met),
+      ]),
+    ),
   );
   writeHouseTable(accountSheet, accountStart, {
     columns: [
+      { label: "Region", width: 14 },
+      { label: "District manager", width: 24 },
       { label: "Rep", width: 26 },
       { label: "Account", width: 34 },
       { label: "Visits", right: true, width: 8 },

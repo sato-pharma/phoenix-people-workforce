@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
-import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
+import { BackToAllReps, cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
 import { awaitingBrickSub } from "@/lib/crm/reps-list-labels";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
@@ -150,6 +150,7 @@ export function RepsListListBody({
         exportTitle={exportTitle}
         groups={list.groups}
         repName={listName}
+        validationRead={list.validationRead}
       />
     </>
   );
@@ -270,6 +271,7 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
         <RepsListFilters basePath={basePath} options={options} preserve={preserve} selection={selection} />
       </Section>
 
+      {selected ? <BackToAllReps href={hrefWithRep(basePath, board, null)} /> : null}
       {selected ? (
         <Section
           action={

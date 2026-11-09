@@ -7,7 +7,8 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { fraudScanWindow } from "@/lib/phoenix-crm/fraud-scan-rules";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
-import { seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
+import { seatOccupants, territoryName } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -61,7 +62,8 @@ export type WeeklySheetRep = {
   vacant: boolean;
 };
 
-export type WeeklySheetDistrict = { managerName: string; districtName: string; reps: WeeklySheetRep[] };
+/** One group: a region and its district manager (owner, 2026-11-09 — `groupByRegionAndManager`). */
+export type WeeklySheetDistrict = { regionName: string; managerName: string; districtName: string; vacantSeats: number; reps: WeeklySheetRep[] };
 
 export type WeeklySheet = {
   weekStart: string;
@@ -181,7 +183,7 @@ export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string |
     bySeat.set(key, [...(bySeat.get(key) ?? []), row]);
   }
 
-  const districtOf = new Map<string, { seat: OrgSeat | null; reps: WeeklySheetRep[] }>();
+  const repBySeat = new Map<string, WeeklySheetRep>();
   for (const seat of seats) {
     const working = days.filter((day) => isCallRateWorkingDay(day, holidays.dates));
     const leaveDays = leave.unread ? 0 : working.filter((day) => leave.days.has(leaveDayKey(seat.seatId, day))).length;
@@ -237,19 +239,22 @@ export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string |
       waiting,
       workingDays,
     };
-    const district = districtSeatOf(viewer, seat);
-    const key = district?.seatId ?? "";
-    const group = districtOf.get(key) ?? { reps: [], seat: district };
-    group.reps.push(rep);
-    districtOf.set(key, group);
+    repBySeat.set(seat.seatId, rep);
   }
 
-  const districts: WeeklySheetDistrict[] = [...districtOf.values()]
-    .map((group) => ({
-      districtName: group.seat ? territoryName(group.seat) : "No district manager",
-      managerName: group.seat ? (group.seat.occupantHrId ? nameOf(names, group.seat.occupantHrId) : "Seat is vacant") : "No district manager",
-      reps: group.reps.sort((left, right) => left.territory.localeCompare(right.territory) || left.person.localeCompare(right.person)),
-    }))
-    .sort((left, right) => left.districtName.localeCompare(right.districtName));
+  // Grouped by region and district manager (owner, 2026-11-09), in the organogram's region order.
+  const districts: WeeklySheetDistrict[] = groupByRegionAndManager(seats, (seat) => seat, (seat) => districtSeatOf(viewer, seat)).map((group) => {
+    const reps = group.items.flatMap((seat) => {
+      const rep = repBySeat.get(seat.seatId);
+      return rep ? [rep] : [];
+    });
+    return {
+      districtName: group.district ? territoryName(group.district) : "No district manager",
+      managerName: group.district ? (group.district.occupantHrId ? nameOf(names, group.district.occupantHrId) : "Seat is vacant") : "No district manager",
+      regionName: group.regionName,
+      reps: reps.sort((left, right) => left.territory.localeCompare(right.territory) || left.person.localeCompare(right.person)),
+      vacantSeats: reps.filter((rep) => rep.vacant).length,
+    };
+  });
   return { districts, label: window.label, targetsUncertain: !holidays.complete || leave.unread, weekEnd: window.to, weekStart: window.from };
 }

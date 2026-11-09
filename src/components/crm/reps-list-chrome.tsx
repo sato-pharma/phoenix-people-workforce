@@ -11,7 +11,27 @@
  * is that these are one screen.
  */
 
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+
+/**
+ * The way back from one rep to all of them, as the FIRST thing on a rep's screen (owner, 2026-11-09: "when I
+ * press a rep there is no back button to go back to all reps"). The small outlined link in the dark title bar
+ * stays; this bar is the one a reader cannot miss, on a phone as on a desktop.
+ */
+export function BackToAllReps({ href }: { href: string }) {
+  return (
+    <div className="border-b border-slate-200 bg-white px-5 py-3">
+      <Link
+        className="inline-flex items-center gap-2 border border-orange-500 bg-orange-50 px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-orange-800 transition-colors hover:bg-orange-100"
+        href={href}
+      >
+        <ArrowLeft aria-hidden className="h-4 w-4 shrink-0" />
+        Back to all reps
+      </Link>
+    </div>
+  );
+}
 
 export function Section({
   action,

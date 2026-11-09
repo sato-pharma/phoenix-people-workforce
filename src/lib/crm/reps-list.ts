@@ -194,6 +194,12 @@ export type RepsListContact = DoctorListRow & {
    * the rep's phone was. Null when the doctor is not validated yet; the row then falls back to `seenAt`.
    */
   place?: ValidatedPlacePoint | null;
+  /**
+   * When the doctor was validated in Phoenix CRM (owner, 2026-11-09: "in rep list show what's
+   * validated"). Null when he is not validated yet; undefined when the caller never asked. Read only
+   * with `RepsListForRep.validationRead` true — a failed read leaves every row null.
+   */
+  validatedAt?: string | null;
   seenAt?: ContactSeenAt | null;
   /** Other reps carrying what the evidence says is this same customer. */
   sharedWith?: SharedWith[] | null;
@@ -238,6 +244,11 @@ export type RepsListForRep = {
   unmappedRegionCount: number;
   /** Contacts on this rep's list sitting in an unmapped region. Stated on screen. */
   unmappedContactCount: number;
+  /**
+   * True when Phoenix CRM's validations were read, so a null `validatedAt` means "not validated yet".
+   * False when the read failed; absent from a caller that never asked.
+   */
+  validationRead?: boolean;
 };
 
 /** What a heading shows for a brick: its name, its area and the area's region. */
@@ -1164,13 +1175,15 @@ export async function getRepsListForAgent(
       insights: insightsByContact.get(row.contactCrmId) ?? null,
       nearby: null,
       place: places.points.get(row.contactCrmId) ?? null,
+      // The place's own date first, so the row's chip and its address line never name two days.
+      validatedAt: places.points.get(row.contactCrmId)?.validatedAt ?? places.validatedAt.get(row.contactCrmId) ?? null,
       seenAt: found?.seenAt ?? null,
       sharedWith,
       trade: tradeByContact.get(row.contactCrmId) ?? null,
     };
   });
 
-  return groupContactsByBrick(annotated, index);
+  return { ...groupContactsByBrick(annotated, index), validationRead: places.read };
 }
 
 function brickIndexOf(

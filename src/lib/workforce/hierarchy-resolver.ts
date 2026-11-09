@@ -388,3 +388,23 @@ export function regionsWithinManagerHierarchy<T extends SeatContinuitySubject & 
   }
   return regions;
 }
+
+/**
+ * The same region set as `regionsWithinManagerHierarchy`, as the labels a person reads — one per
+ * region, in its first-seen spelling, sorted ("Alex-BHR", "Delta (1)", "Delta (2)"). This is what a
+ * Regional Manager's territory says: his own `region_name` holds ONE of his regions (Hany Saad's
+ * reads "Alex-BHR" while his seat runs Alex-BHR, Delta (1) and Delta (2) — 2026-11-09).
+ */
+export function regionLabelsWithinManagerHierarchy<T extends SeatContinuitySubject & RegionSubject & { hrId: string }>(
+  employees: readonly T[],
+  viewerCanonicalHrId: string,
+  canonicalize: CanonicalizeHrId,
+): string[] {
+  const keys = regionsWithinManagerHierarchy(employees, viewerCanonicalHrId, canonicalize);
+  const labels = new Map<string, string>();
+  for (const employee of employees) {
+    const key = normalizeRegionLabel(employee.regionName);
+    if (key && keys.has(key) && !labels.has(key)) labels.set(key, employee.regionName!.trim());
+  }
+  return [...labels.values()].sort((a, b) => a.localeCompare(b, "en", { numeric: true, sensitivity: "base" }));
+}

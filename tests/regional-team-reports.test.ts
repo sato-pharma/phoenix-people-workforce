@@ -9,6 +9,8 @@ import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, t
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
+import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
+import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 
 /**
  * Dr. Hany Saad's team reports (owner, 2026-11-08) — the Regional Sales Manager's eight needs. Names in the
@@ -272,7 +274,80 @@ function districtsWithoutPublishedMonth() {
   assert.ok(board.includes("unranked={rmRegional?.dsmsWithoutPublishedMonth ?? []}"), "his My Districts board draws them");
 }
 
+function seat(seatId: string, regionName: string | null, parentSeatId: string | null, occupantHrId: string | null): OrgSeat {
+  return { areaName: null, lineCode: "PED", lineName: "Pedia", occupantHrId, parentSeatId, path: [], regionName, seatId, seatLabel: null, tier: parentSeatId ? "REP" : "DM" };
+}
+
+function groupedByRegionAndManager() {
+  // Owner, 2026-11-09: "in every screen u build for Hany group reps by their manager and region".
+  const dmD2 = seat("DM-D2", "Delta (2)", null, "PD-0028");
+  const dmAb = seat("DM-AB", "Alex-BHR", null, "PD-0012");
+  const districts = new Map([["DM-D2", dmD2], ["DM-AB", dmAb]]);
+  const reps = [
+    seat("REP-D21", "Delta (2)", "DM-D2", "PD-0034"),
+    seat("REP-AB1", "Alex-BHR", "DM-AB", "PD-0035"),
+    seat("REP-D22", "Delta (2)", "DM-D2", null),
+    // Two reps with no district manager above them, in two regions: two groups, never one heap.
+    seat("REP-X1", "Delta (1)", null, "B-100"),
+    seat("REP-X2", null, null, "B-91"),
+  ];
+  const groups = groupByRegionAndManager(reps, (rep) => rep, (rep) => districts.get(rep.parentSeatId ?? "") ?? null);
+  assert.deepEqual(
+    groups.map((group) => [group.regionName, group.district?.seatId ?? null, group.items.map((rep) => rep.seatId)]),
+    [
+      ["Alex-BHR", "DM-AB", ["REP-AB1"]],
+      ["Delta (1)", null, ["REP-X1"]],
+      ["Delta (2)", "DM-D2", ["REP-D21", "REP-D22"]],
+      ["No region", null, ["REP-X2"]],
+    ],
+    "region order, one group per region and district manager, an unknown region last",
+  );
+  assert.equal(regionManagerTitle("Delta (2)", "Sahar El Gallad"), "Delta (2) · Sahar El Gallad");
+  assert.equal(regionGroupCaption(6, 3), "Region and district manager · 3 reps · 3 vacant seats");
+  assert.equal(regionGroupCaption(2, 1), "Region and district manager · 1 rep · 1 vacant seat");
+  assert.equal(regionGroupCaption(5, 0), "Region and district manager · 5 reps");
+  for (const view of ["team-visits-view", "weekly-sheet-view", "district-manager-plans-view"]) {
+    const source = readFileSync(`src/components/crm/regional/${view}.tsx`, "utf8");
+    assert.ok(source.includes("title={regionManagerTitle("), `${view} heads each group with its region and manager`);
+  }
+  const workbook = readFileSync("src/lib/crm/weekly-sheet-workbook.ts", "utf8");
+  assert.equal(workbook.match(/\{ label: "Region", width: 14 \}/g)?.length, 2, "both export sheets carry the region column");
+}
+
+function vacantSeatsKeyCard() {
+  // Owner, 2026-11-09: "also a key card for vacants number" — on the Reps Weekly Plans tiles, counted by the
+  // Vacant Areas tab's own pipeline and opening that tab.
+  const board = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+  assert.ok(board.includes('label="Vacant seats"'), "the fifth key card");
+  assert.ok(board.includes("href={hrefToVacant(basePath, board)}"), "it opens Vacant Areas under the same filters");
+  assert.ok(board.includes('vacantSeats == null ? "–"'), "a failed read is a dash and a sentence, never a 0");
+  for (const page of ["app/employee-portals/reps-list/page.tsx", "app/(admin)/admin/reps-list/page.tsx"]) {
+    const source = readFileSync(page, "utf8");
+    assert.ok(source.includes("vacantSeats = await countVacantAreas("), `${page} counts the vacancies`);
+    assert.ok(source.includes("vacantSeats={vacantSeats}"), `${page} hands the count to the board`);
+  }
+  const vacant = readFileSync("src/lib/crm/reps-list-vacant-areas.ts", "utf8");
+  const counter = vacant.slice(vacant.indexOf("export async function countVacantAreas"), vacant.indexOf("export async function getVacantAreasBoard"));
+  assert.ok(counter.includes("foldVacancyCells(vacanciesMatching(") && counter.includes("pruneLineFirst(") && counter.includes("allowedHrIdsFor(input.scope)"), "the same restrict, prune, match and fold as the tab");
+}
+
+function backToAllReps() {
+  // Owner, 2026-11-09: "when I press a rep there is no back button to go back to all reps".
+  for (const board of ["src/components/crm/reps-list-board.tsx", "src/components/crm/reps-weekly-plans-board.tsx"]) {
+    const source = readFileSync(board, "utf8");
+    assert.ok(source.includes("{selected ? <BackToAllReps href={hrefWithRep(basePath, board, null)} /> : null}"), `${board} opens a rep with the back bar first`);
+  }
+  const day = readFileSync("app/employee-portals/field-crm/day/[seatId]/[date]/page.tsx", "utf8");
+  assert.ok(day.includes('const BACK_TO: Record<string, string> = { "team-visits": "/employee-portals/team-visits" };'), "the day page goes back by a fixed key, never a free address");
+  assert.ok(day.includes("<BackToAllReps href={BACK_TO[query.from]} />"), "the day page draws the back bar");
+  const visits = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
+  assert.ok(visits.includes("?from=team-visits`"), "Visits opens the day with its way back");
+}
+
 export function runRegionalTeamReportsTests() {
+  backToAllReps();
+  groupedByRegionAndManager();
+  vacantSeatsKeyCard();
   districtsWithoutPublishedMonth();
   gate();
   visitsYesterdayAndToday();

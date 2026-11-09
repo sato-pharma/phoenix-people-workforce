@@ -2,11 +2,12 @@ import Link from "next/link";
 
 import { KpiSection, KpiTile } from "@/components/crm/kpis-chrome";
 import { cairoDate } from "@/lib/format/cairo-datetime";
+import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 import type { TeamVisitDay, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
 
 /**
  * Visits — Yesterday and Today, the Regional Sales Manager's screen. Server-rendered: the page holds no client
- * state and the figures are read on every load. One section per district manager, one row per rep, the two days
+ * state and the figures are read on every load. One section per region and its district manager, one row per rep, the two days
  * side by side; on a phone each rep is a card. AM · PM · Pharmacies are always three figures apart.
  */
 
@@ -62,7 +63,8 @@ function DayCell({ day, href }: { day: TeamVisitDay; href: string | null }) {
 export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
   const yesterday = dayLabel(report.yesterday);
   const today = dayLabel(report.today);
-  const dayHref = (seatId: string, on: string) => `/employee-portals/field-crm/day/${encodeURIComponent(seatId)}/${on}`;
+  // `from=team-visits` gives the day page its "Back to all reps" bar, back to this screen.
+  const dayHref = (seatId: string, on: string) => `/employee-portals/field-crm/day/${encodeURIComponent(seatId)}/${on}?from=team-visits`;
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -81,8 +83,8 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
         <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No reps under your district managers yet.</p>
       ) : null}
       {report.districts.map((district) => (
-        <div className="border border-slate-200" key={`${district.districtName}|${district.managerName}`}>
-          <KpiSection description={district.districtName} title={district.managerName}>
+        <div className="border border-slate-200" key={`${district.regionName}|${district.districtName}|${district.managerName}`}>
+          <KpiSection description={regionGroupCaption(district.reps.length, district.vacantSeats)} title={regionManagerTitle(district.regionName, district.managerName)}>
             <table className="hidden w-full table-fixed text-left md:table">
               <colgroup>
                 <col className="w-[26%]" />
