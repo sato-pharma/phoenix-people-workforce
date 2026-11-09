@@ -56,7 +56,7 @@ function SortHeader<T extends string>({
         type="button"
         onClick={() => onSort(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wider transition-colors hover:text-orange-400",
+          "inline-flex items-center gap-1 text-phx-sm font-black uppercase tracking-wider transition-colors hover:text-orange-400",
           isActive ? "text-orange-400" : "text-slate-300",
           align === "right" && "flex-row-reverse",
         )}
@@ -70,7 +70,7 @@ function SortHeader<T extends string>({
 
 function IssueBadge({ issue }: { issue: DoubleVisitIntegrityIssue }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5 break-words bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">
+    <span className="inline-flex max-w-full items-center gap-1.5 break-words bg-rose-50 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-rose-700">
       <AlertTriangle className="h-3 w-3 shrink-0" />
       {ISSUE_TYPE_LABELS[issue.issueType]}
     </span>
@@ -192,7 +192,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                 )}
               >
                 <p className="text-2xl font-black text-slate-900">{report.countsByType[type]}</p>
-                <p className="mt-1 text-phx-2xs font-semibold uppercase leading-tight tracking-wide text-slate-500">
+                <p className="mt-1 text-phx-sm font-semibold uppercase leading-tight tracking-wide text-slate-500">
                   {ISSUE_TYPE_LABELS[type]}
                 </p>
               </button>
@@ -202,7 +202,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
           {report.importSummaries.length > 0 && (
             <div className="overflow-hidden border border-slate-200 bg-white">
               <div className="bg-slate-900 px-5 py-3">
-                <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
+                <h2 className="text-phx-sm font-bold uppercase tracking-widest text-slate-300">
                   Imports With Dropped or Flagged Rows
                 </h2>
               </div>
@@ -211,11 +211,11 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                   <div key={importRow.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
                     <div>
                       <p className="font-semibold text-slate-900">{importRow.sourceFilename}</p>
-                      <p className="text-phx-xs text-slate-500">
+                      <p className="text-phx-md text-slate-500">
                         {formatDate(importRow.uploadedAt)} · {humanizeCode(importRow.sourceType)} · {humanizeCode(importRow.status)} · {importRow.totalRows} rows
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-3 text-phx-xs font-bold uppercase tracking-wide">
+                    <div className="flex flex-wrap gap-3 text-phx-md font-bold uppercase tracking-wide">
                       {importRow.duplicateWarningCount > 0 && (
                         <span className="text-amber-600">{importRow.duplicateWarningCount} duplicate rows dropped</span>
                       )}

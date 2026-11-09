@@ -64,7 +64,7 @@ function VisitKindBadge({ kind }: { kind: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide",
+        "inline-flex items-center px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide",
         kind === "Regular" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
       )}
     >
@@ -110,7 +110,7 @@ function SortHeader<T extends string>({
         type="button"
         onClick={() => onSort(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wider transition-colors hover:text-orange-400",
+          "inline-flex items-center gap-1 text-phx-sm font-black uppercase tracking-wider transition-colors hover:text-orange-400",
           isActive ? "text-orange-400" : "text-slate-300",
           align === "right" && "flex-row-reverse",
         )}
@@ -127,7 +127,7 @@ const STICKY_HEAD = "sticky top-0 z-10 bg-slate-900";
 
 function FilterField({ label, children }: { children: ReactNode; label: string }) {
   return (
-    <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+    <label className="flex flex-col gap-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
       {label}
       {children}
     </label>
@@ -148,7 +148,7 @@ function Pagination({ page, total, unit, onPage }: { onPage: (next: number) => v
         <button type="button" className={btn} disabled={page <= 0} onClick={() => onPage(page - 1)}>
           <ChevronLeft className="h-4 w-4" /> Prev
         </button>
-        <span className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Page {page + 1} / {count}</span>
+        <span className="text-phx-md font-black uppercase tracking-wider text-slate-500">Page {page + 1} / {count}</span>
         <button type="button" className={btn} disabled={page >= count - 1} onClick={() => onPage(page + 1)}>
           Next <ChevronRight className="h-4 w-4" />
         </button>
@@ -195,7 +195,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
 
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
         From
         <input
           type="date"
@@ -204,7 +204,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
           className={phxFieldClassName}
         />
       </label>
-      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
         To
         <input
           type="date"
@@ -235,7 +235,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
  * What a reader may see is decided server-side (`phoenix-visit-detail.ts`): a `distance` reader's row
  * simply arrives with no accuracy and no raw point, so there is nothing here to hide.
  */
-const PHOENIX_LINE = "block text-phx-2xs font-semibold leading-4 text-slate-500";
+const PHOENIX_LINE = "block text-phx-sm font-semibold leading-4 text-slate-500";
 
 function phoenixLines(values: readonly (string | null | undefined)[]): string | null {
   const parts = values.map((value) => (value ?? "").trim()).filter(Boolean);
@@ -305,7 +305,7 @@ function NeverVisitedCard({ row }: { row: DoubleVisitFocusRosterEntry }) {
       status={
         <span className={cn("text-sm font-black tabular-nums", row.flagged ? "text-rose-600" : "text-slate-700")}>
           {row.daysSinceHire ?? "—"}
-          <span className="ml-1 text-phx-3xs font-bold uppercase tracking-wide text-slate-400">days</span>
+          <span className="ml-1 text-phx-xs font-bold uppercase tracking-wide text-slate-400">days</span>
         </span>
       }
       title={
@@ -517,12 +517,12 @@ export function DoubleVisitReportWorkspace({
           >
             {t.label}
             {t.key === "neverVisited" && data.neverVisited.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-danger px-1 text-phx-2xs text-white">
+              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-danger px-1 text-phx-sm text-white">
                 {data.neverVisited.length}
               </span>
             )}
             {t.key === "probation" && data.probation.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
+              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-warn px-1 text-phx-sm text-white">
                 {data.probation.length}
               </span>
             )}
@@ -552,7 +552,7 @@ export function DoubleVisitReportWorkspace({
             )}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" /> Advanced filters
-            {advancedActive && <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-phx-accent px-1 text-phx-3xs text-white">on</span>}
+            {advancedActive && <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-phx-accent px-1 text-phx-xs text-white">on</span>}
           </button>
           {(advancedActive || search) && (
             <button type="button" onClick={clearFilters} className="text-xs font-bold text-slate-400 underline transition hover:text-slate-700">
@@ -646,7 +646,7 @@ export function DoubleVisitReportWorkspace({
 
       {tab === "log" && (
         <div className="border border-slate-200 bg-white">
-          <p className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-phx-xs text-slate-500">
+          <p className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-phx-md text-slate-500">
             <span className="font-bold text-slate-700">Type</span> shows whether the source system logged this as a Regular field visit
             or a Campaign/other activity. Both count toward totals — this column and filter are for visibility, not exclusion.
           </p>

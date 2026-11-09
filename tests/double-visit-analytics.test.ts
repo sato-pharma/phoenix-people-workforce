@@ -99,6 +99,15 @@ function employee(input: Partial<EmployeeDirectoryRow>): EmployeeDirectoryRow {
 }
 
 export function runDoubleVisitAnalyticsTests() {
+  // "audit the double visit pages font too" (owner, 2026-11-09): no label on the double visit pages is set below
+  // 11px (text-phx-xs) — Analytics, Data Integrity and the Report.
+  for (const file of [
+    "src/components/double-visit-analytics/double-visit-analytics-workspace.tsx",
+    "src/components/double-visit-analytics/double-visit-data-integrity-workspace.tsx",
+    "src/components/double-visit-report/double-visit-report-workspace.tsx",
+  ]) {
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b/.test(readFileSync(file, "utf8")), `${file}: no text below 11px on the double visit pages`);
+  }
   // ── Live-source rebuild (2026-07-04): structural checks that the module reads
   // ireports360_visits directly, applies the Regular(0)/Campaign(-8) double-visit filter, and
   // no longer has an import/publish/Excel path. ──────────────────────────────────────────────

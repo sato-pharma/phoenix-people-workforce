@@ -139,7 +139,7 @@ function RoleBadge({ role }: { role: DoubleVisitRoleCode | null }) {
         : role
           ? "bg-slate-100 text-slate-600"
           : "bg-slate-100 text-slate-400";
-  return <span className={`rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
+  return <span className={`rounded px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
 }
 
 /**
@@ -159,7 +159,7 @@ function pharmacyCellContent(split: VisitCountSplit): ReactNode {
   if (recording === "recorded") return figure;
   return (
     <>
-      {figure} <span className="text-phx-2xs text-slate-400">{PHARMACIES_IREPORTS360_ONLY}</span>
+      {figure} <span className="text-phx-sm text-slate-400">{PHARMACIES_IREPORTS360_ONLY}</span>
     </>
   );
 }
@@ -181,7 +181,7 @@ function AmPmBar({ am, pharmacies, phoenix, pm }: { am: number; pharmacies: numb
 function StatChip({ label, value, sub, span }: { label: string; span?: boolean; sub?: string; value: string }) {
   return (
     <div className={["rounded border border-slate-200 bg-slate-50 px-4 py-3", span ? "col-span-2 sm:col-span-1" : ""].join(" ")}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
       {sub ? <p className="mt-0.5 text-xs font-semibold text-slate-500">{sub}</p> : null}
     </div>
@@ -193,7 +193,7 @@ function KpiCard({ icon: Icon, label, value, hint }: { hint: string; icon: Lucid
     <div className="rounded border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+          <p className="text-phx-md font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
         </div>
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-slate-100 text-slate-700">
@@ -215,7 +215,7 @@ function MiniStat({ value, label, tone }: { label: string; tone?: "orange" | "ro
   return (
     <span className={["inline-flex items-baseline gap-1.5 rounded border px-3 py-1.5", toneClass].join(" ")}>
       <span className="text-sm font-black">{value}</span>
-      <span className="text-phx-xs font-semibold uppercase tracking-wide opacity-80">{label}</span>
+      <span className="text-phx-md font-semibold uppercase tracking-wide opacity-80">{label}</span>
     </span>
   );
 }
@@ -591,7 +591,7 @@ function MrScoreCard({
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {entryPeriodLabel(e) !== "UNKNOWN" ? (
-                    <span className={`rounded px-1.5 py-0.5 text-phx-2xs font-black ${periodPillClass(entryPeriodLabel(e))}`}>{entryPeriodLabel(e)}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-phx-sm font-black ${periodPillClass(entryPeriodLabel(e))}`}>{entryPeriodLabel(e)}</span>
                   ) : null}
                   <span className="font-black tabular-nums text-slate-800">{e.visitCount}</span>
                 </div>
@@ -629,7 +629,7 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
         )}
       </div>
       <div className="mt-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-sm font-bold uppercase tracking-wide text-slate-400">
           <span>AM {rollup.amVisits}</span>
           <span>PM {rollup.pmVisits}</span>
           <span>{formatPharmacyFigure(figureSplit(rollup.amVisits, rollup.pmVisits, rollup.pharmacyVisits, rollup.phoenixVisits))}</span>
@@ -702,7 +702,7 @@ function LeaderboardCard({
           },
         ]}
       />
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 text-phx-sm font-bold uppercase tracking-wide text-slate-400">
         <span>AM {row.amVisits}</span>
         <span>PM {row.pmVisits}</span>
         <span>{formatPharmacyFigure(figureSplit(row.amVisits, row.pmVisits, row.pharmacyVisits, row.phoenixVisits))}</span>
@@ -738,7 +738,7 @@ function MrBreakdownCard({
         </div>
         <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>
         {overFocused ? (
-          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-orange-700">Over-focused</span>
+          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-sm font-black uppercase text-orange-700">Over-focused</span>
         ) : null}
       </div>
       <PortalRecordFields
@@ -763,7 +763,7 @@ function VacantTerritoryCard({ row }: { row: MrVisitRow }) {
     <PortalRecordCard
       accent="slate"
       title={territoryLabel(row)}
-      meta={<span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-slate-500">Resigned / vacant</span>}
+      meta={<span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-sm font-black uppercase text-slate-500">Resigned / vacant</span>}
       status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>}
     >
       <PortalRecordFields
@@ -787,7 +787,7 @@ function TrendCard({ week }: { week: DoubleVisitTrendPoint }) {
       status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{fmt(week.totalDvs)} DVs</span>}
     >
       <PortalRecordFields fields={[{ label: "MRs covered", value: week.distinctMrs }]} />
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 text-phx-sm font-bold uppercase tracking-wide text-slate-400">
         <span>AM {week.amVisits}</span>
         <span>PM {week.pmVisits}</span>
         <span>{formatPharmacyFigure(figureSplit(week.amVisits, week.pmVisits, week.pharmacyVisits, week.phoenixVisits))}</span>
@@ -1050,11 +1050,11 @@ export function DoubleVisitAnalyticsWorkspace({
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
-              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">From</span>
+              <span className="mb-1 block text-phx-sm font-black uppercase tracking-wide text-slate-500">From</span>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">To</span>
+              <span className="mb-1 block text-phx-sm font-black uppercase tracking-wide text-slate-500">To</span>
               <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </label>
             <Button className="min-h-10 gap-2 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
@@ -1066,7 +1066,7 @@ export function DoubleVisitAnalyticsWorkspace({
               </Button>
             </a>
             <label className="flex items-center gap-2">
-              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Period</span>
+              <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Period</span>
               <select
                 aria-label="Period for the coaching audit export"
                 value={periodFilter}
@@ -1097,7 +1097,7 @@ export function DoubleVisitAnalyticsWorkspace({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2">
-              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Period</span>
+              <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Period</span>
               <select
                 aria-label="Period for the coaching audit export"
                 value={periodFilter}
@@ -1425,7 +1425,7 @@ export function DoubleVisitAnalyticsWorkspace({
           <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm self-start max-h-[calc(100vh-220px)] overflow-auto">
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Managers ({managerList.length})</h2>
-              <p className="text-phx-xs font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
+              <p className="text-phx-md font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
               {availableRoles.length > 0 && (
                 <div className="mt-2"><RoleFilterBar value={roleFilter} options={availableRoles} onChange={setRoleFilter} /></div>
               )}
@@ -1501,7 +1501,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 {/* AM · PM · Pharmacies + concentration / focus signal */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits} · {formatPharmacyFigure(figureSplit(selectedSummary?.amVisits ?? managerProfile.amVisits, selectedSummary?.pmVisits ?? managerProfile.pmVisits, selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits, selectedSummary ? selectedSummary.phoenixVisits : managerProfile.phoenixVisits))}</span>
+                    <span className="text-phx-md font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits} · {formatPharmacyFigure(figureSplit(selectedSummary?.amVisits ?? managerProfile.amVisits, selectedSummary?.pmVisits ?? managerProfile.pmVisits, selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits, selectedSummary ? selectedSummary.phoenixVisits : managerProfile.phoenixVisits))}</span>
                     <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pharmacies={selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits} phoenix={selectedSummary ? selectedSummary.phoenixVisits : managerProfile.phoenixVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
                   </div>
                   {selectedSummary?.teamMrCount != null && (
@@ -1588,7 +1588,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                     </div>
                                     <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
                                     {managerProfile.overFocusedKeys.has(row.key) && (
-                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-orange-700">Over-focused</span>
+                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-sm font-black uppercase text-orange-700">Over-focused</span>
                                     )}
                                   </div>
                                 </td>
@@ -1655,7 +1655,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <tr key={row.key} className="border-t border-slate-100">
                                   <td className="px-3 py-2.5">
                                     <span className="text-sm font-semibold text-slate-800">{territoryLabel(row)}</span>
-                                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-slate-500">Resigned / vacant</span>
+                                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-phx-sm font-black uppercase text-slate-500">Resigned / vacant</span>
                                   </td>
                                   <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-950">{row.visits}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
