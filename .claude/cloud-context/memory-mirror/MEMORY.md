@@ -33,8 +33,6 @@
 - [Tablet lock screen says NOT PRIVATE](tablet-lock-screen-says-not-private.md) - 2026-11-09 his wording; one string in the fork's `Utils.applyOwnerInfo`. BLOCKED: gh cannot sign in as `it-gawish-hr`.
 - 🔴 [Launcher fork account SUSPENDED](launcher-fork-account-suspended.md) - 2026-11-09: `it-gawish-hr` suspended; launcher source unreachable. Fleet fine (6.48 serves 200). **Signing key is now a SINGLE copy — off-machine backup is his hands.**
 - [Pull-down is NOT a server toggle](launcher-status-bar-is-not-gated-on-blockstatusbar.md) - 2026-11-09 PROVEN on 0009: `blockStatusBar:false` + restart did NOT restore the shade; the launcher disables it unconditionally. Needs a rebuild (blocked by the suspended fork).
-- [Headwind app rows compare by versionCode](headwind-app-rows-compare-by-version-code.md) - 2026-11-09: a non-zero code wins over the name; WhatsApp/Telegram rows now on the publishers' current builds with exact codes.
-- [PHX-TAB-0008 silent since 22 Oct = off network](phx-tab-0008-silent-since-22-oct-is-off-network.md) - 2026-11-09: not a launcher death; Ahmed Abd-Elnaim works only from his own phone; needs a person to switch it on.
 - 🔴 [Launcher now rebuilt by patching the APK in CI](launcher-rebuilt-by-patching-the-apk-in-ci.md) - 2026-11-09: source gone, so `Omar-3-xx/hmdm-android` (public) workflow `patch-launcher.yml` patches 6.48. build-unsigned PROVEN GREEN. `build` (sign+cert-match guard) waits on his key in repo secrets.
 
 
