@@ -656,3 +656,77 @@ export function ExportRowBar({ children, note }: { children: React.ReactNode; no
     </div>
   );
 }
+
+/**
+ * Every team on one screen, one line each — the regional manager's first question ("which of my teams is behind?")
+ * answered before he scrolls through a single card. Each line is the team's heading, how many it holds, and its own
+ * flat bar with the figures in words beside it, so two teams are compared by eye and confirmed by number.
+ *
+ * Drawn only when there are two teams or more: one team's roll-up is the bar above it, said twice. A definition list,
+ * not a table — it has no columns to read down, and on a phone each team simply stacks its bar under its name, so
+ * nothing ever scrolls sideways.
+ */
+export function TeamRollup<T>({
+  caption,
+  groups,
+  noun,
+  segments,
+}: {
+  caption: string;
+  groups: readonly { key?: string; label: string; reps: readonly T[] }[];
+  noun: string;
+  /** The team's own figures, in the same order and tones as the tab's whole-board bar. */
+  segments: (items: readonly T[]) => readonly ShareBarSegment[];
+}) {
+  if (groups.length < 2) return null;
+  return (
+    <figure className="px-5 pt-4">
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{caption}</span>
+        <span className="text-phx-2xs font-semibold text-slate-500 tabular-nums">{countOf(groups.length, "team")}</span>
+      </figcaption>
+      <dl className="mt-2 border-t border-slate-200">
+        {groups.map((group) => {
+          const parts = segments(group.reps);
+          const { slices } = shareSlices(parts);
+          const toneOf = new Map(parts.map((part) => [part.key, part.tone]));
+          return (
+            <div
+              className="grid gap-x-6 gap-y-1.5 border-b border-slate-100 py-2.5 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-center"
+              key={group.key ?? group.label}
+            >
+              <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-900 [overflow-wrap:anywhere]">
+                {group.label}
+                <span className="ml-2 font-semibold normal-case tracking-normal text-slate-500 tabular-nums">
+                  {countOf(group.reps.length, noun)}
+                </span>
+              </dt>
+              <dd className="min-w-0">
+                <div aria-hidden className="flex h-2 w-full bg-slate-100">
+                  {slices.map((slice) =>
+                    slice.width > 0 ? (
+                      <div
+                        className={`h-2 ${TONE_FILL[toneOf.get(slice.key) ?? "slate"]} border-r border-white last:border-r-0`}
+                        key={slice.key}
+                        style={{ width: `${slice.width}%` }}
+                      />
+                    ) : null,
+                  )}
+                </div>
+                <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-phx-2xs text-slate-600">
+                  {slices.map((slice) => (
+                    <span className="inline-flex items-center gap-1.5" key={slice.key}>
+                      <Swatch tone={toneOf.get(slice.key) ?? "slate"} />
+                      <span className="font-black text-slate-900 tabular-nums">{slice.value}</span>
+                      {slice.label.toLowerCase()}
+                    </span>
+                  ))}
+                </p>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </figure>
+  );
+}

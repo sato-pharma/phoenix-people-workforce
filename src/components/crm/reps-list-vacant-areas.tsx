@@ -4,6 +4,7 @@ import { listLabel, RepsListListBody } from "@/components/crm/reps-list-board";
 import {
   BackToAllReps,
   cairoStamp,
+  CardMeter,
   countOf,
   EmptyNote,
   ExportRowBar,
@@ -14,6 +15,7 @@ import {
   ShareBar,
   StatusMark,
   Swatch,
+  TeamRollup,
   TeamTable,
   TeamTableName,
   Tile,
@@ -102,7 +104,7 @@ function VacancyCard({ area, href }: { area: VacantArea; href: string }) {
 }
 
 /** The vacant areas as a desktop table — the card's facts, one column each, in the card's own words and colours. */
-function vacancyColumns(basePath: string, board: VacantAreasBoard): TeamColumn<VacantArea>[] {
+function vacancyColumns(basePath: string, board: VacantAreasBoard, largestLeft: number): TeamColumn<VacantArea>[] {
   return [
     {
       cell: (area) => (
@@ -133,18 +135,34 @@ function vacancyColumns(basePath: string, board: VacantAreasBoard): TeamColumn<V
       ),
       key: "until",
       label: "Until",
-      width: "w-[14%]",
+      width: "w-[13%]",
     },
     {
       cell: (area) =>
         area.status === "list" ? (
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600 tabular-nums">{statusLine(area)}</span>
+          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">Open the list</span>
         ) : (
           <StatusMark text={statusLine(area)} tone={statusTone(area)} />
         ),
       key: "list",
       label: "What the seat holds",
-      width: "w-[34%]",
+      width: "w-[23%]",
+    },
+    {
+      // Only a list still on the seat has contacts to count; the other three states hold nothing here, said as a dash.
+      align: "right",
+      cell: (area) =>
+        area.status === "list" ? (
+          <>
+            <span className="font-black text-slate-900 tabular-nums">{area.holder?.contactCount ?? 0}</span>
+            <CardMeter max={largestLeft} value={area.holder?.contactCount ?? 0} />
+          </>
+        ) : (
+          <span className="text-slate-400">–</span>
+        ),
+      key: "contacts",
+      label: "Contacts left",
+      width: "w-[12%]",
     },
   ];
 }
@@ -215,6 +233,8 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
   const neverHeld = areas.filter((area) => area.status === "never_held").length;
   const share = (value: number) => (areas.length > 0 ? Math.round((value / areas.length) * 100) : 0);
   const groups = groupRepsByTeam(areas);
+  // The longest list still on an empty seat, so each row's meter reads against the others in view.
+  const largestLeft = areas.reduce((most, area) => (area.status === "list" ? Math.max(most, area.holder?.contactCount ?? 0) : most), 0);
   const description = [
     "Filter to a line, region and area, then open a vacant area to see the CRM contact list its last rep left behind, grouped by brick",
     `your reach: ${scopeLabel}`,
@@ -319,6 +339,18 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
               ]}
             />
           ) : null}
+          {/* Every team's empty seats on one screen, in the four states of the bar above. */}
+          <TeamRollup
+            caption="The teams at a glance"
+            groups={groups}
+            noun="empty seat"
+            segments={(members) => [
+              { key: "list", label: "List left behind", tone: "slate", value: members.filter((area) => area.status === "list").length },
+              { key: "moved", label: "Moved with the rep", tone: "amber", value: members.filter((area) => area.status === "holder_reseated").length },
+              { key: "closed", label: "Closed or handed over", tone: "rose", value: members.filter((area) => area.status === "list_closed").length },
+              { key: "never", label: "Never held", tone: "sky", value: members.filter((area) => area.status === "never_held").length },
+            ]}
+          />
           {areas.length > 0 ? (
             <ExportRowBar note="The vacant areas in these filters, by region and district manager, with who held each seat last.">
               <ExportXlsxButton
@@ -330,6 +362,9 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
                   { key: "holder", label: "Last held by" },
                   { key: "until", label: "Until" },
                   { key: "status", label: "What the seat holds" },
+                  // Never summed: an inherited list can share doctors with the team's own, so a total would double them.
+                  { excludeFromTotal: true, key: "contacts", label: "Contacts left", numeric: true },
+                  { excludeFromTotal: true, key: "pharmacies", label: "Pharmacies left", numeric: true },
                 ]}
                 label="Download the vacant areas"
                 rows={groups.flatMap((group) =>
@@ -339,6 +374,8 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
                     line: area.lineName,
                     manager: area.team.managerName ?? "",
                     region: area.team.regionName,
+                    contacts: area.status === "list" ? (area.holder?.contactCount ?? 0) : "",
+                    pharmacies: area.status === "list" ? (area.holder?.pharmacyCount ?? 0) : "",
                     status: statusLine(area),
                     until: dayLabel(area.holder?.heldUntil ?? null) ?? "",
                   })),
@@ -368,7 +405,7 @@ export function RepsListVacantAreasView({ basePath, board }: { basePath: string;
               {/* A desktop reads the empty seats as a table, a phone as cards (owner's standing rule). */}
               <TeamTable
                 caption="The vacant areas in these filters, by region and district manager"
-                columns={vacancyColumns(basePath, board)}
+                columns={vacancyColumns(basePath, board, largestLeft)}
                 groups={groups}
                 noun="empty seat"
                 renderGroupMeta={(members) => <TeamVacancyLine areas={members} />}

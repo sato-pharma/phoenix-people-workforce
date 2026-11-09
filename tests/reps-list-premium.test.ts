@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { brickCoverage, groupRepsByTeam, meterPercent, repInitials, shareSlices, teamHeading, type TeamOfRep } from "../src/lib/crm/reps-list-groups.ts";
+import { brickCoverage, groupRepsByTeam, listMix, meterPercent, repInitials, shareSlices, teamHeading, type TeamOfRep } from "../src/lib/crm/reps-list-groups.ts";
+import { planWeekMix } from "../src/lib/crm/plan-week-mix.ts";
 import { districtSeatAbove, groupByRegionAndManager } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -181,7 +182,7 @@ function theFinish() {
     assert.ok(!source.includes('className="px-5 py-6"'), `${board} has no hand-rolled empty state left`);
     // Desktop tables, phone cards (owner's standing rule): the same groups drawn twice, never two different lists.
     const code = codeOnly(source);
-    assert.equal((code.match(/groups=\{groups\}/g) ?? []).length, 2, `${board}: the cards and the table read the one grouping`);
+    assert.equal((code.match(/groups=\{groups\}/g) ?? []).length, 3, `${board}: the cards, the table and the teams roll-up read the one grouping`);
     assert.ok(code.includes("phoneOnly") && code.includes("<TeamTable"), `${board}: cards on a phone, the table from md up`);
     // An opened card starts with the band that names whose screen it is, and his team.
     assert.ok(code.includes("<RepProfileBand") && code.includes("team={teamHeading(selected.team)}"), `${board}: an opened card names its team`);
@@ -228,8 +229,121 @@ function theFinish() {
   assert.ok(table.includes("{day.actual ? <PlanDayKeptBar actual={day.actual} /> : null}"), "an ended plan day shows how it went as a bar");
 }
 
+/** One planned call, as `planWeekMix` reads it: the doctor, his grade on the plan, and whether he joined the list. */
+function call(contactCrmId: number | null, contactName: string, grade: string | null, onList: boolean, listGrade: string | null = null) {
+  return {
+    ampm: null,
+    contact: onList ? { brick: { heading: "Smouha", mapped: true }, contact: { grade: listGrade } } : null,
+    entry: { contactCrmId, contactName, grade },
+    key: `${contactCrmId ?? contactName}:${Math.random()}`,
+    verdict: "unknown",
+  };
+}
+
+function dayOf(rows: unknown[], actual: { missed: number; moved: number; planned: number; upcoming: boolean; visited: number } | null) {
+  return { actual: actual ? { ...actual, campaignCalls: 0 } : null, date: "2026-11-08", label: "Sat 8 Nov", rows } as never;
+}
+
+function thePlanWeek() {
+  const mix = planWeekMix([
+    // Doctor 1 planned AM and PM: one doctor, two calls. Doctor 2 is off the list. Doctor 3 has no grade on the
+    // plan and takes the list's. Doctor 4 is known only by name and has no grade anywhere.
+    dayOf([call(1, "Dr Amr", "A", true), call(1, "Dr Amr", "A", true), call(2, "Dr Hoda", "b", false)], {
+      missed: 1,
+      moved: 0,
+      planned: 3,
+      upcoming: false,
+      visited: 2,
+    }),
+    dayOf([call(3, "Dr Sara", null, true, "C"), call(null, " Dr Nour ", null, false), call(null, "dr nour", null, false)], {
+      missed: 0,
+      moved: 1,
+      planned: 3,
+      upcoming: false,
+      visited: 0,
+    }),
+    // A day still ahead: its doctors count, its zeros never reach the kept bar.
+    dayOf([call(1, "Dr Amr", "A", true)], { missed: 0, moved: 0, planned: 1, upcoming: true, visited: 0 }),
+    // A day whose visits could not be read: no kept figures at all.
+    dayOf([call(5, "Dr Mona", "A", false)], null),
+  ]);
+  assert.deepEqual(
+    mix.grades,
+    [
+      { count: 2, grade: "A" },
+      { count: 1, grade: "B" },
+      { count: 1, grade: "C" },
+      { count: 1, grade: "No grade" },
+    ],
+    "the grades count doctors once each, A first and No grade last, the list's grade filling a blank one",
+  );
+  assert.equal(mix.onList + mix.offList, 5, "five distinct doctors — a doctor planned twice is one, and a name is one doctor");
+  assert.deepEqual([mix.onList, mix.offList], [2, 3], "on the list when any of his rows joined to it");
+  assert.deepEqual(mix.kept, { missed: 1, moved: 1, visited: 2 }, "kept is the ended days' calls, the day headings added up");
+  assert.deepEqual(planWeekMix([]), { grades: [], kept: { missed: 0, moved: 0, visited: 0 }, offList: 0, onList: 0 });
+
+  const chrome = readFileSync(CHROME, "utf8");
+  assert.ok(chrome.includes("if (groups.length < 2) return null;"), "one team's roll-up is never drawn — it would repeat the bar above it");
+  for (const board of BOARDS) {
+    assert.ok(codeOnly(readFileSync(board, "utf8")).includes('<TeamRollup\n            caption="The teams at a glance"\n            groups={groups}'), `${board}: every team on one screen, from the one grouping`);
+  }
+  const plans = codeOnly(readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8"));
+  assert.ok(plans.includes("<PlanWeekCharts days={board.days} />"), "an opened plan says what it is made of before its doctors");
+}
+
+function theListMix() {
+  const rows = [
+    { grade: "a", listType: "PM", speciality: "Pediatrics" },
+    { grade: "A", listType: "AM", speciality: "Pediatrics" },
+    { grade: "B", listType: "PM", speciality: " Neurology " },
+    { grade: null, listType: "PM", speciality: null },
+    { grade: "X", listType: "AM", speciality: "Chest" },
+    // A pharmacy is not a contact: it reaches neither chart.
+    { grade: "A", listType: "Pharmacy", speciality: "Pharmacist" },
+  ];
+  const mix = listMix(rows, 2);
+  assert.deepEqual(
+    mix.grades,
+    [
+      { count: 2, grade: "A" },
+      { count: 1, grade: "B" },
+      { count: 1, grade: "X" },
+      { count: 1, grade: "No grade" },
+    ],
+    "grades in the order a manager reads them, an unknown grade after D, No grade last",
+  );
+  assert.deepEqual(
+    mix.specialties,
+    [
+      { count: 2, label: "Pediatrics" },
+      { count: 1, label: "Chest" },
+      { count: 2, label: "Other specialties", other: true },
+    ],
+    "the largest specialties, and the rest folded into one line — never dropped",
+  );
+  const contacts = rows.filter((row) => row.listType !== "Pharmacy").length;
+  assert.equal(mix.grades.reduce((sum, entry) => sum + entry.count, 0), contacts, "the grade bar adds up to the Contacts tile");
+  assert.equal(mix.specialties.reduce((sum, entry) => sum + entry.count, 0), contacts, "and so do the specialty bars");
+  assert.deepEqual(listMix([]), { grades: [], specialties: [] });
+
+  const vacant = codeOnly(readFileSync("src/components/crm/reps-list-vacant-areas.tsx", "utf8"));
+  const widths = [...vacant.slice(vacant.indexOf("function vacancyColumns"), vacant.indexOf("function TeamVacancyLine")).matchAll(/width: "w-\[(\d+)%\]"/g)].map(
+    (match) => Number(match[1]),
+  );
+  assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "the vacant areas table's columns share exactly the whole width");
+  for (const board of ["src/components/crm/reps-list-board.tsx", "src/components/crm/reps-weekly-plans-board.tsx"]) {
+    const source = codeOnly(readFileSync(board, "utf8"));
+    const name = board.includes("weekly") ? "planColumns" : "contactColumns";
+    const block = source.slice(source.indexOf(`function ${name}`));
+    const columns = [...block.slice(0, block.indexOf("\n}\n")).matchAll(/width: "w-\[(\d+)%\]"/g)].map((match) => Number(match[1]));
+    assert.equal(columns.reduce((sum, width) => sum + width, 0), 100, `${board}: the team table's columns share exactly the whole width`);
+  }
+}
+
 export function runRepsListPremiumTests() {
   groupsFollowTheSharedRule();
   theArithmetic();
+  thePlanWeek();
+  theListMix();
   theFinish();
 }

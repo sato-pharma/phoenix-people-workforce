@@ -17,6 +17,7 @@ import {
   ShareBar,
   StatusMark,
   Swatch,
+  TeamRollup,
   TeamTable,
   TeamTableName,
   Tile,
@@ -28,7 +29,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
 import { awaitingBrickSub } from "@/lib/crm/reps-list-labels";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
-import { groupRepsByTeam, teamHeading } from "@/lib/crm/reps-list-groups";
+import { groupRepsByTeam, listMix, teamHeading } from "@/lib/crm/reps-list-groups";
 
 // Server half of Reps List. The Section/Tile vocabulary comes from reps-list-chrome.tsx, shared by all
 // three tabs — flat borders, slate-900 header bar with its orange keyline, KPI tiles with a tone rule,
@@ -184,6 +185,44 @@ function BrickBars({ list }: { list: RepsListForRep }) {
   );
 }
 
+/**
+ * What the list is made of (`listMix`): its contacts by grade as one bar, and its largest specialties as ranked bars
+ * with the rest folded into one line, so each chart adds up to the Contacts tile. Contacts only — a pharmacy is not a
+ * contact. A chart with a single entry says nothing a tile does not, so it is not drawn.
+ */
+function ListMixCharts({ list }: { list: RepsListForRep }) {
+  const mix = listMix(list.groups.flatMap((group) => group.rows));
+  const gradeTone = (grade: string): "emerald" | "sky" | "slate" | "amber" =>
+    grade === "A" ? "emerald" : grade === "B" ? "sky" : grade === "No grade" ? "amber" : "slate";
+  return (
+    <>
+      {mix.grades.length > 1 ? (
+        <ShareBar
+          caption="Contacts by grade"
+          segments={mix.grades.map((entry) => ({
+            key: entry.grade,
+            label: entry.grade === "No grade" ? "No grade" : `Grade ${entry.grade}`,
+            tone: gradeTone(entry.grade),
+            value: entry.count,
+          }))}
+        />
+      ) : null}
+      {mix.specialties.length > 1 ? (
+        <RankedBars
+          caption="Contacts by specialty"
+          items={mix.specialties.map((entry) => ({
+            key: entry.label,
+            label: entry.label,
+            tone: entry.other ? "sky" : "slate",
+            value: entry.count,
+          }))}
+          total={countOf(list.counts.contacts, "contact")}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /** Whether the CRM mirrors a list for the rep — pharmacies count towards HAVING one, as on the card. */
 function hasListOf(rep: RepsListRep): boolean {
   return rep.contactCount + rep.pharmacyCount > 0;
@@ -311,6 +350,7 @@ export function RepsListListBody({
         />
       ) : null}
       <BrickBars list={list} />
+      <ListMixCharts list={list} />
       <div aria-hidden className="h-5" />
       <RepsListContacts
         activityAvailable={board.activityAvailable}
@@ -533,6 +573,16 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
               value={String(median(withList.map((rep) => rep.contactCount)))}
             />
           </TileRow>
+          {/* Every team on one screen: who has lists mirrored and who has none, team against team. */}
+          <TeamRollup
+            caption="The teams at a glance"
+            groups={groups}
+            noun="rep"
+            segments={(members) => [
+              { key: "list", label: "With a list", tone: "emerald", value: members.filter(hasListOf).length },
+              { key: "none", label: "No list mirrored", tone: "amber", value: members.filter((rep) => !hasListOf(rep)).length },
+            ]}
+          />
           {reps.length > 0 ? (
             <ExportRowBar note="The reps in these filters, by region and district manager, with the size of each list.">
               <ExportXlsxButton

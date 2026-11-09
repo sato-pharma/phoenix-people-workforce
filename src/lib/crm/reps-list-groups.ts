@@ -121,3 +121,53 @@ export function brickCoverage(rows: readonly Pick<RepsListContact, "activity">[]
   }
   return { notDue, scored: notDue + unvisited + visited, unvisited, visited };
 }
+
+/** The two mixes an opened list is read by, counted over CONTACTS only — a pharmacy is not a contact (owner, 2026-09-01). */
+export type ListMix = {
+  /** Contacts by grade: A, B, C, D first, then any other grade the CRM sends, then No grade last. */
+  grades: { count: number; grade: string }[];
+  /** The largest specialties, largest first; the rest are folded into one "Other specialties" line, never dropped. */
+  specialties: { count: number; label: string; other?: boolean }[];
+};
+
+const LIST_GRADE_ORDER = ["A", "B", "C", "D"];
+const LIST_NO_GRADE = "No grade";
+const LIST_UNSPECIFIED = "Unspecified";
+
+function listGradeRank(grade: string): number {
+  if (grade === LIST_NO_GRADE) return LIST_GRADE_ORDER.length + 1;
+  const index = LIST_GRADE_ORDER.indexOf(grade);
+  return index >= 0 ? index : LIST_GRADE_ORDER.length;
+}
+
+/**
+ * How one rep's list is made up — the grade mix and the specialties a manager checks a list against before he asks
+ * why it is the size it is. Every contact is counted exactly once, in one grade and one specialty line, so each chart
+ * adds up to the Contacts tile above it: the specialties past `top` are summed into an "Other specialties" line
+ * rather than left off, because a chart that silently shows 80 of 120 contacts would restate the list.
+ */
+export function listMix(
+  rows: readonly { grade?: string | null; listType: string; speciality?: string | null }[],
+  top = 8,
+): ListMix {
+  const grades = new Map<string, number>();
+  const specialties = new Map<string, number>();
+  for (const row of rows) {
+    if (row.listType === "Pharmacy") continue;
+    const grade = row.grade?.trim().toUpperCase() || LIST_NO_GRADE;
+    grades.set(grade, (grades.get(grade) ?? 0) + 1);
+    const speciality = row.speciality?.trim() || LIST_UNSPECIFIED;
+    specialties.set(speciality, (specialties.get(speciality) ?? 0) + 1);
+  }
+  const ranked = [...specialties.entries()]
+    .map(([label, count]) => ({ count, label }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const shown = ranked.slice(0, top);
+  const rest = ranked.slice(top).reduce((sum, entry) => sum + entry.count, 0);
+  return {
+    grades: [...grades.entries()]
+      .map(([grade, count]) => ({ count, grade }))
+      .sort((left, right) => listGradeRank(left.grade) - listGradeRank(right.grade) || left.grade.localeCompare(right.grade)),
+    specialties: rest > 0 ? [...shown, { count: rest, label: "Other specialties", other: true }] : shown,
+  };
+}

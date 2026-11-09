@@ -17,6 +17,7 @@ import {
   ShareBar,
   StatusMark,
   Swatch,
+  TeamRollup,
   TeamTable,
   TeamTableName,
   Tile,
@@ -36,6 +37,7 @@ import {
   planStatusClass,
   planStatusLabel,
 } from "@/lib/crm/plan-verification";
+import { planWeekMix } from "@/lib/crm/plan-week-mix";
 import { groupRepsByTeam, teamHeading } from "@/lib/crm/reps-list-groups";
 import type { RepsWeeklyPlanRep, RepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 
@@ -348,6 +350,52 @@ function dayStripLine(day: RepsWeeklyPlansBoard["days"][number]): string {
   return `${day.actual.visited + day.actual.moved} of ${day.actual.planned} kept`;
 }
 
+/**
+ * What the plan is made of, as charts above its doctors (`planWeekMix`): whether its doctors are the rep's own, the
+ * grades it spends the week on, and — once a day has ended — how much of it was kept. Doctors are counted once each;
+ * kept is counted in calls, the day headings' own figures added up. A chart with nothing to say is not drawn.
+ */
+function PlanWeekCharts({ days }: { days: RepsWeeklyPlansBoard["days"] }) {
+  const mix = planWeekMix(days);
+  const kept = mix.kept.visited + mix.kept.moved + mix.kept.missed;
+  const gradeTone = (grade: string): "emerald" | "sky" | "slate" | "amber" =>
+    grade === "A" ? "emerald" : grade === "B" ? "sky" : grade === "No grade" ? "amber" : "slate";
+  return (
+    <>
+      {mix.onList + mix.offList > 0 ? (
+        <ShareBar
+          caption="The plan's doctors"
+          segments={[
+            { key: "on", label: "On their list", tone: "slate", value: mix.onList },
+            { key: "off", label: "Not on their list", tone: "amber", value: mix.offList },
+          ]}
+        />
+      ) : null}
+      {mix.grades.length > 1 ? (
+        <ShareBar
+          caption="The plan's doctors by grade"
+          segments={mix.grades.map((entry) => ({
+            key: entry.grade,
+            label: entry.grade === "No grade" ? "No grade" : `Grade ${entry.grade}`,
+            tone: gradeTone(entry.grade),
+            value: entry.count,
+          }))}
+        />
+      ) : null}
+      {kept > 0 ? (
+        <ShareBar
+          caption="The ended days so far, in calls"
+          segments={[
+            { key: "visited", label: "Kept on the day", tone: "emerald", value: mix.kept.visited },
+            { key: "moved", label: "Kept another day", tone: "amber", value: mix.kept.moved },
+            { key: "missed", label: "Not seen", tone: "rose", value: mix.kept.missed },
+          ]}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function PlanPanel({
   basePath,
   board,
@@ -441,6 +489,7 @@ function PlanPanel({
         // are on tab one, and a padded box around them would make the two tabs stop matching at the
         // one place the owner asked for them to match most closely.
         <>
+          <PlanWeekCharts days={board.days} />
           <DayStrip days={board.days} />
           <div className="border-t border-slate-100">
             <PlanDoctorsTable days={board.days} />
@@ -674,6 +723,27 @@ export function RepsWeeklyPlansBoardView({
               ]}
             />
           ) : null}
+          {/* Every team's week on one screen, in the tones of the bar above — which team is waiting on him, which
+              has not filed. Counted from the filtered grid's own groups, so it says what the cards below say. */}
+          <TeamRollup
+            caption="The teams at a glance"
+            groups={groups}
+            noun="rep"
+            segments={(members) => {
+              const filed = members.filter((member) => member.plansFiled > 0);
+              const waiting = filed.filter((member) => (member.planStatus ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW).length;
+              return [
+                { key: "verified", label: "Verified", tone: "emerald", value: filed.length - waiting },
+                { key: "awaiting", label: "Awaiting you", tone: "amber", value: waiting },
+                {
+                  key: "missing",
+                  label: weekIsFuture ? "Not filed yet" : "Not filed",
+                  tone: weekIsFuture ? "slate" : "rose",
+                  value: members.length - filed.length,
+                },
+              ];
+            }}
+          />
           {reps.length > 0 ? (
             <ExportRowBar note={`The reps in these filters and the plan each filed for ${week.label}, by region and district manager.`}>
               <ExportXlsxButton
