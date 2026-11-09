@@ -20,8 +20,6 @@
  * app passwords are still there, because that turns a real hole into one the register says is shut.
  */
 
-import { randomInt } from "node:crypto";
-
 import { logError, logInfo } from "@/lib/observability/log";
 
 import {

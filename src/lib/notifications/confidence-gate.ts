@@ -718,6 +718,10 @@ export async function discardHeldNotification(access: AccessContext, reviewId: s
   if (!data) throw conflictError("This item is no longer pending review (already decided, or not found).");
 }
 
+export const CREDENTIAL_REMOVED_CHECK = "credential_removed";
+const CREDENTIAL_REMOVED_CHECK_DETAIL =
+  "A password code or link: the copy kept here has it removed, so this email can never be re-sent from review.";
+
 /**
  * A Super Admin manually approving a held item — sends the EXACT content that was rendered
  * at hold time (never re-rendered, so what the admin reviewed is what goes out), bypassing
@@ -726,10 +730,6 @@ export async function discardHeldNotification(access: AccessContext, reviewId: s
  * to keep the cycle safe (same pattern already used elsewhere in this codebase for a
  * table-builder cycle between email-templates/service.ts and a domain module).
  */
-export const CREDENTIAL_REMOVED_CHECK = "credential_removed";
-const CREDENTIAL_REMOVED_CHECK_DETAIL =
-  "A password code or link: the copy kept here has it removed, so this email can never be re-sent from review.";
-
 export async function approveHeldNotification(access: AccessContext, reviewId: string, note?: string) {
   assertConfidenceGateActor(access);
   const decidedBy = access.hrId ?? access.loginId ?? "system";

@@ -505,6 +505,32 @@ export function runAutomatedPayrollHeldReleaseTests() {
     )[0];
     assert.equal(savedZero?.values[field], 0, `Part ${part}: a 0 HR saved is kept`);
   }
+
+  // What Part 1 already released of an added amount is not added again in Part 2: 6,665 of the 7,265
+  // owed was added and released in Part 1, so the 600 still due is NOT something HR added.
+  const afterPart1 = recommendHeldRelease(
+    [],
+    chooseDirectory,
+    new Map([["b2", draft("B-2", { heldReleaseP1Value: 6665 })]]),
+    chooseBalances,
+    OCTOBER,
+    new Map(),
+    2,
+    new Map([["b2", 6665]]),
+  )[0];
+  assert.equal(afterPart1?.context["Due Now"], 600, "Part 2: Part 1's release comes off what is due");
+  assert.equal(afterPart1?.values.heldReleaseValue, 0, "Part 2: nothing HR did not add is filled in after Part 1 released the added amount");
+  const addedMore = recommendHeldRelease(
+    [],
+    chooseDirectory,
+    new Map([["b2", draft("B-2", { heldReleaseP1Value: 6665 })]]),
+    chooseBalances,
+    OCTOBER,
+    new Map(),
+    2,
+    new Map([["b2", 7000]]),
+  )[0];
+  assert.equal(addedMore?.values.heldReleaseValue, 335, "Part 2: only what was added beyond Part 1's release is filled in");
 }
 
 function statutoryRecord(overrides: Partial<SalaryRecord>): SalaryRecord {
