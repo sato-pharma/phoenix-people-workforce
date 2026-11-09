@@ -21,6 +21,7 @@ import {
   phoenixSessionTimeoutReason,
 } from "@/lib/auth/client-session";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { safeReturnUrl } from "@/lib/auth/safe-return-url";
 import { currentCairoTimeHM } from "@/lib/i18n/format";
 
 const rememberedLoginIdKey = "phoenix_remembered_login_id";
@@ -46,12 +47,6 @@ const embers = Array.from({ length: 42 }, (_, index) => ({
 }));
 
 const loginFeatureIcons = [BarChart3, ShieldCheck, Zap] as const;
-
-function safeReturnUrl(value: string | null | undefined): string | null {
-  const v = value?.trim();
-  if (!v || !v.startsWith("/") || v.startsWith("//")) return null;
-  return v;
-}
 
 export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -209,9 +204,9 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       markSessionActivity();
       const urlReturnUrl = new URLSearchParams(window.location.search).get("returnUrl");
       const destination =
-        returnUrl ??
+        safeReturnUrl(returnUrl) ??
         safeReturnUrl(urlReturnUrl) ??
-        payload.redirectTo ??
+        safeReturnUrl(payload.redirectTo) ??
         resolveLandingPathForRole(payload.user?.role);
       window.location.assign(destination);
     } catch (cancellation) {
@@ -276,7 +271,8 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
 
       markSessionActivity();
       const urlReturnUrl = new URLSearchParams(window.location.search).get("returnUrl");
-      const destination = returnUrl ?? safeReturnUrl(urlReturnUrl) ?? resolveLandingPathForRole(payload.user?.role);
+      const destination =
+        safeReturnUrl(returnUrl) ?? safeReturnUrl(urlReturnUrl) ?? resolveLandingPathForRole(payload.user?.role);
       window.location.assign(destination);
     } catch {
       showLoginError("Unable to sign in. Check your connection and try again.");

@@ -291,7 +291,12 @@ export async function assertReachableEmailImage(url: string, input?: {
     throw new Error("Email signature image URL must be HTTPS so email clients can load it.");
   }
 
-  if (input?.blockLocalAssets && (isBlockedImageHost(parsed.hostname) || /\/assets\//i.test(parsed.pathname))) {
+  // SSRF guard, on every caller: never reach a loopback, private or link-local host, and never
+  // send credentials embedded in the URL. The relative /assets check stays opt-in.
+  if (isBlockedImageHost(parsed.hostname) || parsed.username || parsed.password) {
+    throw new Error("Email signature image must not use a local/internal host or a relative /assets URL.");
+  }
+  if (input?.blockLocalAssets && /\/assets\//i.test(parsed.pathname)) {
     throw new Error("Email signature image must not use a local/internal host or a relative /assets URL.");
   }
 
@@ -307,13 +312,27 @@ export async function assertReachableEmailImage(url: string, input?: {
     return { cached: true, contentType: cached.contentType, verified: true as const };
   }
 
-  const verify = async (method: "GET" | "HEAD") =>
-    fetch(url, {
-      cache: "no-store",
-      headers: method === "GET" ? { Range: "bytes=0-0" } : undefined,
-      method,
-      signal: AbortSignal.timeout(8000),
-    });
+  // Redirects are followed by hand, at most three hops, and each hop is held to the same rule
+  // (https, public host, no credentials) — a public URL cannot bounce the check onto an internal one.
+  const verify = async (method: "GET" | "HEAD") => {
+    let target = parsed;
+    for (let hop = 0; ; hop += 1) {
+      const response = await fetch(target, {
+        cache: "no-store",
+        headers: method === "GET" ? { Range: "bytes=0-0" } : undefined,
+        method,
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      });
+      const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
+      if (!location || hop >= 3) return response;
+      const next = new URL(location, target);
+      if (next.protocol !== "https:" || isBlockedImageHost(next.hostname) || next.username || next.password) {
+        return response;
+      }
+      target = next;
+    }
+  };
 
   let response = await verify("HEAD").catch(() => null);
 

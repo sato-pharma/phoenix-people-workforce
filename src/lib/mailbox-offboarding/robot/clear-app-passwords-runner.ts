@@ -20,6 +20,8 @@
  * app passwords are still there, because that turns a real hole into one the register says is shut.
  */
 
+import { randomInt } from "node:crypto";
+
 import { logError, logInfo } from "@/lib/observability/log";
 
 import {
@@ -161,6 +163,7 @@ export async function runAppPasswordClear(options: {
         const captured = await driver.resetAndCapture({ address });
         reset = true;
         // Held in a local and nowhere else: never sealed, never logged, never returned.
+        // A live credential: throwawayPassword draws every character from the crypto source.
         const password = throwawayPassword();
         await driver.setMailboxPassword({ address, newPassword: password, oneTimePassword: captured.oneTimePassword });
         const { removed } = await driver.clearAppPasswords({ address, password });

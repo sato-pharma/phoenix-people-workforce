@@ -189,7 +189,9 @@ export async function logAppError(input: LogAppErrorInput): Promise<string | nul
   // caller — the client reporter and instrumentation.ts's onRequestError both funnel
   // through /api/errors/client into this one function.
   if (!shouldPersistErrorEvents()) {
+    // "%s" first, so a % in the route or message is printed as text, never read as a format directive.
     console.error(
+      "%s %s",
       `[app-error:not-persisted] ${redactSecretsFromRoute(input.route) ?? "(no route)"} — ${input.message}`,
       input.stack ?? "",
     );
