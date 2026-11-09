@@ -61,7 +61,7 @@ const fieldInputClass = phxFieldClassName;
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );
@@ -109,7 +109,7 @@ async function readJson<T extends { error?: string; success: boolean }>(response
 function Labelled({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <div className="mt-1.5">
-      <div className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</div>
+      <div className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</div>
       <div className="break-words">{children}</div>
     </div>
   );
@@ -334,7 +334,7 @@ function MasterTab({
           </Button>
         </div>
         {isRelocatingEdit ? (
-          <p className="break-words text-phx-2xs font-semibold leading-tight text-phx-ink-faint">
+          <p className="break-words text-phx-sm font-semibold leading-tight text-phx-ink-faint">
             Moves the brick to that block&apos;s area: it gets a new ID there, its pharmacies and their open-month sales go with it, and this brick stays switched on as history.
           </p>
         ) : null}
@@ -786,7 +786,7 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   };
   return (
     <div className={cn("rounded-2xl border p-4", tones[tone])}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 text-2xl font-black tracking-tight">{value}</p>
     </div>
   );

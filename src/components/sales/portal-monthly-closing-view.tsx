@@ -209,7 +209,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
       <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
             {/* Stays the read-only box for everyone who holds one line — which is almost everyone.
                 It becomes a picker only when the server resolved more than one PUBLISHED line for
                 this viewer, so the control cannot offer a line they may not open. */}
@@ -231,7 +231,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
             )}
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             {availablePeriods.length > 1 ? (
               <SearchableSelect
                 className={monthSelectClassName}

@@ -571,7 +571,7 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: Week of month ── */}
         <div className="mb-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">1</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-sm font-black text-white">1</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Week of month</span>
             {weekNumber && (
               <span className="inline-flex items-center bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">Week {weekNumber}</span>
@@ -602,7 +602,7 @@ export function WeeklyUploadWorkspace({
 
         {/* ── Step 2: Distributor & file ── */}
         <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">2</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-sm font-black text-white">2</span>
           <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Distributor &amp; file</span>
         </div>
 
@@ -671,7 +671,7 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: AI Verify ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">3</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-sm font-black text-white">3</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Verify columns</span>
             {verified && (
               <span className="inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
@@ -708,7 +708,7 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 2: Validate (dry run) ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">4</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-sm font-black text-white">4</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Validate</span>
             {validateResult && !validateError && (
               <span className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -1182,7 +1182,7 @@ function UnresolvedItemRow({
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-rose-200 bg-white px-3 py-2">
-      <span className="bg-rose-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-rose-700">
+      <span className="bg-rose-100 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide text-rose-700">
         {FIELD_LABELS[group.field] ?? group.field}
       </span>
       <span className="min-w-0 break-words text-sm font-semibold text-phx-ink-2">{group.message}</span>
@@ -1780,7 +1780,7 @@ function ValidationResultPanel({
       {/* Step 3 — Confirm Upload */}
       <div className="border-t border-phx-line px-4 py-4">
         <div className="flex items-center gap-2 mb-3">
-          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">5</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-sm font-black text-white">5</span>
           <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Confirm &amp; Upload</span>
         </div>
 
@@ -1932,13 +1932,13 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
               </p>
               <div className="mt-2 grid grid-cols-1 gap-1.5">
                 <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
-                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Found in your file</p>
+                  <p className="break-words text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">Found in your file</p>
                   <p className="break-words text-sm text-phx-ink">
                     {col.observedHeader || <span className="text-rose-600">— empty —</span>}
                   </p>
                 </div>
                 <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
-                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Expected</p>
+                  <p className="break-words text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">Expected</p>
                   <p className="break-words text-sm text-phx-ink-faint">{col.expectedHeaderHint}</p>
                 </div>
               </div>
@@ -2122,7 +2122,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
             ))}
           </colgroup>
           <thead>
-            <tr className="text-left text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
+            <tr className="text-left text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">
               <th className="px-2 py-1">Distributor</th>
               {weeks.map((week) => (
                 <th className="px-2 py-1 text-center" key={week}>W{week}</th>
@@ -2162,7 +2162,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {row.cells.map((cell) => (
                 <div className="flex flex-col items-center gap-1" key={cell.week}>
-                  <span className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">W{cell.week}</span>
+                  <span className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">W{cell.week}</span>
                   <span
                     className={`inline-flex h-6 w-9 items-center justify-center border text-phx-xs font-black ${cellClass[cell.state]}`}
                     title={cellTitle(cell)}
@@ -2176,7 +2176,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
         ))}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-sm font-bold uppercase tracking-wide text-phx-ink-faint">
         <span><span className="text-emerald-600">✓</span> uploaded</span>
         <span><span className="text-amber-600">!</span> overdue</span>
         <span><span className="text-phx-line-strong">–</span> upcoming</span>
@@ -2191,7 +2191,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
       <div className={`mt-0.5 text-sm font-black tabular-nums ${accent ? "text-phx-accent" : "text-phx-ink"}`}>{value}</div>
     </div>
   );
@@ -2273,7 +2273,7 @@ function PhoneCard({ children }: { children: React.ReactNode }) {
 function CardStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
-      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <p className="break-words text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
       <div className="break-words text-sm font-black tabular-nums text-phx-ink">{value}</div>
     </div>
   );

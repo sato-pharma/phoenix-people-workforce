@@ -189,7 +189,7 @@ function ProductModal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-phx-line px-5 py-4">
           <div>
-            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+            <p className="text-phx-sm font-black uppercase tracking-[0.18em] text-orange-600">
               Product Reference
             </p>
             <h2 className="mt-1 text-xl font-black tracking-tight text-phx-ink">{title}</h2>

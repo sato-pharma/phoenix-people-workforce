@@ -80,7 +80,7 @@ function AchievementBar({
 function Tile({ label, tone, children }: { label: string; tone?: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/70 px-3 py-2.5">
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <span className={cn("text-sm font-bold tabular-nums", tone ?? "text-slate-900")}>{children}</span>
     </div>
   );
@@ -132,13 +132,13 @@ function AreaBlock({
       <div className="bg-[#0B0B0B] px-5 py-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.24em] text-[#F97316]">Your area</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.24em] text-[#F97316]">Your area</span>
             <p className="mt-1 break-words text-xl font-black leading-tight text-white">{area.areaName}</p>
             {/* slate-400, not 500: 10px slate-500 on the #0B0B0B hero is about 4:1, under AA for small text. */}
-            <span className="text-phx-2xs font-semibold uppercase tracking-[0.16em] text-slate-400">{context}</span>
+            <span className="text-phx-sm font-semibold uppercase tracking-[0.16em] text-slate-400">{context}</span>
           </div>
           <div className="text-right">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-slate-400">Achievement</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.18em] text-slate-400">Achievement</span>
             <p className={cn("text-3xl font-black leading-none tabular-nums", overTarget ? "text-emerald-400" : "text-white")}>
               {achText(total.achievement)}
             </p>

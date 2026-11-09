@@ -104,7 +104,7 @@ function CellValue({ cell, strong }: { cell: AchievementCell | undefined; strong
     );
   }
   return (
-    <span className="text-phx-2xs font-bold break-words uppercase leading-tight tracking-normal text-slate-400" title={words.long}>
+    <span className="text-phx-sm font-bold break-words uppercase leading-tight tracking-normal text-slate-400" title={words.long}>
       {words.short}
     </span>
   );
@@ -140,7 +140,7 @@ function SortHead({
         className={cn(
           // The portal shell paints every table head black with light ink (globals.css,
           // `.employee-portal-shell thead th`), so the sort label is light too: dark ink went black on black.
-          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] transition hover:text-white",
+          "inline-flex items-center gap-1 text-phx-sm font-black uppercase tracking-[0.14em] transition hover:text-white",
           active ? "text-white" : "text-slate-300",
         )}
         onClick={onClick}
@@ -492,7 +492,7 @@ export function RepProductAchievementWorkspace({
                         <span className="flex flex-col items-center leading-tight">
                           <span>{column.label}</span>
                           {columnIsToDate(column, data.currentPeriod) ? (
-                            <span className="text-[10px] font-bold normal-case tracking-normal text-slate-400">to date</span>
+                            <span className="text-phx-sm font-bold normal-case tracking-normal text-slate-400">to date</span>
                           ) : null}
                         </span>
                       </SortHead>
@@ -578,7 +578,7 @@ function DesktopRepRows({
               <span className="flex flex-wrap items-center gap-1.5">
                 <span className="break-words font-black text-slate-950">{record.name}</span>
                 {record.left ? (
-                  <span className="border border-slate-300 px-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                  <span className="border border-slate-300 px-1 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
                     Left
                   </span>
                 ) : null}
@@ -646,7 +646,7 @@ function PeriodGrid({
             )}
             key={column.id}
           >
-            <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+            <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
               {column.label}
               {columnIsToDate(column, currentPeriod) ? " to date" : ""}
             </dt>
@@ -684,7 +684,7 @@ function MobileRepCard({
           <h3 className="flex flex-wrap items-center gap-1.5 break-words text-sm font-black text-slate-950">
             {record.name}
             {record.left ? (
-              <span className="border border-slate-300 px-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+              <span className="border border-slate-300 px-1 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
                 Left
               </span>
             ) : null}

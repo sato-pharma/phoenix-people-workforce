@@ -611,12 +611,12 @@ function FilterBar({
       {/* Period pills — horizontally scrollable on mobile */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Period</span>
+          <span className="text-phx-sm font-bold uppercase tracking-widest text-slate-400">Period</span>
           {!allPeriodsSelected && (
             <button
               type="button"
               onClick={() => onPeriodsChange([])}
-              className="text-phx-2xs font-bold uppercase tracking-wide text-orange-600 hover:text-orange-700"
+              className="text-phx-sm font-bold uppercase tracking-wide text-orange-600 hover:text-orange-700"
             >
               All Periods
             </button>
@@ -647,7 +647,7 @@ function FilterBar({
       <div className="grid gap-3 sm:grid-cols-3">
         {/* Comparison */}
         <div>
-          <label className="mb-1 block text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Compare</label>
+          <label className="mb-1 block text-phx-sm font-bold uppercase tracking-widest text-slate-400">Compare</label>
           <div className="relative">
             <SearchableSelect
               value={comparisonPeriod}
@@ -664,7 +664,7 @@ function FilterBar({
 
         {/* Family */}
         <div>
-          <label className="mb-1 block text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Family</label>
+          <label className="mb-1 block text-phx-sm font-bold uppercase tracking-widest text-slate-400">Family</label>
           <div className="relative">
             <SearchableSelect
               value={selectedFamily}
@@ -695,7 +695,7 @@ function FilterBar({
       {/* Expanded product chips */}
       {showMoreFilters && (
         <div className="border-t border-slate-100 pt-3">
-          <span className="mb-2 block text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Products</span>
+          <span className="mb-2 block text-phx-sm font-bold uppercase tracking-widest text-slate-400">Products</span>
           <div className="flex flex-wrap gap-1.5">
             {availableProducts.map((product) => (
               <button
@@ -815,10 +815,10 @@ function KPICards({
           style={{ animationDelay: `${index * 60}ms` }}
         >
           <div className="flex items-center justify-between gap-2">
-            <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">{card.title}</p>
+            <p className="text-phx-sm font-bold uppercase tracking-widest text-slate-400">{card.title}</p>
             {card.delta !== null && (
               <span
-                className={`inline-flex items-center gap-0.5 text-phx-2xs font-bold ${
+                className={`inline-flex items-center gap-0.5 text-phx-sm font-bold ${
                   card.delta > 0 ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
@@ -853,7 +853,7 @@ function TrendTooltip({
 
   return (
     <div className="min-w-48 rounded border border-slate-200 bg-white p-3 shadow-lg">
-      <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">{row.label}</p>
+      <p className="text-phx-sm font-bold uppercase tracking-widest text-slate-400">{row.label}</p>
       <div className="mt-2 space-y-1.5 text-xs">
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5 font-medium text-slate-600">
@@ -917,23 +917,23 @@ const TrendChart = memo(function TrendChart({
         <div>
           <div className="flex items-center gap-2">
             <Activity className="h-4 w-4 text-orange-500" />
-            <p className="text-phx-2xs font-bold uppercase tracking-widest text-orange-600">Sales vs target trajectory</p>
+            <p className="text-phx-sm font-bold uppercase tracking-widest text-orange-600">Sales vs target trajectory</p>
           </div>
           <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Monthly control chart</h2>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Sales</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Sales</p>
             <p className="mt-0.5 text-xs font-black text-slate-900 sm:text-sm">{formatCompactCurrency(totalSales)}</p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Ach.</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Ach.</p>
             <p className="mt-0.5 text-xs font-black sm:text-sm" style={{ color: achievementColor(blendedAchievement / 100) }}>
               {blendedAchievement.toFixed(1)}%
             </p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 sm:px-3">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Best</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Best</p>
             <p className="mt-0.5 text-xs font-black text-slate-900 sm:text-sm">{best ? best.label : "-"}</p>
           </div>
         </div>
@@ -1030,26 +1030,26 @@ const TrendChart = memo(function TrendChart({
         {/* Sidebar stats */}
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-1 xl:gap-3">
           <div className="rounded border border-slate-100 bg-slate-50 p-3">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Latest</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Latest</p>
             <p className="mt-1 text-sm font-black text-slate-900">{latest ? latest.label : "-"}</p>
             <p className="text-xs font-semibold text-slate-500">
               {latest ? `${latest.achievement.toFixed(1)}%` : "-"}
             </p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50 p-3">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Gap</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Gap</p>
             <p className={`mt-1 text-sm font-black ${totalSales - totalTarget >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {formatCompactCurrency(totalSales - totalTarget)}
             </p>
           </div>
           <div className="col-span-2 flex items-center gap-4 rounded border border-slate-100 bg-slate-50 p-3 xl:col-span-1">
-            <span className="flex items-center gap-1 text-phx-2xs font-bold text-slate-500">
+            <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
               <span className="h-2 w-2 rounded-sm bg-orange-500" />Sales
             </span>
-            <span className="flex items-center gap-1 text-phx-2xs font-bold text-slate-500">
+            <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
               <span className="h-2 w-2 rounded-sm bg-slate-400" />Target
             </span>
-            <span className="flex items-center gap-1 text-phx-2xs font-bold text-slate-500">
+            <span className="flex items-center gap-1 text-phx-sm font-bold text-slate-500">
               <span className="h-2 w-2 rounded-sm bg-sky-500" />Ach%
             </span>
           </div>
@@ -1074,7 +1074,7 @@ function FamilyPerformanceChart({
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-violet-500 to-violet-300" />
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 text-violet-500" />
-        <p className="text-phx-2xs font-bold uppercase tracking-widest text-violet-600">Family breakdown</p>
+        <p className="text-phx-sm font-bold uppercase tracking-widest text-violet-600">Family breakdown</p>
       </div>
       <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Performance by Product Family</h2>
       <p className="mt-0.5 text-xs text-slate-500">Aggregate sales and target achievement across product families</p>
@@ -1115,7 +1115,7 @@ function FamilyPerformanceChart({
                   }}
                 />
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-phx-2xs font-semibold text-slate-400">
+              <div className="mt-1.5 flex items-center justify-between text-phx-sm font-semibold text-slate-400">
                 <span>Target: {formatCompactCurrency(fam.target)}</span>
                 <span className={fam.gap >= 0 ? "text-emerald-600" : "text-rose-500"}>
                   {fam.gap >= 0 ? "+" : ""}{formatCompactCurrency(fam.gap)}
@@ -1172,7 +1172,7 @@ const ProductTable = memo(function ProductTable({
           <div>
             <div className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-orange-500" />
-              <p className="text-phx-2xs font-bold uppercase tracking-widest text-orange-600">Product performance</p>
+              <p className="text-phx-sm font-bold uppercase tracking-widest text-orange-600">Product performance</p>
             </div>
             <p className="mt-0.5 text-xs text-slate-500">Revenue, target, achievement, and contribution</p>
           </div>
@@ -1195,7 +1195,7 @@ const ProductTable = memo(function ProductTable({
           <div className="p-3">
             {/* Mobile sort control */}
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Sort by</span>
+              <span className="text-phx-sm font-bold uppercase tracking-widest text-slate-400">Sort by</span>
               <SearchableSelect
                 value={sortConfig.key}
                 onChange={(e) => onSort(e.target.value)}
@@ -1257,15 +1257,15 @@ const ProductTable = memo(function ProductTable({
                     {/* Compact metrics row */}
                     <div className="mt-2 grid grid-cols-3 gap-1 text-center">
                       <div>
-                        <p className="text-phx-3xs font-bold uppercase text-slate-400">Sales</p>
+                        <p className="text-phx-xs font-bold uppercase text-slate-400">Sales</p>
                         <p className="text-phx-xs font-black text-slate-900">{formatCompactCurrency(product.sales)}</p>
                       </div>
                       <div>
-                        <p className="text-phx-3xs font-bold uppercase text-slate-400">Target</p>
+                        <p className="text-phx-xs font-bold uppercase text-slate-400">Target</p>
                         <p className="text-phx-xs font-semibold text-slate-500">{formatCompactCurrency(product.target)}</p>
                       </div>
                       <div>
-                        <p className="text-phx-3xs font-bold uppercase text-slate-400">Mix</p>
+                        <p className="text-phx-xs font-bold uppercase text-slate-400">Mix</p>
                         <p className="text-phx-xs font-semibold text-slate-600">{contribution}%</p>
                       </div>
                     </div>
@@ -1298,7 +1298,7 @@ const ProductTable = memo(function ProductTable({
                       key={column.key}
                       onClick={() => onSort(column.key)}
                       aria-sort={sortConfig.key === column.key ? (sortConfig.direction === "asc" ? "ascending" : "descending") : "none"}
-                      className="cursor-pointer border border-slate-100 px-4 py-2.5 text-left text-phx-2xs font-bold uppercase tracking-widest text-slate-500 transition hover:bg-orange-50 rtl:text-right"
+                      className="cursor-pointer border border-slate-100 px-4 py-2.5 text-left text-phx-sm font-bold uppercase tracking-widest text-slate-500 transition hover:bg-orange-50 rtl:text-right"
                     >
                       <span className="inline-flex items-center gap-1">
                         {column.label}
@@ -1400,7 +1400,7 @@ function TopBottomProducts({
       <div>
         <div className="flex items-center gap-2">
           {isTop ? <TrendingUp className="h-4 w-4 text-emerald-500" /> : <Zap className="h-4 w-4 text-rose-500" />}
-          <p className="text-phx-2xs font-bold uppercase tracking-widest" style={{ color: accentColor }}>{badge}</p>
+          <p className="text-phx-sm font-bold uppercase tracking-widest" style={{ color: accentColor }}>{badge}</p>
         </div>
         <h2 className="mt-1 text-base font-black text-slate-900">{title}</h2>
       </div>
@@ -1423,19 +1423,19 @@ function TopBottomProducts({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-phx-2xs font-black text-white"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-phx-sm font-black text-white"
                       style={{ backgroundColor: accentColor }}
                     >
                       {index + 1}
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900 leading-snug">{product.product}</p>
-                      <p className="text-phx-2xs font-medium text-slate-500">{product.family}</p>
+                      <p className="text-phx-sm font-medium text-slate-500">{product.family}</p>
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-xs font-black text-slate-900">{formatCompactCurrency(product.sales)}</p>
-                    <p className="text-phx-2xs font-bold" style={{ color: achievementColor(product.achievementRate) }}>
+                    <p className="text-phx-sm font-bold" style={{ color: achievementColor(product.achievementRate) }}>
                       {formatPercent(product.achievementRate)}
                     </p>
                   </div>
@@ -1495,17 +1495,17 @@ function ProductMixChart({
         <div>
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-sky-500" />
-            <p className="text-phx-2xs font-bold uppercase tracking-widest text-sky-600">Product mix</p>
+            <p className="text-phx-sm font-bold uppercase tracking-widest text-sky-600">Product mix</p>
           </div>
           <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Revenue concentration</h2>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Leader</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Leader</p>
             <p className="mt-0.5 text-xs font-bold text-slate-900">{leading?.name ?? "-"}</p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-1.5">
-            <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">Top 3</p>
+            <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">Top 3</p>
             <p className="mt-0.5 text-xs font-bold text-sky-600">{concentration.toFixed(1)}%</p>
           </div>
         </div>
@@ -1545,7 +1545,7 @@ function ProductMixChart({
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-[1]">
                 <div className="rounded border border-slate-100 bg-white/95 px-3 py-2 text-center shadow-sm">
                   <p className="text-lg font-black text-slate-900">{formatCompactCurrency(total).replace("EGP ", "")}</p>
-                  <p className="text-phx-3xs font-bold uppercase tracking-widest text-slate-400">EGP total</p>
+                  <p className="text-phx-xs font-bold uppercase tracking-widest text-slate-400">EGP total</p>
                 </div>
               </div>
             </div>
@@ -1608,7 +1608,7 @@ function PerformanceInsights({
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-500 to-amber-300" />
       <div className="flex items-center gap-2">
         <Zap className="h-4 w-4 text-amber-500" />
-        <p className="text-phx-2xs font-bold uppercase tracking-widest text-amber-600">Diagnostics</p>
+        <p className="text-phx-sm font-bold uppercase tracking-widest text-amber-600">Diagnostics</p>
       </div>
       <h2 className="mt-1 text-base font-black text-slate-900 sm:text-lg">Performance Insights</h2>
 

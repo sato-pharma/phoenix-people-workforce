@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { AddressFindingRow } from "@/lib/sales/normalizer/address-findings";
 
-const label = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+const label = "mb-1 block text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint";
 const headRow = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-[0.12em] text-white";
 
 async function readJson<T>(res: Response): Promise<T> {

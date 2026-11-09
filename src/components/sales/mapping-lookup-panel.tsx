@@ -186,7 +186,7 @@ export function MappingLookupPanel() {
           <Download className="h-4 w-4" /> Offline copy (.xlsx)
         </a>
       </div>
-      <p className="mt-2 text-phx-2xs font-semibold text-phx-ink-faint">
+      <p className="mt-2 text-phx-sm font-semibold text-phx-ink-faint">
         The offline copy is a snapshot of this moment. Download it again whenever the answer matters.
       </p>
 
@@ -206,7 +206,7 @@ export function MappingLookupPanel() {
               {codeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Find
             </button>
           </div>
-          <p className="text-phx-2xs font-semibold text-phx-ink-faint">
+          <p className="text-phx-sm font-semibold text-phx-ink-faint">
             Leading zeros are part of the code, not formatting — they are never stripped.
           </p>
 
@@ -257,7 +257,7 @@ export function MappingLookupPanel() {
               {territoryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Find
             </button>
           </div>
-          <p className="text-phx-2xs font-semibold text-phx-ink-faint">
+          <p className="text-phx-sm font-semibold text-phx-ink-faint">
             Matched exactly as the import pipeline matches it — spacing and ة / ه spelling both count.
           </p>
 
@@ -272,7 +272,7 @@ export function MappingLookupPanel() {
                   <Row name="Region" value={territoryResult.regionName ?? territoryResult.regionCode} />
                 </div>
               ) : null}
-              <p className="text-phx-2xs font-semibold text-phx-ink-faint">
+              <p className="text-phx-sm font-semibold text-phx-ink-faint">
                 Matched on: <span dir="auto" className="font-mono">{territoryResult.key || "(empty)"}</span>
               </p>
             </div>

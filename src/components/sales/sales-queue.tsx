@@ -128,7 +128,7 @@ function Metric({
   };
   return (
     <Card className={cn(panelClassName, "p-4", tones[tone])}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 text-2xl font-black tracking-[-0.03em]">{value}</p>
     </Card>
   );

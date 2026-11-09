@@ -728,7 +728,7 @@ function WeekMarks({ row }: { row: WeeklyDashboard["weekComparison"][number] }) 
       </span>
       {row.spansGap ? (
         <span
-          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
+          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-[#92400E]"
           title="An earlier week of this month was never uploaded, so this week's figure spans the missing week(s) — it is not a true single-week value."
         >
           Spans gap
@@ -737,7 +737,7 @@ function WeekMarks({ row }: { row: WeeklyDashboard["weekComparison"][number] }) 
       {/* Kept, marked: one depot skipped the week before, the other depots' figures are real. */}
       {row.depotSpansGap && !row.spansGap ? (
         <span
-          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
+          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-[#92400E]"
           title="A branch whose sales are in this week sent no sheet for the week before, so this figure also holds the week it skipped and reads high."
         >
           Branch gap
@@ -762,7 +762,7 @@ function PhoneCard({ children }: { children: React.ReactNode }) {
 function CardStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
-      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <p className="break-words text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
       <div className="break-words text-sm font-black tabular-nums text-phx-ink">{value}</div>
     </div>
   );
@@ -788,7 +788,7 @@ function PhoneSortRow({
   options: { key: string; label: string }[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft md:hidden">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2 text-phx-sm font-black uppercase tracking-wide text-phx-ink-soft md:hidden">
       <span className="text-phx-ink-faint">Sort</span>
       {options.map((option) => (
         <SortButton key={option.key} label={option.label} onSort={onSort} sort={sort} sortKey={option.key} />
@@ -904,7 +904,7 @@ function ChartPanel({
     <div className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
-        {meta ? <span className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
+        {meta ? <span className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
       </div>
       {children}
     </div>
@@ -1144,7 +1144,7 @@ function RankTable({
               {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
               <col style={{ width: `${columns.share}%` }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-sm font-black uppercase text-white">
               <tr>
                 <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
@@ -1268,7 +1268,7 @@ function BranchComparisonTable({
               {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
               <col style={{ width: `${columns.share}%` }} />
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-sm font-black uppercase text-white">
               <tr>
                 <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="px-2" />
@@ -1370,7 +1370,7 @@ function ZeroStockTable({
           </div>
           <div className="text-right">
             {shownStock !== null ? <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div> : null}
-            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
+            <div className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">
               {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
             </div>
           </div>
@@ -1393,7 +1393,7 @@ function ZeroStockTable({
               <col style={{ width: `${columns.region}%` }} />
               {showStock ? <col style={{ width: `${columns.stock}%` }} /> : null}
             </colgroup>
-            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-sm font-black uppercase text-white">
               <tr>
                 <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
@@ -1462,7 +1462,7 @@ function PanelTitle({
       <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
       <div className="flex items-center gap-2">
         {actions ? <div className="w-40 sm:w-48">{actions}</div> : null}
-        <span className="shrink-0 border border-phx-line bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
+        <span className="shrink-0 border border-phx-line bg-white px-2 py-1 text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">
           {showSplit ? `${count} / ${total}` : count} rows
         </span>
       </div>
@@ -1575,7 +1575,7 @@ function TrendTooltip({
           {datum.label}
         </span>
         {datum.selected && (
-          <span className="bg-phx-accent-soft px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-accent-hover">
+          <span className="bg-phx-accent-soft px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-wide text-phx-accent-hover">
             Selected
           </span>
         )}
@@ -1594,7 +1594,7 @@ function TrendTooltip({
           </span>
         )}
       </div>
-      {datum.wow !== null && <div className="mt-0.5 text-phx-2xs font-bold text-phx-ink-faint">vs previous week</div>}
+      {datum.wow !== null && <div className="mt-0.5 text-phx-sm font-bold text-phx-ink-faint">vs previous week</div>}
       {top.length > 0 && (
         <div className="mt-2 space-y-1 border-t border-phx-paper-2 pt-2">
           {top.map((row) => {
@@ -1603,9 +1603,9 @@ function TrendTooltip({
               <div className="flex items-center justify-between gap-3" key={row.distributorCode}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="inline-block h-1.5 w-1.5 shrink-0" style={{ background: color, opacity: 0.45 }} />
-                  <span className="min-w-0 break-words text-phx-2xs font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
+                  <span className="min-w-0 break-words text-phx-sm font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
                 </span>
-                <span className="shrink-0 text-phx-2xs font-black tabular-nums text-phx-ink-2">
+                <span className="shrink-0 text-phx-sm font-black tabular-nums text-phx-ink-2">
                   {(share * 100).toFixed(0)}% · {compactEgp(row.salesValue)}
                 </span>
               </div>
@@ -1613,8 +1613,8 @@ function TrendTooltip({
           })}
           {rest.length > 0 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-phx-2xs font-bold text-phx-ink-faint">+{rest.length} more</span>
-              <span className="shrink-0 text-phx-2xs font-black tabular-nums text-phx-ink-faint">{compactEgp(restValue)}</span>
+              <span className="text-phx-sm font-bold text-phx-ink-faint">+{rest.length} more</span>
+              <span className="shrink-0 text-phx-sm font-black tabular-nums text-phx-ink-faint">{compactEgp(restValue)}</span>
             </div>
           )}
         </div>
@@ -1719,7 +1719,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
                 {years.map((year) => (
                   <span className="flex items-center gap-1" key={year}>
                     <span className="inline-block h-1.5 w-3" style={{ background: trendYearColor(year) }} />
-                    <span className="text-phx-2xs font-bold tabular-nums text-phx-ink-faint">{year}</span>
+                    <span className="text-phx-sm font-bold tabular-nums text-phx-ink-faint">{year}</span>
                   </span>
                 ))}
               </span>
@@ -1728,11 +1728,11 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         </div>
         <div className="flex flex-wrap items-center gap-3 text-right">
           <div>
-            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">Average</div>
+            <div className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-soft">Average</div>
             <div className="text-sm font-black tabular-nums text-phx-ink-2">{money(meta.average)}</div>
           </div>
           <div className="border-l border-phx-line pl-3">
-            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-accent-hover">
+            <div className="text-phx-sm font-black uppercase tracking-wide text-phx-accent-hover">
               {meta.selectedCount > 1 ? `${meta.selectedCount} selected weeks` : "Highlighted week"}
             </div>
             <div className="text-lg font-black tabular-nums text-phx-ink">{money(meta.highlightTotal)}</div>

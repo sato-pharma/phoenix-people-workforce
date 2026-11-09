@@ -706,7 +706,7 @@ export function TargetsAuthoring(props: {
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3.5 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <span className="min-w-0">
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.24em] text-orange-600">
+              <span className="block text-phx-sm font-black uppercase tracking-[0.24em] text-orange-600">
                 Sales Operations
               </span>
               <h1 className="block text-xl font-black leading-tight tracking-tight text-slate-900">Targets</h1>
@@ -818,7 +818,7 @@ export function TargetsAuthoring(props: {
                   replaces targets that nothing keeps a previous value for. */}
               {preview.periods.length > 0 ? (
                 <div className="mt-2 border border-l-[3px] border-amber-200 border-l-amber-500 bg-amber-50 px-3 py-2">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-900">
+                  <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-amber-900">
                     This file writes {preview.periods.length} month{preview.periods.length === 1 ? "" : "s"}
                   </p>
                   <ul className="mt-1 space-y-0.5 text-amber-900">
@@ -860,7 +860,7 @@ export function TargetsAuthoring(props: {
               {/* The one signal that survives a soft navigation — beforeunload cannot fire on a
                   sidebar click, so this has to be visible enough to stop him leaving. */}
               {hasUnsavedEdits ? (
-                <span className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-900">
+                <span className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.14em] text-amber-900">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
                   Not saved yet
                 </span>
@@ -880,7 +880,7 @@ export function TargetsAuthoring(props: {
               </Button>
             </div>
           ) : (
-            <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               View only
             </span>
           )
@@ -991,7 +991,7 @@ export function TargetsAuthoring(props: {
                             <p className="break-words text-xs font-black text-slate-900">
                               {area.areaName}
                               {area.areaState === "vacant_will_hire" ? (
-                                <span className="ml-2 border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-800">
+                                <span className="ml-2 border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.14em] text-amber-800">
                                   vacant
                                 </span>
                               ) : null}
@@ -1018,7 +1018,7 @@ export function TargetsAuthoring(props: {
                                     <span className="block break-words text-xs font-semibold text-slate-900">
                                       {row.productName || row.productCode}
                                     </span>
-                                    <span className="block text-phx-2xs tabular-nums text-slate-500">
+                                    <span className="block text-phx-sm tabular-nums text-slate-500">
                                       {row.unitPrice == null
                                         ? "no price"
                                         : `@ ${row.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EGP`}

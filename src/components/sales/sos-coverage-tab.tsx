@@ -146,7 +146,7 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
               <tr key={row.distributorCode} className="border-t border-[#EEF2F7] hover:bg-phx-paper">
                 <td className="break-words px-4 py-2.5 align-top font-black text-phx-ink">
                   {row.distributorCode}
-                  <span className="mt-1 block font-normal text-phx-2xs text-phx-ink-soft md:hidden">
+                  <span className="mt-1 block font-normal text-phx-sm text-phx-ink-soft md:hidden">
                     <span className="block">
                       {row.latestNewCustomers === null ? "new customers not measured" : `${formatNumber(row.latestNewCustomers)} new customers`}
                       {" · "}{formatNumber(row.latestUnmappedProducts)} unmapped

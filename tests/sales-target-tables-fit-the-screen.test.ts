@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -352,4 +352,19 @@ export function runSalesTargetTablesFitTheScreenTests() {
         `this test measures — at 587px the Achievement header ran out of its cell.`,
     );
   }
+
+  // ── Nothing on a Sales screen is drawn below 11px ────────────────────────────────────────────────
+  // "raise the sales screens' fonts too" (owner, 2026-11-09). Every .tsx under src/components/sales is read, so
+  // a new screen is held to it as well. The four target screens this test MEASURED keep their 10px heads and
+  // labels: the widths above were taken with them, and moving one means re-measuring on the real pages.
+  const measured = new Set([VISUALS, REP_TARGETS, "src/components/sales/targets-workspace.tsx", "src/components/sales/vs-target/vs-target-dashboard.tsx"]);
+  let salesScreens = 0;
+  for (const entry of readdirSync("src/components/sales", { recursive: true, encoding: "utf8" })) {
+    if (!entry.endsWith(".tsx")) continue;
+    const file = `src/components/sales/${entry.replace(/\\/g, "/")}`;
+    salesScreens++;
+    if (measured.has(file)) continue;
+    assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(stripComments(read(file))), `${file}: no text below 11px on a Sales screen`);
+  }
+  assert.ok(salesScreens >= 80, `the floor read every Sales screen (${salesScreens})`);
 }

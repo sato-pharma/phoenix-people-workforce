@@ -358,23 +358,23 @@ export function WeeklyNormalizerWorkspace({
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
               <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); setStockFile(null); resetPreview(); }} value={distributorCode}>
                 {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-56">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{needsTwoFiles ? "Sales matrix" : "Raw file"}</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{needsTwoFiles ? "Sales matrix" : "Raw file"}</span>
               <input accept=".xlsx,.xls" className={fileClass} disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); resetPreview(); }} type="file" />
             </label>
             {needsTwoFiles ? (
               <label className="flex flex-col gap-1 sm:w-56">
-                <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Stock matrix</span>
+                <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Stock matrix</span>
                 <input accept=".xlsx,.xls" className={fileClass} disabled={busy !== null} onChange={(e) => { setStockFile(e.target.files?.[0] ?? null); resetPreview(); }} type="file" />
               </label>
             ) : null}
             <label className="flex flex-col gap-1 sm:w-40">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Week date (optional)</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Week date (optional)</span>
               <input className={fileClass} disabled={busy !== null} onChange={(e) => { setPeriodDate(e.target.value); }} title="Only needed when the sheet carries no date, or several" type="date" value={periodDate} />
             </label>
             <Button className="gap-2" disabled={busy !== null || !canAnalyze} onClick={() => void analyze()}>
@@ -409,7 +409,7 @@ export function WeeklyNormalizerWorkspace({
                       <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", k.strong ? "from-orange-500 via-orange-400 to-amber-300" : "from-slate-400 via-slate-300 to-slate-200")} />
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="break-words text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
+                          <p className="break-words text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
                           <p className={cn("mt-1 text-xl font-black tabular-nums", k.strong ? "text-orange-700" : "text-slate-900")}>{k.value}</p>
                         </div>
                         <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-colors", k.strong ? "text-orange-400" : "text-slate-300 group-hover:text-orange-400")} />
@@ -426,7 +426,7 @@ export function WeeklyNormalizerWorkspace({
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected week</span>
+                  <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Detected week</span>
                   <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-900"><CalendarDays className="h-3.5 w-3.5 text-orange-500" />{preview.weekStart ?? "—"}</span>
                   <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{preview.sheetName || preview.fileName}</span>
                   {/* Which column layout the file was read with — the same one the real upload uses. */}
