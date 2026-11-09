@@ -116,9 +116,36 @@ function OwnLabel() {
   return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Visits made alone · not added to any rep</p>;
 }
 
+/**
+ * Leave and a recorded day activity (Admin work, Training…) are printed INSTEAD of visits (owner, 2026-11-09: "if a
+ * day for dm or rep has admin work put it instead of visits and if vacation put it"). A day with visits as well —
+ * a half-day leave, a half-day meeting — prints both, the day's reason first.
+ */
+function Away({ lines }: { lines: readonly string[] }) {
+  return (
+    <div className="grid gap-0.5">
+      {lines.map((line) => (
+        <p className="break-words border-l-[3px] border-l-violet-700 bg-violet-50 px-1.5 py-0.5 text-phx-xs font-black text-violet-900" key={line}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function DayCell({ day, href }: { day: TeamVisitDay; href: string | null }) {
+  const away = day.away ?? [];
+  const worked = day.am + day.pm + day.pharmacies + day.waiting > 0 || day.times.length > 0;
+  if (away.length > 0 && !worked) {
+    return (
+      <div className="min-w-0">
+        <Away lines={away} />
+      </div>
+    );
+  }
   return (
     <div className="min-w-0">
+      {away.length > 0 ? <Away lines={away} /> : null}
       <Figures day={day} />
       <Times day={day} />
       {href && day.times.length > 0 ? (
@@ -149,6 +176,12 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
           value={String(report.totals.today.am + report.totals.today.pm)}
         />
       </div>
+      {report.leaveUnread || report.activitiesUnread ? (
+        <p className="border border-amber-300 bg-amber-50 p-3 text-phx-xs font-semibold text-amber-900">
+          {report.leaveUnread ? "Approved leave could not be read just now, so a day on leave may show as no visits. " : ""}
+          {report.activitiesUnread ? "Recorded admin work and other day activities could not be read just now." : ""}
+        </p>
+      ) : null}
       {report.districts.length === 0 ? (
         <p className="border border-slate-200 bg-white p-4 text-phx-xs text-slate-600">No reps under your district managers yet.</p>
       ) : null}
@@ -176,14 +209,16 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
                     <p className={MANAGER_NOTE}>District manager</p>
                   </td>
                   <td className="px-4 py-3">
+                    {district.managerOwn?.yesterday.away?.length ? <div className="mb-2"><Away lines={district.managerOwn.yesterday.away} /></div> : null}
                     {district.managerDay ? <ManagerDayPlan day={district.managerDay.yesterday} /> : null}
                     <RepsTotal day={district.repsTotal.yesterday} />
-                    {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.yesterday} href={null} /></> : null}
+                    {district.managerOwn ? <><OwnLabel /><DayCell day={{ ...district.managerOwn.yesterday, away: [] }} href={null} /></> : null}
                   </td>
                   <td className="px-4 py-3">
+                    {district.managerOwn?.today.away?.length ? <div className="mb-2"><Away lines={district.managerOwn.today.away} /></div> : null}
                     {district.managerDay ? <ManagerDayPlan day={district.managerDay.today} /> : null}
                     <RepsTotal day={district.repsTotal.today} />
-                    {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.today} href={null} /></> : null}
+                    {district.managerOwn ? <><OwnLabel /><DayCell day={{ ...district.managerOwn.today, away: [] }} href={null} /></> : null}
                   </td>
                 </tr>
                 {district.reps.map((rep) => (
@@ -207,13 +242,15 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
                   <p className={MANAGER_NOTE}>District manager</p>
                 </div>
                 <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Yesterday · {yesterday}</p>
-                {district.managerDay ? <ManagerDayPlan day={district.managerDay.yesterday} /> : null}
+                {district.managerOwn?.yesterday.away?.length ? <div className="mb-2"><Away lines={district.managerOwn.yesterday.away} /></div> : null}
+                    {district.managerDay ? <ManagerDayPlan day={district.managerDay.yesterday} /> : null}
                 <RepsTotal day={district.repsTotal.yesterday} />
-                {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.yesterday} href={null} /></> : null}
+                {district.managerOwn ? <><OwnLabel /><DayCell day={{ ...district.managerOwn.yesterday, away: [] }} href={null} /></> : null}
                 <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Today · {today}</p>
-                {district.managerDay ? <ManagerDayPlan day={district.managerDay.today} /> : null}
+                {district.managerOwn?.today.away?.length ? <div className="mb-2"><Away lines={district.managerOwn.today.away} /></div> : null}
+                    {district.managerDay ? <ManagerDayPlan day={district.managerDay.today} /> : null}
                 <RepsTotal day={district.repsTotal.today} />
-                {district.managerOwn ? <><OwnLabel /><DayCell day={district.managerOwn.today} href={null} /></> : null}
+                {district.managerOwn ? <><OwnLabel /><DayCell day={{ ...district.managerOwn.today, away: [] }} href={null} /></> : null}
               </div>
               {district.reps.map((rep) => (
                 <div className={`grid gap-2 p-4 ${rep.vacant ? VACANT_ROW : ""}`} key={rep.seatId}>

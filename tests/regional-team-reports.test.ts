@@ -8,7 +8,7 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
-import { foldTeamVisitDay, sumTeamVisitDays, teamVisitManagerDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { foldTeamVisitDay, sumTeamVisitDays, teamVisitAway, teamVisitManagerDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import type { DistrictManagerDay, DistrictManagerDayHalf } from "../src/lib/phoenix-crm/server/manager-dm-day.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
@@ -114,6 +114,17 @@ function visitsYesterdayAndToday() {
   assert.ok(source0().includes("hireDates: people.flatMap((hrId) => hireDateOf(hrId) ?? []),") && source0().includes("managerHireDate: managerHrId ? hireDateOf(managerHrId) : null,"), "the loader carries each person's hire date");
   assert.equal(grouped.split("<Hired dates={rep.hireDates} />").length - 1, 2, "each rep's row and card print the hire date");
   assert.equal(grouped.split("<Hired dates={[district.managerHireDate]} />").length - 1, 2, "each manager's row and card print the hire date");
+  // Leave and recorded admin work are printed instead of visits (owner, 2026-11-09: "if a day for dm or rep has
+  // admin work put it instead of visits and if vacation put it").
+  assert.deepEqual(teamVisitAway("Annual Vacation", null), ["On leave · Annual Vacation"], "a day on leave says so");
+  assert.deepEqual(teamVisitAway(null, { activityLabel: "Admin work", halfDay: false }), ["Admin work"], "an admin day says so");
+  assert.deepEqual(teamVisitAway(null, { activityLabel: "Training", halfDay: true }), ["Training · half day"]);
+  assert.deepEqual(teamVisitAway(null, null), [], "a plain working day prints nothing extra");
+  assert.ok(source0().includes("away: awayOn(seat.seatId, on)") && source0().includes("if (district) day.away = awayOn(district.seatId, on);"), "reps and district managers both carry the day's leave and activity");
+  assert.ok(grouped.includes("if (away.length > 0 && !worked) {"), "a day with no visits prints the reason instead of zeros");
+  assert.ok(grouped.includes("report.leaveUnread || report.activitiesUnread"), "a failed leave or activity read is said on the screen");
+  const leaveSource = readFileSync("src/lib/phoenix-crm/server/leave-days.ts", "utf8");
+  assert.ok(leaveSource.includes("export async function loadSeatsLeaveLabels(") && leaveSource.includes("return { days: new Map(), unread: true };"), "the leave read says when it failed");
   // A vacant seat wears a light colour of its own (owner, 2026-11-09).
   assert.ok(source0().includes("vacant: people.length === 0,"), "a rep seat with nobody in it is marked vacant");
   assert.ok(grouped.includes('const VACANT_ROW = "bg-amber-50";') && grouped.includes("rep.vacant ? VACANT_ROW") && grouped.includes("district.managerHrId ? MANAGER_ROW : VACANT_ROW"), "vacant seats, rep and manager, wear the light colour");

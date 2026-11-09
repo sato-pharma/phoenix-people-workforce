@@ -7,6 +7,8 @@ import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } fr
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadSeatDayActivities, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+import { loadSeatsLeaveLabels } from "@/lib/phoenix-crm/server/leave-days";
 import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay } from "@/lib/phoenix-crm/server/manager-dm-day";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -53,6 +55,12 @@ export type TeamVisitDay = {
   /** Visits saved to a customer nobody has validated yet — real work, counted in none of the three. */
   waiting: number;
   times: TeamVisitTime[];
+  /**
+   * What the day was instead of visits (owner, 2026-11-09: "if a day for dm or rep has admin work put it instead of
+   * visits and if vacation put it"): approved leave ("On leave · Annual Vacation") and the day activity the person
+   * recorded ("Admin work", "Training · half day"). Shown, never counted. Absent on a plain working day.
+   */
+  away?: string[];
 };
 
 export type TeamVisitRep = {
@@ -108,6 +116,10 @@ export type TeamVisitsReport = {
   today: string;
   districts: TeamVisitDistrict[];
   totals: { yesterday: TeamVisitDay; today: TeamVisitDay };
+  /** Approved leave could not be read — the screen says so instead of reading the day as worked. */
+  leaveUnread?: boolean;
+  /** The recorded day activities (Admin work, Training…) could not be read — said on the screen. */
+  activitiesUnread?: boolean;
 };
 
 const DISTRICT_TIERS = new Set(["DM", "ACTING_DM"]);
@@ -219,6 +231,14 @@ async function readHireDates(hrIds: ReadonlyArray<string>): Promise<Map<string, 
       context: { people: ids.length },
     });
   }
+  return out;
+}
+
+/** The day's leave and recorded activity, in the words the square prints instead of visits (owner, 2026-11-09). */
+export function teamVisitAway(leave: string | null | undefined, activity: Pick<DayActivityRow, "activityLabel" | "halfDay"> | null | undefined): string[] {
+  const out: string[] = [];
+  if (leave) out.push(`On leave · ${leave}`);
+  if (activity) out.push(activity.halfDay ? `${activity.activityLabel} · half day` : activity.activityLabel);
   return out;
 }
 
@@ -336,6 +356,28 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     }
   }
   const seatLookup = (seatId: string) => viewer.org.seats.get(seatId);
+
+  // Leave and recorded day activities for every rep and district manager seat, both days — printed in the square
+  // instead of visits (owner, 2026-11-09). Each read that fails is said on the screen, never read as a worked day.
+  const dmSeats = groups.flatMap((group) => (group.district ? [group.district] : []));
+  const range = { from: yesterday, to: today };
+  const leave = await loadSeatsLeaveLabels([...seats, ...dmSeats], range);
+  let activitiesUnread = false;
+  const activities = new Map<string, DayActivityRow>();
+  try {
+    for (const isTest of worlds) {
+      const found = await loadSeatDayActivities([...seats, ...dmSeats].map((seat) => seat.seatId), isTest, range);
+      for (const [key, row] of found) if (!activities.has(key)) activities.set(key, row);
+    }
+  } catch (error) {
+    activitiesUnread = true;
+    logWarning("Phoenix CRM could not read the day activities for Visits — Yesterday and Today", {
+      labels: { event: "phoenix_crm_team_visits_activities_unread" },
+      error,
+      context: { seats: seats.length + dmSeats.length },
+    });
+  }
+  const awayOn = (seatId: string, on: string) => teamVisitAway(leave.days.get(seatId)?.get(on), activities.get(`${seatId}|${on}`));
   const managerDayOn = (dmSeatId: string, on: string): TeamVisitManagerDay => {
     if (dmWeeksUnread) return teamVisitManagerDay(null, true);
     const week = (dmWeeks.get(fieldWeekStart(on)) ?? []).find((row) => row.dmSeatId === dmSeatId);
@@ -350,7 +392,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     const reps = group.items
       .map((seat): TeamVisitRep => {
         const people = seatOccupants(seat);
-        const day = (on: string) => foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames);
+        const day = (on: string): TeamVisitDay => ({ ...foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames), away: awayOn(seat.seatId, on) });
         const rep: TeamVisitRep = {
           person: people.length ? people.map((hrId) => nameOf(names, hrId)).join(" · ") : "Seat is vacant",
           seatId: seat.seatId,
@@ -383,6 +425,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
           });
         }
         day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
+        if (district) day.away = awayOn(district.seatId, on);
         return day;
       };
       managerOwn = { today: ownDay(today), yesterday: ownDay(yesterday) };
@@ -401,5 +444,5 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
       reps,
     });
   }
-  return { districts, today, totals, yesterday };
+  return { activitiesUnread, districts, leaveUnread: leave.unread, today, totals, yesterday };
 }
