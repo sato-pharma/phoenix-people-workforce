@@ -450,6 +450,8 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
       attachments: prepared.attachments,
       bcc: prepared.bcc,
       cc: prepared.cc,
+      // The gate's stored copy of a reset code or set-your-password link keeps neither.
+      credentialEmail: input.credentialEmail ?? null,
       from: prepared.from,
       html: prepared.html,
       idempotencyKey: prepared.idempotencyKey,

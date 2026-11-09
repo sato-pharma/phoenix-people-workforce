@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PreparedEmailAttachment } from "@/lib/email/email-providers";
 import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
+import { redactCredentialEmailBody } from "@/lib/email/credential-redaction";
+import { isCredentialEmailKind } from "@/lib/email/transactional-types";
 import { conflictError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { logError, logInfo } from "@/lib/observability/log";
@@ -77,6 +79,12 @@ export type ConfidenceGateInput = {
   attachments?: PreparedEmailAttachment[];
   bcc?: string[];
   cc?: string[];
+  /**
+   * Set when the email carries a live password credential (the reset code, a set-your-password
+   * link). Its stored copy has the credential removed (credential-redaction.ts), so it can never be
+   * re-sent from the review queue: approving one is refused and the person asks for a new one.
+   */
+  credentialEmail?: string | null;
   /** The resolved sender. Kept only if the send is HELD, so approving it sends from the same address. */
   from?: string;
   html: string;
@@ -560,6 +568,13 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
     decision = "auto_send";
   }
 
+  // The stored copy of a credential email keeps no code and no link. Recorded as a check so the
+  // review screen says why the body reads [removed], and so approving it is refused.
+  const credentialEmail = isCredentialEmailKind(input.credentialEmail) ? input.credentialEmail : null;
+  if (credentialEmail) {
+    checks.push({ detail: CREDENTIAL_REMOVED_CHECK_DETAIL, name: CREDENTIAL_REMOVED_CHECK, passed: null });
+  }
+
   let reviewId: string | null = null;
   try {
     // A held send keeps its files, or approving it would send the email without them. Only a hold
@@ -588,8 +603,8 @@ export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInp
         module: input.origin?.module ?? null,
         notification_type: input.origin?.notificationType ?? null,
         recipient_hr_id: input.origin?.recipientHrId ?? null,
-        rendered_html: input.html,
-        rendered_text: input.text,
+        rendered_html: redactCredentialEmailBody(input.html, credentialEmail),
+        rendered_text: redactCredentialEmailBody(input.text, credentialEmail),
         status: decision === "hold" ? "held" : "auto_sent",
         subject: input.subject,
         template_key: input.origin?.templateKey ?? null,
@@ -711,6 +726,10 @@ export async function discardHeldNotification(access: AccessContext, reviewId: s
  * to keep the cycle safe (same pattern already used elsewhere in this codebase for a
  * table-builder cycle between email-templates/service.ts and a domain module).
  */
+export const CREDENTIAL_REMOVED_CHECK = "credential_removed";
+const CREDENTIAL_REMOVED_CHECK_DETAIL =
+  "A password code or link: the copy kept here has it removed, so this email can never be re-sent from review.";
+
 export async function approveHeldNotification(access: AccessContext, reviewId: string, note?: string) {
   assertConfidenceGateActor(access);
   const decidedBy = access.hrId ?? access.loginId ?? "system";
@@ -723,6 +742,9 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
   if (fetchError) throw fetchError;
   if (!row) throw conflictError("This item is no longer pending review (already decided, or not found).");
   const held = mapReviewRow(row as ReviewRow);
+  if (held.checks.some((check) => check.name === CREDENTIAL_REMOVED_CHECK)) {
+    throw conflictError("This email carried a password code or link, and its copy here does not. Discard it and ask the person to request a new one.");
+  }
   const kept = row as { held_attachments?: unknown; held_from_address?: string | null; held_reply_to_address?: string | null };
   // Read before the send: a file that cannot be read back refuses the approval, never drops off it.
   const attachments = await loadHeldAttachments(kept.held_attachments, getSupabaseAdmin());
