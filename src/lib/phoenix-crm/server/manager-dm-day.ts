@@ -54,6 +54,21 @@ export type DistrictManagerDay = {
 };
 
 /** One district manager's week, read once and cut into days by `districtManagerDayOn`. */
+/**
+ * One district manager week per seat across the worlds read (owner, 2026-11-09, his test login reads the real team):
+ * the first world's week (the real one), unless it holds no plan and a later world's does.
+ */
+export function mergeDistrictManagerWeeks(parts: ReadonlyArray<ReadonlyArray<DistrictManagerWeek>>): DistrictManagerWeek[] {
+  const out = new Map<string, DistrictManagerWeek>();
+  for (const weeks of parts) {
+    for (const week of weeks) {
+      const held = out.get(week.dmSeatId);
+      if (!held || (held.status === null && week.status !== null)) out.set(week.dmSeatId, week);
+    }
+  }
+  return [...out.values()];
+}
+
 export type DistrictManagerWeek = {
   dmSeatId: string;
   dmName: string;

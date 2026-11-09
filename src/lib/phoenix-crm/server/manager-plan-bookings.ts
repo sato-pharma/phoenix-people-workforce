@@ -299,7 +299,8 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
 export async function loadWeekHalfNotes(input: {
   plannerHrId: string;
   weekStart: string;
-  isTest: boolean;
+  /** The worlds read: `regionalReportWorlds` — the real team, and a test week's own beside it. */
+  worlds: ReadonlyArray<boolean>;
   viewer: Pick<PhoenixCrmViewer, "org">;
   halves: ReadonlyArray<{ date: string; half: ManagerHalf; repSeatId: string; repName: string }>;
 }): Promise<Record<string, string[]>> {
@@ -312,7 +313,7 @@ export async function loadWeekHalfNotes(input: {
     return seat ? [seat] : [];
   });
   const [bookings, leave] = await Promise.all([
-    loadRepDayBookings({ from: input.weekStart, isTest: input.isTest, repSeatIds: seatIds, to: weekEnd }),
+    Promise.all(input.worlds.map((isTest) => loadRepDayBookings({ from: input.weekStart, isTest, repSeatIds: seatIds, to: weekEnd }))).then((parts) => parts.flat()),
     loadSeatLeaveDays(seats, { from: input.weekStart, to: weekEnd }),
   ]);
   const names = await loadPeopleNames(bookings.map((booking) => booking.managerHrId));
@@ -344,12 +345,13 @@ export async function loadRegionalBoardNotes(input: {
   plannerHrId: string;
   repSeats: ReadonlyArray<OrgSeat>;
   weekStart: string;
-  isTest: boolean;
+  /** The worlds read: `regionalReportWorlds` — the real team, and a test board's own beside it (owner, 2026-11-09). */
+  worlds: ReadonlyArray<boolean>;
 }): Promise<Map<string, RegionalBoardDayNotes>> {
   const weekEnd = addDaysIso(input.weekStart, 6);
   const repSeats = input.repSeats.filter((seat) => Boolean(personKey(seat.occupantHrId)));
   const [bookings, leave] = await Promise.all([
-    loadRepDayBookings({ from: input.weekStart, isTest: input.isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }),
+    Promise.all(input.worlds.map((isTest) => loadRepDayBookings({ from: input.weekStart, isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }))).then((parts) => parts.flat()),
     loadSeatLeaveDays(repSeats, { from: input.weekStart, to: weekEnd }),
   ]);
   const names = await loadPeopleNames([...bookings.map((booking) => booking.managerHrId), ...repSeats.map((seat) => seat.occupantHrId)]);
