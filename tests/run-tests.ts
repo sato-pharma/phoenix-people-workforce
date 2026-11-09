@@ -590,6 +590,7 @@ import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import { runKpisNewHireTests } from "./kpis-new-hire.test.ts";
+import { runKpisFullRosterTests } from "./kpis-full-roster.test.ts";
 import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
 import { runKpisCallRateThroughYesterdayTests } from "./kpis-call-rate-through-yesterday.test.ts";
 import {
@@ -1707,6 +1708,7 @@ import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-c
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
 import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
 import { runDeductionsBulkDecideTests } from "./deductions-bulk-decide.test.ts";
+import { runDeductionsDecisionCommentOptionalTests } from "./deductions-decision-comment-optional.test.ts";
 import { runDeductionsCandidatesTableFitsTheScreenTests } from "./deductions-candidates-table-fits-the-screen.test.ts";
 import { runDeductionsSameDayGuardTests } from "./deductions-same-day-guard.test.ts";
 import { runDeductionsManualDayGuardTests } from "./deductions-manual-day-guard.test.ts";
@@ -4347,6 +4349,11 @@ await runTest(
   runKpisNewHireTests,
 );
 await runTest(
+  "kpis full roster (every active medical rep in reach is on the board even with no visit or plan yet, never "
+  + "twice, never outside the scope, and a district of new hires keeps its manager row)",
+  runKpisFullRosterTests,
+);
+await runTest(
   "reps list through yesterday (ruling C1: a running window stops at yesterday, today's calls and its working "
   + "day leave together, a window opened today scores empty, and the default window still runs through today)",
   runRepsListThroughYesterdayTests,
@@ -6370,6 +6377,10 @@ await runTest(
 await runTest(
   "the Deductions workspace decides many candidates at once (tick several or all; one confirmed decision per row through the single-decision route, no amount or days sent, a pushed line can never be ticked)",
   runDeductionsBulkDecideTests,
+);
+await runTest(
+  "the comment on a Deductions decision is optional (owner, 2026-11-09): recordDecision accepts a blank comment and stores it as '', the database CHECK that refused it is dropped and never re-added, and neither the Decide box nor the bulk bar blocks or invents one",
+  runDeductionsDecisionCommentOptionalTests,
 );
 await runTest(
   "the Deductions candidates table fits the screen (CategoryTab serves all seven candidate tabs: table-fixed with a colgroup totalling 100 for the 7-column and 6-column shapes, every column holds its unwrappable content at the 720px floor, no whitespace-nowrap cell, no scroll wrapper, min-width floor or ellipsis, a card list beside it, and the day editor spanning every column)",

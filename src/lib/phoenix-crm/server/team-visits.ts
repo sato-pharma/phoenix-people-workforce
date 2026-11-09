@@ -34,6 +34,11 @@ export type TeamVisitTime = {
   savedAt: string | null;
   /** "AM", "PM" or "Pharmacy". */
   list: "AM" | "PM" | "Pharmacy";
+  /**
+   * Who the visit was to, printed beside its time (owner, 2026-11-09: "group by am/pm put customer name and beside
+   * the visit time sort ascending"): the customer's name, a pharmacy visit's pharmacy. Null when neither is known.
+   */
+  customer: string | null;
   /** The instant, for sorting. */
   at: string | null;
 };
@@ -65,6 +70,11 @@ export type TeamVisitDistrict = {
   vacantSeats: number;
   /** The district manager's own visits, listed apart and counted in no rep's figure. Null when the seat is vacant. */
   managerOwn: { yesterday: TeamVisitDay; today: TeamVisitDay } | null;
+  /**
+   * The district manager's count: the total of his reps' visits, each day (owner, 2026-11-09: "put the district
+   * managers visits count the total number visits of his reps"). His own visits stay apart, in `managerOwn`.
+   */
+  repsTotal: { yesterday: TeamVisitDay; today: TeamVisitDay };
   reps: TeamVisitRep[];
 };
 
@@ -80,6 +90,7 @@ const DISTRICT_TIERS = new Set(["DM", "ACTING_DM"]);
 type VisitRow = {
   id: string;
   seat_id: string | null;
+  customer_id: string | null;
   visit_date: string | null;
   list_type: string | null;
   pharmacy_name: string | null;
@@ -112,12 +123,14 @@ function listOf(listType: unknown): "AM" | "PM" | "Pharmacy" {
  * validated AM and PM counted apart, pharmacies as DISTINCT names (the team calendar's rule, so the two agree),
  * an unvalidated customer counted only as waiting, and a copied visit's time printed as none.
  */
-export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>): TeamVisitDay {
+export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>, customerNames: ReadonlyMap<string, string> = new Map()): TeamVisitDay {
   const day = emptyTeamVisitDay();
   const pharmacies = new Set<string>();
   for (const row of rows) {
     const copied = Boolean(row.imported_from_ireports360_at);
-    day.times.push({ at: copied ? null : row.captured_at, list: listOf(row.list_type), savedAt: copied ? null : cairoTimeOnly(row.captured_at) });
+    const list = listOf(row.list_type);
+    const customer = (list === "Pharmacy" ? row.pharmacy_name?.trim() : null) || (row.customer_id ? customerNames.get(row.customer_id) : null) || row.pharmacy_name?.trim() || null;
+    day.times.push({ at: copied ? null : row.captured_at, customer, list, savedAt: copied ? null : cairoTimeOnly(row.captured_at) });
     if (row.customer_validated !== true) {
       day.waiting += 1;
       continue;
@@ -133,6 +146,13 @@ export function foldTeamVisitDay(rows: ReadonlyArray<VisitRow>): TeamVisitDay {
   day.pharmacies = pharmacies.size;
   day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
   return day;
+}
+
+/** The total of the reps' visits for one day — AM · PM · Pharmacies still three figures apart, no times. */
+export function sumTeamVisitDays(days: readonly TeamVisitDay[]): TeamVisitDay {
+  const total = emptyTeamVisitDay();
+  for (const day of days) addDay(total, day);
+  return total;
 }
 
 function addDay(into: TeamVisitDay, from: TeamVisitDay): void {
@@ -160,7 +180,7 @@ async function readVisitRows(seatIds: string[], worlds: boolean[], from: string,
         getSupabaseAdmin()
           // Named columns, every one read off the live view — and NO location column (see the file header).
           .from("phoenix_crm_countable_visits_with_history")
-          .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, captured_at, imported_from_ireports360_at")
+          .select("id, seat_id, customer_id, visit_date, list_type, pharmacy_name, customer_validated, captured_at, imported_from_ireports360_at")
           .in("is_test", worlds)
           .gte("visit_date", from)
           .lte("visit_date", to)
@@ -168,6 +188,19 @@ async function readVisitRows(seatIds: string[], worlds: boolean[], from: string,
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   );
+}
+
+/** The names of the customers the visits went to, by id. A failed read throws: the page says so, never a blank name. */
+async function readCustomerNames(customerIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (customerIds.length === 0) return names;
+  const rows = await readSeatGroups(customerIds, 100, async (part) => {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name").in("id", part);
+    if (error) throw new Error(`Could not read the customers' names: ${error.message}`);
+    return (data ?? []) as Array<{ id: string; name: string | null }>;
+  });
+  for (const row of rows) if (row.name?.trim()) names.set(String(row.id), row.name.trim());
+  return names;
 }
 
 export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<TeamVisitsReport> {
@@ -183,6 +216,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     yesterday,
     today,
   );
+  const customerNames = await readCustomerNames([...new Set(rows.flatMap((row) => (row.customer_id ? [String(row.customer_id)] : [])))]);
   const bySeatDay = new Map<string, VisitRow[]>();
   for (const row of rows) {
     const key = `${row.seat_id ?? ""}|${String(row.visit_date ?? "").slice(0, 10)}`;
@@ -208,7 +242,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
     const reps = group.items
       .map((seat): TeamVisitRep => {
         const people = seatOccupants(seat);
-        const day = (on: string) => foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? []);
+        const day = (on: string) => foldTeamVisitDay(bySeatDay.get(`${seat.seatId}|${on}`) ?? [], customerNames);
         const rep: TeamVisitRep = {
           person: people.length ? people.map((hrId) => nameOf(names, hrId)).join(" · ") : "Seat is vacant",
           seatId: seat.seatId,
@@ -231,7 +265,12 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
           if (visit.bucket === "AM") day.am += 1;
           else if (visit.bucket === "PM") day.pm += 1;
           else day.pharmacies += 1;
-          day.times.push({ at: visit.loggedAt, list: visit.bucket === "AM" ? "AM" : visit.bucket === "PM" ? "PM" : "Pharmacy", savedAt: cairoTimeOnly(visit.loggedAt) });
+          day.times.push({
+            at: visit.loggedAt,
+            customer: visit.customerName?.trim() || null,
+            list: visit.bucket === "AM" ? "AM" : visit.bucket === "PM" ? "PM" : "Pharmacy",
+            savedAt: cairoTimeOnly(visit.loggedAt),
+          });
         }
         day.times.sort((left, right) => (left.at ?? "9999").localeCompare(right.at ?? "9999"));
         return day;
@@ -246,6 +285,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
       managerHrId,
       managerName: district ? (managerHrId ? nameOf(names, managerHrId) : "Seat is vacant") : "No district manager",
       managerOwn,
+      repsTotal: { today: sumTeamVisitDays(reps.map((rep) => rep.today)), yesterday: sumTeamVisitDays(reps.map((rep) => rep.yesterday)) },
       reps,
     });
   }

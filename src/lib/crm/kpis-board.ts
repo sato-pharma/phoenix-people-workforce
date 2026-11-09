@@ -88,8 +88,8 @@ import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { buildKpiManagerRows, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { loadKpiDoctorBricks } from "@/lib/crm/kpis-doctor-bricks";
 import { buildKpiBrickRows, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
-import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isMedicalRepJobTitle, keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
+import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
@@ -888,6 +888,16 @@ export function joinKpiRows(input: {
    * Optional so the join stays testable without it; absent, every rep keeps the report's days.
    */
   employedWindow?: { dateFrom: string; dateTo: string; holidays?: CallRateHolidays };
+  /**
+   * Every rep the board must show even with no visit and no planned doctor yet (owner, 2026-11-09:
+   * "y are not pulling data of these reports from phoenix crm"). The board was built only from the
+   * reps whose rows the doors returned, so a rep with nothing yet was simply absent: Hany Saad's
+   * Coverage read "9 of 9 medical reps in your reach" against 13 on his Phoenix CRM seats, and Sahar El
+   * Gallad's whole district (three November hires) was missing from the manager rows. A rep named here
+   * with no row gets a blank one, keyed by hr id as a post-cutover hire is, and the scope filter below
+   * still decides — the roster can never widen what the viewer sees. Optional so the join stays testable.
+   */
+  roster?: readonly { hrId: string; crmId?: number | null }[];
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
   const amTarget = input.amTarget ?? AM_CALL_RATE_TARGET;
@@ -1046,6 +1056,20 @@ export function joinKpiRows(input: {
     row.underPlannedVsGrade = list.underPlannedVsGrade;
   }
 
+  // The reps in reach with no row yet — on the board with nothing to measure, never absent from it.
+  // A rep already present by his CRM id is never added again by his hr id: an old-CRM row can carry the
+  // id with a blank hr id, and two rows for one person would split him in half.
+  if (input.roster?.length) {
+    const present = new Set(rows.map((row) => row.agentHrId).filter((key): key is string => key != null));
+    const presentCrm = new Set(rows.map((row) => row.agentCrmId).filter((id): id is number => id != null));
+    for (const entry of input.roster) {
+      const key = canonicalHrIdKey(entry.hrId);
+      if (!key || present.has(key) || (entry.crmId != null && presentCrm.has(entry.crmId))) continue;
+      present.add(key);
+      claim(null, key, identityByHrId.get(key)?.displayName?.trim() || entry.hrId);
+    }
+  }
+
   // Identity and attainment are stamped LAST, over whichever source claimed the row — a rep present
   // on only one side still gets a line and an area, which is the whole point of filtering by them.
   for (const row of rows) {
@@ -1079,6 +1103,27 @@ export function joinKpiRows(input: {
   const scoped = rows.filter((row) => isAgentInScope(scope, row.agentHrId));
   scoped.sort((left, right) => left.repName.localeCompare(right.repName));
   return scoped;
+}
+
+/**
+ * The medical reps the board shows whether or not they have worked yet: active, a rep by HR title (the
+ * title arm keepMedicalRepsOnly applies after the join), inside the viewer's scope, and hired by the
+ * window's end, so a November hire never appears on October's board. Pure, exported for its test.
+ */
+export function kpiBoardRoster(
+  employees: readonly { hrId: string; crmId?: string | number | null; employmentStatus?: string | null; jobTitle?: string | null; hireDate?: string | null }[],
+  scope: DoctorCoverageScope,
+  windowEnd: string,
+): { hrId: string; crmId: number | null }[] {
+  return employees
+    .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
+    .filter((employee) => isMedicalRepJobTitle(employee.jobTitle))
+    .filter((employee) => !employee.hireDate?.trim() || employee.hireDate.trim().slice(0, 10) <= windowEnd)
+    .filter((employee) => isAgentInScope(scope, canonicalHrIdKey(employee.hrId)))
+    .map((employee) => {
+      const crmId = Number(employee.crmId);
+      return { hrId: employee.hrId, crmId: employee.crmId != null && Number.isFinite(crmId) ? crmId : null };
+    });
 }
 
 /**
@@ -1507,6 +1552,7 @@ export async function getKpisBoard(input: {
     basis: callRate.basis ?? "verified",
     directory,
     employedWindow: { dateFrom: callRange.dateFrom, dateTo: callRange.dateTo, holidays: windowHolidays.dates },
+    roster: kpiBoardRoster(employees, scope, range.windowEnd),
   });
 
   // MEDICAL REPS ONLY — owner, 2026-09-03 — for the REP rows. This runs BEFORE the facets and the
