@@ -113,6 +113,14 @@ export function auditPayrollDataQuality(input: {
    * missing wage because the map was never passed.
    */
   insuranceWages?: Map<string, number | null>;
+  /**
+   * Compact HR ids the employee record marks as NOT insured by the company
+   * (`social_insurance_status = 'no'`). A person on a government secondment is insured through the
+   * government, so the company files nothing for them and no wage is missing (owner, 2026-11-09:
+   * Nahed Tarek Hattab, Rasha Sabry Khalifa and Reham Mahmoud Elwiy were flagged for exactly this).
+   * Only the FLAG reads it — the filing itself still reads the wage alone.
+   */
+  notCompanyInsured?: Set<string>;
 }): PayrollDataQualityReport {
   const draftByCompact = new Map(input.draftRows.map((row) => [row.employeeHrIdCompact, row]));
   const rows: PayrollDataQualityRow[] = [];
@@ -145,7 +153,11 @@ export function auditPayrollDataQuality(input: {
     // the column is hand-edited and an unusable value (a zero, a stray non-number) has to read as
     // missing, because that is exactly what the engine will treat it as when it computes the
     // filing.
-    if (input.insuranceWages && usableInsuranceWage(input.insuranceWages.get(member.compact)) === null) {
+    if (
+      input.insuranceWages &&
+      !input.notCompanyInsured?.has(member.compact) &&
+      usableInsuranceWage(input.insuranceWages.get(member.compact)) === null
+    ) {
       issues.push("missing_insurance_wage");
     }
 

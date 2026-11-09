@@ -186,6 +186,25 @@ export function runAutomatedPayrollModuleDriftTests() {
   assert.match(describeModuleDrift(unbacked), /no approved deduction behind them/);
   assert.match(describeModuleDrift(unbacked), /2931\.00/, "the sentence names the money, not a count");
 
+  // A LOAN typed on Part 1 is already inside the frozen first part once Part 1 is confirmed — paid,
+  // nothing left to clear (owner, 2026-11-09: Mahmoud Ibrahim Ahmed Mohamed (A-1), 1,250.00 loan,
+  // "already deducted from him first part"). Hidden then; still shown before; "Other" never hidden.
+  const typedLoan = (part1Confirmed: boolean, field: string) =>
+    detectModuleDrift({
+      stepKey: "p1_other_deductions",
+      rows: [row({ hrId: "A-1", fullName: "Mahmoud", recommended: { [field]: 0 } })],
+      snapshot: {},
+      chargedByCompact: { a1: { [field]: 1250 } },
+      part1Confirmed,
+    }).unbackedCharges;
+  assert.equal(typedLoan(true, "p1odLoanValue"), 0, "a typed Part 1 loan is not reported once Part 1 is paid");
+  assert.equal(typedLoan(false, "p1odLoanValue"), 1, "before Part 1 is confirmed it can still be cleared, so it is shown");
+  assert.equal(
+    typedLoan(true, "p1odOtherValue"),
+    1,
+    "a typed Other figure is still reported after Part 1 — September's double-charged lateness was exactly that",
+  );
+
   // Reported, never REWRITTEN. Zeroing it would silently delete a hand-entered manual deduction —
   // the mirror of the bug this whole file opens with.
   const unbackedRows = [
