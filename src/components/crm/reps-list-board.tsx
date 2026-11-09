@@ -150,6 +150,7 @@ export function RepsListListBody({
         exportTitle={exportTitle}
         groups={list.groups}
         repName={listName}
+        validationRead={list.validationRead}
       />
     </>
   );

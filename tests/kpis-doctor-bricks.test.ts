@@ -6,7 +6,9 @@ import {
   type KpiBrickCustomer,
   type KpiBrickPlace,
 } from "../src/lib/crm/kpis-doctor-bricks.ts";
-import { chooseValidatedPlacePoints } from "../src/lib/crm/validated-place-points.ts";
+import { readFileSync } from "node:fs";
+
+import { chooseValidatedDates, chooseValidatedPlacePoints } from "../src/lib/crm/validated-place-points.ts";
 
 /**
  * The brick each doctor on a rep's Coverage and Frequency list is filed under (owner, 2026-10-29: "the
@@ -158,5 +160,42 @@ export function runKpiDoctorBrickChooserTests() {
     chooseValidatedPlacePoints([customer({ validated_at: null })], [located({})]).has(501),
     false,
     "a doctor not validated yet has no validation pin",
+  );
+
+  // ── "IN REP LIST SHOW WHAT'S VALIDATED" (owner, 2026-11-09) ─────────────────────────────────────────
+  // Every validated, not-dropped customer is validated on the Reps List — WITH OR WITHOUT a usable place,
+  // because a doctor validated with a poor fix is still validated. Two customers on one contact: the
+  // earliest validation answers. A dropped customer is not validated on anyone's list.
+  const dates = chooseValidatedDates([
+    customer({ id: "c-1", validated_at: "2026-10-20T08:00:00Z" }),
+    customer({ id: "c-2", validated_at: "2026-10-02T08:00:00Z" }),
+    customer({ id: "c-3", reference_contact_crm_id: 777, validated_at: null }),
+    customer({ id: "c-4", reference_contact_crm_id: 778, status: "dropped" }),
+    customer({ id: "c-5", reference_contact_crm_id: null, own_contact_crm_id: 903 }),
+  ]);
+  assert.deepEqual(
+    [...dates].sort(([left], [right]) => left - right),
+    [
+      [501, "2026-10-02T08:00:00Z"],
+      [903, "2026-09-01T09:00:00Z"],
+    ],
+    "validated: the earliest date per contact, a rep-added contact too; not validated: null date or dropped",
+  );
+  assert.equal(
+    chooseValidatedPlacePoints([customer()], [located({ lat: 0, lon: 0 })]).has(501),
+    false,
+    "a validated doctor whose photo has no usable pin has no point…",
+  );
+  assert.ok(chooseValidatedDates([customer()]).has(501), "…yet he still reads Validated on the Reps List");
+
+  // The board draws the chip, the brick count and the filter only when the read worked, and a failed
+  // read says so once — never "Not validated yet" against every doctor.
+  const board = readFileSync("src/components/crm/reps-list-tables.tsx", "utf8");
+  assert.ok(board.includes("const showValidation = validationRead === true;"), "the validation signals are drawn only on a read that worked");
+  assert.ok(board.includes("{validationRead === false ? ("), "a failed read is said once, above the list");
+  assert.ok(board.includes("(!showValidation || matchesValidation(row, validation))"), "the Validation filter narrows the rows");
+  assert.ok(
+    readFileSync("src/components/crm/reps-list-board.tsx", "utf8").includes("validationRead={list.validationRead}"),
+    "the manager Reps List passes the read through; Phoenix CRM's own My List does not",
   );
 }

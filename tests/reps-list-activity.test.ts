@@ -457,7 +457,7 @@ export function runRepsListActivityTests() {
       "a row with no activity must never match a status filter, or a failed read would present the entire list as Missed",
     );
     assert.ok(
-      /\[activity, brick, grade, groups, listType, query, speciality, tab\]/.test(tables),
+      /\[activity, brick, grade, groups, listType, query, showValidation, speciality, tab, validation\]/.test(tables),
       "the activity choice must be in the memo's dependency list, or picking a filter would leave the rows unchanged",
     );
 
