@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 
 import type { AuditLogInput } from "../src/lib/admin/audit.ts";
@@ -10,7 +9,7 @@ import {
   HeadwindActionError,
 } from "../src/lib/devices/headwind/actions.ts";
 import { HeadwindAppInputError } from "../src/lib/devices/headwind/apps.ts";
-import { HeadwindNotConfiguredError, resetHeadwindTokenCache } from "../src/lib/devices/headwind/auth.ts";
+import { HeadwindNotConfiguredError, headwindPasswordHash, resetHeadwindTokenCache } from "../src/lib/devices/headwind/auth.ts";
 import { callHeadwind, HeadwindRequestError } from "../src/lib/devices/headwind/client.ts";
 import { HeadwindCommandUnconfirmedError } from "../src/lib/devices/headwind/commands.ts";
 import { HeadwindConfigurationError } from "../src/lib/devices/headwind/configurations.ts";
@@ -45,7 +44,9 @@ const ENV = {
 } as unknown as NodeJS.ProcessEnv;
 
 const NEW_PASSWORD = "Correct-Horse-Battery-9";
-const NEW_PASSWORD_WIRE = createHash("md5").update(NEW_PASSWORD, "utf8").digest("hex").toUpperCase();
+// Headwind's own login wire format (UPPER-CASE MD5), through Phoenix's one encoder — which
+// `tests/headwind-bridge.test.ts` pins against an independent hash.
+const NEW_PASSWORD_WIRE = headwindPasswordHash(NEW_PASSWORD);
 
 /** A reply: JSON (`body`), a reply that is not JSON (`notJson`), or a fetch that throws. */
 type Reply = { status: number; body?: unknown; notJson?: true } | { throws: Error };

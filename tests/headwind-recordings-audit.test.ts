@@ -34,6 +34,15 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const SUPABASE = "https://recordings-audit-db.invalid";
 const HEADWIND = "https://mdm.recordings-audit.invalid";
+
+/** Same server, by origin — a prefix match would also accept `https://mdm.recordings-audit.invalid.elsewhere`. */
+function onOrigin(url: string, base: string): boolean {
+  try {
+    return new URL(url).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
 const DEVICE = "PHX-TAB-0042";
 const PUBLIC_ORIGIN = "https://phoenix-hr.satopharma.com";
 
@@ -78,7 +87,7 @@ async function withStandIns(run: (stand: StandIn) => Promise<void>): Promise<voi
     const method = (init.method ?? request?.method ?? "GET").toUpperCase();
     const body = typeof init.body === "string" ? init.body : request ? await request.clone().text() : "";
     stand.seen.push({ body, method, url });
-    if (url.startsWith(HEADWIND)) {
+    if (onOrigin(url, HEADWIND)) {
       const path = new URL(url).pathname;
       if (path.endsWith("/rest/public/jwt/login")) return json(200, { data: { authToken: "stand-in-jwt" }, status: "OK" });
       if (path.endsWith("/rest/private/devices/search")) {
@@ -89,7 +98,7 @@ async function withStandIns(run: (stand: StandIn) => Promise<void>): Promise<voi
       }
       return json(404, { message: `stand-in Headwind has no ${path}` });
     }
-    if (url.startsWith(SUPABASE)) {
+    if (onOrigin(url, SUPABASE)) {
       const path = new URL(url).pathname;
       if (path === "/rest/v1/device_screen_recordings" && method === "GET") {
         if (stand.slotRead === "unreadable") return json(500, { code: "XX000", message: "stand-in read failure" });
@@ -142,7 +151,7 @@ function superAdminRequest(path: string, body: unknown): Request {
 }
 
 function pushPayload(stand: StandIn, answer: string): { extra: { uploadUrl: string; recordingId: string } } {
-  const push = stand.seen.find((call) => call.url.startsWith(HEADWIND) && call.url.endsWith("/rest/private/push"));
+  const push = stand.seen.find((call) => onOrigin(call.url, HEADWIND) && new URL(call.url).pathname.endsWith("/rest/private/push"));
   assert.ok(push, `the record request reached the tablet's push door (the route answered ${answer})`);
   return JSON.parse((JSON.parse(push!.body) as { payload: string }).payload);
 }
