@@ -588,6 +588,7 @@ import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import { runKpisNewHireTests } from "./kpis-new-hire.test.ts";
+import { runKpisFullRosterTests } from "./kpis-full-roster.test.ts";
 import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
 import { runKpisCallRateThroughYesterdayTests } from "./kpis-call-rate-through-yesterday.test.ts";
 import {
@@ -4342,6 +4343,11 @@ await runTest(
   + "them reads Just started, carries no flag, band, floor or overall, and leaves the team totals, podiums "
   + "and manager averages; the footer prints human dates and says what Overall blends)",
   runKpisNewHireTests,
+);
+await runTest(
+  "kpis full roster (every active medical rep in reach is on the board even with no visit or plan yet, never "
+  + "twice, never outside the scope, and a district of new hires keeps its manager row)",
+  runKpisFullRosterTests,
 );
 await runTest(
   "reps list through yesterday (ruling C1: a running window stops at yesterday, today's calls and its working "
