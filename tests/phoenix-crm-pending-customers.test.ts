@@ -456,7 +456,8 @@ function runPendingReachableTests() {
   const listTab = source("src/components/phoenix-crm/list-tab.tsx");
   assert.match(
     listTab,
-    /const current: ListScreen = validateHandoff \? \{ name: "validate", contactCrmId: validateHandoff\.contactCrmId \} : screen;/,
+    // The full-name hand-off (owner, 2026-11-09) sits behind it, and the tab's own screen comes last.
+    /const current: ListScreen = validateHandoff\s*\? \{ name: "validate", contactCrmId: validateHandoff\.contactCrmId \}\s*: fullNameHandoff\s*\? \{ name: "edit-details", customerId: fullNameHandoff\.customerId \}\s*: screen;/,
     "the hand-off outranks whatever screen the tab was left on",
   );
   assert.match(
@@ -465,7 +466,7 @@ function runPendingReachableTests() {
     "and the held-work guard reads `current`, or the page could swap the tab away from a validation he is standing at the door to finish",
   );
   assert.match(listTab, /switch \(current\.name\) \{/, "every screen is dispatched from `current`");
-  assert.match(listTab, /if \(validateHandoff\) onPendingValidateDone\?\.\(\);\s+setScreen\(next\);/, "moving anywhere deliberately ends the hand-off, or the tab sticks on it");
+  assert.match(listTab, /if \(validateHandoff\) onPendingValidateDone\?\.\(\);\s+if \(fullNameHandoff\) onPendingFullNameDone\?\.\(\);\s+setScreen\(next\);/, "moving anywhere deliberately ends the hand-off, or the tab sticks on it");
 
   // The "Validate now" nudge after a visit is GONE (owner, 2026-09-29): a visit needs no photo, and
   // validating happens on the List, once and for good — never offered from the visit flow.

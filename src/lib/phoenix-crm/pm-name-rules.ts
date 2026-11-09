@@ -54,6 +54,16 @@ export function fullNameNeededSentence(name: string): string {
   return `${name} needs a full name first. Open this customer in your list, tap Change the details and write the first, middle and last name.`;
 }
 
+/**
+ * The body of Add visit's note on a blocked doctor, under his name: the fix in one sentence, beside the
+ * button that opens it (owner, 2026-11-09 — the old note repeated the name and offered no way out).
+ */
+export const FULL_NAME_WRITE_SENTENCE =
+  "Write this customer's first, middle and last name, as the signboard shows them, and the visit opens.";
+
+/** The button under that note: it opens the List on this customer's Change the details screen. */
+export const FULL_NAME_WRITE_BUTTON = "Write the full name";
+
 /** The short label beside a blocked doctor in a picker. */
 export const FULL_NAME_NEEDED_TAG = "Needs the full name";
 
@@ -108,6 +118,13 @@ export function doctorNamePartProblem(value: unknown, label: string): string | n
   const words = personNameWords(part);
   if (words.length === 0) return `Write the ${label.toLowerCase()} without Dr or د.`;
   if (words.length > 1) return `Write one name in ${label}. Use the other boxes for the rest of the name.`;
+  // 🔴 A BOX HOLDING ONLY الدين, الله, عبد OR ابو IS HALF A NAME (proven in production, 8 Nov 2026): the
+  // count folds الدين into the word before it, so علاء / الدين / الجمل passed every box and was saved as a
+  // two-word name that blocked the doctor's visits for ever. "عبد الله" or "نور الدين" in one box stays one name.
+  const only = words[0].word;
+  if (COMPOUND_TAILS.has(only) || COMPOUND_HEADS.has(only)) {
+    return `${part} is part of a two-word name like عماد الدين or عبد الله. Write the whole name in one box, then the father's name and the family name in the next two.`;
+  }
   const raw = part.split(" ");
   for (const word of raw) {
     const plain = word.replace(/[.‏‎]/g, "");
@@ -130,6 +147,9 @@ export function doctorFullNameProblem(parts: DoctorNameParts): string | null {
     const problem = doctorNamePartProblem(parts[field.key], field.label);
     if (problem) return problem;
   }
+  // The joined name is counted the way doctorNeedsFullName counts it, or a name every box passed can still
+  // be saved short — an open compound (عبد, ابو) swallows the next box's word.
+  if (doctorNameWordCount(joinDoctorName(parts)) < 3) return "Write the first, middle and last name.";
   return null;
 }
 

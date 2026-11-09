@@ -51,7 +51,7 @@ import { preloadPhoenixCrmTab } from "@/components/phoenix-crm/tab-preload";
 import { TelegramConnectCard } from "@/components/phoenix-crm/telegram-connect-card";
 import { CrmSurfaceProvider, type CrmSurface } from "@/components/phoenix-crm/surface";
 import { CrmBlock, CrmButton, CrmChoice, CrmEmpty, CrmField, CrmLoading, CrmNote, CrmPanel, CrmPill, CrmSelect } from "@/components/phoenix-crm/ui";
-import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import type { PendingFullName, PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, PHOENIX_CRM_TEST_TAB_LABEL, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import { allowedTabs, isTabKey, openingTab, seatOf, territoriesFor, type SeatTab, type TabKey } from "@/lib/phoenix-crm/opening-tab";
@@ -249,6 +249,9 @@ export function PhoenixCrmApp({
   // The mirror of pendingVisit, running the other way: Add Visit hands a still-pending customer to the
   // List's Validate screen, so the rep who is already at the door with his phone out can finish it now.
   const [pendingValidate, setPendingValidate] = useState<PendingValidate | null>(null);
+  // Its sibling (owner, 2026-11-09): Add visit's "Write the full name" on a clinic customer with one or two
+  // names opens the List on his Change the details screen.
+  const [pendingFullName, setPendingFullName] = useState<PendingFullName | null>(null);
   const [holding, setHolding] = useState<ReadonlySet<HoldingTab>>(() => new Set<HoldingTab>());
   const [asking, setAsking] = useState<{ move: Move; work: HoldingTab[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -263,6 +266,9 @@ export function PhoenixCrmApp({
   const customerParam = searchParams?.get("customer") ?? null;
   const customerNameParam = searchParams?.get("name") ?? null;
   const validateParam = searchParams?.get("validate") ?? null;
+  const fullNameParam = searchParams?.get("fullname") ?? null;
+  // The address keeps `?fullname=` after the List let the hand-off go; the one already used is not opened again.
+  const [usedFullNameParam, setUsedFullNameParam] = useState<string | null>(null);
   const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
   const [addVisitNonce, setAddVisitNonce] = useState(0);
   // A district manager's own visit on a VACANT territory is saved from Add visit but lands in My single
@@ -386,6 +392,10 @@ export function PhoenixCrmApp({
     single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
       ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
       : null;
+  const arrivedFullName: PendingFullName | null =
+    single && activeTab === "list" && fullNameParam && fullNameParam !== usedFullNameParam
+      ? { seatId: seats.list ?? "", test, customerId: fullNameParam }
+      : null;
   // A test login's counts are its own world's; everyone else's — the Super Admin's included since his
   // test mode was retired — are the real ones.
   const { waitingForYou } = overview;
@@ -497,6 +507,9 @@ export function PhoenixCrmApp({
     if (pendingValidate && (pendingValidate.seatId !== nextListSeat || pendingValidate.test !== test)) {
       setPendingValidate(null);
     }
+    if (pendingFullName && (pendingFullName.seatId !== nextListSeat || pendingFullName.test !== test)) {
+      setPendingFullName(null);
+    }
     // A tab let go does not say so on its way out.
     if (dropped.length > 0) {
       setHolding((current) => new Set([...current].filter((key) => !dropped.includes(key))));
@@ -534,6 +547,23 @@ export function PhoenixCrmApp({
   /** The Validate screen opened from that hand-off was saved or backed out of. No photo to release. */
   function pendingValidateDone() {
     setPendingValidate(null);
+  }
+
+  /** Add visit's "Write the full name": the List opens on that customer's Change the details screen. */
+  function startWriteFullName(handoff: PendingFullName) {
+    if (single) {
+      openTab("list", { fullname: handoff.customerId });
+      return;
+    }
+    setPendingFullName(handoff);
+    openTab("list");
+    scrollToTop();
+  }
+
+  /** The List moved on from that hand-off — saved, backed out of, or anywhere else. */
+  function pendingFullNameDone() {
+    setPendingFullName(null);
+    if (fullNameParam) setUsedFullNameParam(fullNameParam);
   }
 
   function settingsChanged(change: "numbers" | "line" | "ramadan") {
@@ -879,6 +909,7 @@ export function PhoenixCrmApp({
             onPendingVisitDone={pendingVisitDone}
             onStartValidate={startValidate}
             onWorkChange={holdReporters.visits}
+            onWriteFullName={startWriteFullName}
             pendingVisit={arrivedVisit ?? pendingVisit}
             seatId={seatId}
             test={test}
@@ -891,8 +922,10 @@ export function PhoenixCrmApp({
         <ListTab
           cairoToday={cairoToday}
           key={`${seatId}|${test}`}
+          onPendingFullNameDone={pendingFullNameDone}
           onPendingValidateDone={pendingValidateDone}
           onWorkChange={holdReporters.list}
+          pendingFullName={arrivedFullName ?? pendingFullName}
           pendingValidate={arrivedValidate ?? pendingValidate}
           seatId={seatId}
           test={test}
