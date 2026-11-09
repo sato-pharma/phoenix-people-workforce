@@ -41,6 +41,7 @@ import {
   readTestFlag,
   territoryForRead,
   territoryForValidation,
+  territoryForView,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -309,7 +310,7 @@ async function seatedCounts(sharedPlaceIds: readonly string[]): Promise<Map<stri
  */
 export async function loadSharedPlacesFor(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRow[]> {
   const body = record(raw);
-  const { seat, isTest } = territoryForRead(viewer, body.seatId, readTestFlag(body.test));
+  const { seat, isTest } = territoryForView(viewer, body.seatId, readTestFlag(body.test));
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_shared_places")
     .select(SHARED_PLACE_COLUMNS)

@@ -54,9 +54,9 @@ import {
   canWriteAsRep,
   doubleVisitReportAudience,
   readTestFlag,
-  territoryForRead,
+  readWorldFor,
   territoryForRepWrite,
-  testModeFor,
+  territoryForView,
   testReadSeats,
   type DoubleVisitReportAudience,
   type PhoenixCrmViewer,
@@ -385,7 +385,7 @@ export async function loadDoubleVisitCustomerView(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; customerId: unknown; test: unknown },
 ): Promise<DoubleVisitCustomerView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const customerId = typeof raw.customerId === "string" ? raw.customerId.trim().toLowerCase() : "";
   if (!isUuid(customerId)) throw validationError("Choose a customer.");
   const rows = await loadCustomerRequestRows(seat.seatId, customerId, isTest);
@@ -589,7 +589,7 @@ async function loadAddressedRequestRows(hrId: string, isTest: boolean, since: st
 
 /** GET: the double-visit requests the viewer answers or reads — the managers' sidebar report. */
 export async function loadDoubleVisitReport(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<DoubleVisitReport> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const audience = doubleVisitReportAudience(viewer);
   if (!audience) throw forbiddenError("Double visit requests are for managers, product managers and SFE. A rep reads their own requests on the customer's page.");
   const since = addDaysIso(viewer.cairoToday, -REPORT_DAYS);

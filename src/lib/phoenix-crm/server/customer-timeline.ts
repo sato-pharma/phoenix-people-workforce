@@ -18,7 +18,7 @@ import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { buildCustomerTimeline, type TimelineEntry, type TimelineVisit } from "@/lib/phoenix-crm/customer-timeline";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForRead, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
@@ -51,7 +51,7 @@ export async function loadCustomerTimeline(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; customerId: unknown },
 ): Promise<CustomerTimelineView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const customerId = typeof raw.customerId === "string" ? raw.customerId.trim() : "";
   if (!isUuid(customerId)) throw validationError("Choose a customer.");
 

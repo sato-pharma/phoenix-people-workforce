@@ -1,5 +1,5 @@
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { readTestFlag, territoryForDayWrite, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForDayWrite, territoryForRead, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { listInterviewsConductedBy, type ConductedInterview } from "@/lib/recruitment/interview-calendar";
@@ -138,7 +138,7 @@ export async function loadDayInterviews(
   raw: { seatId: unknown; test: unknown; date?: unknown },
 ): Promise<{ date: string; booked: DayInterview[]; added: DayInterview[]; saved: DayInterview[] }> {
   if (isIsoDay(raw.date)) {
-    const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+    const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
     return { date: raw.date, booked: [], added: [], saved: await storedOn(seat.seatId, isTest, raw.date) };
   }
   const { seat, isTest } = territoryForDayWrite(viewer, raw.seatId, readTestFlag(raw.test));

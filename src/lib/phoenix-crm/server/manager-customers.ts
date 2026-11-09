@@ -40,7 +40,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { compareFoldedNames } from "@/lib/phoenix-crm/name-fold";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
+import { readWorldFor, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { oneRowPerDoctor } from "@/lib/phoenix-crm/server/duplicate-customers";
 import {
@@ -237,7 +237,7 @@ function writesOwnList(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter | nul
 
 /** GET: Manager's own list — his own, or the list of a manager a reader above him picked. */
 export async function loadManagerOwnList(viewer: PhoenixCrmViewer, raw: { manager: unknown; test: unknown }): Promise<ManagerOwnListView> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const reader = resolveManagerPlanReader(viewer, raw.manager);
   // The managers to choose between — himself first when he keeps a list of his own too.
   const choices = managerPlanChoices(viewer, reader);
@@ -398,7 +398,7 @@ async function areaListReach(viewer: PhoenixCrmViewer, writer: ManagerPlanWriter
  */
 export async function loadAreaCustomers(viewer: PhoenixCrmViewer, raw: { area: unknown; test: unknown; scope?: unknown }): Promise<AreaCustomersView> {
   const writer = assertManagerPlanWriter(viewer);
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const district = await areaListReach(viewer, writer, raw.scope);
   const chosen = district.find((seat) => seat.seatId === raw.area) ?? null;
   if (!chosen) throw forbiddenError(outsideReach(writer));

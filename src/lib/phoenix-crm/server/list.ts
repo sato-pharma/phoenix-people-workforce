@@ -100,13 +100,14 @@ import {
   canMovePlaces,
   canOverrideDecision,
   canReviewTerritory,
-  canWriteAsRep,
-  readTestFlag,
-  readsLocationDetail,
-  territoryForRead,
   canValidateReference,
+  canWriteAsRep,
+  readsLocationDetail,
+  readTestFlag,
+  territoryForRead,
   territoryForRepWrite,
   territoryForValidation,
+  territoryForView,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
@@ -873,6 +874,17 @@ export function ensureReferenceCustomersRecently(seat: OrgSeat, isTest: boolean)
 }
 
 /**
+ * The mint a SCREEN's read runs before it reads the customers. A test account reads the real field
+ * force (`territoryForView`, owner 2026-11-09) but writes nothing real, so its read of a real
+ * territory mints nothing and reads the customers already there; the territory's own people mint them
+ * on their next open, exactly as before.
+ */
+export function ensureReferenceCustomersForView(viewer: Pick<PhoenixCrmViewer, "isTestPersona">, seat: OrgSeat, isTest: boolean): Promise<void> {
+  if (viewer.isTestPersona && !isTest) return Promise.resolve();
+  return ensureReferenceCustomersRecently(seat, isTest);
+}
+
+/**
  * Drop the seats' mint stamps after an app write that changes what their next mint finds — a customer
  * moved off a seat can be minted back onto it as pending — so the planner mints on its next open
  * exactly as it did before the throttle.
@@ -1571,7 +1583,7 @@ function monthsBack(isoDay: string, months: number): string {
 }
 
 export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): Promise<TerritoryListView> {
-  const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
+  const { seat, isTest } = territoryForView(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
 
   // 🔴 ONE WAVE, BESIDE THE MINT (2026-10-16 Phoenix CRM performance audit — the visit form's own
@@ -1582,7 +1594,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   // writes nothing but customers and their list events. So every other read starts BESIDE the mint,
   // and the mint's own failure is still the one that surfaces, first, exactly as when it ran alone.
   // Since 1 Nov 2026 it is the planners' throttled mint: a seat minted in the last five minutes skips it.
-  const ensured = ensureReferenceCustomersRecently(seat, isTest);
+  const ensured = ensureReferenceCustomersForView(viewer, seat, isTest);
   const referenceRead = ensured.then(() => loadReference(seat.seatId, isTest));
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest));
   const requestRowsRead = loadRequestRows([seat.seatId], isTest);

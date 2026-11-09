@@ -34,7 +34,7 @@ import { parseCapturedFix } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { personKey } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readWorldFor, testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { holdsPlannedDoctors, MANAGER_CUSTOMER_ADDRESS_MAX, vacantVisitPlaceError, visitPlaceText, type ManagerPlanWriter } from "@/lib/phoenix-crm/manager-plan-rules";
 import { managerVisitDetailEditable, parseManagerVisitDetail } from "@/lib/phoenix-crm/manager-visit-detail-rules";
@@ -290,7 +290,7 @@ async function loadRepCustomerNames(customerIds: ReadonlyArray<string>): Promise
 /** GET: his visits of the visit day — planned (from today's single-visit and with-my-manager half-days) and unplanned. */
 export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ManagerTodayView> {
   const writer = assertManagerPlanWriter(viewer);
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const day = viewer.visitDay;
   const weekStart = fieldWeekStart(day);
   const reach = await managerWriterReach(viewer, writer);

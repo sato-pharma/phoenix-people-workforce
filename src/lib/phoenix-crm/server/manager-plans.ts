@@ -87,7 +87,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canEnterMissedRecords, regionalReportWorlds, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, readWorldFor, regionalReportWorlds, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -1020,7 +1020,7 @@ export async function loadManagerPlanBoard(
   viewer: PhoenixCrmViewer,
   raw: { week: unknown; manager: unknown; test: unknown; scope?: unknown },
 ): Promise<ManagerPlanBoardView> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const reader = resolveManagerPlanReader(viewer, raw.manager);
   const asked = typeof raw.week === "string" && raw.week.trim() ? raw.week.trim() : null;
   const weekStart = asked ?? (await openingWeekFor(viewer, reader.managerHrId, isTest));

@@ -23,9 +23,9 @@ import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   readsTeamReports,
   readTestFlag,
+  readWorldFor,
   territoryForRead,
   territoryForRepWrite,
-  testModeFor,
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
@@ -413,7 +413,7 @@ function cnsSeatsInScope(viewer: PhoenixCrmViewer, isTest: boolean): OrgSeat[] {
 /** One day across every CNS territory beneath the viewer: who sent, when, and how it sits against the day's share. */
 export async function loadForecastBoard(viewer: PhoenixCrmViewer, raw: { day?: unknown; test: unknown }): Promise<ForecastBoardView> {
   assertBoardReader(viewer);
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const day = isIsoDay(raw.day) && raw.day <= viewer.visitDay ? raw.day : viewer.visitDay;
   const period = periodOfDay(day);
   const seats = cnsSeatsInScope(viewer, isTest);
@@ -519,7 +519,7 @@ function accuracyMonthReads(period: string, seats: readonly OrgSeat[], isTest: b
 
 export async function loadForecastAccuracy(viewer: PhoenixCrmViewer, raw: { period?: unknown; test: unknown }): Promise<ForecastAccuracyView> {
   assertBoardReader(viewer);
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const requested = typeof raw.period === "string" && /^\d{4}-\d{2}$/.test(raw.period) ? raw.period : null;
   const seats = cnsSeatsInScope(viewer, isTest);
   // A month asked for by name is one the screen offered from the published list, so its forecasts,

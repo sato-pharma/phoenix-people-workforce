@@ -50,7 +50,7 @@ import {
   TERRITORY_TIER,
   type OrgSeat,
 } from "@/lib/phoenix-crm/scope";
-import { canReadMyMap, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canReadMyMap, readWorldFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, selectByIds } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
@@ -225,7 +225,7 @@ export async function loadMyMap(viewer: PhoenixCrmViewer): Promise<MyMapView> {
   try {
     const seats = mapSeats(viewer);
     if (seats.length === 0) return emptyView(scope, viewer.visitDay, false);
-    const isTest = viewer.isTestPersona;
+    const isTest = readWorldFor(viewer, null);
     const ownSeatIds = new Set(viewer.ownTerritories.map((seat) => seat.seatId));
     const managerEntries = scope === "manager" || scope === "company" ? mapManagers(viewer, seats) : [];
     const [facts, plan, names] = await Promise.all([
@@ -303,7 +303,7 @@ export async function loadMyMapSnapshot(viewer: PhoenixCrmViewer): Promise<MyMap
   const seats = mapSeats(viewer);
   if (seats.length === 0) return null;
   try {
-    const isTest = viewer.isTestPersona;
+    const isTest = readWorldFor(viewer, null);
     // Only a rep's card marks today's plan: one territory, one read. A manager's team plans are on the page.
     const plan =
       scope === "rep"

@@ -54,7 +54,7 @@ import {
   type TerritoryFacts,
 } from "@/lib/phoenix-crm/exceptions";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, readWorldFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk } from "@/lib/phoenix-crm/server/db";
 import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -383,7 +383,7 @@ export async function gatherExceptions(input: {
 
 export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ExceptionsView> {
   if (!readsTeamReports(viewer)) throw forbiddenError("The exceptions board is for managers.");
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   return gatherExceptions({
     seats: testReadSeats(viewer, isTest, viewer.scopeTerritories),
     isTest,

@@ -88,7 +88,7 @@ function runRouteTests() {
   assert.match(route, /loadDoctorDirectory\(viewer, isTest\)/, "the route hands the viewer to the loader, which settles the scope");
   // Settled by the one helper every cross-territory read uses: the Super Admin's own choice, always on
   // for a test login (src/lib/auth/test-persona.ts), refused to everyone else who asks.
-  assert.match(route, /const isTest = testModeFor\(viewer, searchOf\(request\)\.get\("test"\)\)/, "test entries are the Super Admin's, here as everywhere else");
+  assert.match(route, /const isTest = readWorldFor\(viewer, searchOf\(request\)\.get\("test"\)\)/, "test entries are the Super Admin's, here as everywhere else");
 
   // The registry and the route must agree, or the boundary test's on-disk sweep fails.
   const registry = source("src/lib/security/access-registry.ts");

@@ -79,16 +79,17 @@ import {
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
-  testReadSeats,
+  readWorldFor,
   territoryForRead,
   territoryForRepWrite,
-  worldFor,
+  territoryForView,
+  testReadSeats,
   type PhoenixCrmViewer,
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import {
-  ensureReferenceCustomersRecently,
+  ensureReferenceCustomersForView,
   loadMonthVisitCounts,
   loadPlannerReferences,
   loadReadiness,
@@ -488,7 +489,7 @@ export function buildDays(input: {
 }
 
 export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; weekStart: unknown }): Promise<PlannerView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
   const weeks = plannableWeeks(today);
   const weekStart = isFieldWeekStart(raw.weekStart) ? raw.weekStart : weeks[0];
@@ -507,7 +508,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   // The mint itself runs at most once per seat in five minutes (2026-10-23, every page change under 1
   // second): a seat minted inside that window answers at once, so the customer list starts without
   // waiting a hop on a mint that would find nothing new. The first open still mints before it reads.
-  const ensured = ensureReferenceCustomersRecently(seat, isTest);
+  const ensured = ensureReferenceCustomersForView(viewer, seat, isTest);
   const viewerIsRep = canWriteAsRep(viewer, seat, isTest);
   const planRowsRead = (async () => {
     const planRowsResult = await getSupabaseAdmin()
@@ -1146,7 +1147,7 @@ export async function loadPlanReviews(
   raw: { test: unknown; weekStart: unknown },
   read?: TestWorldRead,
 ): Promise<PlanReviewView> {
-  const isTest = worldFor(viewer, raw.test, read);
+  const isTest = readWorldFor(viewer, raw.test, read);
   const weeks = plannableWeeks(viewer.cairoToday);
   // The week he ASKED for, when he picked one. Nothing below ever overrides it.
   const requestedWeek = isFieldWeekStart(raw.weekStart) ? raw.weekStart : null;

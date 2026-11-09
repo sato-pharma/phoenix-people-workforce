@@ -15,7 +15,7 @@ import { crmUrl } from "@/lib/phoenix-crm/crm-url";
 import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import type { CrmFirstRead } from "@/lib/phoenix-crm/first-read";
 import { allowedTabs, openingTab, seatOf, type PhoenixCrmSurface } from "@/lib/phoenix-crm/opening-tab";
-import { resolvePhoenixCrmViewer, testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readWorldFor, resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import type { PhoenixCrmOverview } from "@/lib/phoenix-crm/view-types";
 
 type FirstReadTarget = {
@@ -144,7 +144,7 @@ export function phoenixCrmFirstReadTarget(overview: PhoenixCrmOverview, requeste
         key: "directory",
         load: async (viewer, search) => {
           const { loadDoctorDirectory } = await import("@/lib/phoenix-crm/server/doctors");
-          const isTest = testModeFor(viewer, search.get("test"));
+          const isTest = readWorldFor(viewer, search.get("test"));
           return loadDoctorDirectory(viewer, isTest);
         },
         url: crmUrl("/api/phoenix-crm/doctors", { test }),

@@ -51,7 +51,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planCustomerKey } from "@/lib/phoenix-crm/manager-day-plan";
 import { personKey } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readWorldFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
 import { managerPlace, managerPlanChoices, managerPlanWriterFor, resolveManagerPlanReader } from "@/lib/phoenix-crm/server/manager-plan-reach";
@@ -499,7 +499,7 @@ export async function loadManagerPlanReport(
   viewer: PhoenixCrmViewer,
   raw: { week: unknown; manager: unknown; test: unknown },
 ): Promise<ManagerReportView> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const reader = resolveManagerPlanReader(viewer, raw.manager);
   const weeks = managerReportWeeks(viewer.cairoToday);
   const asked = typeof raw.week === "string" && raw.week.trim() ? raw.week.trim() : null;

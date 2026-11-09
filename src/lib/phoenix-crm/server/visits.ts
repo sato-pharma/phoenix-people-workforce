@@ -103,6 +103,7 @@ import {
   ownDaySeat,
   readTestFlag,
   territoryForRead,
+  territoryForView,
   territoryForVisit,
   type LocationSight,
   type PhoenixCrmViewer,
@@ -624,7 +625,7 @@ export function resolveVisitDayAddress(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; date: unknown },
 ): { seat: ReturnType<typeof territoryForRead>["seat"]; isTest: boolean; date: string } {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   // The visit day, not the calendar day: until 02:00 the day that just ended is still the one a rep
   // adds to (owner, 2026-09-29). A past day is read only; a future one does not exist yet.
   const today = viewer.visitDay;

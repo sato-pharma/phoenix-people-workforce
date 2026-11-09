@@ -20,7 +20,7 @@
 import { validationError } from "@/lib/http/api-errors";
 import { NO_FIX_FOR_A_DAY_START, type DayStartView } from "@/lib/phoenix-crm/day-start-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
-import { readTestFlag, territoryForRead, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForRepWrite, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -201,7 +201,7 @@ export async function loadDayStart(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; date: unknown },
 ): Promise<DayStartView | null> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const date = typeof raw.date === "string" && raw.date ? raw.date : viewer.visitDay;
   return loadDayStartOn(seat.seatId, isTest, date);
 }

@@ -18,7 +18,7 @@ import {
   canEnterMissedRecords,
   readsCalendar,
   readsTeamReports,
-  testModeFor,
+  readWorldFor,
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
@@ -122,7 +122,7 @@ export async function loadTeamCalendar(
   // A rep reads only himself, so the screen can say so. Read from the PREDICATE, never from how
   // many rows came back — a manager whose team is down to one person still reads a team.
   const scope: "own" | "team" = readsTeamReports(viewer) ? "team" : "own";
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const seats = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const missedRecords = canEnterMissedRecords(viewer)
     ? { through: viewer.visitDay, seatIds: seats.filter((seat) => canEnterMissedRecordOn(viewer, seat, isTest)).map((seat) => seat.seatId) }

@@ -21,6 +21,8 @@
  * mirrors a REAL employee (src/lib/auth/test-persona.ts) and writes only test rows; retiring its
  * world would break the reps' own test logins, which the same message put out of scope
  * (*"without touching the reps account"*). So `test` below is `viewer.isTestPersona` and nothing else.
+ * Since 2026-11-09 the server drops it on every READ (`readWorldFor`, owner: "Real data everywhere"):
+ * a test login reads the real field force and only its saves go to the test world.
  *
  * The server decides the tabs, the territories and the counts (GET /api/phoenix-crm/overview) and
  * checks every read and save again; this page only lays them out.

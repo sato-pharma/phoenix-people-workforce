@@ -20,7 +20,7 @@ import { formatPhoenixMonth } from "@/lib/i18n/format";
 import { isMonthKey, monthEndOf, monthStartOf, plannableMonths, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { doctorListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import { readTestFlag, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, territoryForView, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadReference } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import type { PhoenixCrmGrade, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
@@ -62,7 +62,7 @@ export async function loadPlanHistory(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; month: unknown },
 ): Promise<PlanHistoryView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const months = plannableMonths(viewer.cairoToday);
   const targetMonth = isMonthKey(raw.month) && months.includes(`${raw.month}-01`) ? `${raw.month}-01` : months[0];
   const historyMonth = previousMonthStart(targetMonth);

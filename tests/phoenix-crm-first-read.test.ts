@@ -199,7 +199,7 @@ function testEachLoadIsItsRoutesOwn() {
     ["forecast/board", 'loadForecastBoard(viewer, { day: search.get("day"), test: search.get("test") })'],
     ["forecast/board", 'kind: "day", day }'],
     ["team", 'loadTeamView(viewer, { test: search.get("test") })'],
-    ["doctors", 'testModeFor(viewer, search.get("test"))'],
+    ["doctors", 'readWorldFor(viewer, search.get("test"))'],
     ["doctors", "loadDoctorDirectory(viewer, isTest)"],
     ["reports", "loadReportScope(viewer)"],
     ["reports", 'loadTeamCalendar(viewer, { month: search.get("month"), test: search.get("includeTest") })'],
