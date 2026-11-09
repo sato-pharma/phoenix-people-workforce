@@ -145,6 +145,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `expenses` — Expenses and outstation trips | `src/lib/outstation/**` and 5 more |
 | `org` — Organogram, territory and geography | `src/lib/{org,workforce,field-workforce-compliance,territory-management,geo,geocoding,google-maps}/**` and 4 more |
 | `portal` — Employee portal, dashboards and command centres | `src/lib/{employee-portal,navigation,overview,dashboard,action-center,needs-you,ceo,company-activity-report,support-requests,workspace,reports,activity}/**` and 5 more |
+| `portal-manager-boards` — A manager's team boards on the portal home | `src/components/employee-portal/dashboards/**` and 4 more |
 | `notifications` — Email, notifications and messaging | `src/lib/{email,email-templates,notifications,communication,internal-messages,distribution-lists,sato-email,ceo-email,personal-mailbox,mailbox-offboarding,conversations,whatsapp-videos}/**` and 5 more |
 | `email-composers` — The two email composers — Sato and CEO | `src/lib/{sato-email,ceo-email}/**` and 3 more |
 | `turbify` — Turbify mailbox console — the shared browser driver | `src/lib/turbify/**` and 3 more |

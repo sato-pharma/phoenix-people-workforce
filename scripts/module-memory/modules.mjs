@@ -1213,6 +1213,23 @@ export const MODULES = [
     keywords: ["employee portal", "portal", "sidebar", "landing page", "command center", "command centre", "needs you", "action center"],
     tables: ["portal", "navigation", "support_request"],
   },
+  // 🔴 SPLIT 2026-11-09, FOR THE REASON `phoenix-crm-approvals` RECORDS: `portal` measured a 4,165-byte pointer
+  // against the 4,000 margin with the regional manager's "My Districts" rule. The five rules about a manager's
+  // team boards move together; `portal` keeps every glob it had, so a dashboard file loads the PAIR.
+  {
+    id: "portal-manager-boards",
+    title: "A manager's team boards on the portal home",
+    scope: "The district, regional, national and CEO landing boards: the serving roster from the org tree, My Districts and its unranked managers, the NSM team calendar square, managers on leave, and the names the home snapshot prints.",
+    globs: [
+      "src/components/employee-portal/dashboards/**",
+      "src/components/employee-portal/team-calendar-view.tsx",
+      "src/lib/employee-portal/{home-snapshot,serving-roster,unranked-managers,team-calendar,team-calendar-cell,team-calendar-weeks}.ts",
+      "app/employee-portals/team-calendar/**",
+      "tests/{portal-serving-roster,nsm-team-calendar,regional-team-reports,ceo-command-center,business-review-person-names}*",
+    ],
+    keywords: ["my districts", "serving roster", "team roster", "team calendar", "regional manager", "district manager board", "managers on leave"],
+    tables: ["phx_monthly_achievement"],
+  },
   {
     id: "notifications",
     title: "Email, notifications and messaging",

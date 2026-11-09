@@ -8,6 +8,7 @@ import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib
 import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
 import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
+import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 
 /**
  * Dr. Hany Saad's team reports (owner, 2026-11-08) — the Regional Sales Manager's eight needs. Names in the
@@ -216,7 +217,28 @@ function landingShortcuts() {
   assert.ok(!landing.includes('href: "/employee-portals/plans"'), "no tile on his landing opens the read-only plan history");
 }
 
+function districtsWithoutPublishedMonth() {
+  // A district manager who joined after the published window (Sahar El Gallad, 24 Oct 2026, against Jul–Sep)
+  // is listed on "My Districts" unranked, with when she joined — never left off, never a 0%.
+  const unranked = managersWithoutPublishedMonth({
+    hireDates: new Map([["PD-0028", "2026-10-24"], ["B-154", "2026-02-01"]]),
+    ranked: [{ hrId: "b-154" }, { hrId: "PD-0012" }],
+    roster: [
+      { hrId: "B-154", name: "Nermeen Salah" },
+      { hrId: "PD-0012", name: "Mohamed Eleiwa" },
+      { hrId: "PD-0028", name: "Sahar El Gallad" },
+      { hrId: "pd-0028", name: "Sahar El Gallad" },
+    ],
+  });
+  assert.deepEqual(unranked, [{ hrId: "PD-0028", name: "Sahar El Gallad", note: "Joined 24 Oct 2026" }], "only the unranked, once, whatever the letter case");
+  assert.equal(joinedLabel("2026-10-24"), "24 Oct 2026");
+  assert.equal(joinedLabel(null), null, "a missing date is never guessed");
+  const board = readFileSync("src/components/employee-portal/dashboards/rm-command-center.tsx", "utf8");
+  assert.ok(board.includes("unranked={rmRegional?.dsmsWithoutPublishedMonth ?? []}"), "his My Districts board draws them");
+}
+
 export function runRegionalTeamReportsTests() {
+  districtsWithoutPublishedMonth();
   gate();
   visitsYesterdayAndToday();
   chainVisits();
