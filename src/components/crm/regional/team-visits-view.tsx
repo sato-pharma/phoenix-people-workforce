@@ -90,7 +90,7 @@ function Times({ day }: { day: TeamVisitDay }) {
 function RepsTotal({ day }: { day: TeamVisitDay }) {
   return (
     <div className="mb-2 border-b border-sky-200 pb-2">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Reps&apos; total · {day.am + day.pm} doctor visits</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">All reps together · {day.am + day.pm} doctor visits</p>
       <Figures day={day} />
     </div>
   );
@@ -113,7 +113,7 @@ function ManagerDayPlan({ day }: { day: TeamVisitManagerDay }) {
 }
 
 function OwnLabel() {
-  return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Own visits</p>;
+  return <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">Visits made alone · not added to any rep</p>;
 }
 
 function DayCell({ day, href }: { day: TeamVisitDay; href: string | null }) {
@@ -173,7 +173,7 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
                   <td className="break-words px-4 py-3">
                     <p className={district.managerHrId ? MANAGER_NAME : VACANT_NAME}>{district.managerName}</p>
                     <Hired dates={[district.managerHireDate]} />
-                    <p className={MANAGER_NOTE}>District manager · the day planned, the reps&apos; total, then own visits, counted in no rep&apos;s figure</p>
+                    <p className={MANAGER_NOTE}>District manager</p>
                   </td>
                   <td className="px-4 py-3">
                     {district.managerDay ? <ManagerDayPlan day={district.managerDay.yesterday} /> : null}
@@ -204,7 +204,7 @@ export function TeamVisitsView({ report }: { report: TeamVisitsReport }) {
                 <div>
                   <p className={district.managerHrId ? MANAGER_NAME : VACANT_NAME}>{district.managerName}</p>
                   <Hired dates={[district.managerHireDate]} />
-                  <p className={MANAGER_NOTE}>District manager · the day planned, the reps&apos; total, then own visits, counted in no rep&apos;s figure</p>
+                  <p className={MANAGER_NOTE}>District manager</p>
                 </div>
                 <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500">Yesterday · {yesterday}</p>
                 {district.managerDay ? <ManagerDayPlan day={district.managerDay.yesterday} /> : null}
