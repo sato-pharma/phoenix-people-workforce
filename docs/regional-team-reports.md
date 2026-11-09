@@ -38,7 +38,13 @@ Dashboards row's "Region Plans" included. `/employee-portals/plans` is the old f
 - Each visit shows its Saved-at time: `captured_at`, Cairo, 12-hour. A visit copied from the old CRM recorded no
   time and says so.
 - "Today" is the visit day (`viewer.visitDay`, which runs to 02:00 Cairo); yesterday is the day before it.
-- A district manager's own visits sit in the district manager's row and count in no rep's figure.
+- A district manager's own visits sit in the district manager's row and count in no rep's figure. That row wears
+  its own colour (a flat blue ground with a blue rule on its left edge) so a manager never reads as a rep (owner,
+  2026-11-09).
+- A `TEST-` login reads the real team AND its own test work, like every report (`docs/test-accounts.md`) — one
+  rule for Visits, District Managers' Plans and the Weekly Sheet: `regionalReportWorlds` (`server/access.ts`).
+  Reading the test world alone showed every rep at zero and every district manager's week empty for the test
+  account that mirrors Dr. Hany (2026-11-09). On the plans page a sent real week wins over a test one.
 - **No location column is selected.** The far-visit and place-vs-actual evidence is not the Regional Sales
   Manager's (`readsPlaceVsActual`).
 

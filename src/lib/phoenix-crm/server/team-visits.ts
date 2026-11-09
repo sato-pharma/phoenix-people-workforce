@@ -4,7 +4,7 @@ import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -23,6 +23,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * 🔴 NO LOCATION IS READ. The select names no coordinate, distance or location flag: the far-visit evidence is
  * not a Regional Sales Manager's (`readsPlaceVsActual`). "Today" is the VISIT day (`viewer.visitDay`, which runs
  * to 02:00 Cairo) and yesterday is the day before it.
+ *
+ * 🔴 A TEST ACCOUNT READS THE REAL TEAM AND ITS OWN TEST WORK BESIDE IT, the way every report does for one
+ * (`regionalReportWorlds`). Read in the test world alone, the TEST- login that mirrors the Regional
+ * Sales Manager showed every rep at zero (owner, 2026-11-09).
  */
 
 export type TeamVisitTime = {
@@ -148,7 +152,7 @@ export function districtSeatOf(viewer: Pick<PhoenixCrmViewer, "org">, seat: OrgS
   return null;
 }
 
-async function readVisitRows(seatIds: string[], isTest: boolean, from: string, to: string): Promise<VisitRow[]> {
+async function readVisitRows(seatIds: string[], worlds: boolean[], from: string, to: string): Promise<VisitRow[]> {
   if (seatIds.length === 0) return [];
   return readSeatGroups(seatIds, 150, (part) =>
     fetchAllRowsKeyset<VisitRow>(
@@ -157,7 +161,7 @@ async function readVisitRows(seatIds: string[], isTest: boolean, from: string, t
           // Named columns, every one read off the live view — and NO location column (see the file header).
           .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, captured_at, imported_from_ireports360_at")
-          .eq("is_test", isTest)
+          .in("is_test", worlds)
           .gte("visit_date", from)
           .lte("visit_date", to)
           .in("seat_id", part),
@@ -171,11 +175,11 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
   const today = viewer.visitDay;
   const yesterday = addDaysIso(today, -1);
   const seats = regionalTeamRepSeats(viewer);
-  const isTest = viewer.isTestPersona;
+  const worlds = regionalReportWorlds(viewer);
 
   const rows = await readVisitRows(
     seats.map((seat) => seat.seatId),
-    isTest,
+    worlds,
     yesterday,
     today,
   );
@@ -192,7 +196,7 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
 
   const managerHrIds = [...new Set(groups.flatMap((group) => (group.district?.occupantHrId ? [group.district.occupantHrId] : [])))];
   const ownRows = managerHrIds.length
-    ? await loadManagerOwnVisitRows({ end: today, isTest, managerHrIds, start: yesterday })
+    ? (await Promise.all(worlds.map((isTest) => loadManagerOwnVisitRows({ end: today, isTest, managerHrIds, start: yesterday })))).flat()
     : [];
   const names = await loadPeopleNames([...managerHrIds, ...seats.flatMap((seat) => seatOccupants(seat))]);
 

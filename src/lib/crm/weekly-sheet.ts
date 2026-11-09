@@ -9,7 +9,7 @@ import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } fr
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { seatOccupants, territoryName } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -111,7 +111,7 @@ type VisitRow = {
   comment: string | null;
 };
 
-async function readVisits(seatIds: string[], isTest: boolean, from: string, to: string): Promise<VisitRow[]> {
+async function readVisits(seatIds: string[], worlds: boolean[], from: string, to: string): Promise<VisitRow[]> {
   if (seatIds.length === 0) return [];
   return readSeatGroups(seatIds, 150, (part) =>
     fetchAllRowsKeyset<VisitRow>(
@@ -119,7 +119,7 @@ async function readVisits(seatIds: string[], isTest: boolean, from: string, to: 
         getSupabaseAdmin()
           .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, visit_date, list_type, customer_id, pharmacy_name, customer_validated, comment")
-          .eq("is_test", isTest)
+          .in("is_test", worlds)
           .gte("visit_date", from)
           .lte("visit_date", to)
           .in("seat_id", part),
@@ -157,11 +157,12 @@ export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string |
   if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
   const window = weeklySheetWindow(viewer.cairoToday, anyDay);
   const seats = regionalTeamRepSeats(viewer);
-  const isTest = viewer.isTestPersona;
+  // A test account reads the real team and its own test work beside it (regionalReportWorlds).
+  const worlds = regionalReportWorlds(viewer);
   const [rows, holidays, leave] = await Promise.all([
     readVisits(
       seats.map((seat) => seat.seatId),
-      isTest,
+      worlds,
       window.from,
       window.to,
     ),
