@@ -783,7 +783,9 @@ export const MODULES = [
     scope: "The KPIs board: the Summary and the Frequency, Coverage and Call Rate reports, their filters and links, and the manager rows built by averaging the rows beneath each manager.",
     globs: [
       "src/lib/crm/kpis*",
+      "src/lib/crm/kpi-*",
       "src/components/crm/kpis*",
+      "src/components/crm/kpi-*",
       "app/**/kpis/**",
       "tests/*kpi*",
     ],

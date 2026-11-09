@@ -20,11 +20,17 @@
  *   - a "Doctors" sheet when a rep's list is open — his doctors narrowed by the doctor filters on screen
  *     (`filterKpiDoctors`), so a brick picked on the board is the brick in the file.
  * When the bricks could not be read the cover says so and the column prints "Not read", never a 0.
+ *
+ * FROM THE SAME TWO TABS, ON A BOARD OF MORE THAN ONE TEAM (premium pass, 9 Nov 2026: "group reps by
+ * district manager"), a "Teams" sheet — one line per region and direct manager, the same lines the
+ * Coverage screen heads its reps with, each from `kpiTeamCoverage` (the board's own team arithmetic), so
+ * the teams' planned and visited add up to the cover's team coverage.
  */
 
 import ExcelJS from "exceljs";
 import type { KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 import { kpiIndexOf } from "@/lib/crm/kpi-index";
+import { groupKpiRepsByTeam, kpiTeamCoverage, type KpiCoverageTeam, type KpiTeamCoverage } from "@/lib/crm/kpi-coverage-teams";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { KPI_FREQUENCY_STATUS_LABEL, kpiBrickFrequencyColumns, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
 import { countActiveKpiDoctorFilter, filterKpiDoctors, kpiDoctorBrickLabel } from "@/lib/crm/kpis-doctor-filters";
@@ -152,6 +158,9 @@ function repColumns(board: KpisBoard, bricks: { asked: boolean; read: boolean })
     { header: "Job title", width: 20, cell: (row) => text(row.jobTitle) },
     { header: "Line", width: 16, cell: (row) => text(row.lineName) },
     { header: "Area", width: 18, cell: (row) => text(row.areaName) },
+    // Region beside Manager (premium pass, 9 Nov 2026), so the file can be grouped the way the Coverage
+    // screen files its reps — by region and direct manager — with a filter on two columns.
+    { header: "Region", width: 18, cell: (row) => text(row.regionName) },
     { header: "Manager", width: 24, cell: (row) => text(row.managerName) },
     { header: "Coverage", width: 11, cell: (row) => planPct(row, row.coveragePct) },
     { header: "Doctors planned", width: 11, cell: (row) => ({ kind: "count", value: row.plannedDoctors }) },
@@ -240,6 +249,36 @@ function brickColumns(board: KpisBoard): Array<Column<KpiBrickRow>> {
     ...kpiBrickFrequencyColumns(board.kpiRules === "phoenix").map(
       (column): Column<KpiBrickRow> => ({ header: column.label, width: 11, cell: (row) => ({ kind: "count", value: column.count(row) }) }),
     ),
+  ];
+}
+
+/** One line of the Teams sheet: a region and direct manager, and that team's coverage. */
+type TeamLine = { team: KpiCoverageTeam<KpiRepRow>; coverage: KpiTeamCoverage };
+
+/** The Teams sheet: the Coverage screen's team headings as columns. */
+function teamColumns(board: KpisBoard): Array<Column<TeamLine>> {
+  return [
+    { header: "Region", width: 22, cell: (line) => text(line.team.regionName) },
+    { header: "Manager", width: 26, cell: (line) => text(line.team.managerName) },
+    { header: "Reps", width: 9, cell: (line) => ({ kind: "count", value: line.coverage.reps }) },
+    { header: "Just started", width: 11, cell: (line) => ({ kind: "count", value: line.coverage.justStarted }) },
+    { header: "Doctors planned", width: 11, cell: (line) => ({ kind: "count", value: line.coverage.planned }) },
+    { header: "Doctors visited", width: 11, cell: (line) => ({ kind: "count", value: line.coverage.covered }) },
+    { header: "Not reached", width: 11, cell: (line) => ({ kind: "count", value: line.coverage.notReached }) },
+    {
+      header: "Coverage",
+      width: 11,
+      cell: (line) => ({ kind: "pct", value: line.coverage.coveragePct, marker: KPI_EXPORT_MARKERS.noPlan }),
+    },
+    {
+      header: `Reps at the ${board.coverageFloorPct}% floor`,
+      width: 13,
+      cell: (line) =>
+        line.coverage.withPlan > 0
+          ? { kind: "text", value: `${line.coverage.atFloor} of ${line.coverage.withPlan}` }
+          : { kind: "text", value: KPI_EXPORT_MARKERS.noPlan },
+    },
+    { header: "Off plan doctors", width: 11, cell: (line) => ({ kind: "count", value: line.coverage.offPlan }) },
   ];
 }
 
@@ -471,6 +510,30 @@ export async function buildKpisBoardWorkbook(
       columns: brickColumns(board),
       rows: board.teamBricks,
       empty: "No planned doctor on this board to put in a brick.",
+    });
+  }
+
+  const teams: TeamLine[] =
+    options.doctorLists && board.reps.length > 1
+      ? groupKpiRepsByTeam(board.reps).map((team) => ({
+          team,
+          coverage: kpiTeamCoverage(
+            team.members.map((member) => member.row),
+            board.kpiRules ?? "legacy",
+          ),
+        }))
+      : [];
+  if (teams.length >= 2) {
+    writeTableSheet(workbook, {
+      sheetName: "Teams",
+      title: "Teams",
+      subtitle: `${subtitle} · every rep filed under their region and direct manager`,
+      provenance: [
+        `${teams.length} teams · a team's coverage is its visited over its planned doctors · reps who have just started are a head and nothing else, as on the board`,
+      ],
+      columns: teamColumns(board),
+      rows: teams,
+      empty: "No team on this board.",
     });
   }
 

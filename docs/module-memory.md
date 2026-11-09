@@ -120,7 +120,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `crm-board-reads` — Field CRM — how a board reads: the shared minute-old copies and the one-statement functions | `src/lib/crm/{shared-windows,reps-list,reps-list-board,contact-trade,rep-kpi-reports-data,region-brick}.ts` and 5 more |
 | `crm-double-visit-focus` — Field CRM — the double-visit focus panel on a manager's home | `src/lib/double-visit-analytics/service.ts` and 1 more |
 | `crm-unified-doors` — The CRM union doors — crm_visits_unified, crm_checkins_unified and the entry days | `src/lib/crm/{reads,master,phoenix-work-evidence,phoenix-vendor-leftovers,phoenix-team-starts,phoenix-kpi-data}.ts` and 9 more |
-| `crm-kpis` — KPIs — the board, its three reports and the manager rows | `src/lib/crm/kpis*` and 3 more |
+| `crm-kpis` — KPIs — the board, its three reports and the manager rows | `src/lib/crm/kpis*` and 5 more |
 | `rep-ranks` — Phoenix Ranks — the rep board, its pillars and the certificate | `src/lib/rep-ranks/**` and 6 more |
 | `weekly-planning` — Weekly and Monthly Plan — the Plans tab form | `src/lib/weekly-planning/**` and 2 more |
 | `crm-doctor-lists` — Doctor lists — the contact master, its refresh and the list changes | `src/lib/crm/contact-lists/**` and 8 more |
