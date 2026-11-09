@@ -199,7 +199,7 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
               <col key={column.key} style={{ width: periodWidth }} />
             ))}
           </colgroup>
-          <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+          <thead className="border-y border-slate-200 bg-slate-50">
             <tr>
               <th className={TH} scope="col">
                 Measure
@@ -263,7 +263,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
               <col key={column.key} style={{ width: periodWidth }} />
             ))}
           </colgroup>
-          <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+          <thead className="border-y border-slate-200 bg-slate-50">
             <tr>
               <th className={TH} scope="col">
                 Medical rep
