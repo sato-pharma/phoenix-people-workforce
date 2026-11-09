@@ -62,7 +62,7 @@ const TITLES: Record<FieldEvidenceGap, string> = {
 export function NotFieldValidatedBadge({ reason }: { reason: FieldEvidenceGap }) {
   return (
     <span
-      className="inline-flex items-center whitespace-nowrap rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600"
+      className="inline-flex items-center whitespace-nowrap rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-slate-600"
       title={TITLES[reason]}
     >
       {LABELS[reason]}

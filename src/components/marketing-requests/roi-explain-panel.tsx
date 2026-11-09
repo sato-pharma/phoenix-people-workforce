@@ -55,7 +55,7 @@ function Chip({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2.5`}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 text-[16px] font-black leading-none text-phx-ink">{value}</p>
       {hint ? <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{hint}</p> : null}
     </div>
@@ -250,7 +250,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                   }
                   className="text-phx-sm"
                 >
-                  <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+                  <thead className="bg-phx-ink text-phx-sm font-black uppercase tracking-[0.1em] text-white">
                     <tr>
                       <th className="px-3 py-2">SoS row</th>
                       <th className="px-3 py-2">Period / distributor</th>
@@ -274,7 +274,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                         <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(row.qty)}</td>
                         <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(row.valueCounted)}</td>
                         <td className="break-words px-3 py-1.5">
-                          <span className="inline-flex items-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700" title={row.matchReason}>
+                          <span className="inline-flex items-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wide text-emerald-700" title={row.matchReason}>
                             {row.confidence}
                           </span>
                         </td>
@@ -285,7 +285,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
               )}
             />
           </div>
-          <p className="text-phx-2xs font-medium text-phx-ink-faint">
+          <p className="text-phx-sm font-medium text-phx-ink-faint">
             Ledger reflects the current exact attribution (distributor + pharmacy code + product + period) and reconciles to the actual sales above. Read-only — nothing here changes attribution.
           </p>
         </div>

@@ -48,7 +48,7 @@ const STATUS_TONE: Record<SimpleRoiStatus, string> = {
 
 function StatusBadge({ status }: { status: SimpleRoiStatus }) {
   return (
-    <span className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide", STATUS_TONE[status])}>
+    <span className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-phx-sm font-bold uppercase tracking-wide", STATUS_TONE[status])}>
       {SIMPLE_ROI_STATUS_LABEL[status]}
     </span>
   );
@@ -137,7 +137,7 @@ function RoiReportTable({
           }
           className="text-phx-sm"
         >
-          <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+          <thead className="bg-phx-ink text-phx-sm font-black uppercase tracking-[0.1em] text-white">
             <tr>
               <th className="px-3 py-2.5">Request / {secondaryColumnLabel}</th>
               <th className="px-3 py-2.5">Pay date</th>
@@ -207,7 +207,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
     <section className={`${adminPanelClassName} overflow-hidden rounded-[6px]`}>
       <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
         <div>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
           <h3 className="text-phx-base font-black tracking-tight text-phx-ink">{row.requestCode} · {row.customerName}</h3>
         </div>
         <a
@@ -326,7 +326,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                       }
                       className="text-phx-sm"
                     >
-                      <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+                      <thead className="bg-phx-ink text-phx-sm font-black uppercase tracking-[0.1em] text-white">
                         <tr>
                           <th className="px-3 py-2">SoS row</th>
                           <th className="px-3 py-2">Period</th>
@@ -365,7 +365,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className={`${adminSoftPanelClassName} rounded-[6px] px-3 py-2.5`}>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 text-phx-base font-black leading-none text-phx-ink">{value}</p>
       {hint ? <p className="mt-1 truncate text-phx-xs font-semibold text-phx-ink-faint" title={hint}>{hint}</p> : null}
     </div>
@@ -419,7 +419,7 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
               }
               className="text-phx-sm"
             >
-              <thead className="bg-phx-paper text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+              <thead className="bg-phx-paper text-phx-sm font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
                 <tr>
                   <th className="px-3 py-2">{entityLabel}</th>
                   <th className="px-3 py-2 text-right">Reqs</th>

@@ -174,7 +174,7 @@ function requesterLabel(row: RoiTrackerRow): string {
 
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
+    <span className={cn("inline-flex items-center border px-2 py-0.5 text-phx-sm font-black uppercase tracking-wide", className)}>
       {children}
     </span>
   );
@@ -429,7 +429,7 @@ function FlightPath({
           >
             <span className="flex items-center gap-1.5">
               <span className={cn("h-2 w-2", STAGE_META[stage].bar)} />
-              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{STAGE_META[stage].label}</span>
+              <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">{STAGE_META[stage].label}</span>
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[stage].cost)}</span>
             <span className="text-phx-xs text-slate-500">
@@ -589,7 +589,7 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
                 {entry.since ? `since ${cairoDate(entry.since)}` : "not started"}
               </span>
               <span className="ml-auto text-xs font-semibold tabular-nums text-slate-700">{money(entry.row.estimatedCost)}</span>
-              <span className="text-phx-2xs text-slate-400">{entry.row.requestCode}</span>
+              <span className="text-phx-sm text-slate-400">{entry.row.requestCode}</span>
             </div>
           </li>
         ))}
@@ -755,7 +755,7 @@ function RequestCard({
 
         {/* The clock — this surface's signature, in place of the archive's static coverage label. */}
         <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/50 p-2">
-          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Judgeable</span>
+          <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Judgeable</span>
           <span className="text-lg font-bold text-slate-900">{month ? monthLabel(month) : "—"}</span>
           <span className="text-phx-xs text-slate-500">
             {row.roiWindow ? `Window ${windowLabel(row.roiWindow)}` : "No window — not paid yet"}
@@ -764,7 +764,7 @@ function RequestCard({
         </div>
 
         <div className="flex flex-col gap-1 border border-slate-100 bg-slate-50/50 p-2">
-          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
+          <span className="text-phx-sm font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
           <div className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="text-lg font-bold tabular-nums text-slate-900">
               {measured ? money(row.actualSalesValue) : "—"}
