@@ -12,6 +12,7 @@ import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
+import { mergeDistrictManagerWeeks, type DistrictManagerWeek } from "../src/lib/phoenix-crm/server/manager-dm-day.ts";
 
 /**
  * Dr. Hany Saad's team reports (owner, 2026-11-08) — the Regional Sales Manager's eight needs. Names in the
@@ -346,7 +347,28 @@ function backToAllReps() {
   assert.ok(visits.includes("?from=team-visits`"), "Visits opens the day with its way back");
 }
 
+function boardAndApprovalReadTheRealTeam() {
+  // Owner, 2026-11-09 ("populate all production data to the test account of Hany — everything"): his own plan board
+  // and his approval view read the real team too, not only the three report pages.
+  const board = readFileSync("src/lib/phoenix-crm/server/manager-plans.ts", "utf8");
+  assert.ok(board.includes('const dmWorlds = writer.kind === "rsm" ? regionalReportWorlds({ isTestPersona: isTest }) : [isTest];'), "his board reads his district managers' real weeks");
+  assert.ok(board.includes("dmWorlds.map((world) => loadDistrictManagerWeeks("), "every world it reads is asked");
+  assert.ok(board.includes("worlds: regionalReportWorlds({ isTestPersona: isTest })"), "the notes beside each rep read the real team");
+  const hub = readFileSync("src/lib/phoenix-crm/server/manager-plan-hub.ts", "utf8");
+  assert.ok(hub.includes("worlds: regionalReportWorlds({ isTestPersona: plan.isTest })"), "the approval view's Also with lines read the real team");
+  const bookings = readFileSync("src/lib/phoenix-crm/server/manager-plan-bookings.ts", "utf8");
+  assert.ok(!bookings.includes("isTest: input.isTest, repSeatIds"), "no notes loader reads one world alone");
+  // A district manager's real week wins; a test week fills in only where the real one holds no plan.
+  const week = (dmSeatId: string, status: DistrictManagerWeek["status"]) => ({ dmSeatId, status }) as DistrictManagerWeek;
+  const merged = mergeDistrictManagerWeeks([
+    [week("D1", "approved"), week("D2", null)],
+    [week("D1", "draft"), week("D2", "submitted"), week("D3", null)],
+  ]);
+  assert.deepEqual(merged.map((entry) => `${entry.dmSeatId}:${entry.status}`), ["D1:approved", "D2:submitted", "D3:null"]);
+}
+
 export function runRegionalTeamReportsTests() {
+  boardAndApprovalReadTheRealTeam();
   backToAllReps();
   groupedByRegionAndManager();
   vacantSeatsKeyCard();

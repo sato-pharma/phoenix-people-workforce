@@ -45,6 +45,8 @@ Dashboards row's "Region Plans" included. `/employee-portals/plans` is the old f
   rule for Visits, District Managers' Plans and the Weekly Sheet: `regionalReportWorlds` (`server/access.ts`).
   Reading the test world alone showed every rep at zero and every district manager's week empty for the test
   account that mirrors Dr. Hany (2026-11-09). On the plans page a sent real week wins over a test one.
+  The same rule reaches his own plan board ("District manager's plan for this day", the "Also with" and "On
+  leave" notes beside each rep) and his approval view of a district manager's week; his own week stays in his world.
 - **No location column is selected.** The far-visit and place-vs-actual evidence is not the Regional Sales
   Manager's (`readsPlaceVsActual`).
 
