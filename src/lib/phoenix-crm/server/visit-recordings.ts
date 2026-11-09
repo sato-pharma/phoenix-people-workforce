@@ -256,7 +256,8 @@ export async function signVisitRecording(viewer: PhoenixCrmViewer, rawVisitId: u
   if (!/^[0-9a-f-]{36}$/.test(visitId)) throw validationError("Open the visit again.");
   const row = await recordingOfVisit(visitId);
   const seat = row ? seatOf(viewer, row.seat_id) : null;
-  const sameWorld = row ? row.is_test === viewer.isTestPersona : false;
+  // A test account hears the real visits it now reads (owner, 2026-11-09) and its own test ones.
+  const sameWorld = row ? row.is_test === viewer.isTestPersona || (viewer.isTestPersona && row.is_test !== true) : false;
   if (!row || !seat || !sameWorld || !hearsVisitRecording(viewer, seat)) {
     throw notFoundError("This visit has no recording to play.");
   }

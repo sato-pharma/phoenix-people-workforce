@@ -84,21 +84,21 @@ import { seatOccupants } from "@/lib/phoenix-crm/scope";
 import {
   assertCanReturnPlan,
   assertReviewer,
+  canEnterMissedRecords,
   canOverrideDecision,
   canReturnTerritoryPlan,
-  canEnterMissedRecords,
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
-  testReadSeats,
-  territoryForRead,
+  readWorldFor,
   territoryForRepWrite,
-  worldFor,
+  territoryForView,
+  testReadSeats,
   type PhoenixCrmViewer,
   type TestWorldRead,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { ensureReferenceCustomersRecently, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomersForView, loadMonthVisitCounts, loadPlannerReferences, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities, type PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
@@ -537,7 +537,7 @@ export async function loadMonthlyPlanner(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; test: unknown; month: unknown },
 ): Promise<MonthlyPlannerView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
   // ONE instant for the whole render, so the month and every week on it agree about the deadline. Read
   // twice, a request that crosses 23:55 would show one week overdue and the next not.
@@ -565,7 +565,7 @@ export async function loadMonthlyPlanner(
   // The mint runs at most once per seat in five minutes (2026-10-23, every page change under 1 second;
   // ensureReferenceCustomersRecently in list.ts): inside that window the customer list starts at once,
   // and the first open still mints before it reads.
-  const ensured = ensureReferenceCustomersRecently(seat, isTest);
+  const ensured = ensureReferenceCustomersForView(viewer, seat, isTest);
   const planPartsRead = (async () => {
     // TWO reads, not four (2 Nov 2026, the speed root cause, Stage 2 — each request is ~450 ms at
     // Supabase's edge): the month's own header rides in the plannable months' read, and the leading week
@@ -1071,7 +1071,7 @@ export async function loadMonthlyPlanReviews(
   raw: { test: unknown; month: unknown },
   read?: TestWorldRead,
 ): Promise<MonthlyReviewView> {
-  const isTest = worldFor(viewer, raw.test, read);
+  const isTest = readWorldFor(viewer, raw.test, read);
   const months = plannableMonths(viewer.cairoToday);
   const monthStart = resolveMonth(raw.month, months);
 

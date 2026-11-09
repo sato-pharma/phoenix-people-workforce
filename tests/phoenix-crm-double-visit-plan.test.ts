@@ -385,7 +385,7 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     // A test account works as the district manager it mirrors — in the test world, whatever the screen sent.
     assert.equal(testModeFor(testDm, false), true, "a test account is in the test world, always");
     assert.deepEqual(doubleVisitPlanReach(testDm, true), { mode: "own", canWrite: true }, "it plans as the district manager it mirrors");
-    assert.equal(doubleVisitPlanReach(testDm, false), null, "and never in the real world");
+    assert.deepEqual(doubleVisitPlanReach(testDm, false), { mode: "own", canWrite: false }, "and reads the real plan of the person it mirrors, writing none of it (owner, 2026-11-09)");
     assert.equal(assertDoubleVisitPlanWriter(testDm, true, null), "B-12", "his own plan, in the test world");
     refused(() => assertDoubleVisitPlanWriter(testDm, true, "B-76"), 403, /their own/, "never another district manager's");
   }
@@ -524,7 +524,7 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     assert.ok(doneReader.includes("countsAsManagersDoubleVisit(visit, manager)"), "and the manager report's own rule decides which visits are his");
     const planReader = service.slice(service.indexOf("async function loadPlanRows"), service.indexOf("async function loadDoneKeys"));
     assert.ok(planReader.includes('.eq("is_test", isTest)'), "the plan is read in one world");
-    assert.match(service, /export async function loadDoubleVisitPlan[\s\S]*?const isTest = testModeFor\(viewer, raw\.test\);\s+const reader = resolveDoubleVisitPlanReader\(/, "a read is gated before anything is loaded");
+    assert.match(service, /export async function loadDoubleVisitPlan[\s\S]*?const isTest = readWorldFor\(viewer, raw\.test\);\s+const reader = resolveDoubleVisitPlanReader\(/, "a read is gated before anything is loaded");
     assert.match(
       service,
       /export async function saveDoubleVisitSlot[\s\S]*?const isTest = testModeFor\(viewer, body\.test\);\s+const managerHrId = assertDoubleVisitPlanWriter\(viewer, isTest, body\.manager\);/,

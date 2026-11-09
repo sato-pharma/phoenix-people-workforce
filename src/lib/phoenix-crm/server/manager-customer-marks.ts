@@ -35,7 +35,7 @@ import {
 } from "@/lib/phoenix-crm/manager-customer-marks-rules";
 import { countsAsPlannersVisitWithRep } from "@/lib/phoenix-crm/manager-plan-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
-import { testModeFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readWorldFor, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadManagerCustomers } from "@/lib/phoenix-crm/server/manager-customers";
 import { assertManagerPlanWriter } from "@/lib/phoenix-crm/server/manager-plan-reach";
@@ -241,7 +241,7 @@ export async function loadManagerCustomerMarks(
   raw: { seats: unknown; own: unknown; date: unknown; test: unknown },
 ): Promise<CustomerInsightView> {
   const writer = assertManagerPlanWriter(viewer);
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const seatIds = parseSeatList(raw.seats);
   const day = isoDay(raw.date, viewer.cairoToday);
   const reach = await managerWriterReach(viewer, writer);

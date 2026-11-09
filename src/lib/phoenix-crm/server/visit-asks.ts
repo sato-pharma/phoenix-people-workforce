@@ -76,9 +76,10 @@ import {
 import {
   canWriteAsRep,
   readTestFlag,
+  readWorldFor,
   territoryForRead,
   territoryForRepWrite,
-  testModeFor,
+  territoryForView,
   testReadSeats,
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
@@ -250,7 +251,9 @@ export function visitAskInboxReach(viewer: PhoenixCrmViewer, isTest: boolean): V
   if (viewer.isSfeManager && !viewer.isTestPersona) return isTest ? null : { mode: "all", canAnswer: false };
   const reachable = viewer.managerSeats.length > 0 || isVisitAskAskableRole(viewer.role);
   if (!reachable) return null;
-  // A test account is in the test world only; a real person in the real world only.
+  // A test account READS the real asks of the person it mirrors (owner, 2026-11-09, "Real data
+  // everywhere") and answers none of them; it answers in the test world. A real person is never there.
+  if (viewer.isTestPersona && !isTest) return { mode: "own", canAnswer: false };
   if (viewer.isTestPersona !== isTest) return null;
   return { mode: "own", canAnswer: true };
 }
@@ -403,7 +406,7 @@ export async function loadVisitAskCustomerView(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; customerId: unknown; test: unknown },
 ): Promise<VisitAskCustomerView> {
-  const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
+  const { seat, isTest } = territoryForView(viewer, raw.seatId, readTestFlag(raw.test));
   const customerId = typeof raw.customerId === "string" ? raw.customerId.trim().toLowerCase() : "";
   if (!isUuid(customerId)) throw validationError("Choose a customer.");
   const customer = await loadAskCustomer(seat.seatId, customerId, isTest);
@@ -780,7 +783,7 @@ async function loadScopeAskRows(seatIds: ReadonlyArray<string> | null, isTest: b
 
 /** GET: the asks the viewer answers or reads — the district manager's "Asked by your reps", a product manager's "Visit asks". */
 export async function loadVisitAskInbox(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<VisitAskInboxView> {
-  const isTest = testModeFor(viewer, raw.test);
+  const isTest = readWorldFor(viewer, raw.test);
   const reach = visitAskInboxReach(viewer, isTest);
   if (!reach) throw forbiddenError("Visit asks are for the managers and product managers they are addressed to, SFE and the Super Admin.");
   const today = viewer.cairoToday;

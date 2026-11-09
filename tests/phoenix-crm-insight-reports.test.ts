@@ -857,7 +857,7 @@ function runTimelineTests(): void {
   }
   assert.equal(TIMELINE_VISITS_MAX, 100);
   const loader = source("src/lib/phoenix-crm/server/customer-timeline.ts");
-  assert.match(loader, /territoryForRead\(viewer, raw\.seatId, readTestFlag\(raw\.test\)\)/, "read through the list's own seat gate");
+  assert.match(loader, /territoryForView\(viewer, raw\.seatId, readTestFlag\(raw\.test\)\)/, "read through the list's own seat scope, in the real world (a test account included, 2026-11-09)");
   assert.equal([...loader.matchAll(/\.select\(/g)].length, 2, "two reads: the customer and his visits");
   assert.match(loader, /\.from\("phoenix_crm_visits"\)\s*\.select\(TIMELINE_VISIT_COLUMNS\)/);
   // 2026-10-16 performance audit: asked for together, and the customer check still decides first.
