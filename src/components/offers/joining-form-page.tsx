@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   AR_EDUCATION,
@@ -595,6 +595,11 @@ function Field({
  * ticks while empty and the photo itself once chosen. The whole tile is the file input's label, so a
  * tap anywhere opens the phone's camera or gallery. `portrait` draws the optional photo's tile instead:
  * a 3:4 frame with a head-and-shoulders mark, and a tag beside its label.
+ *
+ * When the phone's chooser closes with nothing chosen, the tile says so and offers the camera on its
+ * own input. Chrome on Android refuses the gallery when it has no Photos permission and only flashes
+ * "Unable to select media because permissions were denied" for a few seconds — a candidate who then
+ * sees an empty tile has no way forward, and the national ID photos are required.
  */
 function IdPhotoTile({
   busy,
@@ -617,6 +622,23 @@ function IdPhotoTile({
 }) {
   const { t } = useCopy();
   const id = `jf-${field}`;
+  const chooser = useRef<HTMLInputElement>(null);
+  const [stalled, setStalled] = useState(false);
+  // Chrome fires `cancel` on a file input whenever its chooser closes with nothing chosen — the
+  // candidate backing out, or the phone refusing the gallery. React does not bind it on an input.
+  useEffect(() => {
+    const input = chooser.current;
+    if (!input) return;
+    const onCancel = () => setStalled(true);
+    input.addEventListener("cancel", onCancel);
+    return () => input.removeEventListener("cancel", onCancel);
+  }, []);
+  const take = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    setStalled(false);
+    if (file) onPick(file);
+  };
   return (
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
@@ -668,15 +690,24 @@ function IdPhotoTile({
           aria-label={label}
           className="sr-only"
           id={id}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) onPick(file);
-          }}
+          onChange={take}
+          ref={chooser}
           type="file"
         />
       </label>
       <Message error={error} id={id} />
+      {stalled && !photo && !busy ? (
+        <div className="jf-no-print mt-2 space-y-3 border border-[#cdd6dc] bg-white p-3" role="status">
+          <p className="text-[13px] leading-snug text-[#69757e]">{t.photos.blocked}</p>
+          <label
+            className="inline-flex min-h-[44px] cursor-pointer items-center border border-[#0879b8] px-4 text-[13px] font-bold leading-none text-[#0879b8] transition-colors hover:bg-[#0879b8] hover:text-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#111820]"
+            htmlFor={`${id}-camera`}
+          >
+            {t.photos.camera}
+            <input accept="image/*" capture={portrait ? "user" : "environment"} className="sr-only" id={`${id}-camera`} onChange={take} type="file" />
+          </label>
+        </div>
+      ) : null}
     </div>
   );
 }
