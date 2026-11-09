@@ -68,6 +68,7 @@ import {
   lineScopeIncludesEmployee,
   normalizeRegionLabel,
   isWithinManagerHierarchy,
+  regionLabelsWithinManagerHierarchy,
   regionsWithinManagerHierarchy,
   reportsToManagerSeat,
   sameWorkforceLine,
@@ -2319,7 +2320,7 @@ export const getEmployeePortalShellData = cache(async (access: AccessContext): P
       photoUrl,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
-      territory: employee.regionName ?? employee.areaName,
+      territory: portalTerritoryLabel(employee, directory.employees, currentUser.role),
     },
     hrContract: {
       contractRenewalDate: employmentJourney.contractRenewalDate,
@@ -2431,7 +2432,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
         resolveDirectManagerName(employee.hrId),
         uploadedEmployeePhotoUrl(employee.hrId),
       ]);
-      return { employee, manager, photoUrl };
+      return { employee, manager, photoUrl, territory: portalTerritoryLabel(employee, directory.employees, currentUser.role) };
     })(),
     currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
     currentHrId ? fetchEmployeeSalaryStructure(currentHrId) : Promise.resolve(null),
@@ -2537,7 +2538,7 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       photoUrl: identity.photoUrl,
       roleLabel: employee.jobTitle || employee.positionTitle || currentUser.role || "Employee",
       status: employee.employmentStatus ?? "active",
-      territory: employee.regionName ?? employee.areaName,
+      territory: identity.territory,
     },
     orgStructure: null,
     workforce: {
@@ -2771,6 +2772,28 @@ function serviceDurationText(days: number) {
 
 function isActiveDirectoryEmployee(employee: Pick<EmployeeDirectoryRow, "employmentStatus">) {
   return classifyEmployeeNode(employee).eligible_for_headcount;
+}
+
+/**
+ * The territory a portal header prints. A Regional Manager's is every region his active team works
+ * in ("Alex-BHR, Delta (1), Delta (2)") — his own region_name holds only one of them, so his header
+ * read "Alex-BHR" alone (owner, 2026-11-09). Everyone else keeps their own region, then area.
+ */
+function portalTerritoryLabel(
+  employee: EmployeeDirectoryRow,
+  directoryEmployees: readonly EmployeeDirectoryRow[],
+  role: string | null | undefined,
+): string | null {
+  const ownLabel = employee.regionName ?? employee.areaName;
+  if (normalizeRole(role) !== "Regional Manager") return ownLabel;
+  const viewer = normalizeHrIdForAccess(employee.hrId);
+  if (!viewer) return ownLabel;
+  const labels = regionLabelsWithinManagerHierarchy(
+    directoryEmployees.filter(isActiveDirectoryEmployee),
+    viewer,
+    normalizeHrIdForAccess,
+  );
+  return labels.length > 0 ? labels.join(", ") : ownLabel;
 }
 
 export function isMedicalRepDirectoryEmployee(
@@ -4158,7 +4181,7 @@ export async function getMedicalRepPortalData(
       manager: (await resolveDirectManagerName(employee.hrId)) ?? employee.managerName,
       roleLabel: employee.jobTitle || employee.positionTitle || "Medical Representative",
       status: employee.employmentStatus ?? "active",
-      territory: employee.regionName ?? employee.areaName,
+      territory: portalTerritoryLabel(employee, directory.employees, currentUser.role),
     },
     orgStructure,
     workforce,

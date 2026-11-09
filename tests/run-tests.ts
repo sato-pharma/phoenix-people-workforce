@@ -1025,6 +1025,7 @@ import { runEmployeeImportPersonalFuelAllowanceTests } from "./employee-import-p
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
+import { runRegionalManagerTerritoryLabelTests } from "./regional-manager-territory-label.test.ts";
 import { runPerformanceReconciliationTests } from "./performance-reconciliation.test.ts";
 import { runHrIdAliasNormalizationTests } from "./hrid-alias-normalization.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
@@ -5083,6 +5084,7 @@ await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("HR_ID alias normalization (legacy AAA -> AA)", runHrIdAliasNormalizationTests);
 await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityTests);
+await runTest("regional manager territory label (every region under him)", runRegionalManagerTerritoryLabelTests);
 await runTest("performance page reconciliation (header foots to leaderboard + unattributed slice)", runPerformanceReconciliationTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
