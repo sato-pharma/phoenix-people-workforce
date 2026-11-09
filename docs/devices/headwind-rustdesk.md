@@ -1096,6 +1096,13 @@ Do **PHX-TAB-0002 first, alone**, and only move the rest once every step has bee
    already on Rep tablets**, and the key is in the address bar. `create=1` is what lets the tablet
    **create its own row** on configuration 3, so nothing has to be pre-created; leave it off and the row
    must already exist. Change only the number at the end for each tablet.
+
+   🔴 **Since 9 Nov 2026 each set of rules has its OWN enrolment code** — Rep tablets (3), Rep tablets —
+   Anti Infective (4) and Rep tablets — Pedia (5) each hold one row in `headwind_enrollment_template`
+   (migration `20261109030405`), and the tablet takes the rules its own code names. A tablet for a line
+   rep is enrolled from that line's card, never from the shared Rep tablets code. Phoenix refuses a code
+   whose server or download is not `https://`, that carries a tablet number of its own, or whose download
+   does not answer 200.
 5. The Headwind agent installs itself as **device owner**, names itself from the QR, takes configuration
    3 and grants its own permissions. **RustDesk then installs and launches itself**, and again at every
    boot. Nothing is pushed by hand.
@@ -1978,7 +1985,7 @@ auto-register went with its code on 2026-10-23.
   build.** The console's two-factor form is hard-disabled upstream (`ng-if="false"`), so nothing can
   be enabled from the UI, and forcing it through the raw endpoints would lock him out with no
   recovery. The console's second factor is the Cloudflare Access application below. §4.7.
-- Set a **long config-3 agent password** (today `12345678`; its MD5 is what the public config leaks).
+- ~~Set a long config-3 agent password~~ — DONE 23 Oct 2026, set by the owner in the console (15 characters, not the factory value). Claude never sets or prints it.
 - Create the **Access application** on `mdm-console` and its **service token** for Phoenix, and copy the
   three values §8.10 step 3 names (the AUD tag, the token's Client ID and Client Secret).
 - **For the factory-reset lock (§8.8):** create the Google account **it.satopharma@gmail.com** (the

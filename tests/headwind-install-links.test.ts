@@ -383,6 +383,19 @@ export async function uploadReachesEveryRepSetWithOneAuditRowEach() {
   );
 }
 
+export async function anUpgradeTheServerAnswersWithAnotherVersionIsSaidNotRefused() {
+  // Registering a version of a package the server already holds answers with that package's row, whose
+  // `version` is the newest the server keeps. That is the ordinary upgrade — it must still reach the
+  // rules, and the reply names the version the tablets will actually install.
+  const stub = uploadServer({
+    "PUT /rest/private/applications/android": ok({ id: 90, pkg: "com.satopharma.pedia", version: "1.3.3" }),
+  });
+  const { audit } = auditLog();
+  const result = await uploadHeadwindApp({ file: apkFile(), rules: [5] }, "B-10", stub.fetch, ENV, audit);
+  assert.equal(stub.api("POST", "/rest/private/applications/configurations").length, 1, "🔴 an upgrade whose answer names another version is still linked, never refused");
+  assert.match(result.message, /newest com.satopharma.pedia is 1.3.3, not the uploaded 1.3.4/, "and the reply says which version the tablets install");
+}
+
 export async function uploadAuditsTheRegistrationEvenWhenTheHttpsStepRefuses() {
   const stub = uploadServer({ "GET /rest/private/applications/90/versions": ok({ status: "busy" }) });
   const { audit, rows } = auditLog();
@@ -426,7 +439,7 @@ export async function uploadRefusesWhatCannotWork() {
 
   for (const [reply, because] of [
     [{ id: 90, pkg: "com.other.app", version: "1.3.4" }, "another package"],
-    [{ id: 90, pkg: "com.satopharma.pedia", version: "1.0.0" }, "another version"],
+    // Another VERSION is said, not refused — `anUpgradeTheServerAnswersWithAnotherVersionIsSaidNotRefused`.
   ] as const) {
     const mismatch = uploadServer({ "PUT /rest/private/applications/android": ok(reply) });
     const { audit, rows } = auditLog();
@@ -615,6 +628,7 @@ export async function runHeadwindInstallLinksTests() {
   await versionLinksStepRefusesWhenItDidNothing();
   await uploadReachesEveryRepSetWithOneAuditRowEach();
   await uploadAuditsTheRegistrationEvenWhenTheHttpsStepRefuses();
+  await anUpgradeTheServerAnswersWithAnotherVersionIsSaidNotRefused();
   await uploadRefusesWhatCannotWork();
   await linkRefusesADeadLinkAndHidesProperly();
   await linkToEveryRepSetSaysWhichItMissed();

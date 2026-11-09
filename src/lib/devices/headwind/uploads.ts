@@ -294,11 +294,15 @@ export async function uploadHeadwindApp(
       `The file is ${readPackage}, but the tablet server registered it as ${packageName}, so it was put on no tablet rules. Check the app list in the Headwind console before sending it again.`,
     );
   }
-  if (version && readVersion && version !== readVersion) {
-    throw new HeadwindUploadError(
-      `The file is ${readPackage} ${readVersion}, but the tablet server answered with version ${version}, so it was put on no tablet rules — the tablets could be given a different version from the one uploaded. Check the app's versions in the Headwind console.`,
-    );
-  }
+  // 🔴 A DIFFERENT VERSION IN THE ANSWER IS SAID, NEVER REFUSED (9 Nov 2026). Registering a version of a
+  // package the server already holds answers with that package's row, and its `version` is the newest the
+  // server keeps — what a linked tablet installs, because a set of rules links the APP, not one version.
+  // Refusing here would refuse the ordinary upgrade whenever the row answers before it moved on; the
+  // tablets' version is named in the message instead, so nobody believes the upload's version went out.
+  const versionNote =
+    version && readVersion && version !== readVersion
+      ? ` The tablet server's newest ${readPackage} is ${version}, not the uploaded ${readVersion} — tablets on these rules install ${version}.`
+      : "";
   if (applicationId === null) {
     if (rules.length) {
       throw new HeadwindUploadError(
@@ -337,8 +341,8 @@ export async function uploadHeadwindApp(
     applicationId,
     installed: reached.length > 0,
     message: reached.length
-      ? `${label} is on the server and in ${reached.join(", ")}. Every tablet on those rules installs it at its next check-in.`
-      : `${label} is on the server. 🔴 It is on NO tablet yet — put it in a set of tablet rules to install it. Uploading alone reaches nobody.`,
+      ? `${label} is on the server and in ${reached.join(", ")}. Every tablet on those rules installs it at its next check-in.${versionNote}`
+      : `${label} is on the server. 🔴 It is on NO tablet yet — put it in a set of tablet rules to install it. Uploading alone reaches nobody.${versionNote}`,
     packageName,
     rules: reached,
     version,

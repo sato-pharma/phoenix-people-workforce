@@ -1835,10 +1835,20 @@ async function runConsoleUserTests() {
       { id: 7 },
       { login: "noid" },
       { enabled: false, id: 8, login: "off" },
+      { editable: false, id: 9, login: "locked" },
+      { id: 10, login: "phoenix-bridge" },
     ],
     roles,
+    { HEADWIND_MDM_LOGIN: " phoenix-bridge " } as unknown as NodeJS.ProcessEnv,
   );
-  assert.deepEqual(users.map((user) => user.login), ["amir", "off", "zoe"], "a row with no login or no id is not a person");
+  assert.deepEqual(users.map((user) => user.login), ["amir", "locked", "off", "phoenix-bridge", "zoe"], "a row with no login or no id is not a person");
+  assert.deepEqual(
+    users.map((user) => user.removable),
+    [true, false, true, false, true],
+    "🔴 the login Phoenix signs in with, and one the server marks not editable, are never offered a Remove that the server-side check would refuse",
+  );
+  users.splice(1, 1);
+  users.splice(2, 1);
   assert.equal(users[2].roleName, "Admin", "a role id is resolved to the name a person reads");
   assert.equal(users[0].roleName, null, "🔴 and a role the server did not list reads as unknown, never as the first one in the list");
   assert.equal(users[2].email, null, "a blank email is absent, not an empty string");

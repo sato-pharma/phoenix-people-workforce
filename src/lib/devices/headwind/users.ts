@@ -62,6 +62,11 @@ export type HeadwindConsoleUser = {
   roleName: string | null;
   /** The server's own flag. A user kept but switched off reads as false. */
   enabled: boolean;
+  /**
+   * False for the login Phoenix itself signs in with (or one the server marks not editable) — the
+   * same test `removeHeadwindConsoleUser` refuses on, so the page never offers a Remove that fails.
+   */
+  removable: boolean;
 };
 
 export type HeadwindConsoleRole = { id: number; name: string };
@@ -79,7 +84,12 @@ function roleOf(row: Record<string, unknown>): { id: number | null; name: string
   return { id, name: asText(role ? role.name : null) };
 }
 
-export function consoleUsersFrom(raw: unknown, roles: readonly HeadwindConsoleRole[]): HeadwindConsoleUser[] {
+export function consoleUsersFrom(
+  raw: unknown,
+  roles: readonly HeadwindConsoleRole[],
+  env: NodeJS.ProcessEnv = process.env,
+): HeadwindConsoleUser[] {
+  const bridgeLogin = env.HEADWIND_MDM_LOGIN?.trim() || null;
   const rows = Array.isArray(raw) ? raw : [];
   const users: HeadwindConsoleUser[] = [];
   for (const row of rows as Array<Record<string, unknown>>) {
@@ -94,6 +104,7 @@ export function consoleUsersFrom(raw: unknown, roles: readonly HeadwindConsoleRo
       id: row.id,
       login,
       name: asText(row.name),
+      removable: row.editable !== false && login !== bridgeLogin,
       roleId: role.id,
       // The server's list of roles names it; a role id it did not list stays unknown, never guessed.
       roleName: roles.find((entry) => entry.id === role.id)?.name ?? null,
@@ -135,7 +146,7 @@ export async function getHeadwindConsoleUsers(
       "on tablets and disk space. 🔴 Anyone here can reach every tablet, whatever their Phoenix role " +
       "says, because this is a separate system.",
     roles,
-    users: consoleUsersFrom(rawUsers, roles),
+    users: consoleUsersFrom(rawUsers, roles, env),
   };
 }
 
