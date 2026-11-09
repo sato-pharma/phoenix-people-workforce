@@ -1742,6 +1742,7 @@ function runEnrollmentTests() {
     agentPackage: "com.hmdm.launcher",
     configurationName: "Reps",
     downloadHost: "mdm.satopharma.com",
+    downloadPath: "/files/hmdm.apk",
     hasChecksum: true,
     joinsWifi: false,
     serverHost: "mdm-console.satopharma.com",
@@ -1787,7 +1788,7 @@ function runEnrollmentTests() {
   assert.doesNotMatch(enrollment, /newValues: \{[^}]*payload/, "the payload is never written into an audit row");
   assert.doesNotMatch(enrollment, /console\.(log|info|warn|error|debug)/, "and never logged");
   assert.match(enrollment, /revealed: true/, "looking at it is itself audited");
-  assert.match(enrollment, /getHeadwindEnrollmentSummary/, "the page load reads facts about the code, not the code");
+  assert.match(enrollment, /getHeadwindEnrollmentState/, "the page load reads facts about the codes, not the codes");
 
   const route = stripComments(source("app/api/devices/headwind/enrollment/route.ts"));
   assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only");
@@ -2942,7 +2943,7 @@ function runConsoleUiTests() {
     assert.doesNotMatch(text, /localStorage|sessionStorage|document\.cookie/, `${name} stores nothing in the browser`);
     assert.doesNotMatch(text, /console\.(log|info|warn|error|debug)/, `${name} logs nothing`);
   }
-  assert.match(enrollment, /requestJson<RevealedTemplate>\("\/api\/devices\/headwind\/enrollment", \{ show: true \}\)/, "the code comes back only when somebody asks for it");
+  assert.match(enrollment, /requestJson<RevealedTemplate>\(ENDPOINT, \{ configurationId, show: true \}\)/, "the code comes back only when somebody asks for it, one set of rules at a time");
   assert.doesNotMatch(enrollment, /enrollment\?.*payload|payload=\$\{/, "and never through a URL, which is logged by everything it passes");
   assert.match(settings, /autoComplete="new-password"/, "a new console password is not offered from a browser's saved logins");
   assert.match(settings, /\.\.\.NO_USER_PENDING,/, "and the whole form is reset on success, which is what drops it");
