@@ -4155,7 +4155,10 @@ async function runRecordingUploadDoorTests() {
     form.set("recordingId", formRecordingId);
     form.set("token", token);
     form.set("capturedSeconds", "42");
-    form.set("file", new File([new Uint8Array(2048)], "screen.mp4", { type: "video/mp4" }));
+    // A real mp4 opens with its `ftyp` box; the door refuses bytes that are not the video they claim to be.
+    const video = new Uint8Array(2048);
+    video.set([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]);
+    form.set("file", new File([video], "screen.mp4", { type: "video/mp4" }));
     const encoded = new Response(form);
     const bytes = new Uint8Array(await encoded.arrayBuffer());
     return new Request(recordingUploadUrl("https://phoenix.test", recordingId), {

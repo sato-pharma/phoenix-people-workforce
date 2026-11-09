@@ -719,6 +719,21 @@ function RecordingsPanel({ deviceNumber }: { deviceNumber: string }) {
             {own.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
             Record this screen
           </button>
+          {/*
+            🔴 THE LIST IS READ ONCE, SO IT NEEDS A WAY TO BE READ AGAIN (audit, 9 Nov 2026). The notice
+            after Record says the file "appears below once the tablet uploads it", and nothing ever
+            re-read the list: the capture landed and the row kept saying "Recording…" until the whole
+            page was reloaded.
+          */}
+          <button
+            className={PANEL_ACTION}
+            disabled={own.busy || recordings.loading}
+            onClick={() => setState({ ...own, round: own.round + 1 })}
+            type="button"
+          >
+            {recordings.loading ? <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> : null}
+            Check for new recordings
+          </button>
         </div>
 
         {own.notice ? <Done message={own.notice} /> : null}
@@ -749,6 +764,12 @@ function RecordingsPanel({ deviceNumber }: { deviceNumber: string }) {
                       preload="metadata"
                       src={recording.playbackUrl}
                     />
+                  ) : null}
+                  {/* A ready file whose playback link could not be made used to show nothing at all — read as no file. */}
+                  {recording.status === "ready" && !recording.playbackUrl ? (
+                    <p className="break-words text-[10px] font-semibold text-rose-600">
+                      The file is filed, but a playback link could not be made just now. Press Check for new recordings to try again.
+                    </p>
                   ) : null}
                   {recording.status === "failed" && recording.error ? (
                     <p className="break-words text-[10px] font-semibold text-rose-600">{recording.error}</p>
@@ -1049,6 +1070,8 @@ function RemoteScreenIdPanel({
           <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
           <input
             className={cn(phxFieldClassName, "mt-1")}
+            // Held while it saves: the saved value replaces the box, so a keystroke typed meanwhile was lost.
+            disabled={own.busy}
             inputMode="numeric"
             onChange={(event) => setState({ ...own, failure: null, notice: null, value: event.target.value })}
             placeholder="123 456 789"
