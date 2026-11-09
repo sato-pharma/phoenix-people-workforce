@@ -66,6 +66,11 @@ half-day as a problem. The words are `chainVisitLine`: "Chain visit — <name> (
   only when `writer.kind === "rsm"`; a failed read is logged and the lines are left out), and under each half of a
   district manager's week in the approvals view (`halfNotes`, for a Regional Sales Manager viewer only).
 - On District Managers' Plans a week the district manager has not sent reads "Not sent yet"; the draft is not shown.
+- **District Managers' Plans, the premium pass (9 November 2026)** added the week's position, a filter, the Excel
+  download (`/api/crm/district-manager-plans/export`), four tiles, the status and half-day bars, the week at a
+  glance, the weeks to look at, the reps no manager is with, the chain visits in one neutral list, and each
+  district manager's team. A sent week whose Thursday passed undecided now reads "Ended before it was approved",
+  never "Waiting for approval". Account: `docs/district-manager-plans-report.md`.
 
 ## The district manager's own day on his board
 

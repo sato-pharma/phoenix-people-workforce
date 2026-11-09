@@ -1,20 +1,23 @@
 import { forbiddenError } from "@/lib/http/api-errors";
-import { addDaysIso } from "@/lib/crm/dates";
+import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
 import {
   isManagerPlanSent,
+  isManagerWeekEndedUndecided,
   managerAdminActivityLabel,
   managerPlanStatusLabel,
   managerPlannerTitle,
   type ManagerHalf,
   type ManagerPlannerKind,
+  type ManagerPlanStatus,
+  type ManagerSlotKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
-import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText, managerPlanHref } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, type ManagerSlotRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
 import { loadRepWeeks, type RepWeekState } from "@/lib/phoenix-crm/server/manager-plans";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -98,8 +101,42 @@ const REP_DAY_LABEL: Record<RepWeekState, string> = {
   no_plan: "No plan",
 };
 
+/**
+ * One customer ticked for a half-day, as the list holds it now (owner, 2026-11-08, Dr. Hany Saad's sixth need: "know
+ * who he goes with and whom he will visit"). The grade is the list's A, B or C, or null when it has none.
+ */
+export type DistrictPlanCustomer = {
+  name: string;
+  grade: "A" | "B" | "C" | null;
+  speciality: string | null;
+  /** The customer has since left the rep's list or come off the manager's own. */
+  gone: boolean;
+  /** From the manager's own list, not a rep's. */
+  ownList: boolean;
+};
+
+/** "A", "B" or "C" from whatever the list holds ("a", " B "); anything else is no grade. */
+export function districtCustomerGrade(value: string | null | undefined): DistrictPlanCustomer["grade"] {
+  const grade = (value ?? "").trim().toUpperCase();
+  return grade === "A" || grade === "B" || grade === "C" ? grade : null;
+}
+
 export type DistrictPlanHalf = {
   half: ManagerHalf;
+  /** The customers ticked, each with its grade and speciality — the same customers as `customers`, in the same order. */
+  customerDetails: DistrictPlanCustomer[];
+  /** What the half-day is — with a rep, admin, a single visit, with his own manager. The panels count by it. */
+  kind: ManagerSlotKind;
+  /** The rep seat he is with — with a rep only. */
+  repSeatId: string | null;
+  /** The area a single visit or an area half-day names. */
+  areaName: string | null;
+  /** The customers ticked for the half that have since left the list or come off his own — named, and counted here. */
+  goneCustomers: number;
+  /** The rep is on approved leave that day (never set when leave could not be read). */
+  repOnLeave: boolean;
+  /** The rep's own week this week — with a rep only. */
+  repWeekState: RepWeekState | null;
   /** "With Ahmed Ali", "Training", "Single visit · Nasr City" — the words every manager-plan screen prints. */
   text: string;
   repName: string | null;
@@ -111,7 +148,33 @@ export type DistrictPlanHalf = {
   chainVisits: string[];
 };
 
-export type DistrictPlanDay = { date: string; dateText: string; halves: DistrictPlanHalf[] };
+export type DistrictPlanDay = {
+  date: string;
+  dateText: string;
+  halves: DistrictPlanHalf[];
+  /**
+   * The district manager himself is on approved leave this day (owner, 2026-11-09: "if vacation put it") — a day he
+   * planned nothing on then reads "On leave", never "Nothing planned".
+   */
+  managerOnLeave: boolean;
+};
+
+/** One rep seat in a district manager's team, as this week finds it (owner, 2026-11-09: the premium pass). */
+export type DistrictTeamRep = {
+  seatId: string;
+  /** The person in the seat, or the territory when it is vacant. */
+  name: string;
+  territory: string;
+  vacant: boolean;
+  /** The rep's own week: sent, not sent, the old CRM's, or no plan. */
+  weekState: RepWeekState;
+  /** The days of this week the rep is on approved leave — empty when leave could not be read. */
+  leaveDays: string[];
+  /** Every manager with a sent half-day on this rep this week, the district manager included — each person once. */
+  managers: string[];
+  /** How many sent half-days any manager has booked with this rep this week — two managers on one half count twice. */
+  managerHalves: number;
+};
 
 export type DistrictManagerWeek = {
   /** The organogram region — the heading names it with the manager (owner, 2026-11-09). */
@@ -122,9 +185,32 @@ export type DistrictManagerWeek = {
   managerHrId: string | null;
   managerName: string;
   districtName: string;
-  /** "Approved", "Waiting for approval", or "Not sent yet" for a draft, a returned week or none at all. */
+  /**
+   * "Approved", "Waiting for approval", "Ended before it was approved" for a sent week its Thursday passed undecided,
+   * or "Not sent yet" for a draft, a returned week or none at all.
+   */
   statusText: string;
   sent: boolean;
+  /** His district manager seat. */
+  districtSeatId: string;
+  /** The week's own plan, when there is one — sent or not. */
+  planId: string | null;
+  /** Where a SENT week opens on the Approvals Hub (`managerPlanHref`); null for a week not sent, whose draft is never shown. */
+  planHref: string | null;
+  status: ManagerPlanStatus | null;
+  /** The day the week was due to be sent. */
+  dueOn: string | null;
+  submittedAt: string | null;
+  /** Sent after it was due — the database's own stamp. */
+  submittedLate: boolean;
+  /** When the last decision on it was taken. */
+  decidedAt: string | null;
+  /** A sent week nobody finished deciding before its Thursday passed (`isManagerWeekEndedUndecided`). */
+  endedUndecided: boolean;
+  /** The rep seats under his district, in territory order. */
+  reps: DistrictTeamRep[];
+  /** The days of this week he is on approved leave himself — empty when leave could not be read. */
+  managerLeaveDays: string[];
   /** Empty unless the week is sent: his draft is never shown. */
   days: DistrictPlanDay[];
 };
@@ -132,6 +218,8 @@ export type DistrictManagerWeek = {
 export type DistrictManagersPlans = {
   weekStart: string;
   weekEnd: string;
+  /** The Cairo day the report was read on — whether the week is past, running or ahead is judged from it. */
+  cairoToday: string;
   weeks: DistrictManagerWeek[];
   /** Approved leave could not be read: "On leave" is then not shown, and the page says so. */
   leaveUnread: boolean;
@@ -169,7 +257,16 @@ async function readDistrictWeeks(managerHrIds: ReadonlyArray<string>, weekStart:
   const slots = sentPlans.length ? await loadManagerSlotRows(sentPlans.map((plan) => plan.planId)) : [];
   const customers = slots.length ? await loadManagerSlotCustomers(slots.filter((slot) => slot.kind !== "admin").map((slot) => slot.slotId)) : [];
   const customersBySlot = new Map<string, string[]>();
-  for (const row of customers) customersBySlot.set(row.slotId, [...(customersBySlot.get(row.slotId) ?? []), row.name]);
+  const detailsBySlot = new Map<string, DistrictPlanCustomer[]>();
+  const goneBySlot = new Map<string, number>();
+  for (const row of customers) {
+    customersBySlot.set(row.slotId, [...(customersBySlot.get(row.slotId) ?? []), row.name]);
+    detailsBySlot.set(row.slotId, [
+      ...(detailsBySlot.get(row.slotId) ?? []),
+      { gone: row.gone, grade: districtCustomerGrade(row.grade), name: row.name, ownList: row.managerCustomerId !== null, speciality: row.speciality },
+    ]);
+    if (row.gone) goneBySlot.set(row.slotId, (goneBySlot.get(row.slotId) ?? 0) + 1);
+  }
   // A test account reads both worlds, so a manager can have a real week and a test one: the sent real week first,
   // then a sent test week, then whichever is left.
   const planOf = (managerHrId: string | null) => {
@@ -183,7 +280,7 @@ async function readDistrictWeeks(managerHrIds: ReadonlyArray<string>, weekStart:
       null
     );
   };
-  return { customersBySlot, planOf, slots };
+  return { customersBySlot, detailsBySlot, goneBySlot, planOf, slots };
 }
 
 /** One rep week per seat across the worlds read: the real week, unless it is "No plan" and a test week is there. */
@@ -206,18 +303,24 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
   if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
   const weekStart = fieldWeekStart(anyDayOfWeek);
   const weekEnd = addDaysIso(weekStart, 6);
+  const cairoToday = cairoTodayIso();
   // A test account reads the real team and its own test work beside it (regionalReportWorlds).
   const worlds = regionalReportWorlds(viewer);
   const districts = regionalDistrictSeats(viewer);
   const managerHrIds = districts.flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []));
   const repSeats = regionalTeamRepSeats(viewer);
 
-  const [{ customersBySlot, planOf, slots }, bookings, repWeeks, leave] = await Promise.all([
+  const [{ customersBySlot, detailsBySlot, goneBySlot, planOf, slots }, bookings, repWeeks, repLeave, managerLeave] = await Promise.all([
     readDistrictWeeks(managerHrIds, weekStart, worlds),
     Promise.all(worlds.map((isTest) => loadRepDayBookings({ from: weekStart, isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }))).then((parts) => parts.flat()),
     Promise.all(worlds.map((isTest) => loadRepWeeks(repSeats.map((seat) => seat.seatId), weekStart, isTest))).then(mergeRepWeeks),
     loadSeatLeaveDays(repSeats, { from: weekStart, to: weekEnd }),
+    loadSeatLeaveDays(districts, { from: weekStart, to: weekEnd }),
   ]);
+  // One flag for the page: either read failing means "On leave" is not shown this time, for anyone.
+  const leaveUnread = repLeave.unread || managerLeave.unread;
+  const leave = { days: repLeave.days, unread: leaveUnread };
+  const managerOnLeave = (seatId: string, date: string) => !leaveUnread && managerLeave.days.has(leaveDayKey(seatId, date));
 
   const repSeatById = new Map(repSeats.map((seat) => [seat.seatId, seat]));
   const names = await loadPeopleNames([
@@ -248,32 +351,77 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
       planDays.push({
         date,
         dateText: dayText(date),
+        managerOnLeave: managerOnLeave(district.seatId, date),
         halves: daySlots.map((slot): DistrictPlanHalf => {
           const repName = slot.kind === "with_rep" ? repNameOf(slot.repSeatId, slot.repHrId) : null;
           let repDay: string | null = null;
+          let repOnLeave = false;
+          let repWeekState: RepWeekState | null = null;
           const chainVisits: string[] = [];
           if (slot.kind === "with_rep" && slot.repSeatId) {
-            repDay = !leave.unread && leave.days.has(leaveDayKey(slot.repSeatId, date))
-              ? "On leave"
-              : REP_DAY_LABEL[repWeeks.get(slot.repSeatId)?.state ?? "no_plan"];
+            repOnLeave = !leave.unread && leave.days.has(leaveDayKey(slot.repSeatId, date));
+            repWeekState = repWeeks.get(slot.repSeatId)?.state ?? "no_plan";
+            repDay = repOnLeave ? "On leave" : REP_DAY_LABEL[repWeekState];
             for (const other of otherManagersOnRepDay(bookings, slot.repSeatId, date, managerHrId)) {
               chainVisits.push(chainVisitLine({ name: nameOf(names, other.managerHrId), title: managerPlannerTitle(other.plannerKind) }, repName ?? "the rep"));
             }
           }
           return {
+            areaName: slot.areaName,
             chainVisits,
+            customerDetails: detailsBySlot.get(slot.slotId) ?? [],
             customers: customersBySlot.get(slot.slotId) ?? [],
+            goneCustomers: goneBySlot.get(slot.slotId) ?? 0,
             half: slot.half,
+            kind: slot.kind,
             repDay,
             repName,
+            repOnLeave,
+            repSeatId: slot.kind === "with_rep" ? slot.repSeatId : null,
+            repWeekState,
             text: halfText(slot, repName, names),
           };
         }),
       });
     }
     const underHim = repSeats.filter((seat) => seat.path.includes(district.seatId));
+    const reps: DistrictTeamRep[] = underHim
+      .map((seat): DistrictTeamRep => {
+        const vacant = seatOccupants(seat).length === 0;
+        const managers = new Map<string, string>();
+        let managerHalves = 0;
+        for (const booking of bookings) {
+          if (booking.repSeatId !== seat.seatId) continue;
+          managerHalves += 1;
+          const key = personKey(booking.managerHrId);
+          if (key && !managers.has(key)) managers.set(key, nameOf(names, booking.managerHrId));
+        }
+        return {
+          leaveDays: leave.unread ? [] : days.filter((date) => leave.days.has(leaveDayKey(seat.seatId, date))),
+          managerHalves,
+          managers: [...managers.values()],
+          name: vacant ? territoryName(seat) : (repNameOf(seat.seatId, seat.occupantHrId ?? null) ?? territoryName(seat)),
+          seatId: seat.seatId,
+          territory: territoryName(seat),
+          vacant,
+          weekState: repWeeks.get(seat.seatId)?.state ?? "no_plan",
+        };
+      })
+      .sort((left, right) => left.territory.localeCompare(right.territory) || left.name.localeCompare(right.name));
+    const endedUndecided = Boolean(sent && plan && isManagerWeekEndedUndecided(plan.status, weekStart, cairoToday));
     return {
       days: planDays,
+      decidedAt: plan?.decidedAt ?? null,
+      districtSeatId: district.seatId,
+      dueOn: plan?.dueOn ?? null,
+      endedUndecided,
+      planHref: sent && plan ? managerPlanHref(plan.planId) : null,
+      planId: plan?.planId ?? null,
+      managerLeaveDays: days.filter((date) => managerOnLeave(district.seatId, date)),
+      reps,
+      status: plan?.status ?? null,
+      submittedAt: plan?.submittedAt ?? null,
+      submittedLate: plan?.submittedLate === true,
       districtName: territoryName(district),
       regionName: seatRegionName(district) ?? NO_REGION,
       repSeats: underHim.length,
@@ -281,12 +429,14 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
       managerHrId,
       managerName: managerHrId ? nameOf(names, managerHrId) : "Seat is vacant",
       sent,
-      statusText: sent && plan ? managerPlanStatusLabel(plan.status) : "Not sent yet",
+      // 🔴 Asked WITH the week (2026-11-09): a sent week its Thursday passed undecided reads "Ended before it was
+      // approved", never "Waiting for approval" — nobody can approve it any more (`isManagerWeekEndedUndecided`).
+      statusText: sent && plan ? managerPlanStatusLabel(plan.status, { cairoToday, weekStart }) : "Not sent yet",
     };
   });
   // Region order, as every Regional Sales Manager screen (`groupByRegionAndManager`).
   weeks.sort((left, right) => Number(left.regionName === NO_REGION) - Number(right.regionName === NO_REGION) || left.regionName.localeCompare(right.regionName));
-  return { leaveUnread: leave.unread, weekEnd, weekStart, weeks };
+  return { cairoToday, leaveUnread, weekEnd, weekStart, weeks };
 }
 
 // ── The Regional Sales Manager's approval view of a district manager's week ─────────────────────
