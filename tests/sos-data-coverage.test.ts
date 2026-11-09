@@ -347,10 +347,11 @@ export function runSosDataCoverageTests() {
     // gaps too" count behind it.
     assert.deepEqual(
       SOURCE_ONBOARDINGS.map((o) => `${o.code} ${o.from}`),
-      ["QM 2026-08"],
+      ["QM 2026-08", "EZB 2026-10"],
       "the declaration this repo ships — a new one belongs here, never inferred from first appearance",
     );
     assert.equal(sourceOnboardingFor("qm")?.from, "2026-08", "codes are compared folded");
+    assert.equal(sourceOnboardingFor("ezb")?.from, "2026-10", "El Ezaby's first book is October 2026");
     assert.equal(sourceOnboardingFor("EP-PHS"), null, "nothing else is declared");
 
     const months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"];

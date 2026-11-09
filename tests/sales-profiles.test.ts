@@ -134,6 +134,11 @@ function everyIbnSinaFeedIsWiredMonthly() {
     systemChannels.includes('normalized_distributor_name: "ibn sina-lacto"'),
     "IS-L's SYSTEM_DISTRIBUTORS row must carry the normalized name the DB row holds",
   );
+  // El Ezaby (EZB, owner 2026-11-10) is not in the owner's distributor master either.
+  assert.ok(
+    systemChannels.includes('{ distributor_code: "EZB", distributor_name: "El Ezaby", normalized_distributor_name: "el ezaby" }'),
+    "El Ezaby must stay in SYSTEM_DISTRIBUTORS — a master import plus a reset would otherwise drop it",
+  );
 
   // And the weekly registry must NOT call IS-L weeklyOnly any more: that flag means "no monthly import
   // at all", and it is what exempts a code from weeklyDistributorsHaveProfiles() above.
