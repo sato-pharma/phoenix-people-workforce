@@ -29,12 +29,14 @@ export const maxDuration = 300;
 // subtree). The admin route stays Super-Admin-only and untouched — zero blast radius on the recently
 // hardened company-wide export.
 
+// The first replace collapses every run of other characters to ONE dash, so a single-dash trim at each
+// end is exact — and, unlike `-+$`, it cannot backtrack across a long run of dashes.
 function exportFileName(label: string): string {
   const slug =
     label
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(/^-|-$/g, "")
       .slice(0, 50) || "export";
   return `crm-${slug}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 }

@@ -902,7 +902,31 @@ function templateValue(input: NotificationEmailInput, value: string) {
     ...metrics,
   };
 
-  return value.replace(/\{([^}]+)\}/g, (_match, key: string) => variables[templateToken(key)] ?? "");
+  return replaceTemplateBraces(value, (key) => variables[templateToken(key)] ?? "");
+}
+
+/**
+ * Replaces every `{key}` exactly as `value.replace(/\{([^}]+)\}/g, …)` did — a `{`, then one or more
+ * characters up to the first `}`, `{` included, so `{{a}` hands the resolver `{a` — in one forward
+ * pass. The pattern restarted at every `{` and scanned to the end each time, so a template holding a
+ * long run of `{` with no `}` was quadratic. An empty `{}` is left alone, as the pattern left it.
+ */
+export function replaceTemplateBraces(value: string, resolve: (key: string) => string): string {
+  let result = "";
+  let from = 0;
+  let open = value.indexOf("{");
+  while (open !== -1) {
+    const close = value.indexOf("}", open + 1);
+    if (close === -1) break;
+    if (close === open + 1) {
+      open = value.indexOf("{", open + 1);
+      continue;
+    }
+    result += value.slice(from, open) + resolve(value.slice(open + 1, close));
+    from = close + 1;
+    open = value.indexOf("{", from);
+  }
+  return result + value.slice(from);
 }
 
 /**

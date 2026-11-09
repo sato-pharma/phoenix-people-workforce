@@ -144,12 +144,19 @@ export function capSourceText(text: string): { text: string; truncated: boolean 
  * there rather than trusted here.
  */
 export function htmlDocumentBody(raw: string): string {
-  const whole = String(raw ?? "")
-    // A mail client runs neither, and Outlook prints an unrecognised <style> block as text. They
-    // go with their contents: stripping the tags alone would leave the stylesheet as a paragraph.
-    .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<!doctype[^>]*>/gi, "");
+  let whole = String(raw ?? "");
+  // Until nothing more comes off: one pass over `<scr<script></script>ipt>…` (or a comment split
+  // the same way) leaves a whole new one behind, joined from the pieces either side of the cut.
+  // A real file is finished in the first pass, so the second only confirms it.
+  for (let previous = ""; previous !== whole; ) {
+    previous = whole;
+    whole = whole
+      // A mail client runs neither, and Outlook prints an unrecognised <style> block as text. They
+      // go with their contents: stripping the tags alone would leave the stylesheet as a paragraph.
+      .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<!doctype[^>]*>/gi, "");
+  }
   const body = /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(whole);
   return unwrapSatoEmailFrame((body ? body[1] : whole).trim());
 }
@@ -204,12 +211,13 @@ export function htmlDocumentSubject(raw: string): string {
   const heading = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(value);
   return (title?.[1] ?? heading?.[1] ?? "")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
     .replace(/&nbsp;/gi, " ")
+    // LAST, so a title that says `&amp;lt;` reads as the text `&lt;`, never as a second decode.
+    .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
 }

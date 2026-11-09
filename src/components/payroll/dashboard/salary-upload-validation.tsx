@@ -146,7 +146,7 @@ export function SalaryUploadActions({
       </SearchableSelect>
       {hasPayrollPeriod ? (
         <Button asChild variant="secondary">
-          <a href={`/api/payroll/template?upload=1&month=${payrollMonth}&year=${payrollYear}`}>
+          <a href={`/api/payroll/template?upload=1&month=${encodeURIComponent(payrollMonth)}&year=${encodeURIComponent(payrollYear)}`}>
             <Download className="mr-2 h-4 w-4" />
             Download Upload Template
           </a>
@@ -159,7 +159,7 @@ export function SalaryUploadActions({
       )}
       {hasPayrollPeriod ? (
         <Button asChild variant="secondary">
-          <a href={`/api/payroll/template?ready=1&month=${payrollMonth}&year=${payrollYear}`}>
+          <a href={`/api/payroll/template?ready=1&month=${encodeURIComponent(payrollMonth)}&year=${encodeURIComponent(payrollYear)}`}>
             <Download className="mr-2 h-4 w-4" />
             Download Ready Payroll
           </a>

@@ -42,6 +42,8 @@
  * nothing may be recorded as cleared.
  */
 
+import { randomInt } from "node:crypto";
+
 /**
  * 🔴 FALSE until the list-and-delete controls have been READ OFF THE LIVE PAGE.
  *
@@ -211,6 +213,11 @@ export const APP_PASSWORD_CLEAR_STEP_ORDER = [
   "clearAppPasswords",
 ] as const;
 
+/** A live credential's characters come from the crypto source, never Math.random. */
+function cryptoRandom(): number {
+  return randomInt(0x1000000) / 0x1000000;
+}
+
 /**
  * A strong password for one browser session, kept by nobody.
  *
@@ -218,7 +225,7 @@ export const APP_PASSWORD_CLEAR_STEP_ORDER = [
  * deliberately NOT returned to any caller that stores things — `runAppPasswordClear` holds it in a
  * local and lets it go.
  */
-export function throwawayPassword(random: () => number = Math.random): string {
+export function throwawayPassword(random: () => number = cryptoRandom): string {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   const lowerChars = "abcdefghijkmnopqrstuvwxyz";
   const digits = "23456789";

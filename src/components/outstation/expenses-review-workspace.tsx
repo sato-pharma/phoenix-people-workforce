@@ -43,8 +43,8 @@ async function readExpensesApiPayload(response: Response) {
   } catch {
     const status = `${response.status} ${response.statusText}`.trim();
     const compactBody = text
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script[^>]*>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style[^>]*>/gi, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()

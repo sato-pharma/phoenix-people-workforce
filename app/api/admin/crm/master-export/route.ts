@@ -30,12 +30,14 @@ export const maxDuration = 300;
 // + streamCrmMasterWorkbookResponse), never held in memory all at once — the old path fetched every
 // row as JSON then styled it in a single in-memory pass, which OOM'd/timed out past ~20-50k rows.
 
+// The first replace collapses every run of other characters to ONE dash, so a single-dash trim at each
+// end is exact — and, unlike `-+$`, it cannot backtrack across a long run of dashes.
 function exportFileName(label: string): string {
   const slug =
     label
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(/^-|-$/g, "")
       .slice(0, 50) || "export";
   return `crm-${slug}-${new Date().toISOString().slice(0, 10)}.xlsx`;
 }

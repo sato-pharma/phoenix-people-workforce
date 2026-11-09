@@ -133,11 +133,12 @@ export function emailPlainText(html: string): string {
     .replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, "\n")
     .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    // LAST, so `&amp;lt;` reads as the text `&lt;`, never as a second decode.
+    .replace(/&amp;/gi, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/\n\s*\n\s*/g, "\n")
     .trim();

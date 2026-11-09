@@ -45,11 +45,23 @@ export type OutstationTicketAttachmentUploadInput = Omit<
   "employeeHrId" | "requestDraftId"
 >;
 
+// Strips leading and trailing dashes by index, not `/^-+|-+$/`: a dash is a KEPT character above, so
+// a long run of them survives the collapse, and `-+$` restarts at every dash of a run that is not at
+// the end — quadratic on a segment of many dashes followed by anything else.
+function trimDashes(value: string) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value.charCodeAt(start) === 45 /* "-" */) start += 1;
+  while (end > start && value.charCodeAt(end - 1) === 45 /* "-" */) end -= 1;
+  return value.slice(start, end);
+}
+
 function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {
-  const normalized = String(value ?? "")
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const normalized = trimDashes(
+    String(value ?? "")
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-"),
+  );
 
   return normalized || fallback;
 }

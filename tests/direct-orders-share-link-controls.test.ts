@@ -110,17 +110,23 @@ export function runDirectOrdersShareLinkControlsTests() {
     );
   }
 
-  // ── D5b: the compare is constant-time and salted per link ──────────────────
+  // ── D5b: the compare is constant-time, salted per link, and slow ───────────
   {
+    const passcodeHash = readFileSync(new URL("../src/lib/share-links/passcode-hash.ts", import.meta.url), "utf8");
     assert.match(
       source,
+      /import \{ hashPasscode, passcodeMatches \} from "@\/lib\/share-links\/passcode-hash";/,
+      "the link reads its passcode hash from the one shared module",
+    );
+    assert.match(
+      passcodeHash,
       /timingSafeEqual/,
       "the passcode compare must be constant-time — a length-varying compare leaks the prefix to a patient caller",
     );
     assert.match(
-      source,
-      /createHash\("sha256"\)\.update\(`\$\{token\}:\$\{passcode\.trim\(\)\}`\)/,
-      "the hash must be salted with the token so two links sharing a passcode do not share a hash",
+      passcodeHash,
+      /scryptSync\(`\$\{token\}:\$\{passcode\.trim\(\)\}`, salt, SCRYPT_KEY_LENGTH\)/,
+      "a new passcode is a slow scrypt hash, still salted with the token so two links sharing a passcode do not share a hash",
     );
   }
 

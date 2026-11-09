@@ -31,7 +31,22 @@ import { readTotalExperienceByHrId, totalExperienceFor } from "./total-experienc
 import { parseTotalExperienceYears } from "./total-experience-rules";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * The work-email shape check, accepting exactly what `/^[^\s@]+@[^\s@]+\.[^\s@]+$/` accepted: no
+ * whitespace, one `@` with something before it, and a dot after it that is neither the domain's
+ * first nor its last character. Checked by index rather than by that pattern because its domain
+ * half lets `[^\s@]+` and `\.` trade dots, so a long `a.a.a.…` domain ending in a refused character
+ * backtracked quadratically.
+ */
+export function isWorkEmailFormat(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const at = value.indexOf("@");
+  if (at < 1 || at !== value.lastIndexOf("@")) return false;
+  const domain = value.slice(at + 1);
+  return domain.lastIndexOf(".", domain.length - 2) >= 1;
+}
+
 const activeLifecycleStatuses = new Set(["active", "on_leave"]);
 const statusOptions = ["active", "inactive", "on_leave", "terminated", "resigned", "declined_offer"];
 const employeeSalaryDetailCategories = new Set([
@@ -2483,7 +2498,7 @@ async function employeePayload(
     throw new Error(`Invalid HR_ID format: ${hrId}.`);
   }
 
-  if (workEmail && !emailPattern.test(workEmail)) {
+  if (workEmail && !isWorkEmailFormat(workEmail)) {
     throw new Error("Work email format is invalid.");
   }
 

@@ -133,7 +133,9 @@ const KEY_ATTRIBUTE = /data-hp-key="([^"]*)"/g;
 export function keysInMarkup(html: string): string[] {
   const keys: string[] = [];
   for (const match of html.matchAll(KEY_ATTRIBUTE)) {
-    const key = (match[1] ?? "").replace(/&amp;/g, "&").replace(/&quot;/g, "\"");
+    // `&amp;` LAST: `escapeHtml` writes a key's own `&quot;` as `&amp;quot;`, which must come back as
+    // the text `&quot;`, not as a quote.
+    const key = (match[1] ?? "").replace(/&quot;/g, "\"").replace(/&amp;/g, "&");
     // A field the operator ADDED carries `hpLiteral:<rowId>` — a key manufactured by
     // `literalValueKey` so two fixed strings on one page cannot overwrite each other. It names no
     // value and belongs to no template, so it is not a row of the inventory: the editor already

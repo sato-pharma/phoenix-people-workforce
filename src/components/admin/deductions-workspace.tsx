@@ -1830,7 +1830,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           <a
             className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-orange-500 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600"
             download
-            href={`/api/admin/deductions/export?category=${category}&monthKey=${monthKey}`}
+            href={`/api/admin/deductions/export?category=${encodeURIComponent(category)}&monthKey=${encodeURIComponent(monthKey)}`}
           >
             <Download className="h-3.5 w-3.5" />
             Download XLSX
@@ -2892,7 +2892,7 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
   );
 
   const href =
-    `/api/admin/deductions/export/master?monthKey=${monthKey}` +
+    `/api/admin/deductions/export/master?monthKey=${encodeURIComponent(monthKey)}` +
     (line ? `&line=${encodeURIComponent(line)}` : "") +
     (region ? `&region=${encodeURIComponent(region)}` : "");
   const filtered = Boolean(line || region);

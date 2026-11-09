@@ -4,6 +4,15 @@ function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+// True when the text holds `<` + a letter with a `>` anywhere after it — exactly what
+// `/<[a-z][\s\S]*>/i` tested, found in one pass. That pattern restarts at every `<letter` and scans to
+// the end each time, so a long run of `<a` with no `>` was quadratic. The earliest `<letter` is the
+// only one that matters: any `>` after a later one is also after it.
+function containsHtmlTag(value: string) {
+  const open = /<[a-z]/i.exec(value);
+  return open !== null && value.indexOf(">", open.index + 2) !== -1;
+}
+
 export function extractTelegramPlaceholders(text: string) {
   return Array.from(new Set(Array.from(text.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)).map((match) => match[1])));
 }
@@ -18,7 +27,7 @@ export function validateTelegramTemplateText(text: string, allowedPlaceholders: 
   const unknownPlaceholders = extractTelegramPlaceholders(text).filter((placeholder) => !allowedPlaceholders.includes(placeholder));
   const errors: string[] = [];
   if (!cleanText(text)) errors.push("Message text is required.");
-  if (/<[a-z][\s\S]*>/i.test(text)) errors.push("Telegram templates must be plain text. HTML is not allowed.");
+  if (containsHtmlTag(text)) errors.push("Telegram templates must be plain text. HTML is not allowed.");
   if (unknownPlaceholders.length > 0) errors.push(`Unknown placeholders: ${unknownPlaceholders.join(", ")}.`);
   return { errors, unknownPlaceholders };
 }
@@ -36,12 +45,12 @@ export function validateTelegramCta(input: {
 
   if (!input.ctaEnabled) return { errors, unknownPlaceholders };
   if (!label) errors.push("CTA label is required when CTA is enabled.");
-  if (/<[a-z][\s\S]*>/i.test(label)) errors.push("CTA label must be plain text. HTML is not allowed.");
+  if (containsHtmlTag(label)) errors.push("CTA label must be plain text. HTML is not allowed.");
   if (/\b(approve|approved|reject|rejected|decline|declined)\b/i.test(label)) {
     errors.push("Telegram CTA labels cannot be approval or rejection actions in notification-only mode.");
   }
   if (!url) errors.push("CTA URL is required when CTA is enabled.");
-  if (/<[a-z][\s\S]*>/i.test(url)) errors.push("CTA URL must be plain text. HTML is not allowed.");
+  if (containsHtmlTag(url)) errors.push("CTA URL must be plain text. HTML is not allowed.");
   if (unknownPlaceholders.length > 0) errors.push(`Unknown CTA placeholders: ${unknownPlaceholders.join(", ")}.`);
 
   return { errors, unknownPlaceholders };
@@ -96,12 +105,12 @@ export function validateTelegramTemplateButtons(input: {
 
     if (!isSafeButtonType(type)) errors.push(`Button ${index + 1} has an unsupported type.`);
     if (!label) errors.push(`Button ${index + 1} label is required.`);
-    if (/<[a-z][\s\S]*>/i.test(label)) errors.push(`Button ${index + 1} label must be plain text. HTML is not allowed.`);
+    if (containsHtmlTag(label)) errors.push(`Button ${index + 1} label must be plain text. HTML is not allowed.`);
     if ((approvalLabelBlocked(label) && !approvalLabelAllowedInPhoenix(label, url)) || type === "approve" || type === "reject") {
       errors.push("Telegram action buttons cannot approve or reject unless they open a Phoenix confirmation page.");
     }
     if (!url) errors.push(`Button ${index + 1} URL is required.`);
-    if (/<[a-z][\s\S]*>/i.test(url)) errors.push(`Button ${index + 1} URL must be plain text. HTML is not allowed.`);
+    if (containsHtmlTag(url)) errors.push(`Button ${index + 1} URL must be plain text. HTML is not allowed.`);
     if (unknown.length > 0) errors.push(`Unknown button placeholders: ${unknown.join(", ")}.`);
   });
 

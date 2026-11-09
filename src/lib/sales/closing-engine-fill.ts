@@ -112,6 +112,14 @@ function xmlEscape(value: string): string {
 }
 
 /**
+ * `xmlEscape` for a value written inside a double-quoted attribute: a bare `"` there would end the
+ * attribute early and break the part. Identical output for any value without one.
+ */
+function xmlAttrEscape(value: string): string {
+  return xmlEscape(value).replace(/"/g, "&quot;");
+}
+
+/**
  * Drop the control characters XML 1.0 cannot represent. Customer and product names reach this
  * module from distributor files, so a stray control byte is a real possibility — and it would make
  * Excel reject the entire workbook rather than just that one cell.
@@ -571,7 +579,7 @@ function moveMerges(sheetXml: string, moved: Map<number, number>): string {
   if (read !== total || refs.length === 0) return sheetXml;
 
   const rebuilt = `<mergeCells count="${refs.length}">${refs
-    .map((ref) => `<mergeCell ref="${ref}"/>`)
+    .map((ref) => `<mergeCell ref="${xmlAttrEscape(ref)}"/>`)
     .join("")}</mergeCells>`;
   return `${sheetXml.slice(0, block.index)}${rebuilt}${sheetXml.slice(block.index + block[0].length)}`;
 }
@@ -1134,7 +1142,7 @@ async function rebuildRegionButtons(zip: JSZip, regions: string[]): Promise<void
       .replace(CREATION_ID, "")
       .replace(
         /<xdr:cNvPr id="\d+" name="[^"]*"/,
-        `<xdr:cNvPr id="${nextId}" name="${xmlEscape(shapeName(region, taken))}"`,
+        `<xdr:cNvPr id="${nextId}" name="${xmlAttrEscape(shapeName(region, taken))}"`,
       )
       .replace(/<a:t>[\s\S]*?<\/a:t>/, `<a:t>${xmlEscape(xmlSafe(region))}</a:t>`);
     nextId += 1;
@@ -2409,7 +2417,7 @@ async function addSheetNavigation(zip: JSZip): Promise<void> {
         .replace(/\smacro="[^"]*"/, ' macro=""')
         .replace(
           /<xdr:cNvPr id="\d+" name="[^"]*"/,
-          `<xdr:cNvPr id="${nextId}" name="${xmlEscape(navShapeName(destination, taken))}"`,
+          `<xdr:cNvPr id="${nextId}" name="${xmlAttrEscape(navShapeName(destination, taken))}"`,
         )
         .replace(NON_VISUAL_PROPS, (props) =>
           props.endsWith("/>")
@@ -3353,7 +3361,7 @@ async function addReviewSheets(zip: JSZip, sheets: ReviewSheet[]): Promise<Revie
       "</Relationships>",
       `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${nextPart}.xml"/></Relationships>`,
     );
-    const entry = `<sheet name="${xmlEscape(sheet.name)}" sheetId="${nextSheetId}" r:id="${relId}"/>`;
+    const entry = `<sheet name="${xmlAttrEscape(sheet.name)}" sheetId="${nextSheetId}" r:id="${relId}"/>`;
     workbook = sheet.after
       ? insertSheetAfter(workbook, sheet.after, entry)
       : workbook.replace("</sheets>", () => `${entry}</sheets>`);

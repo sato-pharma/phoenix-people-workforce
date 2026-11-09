@@ -23,17 +23,45 @@ const PREVIEW_MAX = 500;
 const MAX_RECIPIENTS_SHOWN = 5;
 const ADMIN_CHAT_TTL_MS = 5 * 60_000;
 
+/**
+ * Drops every `<tag>…</tag>` block with what is inside it, close tag written any way (`</script >`).
+ * A walk rather than `/<style[\s\S]*?<\/style>/`: that lazy scan runs to the end of the mail from
+ * every `<style` it meets, which is quadratic on a body holding many of them and no close.
+ */
+function dropBlocks(html: string, tag: "script" | "style"): string {
+  const open = new RegExp(`<${tag}`, "gi");
+  const close = new RegExp(`</${tag}`, "gi");
+  let kept = "";
+  let at = 0;
+  for (;;) {
+    open.lastIndex = at;
+    const start = open.exec(html);
+    if (!start) break;
+    close.lastIndex = start.index + start[0].length;
+    const end = close.exec(html);
+    if (!end) break;
+    const shut = html.indexOf(">", end.index + end[0].length);
+    if (shut < 0) break;
+    kept += `${html.slice(at, start.index)} `;
+    at = shut + 1;
+  }
+  return kept + html.slice(at);
+}
+
+// The result is the Telegram message's plain text (sendMessage carries no parse_mode), never HTML.
 function stripHtml(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+  const blockless = dropBlocks(dropBlocks(html, "style"), "script");
+  // Every tag ends at a `>`, so the tail after the last one holds none. Leaving it out of the scan
+  // is the same result, and stops `/<[^>]+>/` re-reading that tail to the end once per `<` in it.
+  const lastTag = blockless.lastIndexOf(">") + 1;
+  return (blockless.slice(0, lastTag).replace(/<[^>]+>/g, " ") + blockless.slice(lastTag))
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#39;/gi, "'")
     .replace(/&quot;/gi, '"')
+    // LAST, so `&amp;lt;` reads as the text `&lt;`, never as a second decode.
+    .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
 }

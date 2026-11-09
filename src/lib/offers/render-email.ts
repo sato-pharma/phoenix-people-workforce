@@ -121,6 +121,11 @@ function inlineSafe(chunk: string): string {
       );
     })
     .replace(/<(?!\/?(strong|b|em|i|u|a|br|span)\b)[^>]*>/gi, "")
+    // A `<` the pass above left standing — one with no `>` after it, or an allowed name with
+    // something spliced into it — would join the `<p>` this chunk is wrapped in and become a tag
+    // there (`<img src=x onerror=… </p>`). The canvas stores a typed `<` as `&lt;`, so only a
+    // damaged or hand-made letter ever holds one, and it prints as the character.
+    .replace(/<(?!\/?(?:strong|b|em|i|u|a|br|span)\b[^<>]*>)/gi, "&lt;")
     .replace(/\sclass\s*=\s*("[^"]*"|'[^']*')/gi, "");
 }
 
