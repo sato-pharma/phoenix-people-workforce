@@ -116,12 +116,12 @@ export function MetricTile({
 
   return (
     <div className="min-h-32 border border-slate-200 bg-white px-4 py-4">
-      <div className="flex items-center gap-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
         <span className="text-orange-600">{icon}</span>
         {label}
       </div>
       <p className={`mt-4 text-3xl font-black leading-none ${toneClass}`}>{value}</p>
-      <p className="mt-2 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
+      <p className="mt-2 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
     </div>
   );
 }
@@ -227,7 +227,7 @@ export function AreaSparkline({
         <path d={area} fill={`url(#${gradId})`} />
         <path d={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
-      <div className="mt-1 flex justify-between text-phx-3xs text-slate-400">
+      <div className="mt-1 flex justify-between text-phx-xs text-slate-400">
         <span>{first.label}</span>
         <span>{last.label}</span>
       </div>
@@ -262,7 +262,7 @@ export function TwoSeriesBars({
               style={{ height: `${Math.max(3, (row.b / max) * 100)}%`, backgroundColor: colorB }}
             />
           </div>
-          <span className="truncate text-phx-4xs text-slate-400">{row.label}</span>
+          <span className="break-words text-phx-xs leading-tight text-slate-400">{row.label}</span>
         </div>
       ))}
     </div>
@@ -364,7 +364,7 @@ function PerfCard({
           width — this row is one column on anything below `lg`. It is inert whenever both items
           fit, which is every desktop width, so the other cards in this row are unaffected. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
-        <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+        <div className="flex items-center gap-2 text-phx-sm font-black uppercase tracking-[0.16em] text-slate-300">
           <span className="text-orange-400">{icon}</span>
           {title}
         </div>
@@ -372,7 +372,7 @@ function PerfCard({
       </div>
       <div className="border-b border-slate-100 px-4 py-4">
         <p className="text-[32px] font-black leading-none tracking-tight text-slate-900">{headline}</p>
-        <p className="mt-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">{headlineSub}</p>
+        <p className="mt-1 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-400">{headlineSub}</p>
       </div>
       <div className="flex-1 px-4 py-4">{children}</div>
     </div>
@@ -399,12 +399,12 @@ export function QuickLinkCard({
     <Link href={href} className="group flex flex-col border border-slate-200 bg-white hover:border-orange-300">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
         <span className="text-orange-400">{icon}</span>
-        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">{title}</span>
+        <span className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-300">{title}</span>
       </div>
       <div className="flex flex-1 flex-col items-start justify-between gap-6 px-4 py-5">
         <div>
           <p className="text-[28px] font-black leading-none tracking-tight text-slate-900">Open →</p>
-          <p className="mt-2 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{headline}</p>
+          <p className="mt-2 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">{headline}</p>
         </div>
         <div className="border border-slate-200 px-3 py-2 text-xs text-slate-500 group-hover:border-orange-300 group-hover:text-orange-700">
           {sub}
@@ -546,7 +546,7 @@ export function CeoCommandCenter({
       {welcome ? (
         <AdminHeroFrame className="z-10 overflow-visible">
           <div className="p-4 sm:p-4 lg:p-5">
-            <div className="mb-3 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
+            <div className="mb-3 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.22em] text-orange-100">
               <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
               {surfaceLabel}
             </div>
@@ -723,7 +723,7 @@ export function CeoCommandCenter({
             // SFE Manager holds none of those grants — his queue is the probation assessments.
             <Link
               href={isSfe ? "/probation" : "/admin/approvals-hub"}
-              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             >
               {isSfe ? "Probation" : "Approvals Hub"} <ArrowRight aria-hidden="true" className="h-3 w-3" />
             </Link>
@@ -799,7 +799,7 @@ export function CeoCommandCenter({
                           #{idx + 1}
                         </span>
                         {/* Priority label */}
-                        <span className={`w-20 shrink-0 text-phx-3xs font-black uppercase tracking-[0.14em] ${tone.text}`}>
+                        <span className={`w-20 shrink-0 text-phx-xs font-black uppercase tracking-[0.14em] ${tone.text}`}>
                           {tone.label}
                         </span>
                         {/* Description */}
@@ -852,7 +852,7 @@ export function CeoCommandCenter({
             headline={sos ? egp(sos.totalValue) : "—"}
             headlineSub={sosPeriodLabel ? `Monthly · ${sosPeriodLabel}` : "Monthly"}
             badge={sos ? (
-              <span className="whitespace-nowrap text-phx-2xs text-slate-400">
+              <span className="whitespace-nowrap text-phx-sm text-slate-400">
                 {n(sos.totalQty)} units{sosNewerLabel ? ` · ${sosNewerLabel}` : ""}
               </span>
             ) : null}
@@ -861,7 +861,7 @@ export function CeoCommandCenter({
                 stacked under the other across the whole screen. */}
             <div className={cn(isSfe ? "grid gap-6 lg:grid-cols-2" : "space-y-5")}>
               <div>
-                <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
+                <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
                 <CeoTopMoversTable
                   movers={sos?.topLines ?? []}
                   title="SoS Top Lines"
@@ -875,7 +875,7 @@ export function CeoCommandCenter({
                 />
               </div>
               <div>
-                <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
+                <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Top Regions</p>
                 <CeoTopMoversTable
                   movers={sos?.topRegions ?? []}
                   title="SoS Top Regions"
@@ -1020,7 +1020,7 @@ export function CeoCommandCenter({
       {extraBands}
 
       {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between bg-slate-900 px-5 py-3 text-phx-2xs text-slate-400">
+      <div className="flex items-center justify-between bg-slate-900 px-5 py-3 text-phx-sm text-slate-400">
         <span className="flex items-center gap-2">
           <Users aria-hidden="true" className="h-3 w-3" />
           Phoenix Workforce · {surfaceLabel}

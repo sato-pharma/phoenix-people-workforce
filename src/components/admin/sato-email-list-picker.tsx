@@ -110,7 +110,7 @@ export function SatoEmailListPicker({ lists, onChange, selected }: Props) {
                 >
                   <span className="text-phx-xs font-black leading-tight">{group.line}</span>
                   <span
-                    className={`text-[10px] font-bold uppercase tracking-wide ${
+                    className={`text-phx-sm font-bold uppercase tracking-wide ${
                       count > 0 ? (active ? "text-phx-accent" : "text-orange-700") : active ? "text-white/60" : "text-phx-ink-faint"
                     }`}
                   >
@@ -125,7 +125,7 @@ export function SatoEmailListPicker({ lists, onChange, selected }: Props) {
           <div className="mt-3 border border-phx-line bg-white" role="tabpanel">
             {current.everyone || current.districtManagers || current.medicalReps ? (
               <div className="border-b border-phx-line bg-phx-paper p-3">
-                <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
+                <p className="mb-2 text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">
                   Whole {current.line} line, every region
                 </p>
                 <TileGrid>
@@ -161,13 +161,13 @@ export function SatoEmailListPicker({ lists, onChange, selected }: Props) {
                 </colgroup>
                 <thead>
                   <tr className="border-b border-phx-line">
-                    <th className="px-3 py-2 text-[10px] font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
+                    <th className="px-3 py-2 text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
                       Region
                     </th>
-                    <th className="px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
+                    <th className="px-2 py-2 text-center text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
                       District Managers
                     </th>
-                    <th className="px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
+                    <th className="px-2 py-2 text-center text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint" scope="col">
                       Medical Reps
                     </th>
                   </tr>

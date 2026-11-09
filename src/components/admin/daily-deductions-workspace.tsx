@@ -201,7 +201,7 @@ const COMPUTE_REQUEST_TIMEOUT_MS = 310_000;
 const PANEL = cn("border border-slate-200 bg-white", adminPanelDepthClassName);
 const PANEL_TITLE = "text-xs font-black uppercase tracking-[0.14em] text-white";
 const SMALL_BUTTON =
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap border px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] transition disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap border px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.08em] transition disabled:pointer-events-none disabled:opacity-50";
 const SMALL_BUTTON_GHOST = cn(SMALL_BUTTON, "border-slate-300 bg-white text-slate-700 hover:border-slate-500", adminControlDepthClassName, "disabled:shadow-none");
 const SMALL_BUTTON_DARK = cn(SMALL_BUTTON, "border-slate-900 bg-slate-900 text-white hover:bg-slate-700", adminControlDepthClassName, "disabled:shadow-none");
 const SMALL_BUTTON_DANGER_GHOST = cn(SMALL_BUTTON, "border-slate-300 bg-white text-slate-700 hover:border-rose-400 hover:text-rose-700");
@@ -1164,7 +1164,7 @@ function KpiTile({
         dark ? cn("border-slate-900", adminPanelHeaderClassName) : tone === "warn" ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white",
       )}
     >
-      <p className={cn("text-phx-2xs font-black uppercase tracking-[0.12em]", dark ? "text-orange-300" : tone === "warn" ? "text-amber-700" : "text-slate-500")}>
+      <p className={cn("text-phx-sm font-black uppercase tracking-[0.12em]", dark ? "text-orange-300" : tone === "warn" ? "text-amber-700" : "text-slate-500")}>
         {label}
       </p>
       <p className={cn("mt-1 break-words text-lg font-black tabular-nums sm:text-2xl", dark ? "text-white" : tone === "warn" ? "text-amber-900" : "text-slate-900")}>
@@ -1184,7 +1184,7 @@ function CategoryTotals({ totals }: { totals: Partial<Record<DailyDeductionConne
     <div className="flex flex-wrap gap-1.5">
       {entries.map((connector) => (
         <span
-          className={cn("border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-bold text-slate-700", adminChipDepthClassName)}
+          className={cn("border border-slate-200 bg-slate-50 px-2 py-1 text-phx-sm font-bold text-slate-700", adminChipDepthClassName)}
           key={connector}
         >
           {dailyDeductionConnectorLabels[connector]} · <span className="tabular-nums">{money(Number(totals[connector] ?? 0))}</span>
@@ -1215,7 +1215,7 @@ function FilterChip({ active, count, label, onClick }: { active: boolean; count:
     <button
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.06em] transition",
+        "inline-flex items-center gap-1.5 border px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.06em] transition",
         adminChipDepthClassName,
         active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
       )}
@@ -1233,7 +1233,7 @@ function DateChips({ dates }: { dates: string[] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {[...dates].sort().map((date) => (
-        <span key={date} className="whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs tabular-nums text-slate-600">
+        <span key={date} className="whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-sm tabular-nums text-slate-600">
           {dateChip(date)}
         </span>
       ))}

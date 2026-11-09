@@ -42,7 +42,7 @@ const STATUS_TONE: Record<SystemAuditStatus, string> = {
   unknown: "text-slate-600",
 };
 
-const headCell = "px-2 py-2 text-left align-bottom text-phx-2xs font-bold uppercase tracking-[0.06em] break-words";
+const headCell = "px-2 py-2 text-left align-bottom text-phx-sm font-bold uppercase tracking-[0.06em] break-words";
 const bodyCell = "px-2 py-2 align-top break-words";
 
 function NameButton({ row, onOpen }: { row: SystemAuditPageRow; onOpen: (row: SystemAuditPageRow) => void }) {
@@ -199,7 +199,7 @@ function MergedTable({ rows, onOpen, selectedId }: TableProps) {
           <Row key={row.id} onOpen={onOpen} row={row} selected={row.id === selectedId}>
             <td className={bodyCell}>
               <NameButton onOpen={onOpen} row={row} />
-              {isSystemRow(row) ? null : <p className="mt-0.5 font-mono text-phx-2xs text-slate-500">{incidentHrId(row)}</p>}
+              {isSystemRow(row) ? null : <p className="mt-0.5 font-mono text-phx-sm text-slate-500">{incidentHrId(row)}</p>}
             </td>
             <td className={cn(bodyCell, "text-slate-700")}>{row.moduleLabel}</td>
             <td className={cn(bodyCell, "tabular-nums text-slate-700")}>
@@ -231,7 +231,7 @@ function MergedTable({ rows, onOpen, selectedId }: TableProps) {
 function CardField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-phx-2xs font-bold uppercase text-slate-400">{label}</dt>
+      <dt className="text-phx-sm font-bold uppercase text-slate-400">{label}</dt>
       <dd className="break-words text-slate-800">{children}</dd>
     </div>
   );
@@ -248,7 +248,7 @@ function Cards({ rows, onOpen, selectedId }: TableProps) {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <NameButton onOpen={onOpen} row={row} />
-              {isSystemRow(row) ? null : <p className="font-mono text-phx-2xs text-slate-500">{incidentHrId(row)}</p>}
+              {isSystemRow(row) ? null : <p className="font-mono text-phx-sm text-slate-500">{incidentHrId(row)}</p>}
             </div>
             <p className="max-w-[45%] text-right tabular-nums text-slate-600">
               {incidentCairoDate(row)} · {incidentCairoTime(row)}

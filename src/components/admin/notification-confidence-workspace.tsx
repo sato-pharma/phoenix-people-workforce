@@ -128,7 +128,7 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
   return (
     <div className="border border-red-200 bg-red-50/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
+        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
           {review.confidencePercent}% confidence
         </span>
         <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
@@ -138,7 +138,7 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
         {/* How long this has waited. A hold has no clock and nothing chases it, so the age is the
             one thing on the row that gets worse by itself. */}
         <span
-          className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${AGE_TONE[heldAgeBand(hoursHeld)]}`}
+          className={`whitespace-nowrap px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] ${AGE_TONE[heldAgeBand(hoursHeld)]}`}
           title={`Held ${hoursHeld} hour${hoursHeld === 1 ? "" : "s"} — nothing expires it and nothing chases it`}
         >
           waiting {formatHeldAge(hoursHeld)}
@@ -204,7 +204,7 @@ function RecentRow({ review }: { review: AdminNotificationSendReview }) {
   return (
     <div className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
+        <span className={`whitespace-nowrap px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
           {review.status.replace("_", " ")}
         </span>
         <span className={`text-phx-xs font-black ${confidenceTone(review.confidencePercent)}`}>{review.confidencePercent}%</span>

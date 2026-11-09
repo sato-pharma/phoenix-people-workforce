@@ -162,7 +162,7 @@ export function CeoTopMoversTable({
           </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
-              <th className="px-2 py-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+              <th className="px-2 py-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
                 #
               </th>
               <SortableTh
@@ -170,7 +170,7 @@ export function CeoTopMoversTable({
                 sortKey="label"
                 sort={table.sort}
                 onSort={table.toggleSort}
-                className="px-2 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white"
+                className="px-2 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white"
               />
               <SortableTh
                 label={valueHeader}
@@ -178,9 +178,9 @@ export function CeoTopMoversTable({
                 sort={table.sort}
                 onSort={table.toggleSort}
                 align="right"
-                className="px-2 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white"
+                className="px-2 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white"
               />
-              <th className="px-2 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">
+              <th className="px-2 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-white">
                 Share
               </th>
             </tr>
@@ -195,7 +195,7 @@ export function CeoTopMoversTable({
             ) : (
               table.rows.map((row, i) => (
                   <tr key={row.label} className="bg-white hover:bg-slate-50/80">
-                    <td className="px-2 py-2 text-phx-2xs font-black text-slate-300">
+                    <td className="px-2 py-2 text-phx-sm font-black text-slate-300">
                       #{i + 1}
                     </td>
                     <td className="px-2 py-2">

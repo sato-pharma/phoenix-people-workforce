@@ -59,7 +59,7 @@ function TriggerChip({ trigger }: { trigger: RetentionRiskSignal["trigger"] }) {
   return (
     // Square, like everything else in the admin shell — no rounded corners anywhere (owner rule).
     <span
-      className={`inline-flex items-center gap-1.5 border px-2 py-1 text-phx-3xs font-bold uppercase tracking-[0.1em] ${
+      className={`inline-flex items-center gap-1.5 border px-2 py-1 text-phx-xs font-bold uppercase tracking-[0.1em] ${
         isSilence ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-800"
       }`}
     >
@@ -72,7 +72,7 @@ function TriggerChip({ trigger }: { trigger: RetentionRiskSignal["trigger"] }) {
 function OngoingChip({ ongoing }: { ongoing: boolean }) {
   return (
     <span
-      className={`inline-flex items-center border px-2 py-1 text-phx-3xs font-bold uppercase tracking-[0.1em] ${
+      className={`inline-flex items-center border px-2 py-1 text-phx-xs font-bold uppercase tracking-[0.1em] ${
         ongoing ? "border-rose-300 bg-rose-600 text-white" : "border-slate-200 bg-slate-50 text-slate-600"
       }`}
     >
@@ -152,7 +152,7 @@ function SignalTable({ signals }: { signals: readonly RetentionRiskSignal[] }) {
           <col className="w-[16%]" />
         </colgroup>
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">
+          <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             <th className="px-4 py-2.5 align-bottom font-black">Employee</th>
             <th className="px-4 py-2.5 align-bottom font-black">Signal</th>
             <th className="px-4 py-2.5 align-bottom font-black">Length</th>
@@ -256,7 +256,7 @@ export function RetentionRiskBand({ view }: { view: RetentionRiskView }) {
         </>
       )}
 
-      <p className="border-t border-slate-200 px-5 py-3 break-words text-phx-3xs text-slate-500">
+      <p className="border-t border-slate-200 px-5 py-3 break-words text-phx-xs text-slate-500">
         Medical Reps only, on both rules (owner, 2026-09-07). A manager has no contact list of their
         own — a rep logs the visit and tags them — so their CRM silence measures the rep&rsquo;s data
         entry, and their approved leave is a holiday rather than a retention signal. CRM activity is
@@ -286,7 +286,7 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
         <span className="text-orange-400">
           <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
         </span>
-        <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+        <span className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.16em] text-slate-300">
           Resignation risk
         </span>
       </div>
@@ -295,7 +295,7 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
         <p className="break-words text-[28px] font-black leading-none tracking-tight text-slate-900">
           {view.signals.length}
         </p>
-        <p className="mt-2 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
+        <p className="mt-2 break-words text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">
           {view.signals.length === 1 ? "Medical Rep still away" : "Medical Reps still away"}
         </p>
       </div>
@@ -317,7 +317,7 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
             <li className="min-w-0 px-4 py-3" key={signalKey(signal)}>
               <div className="flex flex-wrap items-center gap-1.5">
                 <TriggerChip trigger={signal.trigger} />
-                <span className="inline-flex items-center border border-rose-300 bg-rose-600 px-2 py-1 text-phx-3xs font-bold uppercase tracking-[0.1em] text-white">
+                <span className="inline-flex items-center border border-rose-300 bg-rose-600 px-2 py-1 text-phx-xs font-bold uppercase tracking-[0.1em] text-white">
                   {signal.workingDays} working {signal.workingDays === 1 ? "day" : "days"}
                 </span>
               </div>
@@ -340,7 +340,7 @@ export function RetentionRiskColumn({ view }: { view: RetentionRiskView }) {
         </ul>
       )}
 
-      <p className="border-t border-slate-200 px-4 py-3 break-words text-phx-3xs text-slate-500">
+      <p className="border-t border-slate-200 px-4 py-3 break-words text-phx-xs text-slate-500">
         Three working days running with no CRM record, or on leave, and not seen since. Thursday and
         Friday are never counted, so on a Monday the three days behind it are the Wednesday, Saturday
         and Sunday. An early warning to check on someone, never a conclusion about them.
@@ -359,7 +359,7 @@ export function RetentionRiskColumnSkeleton() {
   return (
     <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
-        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
+        <span className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-300">
           Resignation risk
         </span>
       </div>

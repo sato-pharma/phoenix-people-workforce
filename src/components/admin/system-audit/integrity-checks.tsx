@@ -42,17 +42,17 @@ const RUN_TONE: Record<string, string> = {
   running: "text-slate-600",
 };
 
-const headCell = "px-3 py-2 text-left align-bottom text-phx-2xs font-bold uppercase tracking-[0.06em] break-words";
+const headCell = "px-3 py-2 text-left align-bottom text-phx-sm font-bold uppercase tracking-[0.06em] break-words";
 const bodyCell = "px-3 py-2 align-top break-words";
 
 function Side({ label, side }: { label: string; side: IntegrityCheckView["screen"] }) {
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-bold uppercase text-slate-400">{label}</p>
+      <p className="text-phx-sm font-bold uppercase text-slate-400">{label}</p>
       {side ? (
         <>
           <p className="break-words font-semibold text-slate-800">{side.value || "—"}</p>
-          {side.source ? <p className="break-words text-phx-2xs text-slate-500">{side.source}</p> : null}
+          {side.source ? <p className="break-words text-phx-sm text-slate-500">{side.source}</p> : null}
         </>
       ) : (
         <p className="text-slate-500">Not measured</p>

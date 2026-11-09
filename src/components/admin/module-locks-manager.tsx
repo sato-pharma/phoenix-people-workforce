@@ -274,7 +274,7 @@ export function ModuleLocksManager({
               render is impure besides (react-hooks/purity). "4 hours after you lock it" is exactly
               what happens, however long this form has been sitting here.
             */}
-            <p className="mt-1.5 text-phx-2xs text-slate-400">
+            <p className="mt-1.5 text-phx-sm text-slate-400">
               {durationHours > 0
                 ? `Reopens on its own ${durationLabel(durationHours)} after you lock it.`
                 : "Stays locked until you release it here."}
@@ -325,7 +325,7 @@ export function ModuleLocksManager({
                       />
                       <span className="whitespace-nowrap font-semibold">{module.label}</span>
                       {alreadyLocked ? (
-                        <span className="ml-auto whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-amber-700">
+                        <span className="ml-auto whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wider text-amber-700">
                           Locked
                         </span>
                       ) : null}

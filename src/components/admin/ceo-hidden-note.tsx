@@ -49,7 +49,7 @@ export function CeoHiddenNote() {
             className="absolute left-0 top-8 z-50 w-[min(92vw,420px)] border border-orange-400/30 bg-slate-950 p-5 text-left shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
           >
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-phx-3xs font-black uppercase tracking-[0.28em] text-orange-300/80">
+              <span className="text-phx-xs font-black uppercase tracking-[0.28em] text-orange-300/80">
                 A note
               </span>
               <button

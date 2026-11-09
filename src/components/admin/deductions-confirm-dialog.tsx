@@ -66,7 +66,7 @@ export function DeductionsConfirmDialog({
             <dl className="grid grid-cols-1 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-2">
               {facts.map((fact) => (
                 <div className="bg-slate-50 px-3 py-2" key={fact.label}>
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{fact.label}</dt>
+                  <dt className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">{fact.label}</dt>
                   <dd className="mt-0.5 break-words text-sm font-bold tabular-nums text-slate-900">{fact.value}</dd>
                 </div>
               ))}

@@ -291,7 +291,7 @@ export function TestAccountsManager({ initial, initialError }: Props) {
             Make test account
           </Button>
         </div>
-        <p className="mt-2 text-phx-2xs text-slate-400">
+        <p className="mt-2 text-phx-sm text-slate-400">
           Only people with an active employee-portal login can be chosen, so a test account always opens in the employee portal.
         </p>
       </Card>

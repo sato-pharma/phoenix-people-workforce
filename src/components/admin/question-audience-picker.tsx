@@ -78,7 +78,7 @@ export function QuestionAudiencePicker({
           );
         })}
       </div>
-      <p className="mt-1 text-phx-2xs text-slate-400">
+      <p className="mt-1 text-phx-sm text-slate-400">
         {value.length === 0
           ? (everyoneNote ?? "Nothing ticked — every applicant is asked this question.")
           : "Only these applicants are asked it. Everyone else skips it."}

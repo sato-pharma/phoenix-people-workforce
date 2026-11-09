@@ -1605,7 +1605,7 @@ function ChosenChip({
     >
       {icon}
       <span className="min-w-0 break-all">{label}</span>
-      {outside ? <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-orange-700">Outside</span> : null}
+      {outside ? <span className="shrink-0 text-phx-sm font-black uppercase tracking-wide text-orange-700">Outside</span> : null}
       <X className="h-3 w-3 shrink-0" />
     </button>
   );

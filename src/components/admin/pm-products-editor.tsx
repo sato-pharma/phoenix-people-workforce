@@ -140,7 +140,7 @@ function PmRow({
           <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
             {byLine.map(([line, opts]) => (
               <div key={line}>
-                <div className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">{line}</div>
+                <div className="mb-1 text-phx-sm font-black uppercase tracking-wide text-slate-400">{line}</div>
                 <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                   {opts.map((o) => (
                     <label key={o.code} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm text-slate-600 hover:bg-slate-50">

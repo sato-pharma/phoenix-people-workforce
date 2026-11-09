@@ -376,16 +376,16 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                       </Button>
                     </div>
                     {row.questionKey ? (
-                      <span className="bg-slate-100 px-1.5 py-0.5 font-mono text-phx-2xs text-slate-500">
+                      <span className="bg-slate-100 px-1.5 py-0.5 font-mono text-phx-sm text-slate-500">
                         {row.questionKey}
                       </span>
                     ) : (
-                      <span className="bg-blue-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-blue-600">
+                      <span className="bg-blue-50 px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wider text-blue-600">
                         New
                       </span>
                     )}
                     {structureLocked ? (
-                      <span className="bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-amber-700">
+                      <span className="bg-amber-50 px-1.5 py-0.5 text-phx-sm font-bold uppercase tracking-wider text-amber-700">
                         Answered — wording only
                       </span>
                     ) : null}
@@ -420,7 +420,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                     <label className="text-phx-xs font-bold uppercase tracking-wider text-slate-400" htmlFor={`body-${row.clientKey}`}>
                       Question text
                     </label>
-                    <span className={`text-phx-2xs ${counterClass(row.bodyText.length, WHATSAPP_BODY_MAX)}`}>
+                    <span className={`text-phx-sm ${counterClass(row.bodyText.length, WHATSAPP_BODY_MAX)}`}>
                       {row.bodyText.length} / {WHATSAPP_BODY_MAX}
                     </span>
                   </div>
@@ -483,7 +483,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                       >
                         {`Sent when the answer is ${row.endTitles.join(" or ")} - the conversation ends here`}
                       </label>
-                      <span className={`text-phx-2xs ${counterClass((row.endMessage ?? "").length, WHATSAPP_BODY_MAX)}`}>
+                      <span className={`text-phx-sm ${counterClass((row.endMessage ?? "").length, WHATSAPP_BODY_MAX)}`}>
                         {(row.endMessage ?? "").length} / {WHATSAPP_BODY_MAX}
                       </span>
                     </div>
@@ -514,7 +514,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                           value={row.buttonLabel}
                         />
                         <span
-                          className={`text-phx-2xs ${counterClass(row.buttonLabel.length, WHATSAPP_LIST_BUTTON_MAX)}`}
+                          className={`text-phx-sm ${counterClass(row.buttonLabel.length, WHATSAPP_LIST_BUTTON_MAX)}`}
                         >
                           Button — {row.buttonLabel.length} / {WHATSAPP_LIST_BUTTON_MAX}
                         </span>
@@ -528,7 +528,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                           value={row.sectionTitle}
                         />
                         <span
-                          className={`text-phx-2xs ${counterClass(row.sectionTitle.length, WHATSAPP_SECTION_TITLE_MAX)}`}
+                          className={`text-phx-sm ${counterClass(row.sectionTitle.length, WHATSAPP_SECTION_TITLE_MAX)}`}
                         >
                           Heading — {row.sectionTitle.length} / {WHATSAPP_SECTION_TITLE_MAX}
                         </span>
@@ -545,7 +545,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                             placeholder="Option text"
                             value={option.title}
                           />
-                          <span className={`text-phx-2xs ${counterClass(option.title.length, WHATSAPP_ROW_TITLE_MAX)}`}>
+                          <span className={`text-phx-sm ${counterClass(option.title.length, WHATSAPP_ROW_TITLE_MAX)}`}>
                             {option.title.length} / {WHATSAPP_ROW_TITLE_MAX}
                           </span>
                         </div>
@@ -557,7 +557,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                             placeholder="Description (optional)"
                             value={option.description}
                           />
-                          <span className={`text-phx-2xs ${counterClass(option.description.length, WHATSAPP_ROW_DESCRIPTION_MAX)}`}>
+                          <span className={`text-phx-sm ${counterClass(option.description.length, WHATSAPP_ROW_DESCRIPTION_MAX)}`}>
                             {option.description.length} / {WHATSAPP_ROW_DESCRIPTION_MAX}
                           </span>
                         </div>
@@ -589,7 +589,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                         Add option
                       </Button>
                     ) : null}
-                    <p className="text-phx-2xs text-slate-400">
+                    <p className="text-phx-sm text-slate-400">
                       {`${row.options.length} / ${WHATSAPP_LIST_MAX_ROWS} options — WhatsApp's own limit.`}
                     </p>
                   </div>

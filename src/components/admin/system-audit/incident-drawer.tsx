@@ -76,7 +76,7 @@ function ScreenshotView({ screenshot }: { screenshot: OccurrenceScreenshot }) {
       <p className="text-xs text-slate-700">
         {cairoDateTime(screenshot.capturedAt)} Cairo
         {screenshot.route ? (
-          <span className="block font-mono text-phx-2xs text-slate-500 [overflow-wrap:anywhere]">{screenshot.route}</span>
+          <span className="block font-mono text-phx-sm text-slate-500 [overflow-wrap:anywhere]">{screenshot.route}</span>
         ) : null}
       </p>
       {state.status === "open" ? (
@@ -99,7 +99,7 @@ function ScreenshotView({ screenshot }: { screenshot: OccurrenceScreenshot }) {
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-phx-2xs font-bold uppercase text-slate-400">{label}</dt>
+      <dt className="text-phx-sm font-bold uppercase text-slate-400">{label}</dt>
       <dd className="break-words text-sm text-slate-800">{children}</dd>
     </div>
   );
@@ -109,7 +109,7 @@ function JsonBlock({ value }: { value: unknown }) {
   const text = JSON.stringify(value ?? {}, null, 2);
   if (!text || text === "{}" || text === "[]") return <p className="text-xs text-slate-500">None recorded.</p>;
   return (
-    <pre className="whitespace-pre-wrap border border-slate-200 bg-slate-50 p-2 font-mono text-phx-2xs leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
+    <pre className="whitespace-pre-wrap border border-slate-200 bg-slate-50 p-2 font-mono text-phx-sm leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
       {text}
     </pre>
   );
@@ -317,7 +317,7 @@ function ScreenshotList({ screens }: { screens: OccurrenceDetail["screens"] }) {
               width={screen.width ?? undefined}
             />
           </a>
-          <figcaption className="break-words text-phx-2xs text-slate-500">
+          <figcaption className="break-words text-phx-sm text-slate-500">
             {SCREEN_KIND_LABELS[screen.kind] ?? screen.kind}
             {screen.httpStatus ? ` · HTTP ${screen.httpStatus}` : ""} · {cairoDateTime(screen.capturedAt)} Cairo
           </figcaption>
@@ -399,7 +399,7 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
 
       <Section title="System message">
         {occurrence.technicalMessage ? (
-          <pre className="whitespace-pre-wrap border border-slate-200 bg-slate-50 p-2 font-mono text-phx-2xs leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
+          <pre className="whitespace-pre-wrap border border-slate-200 bg-slate-50 p-2 font-mono text-phx-sm leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
             {occurrence.technicalMessage}
           </pre>
         ) : (
@@ -419,9 +419,9 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
         <p className="text-xs text-slate-500">
           First seen {cairoDateTime(issue.firstSeenAt)} · last seen {cairoDateTime(issue.lastSeenAt)} (Cairo)
         </p>
-        <p className="text-phx-2xs font-bold uppercase text-slate-400">Root-cause evidence</p>
+        <p className="text-phx-sm font-bold uppercase text-slate-400">Root-cause evidence</p>
         <JsonBlock value={issue.rootCauseEvidence} />
-        <p className="text-phx-2xs font-bold uppercase text-slate-400">This occurrence&apos;s evidence</p>
+        <p className="text-phx-sm font-bold uppercase text-slate-400">This occurrence&apos;s evidence</p>
         <JsonBlock value={occurrence.evidence} />
       </Section>
 
@@ -498,7 +498,7 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
               {reproTrail.entries.map((entry, index) => (
                 <li className="text-xs text-slate-700" key={`${entry.at}-${index}`}>
                   <span className="font-semibold text-slate-900">{entry.moduleLabel}</span> · {cairoDateTime(entry.at)} Cairo
-                  {entry.path ? <span className="block font-mono text-phx-2xs text-slate-500 [overflow-wrap:anywhere]">{entry.path}</span> : null}
+                  {entry.path ? <span className="block font-mono text-phx-sm text-slate-500 [overflow-wrap:anywhere]">{entry.path}</span> : null}
                 </li>
               ))}
             </ol>
@@ -576,7 +576,7 @@ export function IncidentDrawer({
       >
         <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">Incident</p>
+            <p className="text-phx-sm font-black uppercase tracking-[0.2em] text-orange-600">Incident</p>
             <h2 className="break-words text-base font-black text-slate-900" id="system-audit-drawer-title">
               {loaded.status === "ready" ? loaded.detail.issue.title : "Loading the incident"}
             </h2>

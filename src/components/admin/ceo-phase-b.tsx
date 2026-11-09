@@ -61,7 +61,7 @@ function Section({
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
         <div>
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
+          {description ? <p className="mt-0.5 text-phx-sm text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -151,11 +151,11 @@ function HealthBreakdown({
           pctVal === null ? "#94A3B8" : pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
         return (
           <div key={label} className="flex flex-col gap-3 px-5 py-5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
             <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
               {pctVal === null ? "—" : `${pctVal}%`}
             </p>
-            {note ? <p className="-mt-2 text-phx-3xs font-semibold uppercase tracking-[0.12em] text-slate-400">{note}</p> : null}
+            {note ? <p className="-mt-2 text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{note}</p> : null}
             <div className="h-1.5 w-full bg-slate-100">
               {pctVal === null ? null : (
                 <div className="h-full transition-all" style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }} />
@@ -192,7 +192,7 @@ function TrendsSection({
     >
       <div className="px-5 py-5">
         <div className="mb-1 flex items-baseline justify-between">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500">Monthly Sales</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Monthly Sales</p>
           {trends.sales.length > 0 ? (
             <p className="text-xs font-bold text-slate-900">
               {egp(trends.sales[trends.sales.length - 1]?.sales ?? 0)}
@@ -204,11 +204,11 @@ function TrendsSection({
           stroke="#F97316"
           gradId="pb-trend-sales-grad"
         />
-        <p className="mt-2 text-phx-3xs text-slate-400">Latest {trends.sales.length} periods</p>
+        <p className="mt-2 text-phx-xs text-slate-400">Latest {trends.sales.length} periods</p>
       </div>
       {includeFinancial ? <div className="px-5 py-5">
         <div className="mb-1 flex items-baseline justify-between">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Payroll cost</p>
           {trends.financial.length > 0 ? (
             <p className="text-xs font-bold text-slate-900">
               {egp(trends.financial[trends.financial.length - 1]?.cost ?? 0)}
@@ -220,18 +220,18 @@ function TrendsSection({
           stroke="#8B5CF6"
           gradId="pb-trend-cost-grad"
         />
-        <p className="mt-2 text-phx-3xs text-slate-400">Latest {trends.financial.length} periods</p>
+        <p className="mt-2 text-phx-xs text-slate-400">Latest {trends.financial.length} periods</p>
       </div> : null}
       {/* Hires vs exits is employee-lifecycle data (hire dates, resignations). The SFE Manager
           holds no `employees` or `resignations` grant, so it is dropped from his overview. */}
       {includeHeadcount ? <div className="px-5 py-5">
-        <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500">Headcount movement</p>
+        <p className="mb-3 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Headcount movement</p>
         <TwoSeriesBars
           data={trends.hireExit.map((p) => ({ label: p.label, a: p.hires, b: p.exits }))}
           colorA="#10B981"
           colorB="#F43F5E"
         />
-        <div className="mt-2 flex items-center gap-4 text-phx-3xs text-slate-400">
+        <div className="mt-2 flex items-center gap-4 text-phx-xs text-slate-400">
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 bg-emerald-500" /> Hires</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 bg-rose-500" /> Exits</span>
         </div>
@@ -265,16 +265,16 @@ function RiskSignals({
       {(payroll.net > 0 || payroll.gross > 0 || payroll.unresolvedSalaryFlags > 0) && (
         <div className="grid grid-cols-3 gap-2">
           <div className="border border-slate-200 px-3 py-2.5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Net payroll</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Net payroll</p>
             <p className="mt-0.5 text-lg font-black text-slate-900">{egp(payroll.net)}</p>
-            <p className="text-phx-2xs text-slate-400">{payroll.batchLabel}</p>
+            <p className="text-phx-sm text-slate-400">{payroll.batchLabel}</p>
           </div>
           <div className="border border-slate-200 px-3 py-2.5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Gross payroll</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Gross payroll</p>
             <p className="mt-0.5 text-lg font-black text-slate-900">{egp(payroll.gross)}</p>
           </div>
           <div className={`border px-3 py-2.5 ${payroll.unresolvedSalaryFlags > 0 ? "border-rose-200 bg-rose-50" : "border-slate-200"}`}>
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Salary flags</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Salary flags</p>
             <p className={`mt-0.5 text-lg font-black ${payroll.unresolvedSalaryFlags > 0 ? "text-rose-700" : "text-slate-400"}`}>
               {n(payroll.unresolvedSalaryFlags)}
             </p>
@@ -294,7 +294,7 @@ function RiskSignals({
               >
                 <div className={`w-1 self-stretch ${tone.bar}`} />
                 <span className="w-10 shrink-0 text-center text-phx-xs font-black text-slate-300">#{idx + 1}</span>
-                <span className={`w-20 shrink-0 text-phx-3xs font-black uppercase tracking-[0.14em] ${tone.text}`}>{tone.label}</span>
+                <span className={`w-20 shrink-0 text-phx-xs font-black uppercase tracking-[0.14em] ${tone.text}`}>{tone.label}</span>
                 <span className="flex-1 py-3 text-sm font-medium text-slate-700">{item.label}</span>
                 <span className="w-12 text-center text-xl font-black text-slate-900">{n(item.count)}</span>
                 <ArrowRight aria-hidden="true" className="mr-4 h-3.5 w-3.5 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5" />
@@ -332,14 +332,14 @@ function ExpenseSnippet({
       {/* Two tiles, two columns. It was three, leaving the last cell empty. */}
       <div className="grid grid-cols-2 gap-2">
         <div className="border border-slate-200 px-3 py-2.5">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Total spend</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Total spend</p>
           <p className="mt-0.5 text-lg font-black text-slate-900">{egp(data.totalAmount)}</p>
-          <p className="text-phx-2xs text-slate-400">{data.windowLabel}</p>
+          <p className="text-phx-sm text-slate-400">{data.windowLabel}</p>
         </div>
         <div className="border border-slate-200 px-3 py-2.5">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Approved</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Approved</p>
           <p className="mt-0.5 text-lg font-black text-emerald-700">{approvedPctDisplay}</p>
-          <p className="text-phx-2xs text-slate-400">of total</p>
+          <p className="text-phx-sm text-slate-400">of total</p>
         </div>
       </div>
       {(data.byRegion.length > 0 || data.topSpenders.length > 0) && (
@@ -372,20 +372,20 @@ function RoiBrief({
   return (
     <div className="p-5 space-y-4">
       {data.lastPeriod && (
-        <p className="text-phx-2xs text-slate-400">Latest period: {data.lastPeriod} · {total} total requests</p>
+        <p className="text-phx-sm text-slate-400">Latest period: {data.lastPeriod} · {total} total requests</p>
       )}
       <div className="grid grid-cols-3 gap-2">
         {buckets.map((b) => (
           <div key={b.label} className={`border px-4 py-3 ${b.borderColor}`}>
-            <div className="flex items-center gap-2 mb-1">{b.icon}<span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{b.label}</span></div>
+            <div className="flex items-center gap-2 mb-1">{b.icon}<span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{b.label}</span></div>
             <p className={`text-3xl font-black ${b.textColor}`}>{b.count}</p>
-            <p className="text-phx-2xs text-slate-400 mt-0.5">{total > 0 ? `${Math.round((b.count / total) * 100)}% of total` : "—"}</p>
+            <p className="text-phx-sm text-slate-400 mt-0.5">{total > 0 ? `${Math.round((b.count / total) * 100)}% of total` : "—"}</p>
           </div>
         ))}
       </div>
       {data.trend.length > 1 && (
         <div>
-          <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">ROI status trend</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">ROI status trend</p>
           <div className="flex items-end gap-1 h-12">
             {data.trend.map((p) => {
               const t = p.onTrack + p.behind + p.noData || 1;
@@ -396,12 +396,12 @@ function RoiBrief({
                     <div className="bg-amber-400"   style={{ height: `${(p.behind / t) * 100}%` }} />
                     <div className="bg-rose-400"    style={{ height: `${(p.noData / t) * 100}%` }} />
                   </div>
-                  <span className="text-[7px] text-slate-400 truncate max-w-full">{p.period.slice(5)}</span>
+                  <span className="max-w-full break-words text-center text-phx-xs leading-tight text-slate-400">{p.period.slice(5)}</span>
                 </div>
               );
             })}
           </div>
-          <div className="mt-1.5 flex items-center gap-3 text-phx-3xs text-slate-500">
+          <div className="mt-1.5 flex items-center gap-3 text-phx-xs text-slate-500">
             <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 bg-emerald-500" />Strong</span>
             <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 bg-amber-400" />Weak</span>
             <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 bg-rose-400" />Zero</span>
@@ -424,7 +424,7 @@ function WeeklySalesTrend({ points }: { points: CeoWeeklyTrendPoint[] }) {
     <div className="space-y-4 p-5">
       <div className="flex items-baseline justify-between">
         <div>
-          <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Latest week</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Latest week</p>
           <p className="mt-1 text-3xl font-black leading-none text-slate-900">{egp(latest.salesValue)}</p>
         </div>
         {latest.deltaPct !== null ? (
@@ -444,7 +444,7 @@ function WeeklySalesTrend({ points }: { points: CeoWeeklyTrendPoint[] }) {
       <div className="flex h-24 items-end gap-1.5">
         {points.map((point) => (
           <div key={point.weekStart} className="flex flex-1 flex-col items-center gap-1">
-            <span className="text-phx-4xs font-bold text-slate-400">
+            <span className="text-phx-xs font-bold text-slate-400">
               {point.salesValue >= 1_000_000
                 ? `${(point.salesValue / 1_000_000).toFixed(1)}M`
                 : `${Math.round(point.salesValue / 1_000)}K`}
@@ -456,11 +456,11 @@ function WeeklySalesTrend({ points }: { points: CeoWeeklyTrendPoint[] }) {
                 title={`${point.label} — ${egp(point.salesValue)}`}
               />
             </div>
-            <span className="text-phx-3xs text-slate-400">{point.label}</span>
+            <span className="text-phx-xs text-slate-400">{point.label}</span>
           </div>
         ))}
       </div>
-      <p className="text-phx-2xs text-slate-400">
+      <p className="text-phx-sm text-slate-400">
         De-cumulated real per-week value across the last {points.length} uploaded weeks.
       </p>
     </div>
@@ -484,11 +484,11 @@ function TargetsWidget({ data }: { data: SfeTargetPerformance }) {
           { label: "Achievement", value: pct(data.achievementRate), sub: "Actual vs target" },
         ].map((tile) => (
           <div key={tile.label} className="border border-slate-200 px-3 py-2.5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{tile.label}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">{tile.label}</p>
             <p className={`mt-0.5 text-lg font-black ${tile.label === "Achievement" ? tone(data.achievementRate) : "text-slate-900"}`}>
               {tile.value}
             </p>
-            <p className="text-phx-2xs text-slate-400">{tile.sub}</p>
+            <p className="text-phx-sm text-slate-400">{tile.sub}</p>
           </div>
         ))}
       </div>
@@ -530,7 +530,7 @@ function ImsTable({ rows, title, tone }: { rows: SfeImsRow[]; title: string; ton
   const accent = tone === "emerald" ? "text-emerald-700" : "text-rose-700";
   return (
     <div>
-      <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{title}</p>
+      <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{title}</p>
       {rows.length === 0 ? (
         <p className="text-xs text-slate-400">No comparable areas.</p>
       ) : (
@@ -545,7 +545,7 @@ function ImsTable({ rows, title, tone }: { rows: SfeImsRow[]; title: string; ton
               </span>
             </div>
           ))}
-          <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">
+          <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">
             <span className="flex-1">Area</span>
             <span className="w-14 text-right">Sales</span>
             <span className="w-14 text-right">IMS</span>
@@ -589,7 +589,7 @@ function StartTimeTable({
   const accent = tone === "emerald" ? "text-emerald-700" : "text-amber-700";
   return (
     <div>
-      <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{title}</p>
+      <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{title}</p>
       {rows.length === 0 ? (
         <p className="text-xs text-slate-400">Not enough check-in history yet.</p>
       ) : (
@@ -601,7 +601,7 @@ function StartTimeTable({
               <span className={`w-14 text-right text-sm font-black ${accent}`}>
                 {formatStartMinutes(row.medianStartMinutes)}
               </span>
-              <span className="w-16 text-right text-phx-2xs text-slate-400">{row.daysObserved} days</span>
+              <span className="w-16 text-right text-phx-sm text-slate-400">{row.daysObserved} days</span>
             </div>
           ))}
         </div>
@@ -635,9 +635,9 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
           { label: "No GPS check-in", value: n(data.repsWithoutCheckins), sub: "reps, time unverifiable" },
         ].map((tile) => (
           <div key={tile.label} className="border border-slate-200 px-3 py-2.5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{tile.label}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">{tile.label}</p>
             <p className="mt-0.5 text-lg font-black text-slate-900">{tile.value}</p>
-            <p className="text-phx-2xs text-slate-400">{tile.sub}</p>
+            <p className="text-phx-sm text-slate-400">{tile.sub}</p>
           </div>
         ))}
       </div>
@@ -645,8 +645,8 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
       {classified > 0 ? (
         <div>
           <div className="mb-1 flex items-baseline justify-between">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">AM · PM · Pharmacies</p>
-            <p className="text-phx-2xs text-slate-400">
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">AM · PM · Pharmacies</p>
+            <p className="text-phx-sm text-slate-400">
               AM {n(data.amVisits)} · PM {n(data.pmVisits)} · {pharmacyFigure}
             </p>
           </div>
@@ -665,7 +665,7 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div>
-          <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Most active reps</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Most active reps</p>
           {data.topReps.length === 0 ? (
             <p className="text-xs text-slate-400">No visits in this window.</p>
           ) : (
@@ -675,14 +675,14 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
                   <span className="w-5 shrink-0 text-phx-xs font-black text-slate-300">#{index + 1}</span>
                   <span className="flex-1 text-sm font-medium text-slate-700">{rep.label}</span>
                   <span className="w-12 text-right text-sm font-black text-slate-900">{n(rep.visits)}</span>
-                  <span className="w-20 text-right text-phx-2xs text-slate-400">{n(rep.contacts)} contacts</span>
+                  <span className="w-20 text-right text-phx-sm text-slate-400">{n(rep.contacts)} contacts</span>
                 </div>
               ))}
             </div>
           )}
         </div>
         <div>
-          <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Visit type mix</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">Visit type mix</p>
           {data.byVisitType.length === 0 ? (
             <p className="text-xs text-slate-400">No visits in this window.</p>
           ) : (
@@ -691,7 +691,7 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
                 <div key={type.label} className="flex items-center gap-3 px-3 py-2">
                   <span className="flex-1 text-sm font-medium text-slate-700">{type.label}</span>
                   <span className="w-14 text-right text-sm font-black text-slate-900">{n(type.count)}</span>
-                  <span className="w-12 text-right text-phx-2xs text-slate-400">
+                  <span className="w-12 text-right text-phx-sm text-slate-400">
                     {data.totalVisits > 0 ? `${Math.round((type.count / data.totalVisits) * 100)}%` : "—"}
                   </span>
                 </div>
@@ -718,19 +718,19 @@ function AttendanceWidget({
     <div className="p-5 space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="border border-slate-200 px-3 py-2.5">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Today</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Today</p>
           <p className="mt-0.5 text-sm font-black text-slate-900">{data.todayIsWorkingDay ? "Working day" : "Non-working day"}</p>
         </div>
         <div className="border border-slate-200 px-3 py-2.5">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Absent today</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Absent today</p>
           <p className={`mt-0.5 text-2xl font-black ${data.todayAbsentees.length > 5 ? "text-rose-700" : "text-slate-900"}`}>{data.todayAbsentees.length}</p>
         </div>
         <div className="border border-slate-200 px-3 py-2.5">
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Chronic late (30d)</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Chronic late (30d)</p>
           <p className={`mt-0.5 text-2xl font-black ${data.chronicLate.length > 3 ? "text-amber-700" : "text-slate-900"}`}>{data.chronicLate.length}</p>
         </div>
         <div className={`border px-3 py-2.5 ${(managersOnLeave?.length ?? 0) > 0 ? "border-amber-200 bg-amber-50" : "border-slate-200"}`}>
-          <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Managers on leave</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Managers on leave</p>
           <p className={`mt-0.5 text-2xl font-black ${(managersOnLeave?.length ?? 0) > 0 ? "text-amber-700" : "text-slate-400"}`}>{managersOnLeave?.length ?? 0}</p>
         </div>
       </div>
@@ -742,18 +742,18 @@ function AttendanceWidget({
       />
       {data.weeklyTrend.length > 0 && (
         <div className="px-5 pb-5">
-          <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Late rate — 7-week trend</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Late rate — 7-week trend</p>
           <div className="flex items-end gap-1.5 h-14">
             {data.weeklyTrend.map((w) => (
               <div key={w.isoWeek} className="flex flex-1 flex-col items-center gap-0.5">
                 <div className="flex h-10 w-full items-end">
                   <div className="w-full bg-orange-400" style={{ height: `${Math.max(3, (w.lateRate / maxLate) * 100)}%` }} title={`${w.lateRate.toFixed(1)}% late`} />
                 </div>
-                <span className="text-[7px] text-slate-400 truncate max-w-full">{w.isoWeek}</span>
+                <span className="max-w-full break-words text-center text-phx-xs leading-tight text-slate-400">{w.isoWeek}</span>
               </div>
             ))}
           </div>
-          <p className="mt-1 text-phx-3xs text-slate-400">Latest: {data.weeklyTrend[data.weeklyTrend.length - 1]?.lateRate.toFixed(1) ?? "—"}% late rate</p>
+          <p className="mt-1 text-phx-xs text-slate-400">Latest: {data.weeklyTrend[data.weeklyTrend.length - 1]?.lateRate.toFixed(1) ?? "—"}% late rate</p>
         </div>
       )}
     </div>
@@ -826,7 +826,7 @@ function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ad
           </div>
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 group-hover:text-orange-800">{label}</p>
-            <p className="mt-0.5 text-phx-2xs text-slate-400 leading-tight">{sub}</p>
+            <p className="mt-0.5 text-phx-sm text-slate-400 leading-tight">{sub}</p>
           </div>
           <ArrowRight className="ml-auto h-3 w-3 shrink-0 self-center text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-400" />
         </Link>
@@ -926,7 +926,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/admin/approvals-hub"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Approvals Hub <ArrowRight className="h-3 w-3" />
           </Link>
@@ -970,7 +970,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/sales/targets"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Manage Targets <ArrowRight className="h-3 w-3" />
           </Link>
@@ -994,7 +994,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/admin/field-sales/weekly-sales"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Full Weekly Sales <ArrowRight className="h-3 w-3" />
           </Link>
@@ -1034,7 +1034,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/admin/double-visit-analytics"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Full Analytics <ArrowRight className="h-3 w-3" />
           </Link>
@@ -1062,7 +1062,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/sales/monthly-closing"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Full SoS <ArrowRight className="h-3 w-3" />
           </Link>
@@ -1093,7 +1093,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/admin/outstation/expense-command"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             Full Expense Dashboard <ArrowRight className="h-3 w-3" />
           </Link>
@@ -1139,7 +1139,7 @@ export async function CeoPhaseBWidgets({
         action={
           <Link
             href="/admin/crm"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
           >
             CRM Workspace <ArrowRight className="h-3 w-3" />
           </Link>

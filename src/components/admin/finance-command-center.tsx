@@ -177,12 +177,12 @@ function MetricTile({
   // shared axis — the eye scans down one line instead of re-finding a ragged left edge per row.
   return (
     <div className="min-h-32 border border-slate-200 bg-white px-4 py-4 text-center">
-      <div className="flex items-center justify-center gap-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <div className="flex items-center justify-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
         <span className="text-orange-600">{icon}</span>
         {label}
       </div>
       <p className={`mt-4 text-3xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
-      <p className="mt-2 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
+      <p className="mt-2 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
     </div>
   );
 }
@@ -265,9 +265,9 @@ function PipelineStat({
 
   return (
     <div className="min-w-0 border border-slate-200 bg-white px-4 py-3.5 text-center">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className={`mt-2 text-xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
-      {sub ? <p className="mt-1.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p> : null}
+      {sub ? <p className="mt-1.5 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -389,18 +389,18 @@ function NetMonthOverMonth({ months }: { months: FinanceCommittedMonth[] }) {
                 className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap border border-slate-700 bg-slate-900 px-3 py-2 text-left shadow-[0_12px_28px_rgba(15,23,42,0.35)] group-hover:block"
                 role="tooltip"
               >
-                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
+                <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">
                   {monthLabel(month.period)}
                 </p>
                 <p className="mt-1 text-sm font-black tabular-nums text-white">{egpExact(month.net)}</p>
-                <p className="mt-0.5 text-phx-2xs font-bold tabular-nums text-slate-300">
+                <p className="mt-0.5 text-phx-sm font-bold tabular-nums text-slate-300">
                   {n(month.employees)} paid
                   {delta === null ? "" : ` · ${deltaText} vs ${monthLabel(months[index - 1]!.period)}`}
                 </p>
               </div>
 
               <span
-                className={`text-phx-3xs font-black tabular-nums ${
+                className={`text-phx-xs font-black tabular-nums ${
                   delta === null || flat ? "text-slate-400" : up ? "text-emerald-700" : "text-rose-700"
                 }`}
               >
@@ -424,7 +424,7 @@ function NetMonthOverMonth({ months }: { months: FinanceCommittedMonth[] }) {
               />
 
               <span
-                className={`truncate text-phx-4xs ${isLatest ? "font-black text-slate-700" : "text-slate-400"}`}
+                className={`break-words text-center text-phx-xs leading-tight ${isLatest ? "font-black text-slate-700" : "text-slate-400"}`}
               >
                 {monthLabel(month.period)}
               </span>
@@ -529,7 +529,7 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-sm font-black tabular-nums text-slate-900">{n(run.rows_in_run)}</p>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">in run</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">in run</p>
               </div>
               <div className="hidden shrink-0 text-right sm:block">
                 <p
@@ -537,7 +537,7 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
                 >
                   {n(run.on_hold_count)}
                 </p>
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">on hold</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400">on hold</p>
               </div>
             </div>
           ))
@@ -549,7 +549,7 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
             isAutomatedPayrollFinanceActor — no new authority, one less navigation. */}
         {canDownloadSheets && sheetRun ? (
           <div className="flex flex-wrap items-center gap-2 bg-slate-50 px-5 py-4">
-            <span className="mr-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mr-1 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
               {sheetRun.part2_confirmed
                 ? `Ready to pay — ${monthLabel(sheetRun.month_key)}`
                 : `Part 1 available — ${monthLabel(sheetRun.month_key)}`}
@@ -574,7 +574,7 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
 
       <div className="space-y-4 p-5">
         <div>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Net payroll paid</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">Net payroll paid</p>
           <div className="mt-2">
             <AreaSparkline
               gradId="finance-net-payroll"
@@ -583,10 +583,10 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
           </div>
         </div>
         <div>
-          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+          <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
             Net payroll — month over month
           </p>
-          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
+          <p className="mt-0.5 text-phx-sm font-medium text-slate-400">
             How each month moved against the one before it.
           </p>
           <div className="mt-2">
@@ -730,7 +730,7 @@ export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) 
       <SectionShell
         action={
           <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             href="/admin/finance-command-center"
           >
             <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
@@ -746,7 +746,7 @@ export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) 
       <SectionShell
         action={
           <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             href="/admin/automated-payroll/finance"
           >
             <FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />
@@ -806,7 +806,7 @@ export function FinanceCommandCenter({
           identity: /admin carries the thin strip and would otherwise show two. */}
       <AdminHeroFrame className="z-10 overflow-visible">
         <div className="p-5 sm:p-6 lg:p-8">
-          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
+          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.22em] text-orange-100">
             <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
             Finance Command Center
           </div>
@@ -840,7 +840,7 @@ export function FinanceCommandCenter({
       <SectionShell
         action={
           <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             href="/admin/automated-payroll/finance"
           >
             <FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />
@@ -950,7 +950,7 @@ export function FinanceCommandCenter({
       <SectionShell
         action={
           <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             href="/admin/automated-payroll/finance"
           >
             <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
@@ -1014,7 +1014,7 @@ export function FinanceCommandCenter({
       <SectionShell
         action={
           <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
             href="/admin/direct-orders/report"
           >
             <ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />
@@ -1104,7 +1104,7 @@ export function FinanceCommandCenter({
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
               href="/admin/marketing-requests/inbox"
             >
               <Megaphone aria-hidden="true" className="h-3.5 w-3.5" />
@@ -1123,7 +1123,7 @@ export function FinanceCommandCenter({
                 tests/marketing-review-routing.test.ts. This is a link on his own landing page,
                 which that decision leaves untouched and which the page already carried elsewhere. */}
             <Link
-              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-sm font-bold text-white hover:bg-white/20"
               href="/workspace/marketing-requests"
             >
               <ClipboardList aria-hidden="true" className="h-3.5 w-3.5" />
@@ -1190,7 +1190,7 @@ export function FinanceCommandCenter({
         </div>
       </SectionShell>
 
-      <div className="flex items-center justify-between gap-4 bg-slate-900 px-5 py-3 text-phx-2xs text-slate-400">
+      <div className="flex items-center justify-between gap-4 bg-slate-900 px-5 py-3 text-phx-sm text-slate-400">
         <span>Every figure is taken from committed payroll and live requests — never from an estimate.</span>
         <span className="shrink-0 tabular-nums">Updated {cairoTimestamp(data.generatedAt)}</span>
       </div>

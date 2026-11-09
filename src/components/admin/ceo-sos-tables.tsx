@@ -66,10 +66,10 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
         </colgroup>
         <thead>
           <tr className="bg-slate-900 text-left">
-            <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Value"  sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <SortableTh label="Qty"    sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <th className="px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">Share</th>
+            <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Value"  sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <SortableTh label="Qty"    sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <th className="px-3 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-white">Share</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -150,11 +150,11 @@ function ProductTable({ rows, period }: { rows: ProductRow[]; period: string | n
         </colgroup>
         <thead>
           <tr className="bg-slate-900 text-left">
-            <SortableTh label="Product" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Line"    sortKey="line"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Value"   sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <SortableTh label="Qty"     sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <th className="px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">Share</th>
+            <SortableTh label="Product" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Line"    sortKey="line"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Value"   sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <SortableTh label="Qty"     sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <th className="px-3 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-white">Share</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -215,7 +215,7 @@ export function CeoSosTables({
             </button>
           ))}
         </div>
-        {period ? <span className="text-phx-2xs text-slate-400">Period: {period}</span> : null}
+        {period ? <span className="text-phx-sm text-slate-400">Period: {period}</span> : null}
         <Link
           href="/sales/monthly-closing"
           className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"

@@ -281,7 +281,7 @@ function RoleBadge({ role }: { role: PhoenixRole }) {
   return (
     <span className={badgeClassName(roleBadgeTone(role))}>
       {displayTitleForRole(role)}
-      <span className="ml-1 text-phx-2xs font-bold uppercase tracking-wider opacity-70">{label}</span>
+      <span className="ml-1 text-phx-sm font-bold uppercase tracking-wider opacity-70">{label}</span>
     </span>
   );
 }
@@ -291,7 +291,7 @@ function ScopeBadge({ label, scope }: { label: string; scope: BusinessScope }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-semibold text-phx-ink-soft">
       {label}
-      <span className={`rounded-full border ${classes.border} ${classes.bg} px-1.5 py-0.5 text-phx-2xs ${classes.text}`}>
+      <span className={`rounded-full border ${classes.border} ${classes.bg} px-1.5 py-0.5 text-phx-sm ${classes.text}`}>
         {scope}
       </span>
     </span>
@@ -878,7 +878,7 @@ export function AccessControlManager({
   function renderUserActions(user: AccessUserRow, layout: "compact" | "stacked" = "compact") {
     if (!canManageUsers) {
       return (
-        <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-2 py-1 text-phx-2xs font-semibold uppercase tracking-wider text-phx-ink-soft" title="Your role can view governance state but cannot mutate users.">
+        <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-2 py-1 text-phx-sm font-semibold uppercase tracking-wider text-phx-ink-soft" title="Your role can view governance state but cannot mutate users.">
           Restricted
         </span>
       );
@@ -988,7 +988,7 @@ export function AccessControlManager({
         <div className="flex-1">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
             <ShieldCheck className="h-3.5 w-3.5 text-orange-600" />
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-700">Identity Governance</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.18em] text-orange-700">Identity Governance</span>
           </div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Users & Access</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
@@ -1002,7 +1002,7 @@ export function AccessControlManager({
               { label: "Sensitive actions", value: "Confirmed + audited" },
             ].map((item) => (
               <div className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 shadow-sm" key={item.label}>
-                <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
+                <p className="text-phx-sm font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
                 <p className="mt-1 text-sm font-semibold text-slate-800">{item.value}</p>
               </div>
             ))}
@@ -1184,7 +1184,7 @@ export function AccessControlManager({
                 <col className="w-[14%]" />
                 <col className="w-[26%]" />
               </colgroup>
-              <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+              <thead className="bg-phx-paper text-phx-sm font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 <tr>
                   <th className="px-3 py-3">Row</th>
                   <th className="px-3 py-3">Name</th>
@@ -1283,7 +1283,7 @@ export function AccessControlManager({
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{card.label}</p>
+                        <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{card.label}</p>
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />
                         {isOperationalKPI && (
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping absolute" style={{ animationDuration: '1.5s' }} />
@@ -1338,7 +1338,7 @@ export function AccessControlManager({
 
               <form className="grid gap-5 px-5 py-5" onSubmit={saveUser}>
                 <div className="space-y-4">
-                  <div className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Identity</div>
+                  <div className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">Identity</div>
                   <div className="grid gap-3">
                     <Input
                       aria-label="Full name"
@@ -1378,7 +1378,7 @@ export function AccessControlManager({
                 <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
                 <div className="space-y-4">
-                  <div className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Organization</div>
+                  <div className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">Organization</div>
                   <div className="grid gap-3">
                     <SearchableSelect
                       aria-label="Phoenix role"
@@ -1422,7 +1422,7 @@ export function AccessControlManager({
                 <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
                 <div className="space-y-4">
-                  <div className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Access scope</div>
+                  <div className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">Access scope</div>
                   <div className="grid gap-3">
                     <SearchableSelect
                       aria-label="Sales scope override"
@@ -1463,7 +1463,7 @@ export function AccessControlManager({
                 <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
                 <div className="space-y-4">
-                  <div className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Status</div>
+                  <div className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">Status</div>
                   <div className="grid gap-3">
                     <div className="rounded-lg border border-slate-200 bg-stone-50 p-3 text-sm leading-5 text-slate-600 transition-all duration-160 ease-out hover:bg-stone-100">
                       New users start in password-setup mode. After saving, use the setup link action from the list to
@@ -1868,7 +1868,7 @@ export function AccessControlManager({
                     <col className="w-[34%]" />
                     <col className="w-[66%]" />
                   </colgroup>
-                  <thead className="bg-stone-50 text-phx-2xs font-medium uppercase tracking-wider text-slate-500">
+                  <thead className="bg-stone-50 text-phx-sm font-medium uppercase tracking-wider text-slate-500">
                     <tr>
                       <th className="px-3 py-3">Area</th>
                       <th className="px-3 py-3">Allowed actions</th>
@@ -1894,7 +1894,7 @@ export function AccessControlManager({
                                     : "Restricted";
                                 return (
                                   <label
-                                                        className={`flex items-center gap-1.5 border px-1.5 py-1 text-phx-2xs transition-colors ${
+                                                        className={`flex items-center gap-1.5 border px-1.5 py-1 text-phx-sm transition-colors ${
                                                           isAllowOverride || isDenyOverride
                                                             ? "border-orange-200 bg-orange-50 text-orange-700"
                                                             : isAllowed
