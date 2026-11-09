@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { NO_PUBLISHED_MONTH } from "@/lib/employee-portal/unranked-managers";
+import {
+  achievementBand,
+  compactEgp,
+  pendingItems,
+  rankingBoardEmptyText,
+  wholePercent,
+  type AchievementBand,
+} from "@/lib/employee-portal/rsm-home-summary";
 import { Suspense } from "react";
 import {
   Activity,
@@ -57,9 +65,9 @@ export function egp(n: number) {
 export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
-      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
-        <div className="h-1.5 w-12 bg-orange-500" />
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
+        <h2 className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <div className="h-1.5 w-12 shrink-0 bg-orange-500" />
       </div>
       <div className="bg-white p-3 sm:p-5">{children}</div>
     </div>
@@ -134,6 +142,15 @@ export function MarketingToolRow({
   );
 }
 
+/**
+ * What waits on the viewer, and apart from it, what the viewer is waiting on.
+ *
+ * The vacation and excuse counts on the landing snapshot are the viewer's OWN requests
+ * (`employee_hr_id` is the viewer), waiting on the viewer's manager or HR. They used to sit under
+ * "Needs Your Decision" beside the plans awaiting the viewer's approval and open the Approvals Hub,
+ * where there was nothing to decide. `pendingItems` (rsm-home-summary.ts) splits them; the viewer's
+ * own requests open the viewer's own request pages.
+ */
 export function PendingActions({
   pendingVacationCount,
   pendingExcuseCount,
@@ -143,47 +160,57 @@ export function PendingActions({
   pendingExcuseCount: number;
   plansAwaitingApproval?: number;
 }) {
+  const { decisions, own } = pendingItems({
+    plansAwaitingApproval,
+    ownVacationRequests: pendingVacationCount,
+    ownExcuseRequests: pendingExcuseCount,
+  });
+  if (decisions.length === 0 && own.length === 0) return null;
   return (
-    <SectionShell title="Needs Your Decision">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {plansAwaitingApproval > 0 && (
-          <Link
-            href="/employee-portals/approvals-hub?module=weekly_plan"
-            className="flex items-center justify-between border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
-          >
-            <span className="flex items-center gap-2">
-              <ClipboardCheck className="h-4 w-4" />
-              {plansAwaitingApproval} plan{plansAwaitingApproval > 1 ? "s" : ""} awaiting your approval
-            </span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-        {pendingVacationCount > 0 && (
-          <Link
-            href="/employee-portals/approvals-hub"
-            className="flex items-center justify-between border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
-          >
-            <span className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4" />
-              {pendingVacationCount} vacation request{pendingVacationCount > 1 ? "s" : ""} pending
-            </span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-        {pendingExcuseCount > 0 && (
-          <Link
-            href="/employee-portals/approvals-hub"
-            className="flex items-center justify-between border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
-          >
-            <span className="flex items-center gap-2">
-              <CalendarX2 className="h-4 w-4" />
-              {pendingExcuseCount} excuse request{pendingExcuseCount > 1 ? "s" : ""} pending
-            </span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-      </div>
-    </SectionShell>
+    <div className="space-y-3">
+      {decisions.length > 0 ? (
+        <SectionShell title="Needs Your Decision">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {decisions.map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
+                className="flex items-center justify-between gap-3 border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800 hover:bg-orange-100"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 break-words">{item.text}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </SectionShell>
+      ) : null}
+      {own.length > 0 ? (
+        <SectionShell title="Your Requests in Progress">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {own.map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
+                className={`flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 hover:border-orange-300 hover:bg-orange-50 ${adminControlDepthClassName}`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {item.key === "excuse" ? (
+                    <CalendarX2 className="h-4 w-4 shrink-0 text-slate-500" />
+                  ) : (
+                    <CalendarDays className="h-4 w-4 shrink-0 text-slate-500" />
+                  )}
+                  <span className="min-w-0 break-words">{item.text}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
+              </Link>
+            ))}
+          </div>
+        </SectionShell>
+      ) : null}
+    </div>
   );
 }
 
@@ -360,8 +387,10 @@ export function PortalContextBar({ role, context }: { role: string; context: str
     <div className="flex items-center gap-3 border border-orange-200 bg-orange-50 px-4 py-3 sm:px-5 sm:py-3.5">
       <Layers className="h-4 w-4 shrink-0 text-orange-600" />
       <div className="min-w-0">
-        <p className="text-phx-2xs font-bold uppercase tracking-widest text-orange-500">{role}</p>
-        <p className="whitespace-nowrap font-bold text-slate-900">{context}</p>
+        <p className="break-words text-phx-xs font-bold uppercase tracking-widest text-orange-500">{role}</p>
+        {/* Wraps: a Regional Manager's territory names every region under the seat (#162), which
+            ran past a phone's edge with the nowrap this used to carry. */}
+        <p className="break-words font-bold leading-snug text-slate-900">{context}</p>
       </div>
     </div>
   );
@@ -476,7 +505,7 @@ export function SectionHead({ title, right }: { title: string; right?: React.Rea
       <div className="relative flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5 sm:py-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="h-4 w-[3px] shrink-0 bg-[#f47b20]" />
-          <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-300">
+          <h2 className="min-w-0 break-words text-phx-xs font-black uppercase tracking-[0.18em] text-slate-300">
             {title}
           </h2>
         </div>
@@ -505,7 +534,7 @@ export function SectionMeta({ items }: { items: readonly (string | null | undefi
   const shown = items.filter((item): item is string => Boolean(item && item.trim()));
   if (shown.length === 0) return null;
   return (
-    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
+    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-phx-xs font-bold uppercase tracking-widest text-slate-400">
       {shown.map((item, index) => (
         <span key={item} className="flex items-center gap-2">
           {index > 0 ? (
@@ -541,7 +570,7 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
             <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
               <card.icon className="h-3.5 w-3.5" />
             </span>
-            <p className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
+            <p className="min-w-0 break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-400">
               {card.label}
             </p>
           </div>
@@ -601,11 +630,23 @@ export type RankRow = {
   managerName?: string | null;
 };
 
+const BAND_TEXT: Record<AchievementBand, string> = {
+  met: "text-emerald-600",
+  near: "text-amber-600",
+  behind: "text-orange-600",
+  far: "text-rose-600",
+};
+const BAND_BAR: Record<AchievementBand, string> = {
+  met: "bg-emerald-500",
+  near: "bg-amber-400",
+  behind: "bg-orange-500",
+  far: "bg-rose-500",
+};
 function pctTextClass(pct: number): string {
-  return pct >= 100 ? "text-emerald-600" : pct >= 90 ? "text-amber-600" : pct >= 70 ? "text-orange-600" : "text-rose-600";
+  return BAND_TEXT[achievementBand(pct)];
 }
 function pctBarClass(pct: number): string {
-  return pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : pct >= 70 ? "bg-orange-500" : "bg-rose-500";
+  return BAND_BAR[achievementBand(pct)];
 }
 /** The house medal palette — gold, silver, bronze, then plain. Exported so the Early Birds race
  * panel reuses the same chips as the sales leaderboard instead of a second, drifting copy. */
@@ -649,11 +690,12 @@ export function RankingPanel({
     <div className={`overflow-hidden border border-slate-200 bg-white ${adminSoftDepthClassName}`}>
       <SectionHead title={title} right={<SectionMeta items={[windowLabel, subtitle]} />} />
       {ranked.length === 0 && unranked.length === 0 ? (
-        <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">{rankingBoardEmptyText(windowLabel)}</p>
       ) : (
         <div className="bg-white">
           {ranked.map((row, i) => {
-            const pct = Math.max(0, Math.round(row.achievementPercent));
+            // Never rounded UP across a line: 89.6% reads 89%, the same as Districts Needing Attention.
+            const pct = wholePercent(row.achievementPercent);
             // No target means the percent has no meaning — showing 0% would tell someone who
             // sold well that they achieved nothing. Targets start 2026-07, so this is ordinary.
             const hasTarget = row.totalTarget > 0;
@@ -672,7 +714,7 @@ export function RankingPanel({
                         and the old ellipsis cut most of them off on a phone. */}
                     <p className="break-words text-sm font-semibold leading-snug text-slate-800">{row.name}</p>
                     {showManager && row.managerName ? (
-                      <p className="break-words text-phx-2xs font-medium uppercase leading-snug tracking-wide text-slate-400">
+                      <p className="break-words text-phx-xs font-medium uppercase leading-snug tracking-wide text-slate-400">
                         {row.managerName}
                       </p>
                     ) : null}
@@ -687,7 +729,7 @@ export function RankingPanel({
                       </div>
                     </>
                   ) : (
-                    <p className="whitespace-nowrap text-right text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                    <p className="break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-400">
                       No target
                     </p>
                   )}
@@ -708,13 +750,13 @@ export function RankingPanel({
                 <div className="min-w-0">
                   <p className="break-words text-sm font-semibold leading-snug text-slate-800">{person.name}</p>
                   {person.note ? (
-                    <p className="break-words text-phx-2xs font-medium uppercase leading-snug tracking-wide text-slate-400">
+                    <p className="break-words text-phx-xs font-medium uppercase leading-snug tracking-wide text-slate-400">
                       {person.note}
                     </p>
                   ) : null}
                 </div>
               </div>
-              <p className="w-24 shrink-0 text-right text-phx-2xs font-bold uppercase leading-snug tracking-wide text-slate-400">
+              <p className="w-24 shrink-0 break-words text-right text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-400">
                 {NO_PUBLISHED_MONTH}
               </p>
             </div>
@@ -793,18 +835,7 @@ export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
 /* ── egpCompact (compact currency, e.g. "128.45 M EGP") ──────────────── */
 
 export function egpCompact(value: number): string {
-  const abs = Math.abs(value);
-  const unit =
-    abs >= 1_000_000_000
-      ? { div: 1_000_000_000, suffix: "B" }
-      : abs >= 1_000_000
-        ? { div: 1_000_000, suffix: "M" }
-        : abs >= 1_000
-          ? { div: 1_000, suffix: "K" }
-          : null;
-  if (!unit) return `${Math.round(value).toLocaleString("en-US")} EGP`;
-  const scaled = (value / unit.div).toFixed(2).replace(/\.?0+$/, "");
-  return `${scaled} ${unit.suffix} EGP`;
+  return compactEgp(value);
 }
 
 /* ── Private command center layouts ─────────────────────────────── */

@@ -849,6 +849,8 @@ export type PortalClosingTrendPoint = {
   period: string;
   salesValue: number;
   salesUnits: number;
+  /** The same published closing's target value for the viewer's scope; null when none is loaded. */
+  targetValue: number | null;
 };
 
 /**
@@ -874,7 +876,7 @@ export async function loadPortalClosingTrend(input: {
       const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
       const matrix = applyRegionScope(productScoped, scope.regionNames, areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, period));
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
-      return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
+      return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits, targetValue: matrix.grandTotal.rowTotal.targetValue ?? null };
     }),
   );
 
