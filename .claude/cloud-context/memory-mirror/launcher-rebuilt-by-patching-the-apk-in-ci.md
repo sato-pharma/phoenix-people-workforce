@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: dd58f0ee-c080-4c4d-b6a3-efefe32f1614
-  modified: 2026-11-09T06:59:05.711Z
+  modified: 2026-11-09T07:07:09.571Z
 ---
 
 Because the launcher SOURCE is unrecoverable ([[launcher-fork-account-suspended]]), a new launcher is
@@ -111,6 +111,10 @@ mode's worker does nothing else). Edit G: channel importance 3→2 (LOW; MIN wou
 `mqtt_service_text` → "Sato Pharma" in all 17 locales. Hosting PR #203 (`codex/launcher-651-host`, worktree
 `_wt-launcher-651-host`) serves 6.51 + keeps 6.50. After his merge: row 10045 → 6.51 / 15483 / `…/hmdm-phoenix-6.51.apk`
 on his word. Tablets run **Android 12** (no POST_NOTIFICATIONS route).
+**✅ 6.51 SHIPPED (9 Nov 2026, owner "merge 203 when green" + "ship 6.51 to all 3"):** #203 merged 09:02 Cairo
+(`e84132392`, alone — PHX_MERGE_OK because a non-required CodeQL check was still pending); 6.51 served 200/6466497
+from 09:05:51 Cairo, 6.50 still served; row 10045 → 6.51 / 15483 / `…/hmdm-phoenix-6.51.apk`; configUpdated pushed
+to 0009, 0007, 0008. Worktree `_wt-launcher-651-host` removed on his word.
 
 **ONLY REMAINING — the owner's eyes on a tablet:** on any rep tablet after its next check-in, confirm the
 pull-down returns, Android's privacy notices show, and the lock screen reads "This device is not private.
