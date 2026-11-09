@@ -44,8 +44,8 @@ import {
 import type { KpiCoverageDoctor } from "@/lib/crm/kpis-board";
 import { kpiBandOf, type KpiBand } from "@/lib/crm/kpis-filters";
 
-const EYEBROW = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-3xs";
-const SMALL = "text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs";
+const EYEBROW = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-xs";
+const SMALL = "text-phx-sm leading-4 text-slate-500 sm:text-phx-xs";
 const LINK = "underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500";
 
 /** The three states of a planned doctor, each one flat swatch. Late is the only one in a warning colour. */
@@ -74,8 +74,8 @@ function Panel({ caption, children, title }: { caption?: string; children: React
   return (
     <div className="min-w-0 border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
-        {caption ? <p className="mt-0.5 text-phx-3xs leading-4 text-slate-500">{caption}</p> : null}
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
+        {caption ? <p className="mt-0.5 text-phx-xs leading-4 text-slate-500">{caption}</p> : null}
       </div>
       {children}
     </div>
@@ -170,8 +170,8 @@ export function KpiFloorTrack({
         {segments.map((segment) => (
           <li className="flex items-start gap-2" key={segment.key}>
             <span aria-hidden className={`mt-1 h-2 w-2 shrink-0 ${segment.swatch}`} />
-            <span className="min-w-0 flex-1 text-phx-xs leading-4 text-slate-700 sm:text-phx-2xs">{segment.label}</span>
-            <span className="shrink-0 text-phx-xs font-black tabular-nums text-slate-900 sm:text-phx-2xs">
+            <span className="min-w-0 flex-1 text-phx-md leading-4 text-slate-700 sm:text-phx-sm">{segment.label}</span>
+            <span className="shrink-0 text-phx-md font-black tabular-nums text-slate-900 sm:text-phx-sm">
               <CountLink count={segment.count} href={segment.href} />
             </span>
           </li>
@@ -255,7 +255,7 @@ function DoctorLine({ doctor }: { doctor: KpiCoverageDoctor }) {
         <span className="block font-semibold leading-5 text-slate-500">Name not on the plan</span>
       )}
       {meta ? (
-        <span className="block text-phx-3xs leading-4 text-slate-500" dir="auto">
+        <span className="block text-phx-xs leading-4 text-slate-500" dir="auto">
           {meta}
         </span>
       ) : null}
@@ -313,7 +313,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
                   <DoctorLine doctor={step.doctor} />
                 </td>
                 <td className={TD}>
-                  <span className={`block text-phx-2xs font-semibold leading-4 ${step.late ? "text-rose-700" : "text-slate-600"}`}>
+                  <span className={`block text-phx-sm font-semibold leading-4 ${step.late ? "text-rose-700" : "text-slate-600"}`}>
                     {stepWhy(step)}
                   </span>
                 </td>
@@ -327,7 +327,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
               <span className="w-5 shrink-0 font-black tabular-nums text-slate-400">{index + 1}</span>
               <span className="min-w-0 flex-1">
                 <DoctorLine doctor={step.doctor} />
-                <span className={`mt-1 block text-phx-3xs font-semibold leading-4 ${step.late ? "text-rose-700" : "text-slate-600"}`}>
+                <span className={`mt-1 block text-phx-xs font-semibold leading-4 ${step.late ? "text-rose-700" : "text-slate-600"}`}>
                   {stepWhy(step)}
                 </span>
               </span>
@@ -385,7 +385,7 @@ function GroupName({ row }: { row: KpiCoverageGroupLine }) {
       ) : (
         row.label
       )}
-      {row.note ? <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-400">{row.note}</span> : null}
+      {row.note ? <span className="mt-0.5 block text-phx-xs leading-4 text-slate-400">{row.note}</span> : null}
     </span>
   );
 }
@@ -464,7 +464,7 @@ export function KpiCoverageGroupTable({
                 </td>
                 <td className={NUM}>{row.planned}</td>
                 <td className={NUM}>{row.covered}</td>
-                <td className={`${NUM} text-phx-2xs`}>
+                <td className={`${NUM} text-phx-sm`}>
                   <NotCoveredCell row={row} />
                 </td>
                 <td className={NUM}>
@@ -485,7 +485,7 @@ export function KpiCoverageGroupTable({
                 <span className={`shrink-0 text-sm font-black tabular-nums ${toneOf(groupBand(row)).text}`}>{row.pct}%</span>
               </div>
               <KpiMeter band={groupBand(row)} value={row.pct} />
-              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+              <span className="mt-1 block text-phx-xs leading-4 text-slate-500">
                 {row.covered} of {row.planned} planned doctors seen
                 {row.late > 0 ? (
                   <>

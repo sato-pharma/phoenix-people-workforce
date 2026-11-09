@@ -43,8 +43,8 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // It stays in the export, where somebody reconciles against the CRM and a name alone cannot be
 // matched back.
 
-const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-const CHIP = "px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]";
+const THEAD = "px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white";
+const CHIP = "px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]";
 
 /** The proof bucket, coloured. Green proved, rose unproved, sky campaign, slate not-field-work. */
 function standingChip(standing: RepVisitStanding): string {
@@ -78,7 +78,7 @@ function standingText(standing: RepVisitStanding): string {
  *
  * The XLSX export keeps them FLAT, one column each — a sheet has no viewport and nothing is lost.
  */
-const PHOENIX_LINE = "block text-phx-2xs font-semibold leading-4 text-slate-500";
+const PHOENIX_LINE = "block text-phx-sm font-semibold leading-4 text-slate-500";
 
 function phoenixLines(values: ReadonlyArray<string | null>): React.ReactNode {
   const lines = values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
@@ -231,7 +231,7 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     <div className="flex flex-wrap border-l border-t border-slate-200">
       {cells.map((cell) => (
         <div className="min-w-0 basis-32 flex-1 border-b border-r border-slate-200 bg-white px-3 py-2.5" key={cell.label}>
-          <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
           <p className={`text-lg font-black ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
         </div>
       ))}
@@ -332,11 +332,11 @@ export function RepVisitsDetail({
             Phoenix brick yet, so their area and region cannot be resolved.
           </p>
           {surface === "portal" ? (
-            <p className="mt-1 text-phx-xs text-amber-800">
+            <p className="mt-1 text-phx-md text-amber-800">
               The place is still named on every row — it is the brick, area and region behind it that are missing.
             </p>
           ) : (
-          <p className="mt-1 text-phx-xs text-amber-800">
+          <p className="mt-1 text-phx-md text-amber-800">
             {mappedRegions === 0
               ? "No CRM region has been mapped at all so far."
               : `${mappedRegions.toLocaleString("en-US")} CRM regions are mapped so far.`}{" "}
@@ -511,7 +511,7 @@ export function RepVisitsDetail({
                           <td className="break-words px-3 py-2">
                             <span className="block font-semibold leading-tight text-slate-900">{contactText(row)}</span>
                             {row.contactCrmId == null && note ? (
-                              <span className={`block text-phx-2xs font-black uppercase tracking-[0.1em] ${note.tone}`}>
+                              <span className={`block text-phx-sm font-black uppercase tracking-[0.1em] ${note.tone}`}>
                                 {note.text}
                               </span>
                             ) : null}
@@ -553,7 +553,7 @@ export function RepVisitsDetail({
                           <td className="break-words px-3 py-2">
                             <span className={`inline-block ${standingChip(row.standing)}`}>{standingText(row.standing)}</span>
                             {unscored ? (
-                              <span className="mt-1 block text-phx-2xs font-semibold leading-4 text-slate-500">{unscored}</span>
+                              <span className="mt-1 block text-phx-sm font-semibold leading-4 text-slate-500">{unscored}</span>
                             ) : null}
                             {phoenixLines([
                               row.phoenix?.location ?? null,
@@ -580,8 +580,8 @@ export function RepVisitsDetail({
       {offDutyRows.length > 0 ? (
         <div className="border border-slate-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-100 px-5 py-3">
-            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
-            <p className="text-phx-xs text-slate-500">
+            <h3 className="text-phx-md font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
+            <p className="text-phx-md text-slate-500">
               {offDutyRows.length.toLocaleString("en-US")}{" "}
               {offDutyRows.length === 1 ? "day" : "days"} · leave, public holidays, meetings and training · counted in no
               rate, and never a visit

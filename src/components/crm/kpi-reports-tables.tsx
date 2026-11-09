@@ -66,7 +66,7 @@ function Verdict({ block, kind }: { block: ListKpiBlock; kind: "callRate" | "cov
   const score = block[kind].score;
   if (!score.scored) return <span className={CAPTION}>{unscoredLabel(score.reason)}</span>;
   return (
-    <span className={score.meets ? "text-phx-2xs font-bold text-emerald-700" : "text-phx-2xs font-bold text-rose-700"}>
+    <span className={score.meets ? "text-phx-sm font-bold text-emerald-700" : "text-phx-sm font-bold text-rose-700"}>
       {score.meets ? "Met" : "Below"}
     </span>
   );
@@ -187,7 +187,7 @@ function Tally({ rows }: { rows: ReportRow[] }) {
 function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeading: string; rows: ReportRow[] }) {
   return (
     <table className="hidden w-full table-fixed md:table">
-      <caption className={`px-4 pb-2 pt-4 text-left text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900 sm:px-5`}>
+      <caption className={`px-4 pb-2 pt-4 text-left text-phx-md font-black uppercase tracking-[0.12em] text-slate-900 sm:px-5`}>
         {caption}
       </caption>
       <colgroup>
@@ -203,19 +203,19 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
           </th>
           <th className={TH} scope="col">
             Call rate
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               {rateHeading}
             </span>
           </th>
           <th className={TH} scope="col">
             Coverage
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Seen at least once ÷ their list
             </span>
           </th>
           <th className={TH} scope="col">
             Frequency
-            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+            <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
               Met the grade&apos;s own norm
             </span>
           </th>
@@ -246,7 +246,7 @@ function ListTable({ caption, rateHeading, rows }: { caption: string; rateHeadin
 function ListCards({ caption, rows }: { caption: string; rows: ReportRow[] }) {
   return (
     <div className="md:hidden">
-      <p className="px-4 pb-2 pt-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">{caption}</p>
+      <p className="px-4 pb-2 pt-4 text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">{caption}</p>
       <div className="divide-y divide-slate-100 border-t border-slate-100">
         {rows.map((row, index) => (
           <div className="px-4 py-3" key={row.repKey ?? `${row.repName}-${index}`}>

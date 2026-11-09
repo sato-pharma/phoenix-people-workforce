@@ -39,7 +39,7 @@ import {
  * than appended, because two padding utilities on one element are resolved by stylesheet order, not by
  * which is written last.
  */
-const PERIOD_TH = "px-2 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const PERIOD_TH = "px-2 py-2.5 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 const PERIOD_TD = "px-2 py-3 align-top text-sm font-semibold tabular-nums text-slate-900";
 
 type Reading = { value: string; caption: string; band: KpiBand; fill: number | null };
@@ -107,7 +107,7 @@ function ReadingBlock({ reading }: { reading: Reading }) {
     <>
       <span className={`block text-base font-black ${toneOf(reading.band).text}`}>{reading.value}</span>
       <KpiMeter band={reading.band} value={reading.fill} />
-      <span className="mt-1 block text-phx-3xs font-semibold leading-4 text-slate-500">{reading.caption}</span>
+      <span className="mt-1 block text-phx-xs font-semibold leading-4 text-slate-500">{reading.caption}</span>
     </>
   );
 }
@@ -117,7 +117,7 @@ function PeriodHead({ column, running }: { column: KpiTrendColumn; running: bool
   return (
     <th className={PERIOD_TH} scope="col">
       <span className="block">{column.label}</span>
-      <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+      <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
         {column.span}
         {soFar ? " · so far" : ""}
       </span>
@@ -141,15 +141,15 @@ function Switch<T extends string>({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{title}</p>
+      <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{title}</p>
       <div className="mt-1 flex flex-wrap gap-1.5">
         {options.map((option) => (
           <Link
             aria-current={option === current ? "page" : undefined}
             className={
               option === current
-                ? "border border-orange-500 bg-orange-50 px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-orange-800"
-                : "border border-slate-300 bg-white px-2.5 py-1.5 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+                ? "border border-orange-500 bg-orange-50 px-2.5 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-orange-800"
+                : "border border-slate-300 bg-white px-2.5 py-1.5 text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
             }
             href={hrefs[option]}
             key={option}
@@ -171,7 +171,7 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
       <div className="divide-y divide-slate-100 md:hidden">
         {KPI_TREND_METRICS.map((metric) => (
           <div className="px-4 py-4" key={metric}>
-            <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+            <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
               {KPI_TREND_METRIC_LABEL[metric]}
             </p>
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -180,8 +180,8 @@ function TeamMatrix({ trend }: { trend: KpiTrend }) {
                   className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-orange-300 bg-orange-50/70" : "border-slate-200 bg-white"}`}
                   key={column.key}
                 >
-                  <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
-                  <p className="text-phx-3xs text-slate-400">{column.span}</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
+                  <p className="text-phx-xs text-slate-400">{column.span}</p>
                   <div className="mt-1 tabular-nums">
                     <ReadingBlock reading={readingOf(team[index] ?? null, metric, column)} />
                   </div>
@@ -245,7 +245,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
                   className={`min-w-0 border px-2 py-2 ${column.kind === "total" ? "border-orange-300 bg-orange-50/70" : "border-slate-200 bg-white"}`}
                   key={column.key}
                 >
-                  <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{column.label}</p>
                   <div className="mt-1 tabular-nums">
                     <ReadingBlock reading={readingOf(line.cells[index] ?? null, metric, column)} />
                   </div>
@@ -267,7 +267,7 @@ function RepMatrix({ metric, trend }: { metric: KpiTrendMetric; trend: KpiTrend 
             <tr>
               <th className={TH} scope="col">
                 Medical rep
-                <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+                <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">
                   Line · area
                 </span>
               </th>
@@ -328,7 +328,7 @@ export function KpiTrendView({
     <>
       <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 px-4 py-4 sm:px-5">
         <Switch current={scale} hrefs={scaleHrefs} labels={KPI_TREND_SCALE_LABEL} options={KPI_TREND_SCALES} title="View" />
-        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+        <p className="text-phx-md font-black uppercase tracking-[0.12em] text-slate-900">
           {trend.plan.title}
           {trend.plan.running ? <span className="ml-1.5 text-slate-500">· so far</span> : null}
         </p>

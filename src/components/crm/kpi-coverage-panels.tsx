@@ -82,8 +82,8 @@ export function kpiInkOf(band: KpiBand): string {
   return INK[band];
 }
 
-const EYEBROW = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-3xs";
-const SMALL = "text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs";
+const EYEBROW = "text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:text-phx-xs";
+const SMALL = "text-phx-sm leading-4 text-slate-500 sm:text-phx-xs";
 
 // ── The share bar ─────────────────────────────────────────────────────────────────────────────
 
@@ -142,9 +142,9 @@ export function KpiShareBar({
           const body = (
             <>
               <span aria-hidden className={`mt-1 h-2 w-2 shrink-0 ${slice.swatch}`} />
-              <span className="min-w-0 flex-1 text-phx-xs leading-4 text-slate-700 sm:text-phx-2xs">{slice.label}</span>
-              <span className="shrink-0 text-phx-xs font-black tabular-nums text-slate-900 sm:text-phx-2xs">{slice.count}</span>
-              <span className="w-9 shrink-0 text-right text-phx-2xs tabular-nums text-slate-500 sm:text-phx-3xs">
+              <span className="min-w-0 flex-1 text-phx-md leading-4 text-slate-700 sm:text-phx-sm">{slice.label}</span>
+              <span className="shrink-0 text-phx-md font-black tabular-nums text-slate-900 sm:text-phx-sm">{slice.count}</span>
+              <span className="w-9 shrink-0 text-right text-phx-sm tabular-nums text-slate-500 sm:text-phx-xs">
                 {percents[index]}%
               </span>
             </>
@@ -327,19 +327,19 @@ export function KpiTeamCoverageRollup({ floorPct, teams }: { floorPct: number; t
           <tr>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Team
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">Region · manager</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">Region · manager</span>
             </th>
             <th className={`px-3 py-2.5 text-left ${EYEBROW}`} scope="col">
               Coverage
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">Covered ÷ planned</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">Covered ÷ planned</span>
             </th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`} scope="col">
               Not reached
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">Planned, unseen</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">Planned, unseen</span>
             </th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`} scope="col">
               At the floor
-              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">{floorPct}% or more</span>
+              <span className="mt-0.5 block text-phx-xs font-bold normal-case tracking-normal text-slate-400">{floorPct}% or more</span>
             </th>
           </tr>
         </thead>
@@ -432,7 +432,7 @@ function KpiTeamHeadingText({ entry }: { entry: KpiTeamWithCoverage }) {
   return (
     <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <span className="min-w-0">
-        <span className="block text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
+        <span className="block text-phx-md font-black uppercase tracking-[0.12em] text-slate-900" dir="auto">
           {kpiTeamHeading(team)}
         </span>
         <span className={`block ${SMALL}`}>{teamHeadCount(coverage)}</span>
@@ -486,7 +486,7 @@ export function KpiBrickGlance({ rows }: { rows: readonly KpiBrickRow[] }) {
             <ul className="mt-2 flex flex-wrap gap-1.5">
               {untouched.map((row) => (
                 <li
-                  className="inline-flex items-baseline gap-1.5 border border-rose-200 px-2 py-1 text-phx-2xs text-slate-800"
+                  className="inline-flex items-baseline gap-1.5 border border-rose-200 px-2 py-1 text-phx-sm text-slate-800"
                   key={row.brick}
                 >
                   <span dir="auto">{row.label}</span>
@@ -509,10 +509,10 @@ export function KpiBrickGlance({ rows }: { rows: readonly KpiBrickRow[] }) {
               return (
                 <li className="min-w-0" key={row.brick}>
                   <span className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 text-phx-xs font-semibold leading-4 text-slate-800 sm:text-phx-2xs" dir="auto">
+                    <span className="min-w-0 text-phx-md font-semibold leading-4 text-slate-800 sm:text-phx-sm" dir="auto">
                       {row.label}
                     </span>
-                    <span className="shrink-0 text-phx-xs tabular-nums text-slate-500 sm:text-phx-2xs">
+                    <span className="shrink-0 text-phx-md tabular-nums text-slate-500 sm:text-phx-sm">
                       <span className="font-black text-slate-900">{row.left}</span> left · {row.covered} of {row.planned}
                       {pct == null ? "" : ` · ${pct}%`}
                     </span>
