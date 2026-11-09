@@ -87,7 +87,7 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
           </p>
         </div>
         <div className="grid gap-3 px-5 py-4 sm:max-w-xl">
-          <label className="block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500" htmlFor="phoenix-crm-template-seat">
+          <label className="block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500" htmlFor="phoenix-crm-template-seat">
             Territory
           </label>
           {/* A COMBO BOX, not a dropdown (owner, 2026-10-03: *"make any droplist have a combo box"*).
@@ -199,7 +199,7 @@ export function PhoenixCrmListTemplateWorkspace({ territories }: { territories: 
             <ul className="space-y-2 px-5 py-4">
               {result.refused.map((entry) => (
                 <li className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-slate-100 pb-2 last:border-b-0" key={`${entry.row}:${entry.reason}`}>
-                  <span className="shrink-0 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Row {entry.row}</span>
+                  <span className="shrink-0 text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Row {entry.row}</span>
                   <span className="min-w-0 break-words text-sm text-slate-700">{entry.reason}</span>
                 </li>
               ))}

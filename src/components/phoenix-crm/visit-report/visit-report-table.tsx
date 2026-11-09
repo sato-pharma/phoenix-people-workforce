@@ -58,13 +58,13 @@ function Detail({ fields, row }: { fields: ReadonlyArray<VisitReportField>; row:
         if (inCategory.length === 0) return null;
         return (
           <section className="min-w-0" key={category.id}>
-            <h4 className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">{category.label}</h4>
+            <h4 className="mb-2 text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">{category.label}</h4>
             <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {inCategory.map((field) => {
                 const text = formatVisitReportValue(field, row.values[field.key]);
                 return (
                   <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2" key={field.key}>
-                    <dt className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{field.label}</dt>
+                    <dt className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">{field.label}</dt>
                     <dd className="mt-0.5 min-w-0 whitespace-pre-line break-words text-xs font-bold text-slate-800">{text}</dd>
                   </div>
                 );

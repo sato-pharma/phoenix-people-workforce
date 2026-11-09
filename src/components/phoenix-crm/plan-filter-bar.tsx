@@ -95,7 +95,7 @@ export function PlanFilterBar({
   return (
     <div className="grid min-w-0 gap-3 border border-slate-200 bg-slate-50 px-3.5 py-3">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Filter the customers</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Filter the customers</p>
         {active ? (
           <CrmButton
             disabled={locked}

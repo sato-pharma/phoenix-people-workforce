@@ -49,14 +49,14 @@ function Columns({ panel }: { panel: VisitReportDashboardPanel }) {
             key={item.label}
             title={`${labelOf(item.label)}: ${countText(item.value)}`}
           >
-            {showValues ? <span className="mb-0.5 text-center text-phx-2xs font-black text-slate-700">{countText(item.value)}</span> : null}
+            {showValues ? <span className="mb-0.5 text-center text-phx-sm font-black text-slate-700">{countText(item.value)}</span> : null}
             <span className="block w-full bg-orange-500" style={{ height: `${Math.max(2, Math.round((item.value / max) * 100))}%` }} />
           </div>
         ))}
       </div>
       <div className="mt-1 flex gap-px">
         {panel.items.map((item, index) => (
-          <span className="min-w-0 flex-1 break-words text-center text-phx-2xs font-semibold leading-3 text-slate-500" key={item.label}>
+          <span className="min-w-0 flex-1 break-words text-center text-phx-sm font-semibold leading-3 text-slate-500" key={item.label}>
             {index % step === 0 ? labelOf(item.label) : ""}
           </span>
         ))}
@@ -80,7 +80,7 @@ export function VisitReportDashboardView({ dashboard }: { dashboard: VisitReport
           <div className="grid gap-3 lg:grid-cols-2">
             {dashboard.panels.map((panel) => (
               <section className="min-w-0 border border-t-2 border-slate-200 border-t-orange-500 bg-white px-4 py-3.5" key={panel.id}>
-                <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">{visitReportCategoryOf(panel.category).label}</p>
+                <p className="text-phx-sm font-black uppercase tracking-[0.14em] text-orange-600">{visitReportCategoryOf(panel.category).label}</p>
                 <h3 className="mb-3 mt-0.5 break-words text-sm font-black text-slate-950">{panel.title}</h3>
                 {panel.kind === "columns" ? <Columns panel={panel} /> : <Bars panel={panel} />}
                 {panel.note ? <p className="mt-2 break-words text-xs font-medium leading-5 text-slate-500">{panel.note}</p> : null}

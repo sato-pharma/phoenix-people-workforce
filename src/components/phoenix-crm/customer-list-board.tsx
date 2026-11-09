@@ -83,7 +83,7 @@ import { brickTintMap, neighbourTint, type BrickTint } from "@/components/phoeni
  * on an admin account (owner, 2026-10-03) — the Brick filter is the one that needed it: a long list's
  * brick names are the hardest thing on this board to find by scrolling.
  */
-const LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-sm font-black uppercase tracking-[0.16em] text-slate-400";
 const SELECT_CLASS =
   "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
 
@@ -197,14 +197,14 @@ function GroupHeading({
           {group.heading}
         </h3>
         {group.mapped && group.areaName ? (
-          <span className="text-phx-2xs font-semibold text-slate-500">{group.areaName}</span>
+          <span className="text-phx-sm font-semibold text-slate-500">{group.areaName}</span>
         ) : group.mapped ? null : (
-          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+          <span className="text-phx-sm font-black uppercase tracking-[0.1em] text-amber-700">
             Locality not yet mapped to a brick
           </span>
         )}
       </div>
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
         {shown === group.customers.length ? `${group.customers.length}` : `${shown} of ${group.customers.length} shown`}
       </span>
     </button>
@@ -353,7 +353,7 @@ function NearbyLine({ neighbourhood }: { neighbourhood: Neighbourhood | null }) 
   const rest = nearby.length - shown.length;
   const tint = neighbourTint(neighbourhood?.cluster);
   return (
-    <span className={`mt-0.5 block break-words text-phx-2xs font-semibold ${tint?.ink ?? "text-slate-500"}`} dir="auto">
+    <span className={`mt-0.5 block break-words text-phx-sm font-semibold ${tint?.ink ?? "text-slate-500"}`} dir="auto">
       {`Also here: ${shown.map((entry) => entry.name).join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`}
     </span>
   );
@@ -426,7 +426,7 @@ const EMPTY_MARKS: ReadonlySet<string> = new Set();
 
 function PlanPatternCell({ customer }: { customer: ListCustomer }) {
   const rows = planPatternRows(customer.planPattern ?? []);
-  if (rows.length === 0) return <span className="text-phx-2xs font-semibold italic text-slate-400">No plan recorded</span>;
+  if (rows.length === 0) return <span className="text-phx-sm font-semibold italic text-slate-400">No plan recorded</span>;
   return (
     // 🔴 THE CELL IS ITSELF A LITTLE TABLE (owner, 2026-09-30: "it is a table: put day, put week
     // corresponding — make it a table, make it more tidy than this"). It was day chips that wrapped,
@@ -442,10 +442,10 @@ function PlanPatternCell({ customer }: { customer: ListCustomer }) {
     <span className="grid grid-cols-[auto_minmax(0,1fr)] border-l border-t border-slate-200">
       {rows.map((row) => (
         <Fragment key={row.day}>
-          <span className="border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1 text-center text-phx-3xs font-black uppercase tracking-[0.06em] text-slate-700">
+          <span className="border-b border-r border-slate-200 bg-slate-50 px-1.5 py-1 text-center text-phx-xs font-black uppercase tracking-[0.06em] text-slate-700">
             {row.day}
           </span>
-          <span className="break-words border-b border-r border-slate-200 px-1.5 py-1 text-phx-2xs font-semibold text-slate-500">{row.weeksLabel}</span>
+          <span className="break-words border-b border-r border-slate-200 px-1.5 py-1 text-phx-sm font-semibold text-slate-500">{row.weeksLabel}</span>
         </Fragment>
       ))}
     </span>
@@ -465,7 +465,7 @@ function SharedLine({ customer }: { customer: ListCustomer }) {
   const shared = customer.sharedWith ?? null;
   if (!shared || shared.length === 0) return null;
   return (
-    <span className="mt-1 block break-words text-phx-2xs font-semibold text-violet-700" dir="auto">
+    <span className="mt-1 block break-words text-phx-sm font-semibold text-violet-700" dir="auto">
       {describeSharing(shared)}
     </span>
   );
@@ -675,7 +675,7 @@ export function CustomerListBoard({
         <button
           aria-controls={filtersId}
           aria-expanded={filtersOpen}
-          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
           onClick={() => setFiltersOpen((open) => !open)}
           type="button"
         >
@@ -764,7 +764,7 @@ export function CustomerListBoard({
         </div>
       </div>
 
-      <p className="text-phx-2xs font-semibold text-slate-400">
+      <p className="text-phx-sm font-semibold text-slate-400">
         {`${shownCount} shown across ${brickCount} ${brickCount === 1 ? "brick" : "bricks"}`}
         {localityCount > 0 ? ` and ${localityCount} ${localityCount === 1 ? "locality" : "localities"} awaiting one` : ""}
       </p>
@@ -928,7 +928,7 @@ export function CustomerListBoard({
                                   <span dir="auto">{customer.name}</span>
                                 </p>
                                 {/* The grade keeps its own ink, as the old board painted it. */}
-                                <p className={`mt-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
+                                <p className={`mt-0.5 text-phx-sm font-black uppercase tracking-[0.08em] ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
                                 {/* WHY it is highlighted, and who with — the owner asked for the
                                     reason to be stated rather than implied, because the match is an
                                     inference a reader must be able to overrule. */}
@@ -942,7 +942,7 @@ export function CustomerListBoard({
                               </td>
                               <td className={`${crmTdClassName} ${GRID_CELL} first:border-l-0`}>
                                 {/* 🔴 AM and PM are the two lists, printed apart and never summed. */}
-                                <span className="text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500">
+                                <span className="text-phx-sm font-black uppercase tracking-[0.08em] text-slate-500">
                                   {listText(customer.listType)}
                                 </span>
                               </td>
@@ -965,7 +965,7 @@ export function CustomerListBoard({
                                 <AddressText href={facts.mapsHref} text={variant === "dropped" ? detailText(customer, variant) : facts.address.text} />
                                 <NearbyLine neighbourhood={near} />
                                 {variant === "active" || variant === "outside" ? (
-                                  <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{placesDaysText(customer)}</p>
+                                  <p className="mt-0.5 break-words text-phx-sm font-semibold leading-4 text-slate-500">{placesDaysText(customer)}</p>
                                 ) : null}
                                 {variant === "pending" && !historyNamesLastVisit(customer) ? (
                                   <p className="mt-0.5 text-xs text-slate-500">
@@ -973,9 +973,9 @@ export function CustomerListBoard({
                                   </p>
                                 ) : null}
                                 {variant === "dropped" && customer.droppedNote ? (
-                                  <p className="mt-0.5 whitespace-pre-line break-words text-phx-2xs font-semibold leading-4 text-slate-500">{customer.droppedNote}</p>
+                                  <p className="mt-0.5 whitespace-pre-line break-words text-phx-sm font-semibold leading-4 text-slate-500">{customer.droppedNote}</p>
                                 ) : null}
-                                <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{monthText(customer, variant)}</p>
+                                <p className="mt-0.5 break-words text-phx-sm font-semibold leading-4 text-slate-500">{monthText(customer, variant)}</p>
                               </td>
                               <td className={`${crmTdClassName} ${GRID_CELL} first:border-l-0`}>
                                 <PlanPatternCell customer={customer} />

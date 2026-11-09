@@ -656,7 +656,7 @@ export function PhoenixCrmApp({
             >
               <span className="min-w-0 break-words">{TAB_LABELS[key]}</span>
               {count > 0 ? (
-                <span className="inline-flex min-w-5 items-center justify-center rounded-none bg-orange-600 px-1 text-phx-2xs font-black leading-5 text-white">
+                <span className="inline-flex min-w-5 items-center justify-center rounded-none bg-orange-600 px-1 text-phx-sm font-black leading-5 text-white">
                   {countText(count)}
                   <span className="sr-only"> waiting for you</span>
                 </span>

@@ -993,7 +993,7 @@ function ScopePicker({
     <div className="grid min-w-0 gap-3">
       {groups.map((group) => (
         <div className="grid min-w-0 gap-1.5" key={group.heading ?? "direct"}>
-          {group.heading ? <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{group.heading}</p> : null}
+          {group.heading ? <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{group.heading}</p> : null}
           <CrmChoice
             columns={2}
             label={group.heading ? `${label} · ${group.heading}` : label}
@@ -1135,7 +1135,7 @@ function HalfStep({
     <div className="grid min-w-0 gap-5">
       {choosesDistrict ? (
         <div className="grid min-w-0 gap-2">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${byRegion ? "Region" : "District manager"} for this day`}</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${byRegion ? "Region" : "District manager"} for this day`}</p>
           {canEdit ? (
             <ScopePicker
               byLine={byLine}
@@ -1168,7 +1168,7 @@ function HalfStep({
         <CrmNote tone="neutral">{view.canWrite ? "This day has passed, or is not open to change." : "This week is sent. Ask to edit it from Send."}</CrmNote>
       ) : null}
       <div className="grid min-w-0 gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${half}`}</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{`${day.dateText} · ${half}`}</p>
         <CrmChoice columns={kindOptions.length > 3 ? 2 : 3} label="What you do" onChange={chooseKind} options={kindOptions} value={draft.kind} />
       </div>
 
@@ -1861,7 +1861,7 @@ function WithSeniorPart({
             <>
               <CrmSearchField id={`${idPrefix}-senior-search`} label="Find a customer" onChange={setQuery} placeholder="Type a name" value={query} />
               <div className="grid min-w-0 gap-2">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+                <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">
                   {listVacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep lists"}
                 </p>
                 {repList.length === 0 ? (
@@ -1928,7 +1928,7 @@ function AdminPart({
         value={draft.activityType}
       />
       <label className="grid min-w-0 gap-1.5" htmlFor={`${idPrefix}-admin-note`}>
-        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Note</span>
+        <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Note</span>
         <textarea
           className={crmTextareaClassName}
           dir="auto"
@@ -2128,7 +2128,7 @@ function SingleVisitPart({
               </div>
               {ownList.length > 0 ? (
                 <div className="grid min-w-0 gap-2">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Manager&apos;s own list</p>
+                  <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Manager&apos;s own list</p>
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                     {ownList.map((customer) => (
                       <CustomerCard dimmed={false} grade={customer.grade} highlight={null} key={customer.id}>
@@ -2150,7 +2150,7 @@ function SingleVisitPart({
                 </div>
               ) : null}
               <div className="grid min-w-0 gap-2">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+                <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">
                   {chosenVacant ? `${VACANT_LIST_LABEL} · this area has no rep` : "The area's rep lists"}
                 </p>
                 {chosenVacant ? (
@@ -2295,7 +2295,7 @@ function SendStep({
           .filter((day) => day.halves.length > 0 || day.holiday)
           .map((day) => (
             <div className="min-w-0 border border-slate-200" key={day.date}>
-              <p className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
+              <p className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-600">
                 {day.holiday ? `${day.dateText} · ${day.holiday}` : day.dateText}
               </p>
               {day.halves.map((half) => {
@@ -2306,7 +2306,7 @@ function SendStep({
                 return (
                   <div className="grid min-w-0 gap-0.5 px-3 py-2" key={half}>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
+                      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
                       <span className={`min-w-0 break-words text-sm font-bold ${problem ? "text-amber-800" : "text-slate-900"}`}>
                         {problem ? `Not saved: ${problem}` : waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}
                       </span>
@@ -2384,7 +2384,7 @@ function SendStep({
         ) : asking ? (
           <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
             <label className="grid min-w-0 gap-1.5" htmlFor={`${idPrefix}-edit-reason`}>
-              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Why you need to change it *</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Why you need to change it *</span>
               <textarea
                 className={crmTextareaClassName}
                 dir="auto"

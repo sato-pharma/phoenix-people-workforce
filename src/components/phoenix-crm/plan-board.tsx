@@ -1596,7 +1596,7 @@ export function PlanBoard({
 function MeterLine({ label, note, tone = "neutral", value }: { label: string; note: string; tone?: Tone; value: string }) {
   return (
     <div className="min-w-0 border-t border-slate-100 py-2 first:border-t-0 first:pt-0">
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className={cn("mt-0.5 break-words text-lg font-black leading-tight", tone === "warn" ? "text-amber-700" : "text-slate-950")}>{value}</p>
       <p className="break-words text-xs font-semibold leading-5 text-slate-500">{note}</p>
     </div>

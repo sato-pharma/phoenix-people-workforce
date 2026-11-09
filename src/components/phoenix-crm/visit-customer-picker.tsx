@@ -280,7 +280,7 @@ export function VisitCustomerPicker({
                         List board draw a brick, from the one shared palette. */}
                     <p
                       className={cn(
-                        "mb-1.5 break-words border-l-4 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.16em]",
+                        "mb-1.5 break-words border-l-4 px-2 py-1 text-phx-sm font-black uppercase tracking-[0.16em]",
                         tint ? `${tint.bar} ${tint.fill} text-slate-600` : "border-l-amber-500 bg-amber-50 text-amber-800",
                       )}
                     >

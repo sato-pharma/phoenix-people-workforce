@@ -222,7 +222,7 @@ function MemberCard({ member }: { member: MatchMember }) {
 function QuestionSide({ label, more, subjects }: { label: string; more: number; subjects: MatchSubject[] }) {
   return (
     <div className="min-w-0 space-y-2 border border-slate-200 bg-slate-50/60 p-3">
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
       {subjects.map((subject) => (
         <Reading key={subject.key} subject={subject} />
       ))}

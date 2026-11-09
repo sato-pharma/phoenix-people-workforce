@@ -25,7 +25,7 @@ export function SystemAdvice({ advice, className }: { advice: PlaceCheckAdvice; 
   return (
     <div className={cn("min-w-0 space-y-1 border border-l-[3px] border-slate-200 bg-white px-3 py-2", BAR[advice.kind], className)}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">System recommends</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">System recommends</p>
         <CrmPill tone={PILL[advice.kind]}>{PLACE_CHECK_ADVICE_LABEL[advice.kind]}</CrmPill>
       </div>
       <p className="break-words text-xs font-semibold text-slate-800">{advice.reason}</p>

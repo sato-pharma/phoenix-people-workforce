@@ -312,7 +312,7 @@ function personOptions(people: ReadonlyArray<{ hrId: string; name: string; title
 function SummaryLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 border-l-[3px] border-slate-200 pl-3">
-      <dt className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
+      <dt className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{label}</dt>
       <dd className="mt-0.5 whitespace-pre-line break-words text-sm font-bold text-slate-900" dir="auto">
         {value}
       </dd>
@@ -1171,7 +1171,7 @@ export function VisitLogForm({
       {/* The line between what the save needs and what it does not. Everything under it may stay blank and
           the visit is still whole — said once, here, rather than as a nag on every box. */}
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-slate-200 bg-slate-50 px-4 py-2.5 sm:px-5">
-        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-600">Optional</p>
+        <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-600">Optional</p>
         <p className="min-w-0 break-words text-xs font-semibold text-slate-500">The visit logs without these. Add what helps.</p>
       </div>
 
@@ -1411,7 +1411,7 @@ export function VisitLogForm({
                 >
                   <ArrowDown aria-hidden className={cn("mt-0.5 h-4 w-4 shrink-0", tried ? "text-rose-600" : "text-orange-600")} />
                   <span className="min-w-0">
-                    <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
+                    <span className={cn("block text-phx-sm font-black uppercase tracking-[0.16em]", tried ? "text-rose-600" : "text-orange-600")}>
                       {tried ? "Still needed" : "Next"}
                     </span>
                     <span className={cn("block break-words text-sm font-black", tried ? "text-rose-700" : "text-slate-950")}>{check.problem}</span>

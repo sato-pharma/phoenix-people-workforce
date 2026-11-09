@@ -295,7 +295,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
             { by: 1, label: "Next month" },
           ].map((step) => (
             <button
-              className="min-h-11 rounded-none border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 transition hover:border-slate-400"
+              className="min-h-11 rounded-none border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700 transition hover:border-slate-400"
               key={step.label}
               onClick={() => {
                 // From the month on screen, which on the first press is the one the server chose
@@ -388,7 +388,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
               {LEGEND.map((shape) => (
                 <span
                   className={cn(
-                    "inline-flex min-w-0 items-center gap-1.5 rounded-none border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em]",
+                    "inline-flex min-w-0 items-center gap-1.5 rounded-none border px-2 py-1 text-phx-sm font-black uppercase tracking-[0.08em]",
                     SHAPE_INK[shape],
                   )}
                   key={shape}
@@ -415,12 +415,12 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
             <CrmTable columns={["22%", ...days.map(() => `${78 / Math.max(1, days.length)}%`)]} desktopOnly={false}>
               <thead>
                 <tr>
-                  <th className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+                  <th className="border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
                     Person
                   </th>
                   {days.map((day) => (
                     <th
-                      className="border border-slate-200 bg-slate-50 px-0 py-1.5 text-center text-phx-3xs font-black tabular-nums text-slate-500"
+                      className="border border-slate-200 bg-slate-50 px-0 py-1.5 text-center text-phx-xs font-black tabular-nums text-slate-500"
                       key={day}
                       scope="col"
                     >
@@ -436,11 +436,11 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                       <span className="block break-words text-xs font-black leading-5 text-slate-900" dir="auto">
                         {row.person}
                       </span>
-                      <span className="block break-words text-phx-3xs font-semibold leading-4 text-slate-500" dir="auto">
+                      <span className="block break-words text-phx-xs font-semibold leading-4 text-slate-500" dir="auto">
                         {row.territory}
                       </span>
                       {row.manager ? (
-                        <span className="block break-words text-phx-3xs font-semibold leading-4 text-slate-400" dir="auto">
+                        <span className="block break-words text-phx-xs font-semibold leading-4 text-slate-400" dir="auto">
                           Under {row.manager}
                         </span>
                       ) : null}
@@ -448,7 +448,7 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                     {row.days.map((day) => {
                       const opens = cellOpens(row, day, entrySeats, entryThrough);
                       const face = cn(
-                        "flex h-11 w-full items-center justify-center rounded-none border-0 px-0 text-center text-phx-3xs font-black transition",
+                        "flex h-11 w-full items-center justify-center rounded-none border-0 px-0 text-center text-phx-xs font-black transition",
                         SHAPE_INK[day.shape],
                         open?.seatId === row.seatId && open.day === day.day ? "ring-2 ring-inset ring-slate-900" : "",
                         opens ? "cursor-pointer hover:brightness-95" : "",
@@ -502,13 +502,13 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                     {row.manager ? ` · under ${row.manager}` : ""}
                   </p>
                   <p className="mt-1 break-words text-xs font-black leading-5 text-slate-700">{splitText(row.totals)}</p>
-                  <p className="break-words text-phx-2xs font-semibold uppercase tracking-[0.08em] leading-5 text-slate-500">
+                  <p className="break-words text-phx-sm font-semibold uppercase tracking-[0.08em] leading-5 text-slate-500">
                     {`AM only ${row.amOnlyDays} · PM only ${row.pmOnlyDays} · Both ${row.bothDays}`}
                   </p>
                   <div className="mt-2 grid grid-cols-7 gap-px">
                     {WEEKDAYS.map((name) => (
                       <div
-                        className="px-0 py-1 text-center text-phx-3xs font-black uppercase tracking-[0.06em] text-slate-400"
+                        className="px-0 py-1 text-center text-phx-xs font-black uppercase tracking-[0.06em] text-slate-400"
                         key={name}
                       >
                         {name}
@@ -520,13 +520,13 @@ export function CalendarTab({ cairoToday, test }: { cairoToday: string; test: bo
                     {row.days.map((day) => {
                       const opens = cellOpens(row, day, entrySeats, entryThrough);
                       const face = cn(
-                        "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-none border px-0 py-1 text-center text-phx-3xs font-black transition",
+                        "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-none border px-0 py-1 text-center text-phx-xs font-black transition",
                         SHAPE_INK[day.shape],
                         open?.seatId === row.seatId && open.day === day.day ? "ring-2 ring-inset ring-slate-900" : "",
                       );
                       const inside = (
                         <>
-                          <span className="block text-phx-3xs font-black tabular-nums opacity-70">{dayNumber(day.day)}</span>
+                          <span className="block text-phx-xs font-black tabular-nums opacity-70">{dayNumber(day.day)}</span>
                           <CellFace day={day} />
                         </>
                       );

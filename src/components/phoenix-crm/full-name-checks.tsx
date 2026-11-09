@@ -188,7 +188,7 @@ function BoardEvidence({ board, fullName }: { board: HeldFullNameBoard; fullName
             path={board.photoPath}
             rotatable
           />
-          <figcaption className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{seated ? "The building" : "The signboard"}</figcaption>
+          <figcaption className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">{seated ? "The building" : "The signboard"}</figcaption>
         </figure>
         {seated ? (
           <figure className="w-full min-w-0 space-y-1 sm:w-80">
@@ -199,7 +199,7 @@ function BoardEvidence({ board, fullName }: { board: HeldFullNameBoard; fullName
               path={board.schedulePhotoPath}
               rotatable
             />
-            <figcaption className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">The timetable</figcaption>
+            <figcaption className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">The timetable</figcaption>
           </figure>
         ) : null}
       </div>

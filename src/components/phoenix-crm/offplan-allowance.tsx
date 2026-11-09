@@ -34,7 +34,7 @@ function OffPlanMeter({ label, tally }: { label: string; tally: OffPlanTally }) 
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2">
-        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</span>
+        <span className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{label}</span>
         <span className={cn("text-sm font-black tabular-nums", full ? "text-amber-700" : "text-slate-950")}>
           {tally.used}
           <span className="font-semibold text-slate-400"> of {tally.cap}</span>

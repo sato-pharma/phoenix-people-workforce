@@ -70,13 +70,13 @@ export function CompanyPicker({
       <p className="text-xs font-semibold text-slate-500">{companyHint(choice, picked.length)}</p>
       {managers.length > 0 ? (
         <div className="grid min-w-0 gap-1.5">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Managers</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Managers</p>
           {managers.map(row)}
         </div>
       ) : null}
       {productManagers.length > 0 ? (
         <div className="grid min-w-0 gap-1.5">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
           {productManagers.map(row)}
         </div>
       ) : null}

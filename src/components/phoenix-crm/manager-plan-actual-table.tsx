@@ -66,18 +66,18 @@ const KIND_STYLES: Record<ManagerDayVisit["kind"], string> = {
  * boundary pin). Keep the two strings equal.
  */
 const TH_CLASS =
-  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500 border-t-2 border-t-slate-900";
+  "border-b border-slate-200 bg-slate-50 px-3 py-2.5 align-bottom text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500 border-t-2 border-t-slate-900";
 
 function Chip({ children, className }: { children: ReactNode; className: string }) {
   return (
-    <span className={cn("inline-flex max-w-full items-center rounded-none border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]", className)}>
+    <span className={cn("inline-flex max-w-full items-center rounded-none border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em]", className)}>
       {children}
     </span>
   );
 }
 
 function Label({ children }: { children: ReactNode }) {
-  return <p className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{children}</p>;
+  return <p className="break-words text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{children}</p>;
 }
 
 function Muted({ children }: { children: ReactNode }) {
@@ -124,7 +124,7 @@ function PlanCell({ row }: { row: PlanVsActualRow }) {
 function Fact({ children, label }: { children: ReactNode; label: string }) {
   return (
     <p className="min-w-0 break-words leading-5">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label} </span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-400">{label} </span>
       <span className="text-xs font-bold text-slate-700">{children}</span>
     </p>
   );

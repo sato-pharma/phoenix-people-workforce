@@ -130,7 +130,7 @@ function previousMonth(isoDay: string): { from: string; to: string } {
   return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10) };
 }
 
-const SUBHEAD = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const SUBHEAD = "text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500";
 
 export function VisitReportGenerator({ initial, scope }: { initial: VisitReportInitial; scope: VisitReportScopeView }) {
   const offered = useMemo(() => visitReportFieldsFor(scope.sight), [scope.sight]);
@@ -632,7 +632,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                           <span className="min-w-0 break-words">
                             {field.label}
                             {field.sight === "superAdmin" ? (
-                              <span className="mt-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">Super Admin only</span>
+                              <span className="mt-1 block text-phx-sm font-black uppercase tracking-[0.12em] text-amber-700">Super Admin only</span>
                             ) : null}
                             {field.hint ? <span className="mt-1 block text-xs font-medium leading-4 text-slate-500">{field.hint}</span> : null}
                           </span>

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -214,6 +214,22 @@ export function runPhoenixCrmStepFormTests(): void {
       "and its back bar: the form's foot has the one Back",
     );
     assert.ok(tab.includes("<CrmStepFrame>{content}</CrmStepFrame>"), "Add visit's screens are drawn inside that frame");
+  }
+
+  // ── (e) Nothing in Phoenix CRM is drawn below 11px (owner, 2026-11-09: "the font is fucken small",
+  // then "audit the Phoenix CRM pages font too"). Every screen under both folders is read, so a new one
+  // is held to it as well. The form kit's own eyebrow, pinned in (a), lives in the kit, not here.
+  {
+    let read = 0;
+    for (const folder of ["src/components/phoenix-crm/", "src/components/crm-integrity/"]) {
+      for (const entry of readdirSync(new URL(folder, ROOT), { recursive: true, encoding: "utf8" })) {
+        if (!entry.endsWith(".tsx")) continue;
+        const file = folder + entry.replace(/\\/g, "/");
+        assert.ok(!/text-phx-(?:2xs|3xs|4xs)\b|text-\[(?:[1-9]|10)px\]/.test(source(file)),`${file}: no text below 11px in Phoenix CRM`);
+        read++;
+      }
+    }
+    assert.ok(read >= 100, `the floor read every Phoenix CRM screen (${read})`);
   }
 
   console.log("phoenix-crm step form: OK");

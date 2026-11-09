@@ -99,13 +99,13 @@ export function DoubleVisitQuestion({
             <p className="text-sm font-black text-slate-800">Who do you need? Tick as many as you want.</p>
             {managers.length > 0 ? (
               <div className="grid min-w-0 gap-1.5">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Managers</p>
+                <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">Managers</p>
                 {managers.map(person)}
               </div>
             ) : null}
             {productManagers.length > 0 ? (
               <div className="grid min-w-0 gap-1.5">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
+                <p className="text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">{companionGroupTitle(productManagers)}</p>
                 {productManagers.map(person)}
               </div>
             ) : null}

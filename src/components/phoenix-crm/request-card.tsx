@@ -304,7 +304,7 @@ export function RequestCard({
             Select to drop with the others
           </CrmCheck>
         ) : null}
-        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{request.kindLabel}</p>
+        <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{request.kindLabel}</p>
         <p className="break-words font-black text-slate-900">{requestSubject(request)}</p>
         {request.note ? (
           <p className="whitespace-pre-line break-words font-medium text-slate-700">

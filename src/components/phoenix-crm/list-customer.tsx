@@ -407,7 +407,7 @@ export function CustomerScreen({
             2026-10-10). On the customer's page, never a second button on a list row. */}
         {view.canSeatInVenue && customer.listType !== "Pharmacy" && (active || pending) && customer.places.some((place) => !place.sharedPlaceId) ? (
           <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
-            <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · polyclinics</p>
+            <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · polyclinics</p>
             <div className="grid gap-2 sm:flex sm:flex-wrap">
               <CrmButton onClick={() => onOpen({ name: "seat-in-venue", customerId: customer.customerId })}>Move into a polyclinic</CrmButton>
             </div>
@@ -824,7 +824,7 @@ function CurateFromList({
 
   return (
     <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">SFE · this rep&apos;s list</p>
+      <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">SFE · this rep&apos;s list</p>
       {open === null ? (
         <div className="grid gap-2 sm:flex sm:flex-wrap">
           <CrmButton onClick={() => setOpen("move")}>Move to another rep</CrmButton>
@@ -1183,7 +1183,7 @@ function PharmacyCard({
         <div className="mt-3 grid gap-2">
           {has.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Has</span>
+              <span className="text-phx-sm font-black uppercase tracking-wider text-slate-500">Has</span>
               {has.map((product) => (
                 <CrmPill key={product} tone="good">
                   {product}
@@ -1193,7 +1193,7 @@ function PharmacyCard({
           ) : null}
           {missing.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Doesn&apos;t have</span>
+              <span className="text-phx-sm font-black uppercase tracking-wider text-slate-500">Doesn&apos;t have</span>
               {missing.map((product) => (
                 <CrmPill key={product} tone="bad">
                   {product}

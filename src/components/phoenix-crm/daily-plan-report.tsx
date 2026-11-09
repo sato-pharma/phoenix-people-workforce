@@ -327,7 +327,7 @@ function DayBlock({ day, idPrefix, today }: { day: DailyPlanDay; idPrefix: strin
           <CrmCardsOnPhone>
             {lists.map((list) => (
               <Fragment key={list.listType}>
-                <p className="px-4 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{listHeading(list.listType, list.customers.length)}</p>
+                <p className="px-4 py-2 text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{listHeading(list.listType, list.customers.length)}</p>
                 {list.customers.map((customer) => (
                   <CustomerCard customer={customer} key={customer.customerId} />
                 ))}
@@ -354,7 +354,7 @@ function DayBlock({ day, idPrefix, today }: { day: DailyPlanDay; idPrefix: strin
             {lists.map((list) => (
               <tbody key={list.listType}>
                 <tr>
-                  <th className="border-b border-slate-100 px-3 pb-1.5 pt-3 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500" colSpan={4} scope="rowgroup">
+                  <th className="border-b border-slate-100 px-3 pb-1.5 pt-3 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500" colSpan={4} scope="rowgroup">
                     {listHeading(list.listType, list.customers.length)}
                   </th>
                 </tr>

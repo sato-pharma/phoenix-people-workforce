@@ -107,7 +107,7 @@ function Photos({ profile, canDecide, busy, onSave }: { profile: MasterProfile; 
                 <button
                   type="button"
                   disabled={busy}
-                  className="block text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-700 hover:underline disabled:opacity-40"
+                  className="block text-phx-sm font-black uppercase tracking-[0.08em] text-orange-700 hover:underline disabled:opacity-40"
                   onClick={() => onSave(profile, member.placeId, "confirmed")}
                 >
                   Use this photo
@@ -124,7 +124,7 @@ function Photos({ profile, canDecide, busy, onSave }: { profile: MasterProfile; 
 function StatusBlock({ profile, canDecide, busy, onSave }: { profile: MasterProfile; canDecide: boolean; busy: boolean; onSave: Save }) {
   return (
     <div className="min-w-0 space-y-2">
-      <span className={cn("inline-block border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", STATUS_TONE[profile.status])}>
+      <span className={cn("inline-block border px-2 py-0.5 text-phx-sm font-black uppercase tracking-[0.1em]", STATUS_TONE[profile.status])}>
         {STATUS_TEXT[profile.status]}
       </span>
       <p className="break-words text-xs font-semibold text-slate-600">{profile.reason}</p>
