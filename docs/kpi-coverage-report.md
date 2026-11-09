@@ -52,7 +52,7 @@ Nothing on this page adds a measure.
 
 Flat colour, square corners, no gradient, glow or drop shadow (owner, 22 Oct 2026). The same pass removed the 2026-09-08 "depth" gradients and shadows from the whole KPIs kit (`kpis-chrome.tsx`).
 
-Every table is `table-fixed` with a `<colgroup>` that totals 100%. A table that can sit in half a row switches to rows by its own width (`@container`, `@min-[34rem]`), never by the viewport's.
+Every table is `table-fixed` with a `<colgroup>` that totals 100%. A table that can sit in half a row is a table only when its own panel is 34rem wide (`@container`) and the screen is `md` or wider (`@min-[34rem]:md:table`). Below 768px every CRM table shows as rows, as the CRM's desktop gate requires.
 
 ## Tests
 

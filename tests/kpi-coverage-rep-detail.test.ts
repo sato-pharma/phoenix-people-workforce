@@ -346,7 +346,7 @@ function checkSource() {
   assert.ok(tables.length >= 2);
   for (const table of tables) {
     assert.match(table, /\btable-fixed\b/, "every table is fixed-layout");
-    assert.match(table, /@min-\[34rem\]:table/, "every table switches on its own container's width");
+    assert.match(table, /@min-\[34rem\]:md:table/, "every table switches on its own container's width AND the desktop gate");
   }
   // No function crosses into the panels: links arrive as strings.
   assert.ok(!/hrefFor\??:\s*\(/.test(panels), "the panels take ready-made links, never a function");

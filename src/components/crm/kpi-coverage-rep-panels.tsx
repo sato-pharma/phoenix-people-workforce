@@ -13,8 +13,10 @@
  *
  * Flat colour, square corners, no gradient, glow or drop shadow. Colour marks a status in one place per part
  * (a segment, a swatch, a meter) and every figure is tabular. Nothing sets a min-width or scrolls sideways,
- * and nothing is cut with an ellipsis. A table that can sit in half a row switches to rows by ITS OWN width
- * (`@container`), never the viewport's, so it fits in the two-column grid on a laptop and alone on a phone.
+ * and nothing is cut with an ellipsis. A table that can sit in half a row is a table only when BOTH its own
+ * panel is 34rem wide (`@container`) AND the screen is `md` or wider — `@min-[34rem]:md:table`. The second
+ * half is the CRM's desktop gate (tests/crm-mobile-table-cards.test.ts, tests/hr-shell-mobile-tables.test.ts):
+ * below 768px every CRM table is the rows beside it, whatever the panel's width.
  *
  * ## NO "use client"
  *
@@ -284,7 +286,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
       title="To clear the floor, see these first"
     >
       <div className="@container">
-        <table className="hidden w-full table-fixed @min-[34rem]:table">
+        <table className="hidden w-full table-fixed @min-[34rem]:md:table">
           <colgroup>
             <col style={{ width: "10%" }} />
             <col style={{ width: "50%" }} />
@@ -319,7 +321,7 @@ export function KpiFloorPathPanel({ steps, summary }: { steps: readonly KpiFloor
             ))}
           </tbody>
         </table>
-        <ol className="divide-y divide-slate-100 @min-[34rem]:hidden">
+        <ol className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
           {steps.map((step, index) => (
             <li className="flex items-start gap-3 px-3 py-2.5 text-sm" key={step.doctor.contactCrmId}>
               <span className="w-5 shrink-0 font-black tabular-nums text-slate-400">{index + 1}</span>
@@ -427,7 +429,7 @@ export function KpiCoverageGroupTable({
   return (
     <Panel caption={caption} title={title}>
       <div className="@container">
-        <table className="hidden w-full table-fixed @min-[34rem]:table">
+        <table className="hidden w-full table-fixed @min-[34rem]:md:table">
           <colgroup>
             <col style={{ width: "32%" }} />
             <col style={{ width: "14%" }} />
@@ -473,7 +475,7 @@ export function KpiCoverageGroupTable({
             ))}
           </tbody>
         </table>
-        <ul className="divide-y divide-slate-100 @min-[34rem]:hidden">
+        <ul className="divide-y divide-slate-100 @min-[34rem]:md:hidden">
           {rows.map((row) => (
             <li className="px-3 py-2.5" key={row.label}>
               <div className="flex items-baseline justify-between gap-3">
