@@ -149,7 +149,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
   // `w-40`/`w-48`/`w-56` they carried are exactly the un-shrinkable widths that dragged this table
   // to 561px inside a 283px container at 375px, and the wrapper's `overflow-auto` then scrolled it
   // sideways. The colgroup owns the widths now, so the table cannot exceed its container.
-  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const cardLabel = "mb-1 block text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint";
   const brickFor = (r: CustomerRow) => edits[r.customerCode] ?? r.brickId;
 
   const customerFacts = (r: CustomerRow) => (
@@ -157,7 +157,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
       <span className="block break-words font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
       <span className="block break-words font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
       {r.source === "auto" ? (
-        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-phx-info-line bg-phx-info-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-info">
+        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-phx-info-line bg-phx-info-bg px-1.5 py-0.5 text-phx-sm font-bold text-phx-info">
           AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
         </span>
       ) : null}
@@ -322,7 +322,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
   // One definition per control, shared by the desktop row and the mobile card. Both the raw-text
   // input and the code combobox carried `w-56`; two of those plus an Add button cannot fit inside
   // 283px, so the table reached 561px and the wrapper's `overflow-auto` scrolled it sideways.
-  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const cardLabel = "mb-1 block text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint";
   // The mapped target is shown by its name; the code stays only when the list has no name for it.
   const targetName = (code: string) => options.find((option) => option.code === code)?.name || code;
   const addRawInput = <input className={phxFieldClassName} onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} />;

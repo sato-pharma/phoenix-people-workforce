@@ -22,7 +22,7 @@ type Props = {
   initialError: string | null;
 };
 
-const headerCell = "px-3 py-2 text-left text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500";
+const headerCell = "px-3 py-2 text-left text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500";
 const bodyCell = "px-3 py-2.5 text-sm text-slate-700 align-top break-words";
 
 function SectionTable({
@@ -54,7 +54,7 @@ function SectionTable({
           <div className={`px-4 py-3 ${index % 2 === 1 ? "bg-slate-50/50" : ""}`} key={index}>
             {cells.map((cell, cellIndex) => (
               <div className="flex gap-2 py-0.5" key={cellIndex}>
-                <span className="w-24 shrink-0 pt-0.5 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                <span className="w-24 shrink-0 pt-0.5 text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">
                   {columns[cellIndex]}
                 </span>
                 <span className="min-w-0 break-words text-sm text-slate-700">{cell}</span>
@@ -163,7 +163,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
       <AdminTableShell
         action={(
           <label className="flex flex-col gap-1 sm:w-44">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             <SearchableSelect
               className="w-full px-3.5"
               disabled={isPending || availablePeriods.length === 0}

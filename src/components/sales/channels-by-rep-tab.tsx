@@ -344,19 +344,19 @@ export function ChannelsByRepTab() {
               </p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <dt className="whitespace-nowrap text-phx-2xs font-bold uppercase text-slate-400">Hospitals</dt>
+                  <dt className="whitespace-nowrap text-phx-sm font-bold uppercase text-slate-400">Hospitals</dt>
                   <dd className="whitespace-nowrap font-bold tabular-nums text-slate-800">{formatCurrency(row.hospitalValue)}</dd>
                 </div>
                 <div>
-                  <dt className="whitespace-nowrap text-phx-2xs font-bold uppercase text-slate-400">Stores</dt>
+                  <dt className="whitespace-nowrap text-phx-sm font-bold uppercase text-slate-400">Stores</dt>
                   <dd className="whitespace-nowrap font-bold tabular-nums text-slate-800">{formatCurrency(row.storeValue)}</dd>
                 </div>
                 <div>
-                  <dt className="whitespace-nowrap text-phx-2xs font-bold uppercase text-slate-400">Pharmacies</dt>
+                  <dt className="whitespace-nowrap text-phx-sm font-bold uppercase text-slate-400">Pharmacies</dt>
                   <dd className="whitespace-nowrap font-bold tabular-nums text-slate-800">{formatCurrency(row.pharmacyValue)}</dd>
                 </div>
                 <div>
-                  <dt className="whitespace-nowrap text-phx-2xs font-bold uppercase text-slate-400">Total</dt>
+                  <dt className="whitespace-nowrap text-phx-sm font-bold uppercase text-slate-400">Total</dt>
                   <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">{formatCurrency(row.totalValue)}</dd>
                 </div>
               </dl>

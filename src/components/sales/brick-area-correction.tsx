@@ -29,7 +29,7 @@ export type BrickCorrectionMoved = { lines: string[]; newBrickId: string; pendin
 
 type MoveResponse = { error?: unknown; lines?: unknown; message?: unknown; move?: unknown; newBrickId?: unknown; success?: unknown };
 
-const labelClass = "text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+const labelClass = "text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint";
 
 function Notice({ children, title }: { children: ReactNode; title: string }) {
   return (

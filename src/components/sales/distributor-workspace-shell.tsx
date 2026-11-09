@@ -74,7 +74,7 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
                   </span>
                   {d.weeklySupported ? (
                     <span className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em]",
+                      "shrink-0 rounded-full px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em]",
                       active ? "bg-white/15 text-white" : "bg-[#FFEAD5] text-phx-accent-press",
                     )}>Weekly</span>
                   ) : null}

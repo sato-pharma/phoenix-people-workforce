@@ -63,7 +63,7 @@ function HeaderPairs({ pairs }: { pairs: HeaderPair[] }) {
     <div className="space-y-1.5">
       {pairs.map((p) => (
         <div key={p.label}>
-          <div className="break-words text-phx-2xs font-semibold leading-snug text-slate-400">{p.label}</div>
+          <div className="break-words text-phx-sm font-semibold leading-snug text-slate-400">{p.label}</div>
           <div className={isDerivedHeaderValue(p.value) ? "break-words italic text-slate-400" : "break-words text-slate-700"}>{p.value}</div>
         </div>
       ))}
@@ -79,7 +79,7 @@ function MasterName({ value }: { value: ResolvedName }) {
   return (
     <>
       {value.name}
-      {value.resolved ? null : <span className="text-phx-2xs font-semibold text-[#991B1B]"> · not in the master</span>}
+      {value.resolved ? null : <span className="text-phx-sm font-semibold text-[#991B1B]"> · not in the master</span>}
     </>
   );
 }
@@ -88,8 +88,8 @@ function CustomerCell({ customer, names }: { customer: CustomerRow; names: Custo
   return (
     <>
       <p className="break-words font-semibold text-[#0B0B0B]">{customer.customerName || "—"}</p>
-      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Code</span> {customer.customerCode}</p>
-      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Distributor</span> <MasterName value={names.distributor} /></p>
+      <p className="mt-1 break-words text-slate-500"><span className="text-phx-sm font-semibold text-slate-400">Code</span> {customer.customerCode}</p>
+      <p className="break-words text-slate-500"><span className="text-phx-sm font-semibold text-slate-400">Distributor</span> <MasterName value={names.distributor} /></p>
     </>
   );
 }
@@ -98,8 +98,8 @@ function TerritoryCell({ names }: { names: CustomerMapNames }) {
   return (
     <>
       <p className="break-words font-semibold text-[#1D4ED8]"><MasterName value={names.brick} /></p>
-      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Area</span> <MasterName value={names.area} /></p>
-      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Region</span> <MasterName value={names.region} /></p>
+      <p className="mt-1 break-words text-slate-500"><span className="text-phx-sm font-semibold text-slate-400">Area</span> <MasterName value={names.area} /></p>
+      <p className="break-words text-slate-500"><span className="text-phx-sm font-semibold text-slate-400">Region</span> <MasterName value={names.region} /></p>
     </>
   );
 }
@@ -232,7 +232,7 @@ export function DatabaseValidationTab({
                   <tr className="border-b border-[#F1D9C0]/50" key={r.distributorCode}>
                     <td className="break-words px-3 py-2 align-top">
                       <div className="font-bold text-[#0B0B0B]">{r.distributorName}</div>
-                      <div className="mt-1.5 text-phx-2xs font-semibold leading-snug text-slate-400">{distrubLabel}</div>
+                      <div className="mt-1.5 text-phx-sm font-semibold leading-snug text-slate-400">{distrubLabel}</div>
                       <div className="break-words text-slate-700">{r.cells.distrub ?? r.distributorCode}</div>
                     </td>
                     {headerGroups.map((g) => (
@@ -251,11 +251,11 @@ export function DatabaseValidationTab({
             {headerRows.map((r) => (
               <div className="border border-phx-line bg-white p-3" key={r.distributorCode}>
                 <p className="break-words text-sm font-bold text-[#0B0B0B]">{r.distributorName}</p>
-                <p className="break-words text-phx-2xs font-semibold text-slate-400">{distrubLabel} {r.cells.distrub ?? r.distributorCode}</p>
+                <p className="break-words text-phx-sm font-semibold text-slate-400">{distrubLabel} {r.cells.distrub ?? r.distributorCode}</p>
                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
                   {headerGroups.map((g) => (
                     <div className="min-w-0" key={g.title}>
-                      <p className="mb-1 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{g.title}</p>
+                      <p className="mb-1 break-words text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{g.title}</p>
                       <HeaderPairs pairs={headerPairs(g.keys, r.cells, headerLabelOf)} />
                     </div>
                   ))}

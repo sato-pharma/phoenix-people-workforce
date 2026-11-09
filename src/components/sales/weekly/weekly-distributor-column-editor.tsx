@@ -165,7 +165,7 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
             <select className={cn(phxSelectClassName, "h-9 w-full sm:w-64")} onChange={(e) => pick(e.target.value)} value={selected}>
               {contracts.map((c) => (
                 <option key={c.code} value={c.code}>{c.name}{c.isCustom ? " · edited" : ""}</option>
@@ -187,17 +187,17 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
               {draft.splitFiles ? (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample sales file (.xlsx)</span>
+                    <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample sales file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewSalesFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample stock file (.xlsx)</span>
+                    <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample stock file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewStockFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                 </>
               ) : (
                 <label className="flex flex-col gap-1">
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
+                  <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
                   <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
                 </label>
               )}
@@ -266,7 +266,7 @@ function SheetEditor({
       <div className="flex flex-wrap items-center justify-between gap-2 bg-[#020617] px-3 py-2 text-white">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black uppercase tracking-wide">{ROLE_LABEL[sheet.role] ?? sheet.role}</span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-0.5 text-phx-2xs font-bold text-white/70"><Lock className="h-3 w-3" /> {FILE_LABEL[sheet.formField] ?? sheet.formField}</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-0.5 text-phx-sm font-bold text-white/70"><Lock className="h-3 w-3" /> {FILE_LABEL[sheet.formField] ?? sheet.formField}</span>
         </div>
         <label className="flex items-center gap-1.5 text-phx-xs font-bold text-white/80">
           Header row
@@ -284,15 +284,15 @@ function SheetEditor({
           <div className="flex items-center justify-between gap-3 bg-white px-3 py-2" key={field.field}>
             <div className="min-w-0">
               <div className="break-words text-phx-sm font-bold text-phx-ink">{field.label}</div>
-              <div className="break-words text-phx-2xs text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
+              <div className="break-words text-phx-sm text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
               {obs ? (
                 obs.status === "empty"
-                  ? <div className="mt-0.5 break-words text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
-                  : <div className="mt-0.5 break-words text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
+                  ? <div className="mt-0.5 break-words text-phx-sm font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
+                  : <div className="mt-0.5 break-words text-phx-sm font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
               ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">
-              <span className="text-phx-3xs font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
               <input
                 className={cn(phxFieldClassName, "h-8 w-16 text-right font-mono")}
                 inputMode="numeric"

@@ -249,7 +249,7 @@ const stackHeadCell = "px-3 py-2 text-left font-semibold text-slate-600";
 
 /** A card's field name on a phone; the column header says it on a desktop. */
 function StackLabel({ children }: { children: ReactNode }) {
-  return <span className="mb-0.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
+  return <span className="mb-0.5 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
 }
 
 /** The tick for bulk mapping; on a phone it says what it is for, since the header is hidden there. */
@@ -922,13 +922,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
               <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setPickedSource(e.target.value); resetParts(); }} value={pickedSource}>
                 {distributors.map((d) => <option key={d.code} value={d.code}>{isPhoenixTemplateCode(d.code) ? d.name : `${d.name} / ${d.code}`}</option>)}
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Raw file(s)</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Raw file(s)</span>
               <input
                 accept=".xlsx,.xls"
                 className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
@@ -953,7 +953,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               ) : null}
             </label>
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month of a sheet with no date</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Month of a sheet with no date</span>
               <input
                 className={cn(phxFieldClassName, "h-11 text-xs")}
                 disabled={busy !== null}
@@ -1016,7 +1016,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                       <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", k.strong ? "from-orange-500 via-orange-400 to-amber-300" : "from-slate-400 via-slate-300 to-slate-200")} />
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
+                          <p className="truncate text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
                           <p className={cn("mt-1 text-xl font-black tabular-nums", k.strong ? "text-orange-700" : "text-slate-900")}>{k.value}</p>
                         </div>
                         <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-colors", k.strong ? "text-orange-400" : "text-slate-300 group-hover:text-orange-400")} />
@@ -1034,7 +1034,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               <div className="flex flex-wrap items-center gap-2">
                 {parts.length > 1 ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{partsHeading(parts, files.length)}</span>
+                    <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{partsHeading(parts, files.length)}</span>
                     {parts.map((part, i) => (
                       <button
                         className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold transition ${i === activePart ? "border-orange-600 bg-orange-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
@@ -1050,12 +1050,12 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   </div>
                 ) : templateSelected ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected distributor</span>
+                    <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Detected distributor</span>
                     <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-800"><Sparkles className="h-3.5 w-3.5 text-orange-500" />{preview.distributorName}</span>
                   </div>
                 ) : null}
                 <div className="flex items-center gap-2">
-                  <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
+                  <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
                   <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-900"><CalendarDays className="h-3.5 w-3.5 text-orange-500" />{preview.period ?? "—"}</span>
                 </div>
                 <div className="ml-auto flex flex-col items-end gap-1">
@@ -1382,7 +1382,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                     <ConfidenceBadge pct={shownConfidence(`c:${u.raw}`)!} />
                                     {aiOrigin[`c:${u.raw}`]?.source === "propagated" ? (
                                       <span
-                                        className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600"
+                                        className="inline-flex items-center gap-1 text-phx-sm font-semibold text-violet-600"
                                         title={aiOrigin[`c:${u.raw}`]?.matchedFrom
                                           ? `Matched from ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.distributorCode}/${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerCode} — ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerName}`
                                           : "Matched from an existing mapping"}
@@ -1390,11 +1390,11 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                         <Layers aria-hidden="true" className="h-3 w-3" />known twin
                                       </span>
                                     ) : aiOrigin[`c:${u.raw}`]?.source === "address" ? (
-                                      <span className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600" title="Same address as pharmacies you already mapped">
+                                      <span className="inline-flex items-center gap-1 text-phx-sm font-semibold text-violet-600" title="Same address as pharmacies you already mapped">
                                         <MapPin aria-hidden="true" className="h-3 w-3" />address match
                                       </span>
                                     ) : aiOrigin[`c:${u.raw}`]?.source === "place" ? (
-                                      <span className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600" title="The pharmacy's name holds this brick's place name">
+                                      <span className="inline-flex items-center gap-1 text-phx-sm font-semibold text-violet-600" title="The pharmacy's name holds this brick's place name">
                                         <Signpost aria-hidden="true" className="h-3 w-3" />place in name
                                       </span>
                                     ) : null}

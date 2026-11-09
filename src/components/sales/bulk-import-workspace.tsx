@@ -158,7 +158,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
     <div className="space-y-4">
       {/* Shared month for this bulk session */}
       <Card className="space-y-2 rounded-[6px] border border-phx-line bg-white p-4">
-        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
+        <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
         <div className="flex gap-2">
           <select className={phxSelectClassName} onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
             <option value="">Month</option>
@@ -204,10 +204,10 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
                   <span aria-hidden className={cn("h-2 w-2 shrink-0 rounded-full", style.dot)} />
                   <span className="truncate text-xs font-black text-phx-ink">{d.name}</span>
                 </div>
-                <span className="font-mono text-phx-2xs text-phx-ink-faint">{d.code}</span>
-                <span className={cn("text-phx-2xs font-bold", style.text)}>{style.label}</span>
+                <span className="font-mono text-phx-sm text-phx-ink-faint">{d.code}</span>
+                <span className={cn("text-phx-sm font-bold", style.text)}>{style.label}</span>
                 {status?.reconciliation ? (
-                  <span className="text-phx-2xs font-medium text-phx-ink-soft">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
+                  <span className="text-phx-sm font-medium text-phx-ink-soft">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
                 ) : null}
               </button>
             );

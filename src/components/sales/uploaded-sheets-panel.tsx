@@ -119,7 +119,7 @@ export function UploadedSheetsPanel({
           </p>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
+          <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
           <SearchableSelect
             aria-label="Filter uploaded sheets by month"
             className="px-3"

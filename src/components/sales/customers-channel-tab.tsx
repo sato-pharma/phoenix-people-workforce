@@ -433,11 +433,11 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
               </p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <dt className="text-phx-2xs font-bold uppercase text-slate-400">Units</dt>
+                  <dt className="text-phx-sm font-bold uppercase text-slate-400">Units</dt>
                   <dd className="font-bold tabular-nums text-slate-800">{formatNumber(row.totalUnits)}</dd>
                 </div>
                 <div>
-                  <dt className="text-phx-2xs font-bold uppercase text-slate-400">Value</dt>
+                  <dt className="text-phx-sm font-bold uppercase text-slate-400">Value</dt>
                   <dd className="font-bold tabular-nums text-slate-800">{formatCurrency(row.totalValue)}</dd>
                 </div>
               </dl>

@@ -239,7 +239,7 @@ export function PortalWeeklyFieldForceView({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
             <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
-            <h2 className="break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
+            <h2 className="break-words text-phx-sm font-black uppercase tracking-[0.18em] text-slate-200">
               Medical reps · week by week
             </h2>
           </div>
@@ -263,7 +263,7 @@ export function PortalWeeklyFieldForceView({
                   key={option.key}
                   type="button"
                   onClick={() => setSort(option.key)}
-                  className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
+                  className={`whitespace-nowrap px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide transition ${
                     sort === option.key
                       ? "bg-orange-500 text-white"
                       : "bg-slate-800 text-slate-300 hover:bg-slate-700"
@@ -276,7 +276,7 @@ export function PortalWeeklyFieldForceView({
             <button
               type="button"
               onClick={() => setShowVacant((previous) => !previous)}
-              className={`whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
+              className={`whitespace-nowrap border px-2.5 py-1 text-phx-sm font-black uppercase tracking-wide transition ${
                 showVacant
                   ? "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   : "border-orange-500 bg-orange-500 text-white"
@@ -299,20 +299,20 @@ export function PortalWeeklyFieldForceView({
             </colgroup>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <th className="px-3 py-2 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                   Medical rep · Area · District manager
                 </th>
                 {weeks.map((week) => (
                   <th
                     key={week}
-                    className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                    className="px-1.5 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
                     title={gapWeeks.has(week) ? "Also holds a week a branch never uploaded" : undefined}
                   >
                     {`W${week}`}
                     {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}
                   </th>
                 ))}
-                <th className="px-2 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <th className="px-2 py-2 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                   Period · Share
                 </th>
               </tr>
@@ -325,10 +325,10 @@ export function PortalWeeklyFieldForceView({
                       <td colSpan={weeks.length + 2} className="bg-slate-900 px-3 py-2">
                         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                           <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                            <span className="break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
+                            <span className="break-words text-phx-sm font-black uppercase tracking-[0.18em] text-white">
                               {group.line}
                             </span>
-                            <span className="break-words text-phx-2xs font-semibold text-slate-400">
+                            <span className="break-words text-phx-sm font-semibold text-slate-400">
                               {`${formatNumber(group.reps.filter((r) => r.kind === "rep").length)} reps · ${formatNumber(
                                 group.reps.filter((r) => r.kind === "vacant").length,
                               )} vacant`}
@@ -338,7 +338,7 @@ export function PortalWeeklyFieldForceView({
                             <span className="whitespace-nowrap text-xs font-black tabular-nums text-white">
                               {formatEgp(group.value)}
                             </span>
-                            <span className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
+                            <span className="whitespace-nowrap text-phx-sm font-bold tabular-nums text-slate-400">
                               {formatPct(totals.value > 0 ? group.value / totals.value : 0)}
                             </span>
                           </span>
@@ -357,11 +357,11 @@ export function PortalWeeklyFieldForceView({
                             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                               <span className="flex min-w-0 items-center gap-2">
                                 <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
-                                <span className="break-words text-phx-2xs font-black tracking-[0.06em] text-slate-600">
+                                <span className="break-words text-phx-sm font-black tracking-[0.06em] text-slate-600">
                                   {region.region}
                                 </span>
                               </span>
-                              <span className="whitespace-nowrap text-phx-2xs font-black tabular-nums text-slate-600">
+                              <span className="whitespace-nowrap text-phx-sm font-black tabular-nums text-slate-600">
                                 {formatEgp(region.value)}
                               </span>
                             </div>
@@ -394,7 +394,7 @@ export function PortalWeeklyFieldForceView({
             <Fragment key={group.line}>
               {showLineBands ? (
                 <div className="flex items-baseline justify-between gap-3 bg-slate-900 px-4 py-2">
-                  <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
+                  <span className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.18em] text-white">
                     {group.line}
                   </span>
                   <span className="whitespace-nowrap text-xs font-black tabular-nums text-white">
@@ -408,11 +408,11 @@ export function PortalWeeklyFieldForceView({
                     <div className="flex items-baseline justify-between gap-3 border-y border-slate-200 bg-slate-50 px-4 py-1.5">
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
-                        <span className="break-words text-phx-2xs font-black tracking-[0.06em] text-slate-600">
+                        <span className="break-words text-phx-sm font-black tracking-[0.06em] text-slate-600">
                           {region.region}
                         </span>
                       </span>
-                      <span className="whitespace-nowrap text-phx-2xs font-black tabular-nums text-slate-600">
+                      <span className="whitespace-nowrap text-phx-sm font-black tabular-nums text-slate-600">
                         {formatEgp(region.value)}
                       </span>
                     </div>
@@ -442,22 +442,22 @@ export function PortalWeeklyFieldForceView({
           /* The scale has to be stated. Shading that looks table-wide but is row-wise would invite
              the exact misreading it exists to prevent — comparing one rep's blue against another's. */
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 px-4 py-2.5">
-            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+            <span className="inline-flex items-center gap-1.5 text-phx-sm font-semibold text-slate-500">
               <span className="shrink-0 border-b-2 border-orange-400 pb-0.5 font-bold text-slate-900">1,234</span>
               <span className="min-w-0 break-words">that rep&rsquo;s strongest week</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+            <span className="inline-flex items-center gap-1.5 text-phx-sm font-semibold text-slate-500">
               <span className="shrink-0 border-b-2 border-dotted border-amber-400 pb-0.5 font-semibold text-slate-700">
                 1,234
               </span>
               <span className="min-w-0 break-words">spans a week that was never uploaded</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+            <span className="inline-flex items-center gap-1.5 text-phx-sm font-semibold text-slate-500">
               <ArrowUp className="h-2 w-2 shrink-0 text-emerald-500" strokeWidth={4} />
               <ArrowDown className="h-2 w-2 shrink-0 text-rose-400" strokeWidth={4} />
               <span className="min-w-0 break-words">up or down on the week before</span>
             </span>
-            <span className="break-words text-phx-2xs font-semibold text-slate-400">
+            <span className="break-words text-phx-sm font-semibold text-slate-400">
               Weight is read across one rep&rsquo;s own row, never between reps.
             </span>
           </div>
@@ -520,14 +520,14 @@ function RepRow({
               <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
                 {rep.areaName ? weeklyAreaLabel(rep.areaName) : "—"}
                 {rep.regionName ? (
-                  <span className="ml-1.5 text-phx-2xs font-bold tracking-wide text-slate-400">
+                  <span className="ml-1.5 text-phx-sm font-bold tracking-wide text-slate-400">
                     {weeklyRegionLabel(rep.regionName)}
                   </span>
                 ) : null}
               </p>
               {rep.managerName ? (
                 <p className="break-words text-xs font-semibold text-slate-500">
-                  <span className="mr-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                  <span className="mr-1.5 text-phx-sm font-bold uppercase tracking-wide text-slate-400">
                     District manager
                   </span>
                   {weeklyPersonLabel(rep.managerName)}
@@ -560,7 +560,7 @@ function RepRow({
                 style={{ width: `${Math.max(2, (rep.value / maxValue) * 100)}%` }}
               />
             </div>
-            <span className="text-phx-2xs font-bold tabular-nums text-slate-500">{formatPct(share)}</span>
+            <span className="text-phx-sm font-bold tabular-nums text-slate-500">{formatPct(share)}</span>
           </div>
         </td>
       </tr>
@@ -604,10 +604,10 @@ function ProductGrid({
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-3 py-2">
         <Package className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-        <p className="min-w-0 break-words text-phx-2xs font-black tracking-[0.04em] text-slate-500">
+        <p className="min-w-0 break-words text-phx-sm font-black tracking-[0.04em] text-slate-500">
           Units per product, week by week
         </p>
-        <span className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+        <span className="min-w-0 break-words text-phx-sm font-bold uppercase tracking-wide text-slate-400">
           {`${rep.products.length} product${rep.products.length === 1 ? "" : "s"} · ${rep.lineName}`}
         </span>
       </div>
@@ -623,23 +623,23 @@ function ProductGrid({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/80">
-              <th className="px-3 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-3 py-1.5 text-left text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                 Product
               </th>
               {weeks.map((week) => (
                 <th
                   key={week}
-                  className="px-1.5 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                  className="px-1.5 py-1.5 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500"
                   title={gapWeeks.has(week) ? "Includes a week that was never uploaded" : undefined}
                 >
                   {`W${week}`}
                   {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}
                 </th>
               ))}
-              <th className="px-2 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-2 py-1.5 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                 Units
               </th>
-              <th className="px-2 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-2 py-1.5 text-right text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">
                 Value
               </th>
             </tr>
@@ -690,7 +690,7 @@ function ProductGrid({
                     <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">
                       {`${unitsTotal(product.units)} units`}
                     </p>
-                    <p className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
+                    <p className="whitespace-nowrap text-phx-sm font-bold tabular-nums text-slate-400">
                       {formatEgp(product.value)}
                     </p>
                   </div>
@@ -716,7 +716,7 @@ function ProductGrid({
           })}
         </div>
       )}
-      <p className="border-t border-slate-100 px-3 py-1.5 text-phx-2xs font-semibold text-slate-400">
+      <p className="border-t border-slate-100 px-3 py-1.5 text-phx-sm font-semibold text-slate-400">
         Units are shown per product only — units of different products are never added together.
       </p>
     </div>
@@ -759,7 +759,7 @@ function RepCard({
           </span>
           <div className="min-w-0 flex-1">
             <p className="break-words text-sm font-black text-slate-900">{weeklyPersonLabel(rep.label)}</p>
-            <p className="break-words text-phx-2xs font-bold tracking-wide text-slate-400">
+            <p className="break-words text-phx-sm font-bold tracking-wide text-slate-400">
               {[
                 rep.areaName ? weeklyAreaLabel(rep.areaName) : null,
                 rep.regionName ? weeklyRegionLabel(rep.regionName) : null,
@@ -773,7 +773,7 @@ function RepCard({
         <div className="flex shrink-0 items-center gap-2">
           <div className="text-right">
             <p className="whitespace-nowrap text-sm font-black tabular-nums text-slate-900">{formatEgp(rep.value)}</p>
-            <p className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">{formatPct(share)}</p>
+            <p className="whitespace-nowrap text-phx-sm font-bold tabular-nums text-slate-400">{formatPct(share)}</p>
           </div>
           {expanded ? (
             <ChevronDown className="h-4 w-4 text-orange-500" />
@@ -905,7 +905,7 @@ function WeekChip({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap bg-slate-50 px-1.5 py-0.5 text-phx-2xs tabular-nums ${
+      className={`inline-flex items-center gap-1 whitespace-nowrap bg-slate-50 px-1.5 py-0.5 text-phx-sm tabular-nums ${
         rank.text
       } ${rank.peak ? "ring-1 ring-orange-300" : ""} ${gap ? "ring-1 ring-amber-300" : ""}`}
     >
@@ -940,7 +940,7 @@ function AttributionDot({ rep }: { rep: FieldForceRep }) {
   return (
     <span
       title={`${formatPct(1 - exactShare)} of this figure is allocated from branch names, not mapped by hand.`}
-      className="inline-flex items-center gap-1 whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-700"
+      className="inline-flex items-center gap-1 whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-wide text-amber-700"
     >
       Allocated
     </span>
@@ -968,7 +968,7 @@ function AttributionStrip({
     <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
       <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
-        <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
+        <h2 className="min-w-0 break-words text-phx-sm font-black uppercase tracking-[0.18em] text-slate-200">
           How these numbers reached a rep
         </h2>
       </div>
@@ -987,13 +987,13 @@ function AttributionStrip({
           {parts.map((part) => (
             <div key={part.label} className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
               <span className={`h-2 w-2 shrink-0 ${part.className}`} />
-              <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+              <span className="min-w-0 break-words text-phx-sm font-black uppercase tracking-wide text-slate-500">
                 {part.label}
               </span>
               <span className={`whitespace-nowrap text-xs font-black tabular-nums ${part.tone}`}>
                 {formatEgp(part.value)}
               </span>
-              <span className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
+              <span className="whitespace-nowrap text-phx-sm font-bold tabular-nums text-slate-400">
                 {formatPct(part.value / safe)}
               </span>
             </div>
@@ -1039,13 +1039,13 @@ function FieldTile({
         >
           <Icon className="h-3.5 w-3.5" />
         </span>
-        <p className="mt-2.5 break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        <p className="mt-2.5 break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-400">
           {label}
         </p>
         <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">
           {value}
         </p>
-        {sub ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
+        {sub ? <p className="mt-0.5 break-words text-phx-sm font-semibold text-slate-400">{sub}</p> : null}
       </div>
     </div>
   );

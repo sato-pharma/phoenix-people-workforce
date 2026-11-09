@@ -169,7 +169,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
             <select className={`${phxSelectClassName} min-w-64`} onChange={(e) => pick(e.target.value)} value={selected}>
               {profiles.map((p) => (
                 <option key={p.distributorCode} value={p.distributorCode}>{p.distributorName} ({p.distributorCode}){p.isCustom ? " · edited" : ""}</option>
@@ -182,15 +182,15 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
             <input className={cn(phxFieldClassName, "font-mono")} disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
             <input className={phxFieldClassName} onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
             <select className={phxSelectClassName} onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
               <option value="recompute">recompute (qty × master price)</option>
               <option value="sheet">sheet (value column)</option>
@@ -206,7 +206,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
         <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-[#FCFDFE] p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
+              <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
               <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
             </label>
             <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={previewing || !previewFile} onClick={() => void runPreview()} type="button">
@@ -226,12 +226,12 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               return (
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
                 <span className="text-phx-xs font-bold text-phx-ink-2">{f.label}</span>
-                {f.hint ? <span className="text-phx-2xs font-semibold leading-snug text-phx-warn">{f.hint}</span> : null}
+                {f.hint ? <span className="text-phx-sm font-semibold leading-snug text-phx-warn">{f.hint}</span> : null}
                 <input className={cn(phxFieldClassName, "font-mono")} onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
-                    ? <span className="break-words text-phx-2xs font-semibold text-emerald-700">✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
-                    : <span className="break-words text-phx-2xs font-bold text-amber-700">✗ none of these aliases is in the file</span>
+                    ? <span className="break-words text-phx-sm font-semibold text-emerald-700">✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
+                    : <span className="break-words text-phx-sm font-bold text-amber-700">✗ none of these aliases is in the file</span>
                 ) : null}
               </label>
               );

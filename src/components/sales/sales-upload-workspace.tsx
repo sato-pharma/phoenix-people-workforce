@@ -84,7 +84,7 @@ const stackCell = "block break-words px-1 py-1 align-top md:table-cell md:px-3 m
 
 /** A card's field name on a phone; the column header says it on a desktop. */
 function StackLabel({ children }: { children: React.ReactNode }) {
-  return <span className="mb-0.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
+  return <span className="mb-0.5 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
 }
 
 export const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -113,7 +113,7 @@ const CUSTOMER_FIX_COLUMNS: ExportColumn[] = [
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-phx-2xs font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-phx-line text-phx-ink-soft")}>
+      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-phx-sm font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-phx-line text-phx-ink-soft")}>
         {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
       </span>
       <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">{label}</span>
@@ -124,7 +124,7 @@ function StepBadge({ n, label, done, active }: { n: number; label: string; done?
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className="text-phx-sm font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
       <div className={cn("mt-0.5 text-sm font-black tabular-nums", accent ? "text-phx-accent" : "text-phx-ink")}>{value}</div>
     </div>
   );
@@ -1040,8 +1040,8 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-bold text-phx-ok ring-1 ring-phx-ok-line"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
+            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-sm font-bold text-phx-ok ring-1 ring-phx-ok-line"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
           </div>
           <div className="flex gap-1">
             <select className={cn(phxSelectClassName, periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
@@ -1068,7 +1068,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       </div>
       {files.length > 1 ? (
         <div className="rounded-[6px] border border-phx-line bg-[#FCFDFE] px-3 py-2">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{files.length} {distributorName} sheets — validated and uploaded together</p>
+          <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{files.length} {distributorName} sheets — validated and uploaded together</p>
           <ul className="mt-1 space-y-0.5">
             {files.map((f, i) => (
               <li className="break-words text-xs font-semibold text-phx-ink" key={`${f.name}-${i}`}>

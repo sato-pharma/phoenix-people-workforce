@@ -57,7 +57,7 @@ function initialsOf(name: string): string {
 
 function Avatar({ entry, size = "sm" }: { entry: Pick<RankingEntry, "hrId" | "name" | "hasPhoto">; size?: "sm" | "md" }) {
   const [failed, setFailed] = useState(false);
-  const box = size === "md" ? "h-12 w-12 text-sm" : "h-9 w-9 text-phx-2xs";
+  const box = size === "md" ? "h-12 w-12 text-sm" : "h-9 w-9 text-phx-sm";
   if (!entry.hasPhoto || failed) {
     return (
       <span
@@ -217,15 +217,15 @@ function StandingCard({
               #{rank}
             </span>
             <span className="text-2xl font-black leading-none tabular-nums text-white/70">/ {outOf}</span>
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-white/60">{outOfNote}</span>
+            <span className="text-phx-sm font-bold uppercase tracking-[0.14em] text-white/60">{outOfNote}</span>
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-2">
           <div className="border-l border-white/15 pl-4">
             <Trend className="text-sm" tone="dark" value={trend} />
-            <p className="mt-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-white/50">vs previous</p>
+            <p className="mt-1 text-phx-sm font-bold uppercase tracking-[0.14em] text-white/50">vs previous</p>
           </div>
-          <p className="border-l border-white/15 pl-4 text-phx-2xs font-black uppercase tracking-[0.18em] text-white/70">
+          <p className="border-l border-white/15 pl-4 text-phx-sm font-black uppercase tracking-[0.18em] text-white/70">
             {periodLabel}
           </p>
         </div>
@@ -254,7 +254,7 @@ function ChipFilter({
   };
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
       <button
         aria-pressed={selected.length === 0}
         className={cn("whitespace-nowrap", chipClass(selected.length === 0))}
@@ -369,7 +369,7 @@ function BoardTable({ entries, showLine }: { entries: readonly RankingEntry[]; s
                 </span>
                 <span className="shrink-0 text-right">
                   <Trend className="text-xs" value={entry.trend} />
-                  <span className="mt-0.5 block whitespace-nowrap text-phx-2xs tabular-nums text-slate-500">
+                  <span className="mt-0.5 block whitespace-nowrap text-phx-sm tabular-nums text-slate-500">
                     {formatEgp(entry.salesValue)}
                   </span>
                 </span>
@@ -489,7 +489,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
                 : []),
             ].map((figure, index) => (
               <div className={cn(index > 0 && "border-l border-slate-200 pl-6")} key={figure.label}>
-                <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{figure.label}</dt>
+                <dt className="text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">{figure.label}</dt>
                 <dd className={cn("mt-0.5 text-2xl font-black leading-none tabular-nums", figure.tone)}>{figure.value}</dd>
               </div>
             ))}
@@ -505,7 +505,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
       <section className={cn(SURFACE_CLASS, "px-4 py-1 sm:px-5")}>
         <div className="divide-y divide-slate-100 [&>*]:py-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Period</span>
+            <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Period</span>
             {MODES.map((mode) => (
               <button
                 aria-pressed={mode === data.mode}
@@ -521,7 +521,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
 
           {data.anchorOptions.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
+              <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">
                 {MODE_LABELS[data.mode]}
               </span>
               {data.anchorOptions.map((option) => (
@@ -565,7 +565,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
               which is far more names than a chip row can carry legibly. */}
           {data.managerOptions.length > 0 || data.filters.manager ? (
             <label className="flex flex-wrap items-center gap-2">
-              <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Manager</span>
+              <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Manager</span>
               <span className="min-w-0 flex-1 sm:max-w-xs">
                 <select
                   aria-label="Filter by manager"
@@ -594,7 +594,7 @@ export function RankingsExplorer({ data }: { data: RankingsPageData }) {
               push({ q: queryDraft });
             }}
           >
-            <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Person</span>
+            <span className="whitespace-nowrap text-phx-sm font-black uppercase tracking-[0.18em] text-slate-500">Person</span>
             <span className="flex min-w-0 flex-1 items-center gap-2 border border-slate-200 bg-white px-3 py-1.5 sm:max-w-xs">
               <Search aria-hidden className="h-4 w-4 shrink-0 text-slate-400" />
               <input

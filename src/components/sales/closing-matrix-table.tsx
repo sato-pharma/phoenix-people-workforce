@@ -662,7 +662,7 @@ export function ClosingMatrixTable({
                 ...(group.isMulti ? [
                   <th className={`${bandHeader} phx-family sticky top-0 z-30 h-11`} colSpan={3} key={`fh-${gi}`}>
                     <span className="block break-words text-phx-sm font-black leading-tight">{group.family}</span>
-                    <span className="block text-phx-2xs font-normal opacity-70">Family Total</span>
+                    <span className="block text-phx-sm font-normal opacity-70">Family Total</span>
                   </th>,
                 ] : []),
               ])}

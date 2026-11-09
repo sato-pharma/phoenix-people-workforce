@@ -348,7 +348,7 @@ export function WeeklyProductMappingManager({
               key={alias.id}
               status={
                 alias.resolvable ? undefined : (
-                  <span className="inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase text-amber-700">
+                  <span className="inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-sm font-black uppercase text-amber-700">
                     <AlertTriangle className="h-3 w-3" /> fix price/line in master
                   </span>
                 )
@@ -394,7 +394,7 @@ export function WeeklyProductMappingManager({
                 <td className="break-words px-3 py-2">
                   <span className="font-semibold text-phx-ink">{alias.productName}</span>
                   {!alias.resolvable && (
-                    <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase text-amber-700">
+                    <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-sm font-black uppercase text-amber-700">
                       <AlertTriangle className="h-3 w-3" /> fix price/line in master
                     </span>
                   )}
@@ -421,7 +421,7 @@ export function WeeklyProductMappingManager({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

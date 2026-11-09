@@ -75,7 +75,7 @@ function toggled(open: ReadonlySet<string>, key: string): Set<string> {
 }
 
 const headBase =
-  "px-2 py-2 align-bottom text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500";
+  "px-2 py-2 align-bottom text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500";
 const headCell = `${headBase} text-left`;
 const headNum = `${headBase} text-right`;
 const bodyCell = "px-2 py-2 align-top text-sm text-slate-700 break-words";
@@ -280,7 +280,7 @@ export function ClosingSummaryFits({ matrix }: { matrix: MonthlyClosingMatrix })
                   <span className="block text-sm font-bold tabular-nums text-[#0B0B0B]">
                     {money(node.total.value)}
                   </span>
-                  <span className="block text-phx-2xs tabular-nums text-slate-500">
+                  <span className="block text-phx-sm tabular-nums text-slate-500">
                     {achievement(node.total.achievement)}
                   </span>
                 </span>
@@ -308,7 +308,7 @@ export function ClosingSummaryFits({ matrix }: { matrix: MonthlyClosingMatrix })
                             <span className="block text-xs font-semibold tabular-nums text-[#0B0B0B]">
                               {money(region.cell.value)}
                             </span>
-                            <span className="block text-phx-2xs tabular-nums text-slate-500">
+                            <span className="block text-phx-sm tabular-nums text-slate-500">
                               {achievement(region.cell.achievement)}
                             </span>
                           </span>

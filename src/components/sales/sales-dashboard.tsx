@@ -160,7 +160,7 @@ function MetricCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+            <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />
             {trend === "up" && <span className="text-emerald-500 text-xs font-semibold">↑</span>}
             {trend === "down" && <span className="text-rose-500 text-xs font-semibold">↓</span>}
@@ -209,7 +209,7 @@ function ChartCard({ children, subtitle, title }: { children: React.ReactNode; s
       <div className="flex items-start justify-between gap-3">
         <SectionHeader title={title} subtitle={subtitle} />
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent-hover">
+          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-phx-sm font-black uppercase tracking-[0.16em] text-phx-accent-hover">
             Live
           </span>
         </div>
@@ -313,7 +313,7 @@ function DonutChart({ rows, total }: { rows: AnyRow[]; total: number }) {
       <div className="relative mx-auto h-44 w-44 rounded-full p-2 shadow-[0_20px_45px_rgba(15,23,42,0.12)] transition-all duration-160 ease-out hover:shadow-lg" style={{ background: `conic-gradient(${gradient})` }}>
         <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full border border-phx-line bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
           <p className="text-2xl font-black text-slate-900">{shortCurrency(total).replace("EGP ", "")}</p>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">EGP Total</p>
+          <p className="text-phx-sm font-bold uppercase tracking-[0.14em] text-slate-500">EGP Total</p>
         </div>
       </div>
       <div className="space-y-3 self-center">
@@ -355,18 +355,18 @@ function TopList({ labelKey, rows, title }: { labelKey: string; rows: AnyRow[]; 
           const sales = valueAsNumber(row.sales);
           return (
             <div className="grid grid-cols-[20px_minmax(0,1fr)_60px] items-center gap-2" key={`${valueAsText(row[labelKey])}-${index}`}>
-              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-phx-paper text-phx-2xs font-black text-phx-ink-soft">{index + 1}</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-phx-paper text-phx-sm font-black text-phx-ink-soft">{index + 1}</span>
               <div className="min-w-0">
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <p className="truncate font-bold text-phx-ink">{valueAsText(row[labelKey])}</p>
-                  <p className="shrink-0 text-phx-2xs font-bold text-phx-ink-soft">{shortCurrency(sales).replace("EGP ", "")}</p>
+                  <p className="shrink-0 text-phx-sm font-bold text-phx-ink-soft">{shortCurrency(sales).replace("EGP ", "")}</p>
                 </div>
-                {valueAsText(row.area) && <p className="mt-0.5 truncate text-phx-2xs font-semibold text-phx-ink-soft">{valueAsText(row.area)}</p>}
+                {valueAsText(row.area) && <p className="mt-0.5 truncate text-phx-sm font-semibold text-phx-ink-soft">{valueAsText(row.area)}</p>}
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
                   <div className="h-full rounded-full bg-[linear-gradient(90deg,#F59E0B_0%,#F97316_100%)]" style={{ width: `${Math.min((sales / max) * 100, 100)}%` }} />
                 </div>
               </div>
-              <p className="text-right text-phx-2xs font-semibold text-phx-ink-soft">{formatPercent(total > 0 ? sales / total : 0)}</p>
+              <p className="text-right text-phx-sm font-semibold text-phx-ink-soft">{formatPercent(total > 0 ? sales / total : 0)}</p>
             </div>
           );
         })}
@@ -424,11 +424,11 @@ function RankingHalfTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-phx-line transition-all duration-160 ease-out hover:shadow-md hover:border-phx-accent-line/50">
-      <div className={cn("px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em]", tone === "top" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
+      <div className={cn("px-3 py-1.5 text-phx-sm font-black uppercase tracking-[0.12em]", tone === "top" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
         {label}
       </div>
       <CrmTable className="text-xs" columns={metric === "achievement" ? ["8%", "34%", "18%", "20%", "20%"] : ["8%", "46%", "24%", "22%"]}>
-        <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft">
+        <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             <th className="px-2 py-1.5 font-semibold">#</th>
             <th className="px-2 py-1.5 font-semibold">Name</th>
@@ -443,10 +443,10 @@ function RankingHalfTable({
             const area = valueAsText(row.area).trim();
             return (
               <tr className={cn("transition-all duration-160 ease-out hover:bg-phx-paper/80", isTopPerformer && "bg-emerald-50/30")} key={`${valueAsText(row.name)}-${label}-${index}`}>
-                <td className={cn("px-2 py-1.5 align-top font-black text-phx-2xs", isTopPerformer ? "text-emerald-600" : "text-phx-ink-soft")}>{index + 1}</td>
+                <td className={cn("px-2 py-1.5 align-top font-black text-phx-sm", isTopPerformer ? "text-emerald-600" : "text-phx-ink-soft")}>{index + 1}</td>
                 <td className="break-words px-2 py-1.5 align-top">
                   <p className={cn("break-words text-xs font-semibold", isTopPerformer ? "text-slate-900 font-bold" : "text-phx-ink")}>{valueAsText(row.name)}</p>
-                  {area && area !== "-" ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-phx-ink-soft">{area}</p> : null}
+                  {area && area !== "-" ? <p className="mt-0.5 break-words text-phx-sm font-semibold text-phx-ink-soft">{area}</p> : null}
                 </td>
                 <td className={cn("break-words px-2 py-1.5 align-top text-xs font-black", tone === "top" ? "text-emerald-600" : "text-rose-600")}>{renderValue(row)}</td>
                 {metric === "achievement" ? <td className="break-words px-2 py-1.5 align-top text-xs text-phx-ink-soft">{shortCurrency(row.sales)}</td> : null}
@@ -500,7 +500,7 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
       <div className="flex items-center justify-between gap-3">
         <SectionHeader title={title} />
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2 py-0.5 text-phx-3xs font-black uppercase tracking-[0.14em] text-phx-accent-hover">
+          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-accent-hover">
             Live
           </span>
         </div>
@@ -508,14 +508,14 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
       <div className="mt-3 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/30 px-2.5 py-2">
-            <p className="text-phx-3xs font-bold uppercase tracking-[0.08em] text-emerald-600">Highest Achievement</p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-emerald-600">Highest Achievement</p>
             <p className="mt-0.5 text-xs font-black text-slate-900">{topAchievement ? valueAsText(topAchievement.name) : "—"}</p>
-            <p className="text-phx-2xs font-semibold text-emerald-600">{topAchievement ? formatPercent(valueAsNumber(topAchievement.achievementRate)) : "—"}</p>
+            <p className="text-phx-sm font-semibold text-emerald-600">{topAchievement ? formatPercent(valueAsNumber(topAchievement.achievementRate)) : "—"}</p>
           </div>
           <div className="rounded-xl border border-orange-200/60 bg-orange-50/30 px-2.5 py-2">
-            <p className="text-phx-3xs font-bold uppercase tracking-[0.08em] text-orange-600">Highest Sales</p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.08em] text-orange-600">Highest Sales</p>
             <p className="mt-0.5 text-xs font-black text-slate-900">{topValue ? valueAsText(topValue.name) : "—"}</p>
-            <p className="text-phx-2xs font-semibold text-orange-600">{topValue ? shortCurrency(valueAsNumber(topValue.sales)) : "—"}</p>
+            <p className="text-phx-sm font-semibold text-orange-600">{topValue ? shortCurrency(valueAsNumber(topValue.sales)) : "—"}</p>
           </div>
         </div>
         <div className="flex items-center justify-end">
@@ -525,7 +525,7 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
         </div>
         <div className="max-h-48 overflow-y-auto rounded-xl border border-phx-line bg-white">
           <CrmTable className="text-xs" columns={["40%", "20%", "20%", "20%"]}>
-            <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft sticky top-0">
+            <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.08em] text-phx-ink-soft sticky top-0">
               <tr>
                 <SortableTh label="Name" sortKey="name" {...leaderThProps(table)} />
                 <SortableTh label="Sales" sortKey="sales" {...leaderThProps(table)} />
@@ -579,7 +579,7 @@ function leaderThProps(table: { sort: SortState | null; toggleSort: (key: string
     sort: table.sort,
     onSort: table.toggleSort,
     variant: "light" as const,
-    className: "px-2 py-1.5 text-phx-3xs tracking-[0.08em] font-semibold",
+    className: "px-2 py-1.5 text-phx-xs tracking-[0.08em] font-semibold",
   };
 }
 
@@ -642,18 +642,18 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
                       <p className={cn("truncate text-xs font-black", isTopPerformer ? "text-orange-700" : "text-slate-900")}>{valueAsText(row.line)}</p>
                       {isTopPerformer && <span className="h-1 w-1 rounded-full bg-orange-500 animate-pulse" style={{ animationDuration: '1.5s' }} />}
                     </div>
-                    <p className="text-phx-2xs font-semibold text-slate-500">{formatNumber(valueAsNumber(row.rows))} rows</p>
+                    <p className="text-phx-sm font-semibold text-slate-500">{formatNumber(valueAsNumber(row.rows))} rows</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-black text-slate-900">{shortCurrency(sales)}</p>
-                    <p className={cn("text-phx-2xs font-bold", rate >= 0.8 ? "text-emerald-600" : "text-rose-600")}>{formatPercent(rate)}</p>
+                    <p className={cn("text-phx-sm font-bold", rate >= 0.8 ? "text-emerald-600" : "text-rose-600")}>{formatPercent(rate)}</p>
                   </div>
                 </div>
                 <div className="mt-2 grid gap-1">
                   <div className="h-2 overflow-hidden rounded-full bg-phx-paper-2 shadow-[inset_0 1px 2px_rgba(15,23,42,0.06)]">
                     <div className={cn("h-full rounded-full shadow-[0_0_14px_rgba(249,115,22,0.35)] transition-all duration-160 ease-out", isTopPerformer ? "bg-gradient-to-r from-orange-400 to-orange-600" : "bg-gradient-to-r from-amber-400 to-orange-600")} style={{ width: `${Math.min((sales / maxSales) * 100, 100)}%` }} />
                   </div>
-                  <div className="flex justify-between text-phx-2xs font-semibold text-slate-500">
+                  <div className="flex justify-between text-phx-sm font-semibold text-slate-500">
                     <span>Tgt {shortCurrency(target)}</span>
                     <span>Gap {shortCurrency(sales - target)}</span>
                   </div>
@@ -724,7 +724,7 @@ function FilterSelect({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className="mb-1 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <div className="relative">
         <SearchableSelect
           className="h-9 w-full appearance-none px-3 pr-9"
@@ -759,7 +759,7 @@ function PeriodFilter({
 
   return (
     <div className="relative">
-      <p className="mb-1 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Month</p>
+      <p className="mb-1 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">Month</p>
       <button
         className="flex h-9 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-all duration-160 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm"
         onClick={() => setOpen((current) => !current)}
@@ -825,7 +825,7 @@ function MiniStat({ icon: Icon, label, value }: { icon: React.ComponentType<{ cl
 function FilterField({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <div>
-      <p className="mb-1 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mb-1 block text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       {children}
     </div>
   );
@@ -850,7 +850,7 @@ function PerformanceTable({
   return (
     <div className="overflow-hidden rounded-[24px] border border-phx-line">
       <CrmTable className="text-xs" columns={columns.map((column) => column.width)}>
-        <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft">
+        <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             {columns.map((column) => (
               <th className="break-words px-2 py-1.5 font-semibold" key={column.key}>
@@ -1065,7 +1065,7 @@ function SalesDashboardContent({
           <div className="flex-1">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-500/20 bg-orange-500/5 px-3 py-1 backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-400 shadow-[0_0_6px_rgba(249,115,22,0.5)]" />
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.2em] text-orange-600">
+              <span className="text-phx-sm font-bold uppercase tracking-[0.2em] text-orange-600">
                 {portalMode ? "Employee Sales" : "Sales Intelligence"}
               </span>
             </div>
@@ -1177,7 +1177,7 @@ function SalesDashboardContent({
                 <TrendingUp className="h-4.5 w-4.5" />
               </div>
               <div className="flex-1">
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-emerald-600">Top Territory</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-emerald-600">Top Territory</p>
                 <p className="mt-1 text-lg font-black text-slate-900">{topTerritory ? valueAsText(topTerritory.name) : "—"}</p>
                 <p className="mt-0.5 text-xs font-semibold text-slate-500">{topTerritory ? shortCurrency(valueAsNumber(topTerritory.sales)) : "—"}</p>
               </div>
@@ -1190,7 +1190,7 @@ function SalesDashboardContent({
                 <BarChart3 className="h-4.5 w-4.5" />
               </div>
               <div className="flex-1">
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-orange-600">Top Line</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-orange-600">Top Line</p>
                 <p className="mt-1 text-lg font-black text-slate-900">{topLine ? valueAsText(topLine.line) : "—"}</p>
                 <p className="mt-0.5 text-xs font-semibold text-slate-500">{topLine ? formatPercent(valueAsNumber(topLine.achievementRate)) : "—"} achievement</p>
               </div>
@@ -1203,7 +1203,7 @@ function SalesDashboardContent({
                 <Users className="h-4.5 w-4.5" />
               </div>
               <div className="flex-1">
-                <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-sky-600">Top Performer</p>
+                <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-sky-600">Top Performer</p>
                 <p className="mt-1 text-lg font-black text-slate-900">{topRep ? valueAsText(topRep.name) : "—"}</p>
                 <p className="mt-0.5 text-xs font-semibold text-slate-500">{topRep ? formatPercent(valueAsNumber(topRep.achievementRate)) : "—"} achievement</p>
               </div>
@@ -1407,21 +1407,21 @@ function SalesDashboardContent({
           <div className="flex items-center gap-3">
             <Users className="h-4.5 w-4.5 text-phx-accent" />
             <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">Linked Employees</p>
+              <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">Linked Employees</p>
               <p className="text-sm font-bold text-slate-900">{formatNumber(summary.linkedEmployees)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <MapPinned className="h-4.5 w-4.5 text-phx-accent" />
             <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">Territories</p>
+              <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">Territories</p>
               <p className="text-sm font-bold text-slate-900">{formatNumber(view.territoryRows.length)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <TrendingUp className="h-4.5 w-4.5 text-phx-accent" />
             <div>
-              <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">Avg Factory Price</p>
+              <p className="text-phx-sm font-bold uppercase tracking-[0.1em] text-slate-500">Avg Factory Price</p>
               <p className="text-sm font-bold text-slate-900">{formatCurrency(summary.averageFactoryPrice)}</p>
             </div>
           </div>

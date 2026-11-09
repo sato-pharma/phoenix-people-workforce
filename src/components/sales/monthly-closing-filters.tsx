@@ -56,7 +56,7 @@ function MultiSelect({
           clicks. Keep this above whatever the table uses. */}
       <div className="absolute left-0 z-50 mt-1 max-h-72 w-64 overflow-auto border border-phx-line bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
         <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
-          <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{count} selected</span>
+          <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{count} selected</span>
           <button className="text-xs font-bold text-phx-accent hover:underline" onClick={onClear} type="button">Clear</button>
         </div>
         {/*

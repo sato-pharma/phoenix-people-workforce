@@ -82,7 +82,7 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
       <Card className={cn(panel, "space-y-3 p-5")}>
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Force distributor (optional)</span>
+            <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-phx-ink-faint">Force distributor (optional)</span>
             <div className="w-56"><SearchableSelect onValueChange={setOverride} placeholder="auto-detect" value={override}>
               <option value="">Auto-detect</option>
               {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} ({d.code})</option>)}

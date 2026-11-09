@@ -36,7 +36,7 @@ function PickerOrLocked({
 }) {
   return (
     <label className="flex flex-col gap-1 sm:w-44">
-      <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</span>
+      <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">{label}</span>
       {options.length > 1 ? (
         <SearchableSelect className={selectClassName} onChange={(event) => onChange(event.target.value)} value={value}>
           {options.map((entry) => (

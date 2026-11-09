@@ -271,7 +271,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                           <td className="break-words px-3 py-2.5 align-top">
                             <span className="font-mono text-xs font-semibold text-slate-700">{row.masterCustomerId}</span>
                             {row.matched ? (
-                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{row.distributorSpan}</span>
+                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-sm font-black text-white">×{row.distributorSpan}</span>
                             ) : null}
                           </td>
                         </tr>
@@ -319,7 +319,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                             <span className="block font-semibold text-phx-ink">{master.customerName || "—"}</span>
                             <span className="font-mono text-xs font-semibold text-slate-400">{master.masterCustomerId}</span>
                             {master.distributorSpan > 1 ? (
-                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{master.distributorSpan}</span>
+                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-sm font-black text-white">×{master.distributorSpan}</span>
                             ) : null}
                             {/* Below `md` the six folded columns come back here, so a phone loses
                                 nothing. */}

@@ -127,7 +127,7 @@ export function ClosingPeriodSelect({
           <>
             {multi ? (
               <div className="mb-2 flex items-center justify-between px-1">
-                <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">
                   {value.length} of {ordered.length}
                 </span>
                 <span className="flex gap-3">

@@ -616,7 +616,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
           // the "Closing Matrix" title nothing — see AdminSectionHeader.
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availableLines.length === 0}
@@ -633,7 +633,7 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="text-phx-sm font-bold uppercase tracking-[0.16em] text-slate-500">
                 {isMultiPeriod ? "Months" : "Month"}
               </span>
               <ClosingPeriodSelect

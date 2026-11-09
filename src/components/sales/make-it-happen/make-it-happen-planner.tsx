@@ -766,7 +766,7 @@ export function MakeItHappenPlanner({
                       </span>
                     </label>
                     {goalPct == null ? (
-                      <span className="text-phx-2xs font-bold text-red-600">
+                      <span className="text-phx-sm font-bold text-red-600">
                         A whole number from {MIN_GOAL_PCT} to {MAX_GOAL_PCT}
                       </span>
                     ) : null}
@@ -806,7 +806,7 @@ export function MakeItHappenPlanner({
               >
                 <CoachIcon className={cn("mt-0.5 h-5 w-5 shrink-0", coachTone.iconTone)} />
                 <div className="min-w-0">
-                  <p className={cn("text-phx-2xs font-black uppercase tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
+                  <p className={cn("text-phx-sm font-black uppercase tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
                   <p className="mt-0.5 break-words text-sm font-semibold leading-6 text-slate-800">{coach.message}</p>
                 </div>
               </div>
@@ -830,11 +830,11 @@ export function MakeItHappenPlanner({
                         )}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className={cn("text-phx-2xs font-black uppercase tracking-[0.18em]", style.kicker)}>
+                          <p className={cn("text-phx-sm font-black uppercase tracking-[0.18em]", style.kicker)}>
                             Scenario {scenario.number}
                           </p>
                           {inUse ? (
-                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-emerald-700">
+                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-emerald-700">
                               In your forecast
                             </span>
                           ) : null}
@@ -1030,7 +1030,7 @@ export function MakeItHappenPlanner({
                           <p className="flex flex-wrap items-center gap-2 break-words text-sm font-bold text-slate-900">
                             <span className="min-w-0 break-words">{plan.name}</span>
                             {active ? (
-                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
+                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.12em] text-orange-700">
                                 Open now
                               </span>
                             ) : null}
@@ -1076,7 +1076,7 @@ export function MakeItHappenPlanner({
                     <p className="text-lg font-black tabular-nums text-amber-600">{formatEgpFull(forecastTotal)}</p>
                   </div>
                   <div className="w-36">
-                    <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    <p className="flex items-baseline justify-between gap-2 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
                       Achievement
                       <span className={cn("text-sm tabular-nums tracking-normal", achievementTone(overallPct))}>
                         {formatPct(overallPct)}
@@ -1089,7 +1089,7 @@ export function MakeItHappenPlanner({
                   {/* Pedia alone: its total half IS the achievement beside it, so only the Sato half is added. */}
                   {halves.filter((half) => half.key === "sato" || data.lines.length > 1).map((half) => (
                     <div key={half.key} className="w-36">
-                      <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      <p className="flex items-baseline justify-between gap-2 text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500">
                         {half.key === "sato" ? "Sato half" : "Total half"}
                         <span className={cn("text-sm tabular-nums tracking-normal", achievementTone(half.achievement))}>
                           {formatPct(half.achievement)}
@@ -1307,7 +1307,7 @@ function FilterBar({
   ) =>
     options.length > 1 ? (
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500 sm:w-16">{label}</span>
+        <span className="w-full text-phx-sm font-black uppercase tracking-[0.14em] text-slate-500 sm:w-16">{label}</span>
         <div aria-label={`Filter by ${label.toLowerCase()}`} className="flex min-w-0 flex-1 flex-wrap gap-1.5" role="group">
           {options.map((option) => {
             const selected = filters[key].includes(option.value);
@@ -1469,7 +1469,7 @@ function TrendBadge({ trend }: { trend: TrendReading }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
+        "inline-flex max-w-full items-center gap-1 border px-1.5 py-0.5 text-phx-sm font-black uppercase tracking-[0.08em]",
         style.className,
       )}
     >
@@ -1510,23 +1510,23 @@ function UnitsHint({
   invalid: boolean;
   onUse: (units: number) => void;
 }) {
-  if (invalid) return <p className="mt-1 text-right text-phx-2xs font-bold text-red-600">Whole units only</p>;
+  if (invalid) return <p className="mt-1 text-right text-phx-sm font-bold text-red-600">Whole units only</p>;
   if (!open) return null;
   const realistic = row.trend.realisticMaxUnits;
   if (realistic <= 0) return null;
   if (typedUnits > realistic) {
     return (
-      <p className="mt-1 text-right text-phx-2xs font-bold text-amber-700">
+      <p className="mt-1 text-right text-phx-sm font-bold text-amber-700">
         Above its realistic {formatNumber(realistic)}
       </p>
     );
   }
   if (typedUnits === realistic) {
-    return <p className="mt-1 text-right text-phx-2xs font-bold text-emerald-700">At its realistic level</p>;
+    return <p className="mt-1 text-right text-phx-sm font-bold text-emerald-700">At its realistic level</p>;
   }
   return (
     <button
-      className={cn("mt-1 block w-full text-right text-phx-2xs font-bold text-orange-600 underline-offset-2 hover:underline", FOCUS_RING)}
+      className={cn("mt-1 block w-full text-right text-phx-sm font-bold text-orange-600 underline-offset-2 hover:underline", FOCUS_RING)}
       onClick={() => onUse(realistic)}
       type="button"
     >
@@ -1578,7 +1578,7 @@ function BrickList({
       </button>
       {open ? (
         <>
-          <p className="border-t border-slate-100 px-3 py-1.5 text-phx-2xs text-slate-500">
+          <p className="border-t border-slate-100 px-3 py-1.5 text-phx-sm text-slate-500">
             Each brick&apos;s share comes from its own sales of {productName}. Change any brick and the product total follows.
           </p>
           <table className="w-full table-fixed text-sm">
@@ -1620,7 +1620,7 @@ function BrickList({
                         placeholder="0"
                         value={text[brick.brickId] ?? ""}
                       />
-                      {bad ? <p className="mt-1 text-right text-phx-2xs font-bold text-red-600">Whole units only</p> : null}
+                      {bad ? <p className="mt-1 text-right text-phx-sm font-bold text-red-600">Whole units only</p> : null}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums">
                       <p className={cn("break-words font-bold", units > 0 ? "text-orange-700" : "text-slate-500")}>
@@ -1781,7 +1781,7 @@ function LineSection({
                       <HistoryBars history={row.history} />
                     </div>
                     {detailText(row) ? (
-                      <p className="mt-1 break-words text-phx-2xs tabular-nums text-slate-500">{detailText(row)}</p>
+                      <p className="mt-1 break-words text-phx-sm tabular-nums text-slate-500">{detailText(row)}</p>
                     ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
@@ -1875,19 +1875,19 @@ function LineSection({
               </div>
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Target</dt>
+                  <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Target</dt>
                   <dd className="font-bold tabular-nums">{row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}</dd>
                   <dd className="text-slate-500">
                     {row.targetUnits == null ? "No target" : `${formatNumber(row.targetUnits)} units`}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Sold so far</dt>
+                  <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Sold so far</dt>
                   <dd className="font-bold tabular-nums">{formatEgpFull(row.gradedValue)}</dd>
                   <dd className="text-slate-500">{formatNumber(row.gradedUnits)} units</dd>
                 </div>
                 <div className="col-span-2 border-t border-dashed border-slate-200 pt-2">
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Gap to target</dt>
+                  <dt className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Gap to target</dt>
                   <dd className="tabular-nums">
                     <GapToTarget gap={figures.gapValue} units={figures.gapUnits} />
                   </dd>
@@ -1895,7 +1895,7 @@ function LineSection({
               </dl>
               <div className="grid grid-cols-2 items-start gap-2">
                 <label className="block">
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Forecast units</span>
+                  <span className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Forecast units</span>
                   {unitsInput(row, `Forecast units for ${row.name}`)}
                   <UnitsHint
                     invalid={invalid(row.productCode)}
@@ -1906,7 +1906,7 @@ function LineSection({
                   />
                 </label>
                 <div className="text-right text-xs">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Forecast value</p>
+                  <p className="text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Forecast value</p>
                   <p className={cn("text-sm font-black tabular-nums", planned ? "text-orange-700" : "text-slate-900")}>
                     {formatEgpFull(figures.value)}
                   </p>
@@ -1916,7 +1916,7 @@ function LineSection({
                 </div>
               </div>
               {detailText(row) ? (
-                <p className="break-words text-phx-2xs tabular-nums text-slate-500">{detailText(row)}</p>
+                <p className="break-words text-phx-sm tabular-nums text-slate-500">{detailText(row)}</p>
               ) : null}
               {brickList(row)}
             </div>
@@ -1949,7 +1949,7 @@ function TeamPaceCell({ rep }: { rep: RepPlanSummary }) {
   return (
     <div className="space-y-1.5">
       <div>
-        <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+        <p className="flex items-baseline justify-between gap-2 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
           Total
           <span className={cn("text-phx-xs tabular-nums tracking-normal", achievementTone(rep.expectedAchievement))}>
             {formatPct(rep.expectedAchievement)}
@@ -1958,7 +1958,7 @@ function TeamPaceCell({ rep }: { rep: RepPlanSummary }) {
         <ProportionBar color={achievementHex(rep.expectedAchievement)} fraction={rep.expectedAchievement ?? 0} />
       </div>
       <div>
-        <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+        <p className="flex items-baseline justify-between gap-2 text-phx-sm font-black uppercase tracking-[0.1em] text-slate-500">
           Sato
           <span
             className={cn(

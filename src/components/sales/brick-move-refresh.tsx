@@ -131,7 +131,7 @@ export function BrickMoveRefreshStatus({ className, refresh }: { className?: str
       <span className="min-w-0 flex-1 break-words">{text}</span>
       {!refresh.running && waiting ? (
         <button
-          className="border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-700"
+          className="border border-slate-300 bg-white px-2 py-1 text-phx-sm font-bold uppercase tracking-[0.12em] text-slate-700"
           onClick={() => void refresh.run()}
           type="button"
         >
