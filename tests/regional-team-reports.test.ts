@@ -7,6 +7,7 @@ import { previousMonthKey, regionalTeamReportLinks } from "../src/lib/employee-p
 import { resolveRegionRouteScope, territoryRouteAdmitsRequest } from "../src/lib/marketing-requests/roi-report-scope.ts";
 import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { chainVisitLine, mergeRepWeeks, otherManagersOnRepDay, type RepDayBooking } from "../src/lib/phoenix-crm/server/manager-plan-bookings.ts";
+import type { RepWeekState } from "../src/lib/phoenix-crm/server/manager-plans.ts";
 import { foldTeamVisitDay } from "../src/lib/phoenix-crm/server/team-visits.ts";
 import { joinedLabel, managersWithoutPublishedMonth } from "../src/lib/employee-portal/unranked-managers.ts";
 import { groupByRegionAndManager, regionGroupCaption, regionManagerTitle } from "../src/lib/phoenix-crm/region-manager-groups.ts";
@@ -108,9 +109,10 @@ function teamVisitsTestAccountAndColours() {
   assert.ok(!loader.slice(0, loader.indexOf("const repSeatById")).includes("viewer.isTestPersona"), "and never reads the test world alone");
   assert.ok(loader.includes("readDistrictWeeks(managerHrIds, weekStart, worlds)"), "the district managers' weeks read every world");
   // A seat's real week wins; a test week fills in only where the real one is "No plan".
-  const merged = mergeRepWeeks([
-    new Map([["R1", { state: "sent" as const }], ["R2", { state: "no_plan" as const }]]),
-    new Map([["R1", { state: "not_sent" as const }], ["R2", { state: "sent" as const }], ["R3", { state: "old_crm" as const }]]),
+  type Week = { state: RepWeekState };
+  const merged = mergeRepWeeks<Week>([
+    new Map<string, Week>([["R1", { state: "sent" }], ["R2", { state: "no_plan" }]]),
+    new Map<string, Week>([["R1", { state: "not_sent" }], ["R2", { state: "sent" }], ["R3", { state: "old_crm" }]]),
   ]);
   assert.deepEqual([...merged].map(([seat, week]) => `${seat}:${week.state}`), ["R1:sent", "R2:sent", "R3:old_crm"]);
   const view = readFileSync("src/components/crm/regional/team-visits-view.tsx", "utf8");
