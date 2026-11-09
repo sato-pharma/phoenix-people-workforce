@@ -87,7 +87,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { planDueLabel } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canEnterMissedRecords, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
+import { canEnterMissedRecords, REGIONAL_TEAM_REPORTS_READ_TEST_ROWS, testModeFor, worldFor, type PhoenixCrmViewer, type TestWorldRead } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
 import {
   assertManagerPlanWriter,
@@ -708,7 +708,10 @@ async function buildBoard(
   // saved With a district manager half-day names, read beside the reps' weeks. A failed read is said on the
   // board (`districtManagerPlanUnread`), never shown as "nothing planned".
   const dmWeekSeats = writer.kind === "dm" || writer.kind === "tm" ? [] : [chosen?.dmSeatId ?? null, ...slots.filter((slot) => slot.kind === "with_dm").map((slot) => slot.scopeDmSeatId)];
-  const dmWeeksRead = loadDistrictManagerWeeks({ org: viewer.org, dmSeatIds: dmWeekSeats, weekStart, cairoToday: viewer.cairoToday, isTest }).then(
+  // The regional sales manager reads his district managers' REAL weeks, a test login included (owner, 2026-11-09,
+  // `REGIONAL_TEAM_REPORTS_READ_TEST_ROWS`); his own week above stays in his world.
+  const dmWeeksIsTest = writer.kind === "rsm" ? REGIONAL_TEAM_REPORTS_READ_TEST_ROWS : isTest;
+  const dmWeeksRead = loadDistrictManagerWeeks({ org: viewer.org, dmSeatIds: dmWeekSeats, weekStart, cairoToday: viewer.cairoToday, isTest: dmWeeksIsTest }).then(
     (weeks) => weeks,
     (error: unknown) => {
       view.districtManagerPlanUnread = true;
@@ -866,7 +869,7 @@ async function buildBoard(
   const regionalNotes =
     writer.kind === "rsm" && team.length > 0
       ? await import("@/lib/phoenix-crm/server/manager-plan-bookings")
-          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ isTest, plannerHrId: managerHrId, repSeats: team, viewer, weekStart }))
+          .then(({ loadRegionalBoardNotes }) => loadRegionalBoardNotes({ plannerHrId: managerHrId, repSeats: team, viewer, weekStart }))
           .catch((error: unknown) => {
             logError("Phoenix CRM: the regional board's rep notes could not be read", {
               error,

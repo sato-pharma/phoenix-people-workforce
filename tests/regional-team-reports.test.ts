@@ -309,7 +309,22 @@ function backToAllReps() {
   assert.ok(visits.includes("?from=team-visits`"), "Visits opens the day with its way back");
 }
 
+function teamReportsReadTheRealWorld() {
+  // Owner, 2026-11-09: Hany's test login reads the real Phoenix CRM rows on his team reports ("Read the real data live").
+  const access = readFileSync("src/lib/phoenix-crm/server/access.ts", "utf8");
+  assert.ok(access.includes("export const REGIONAL_TEAM_REPORTS_READ_TEST_ROWS = false;"), "the regional team reports read the real world");
+  for (const path of ["src/lib/phoenix-crm/server/team-visits.ts", "src/lib/crm/weekly-sheet.ts", "src/lib/phoenix-crm/server/manager-plan-bookings.ts"]) {
+    const source = readFileSync(path, "utf8");
+    assert.ok(!source.includes("viewer.isTestPersona"), `${path} must not read the test world for a test login`);
+    assert.ok(!source.includes("isTest: input.isTest, repSeatIds"), `${path}: other managers' bookings are the real world's`);
+    assert.ok(source.includes("isTest = REGIONAL_TEAM_REPORTS_READ_TEST_ROWS") || source.includes("isTest: REGIONAL_TEAM_REPORTS_READ_TEST_ROWS"), `${path} reads with the real-world switch`);
+  }
+  const board = readFileSync("src/lib/phoenix-crm/server/manager-plans.ts", "utf8");
+  assert.ok(board.includes('const dmWeeksIsTest = writer.kind === "rsm" ? REGIONAL_TEAM_REPORTS_READ_TEST_ROWS : isTest;'), "his board reads the district managers' real weeks");
+}
+
 export function runRegionalTeamReportsTests() {
+  teamReportsReadTheRealWorld();
   backToAllReps();
   groupedByRegionAndManager();
   vacantSeatsKeyCard();

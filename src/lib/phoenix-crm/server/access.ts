@@ -1177,6 +1177,17 @@ export function readsRegionalTeamReports(viewer: PhoenixCrmViewer): boolean {
   return viewer.managerSeats.some((seat) => REGIONAL_TEAM_REPORT_TIERS.has(seat.tier));
 }
 
+/**
+ * 🔴 THE REGIONAL TEAM REPORTS READ THE REAL WORLD, A `TEST-` LOGIN INCLUDED (owner, 2026-11-09: "push Phoenix CRM
+ * number of visits and populate all production data to the test account of Hany — everything, especially My Team's
+ * Reports", answered "Read the real data live"). Visits — Yesterday and Today, the Weekly Sheet, District Managers'
+ * Plans, and the "District manager's plan for this day" and "Also with" lines on his board and in his approval view,
+ * read the real reps' and district managers' Phoenix CRM rows, so his test login shows the same numbers his real
+ * login would. Nothing is copied. What a test login SAVES (his own plan, a visit, a decision) stays in the test world:
+ * this is the READ only, and only behind `readsRegionalTeamReports`. Never "fix" it back to `isTestPersona`.
+ */
+export const REGIONAL_TEAM_REPORTS_READ_TEST_ROWS = false;
+
 /** The rep seats under the Regional Sales Manager — his scope, reps only, never a blind seat. */
 export function regionalTeamRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   if (!readsRegionalTeamReports(viewer)) return [];

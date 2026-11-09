@@ -12,7 +12,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { REGIONAL_TEAM_REPORTS_READ_TEST_ROWS, readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, type ManagerSlotRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
@@ -180,7 +180,8 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
   if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
   const weekStart = fieldWeekStart(anyDayOfWeek);
   const weekEnd = addDaysIso(weekStart, 6);
-  const isTest = viewer.isTestPersona;
+  // The real district managers' weeks and reps' plans, a test login included (owner, 2026-11-09).
+  const isTest = REGIONAL_TEAM_REPORTS_READ_TEST_ROWS;
   const districts = regionalDistrictSeats(viewer);
   const managerHrIds = districts.flatMap((seat) => (seat.occupantHrId ? [seat.occupantHrId] : []));
   const repSeats = regionalTeamRepSeats(viewer);
@@ -276,7 +277,6 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
 export async function loadWeekHalfNotes(input: {
   plannerHrId: string;
   weekStart: string;
-  isTest: boolean;
   viewer: Pick<PhoenixCrmViewer, "org">;
   halves: ReadonlyArray<{ date: string; half: ManagerHalf; repSeatId: string; repName: string }>;
 }): Promise<Record<string, string[]>> {
@@ -289,7 +289,8 @@ export async function loadWeekHalfNotes(input: {
     return seat ? [seat] : [];
   });
   const [bookings, leave] = await Promise.all([
-    loadRepDayBookings({ from: input.weekStart, isTest: input.isTest, repSeatIds: seatIds, to: weekEnd }),
+    // Other managers' bookings are the real world's, a test login included (owner, 2026-11-09).
+    loadRepDayBookings({ from: input.weekStart, isTest: REGIONAL_TEAM_REPORTS_READ_TEST_ROWS, repSeatIds: seatIds, to: weekEnd }),
     loadSeatLeaveDays(seats, { from: input.weekStart, to: weekEnd }),
   ]);
   const names = await loadPeopleNames(bookings.map((booking) => booking.managerHrId));
@@ -321,12 +322,12 @@ export async function loadRegionalBoardNotes(input: {
   plannerHrId: string;
   repSeats: ReadonlyArray<OrgSeat>;
   weekStart: string;
-  isTest: boolean;
 }): Promise<Map<string, RegionalBoardDayNotes>> {
   const weekEnd = addDaysIso(input.weekStart, 6);
   const repSeats = input.repSeats.filter((seat) => Boolean(personKey(seat.occupantHrId)));
   const [bookings, leave] = await Promise.all([
-    loadRepDayBookings({ from: input.weekStart, isTest: input.isTest, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }),
+    // Other managers' bookings are the real world's, a test login included (owner, 2026-11-09).
+    loadRepDayBookings({ from: input.weekStart, isTest: REGIONAL_TEAM_REPORTS_READ_TEST_ROWS, repSeatIds: repSeats.map((seat) => seat.seatId), to: weekEnd }),
     loadSeatLeaveDays(repSeats, { from: input.weekStart, to: weekEnd }),
   ]);
   const names = await loadPeopleNames([...bookings.map((booking) => booking.managerHrId), ...repSeats.map((seat) => seat.occupantHrId)]);

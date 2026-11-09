@@ -340,7 +340,6 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
               slot.kind === "with_rep" && slot.repSeatId ? [{ date: day.date, half: slot.half, repName: slot.repName ?? "the rep", repSeatId: slot.repSeatId }] : [],
             ),
           ),
-          isTest: plan.isTest,
           plannerHrId: plan.managerHrId,
           viewer,
           weekStart: plan.weekStart,

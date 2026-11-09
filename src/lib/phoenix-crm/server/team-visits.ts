@@ -4,7 +4,7 @@ import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { REGIONAL_TEAM_REPORTS_READ_TEST_ROWS, readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -171,7 +171,8 @@ export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<Te
   const today = viewer.visitDay;
   const yesterday = addDaysIso(today, -1);
   const seats = regionalTeamRepSeats(viewer);
-  const isTest = viewer.isTestPersona;
+  // The real reps' visits, a test login included (owner, 2026-11-09) — `REGIONAL_TEAM_REPORTS_READ_TEST_ROWS`.
+  const isTest = REGIONAL_TEAM_REPORTS_READ_TEST_ROWS;
 
   const rows = await readVisitRows(
     seats.map((seat) => seat.seatId),
