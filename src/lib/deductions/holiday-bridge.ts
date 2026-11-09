@@ -146,3 +146,12 @@ export function excludeAlreadyDeductedDays(input: {
     (bridge) => !input.alreadyDeducted.has(`${input.employeeHrIdCompact}:${bridge.date}`),
   );
 }
+
+/**
+ * True when `date` falls before the employee's hire date, so the bridge rule has nothing to charge:
+ * he had not joined yet (owner report 2026-11-09 — 18 joiners hired 10 October to 1 November were
+ * flagged for 7 and 10 October). Both are ISO `YYYY-MM-DD`; no hire date on record charges as before.
+ */
+export function isBeforeHireDate(date: string, hireDate: string | null): boolean {
+  return Boolean(hireDate) && date < hireDate!;
+}

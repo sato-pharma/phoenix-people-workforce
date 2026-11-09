@@ -1,8 +1,10 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import {
   computeHolidayBridgeDays,
   excludeAlreadyDeductedDays,
+  isBeforeHireDate,
   isFieldForceWorkingDay,
   type HolidayInput,
 } from "../src/lib/deductions/holiday-bridge.ts";
@@ -24,6 +26,23 @@ export async function runDeductionsHolidayBridgeTests(): Promise<void> {
     assert.equal(new Date("2026-06-25T00:00:00Z").getUTCDay(), 4, "2026-06-25 must be a Thursday");
     assert.equal(isFieldForceWorkingDay("2026-10-09"), false, "Friday is not a working day for the field force");
     assert.equal(isFieldForceWorkingDay("2026-10-10"), true, "Saturday IS a working day for the field force");
+  }
+
+  // ── A bridge day before the hire date is never charged ───────────────────
+  // Owner report 2026-11-09: reps hired 11 October were flagged "no record" on 7 and 10 October.
+  {
+    assert.equal(isBeforeHireDate("2026-10-07", "2026-10-11"), true, "7 October is before an 11 October hire");
+    assert.equal(isBeforeHireDate("2026-10-10", "2026-10-11"), true, "10 October is before an 11 October hire");
+    assert.equal(isBeforeHireDate("2026-10-11", "2026-10-11"), false, "the hire day itself is a working day he can be charged for");
+    assert.equal(isBeforeHireDate("2026-10-07", "2026-09-01"), false, "an earlier hire is charged as before");
+    assert.equal(isBeforeHireDate("2026-10-07", null), false, "no hire date on record keeps the old behaviour");
+    // The connector must read the hire date and ask the rule for every employee-day.
+    const connector = readFileSync("src/lib/deductions/connectors/holiday-bridge.ts", "utf8");
+    assert.ok(connector.includes(`employment_status, hire_date")`), "the field-force roster must select hire_date");
+    assert.ok(
+      connector.includes("if (isBeforeHireDate(bridge.date, employee.hireDate)) continue;"),
+      "the bridge loop must skip every day before the employee's hire date",
+    );
   }
 
   // ── A mid-week holiday bridges its plain calendar neighbours ─────────────
