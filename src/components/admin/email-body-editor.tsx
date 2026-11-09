@@ -995,7 +995,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </button>
         <button
           aria-label="Left-to-right paragraph (English)"
-          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-phx-2xs font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
+          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-phx-sm font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
           onClick={() => applyToSelectedBlocks((block) => block.setAttribute("dir", "ltr"))}
           onMouseDown={(event) => event.preventDefault()}
           title="Left-to-right paragraph (English)"
@@ -1040,7 +1040,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
             </button>
             {tablePickerOpen ? (
               <div className="absolute left-0 top-9 z-20 border border-phx-line bg-white p-2 shadow-md">
-                <div className="mb-1 text-phx-2xs font-bold text-phx-ink-2">
+                <div className="mb-1 text-phx-sm font-bold text-phx-ink-2">
                   {tableHover.rows > 0
                     ? `${tableHover.rows} rows by ${tableHover.columns} columns`
                     : "Pick the size"}
@@ -1095,10 +1095,10 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       </div>
       {inTable && tableShown ? (
         <div className="flex flex-wrap items-center gap-1 border-b border-phx-line bg-phx-accent-soft px-3 py-1.5">
-          <span className="mr-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-2">Table</span>
+          <span className="mr-1 text-phx-sm font-black uppercase tracking-wide text-phx-ink-2">Table</span>
           {tableControls.map((control) => (
             <button
-              className="h-7 border border-phx-line bg-white px-2 text-phx-2xs font-bold text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
+              className="h-7 border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
               key={control.label}
               onClick={control.run}
               onMouseDown={(event) => event.preventDefault()}

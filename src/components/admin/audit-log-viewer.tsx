@@ -246,7 +246,7 @@ export function AuditLogViewer({
               <tr className="border-b border-phx-line bg-phx-paper">
                 {["When", "Actor", "Entity", "Summary", "IP"].map((h) => (
                   <th
-                    className="px-3 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
+                    className="px-3 py-4 text-left text-phx-sm font-black uppercase tracking-widest text-phx-ink-soft"
                     key={h}
                   >
                     {h}

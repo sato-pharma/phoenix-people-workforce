@@ -112,7 +112,7 @@ function ProductMultiSelect({
           <div className="max-h-64 overflow-y-auto">
             {byLine.map(({ line, items }) => (
               <div key={line}>
-                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-phx-sm font-bold uppercase tracking-wider text-slate-400">
                   {line}
                 </p>
                 {items.map((p) => (
@@ -400,7 +400,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                               </button>
                             ))}
                           </div>
-                          <p className="mt-1 text-phx-2xs text-slate-400">
+                          <p className="mt-1 text-phx-sm text-slate-400">
                             Click to toggle. Empty = role default.
                           </p>
                         </PortalStackingCell>
@@ -410,7 +410,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             products={initialProducts}
                             selected={editState.productCodes}
                           />
-                          <p className="mt-1 text-phx-2xs text-slate-400">Empty = no restriction.</p>
+                          <p className="mt-1 text-phx-sm text-slate-400">Empty = no restriction.</p>
                         </PortalStackingCell>
                         <PortalStackingCell className="py-3 pr-4" label="Sales scope">
                           <select
@@ -457,7 +457,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             </Button>
                           </div>
                           {saveError ? (
-                            <p className="mt-1 text-phx-2xs text-red-600">{saveError}</p>
+                            <p className="mt-1 text-phx-sm text-red-600">{saveError}</p>
                           ) : null}
                         </PortalStackingCell>
                       </>
@@ -467,7 +467,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           {row.lineNames && row.lineNames.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {row.lineNames.map((line) => (
-                                <Badge key={line} className="text-phx-2xs" variant="neutral">
+                                <Badge key={line} className="text-phx-sm" variant="neutral">
                                   {line}
                                 </Badge>
                               ))}
@@ -481,7 +481,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             row.productCodes.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {row.productCodes.map((code) => (
-                                  <Badge key={code} className="font-mono text-phx-2xs" variant="neutral">
+                                  <Badge key={code} className="font-mono text-phx-sm" variant="neutral">
                                     {code}
                                   </Badge>
                                 ))}
@@ -495,7 +495,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                         </PortalStackingCell>
                         <PortalStackingCell className="py-3 pr-4" label="Sales scope">
                           {row.salesScopeOverride ? (
-                            <Badge className="text-phx-2xs" variant="warning">
+                            <Badge className="text-phx-sm" variant="warning">
                               {row.salesScopeOverride}
                             </Badge>
                           ) : (

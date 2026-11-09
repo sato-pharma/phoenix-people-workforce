@@ -183,7 +183,7 @@ function ControlCenterRow({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-black text-phx-ink">{item.label}</h4>
-            <span className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">
+            <span className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">
               {SOURCE_LABEL[item.sourceSystem]}
             </span>
           </div>

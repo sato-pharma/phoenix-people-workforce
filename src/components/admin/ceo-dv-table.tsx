@@ -70,7 +70,7 @@ export function CeoDvTable({
           onClear={table.clearQuery}
         />
         <div className="flex items-center gap-2">
-          <span className="text-phx-2xs text-slate-400">{dateFrom} → {dateTo}</span>
+          <span className="text-phx-sm text-slate-400">{dateFrom} → {dateTo}</span>
           <ExportXlsxButton
             title="Double-Visit Intelligence"
             subtitle={`${dateFrom} to ${dateTo}`}
@@ -109,12 +109,12 @@ export function CeoDvTable({
           </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
-              <SortableTh label="Manager · role" sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
-              <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
-              <SortableTh label="Neglected · %" sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
-              <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
-              <SortableTh label="Coverage"     sortKey="coveragePct"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-emerald-300 text-right" align="right" />
+              <SortableTh label="Manager · role" sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white" />
+              <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
+              <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
+              <SortableTh label="Neglected · %" sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
+              <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
+              <SortableTh label="Coverage"     sortKey="coveragePct"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-sm font-black uppercase tracking-[0.12em] text-emerald-300 text-right" align="right" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -130,7 +130,7 @@ export function CeoDvTable({
                   <tr key={row.managerHrId} className="bg-white hover:bg-slate-50">
                     <td className="min-w-0 break-words px-3 py-2">
                       <span className="font-semibold text-slate-900">{row.managerName}</span>
-                      <span className="block text-phx-2xs text-slate-500">
+                      <span className="block text-phx-sm text-slate-500">
                         {[codeOrWords(row.roleCode), row.lineName].filter(Boolean).join(" · ") || "—"}
                       </span>
                     </td>

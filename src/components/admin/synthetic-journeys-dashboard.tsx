@@ -31,7 +31,7 @@ const OVERALL_TONE: Record<string, { label: string; className: string; icon: typ
 
 function StatusPill({ status }: { status: string }) {
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider", STATUS_TONE[status] ?? "bg-slate-100 text-slate-600")}>
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-phx-sm font-black uppercase tracking-wider", STATUS_TONE[status] ?? "bg-slate-100 text-slate-600")}>
       {status}
     </span>
   );
