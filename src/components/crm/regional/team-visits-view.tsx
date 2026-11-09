@@ -81,14 +81,33 @@ function dayLabel(iso: string): string {
   return cairoDate(`${iso}T12:00:00Z`);
 }
 
+/**
+ * The three figures as three counted boxes, AM · PM · Pharmacies apart (the golden rule). "2 AM · 10 PM" printed on
+ * one line read as two clock times beside the saved times under it, so each count sits under its own label. A zero
+ * is drawn pale so the figures that are there stand out.
+ */
+const FIGURE_CELLS = [
+  { key: "am", label: "AM" },
+  { key: "pm", label: "PM" },
+  { key: "pharmacies", label: "Pharmacies" },
+] as const;
+
 function Figures({ day }: { day: TeamVisitDay }) {
   const waiting = teamVisitWaitingLine(day.waiting);
   return (
     <div>
-      <p className="text-phx-xs font-black tabular-nums text-slate-900">
-        {day.am} AM · {day.pm} PM · {day.pharmacies} Pharmacies
-      </p>
-      {waiting ? <p className="text-phx-2xs font-semibold text-amber-800">{waiting}</p> : null}
+      <dl className="grid w-full max-w-[16rem] grid-cols-3 border border-slate-200 bg-white">
+        {FIGURE_CELLS.map((cell, index) => {
+          const value = day[cell.key];
+          return (
+            <div className={`min-w-0 px-2 py-1 ${index > 0 ? "border-l border-slate-200" : ""}`} key={cell.key}>
+              <dt className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{cell.label}</dt>
+              <dd className={`text-phx-sm font-black leading-tight tabular-nums ${value === 0 ? "text-slate-300" : "text-slate-900"}`}>{value}</dd>
+            </div>
+          );
+        })}
+      </dl>
+      {waiting ? <p className="mt-1 text-phx-2xs font-semibold text-amber-800">{waiting}</p> : null}
     </div>
   );
 }
@@ -119,33 +138,22 @@ const TIME_GROUPS: ReadonlyArray<{ list: TeamVisitDay["times"][number]["list"]; 
  * ascending"). The loader already sorts by the saved instant; a copied old-CRM visit has none and comes last.
  */
 function Times({ day }: { day: TeamVisitDay }) {
-  if (day.times.length === 0) return <p className="mt-1 text-phx-2xs text-slate-400">No visits saved</p>;
+  if (day.times.length === 0) return <p className="mt-1.5 text-phx-2xs text-slate-400">No visits saved</p>;
   return (
-    <div className="mt-1.5 grid gap-1.5">
+    <div className="mt-2 grid gap-2">
       {TIME_GROUPS.map((group) => {
         const times = day.times.filter((time) => time.list === group.list);
         if (times.length === 0) return null;
         return (
           <div key={group.list}>
-            <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">{group.label}</p>
-            <ul className="mt-0.5 grid gap-0.5">
-              {times.map((time, index) => {
-                const distance = teamVisitDistanceText(time);
-                return (
-                  <li
-                    className={`grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border border-l-[3px] px-1.5 py-0.5 text-phx-3xs ${TEAM_VISIT_ORIGIN_EDGE[time.origin]} ${time.waiting ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}
-                    key={index}
-                  >
-                    <span className="font-semibold tabular-nums text-slate-700">{time.savedAt ?? "No time recorded"}</span>
-                    <span className="break-words font-semibold text-slate-900">
-                      {time.customer ?? "Customer not recorded"}
-                      {distance ? <span className={`ml-1 tabular-nums ${typeof time.metres === "number" ? "font-black text-slate-800" : "font-semibold text-slate-500"}`}>· {distance}</span> : null}
-                      <span className={`ml-1 font-black uppercase tracking-[0.08em] ${TEAM_VISIT_ORIGIN_INK[time.origin]}`}>· {TEAM_VISIT_ORIGIN_LABEL[time.origin]}</span>
-                      {time.waiting ? <span className="ml-1 font-black uppercase tracking-[0.08em] text-amber-800">· Waiting for validation</span> : null}
-                    </span>
-                  </li>
-                );
-              })}
+            <p className="flex items-baseline justify-between border-b border-slate-200 pb-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-500">
+              <span>{group.label}</span>
+              <span className="tabular-nums text-slate-400">{times.length}</span>
+            </p>
+            <ul className="divide-y divide-slate-100 border-x border-b border-slate-200">
+              {times.map((time, index) => (
+                <VisitLine key={index} time={time} />
+              ))}
             </ul>
           </div>
         );
@@ -155,12 +163,51 @@ function Times({ day }: { day: TeamVisitDay }) {
 }
 
 /**
+ * One saved visit: the time, the customer, and the metres in a column of their own on the right. The customer's
+ * name is bidi-isolated — an Arabic name beside "30 m" pulled the number into the Arabic run and printed it on the
+ * wrong side. The left edge carries the colour (planned, unplanned, logged by admin); the word is printed only for
+ * the two that are not the usual planned visit, so the exceptions are the words on the square.
+ */
+function VisitLine({ time }: { time: TeamVisitDay["times"][number] }) {
+  const distance = teamVisitDistanceText(time);
+  const metres = typeof time.metres === "number" ? time.metres : null;
+  const note = metres === null ? distance : null;
+  const tagged = time.origin !== "planned";
+  return (
+    <li
+      className={`grid grid-cols-[3.75rem_minmax(0,1fr)_auto] items-baseline gap-x-2 border-l-[3px] px-2 py-1 ${TEAM_VISIT_ORIGIN_EDGE[time.origin]} ${time.waiting ? "bg-amber-50" : "bg-white"}`}
+    >
+      <span className="text-phx-3xs font-semibold tabular-nums text-slate-500">{time.savedAt ?? "No time recorded"}</span>
+      <span className="min-w-0">
+        <span className="block break-words text-phx-2xs font-semibold text-slate-900">
+          <bdi>{time.customer ?? "Customer not recorded"}</bdi>
+        </span>
+        {tagged || note || time.waiting ? (
+          <span className="flex flex-wrap gap-x-2 text-phx-3xs">
+            {tagged ? <span className={`font-black uppercase tracking-[0.08em] ${TEAM_VISIT_ORIGIN_INK[time.origin]}`}>{TEAM_VISIT_ORIGIN_LABEL[time.origin]}</span> : null}
+            {time.waiting ? <span className="font-black uppercase tracking-[0.08em] text-amber-800">Waiting for validation</span> : null}
+            {note ? <span className="font-semibold text-slate-400">{note}</span> : null}
+          </span>
+        ) : null}
+      </span>
+      <span className="text-right text-phx-3xs font-black tabular-nums text-slate-700" title={distance ?? undefined}>
+        {metres !== null ? (
+          <>
+            {metres.toLocaleString("en-US")} m<span className="sr-only"> from the live photo</span>
+          </>
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
+/**
  * The district manager's count — the total of his reps' visits that day (owner, 2026-11-09), first in his row and
  * above his own visits, which stay apart.
  */
 function RepsTotal({ day }: { day: TeamVisitDay }) {
   return (
-    <div className="mb-2 border-b border-sky-200 pb-2">
+    <div className="mb-2 grid gap-1 border-b border-sky-200 pb-2">
       <p className="text-phx-3xs font-black uppercase tracking-[0.1em] text-sky-800">All reps together · {day.am + day.pm} doctor visits</p>
       <Figures day={day} />
     </div>
@@ -298,8 +345,11 @@ function DayCell({ day, fold = false, href, pace = null }: { day: TeamVisitDay; 
       {href ? <DayStrip day={day} /> : null}
       {fold ? <FoldedTimes day={day} /> : <Times day={day} />}
       {href && day.times.length > 0 ? (
-        <Link className="mt-1 inline-block text-phx-3xs font-black uppercase tracking-[0.1em] text-orange-700 hover:underline" href={href}>
-          Open the day
+        <Link
+          className="mt-2 inline-block border border-slate-300 bg-white px-2.5 py-1 text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-800 hover:border-slate-900 hover:bg-slate-50"
+          href={href}
+        >
+          Open the day →
         </Link>
       ) : null}
     </div>
