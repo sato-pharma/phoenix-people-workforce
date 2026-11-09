@@ -21,7 +21,7 @@ export async function runCredentialOutboxSealTests() {
   process.env.PHOENIX_AUTH_SECRET = "test-secret-for-the-credential-outbox-seal";
   try {
     const code = "482913";
-    const token = "Zx81kQp_4mWv9TnB2cRe7yHs";
+    const token = "fake-setup-link-for-the-seal-test";
     const resetCode = {
       credentialEmail: "password_reset_code" as const,
       ctaHref: "/password-reset",
