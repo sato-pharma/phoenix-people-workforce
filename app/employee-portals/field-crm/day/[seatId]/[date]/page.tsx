@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
+import { BackToAllReps } from "@/components/crm/reps-list-chrome";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DayDetailView } from "@/components/phoenix-crm/day-detail-view";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
@@ -34,6 +35,12 @@ export const dynamic = "force-dynamic";
  * reads "Visit saved" with no distance and no flag (Golden rule #1). A second gate on this page
  * would be a second answer to a settled question.
  */
+/**
+ * Where "Back to all reps" returns to, by a fixed key the opening screen puts in `?from=` — never a free address,
+ * so the link can only ever point inside the app (owner, 2026-11-09: "when I press a rep there is no back button").
+ */
+const BACK_TO: Record<string, string> = { "team-visits": "/employee-portals/team-visits" };
+
 export default async function PhoenixCrmDayPage({
   params,
   searchParams,
@@ -58,6 +65,11 @@ export default async function PhoenixCrmDayPage({
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description="Phoenix CRM · the day in full" title="The day in full">
+        {typeof query.from === "string" && BACK_TO[query.from] ? (
+          <div className="mb-3 border border-slate-200">
+            <BackToAllReps href={BACK_TO[query.from]} />
+          </div>
+        ) : null}
         <DayDetailView view={load.view} />
       </EmployeePortalPageShell>
     );

@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [DONOT USE DEV](donot-use-dev-for-the-look.md) - 2026-11-09: no dev-server look on your own initiative; prove UI by tests + CI unless he asks.
 
 
 

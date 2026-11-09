@@ -10,7 +10,8 @@ import {
   type ManagerHalf,
   type ManagerPlannerKind,
 } from "@/lib/phoenix-crm/manager-plan-rules";
-import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
+import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readsRegionalTeamReports, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -113,6 +114,11 @@ export type DistrictPlanHalf = {
 export type DistrictPlanDay = { date: string; dateText: string; halves: DistrictPlanHalf[] };
 
 export type DistrictManagerWeek = {
+  /** The organogram region — the heading names it with the manager (owner, 2026-11-09). */
+  regionName: string;
+  /** The region's rep seats with nobody in them. */
+  vacantSeats: number;
+  repSeats: number;
   managerHrId: string | null;
   managerName: string;
   districtName: string;
@@ -242,15 +248,21 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
         }),
       });
     }
+    const underHim = repSeats.filter((seat) => seat.path.includes(district.seatId));
     return {
       days: planDays,
       districtName: territoryName(district),
+      regionName: seatRegionName(district) ?? NO_REGION,
+      repSeats: underHim.length,
+      vacantSeats: underHim.filter((seat) => seatOccupants(seat).length === 0).length,
       managerHrId,
       managerName: managerHrId ? nameOf(names, managerHrId) : "Seat is vacant",
       sent,
       statusText: sent && plan ? managerPlanStatusLabel(plan.status) : "Not sent yet",
     };
   });
+  // Region order, as every Regional Sales Manager screen (`groupByRegionAndManager`).
+  weeks.sort((left, right) => Number(left.regionName === NO_REGION) - Number(right.regionName === NO_REGION) || left.regionName.localeCompare(right.regionName));
   return { leaveUnread: leave.unread, weekEnd, weekStart, weeks };
 }
 

@@ -43,7 +43,7 @@ import { canAccessDoctorList, canAccessMyList, getDoctorListScope } from "@/lib/
 import { kpisCallRateHref, PORTAL_KPIS_PATH } from "@/lib/crm/kpis-call-rate-route";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
-import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
+import { countVacantAreas, getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -171,6 +171,17 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
       plansBoard = null;
     }
 
+    // The "Vacant seats" key card (owner, 2026-11-09): read under the Reps List scope and the board's own
+    // cascade, exactly as the Vacant Areas tab it opens. Its failure costs the card a number, never the board.
+    let vacantSeats: number | null = null;
+    if (plansBoard) {
+      try {
+        vacantSeats = await countVacantAreas({ params: plansBoard.selection, scope: await getDoctorListScope(access) });
+      } catch {
+        vacantSeats = null;
+      }
+    }
+
     if (!plansBoard) {
       return (
         <EmployeePortalEmptyState
@@ -193,7 +204,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
           selection={plansBoard.selection}
           week={plansBoard.week.key}
         />
-        <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} />
+        <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} vacantSeats={vacantSeats} />
       </EmployeePortalPageShell>
     );
   }

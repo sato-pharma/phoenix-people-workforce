@@ -626,6 +626,7 @@ export const MODULES = [
       "src/lib/crm/{weekly-sheet,weekly-sheet-workbook,account-doctor-notes}.ts",
       "src/lib/employee-portal/regional-team-reports.ts",
       "src/components/crm/regional/**",
+      "src/lib/phoenix-crm/region-manager-groups.ts",
       "app/employee-portals/{team-visits,district-manager-plans,weekly-sheet}/**",
       "app/api/crm/weekly-sheet/**",
       "tests/regional-team-reports*",

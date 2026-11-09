@@ -51,7 +51,7 @@ import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-a
 import { ADMIN_KPIS_PATH, kpisCallRateHref } from "@/lib/crm/kpis-call-rate-route";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
-import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
+import { countVacantAreas, getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 
 export const runtime = "nodejs";
@@ -162,6 +162,17 @@ export default async function RepsListPage({ searchParams }: PageProps) {
       plansError = error instanceof Error ? error.message : "Reps List data is unavailable.";
     }
 
+    // The "Vacant seats" key card (owner, 2026-11-09): read under the Reps List scope and the board's own
+    // cascade, exactly as the Vacant Areas tab it opens. Its failure costs the card a number, never the board.
+    let vacantSeats: number | null = null;
+    if (plansBoard) {
+      try {
+        vacantSeats = await countVacantAreas({ params: plansBoard.selection, scope: await getDoctorListScope(access) });
+      } catch {
+        vacantSeats = null;
+      }
+    }
+
     return (
       <>
         {/* The strip renders even when the board below it failed, so a manager can step back to the
@@ -174,7 +185,7 @@ export default async function RepsListPage({ searchParams }: PageProps) {
           week={plansBoard?.week.key ?? params?.week ?? null}
         />
         {plansBoard ? (
-          <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} />
+          <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} vacantSeats={vacantSeats} />
         ) : (
           <LoadFailure message={plansError} />
         )}
