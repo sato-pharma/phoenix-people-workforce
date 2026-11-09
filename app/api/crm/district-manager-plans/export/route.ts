@@ -6,7 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { readsRegionalTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionOrDistrictReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { buildDistrictPlansWorkbook, districtPlansWorkbookFileName } from "@/lib/phoenix-crm/server/district-plans-workbook";
 import { loadDistrictManagersPlans } from "@/lib/phoenix-crm/server/manager-plan-bookings";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * District Managers' Plans as Excel — the Regional Sales Manager's only, as the screen is (owner, 2026-11-08; the
+ * District Managers' Plans as Excel — a Regional Sales Manager's or a District Manager's own team only, as the screen is (owner, 2026-11-08; the
  * export came with the premium pass of 9 Nov 2026). The gate is asked here, before any read: a signed-in person
  * without Phoenix CRM, or without a regional sales manager's seat, gets a 403. The loader asks the same gate again.
  * `week` is any day of the week wanted, read strictly; anything else is the current week. The file holds every seat,
@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "unauthenticated", message: "Not authenticated." }, { status: 401 });
     }
     if (!(await canAccess(access, "phoenix_crm", "read"))) {
-      return NextResponse.json({ error: "forbidden", message: "District Managers' Plans is for the Regional Sales Manager." }, { status: 403 });
+      return NextResponse.json({ error: "forbidden", message: "District Managers' Plans is for a Regional Sales Manager or a District Manager." }, { status: 403 });
     }
     const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
-    if (!viewer || !readsRegionalTeamReports(viewer)) {
-      return NextResponse.json({ error: "forbidden", message: "District Managers' Plans is for the Regional Sales Manager." }, { status: 403 });
+    if (!viewer || !readsRegionOrDistrictReports(viewer)) {
+      return NextResponse.json({ error: "forbidden", message: "District Managers' Plans is for a Regional Sales Manager or a District Manager." }, { status: 403 });
     }
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:crm:district-manager-plans" });
 

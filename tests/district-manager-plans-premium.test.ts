@@ -525,7 +525,7 @@ function theExportGateAndRegistry() {
   const route = stripComments(readFileSync("app/api/crm/district-manager-plans/export/route.ts", "utf8"));
   const load = route.indexOf("loadDistrictManagersPlans(viewer");
   const read = route.indexOf('canAccess(access, "phoenix_crm", "read")');
-  const gate = route.indexOf("readsRegionalTeamReports(viewer)");
+  const gate = route.indexOf("readsRegionOrDistrictReports(viewer)");
   const limit = route.indexOf('scope: "export:crm:district-manager-plans"');
   assert.ok(read > 0 && read < load, "phoenix_crm:read before any read");
   assert.ok(gate > 0 && gate < load, "the Regional Sales Manager's gate before any read");

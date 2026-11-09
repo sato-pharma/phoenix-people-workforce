@@ -9,14 +9,14 @@ import { buildWeeklySheetWorkbook, weeklySheetWorkbookFileName } from "@/lib/crm
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { readsRegionalTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionOrDistrictReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The Weekly Sheet as Excel — the Regional Sales Manager's only (owner, 2026-11-08). The gate is asked here,
+ * The Weekly Sheet as Excel — a Regional Sales Manager's or a District Manager's own team only (owner, 2026-11-08). The gate is asked here,
  * before any read: a signed-in person without Phoenix CRM, or without a regional sales manager's seat, gets a 403.
  * Rate-limited, and every download is audited as `crm_weekly_sheet_export` with the week and the seats it holds,
  * counted by the summary the file itself reads. The file always holds every seat, whatever the screen's filter.
@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "unauthenticated", message: "Not authenticated." }, { status: 401 });
     }
     if (!(await canAccess(access, "phoenix_crm", "read"))) {
-      return NextResponse.json({ error: "forbidden", message: "The Weekly Sheet is for the Regional Sales Manager." }, { status: 403 });
+      return NextResponse.json({ error: "forbidden", message: "The Weekly Sheet is for a Regional Sales Manager or a District Manager." }, { status: 403 });
     }
     const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
-    if (!viewer || !readsRegionalTeamReports(viewer)) {
-      return NextResponse.json({ error: "forbidden", message: "The Weekly Sheet is for the Regional Sales Manager." }, { status: 403 });
+    if (!viewer || !readsRegionOrDistrictReports(viewer)) {
+      return NextResponse.json({ error: "forbidden", message: "The Weekly Sheet is for a Regional Sales Manager or a District Manager." }, { status: 403 });
     }
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:crm:weekly-sheet" });
 

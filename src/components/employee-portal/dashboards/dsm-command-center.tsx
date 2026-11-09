@@ -1,8 +1,15 @@
 import {
+  BookUser,
   CalendarDays,
+  ChartColumnBig,
   ClipboardCheck,
+  Clock,
+  FileSpreadsheet,
   ListChecks,
+  Map as MapIcon,
+  Radar,
   ReceiptText,
+  Repeat2,
   Target,
   TrendingUp,
   Trophy,
@@ -43,6 +50,8 @@ import {
   publishedFigure,
 } from "@/lib/employee-portal/published-window";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { districtTeamReportLinks, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 const DASHBOARDS: readonly DashboardLink[] = [
@@ -54,7 +63,34 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Vacation Request" },
   { href: "/employee-portals/med-reps-performance", icon: Target, label: "Med Rep Performance" },
   { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "My Expenses" },
+  // The two sales dashboards on the Regional Sales Manager's overview, each over the district (owner, 2026-11-09:
+  // "all shortcuts we built for Hany, build it for all district managers"). Both pages already scope a District
+  // Manager to their own district (PORTAL_SOS_ROLES, TERRITORY_DRILLDOWN_ROLES).
+  { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales" },
+  { href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Sales Drilldown" },
 ];
+
+/** The same icons the Regional Sales Manager's My Team's Reports wears, one per report. */
+const TEAM_REPORT_ICONS: Record<RegionalTeamReportKey, DashboardLink["icon"]> = {
+  "reps-plans": BookUser,
+  "team-visits": Clock,
+  coverage: Radar,
+  "coverage-last-month": Radar,
+  "frequency-last-month": Repeat2,
+  "district-manager-plans": Users,
+  "region-plans": CalendarDays,
+  "weekly-sheet": FileSpreadsheet,
+  "roi-tracking": ChartColumnBig,
+};
+
+/**
+ * My Team's Reports — Dr. Hany Saad's shortcuts, built for every District Manager over their own district (owner,
+ * 2026-11-09). Each page decides the scope from the viewer's own seat, so the links are the Regional Sales
+ * Manager's own; only District Managers' Plans reads "My Plans" here (`districtTeamReportLinks`).
+ */
+function teamReportTiles(today: string): DashboardLink[] {
+  return districtTeamReportLinks(today).map((link) => ({ href: link.href, icon: TEAM_REPORT_ICONS[link.key], label: link.label }));
+}
 
 const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Review Team Plan" },
@@ -142,6 +178,8 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       </Suspense>
 
       <DashboardsGrid items={DASHBOARDS} />
+
+      <DashboardsGrid items={teamReportTiles(cairoTodayIso())} title="My Team's Reports" />
 
       {access ? (
         <Suspense fallback={<MmSectionSkeleton title="My map" />}>

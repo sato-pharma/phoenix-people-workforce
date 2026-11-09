@@ -9,7 +9,7 @@ import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } fr
 import { leaveDayKey } from "@/lib/phoenix-crm/plan-leave";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { seatOccupants, territoryName } from "@/lib/phoenix-crm/scope";
-import { readsRegionalTeamReports, regionalReportWorlds, regionalTeamRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionOrDistrictReports, regionalReportWorlds, teamReportRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
@@ -156,9 +156,9 @@ async function readCustomerNames(customerIds: string[]): Promise<Map<string, str
 }
 
 export async function loadWeeklySheet(viewer: PhoenixCrmViewer, anyDay: string | null): Promise<WeeklySheet> {
-  if (!readsRegionalTeamReports(viewer)) throw forbiddenError("This report is for the Regional Sales Manager.");
+  if (!readsRegionOrDistrictReports(viewer)) throw forbiddenError("This report is for a Regional Sales Manager or a District Manager.");
   const window = weeklySheetWindow(viewer.cairoToday, anyDay);
-  const seats = regionalTeamRepSeats(viewer);
+  const seats = teamReportRepSeats(viewer);
   // A test account reads the real team and its own test work beside it (regionalReportWorlds).
   const worlds = regionalReportWorlds(viewer);
   const [rows, holidays, leave] = await Promise.all([

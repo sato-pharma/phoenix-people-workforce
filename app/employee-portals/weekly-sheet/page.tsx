@@ -7,7 +7,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadWeeklySheet } from "@/lib/crm/weekly-sheet";
 import { parseWeeklySheetShow } from "@/lib/crm/weekly-sheet-summary";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { readsRegionalTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsRegionOrDistrictReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,9 +17,10 @@ type PageProps = {
 };
 
 /**
- * Weekly Sheet (owner, 2026-11-08 — Dr. Hany Saad's seventh need, the Regional Sales Manager account only): every
+ * Weekly Sheet (owner, 2026-11-08 — Dr. Hany Saad's seventh need, the Regional Sales Manager account; a District
+ * Manager over their own district since 2026-11-09): every
  * rep's PM and AM against the working-day targets for the field week, and the doctors of each speciality inside
- * every AM account, read from the visit comments. `readsRegionalTeamReports` gates the page and the loader.
+ * every AM account, read from the visit comments. `readsRegionOrDistrictReports` gates the page and the loader.
  *
  * `week` is any day of the week wanted (none: the last full week); `show` narrows the reps the screen lists — both
  * read strictly. The filter never changes a figure: the tiles, the bars and the lists are the whole team's, and each
@@ -30,7 +31,7 @@ export default async function WeeklySheetPage({ searchParams }: PageProps) {
   if (access.source === "guest") redirect("/login");
   if (!(await canAccess(access, "phoenix_crm", "read"))) redirect("/employee-portals");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
-  if (!viewer || !readsRegionalTeamReports(viewer)) redirect("/employee-portals");
+  if (!viewer || !readsRegionOrDistrictReports(viewer)) redirect("/employee-portals");
 
   const params = await searchParams;
   const week = Array.isArray(params.week) ? params.week[0] : params.week;

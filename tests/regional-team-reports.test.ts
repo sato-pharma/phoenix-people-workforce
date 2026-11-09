@@ -331,7 +331,8 @@ function roiRegionRoute() {
   // No line known for him → the route admits nothing; every other role gets nothing.
   const lineless = resolveRegionRouteScope({ role: "Regional Manager" }, [row("PD-0001", 99, ""), row("R-1", 11, "Pedia")], "pd-0001", visible);
   assert.equal(lineless.areaIds.size, 0);
-  assert.equal(resolveRegionRouteScope({ role: "District Manager" }, rows, "pd-0001", visible).areaIds.size, 0);
+  assert.equal(resolveRegionRouteScope({ role: "National Sales Manager" }, rows, "pd-0001", visible).areaIds.size, 0);
+  // A District Manager runs the same route over their own district since 2026-11-09 (tests/district-team-reports.test.ts).
 }
 
 function landingShortcuts() {

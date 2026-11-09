@@ -445,9 +445,9 @@ function theScreenAndTheRoute() {
   assert.ok(panels.includes("{nav.next ? ("), "Next week only once it has begun");
   assert.ok(panels.includes("weeklySheetTargetLine()") && panels.includes("weeklySheetDepthLine()"), "the targets stated once, from the lib");
   assert.ok(page.includes("parseWeeklySheetShow(params.show)"), "the page reads the filter strictly");
-  assert.ok(page.includes("readsRegionalTeamReports(viewer)"), "the page keeps the Regional Sales Manager gate");
+  assert.ok(page.includes("readsRegionOrDistrictReports(viewer)"), "the page keeps the team-report gate (an RSM or a DM seat)");
   // The export keeps its gate, its rate limit and its audit, and names the file by the lib.
-  assert.ok(route.indexOf("readsRegionalTeamReports(viewer)") < route.indexOf("loadWeeklySheet("), "the gate before any read");
+  assert.ok(route.indexOf("readsRegionOrDistrictReports(viewer)") < route.indexOf("loadWeeklySheet("), "the gate before any read");
   assert.ok(route.includes('scope: "export:crm:weekly-sheet"'), "rate-limited");
   assert.ok(route.includes('entityType: "crm_weekly_sheet_export"'), "audited");
   assert.ok(route.includes("weeklySheetWorkbookFileName(sheet)") && route.includes("weeklySheetTeamTotals(sheet)"), "the file name and the count are the lib's");

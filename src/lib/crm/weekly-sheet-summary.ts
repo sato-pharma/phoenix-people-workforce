@@ -499,7 +499,7 @@ export function weeklySheetShowCounts(sheet: Pick<WeeklySheet, "cairoToday" | "d
 export function weeklySheetShowEmptyLine(show: WeeklySheetShow, position: WeeklySheetPosition): string {
   if (show === "below") return position === "past" ? "No rep is below a target this week." : "Nobody is graded below a target until the week is over.";
   if (show === "met") return position === "ahead" ? "The week has not started." : "No rep has met both targets yet.";
-  return "No reps under your district managers yet.";
+  return "No reps on your team yet.";
 }
 
 export const WEEKLY_SHEET_PATH = "/employee-portals/weekly-sheet";

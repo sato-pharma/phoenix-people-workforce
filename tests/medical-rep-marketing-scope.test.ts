@@ -242,14 +242,15 @@ function testTheRepSeesTheirOwnAreaInTheRoiTracker() {
     "the territory route must not become a back door to the requester route - scope still runs downward",
   );
 
-  // Nobody else gets an area route: a DM already reaches their whole subtree through the requester
-  // route, which is wider than one area.
+  // A District Manager runs the same route over the district since 2026-11-09 (owner: "all shortcuts we built
+  // for Hany, build it for all district managers, but every one based on his scope"): the areas of the reps under
+  // them, never their own seat's, plus their own line — both halves or neither (tests/district-team-reports.test.ts).
   const dmScope = resolveMarketingRoiScope(access("District Manager", "D-1", "line"), rows);
-  assert.equal(dmScope.visibleAreaIds.size, 0, "only the Medical Rep runs the territory route");
+  assert.deepEqual(Array.from(dmScope.visibleAreaIds).sort(), [11, 12], "a District Manager's area route is their reps' areas");
   assert.equal(
-    dmScope.visibleAreaLineNames.size,
-    0,
-    "the line half of the territory route must be empty wherever the area half is",
+    dmScope.visibleAreaLineNames.size > 0,
+    dmScope.visibleAreaIds.size > 0,
+    "the line half of the territory route must be empty wherever the area half is, and filled wherever it is filled",
   );
 }
 

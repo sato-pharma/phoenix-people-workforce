@@ -4536,7 +4536,11 @@ export async function getMedRepsPerformance(
     if (!currentUser?.hrId) return null;
 
     const currentRole = normalizeRole(currentUser.role);
-    if (currentRole !== "National Sales Manager" && currentRole !== "Regional Manager") return null;
+    // A District Manager reads their own district here (owner, 2026-11-09) — the builder's area bound, the
+    // same one their Team Performance page reads.
+    if (currentRole !== "National Sales Manager" && currentRole !== "Regional Manager" && currentRole !== "District Manager") {
+      return null;
+    }
 
     // A ranking: each month goes to the rep who held the seat then (owner, 26 Oct 2026).
     return await buildDsmTeamPerformanceFromSos(access, options.period ?? null, { creditRepsByTenure: true });
