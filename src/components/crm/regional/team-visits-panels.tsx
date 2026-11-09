@@ -11,7 +11,6 @@ import {
   TEAM_VISIT_SHOW_LABEL,
   TEAM_VISIT_SORT,
   TEAM_VISIT_SORT_LABEL,
-  TEAM_VISITS_EXPORT_HREF,
   TEAM_VISITS_NO_TIME,
   teamVisitAttention,
   teamVisitBarWidth,
@@ -37,7 +36,7 @@ import {
   type TeamVisitManagerDay,
   type TeamVisitShow,
   type TeamVisitSort,
-} from "@/lib/phoenix-crm/team-visits-summary";
+} from "@/lib/phoenix-crm/server/team-visits-summary";
 
 /**
  * The panels above the rep tables on Visits — Yesterday and Today (owner, 9 Nov 2026: the premium pass on My Team's
@@ -47,6 +46,9 @@ import {
  * panel can never disagree with its rows. The finish is the house one: flat colour, square corners, hairline
  * borders — no gradient, glow or drop shadow (owner, 22 Oct 2026).
  */
+
+/** The Excel file's address. It always holds every rep, whatever the screen's filter. */
+export const TEAM_VISITS_EXPORT_HREF = "/api/crm/team-visits/export";
 
 const LINK = "border border-slate-300 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-50";
 const LINK_ON = "border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-white";

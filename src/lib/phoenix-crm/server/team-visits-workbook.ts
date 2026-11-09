@@ -39,7 +39,7 @@ import {
   teamVisitTimeline,
   type TeamVisitDayKey,
   type TeamVisitDayRollup,
-} from "@/lib/phoenix-crm/team-visits-summary";
+} from "@/lib/phoenix-crm/server/team-visits-summary";
 
 export const TEAM_VISITS_WORKBOOK_SHEETS = ["Cover", "Teams", "Reps", "Visits", "Hours", "To look at", "Pace"] as const;
 
@@ -93,8 +93,8 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
       ["Reps", String(occupied.length)],
       ["Vacant seats", String(reps.length - occupied.length)],
       ["District managers", String(report.districts.length)],
-      ["Yesterday's visits", `${team.yesterday.doctorVisits} doctor visits · ${team.yesterday.am} AM · ${team.yesterday.pm} PM · ${team.yesterday.pharmacies} Pharmacies`],
-      ["Today's visits", `${team.today.doctorVisits} doctor visits · ${team.today.am} AM · ${team.today.pm} PM · ${team.today.pharmacies} Pharmacies`],
+      ["Yesterday's visits", `${team.yesterday.doctorVisits} AM + PM visits · ${team.yesterday.am} AM · ${team.yesterday.pm} PM · ${team.yesterday.pharmacies} Pharmacies`],
+      ["Today's visits", `${team.today.doctorVisits} AM + PM visits · ${team.today.am} AM · ${team.today.pm} PM · ${team.today.pharmacies} Pharmacies`],
       ...(pace
         ? ([
             [
@@ -103,7 +103,7 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
             ],
           ] as Array<[string, string]>)
         : []),
-      ["Counting", "AM and PM are validated doctor visits, counted apart; pharmacies are distinct pharmacies; a visit to a customer not validated yet is counted only as waiting"],
+      ["Counting", "AM and PM are validated visits, counted apart; pharmacies are distinct pharmacies; a visit to a customer not validated yet is counted only as waiting"],
       ["Times", "The moment each visit was saved, Cairo time. A visit copied from the old CRM recorded no time"],
     ],
     subtitle,
@@ -145,13 +145,13 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
       { label: "Saved none", right: true, width: 11 },
       { label: "AM", right: true, width: 7 },
       { label: "PM", right: true, width: 7 },
-      { label: "Doctor visits", right: true, width: 12 },
+      { label: "AM + PM", right: true, width: 12 },
       { label: "Pharmacies", right: true, width: 11 },
       { label: "Waiting", right: true, width: 9 },
-      { label: "Doctor visits per rep who saved one", right: true, width: 18 },
+      { label: "AM + PM per rep who saved one", right: true, width: 18 },
       { label: "Vacant seats", right: true, width: 11 },
     ],
-    note: "Doctor visits are AM + PM. The district managers' own visits are counted in no rep's figure and are on the Visits sheet.",
+    note: "AM + PM are the validated visits, pharmacies apart. The district managers' own visits are counted in no rep's figure and are on the Visits sheet.",
     rows: teamRows,
     title: "The reps' visits, by region and district manager",
   });
@@ -163,7 +163,7 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
       { label: "Saved none", right: true, width: 7 },
       { label: "AM", right: true, width: 12 },
       { label: "PM", right: true, width: 11 },
-      { label: "Doctor visits", right: true, width: 7 },
+      { label: "AM + PM", right: true, width: 7 },
       { label: "Pharmacies", right: true, width: 7 },
       { label: "Waiting", right: true, width: 12 },
     ],
@@ -207,7 +207,7 @@ export async function buildTeamVisitsWorkbook(report: TeamVisitsReport, generate
       { label: "Day", width: 11 },
       { label: "AM", right: true, width: 7 },
       { label: "PM", right: true, width: 7 },
-      { label: "Doctor visits", right: true, width: 12 },
+      { label: "AM + PM", right: true, width: 12 },
       { label: "Pharmacies", right: true, width: 11 },
       { label: "Waiting", right: true, width: 9 },
       { label: "Visits saved", right: true, width: 11 },

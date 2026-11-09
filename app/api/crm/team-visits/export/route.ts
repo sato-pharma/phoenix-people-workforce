@@ -7,7 +7,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { readsRegionalTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadTeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
-import { buildTeamVisitsWorkbook, teamVisitsWorkbookFileName } from "@/lib/phoenix-crm/team-visits-workbook";
+import { buildTeamVisitsWorkbook, teamVisitsWorkbookFileName } from "@/lib/phoenix-crm/server/team-visits-workbook";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";

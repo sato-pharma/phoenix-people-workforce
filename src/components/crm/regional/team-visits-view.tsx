@@ -35,7 +35,7 @@ import {
   type TeamVisitDayKey,
   type TeamVisitShow,
   type TeamVisitSort,
-} from "@/lib/phoenix-crm/team-visits-summary";
+} from "@/lib/phoenix-crm/server/team-visits-summary";
 
 /**
  * Visits — Yesterday and Today, the Regional Sales Manager's screen. Server-rendered: the page holds no client

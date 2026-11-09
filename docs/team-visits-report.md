@@ -88,7 +88,7 @@ the counting rules it shares with the other team reports are in `docs/regional-t
 
 ## The Excel file
 
-`/api/crm/team-visits/export` builds the file with `buildTeamVisitsWorkbook` (`src/lib/phoenix-crm/team-visits-workbook.ts`).
+`/api/crm/team-visits/export` builds the file with `buildTeamVisitsWorkbook` (`src/lib/phoenix-crm/server/team-visits-workbook.ts`).
 
 - **The gate.** `phoenix_crm:read`, then `readsRegionalTeamReports`, both checked before any read. Any other seat
   gets a 403.
@@ -114,7 +114,7 @@ Seven sheets, in the house identity (SATO-DIS-2026-01):
 
 ## Where it lives
 
-- `src/lib/phoenix-crm/team-visits-summary.ts`, pure. It holds the hours, the timeline, the pace, the strip, the team
+- `src/lib/phoenix-crm/server/team-visits-summary.ts`, pure. It holds the hours, the timeline, the pace, the strip, the team
   roll-ups, the reps to look at, the vacant line and the filter. The screen and the file both read it.
 - `src/lib/phoenix-crm/server/team-visits.ts`, the loader. It now marks each visit `waiting`, on the rule that counts
   it as waiting, and each seat `vacant`.

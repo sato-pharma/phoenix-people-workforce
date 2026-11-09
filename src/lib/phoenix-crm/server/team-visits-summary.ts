@@ -430,7 +430,7 @@ export type TeamVisitSort = (typeof TEAM_VISIT_SORT)[number];
 export const TEAM_VISIT_SORT_LABEL: Record<TeamVisitSort, string> = {
   first: "Earliest first visit",
   territory: "Territory",
-  visits: "Most doctor visits",
+  visits: "Most AM + PM visits",
 };
 
 /** The `sort` search parameter, read strictly — anything else is the territory order. */
@@ -523,9 +523,6 @@ export function teamVisitNonWorkingNotice(report: Pick<TeamVisitsReport, "today"
 
 /** Above this many visits, a phone card folds the day's list behind "Show the visits", so a long day does not bury the next rep. */
 export const TEAM_VISIT_PHONE_FOLD = 4;
-
-/** The Excel file's address. It always holds every rep, whatever the screen's filter. */
-export const TEAM_VISITS_EXPORT_HREF = "/api/crm/team-visits/export";
 
 /** The visits of one day grouped AM · PM · Pharmacies, each group earliest first, a copied visit last. */
 export function teamVisitTimesByList(day: Pick<TeamVisitDay, "times">): Record<TeamVisitTime["list"], TeamVisitTime[]> {

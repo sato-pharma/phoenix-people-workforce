@@ -6,7 +6,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { readsRegionalTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadTeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
-import { parseTeamVisitDay, parseTeamVisitShow, parseTeamVisitSort } from "@/lib/phoenix-crm/team-visits-summary";
+import { parseTeamVisitDay, parseTeamVisitShow, parseTeamVisitSort } from "@/lib/phoenix-crm/server/team-visits-summary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

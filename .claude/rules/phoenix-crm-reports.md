@@ -13,7 +13,7 @@ paths:
   - "app/employee-portals/{team-visits,district-manager-plans,weekly-sheet}/**"
   - "app/api/crm/weekly-sheet/**"
   - "tests/regional-team-reports*"
-  - "src/lib/phoenix-crm/{team-visits-summary,team-visits-workbook}.ts"
+  - "src/lib/phoenix-crm/server/{team-visits-summary,team-visits-workbook}.ts"
   - "app/api/crm/team-visits/**"
   - "tests/team-visits-premium*"
 ---

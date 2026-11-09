@@ -14,7 +14,6 @@ import {
   parseTeamVisitShow,
   savedVisitsOf,
   TEAM_VISIT_HOUR_BLOCKS,
-  TEAM_VISITS_EXPORT_HREF,
   teamVisitAttention,
   teamVisitBarWidth,
   teamVisitDayHeading,
@@ -53,8 +52,8 @@ import {
   teamVisitTeamPace,
   teamVisitListedSeatIds,
   teamVisitRepAnchor,
-} from "../src/lib/phoenix-crm/team-visits-summary.ts";
-import { buildTeamVisitsWorkbook, TEAM_VISITS_PACE_CLOSED, TEAM_VISITS_WORKBOOK_SHEETS, teamVisitsWorkbookFileName } from "../src/lib/phoenix-crm/team-visits-workbook.ts";
+} from "../src/lib/phoenix-crm/server/team-visits-summary.ts";
+import { buildTeamVisitsWorkbook, TEAM_VISITS_PACE_CLOSED, TEAM_VISITS_WORKBOOK_SHEETS, teamVisitsWorkbookFileName } from "../src/lib/phoenix-crm/server/team-visits-workbook.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -311,7 +310,7 @@ function theFilterNarrowsRowsOnly() {
   assert.equal(teamVisitFilterHref("all", "yesterday"), "/employee-portals/team-visits");
   assert.equal(teamVisitFilterHref("none", "today"), "/employee-portals/team-visits?show=none&day=today");
   assert.equal(teamVisitFilterHref("saved", "yesterday"), "/employee-portals/team-visits?show=saved");
-  assert.equal(TEAM_VISITS_EXPORT_HREF, "/api/crm/team-visits/export", "the file always holds every rep: no filter in its address");
+  assert.ok(readFileSync("src/components/crm/regional/team-visits-panels.tsx", "utf8").includes('export const TEAM_VISITS_EXPORT_HREF = "/api/crm/team-visits/export";'), "the file always holds every rep: no filter in its address");
   assert.equal(teamVisitDayHeading("today"), "Today so far", "today is never a finished day");
   assert.equal(teamVisitDayHeading("yesterday"), "Yesterday");
 }
@@ -373,7 +372,7 @@ async function theWorkbook() {
   assert.ok(visits.includes("Own visit — in no rep's figure"));
   const reps = text("Reps");
   assert.ok(reps.includes("Seat is vacant"), "a vacant seat says so");
-  for (const column of ["AM", "PM", "Doctor visits", "Pharmacies", "Waiting"]) assert.ok(reps.includes(column), `the Reps sheet has its own ${column} column`);
+  for (const column of ["AM", "PM", "AM + PM", "Pharmacies", "Waiting"]) assert.ok(reps.includes(column), `the Reps sheet has its own ${column} column`);
   const teams = text("Teams");
   assert.ok(teams.includes("The whole team"));
   // Every visit row is on the Visits sheet: the reps' saved visits plus the managers' own.
@@ -398,7 +397,7 @@ async function theWorkbook() {
   // No location in the file.
   const everything = workbook.worksheets.flatMap((sheet) => text(sheet.name)).join(" ").toLowerCase();
   for (const banned of ["latitude", "longitude", "distance", "far visit", "gps"]) assert.ok(!everything.includes(banned), `the file never carries ${banned}`);
-  const source = stripComments(readFileSync("src/lib/phoenix-crm/team-visits-workbook.ts", "utf8"));
+  const source = stripComments(readFileSync("src/lib/phoenix-crm/server/team-visits-workbook.ts", "utf8"));
   assert.ok(source.includes("buildHouseCoverSheet") && source.includes("writeHouseMasthead"), "the file wears the house identity");
   assert.ok(!/\bhis\b|\bhim\b|\bhe\b/i.test(source), "neutral wording in the file");
 }
