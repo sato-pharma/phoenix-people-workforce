@@ -279,9 +279,9 @@ function testCrmVisitsTabStartsItsReadsTogether() {
   }
   assert.match(read("src/components/phoenix-crm/phoenix-crm-app.tsx"), /ownSeat=\{overview\.ownSeatIds\.includes\(seatId\)\}/);
 
-  // The Customer List asks for its board WITH the list unless it opened on a Validate hand-off.
+  // The Customer List asks for its board WITH the list unless it opened on a Validate or full-name hand-off.
   const list = read("src/components/phoenix-crm/list-tab.tsx");
-  assert.match(list, /const \[boardWanted, setBoardWanted\] = useState\(\(\) => validateHandoff === null\);/, "RED the board is asked for with the list");
+  assert.match(list, /const \[boardWanted, setBoardWanted\] = useState\(\(\) => validateHandoff === null && fullNameHandoff === null\);/, "RED the board is asked for with the list");
 }
 
 async function testTimingStoreIsOnePerProcess() {

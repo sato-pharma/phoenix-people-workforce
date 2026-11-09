@@ -70,7 +70,8 @@ import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
-import { fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
+import { bidiIsolate } from "@/emails/bidi";
+import { FULL_NAME_WRITE_BUTTON, FULL_NAME_WRITE_SENTENCE } from "@/lib/phoenix-crm/pm-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -106,6 +107,16 @@ export type PendingVisit = {
  * which still accepts one; this tab no longer offers "Validate now" after a visit — validating happens
  * on the List.
  */
+/**
+ * Add visit's hand-off to the List's Change the details screen for a clinic customer with one or two
+ * names (owner, 2026-11-09): the visit opens once the full name is written, so the note offers the way.
+ */
+export type PendingFullName = {
+  seatId: string;
+  test: boolean;
+  customerId: string;
+};
+
 export type PendingValidate = {
   seatId: string;
   test: boolean;
@@ -754,6 +765,7 @@ function AddFlow({
   onQueued,
   onSaved,
   onStep,
+  onWriteFullName,
   resource,
   retryOf,
   seatId,
@@ -770,6 +782,8 @@ function AddFlow({
   onQueued: () => void;
   onSaved: (visit: SavedVisit, customerName: string) => void;
   onStep: (next: AddStep) => void;
+  /** A clinic customer with one or two names: open his Change the details screen on the List. */
+  onWriteFullName?: (customerId: string) => void;
   /** The form's read — the Visits tab's, which starts it before Add visit is pressed (see `formWanted`). */
   resource: CrmResource<VisitFormView>;
   /** The held visit he pressed Log it again on, whose words the form starts from. */
@@ -891,13 +905,22 @@ function AddFlow({
   );
   // Owner, 2026-11-07 (pm-name-rules.ts): any PM customer with one or two names is not visited
   // until the full name is written — the save refuses it, so he reads the way out before the form.
+  // 🔴 AND THE WAY OUT IS A BUTTON, NOT A REPEATED NAME (owner, 2026-11-09): "Write the full name" opens
+  // the List on this customer's Change the details screen; the visit opens once it is saved.
   const fullNameFirst = (customer: VisitCustomerOption) => (
     <CrmPanel>
       {back}
       <CrmBlock>
-        <CrmNote title={customer.name} tone="warn">
-          {fullNameNeededSentence(customer.name)}
+        <CrmNote title={bidiIsolate(customer.name)} tone="warn">
+          {FULL_NAME_WRITE_SENTENCE}
         </CrmNote>
+        {onWriteFullName ? (
+          <div className="mt-3">
+            <CrmButton onClick={() => onWriteFullName(customer.customerId)} variant="primary">
+              {FULL_NAME_WRITE_BUTTON}
+            </CrmButton>
+          </div>
+        ) : null}
       </CrmBlock>
     </CrmPanel>
   );
@@ -1134,6 +1157,7 @@ export function VisitsTab({
   onOwnSingleVisitSaved,
   onPendingVisitDone,
   onWorkChange,
+  onWriteFullName,
   openingDay,
   ownSeat,
   pendingVisit,
@@ -1160,6 +1184,11 @@ export function VisitsTab({
   onStartValidate?: (validate: PendingValidate) => void;
   /** Add visit opened or closed: the page keeps this tab as it is while another tab is open. */
   onWorkChange?: (working: boolean) => void;
+  /**
+   * A clinic customer with one or two names, from Add visit's note: the page opens the List on his
+   * Change the details screen (the Validate hand-off's sibling).
+   */
+  onWriteFullName?: (handoff: PendingFullName) => void;
   /**
    * The visit day as the page learned it — never the calendar date, which runs ahead of it between
    * midnight and 02:00. Shown only until this tab's own day has answered.
@@ -1291,6 +1320,14 @@ export function VisitsTab({
           day.reload();
         }}
         onClose={closeFlow}
+        onWriteFullName={
+          onWriteFullName
+            ? (customerId) => {
+                closeFlow();
+                onWriteFullName({ seatId, test, customerId });
+              }
+            : undefined
+        }
         onQueued={() => {
           closeFlow();
           setSaved(null);
