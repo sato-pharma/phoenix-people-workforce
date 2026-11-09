@@ -7,6 +7,7 @@ import type {
   TerritoryClosingTotals,
   TerritorySkeleton,
 } from "@/lib/sales/territory/types";
+import { areaLoadFailedText } from "@/lib/sales/territory/drilldown-words";
 
 export type AreaFetchState =
   | { status: "idle" }
@@ -61,12 +62,9 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
         const contentType = response.headers.get("content-type") ?? "";
         if (!contentType.includes("application/json")) {
           // Auth middleware can redirect to the login page, which fetch follows and
-          // returns as HTML — detect it before .json() throws a confusing parse error.
-          throw new Error(
-            response.status === 401 || response.status === 403
-              ? "Session expired. Please refresh the page and sign in again."
-              : `Unexpected server response (HTTP ${response.status}). Please refresh and try again.`,
-          );
+          // returns as HTML — detect it before .json() throws a confusing parse error. The viewer
+          // is told what to do, never an HTTP code.
+          throw new Error(areaLoadFailedText(response.status));
         }
         const json = (await response.json()) as {
           success: boolean;
@@ -79,7 +77,7 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
           totalValue?: number;
         };
         if (!response.ok || !json.success) {
-          throw new Error(json.message || "Failed to load this area.");
+          throw new Error(json.message || areaLoadFailedText(response.status));
         }
         const payload: TerritoryAreaPayload = {
           areaCode: json.areaCode ?? key,
@@ -97,7 +95,12 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
         setStates((prev) =>
           new Map(prev).set(key, {
             status: "error",
-            message: error instanceof Error ? error.message : "Failed to load this area.",
+            // A dropped connection (TypeError) or a broken body (SyntaxError) speaks browser, not the
+            // viewer's words; only the errors thrown above carry a sentence worth showing.
+            message:
+              error instanceof Error && !(error instanceof TypeError) && !(error instanceof SyntaxError)
+                ? error.message
+                : areaLoadFailedText(null),
           }),
         );
       })
