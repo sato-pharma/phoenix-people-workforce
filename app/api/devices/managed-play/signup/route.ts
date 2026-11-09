@@ -8,7 +8,11 @@ import {
   SIGNUP_URL_NAME_COOKIE_MAX_AGE_SECONDS,
 } from "@/lib/devices/android-enterprise-signup";
 import { androidManagementTokenProvider } from "@/lib/devices/android-management-auth";
-import { AndroidManagementRequestError } from "@/lib/devices/android-web-app";
+import {
+  AndroidManagementRequestError,
+  ENTERPRISE_ALREADY_BOUND_MESSAGE,
+  isAndroidManagementConfigured,
+} from "@/lib/devices/android-web-app";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -41,6 +45,14 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
+
+    // 🔴 REFUSED ONCE PHOENIX IS BOUND. The page hides the signup button when a binding is set, but
+    // the page is UX: this route would still have started a SECOND enterprise for anyone who posted
+    // to it, owned by whichever Google account finished it. The company's enterprise is bound and is
+    // never signed up again.
+    if (isAndroidManagementConfigured()) {
+      return NextResponse.json({ message: ENTERPRISE_ALREADY_BOUND_MESSAGE }, { status: 409 });
+    }
 
     const origin = trustedOriginForRedirect(request);
     const token = await androidManagementTokenProvider()();
