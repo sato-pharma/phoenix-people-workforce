@@ -196,6 +196,9 @@ const REFUSALS: Record<string, Refusal> = {
   potential_grade_required: { status: 400, message: "Choose the customer's potential (AA to BC) before approving." },
   not_outside: { status: 409, message: "This customer is no longer waiting outside the list. Reload the page." },
   not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
+  // The database's own guard (20261111004733): no route should reach it, and if one does the person is told what
+  // is missing rather than "this entry could not be saved".
+  validated_without_place: { status: 409, message: "This customer has no saved place, so it cannot be validated. Capture the place first." },
   not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add them to your list first." },
   // The Super Admin's trusted point (owner, 2026-11-10, server/trusted-point.ts).
   already_has_place: {

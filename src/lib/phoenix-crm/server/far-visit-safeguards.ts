@@ -11,6 +11,10 @@
  *   C · `farVisitOutcome` → a hold row — the next visit from that spot is saved and held for the SFE, and
  *       `decideFarVisitHold` is the SFE's answer. The two countable views leave a held visit out until then.
  *   D · the 500 m line of an account is applied by the caller (`farRefusalLineFor`), before any of this.
+ *   E · `refuseReadingsApart` — a capture whose pin and photo reading cannot both be the door is refused
+ *       (owner, 2026-11-11), for a place and for a building alike.
+ *   F · `holdVisitsBeforePlace` — a rep's visits logged before the customer had a place, found past the
+ *       line of the place he was then validated at, are held for the SFE exactly as C holds one.
  *
  * 🔴 EVERY READ HERE FAILS OPEN TOWARDS THE RULE THAT WAS ALREADY THERE. A read that fails gives no anchor
  * (no impossible refusal), no tries (no hold, no alert) — the rep meets exactly the door he met before
@@ -29,13 +33,19 @@ import {
   IMPOSSIBLE_LOCATION_REFUSED,
   IMPOSSIBLE_POINT_MEMORY_HOURS,
   IMPOSSIBLE_TRAVEL_LOOKBACK_MINUTES,
+  READINGS_APART_REFUSED,
+  STUCK_LOOKBACK_DAYS,
   holdInsteadOfRefuse,
   impossibleLocationApplies,
   judgeImpossibleLocation,
+  parseFarVisitHoldBasis,
   parseFarVisitHoldStatus,
+  readingsApartMeters,
   stuckAtOneSpot,
+  type FarVisitHoldBasis,
   type FarVisitHoldStatus,
   type TimedReading,
+  type TwoReadings,
 } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -44,8 +54,8 @@ import { numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE, sfeManagerHrIds } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import {
-  loadFarTriesOnDay,
   loadImpossiblePoints,
+  loadRecentFarTries,
   recordFarVisitRefusal,
   recordImpossibleTravelRefusal,
 } from "@/lib/phoenix-crm/server/refused-readings";
@@ -128,6 +138,52 @@ export async function guardPlaceReadings(input: {
   isTest: boolean;
   now?: Date;
 }): Promise<PlaceDraft> {
+  const place = await dropImpossibleReadings(input);
+  // E: asked of the draft as A leaves it — a photo reading A dropped can no longer put the point wrong.
+  await refuseReadingsApart({ place, seatId: input.seatId, repHrId: input.repHrId, customerId: input.customerId, isTest: input.isTest });
+  return place;
+}
+
+/**
+ * E · a capture whose pin and photo reading cannot both be the door is refused, and its two readings are
+ * filed (owner, 2026-11-11 — `readingsApartMeters`, far-visit-safeguards.ts). Asked of EVERY capture: a
+ * rep's, a manager's beside him, a second clinic's and a building's — it is about the phone, never about
+ * who holds it. No read is involved, so there is nothing here to fail open.
+ */
+export async function refuseReadingsApart(input: {
+  place: TwoReadings & { photoPath: string | null; deviceCapturedAt: string | null; deviceMocked?: boolean | null };
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+}): Promise<void> {
+  const { place } = input;
+  const metres = readingsApartMeters(place);
+  if (metres === null || place.photoLat === null || place.photoLon === null) return;
+  await recordImpossibleTravelRefusal({
+    reason: "readings_apart",
+    reading: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters },
+    photo: { lat: place.photoLat, lon: place.photoLon, accuracyMeters: place.photoAccuracyMeters },
+    photoPath: place.photoPath,
+    deviceCapturedAt: place.deviceCapturedAt,
+    deviceMocked: place.deviceMocked ?? null,
+    seatId: input.seatId,
+    repHrId: input.repHrId,
+    customerId: input.customerId,
+    metres,
+    isTest: input.isTest,
+  });
+  throw validationError(READINGS_APART_REFUSED);
+}
+
+async function dropImpossibleReadings(input: {
+  place: PlaceDraft;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  isTest: boolean;
+  now?: Date;
+}): Promise<PlaceDraft> {
   const now = input.now ?? new Date();
   if (!impossibleLocationApplies(cairoBusinessDay(now))) return input.place;
   const [anchors, refusedPoints] = await Promise.all([
@@ -200,12 +256,13 @@ export async function farVisitOutcome(input: {
 }): Promise<FarVisitOutcome> {
   const now = input.now ?? new Date();
   const visitDate = cairoBusinessDay(now);
-  const earlier = await loadFarTriesOnDay({
+  const earlier = await loadRecentFarTries({
     seatId: input.seat.seatId,
     repHrId: input.repHrId,
     customerId: input.customerId,
     isTest: input.isTest,
     visitDate,
+    days: STUCK_LOOKBACK_DAYS,
   });
   const reading = { lat: input.visit.lat, lon: input.visit.lon, accuracyMeters: input.visit.accuracyMeters };
   const verdict = holdInsteadOfRefuse(earlier, reading);
@@ -235,7 +292,7 @@ export async function farVisitOutcome(input: {
     farMeters: input.farMeters,
     isTest: input.isTest,
   });
-  // B: told ONCE, on the try that makes him stuck — never again for the same customer that day.
+  // B: told ONCE, on the try that makes him stuck — never again while the week's tries keep him stuck.
   const before = stuckAtOneSpot(earlier);
   const after = stuckAtOneSpot([...earlier, reading]);
   if (!before.stuck && after.stuck && !input.isTest) {
@@ -278,6 +335,7 @@ async function writeHold(input: {
           distance_meters: input.metres === null || !Number.isFinite(input.metres) ? null : Math.round(input.metres),
           far_meters: Math.round(input.farMeters),
           tries: Math.min(1000, Math.max(1, input.tries)),
+          basis: "stuck",
           spot_lat: input.spot?.lat ?? null,
           spot_lon: input.spot?.lon ?? null,
           visit_date: input.visitDate,
@@ -335,7 +393,7 @@ async function notifyStuckRep(input: {
         channels: phoenixCrmChannels("far_visit_stuck"),
         eventType: "far_visit_stuck",
         message:
-          `${rep} (${territoryName(input.seat)}) has had ${input.tries} visits to ${customerName} refused today, every one from the same spot, ` +
+          `${rep} (${territoryName(input.seat)}) has had ${input.tries} visits to ${customerName} refused in the last ${STUCK_LOOKBACK_DAYS} days, every one from the same spot, ` +
           `${away} the place saved for this customer. The saved place is probably wrong. Their next visit from that spot is saved and held for SFE approval. ` +
           `Open Visits held for SFE to see the spot on the map and move the place there if it is right.`,
         metadata: { idempotencyKey: `phoenix_crm:far_visit_stuck:${personKey(input.repHrId)}:${input.customerId}:${input.visitDate}`, seatId: input.seat.seatId },
@@ -351,6 +409,58 @@ async function notifyStuckRep(input: {
   } catch (error) {
     logError("Phoenix CRM stuck-rep alert failed", { error, labels: { event: "phoenix_crm_far_visit_stuck_notify_failed" } });
   }
+}
+
+// ── F · a visit logged before the customer had a place ──────────────────────────────────────────
+
+/** One of the rep's earlier visits, found past the line of the place the customer was then validated at. */
+export type VisitBeforePlace = {
+  visitId: string;
+  repHrId: string;
+  placeId: string | null;
+  metres: number | null;
+  farMeters: number;
+  spot: { lat: number; lon: number };
+  visitDate: string;
+};
+
+/**
+ * F · hold the rep's earlier visits that the place now shows were taken past the line (`visitHeldBeforePlace`
+ * chose them). `tries` is 0: nobody was refused. A visit already held keeps its hold and its decision.
+ *
+ * 🔴 IT THROWS, unlike the hold of a visit being saved: the caller writes these BEFORE it re-stamps the
+ * visits, so a hold that cannot be written leaves the visit `no_place` — counted in nothing new, and found
+ * again by the next re-stamp — never measured, counted and forgotten.
+ */
+export async function holdVisitsBeforePlace(input: {
+  seatId: string;
+  customerId: string;
+  isTest: boolean;
+  visits: readonly VisitBeforePlace[];
+}): Promise<number> {
+  if (input.visits.length === 0) return 0;
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_far_visit_holds")
+    .upsert(
+      input.visits.map((visit) => ({
+        visit_id: visit.visitId,
+        seat_id: input.seatId,
+        rep_hr_id: visit.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        place_id: visit.placeId,
+        distance_meters: visit.metres === null || !Number.isFinite(visit.metres) ? null : Math.round(visit.metres),
+        far_meters: Math.round(visit.farMeters),
+        tries: 0,
+        basis: "before_place",
+        spot_lat: visit.spot.lat,
+        spot_lon: visit.spot.lon,
+        visit_date: visit.visitDate,
+        is_test: input.isTest,
+      })),
+      { onConflict: "visit_id", ignoreDuplicates: true },
+    );
+  throwIfError(error);
+  return input.visits.length;
 }
 
 // ── C · the SFE's decision, and the readers that must know a visit is held ──────────────────────
@@ -436,6 +546,8 @@ export async function decideFarVisitHold(viewer: PhoenixCrmViewer, raw: unknown)
 export type FarVisitHoldRow = {
   visitId: string;
   status: FarVisitHoldStatus;
+  /** Why it is held: refused again and again from one spot, or logged before the customer had a place. */
+  basis: FarVisitHoldBasis;
   seatId: string;
   territory: string;
   repName: string;
@@ -473,7 +585,7 @@ export async function loadFarVisitHolds(viewer: PhoenixCrmViewer): Promise<FarVi
   const since = new Date(Date.now() - FAR_VISIT_HOLDS_DECIDED_DAYS * 24 * 3600 * 1000).toISOString();
   const { data, error } = await supabase
     .from("phoenix_crm_far_visit_holds")
-    .select("visit_id, status, seat_id, rep_hr_id, customer_id, place_id, distance_meters, far_meters, tries, spot_lat, spot_lon, visit_date, is_test, held_at, decided_by_hr_id, decided_at")
+    .select("visit_id, status, basis, seat_id, rep_hr_id, customer_id, place_id, distance_meters, far_meters, tries, spot_lat, spot_lon, visit_date, is_test, held_at, decided_by_hr_id, decided_at")
     .or(`status.eq.sfe_pending,decided_at.gte.${since}`)
     .order("held_at", { ascending: false })
     .limit(300);
@@ -522,6 +634,7 @@ export async function loadFarVisitHolds(viewer: PhoenixCrmViewer): Promise<FarVi
     out.push({
       visitId,
       status,
+      basis: parseFarVisitHoldBasis(row.basis),
       seatId,
       territory: seat ? territoryName(seat) : "A territory no longer on the team",
       repName: nameOf(people, String(row.rep_hr_id), "A rep"),

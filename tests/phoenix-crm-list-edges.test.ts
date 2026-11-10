@@ -159,8 +159,10 @@ function checkRemeasureWindow(): void {
     "which is the owner's other half: a visit logged before validation gets its distance from the place the validation captured",
   );
   assert.match(service, /places: placesFor\(/, "and the check is given that set, never every active clinic");
-  assert.match(service, /select\("id, lat, lon, captured_at"\)/, "so the place's capture time is read");
-  assert.match(service, /"id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at"/, "and the visit's");
+  // Since 2026-11-11 both reads carry what the before-place hold needs: the place's two readings, and who
+  // entered the visit and on which day (visitsToHoldBeforePlace).
+  assert.match(service, /select\("id, lat, lon, captured_at, photo_lat, photo_lon, photo_accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, point_source"\)/, "so the place's capture time is read");
+  assert.match(service, /"id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at, visit_date, rep_hr_id, entered_by_hr_id, archived_at"/, "and the visit's");
   assert.match(service, /for \(let attempt = 1; attempt <= 2; attempt \+= 1\)/, "a move is once and for ever, so the restamp is retried once");
 }
 

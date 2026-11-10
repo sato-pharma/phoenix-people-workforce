@@ -17,8 +17,12 @@
  */
 
 import { logError } from "@/lib/observability/log";
+import { farVisitRefusalApplies, visitAwayFromValidatedPlace, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
+import { farRefusalLineFor, visitHeldBeforePlace } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
+import { personKey } from "@/lib/phoenix-crm/scope";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { holdVisitsBeforePlace, type VisitBeforePlace } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import type { PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -37,6 +41,65 @@ export type RestampScope = "unplaced" | "all";
 
 /** A place as the measurement needs it: where it is, and when it was captured at the door. */
 export type MeasurablePlace = { id: string; lat: number; lon: number; capturedAt: string };
+
+/** One visit as `visitsToHoldBeforePlace` reads it — the stored row, before this re-stamp touches it. */
+export type UnplacedVisit = {
+  id: string;
+  lat: number | null;
+  lon: number | null;
+  capturedAt: string | null;
+  visitDate: string | null;
+  locationFlag: string | null;
+  repHrId: string | null;
+  enteredByHrId: string | null;
+  copiedFromOldSystem: boolean;
+  archived: boolean;
+};
+
+/**
+ * 🔴 THE VISITS THIS RE-STAMP MUST HOLD BEFORE IT MEASURES THEM (owner, 2026-11-11, far-visit-safeguards.ts F).
+ * Only a visit still `no_place` — one saved before the customer had any place, which the far rule in the
+ * save therefore never judged — and only when it is past the REFUSAL's own line (`farRefusalLineFor`, both
+ * readings of the place) of the places `placesFor` gives it. A visit already measured is never held here:
+ * a moved place re-measures every visit, and holding those would un-count work the door once accepted.
+ */
+export function visitsToHoldBeforePlace(input: {
+  visits: readonly UnplacedVisit[];
+  places: ReadonlyArray<MeasurablePlace & { reading: ValidatedPlaceReading }>;
+  listType: unknown;
+  visitFarMeters: number;
+}): VisitBeforePlace[] {
+  const farMeters = farRefusalLineFor(input.listType, input.visitFarMeters);
+  const held: VisitBeforePlace[] = [];
+  for (const visit of input.visits) {
+    if (visit.locationFlag !== "no_place" || visit.lat === null || visit.lon === null || !visit.repHrId || !visit.visitDate) continue;
+    const measured = placesFor({ capturedAt: visit.capturedAt, copiedFromOldSystem: visit.copiedFromOldSystem }, input.places);
+    const ids = new Set(measured.map((place) => place.id));
+    const away = visitAwayFromValidatedPlace({
+      fix: { lat: visit.lat, lon: visit.lon },
+      places: input.places.filter((place) => ids.has(place.id)).map((place) => place.reading),
+      farMeters,
+    });
+    const hold = visitHeldBeforePlace({
+      farRuleApplies: farVisitRefusalApplies(visit.visitDate),
+      enteredByRep: personKey(visit.enteredByHrId) === personKey(visit.repHrId),
+      copiedFromOldSystem: visit.copiedFromOldSystem,
+      archived: visit.archived,
+      pastTheLine: away.refused,
+    });
+    if (!hold) continue;
+    held.push({
+      visitId: visit.id,
+      repHrId: visit.repHrId,
+      placeId: away.placeId,
+      metres: away.metres,
+      farMeters: away.farMeters,
+      spot: { lat: visit.lat, lon: visit.lon },
+      visitDate: visit.visitDate,
+    });
+  }
+  return held;
+}
 
 /**
  * The places ONE visit is measured against: those already captured when it happened.
@@ -87,12 +150,14 @@ export type RestampInput = {
 /** How many visits were measured again. */
 export async function restampVisitLocations(input: RestampInput): Promise<number> {
   const supabase = getSupabaseAdmin();
-  const [visits, placesResult] = await Promise.all([
+  const [visits, placesResult, customerResult] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () => {
         let query = supabase
           .from("phoenix_crm_visits")
-          .select("id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at")
+          .select(
+            "id, lat, lon, accuracy_meters, captured_at, place_id, distance_meters, location_flag, imported_from_ireports360_at, visit_date, rep_hr_id, entered_by_hr_id, archived_at",
+          )
           .eq("seat_id", input.seatId)
           .eq("is_test", input.isTest)
           .eq("customer_id", input.customerId);
@@ -103,20 +168,60 @@ export async function restampVisitLocations(input: RestampInput): Promise<number
     ),
     supabase
       .from("phoenix_crm_places")
-      .select("id, lat, lon, captured_at")
+      .select("id, lat, lon, captured_at, photo_lat, photo_lon, photo_accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, point_source")
       .eq("seat_id", input.seatId)
       .eq("is_test", input.isTest)
       .eq("customer_id", input.customerId)
       .eq("status", "active"),
+    supabase.from("phoenix_crm_customers").select("list_type").eq("id", input.customerId).maybeSingle(),
   ]);
   throwIfError(placesResult.error);
-  const places: MeasurablePlace[] = ((placesResult.data ?? []) as Row[]).map((row) => ({
+  throwIfError(customerResult.error);
+  const places = ((placesResult.data ?? []) as Row[]).map((row) => ({
     id: String(row.id),
     lat: Number(row.lat),
     lon: Number(row.lon),
     capturedAt: String(row.captured_at ?? ""),
+    reading: {
+      id: String(row.id),
+      lat: Number(row.lat),
+      lon: Number(row.lon),
+      photoLat: numberOrNull(row.photo_lat),
+      photoLon: numberOrNull(row.photo_lon),
+      photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
+      pinLat: numberOrNull(row.pin_lat),
+      pinLon: numberOrNull(row.pin_lon),
+      pinAccuracyMeters: numberOrNull(row.pin_accuracy_meters),
+      pointSource: typeof row.point_source === "string" ? row.point_source : null,
+    } satisfies ValidatedPlaceReading,
   }));
   if (places.length === 0 || visits.length === 0) return 0;
+
+  // 🔴 HELD BEFORE THEY ARE MEASURED (owner, 2026-11-11): a visit logged before the customer had a place,
+  // and found past the line of it, waits for the SFE. The hold is written FIRST and it throws — a visit
+  // re-stamped without its hold would start counting with nobody ever asked where it was taken.
+  await holdVisitsBeforePlace({
+    seatId: input.seatId,
+    customerId: input.customerId,
+    isTest: input.isTest,
+    visits: visitsToHoldBeforePlace({
+      visits: visits.map((visit) => ({
+        id: String(visit.id),
+        lat: numberOrNull(visit.lat),
+        lon: numberOrNull(visit.lon),
+        capturedAt: typeof visit.captured_at === "string" ? visit.captured_at : null,
+        visitDate: typeof visit.visit_date === "string" ? visit.visit_date : null,
+        locationFlag: typeof visit.location_flag === "string" ? visit.location_flag : null,
+        repHrId: typeof visit.rep_hr_id === "string" ? visit.rep_hr_id : null,
+        enteredByHrId: typeof visit.entered_by_hr_id === "string" ? visit.entered_by_hr_id : null,
+        copiedFromOldSystem: visit.imported_from_ireports360_at != null,
+        archived: visit.archived_at != null,
+      })),
+      places,
+      listType: (customerResult.data as Row | null)?.list_type ?? null,
+      visitFarMeters: input.settings.visitFarMeters,
+    }),
+  });
 
   const items = visits.flatMap((visit) => {
     const lat = numberOrNull(visit.lat);

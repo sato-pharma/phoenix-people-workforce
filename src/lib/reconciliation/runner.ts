@@ -18,7 +18,7 @@ import {
 /**
  * Three at a time. Every check reads production Postgres, several of them run heavy aggregates
  * (the SoS dashboard fan-out, the payroll batch sweep), and the 8s statement timeout is shared —
- * firing all twenty-two at once would make the harness the thing that breaks the database it is
+ * firing all twenty-three at once would make the harness the thing that breaks the database it is
  * watching.
  */
 const DEFAULT_CONCURRENCY = 3;

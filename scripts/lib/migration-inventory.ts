@@ -2297,6 +2297,34 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // be60ae8291e3e6884e95bb1b4eb9152e; production's 86 offers all read revision 0. Re-applying is a no-op
   // (`add column if not exists`, `drop constraint if exists` then add).
   "20261110195450_offer_email_message_and_revisions.sql",
+  // Applied 11 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route, which writes NO ledger row: apply_migration answered {"status":"declined"} on staging for this file (a
+  // function body that revokes, and four `drop constraint`/`drop trigger` statements). Staging did not hold
+  // 20261110170000's phoenix_crm_far_visit_holds table, so that file was applied to staging first, the same way.
+  // Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf and equal on both, and equal to this file's own
+  // bodies as LF text: md5(prosrc) of phoenix_crm_decide_request e4d52e35d0eb34c18c5eae34e226207d (before:
+  // 19ccb2eb1c3cbaddfedd57bf9ce30c7a on both), of phoenix_crm_customers_validated_has_place
+  // ee30466883ef80da935d1f536023ceb6; both SECURITY DEFINER with ACL {postgres=X, service_role=X} and nothing else.
+  // Two constraint triggers on phoenix_crm_customers, deferrable and initially deferred, enabled. The four CHECK
+  // definitions (holds basis, holds tries, refused-readings reason, refused-readings far_from_place) as
+  // name:definition md5 9088c814322e964b77ff88ff3f82852e; phoenix_crm_far_visit_holds.basis is text not null default
+  // 'stuck', over 0 rows on production. Rehearsed on staging inside one rolled-back transaction: a doctor made
+  // validated with no place raised phoenix_crm:validated_without_place, one with a place and a pharmacy did not, and
+  // an approved add landed on status pending without a place and on active with one. Re-applying is a no-op
+  // (`create or replace`, `drop trigger if exists` then create, `drop constraint` then add, `add column if not exists`).
+  "20261111004733_phoenix_crm_validation_gap_fixes.sql",
+  // Applied 11 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route, which writes NO ledger row. Two `create or replace function` statements and their revokes, no table, no
+  // row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf and equal on both, and equal to this file's
+  // own bodies as LF text: md5(prosrc) of phoenix_crm_decide_request 9ff9cd6c9194cbc65c6a49f29d624374 (before:
+  // e4d52e35d0eb34c18c5eae34e226207d, the file above), of phoenix_crm_reverse_list_request
+  // 421a3d7e05190bee1c2bb7f5779870b4 (before: 8393e50aa8e2febe367119bfd3d482b9 on production, which is
+  // 20261008190000's body with its comment lines removed); both SECURITY DEFINER, search_path=public, ACL
+  // {postgres=X, service_role=X} and nothing else. Rehearsed on staging inside rolled-back blocks, 6 of 6: a
+  // bring-back and an undone drop of a validated customer whose place was retired landed on pending with the stamp
+  // cleared; with a place, and for a pharmacy, on active as before; an undone add that had admitted to pending
+  // landed on dropped, not_admitted. Re-applying is a no-op (`create or replace`).
+  "20261111013233_phoenix_crm_bring_back_never_validates_without_place.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -210,7 +210,7 @@ import type {
 } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import { guardPlaceReadings } from "@/lib/phoenix-crm/server/far-visit-safeguards";
+import { guardPlaceReadings, refuseReadingsApart } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { createRecentOnce } from "@/lib/phoenix-crm/server/recent-once";
@@ -2483,16 +2483,20 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // far-visit-safeguards.ts — Momen Fathy's Dr. Doria Darraz was saved 8.3 km off from an indoor Wi-Fi
     // guess, five minutes after his own visit in El Raml). The rep's own validation only; a manager
     // validating beside him keeps today's door, as his seating does above.
-    place =
-      validatedAs === "rep"
-        ? await guardPlaceReadings({
-            place: parsed.value,
-            seatId: seat.seatId,
-            repHrId: viewer.hrId,
-            customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
-            isTest,
-          })
-        : parsed.value;
+    const captured = {
+      place: parsed.value,
+      seatId: seat.seatId,
+      repHrId: viewer.hrId,
+      customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null,
+      isTest,
+    };
+    // 🔴 TWO READINGS THAT CANNOT BOTH BE THE DOOR ARE NOBODY'S PLACE (owner, 2026-11-11): a manager's
+    // capture is asked that too — it is about the phone. Only the travel check stays the rep's alone.
+    if (validatedAs === "rep") place = await guardPlaceReadings(captured);
+    else {
+      await refuseReadingsApart(captured);
+      place = parsed.value;
+    }
   }
   // Optional, and written in the same save as the validation (owner, 2026-09-30) — never a second
   // step that could fail after the first one landed.

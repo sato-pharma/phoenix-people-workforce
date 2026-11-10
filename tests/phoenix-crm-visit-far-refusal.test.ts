@@ -310,10 +310,11 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   assert.match(columns, /add column if not exists place_id uuid/, "the place column exists");
   assert.match(columns, /add column if not exists distance_meters integer/, "and the metres column");
   // Since 2026-11-10 an impossible-location refusal carries the metres too (from the rep's own last visit),
-  // never a place: it is refused before any place exists (20261110170000).
+  // never a place: it is refused before any place exists (20261110170000). Since 2026-11-11 so does a
+  // capture whose two readings are apart — the metres between them (20261111004733).
   assert.match(
     sql,
-    /reason = 'far_from_place'::text\s+or \(reason = 'impossible_travel'::text and place_id is null\)\s+or \(place_id is null and distance_meters is null\)/,
-    "and no other reason may carry either of them — an impossible location only the metres",
+    /reason = 'far_from_place'::text\s+or \(reason = any \(array\['impossible_travel'::text, 'readings_apart'::text\]\) and place_id is null\)\s+or \(place_id is null and distance_meters is null\)/,
+    "and no other reason may carry either of them — an impossible location and two readings apart only the metres",
   );
 }
