@@ -35,7 +35,7 @@ import {
   type ScheduleProblem,
 } from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
@@ -55,7 +55,7 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationPhotoKind,
 } from "@/lib/phoenix-crm/validation-feedback";
-import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName, VALIDATION_FULL_NAME_CODE } from "@/lib/phoenix-crm/pm-name-rules";
+import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName, parseDoctorFullName, VALIDATION_FULL_NAME_CODE } from "@/lib/phoenix-crm/pm-name-rules";
 import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -87,7 +87,7 @@ const REJECTED_SHOWN_DAYS = 90;
  * `server/shared-places.ts`, which this file imports from, so declaring them here and importing them
  * there would close a cycle.
  */
-export { canDecideValidationReviews, placeChecksSeatScope } from "@/lib/phoenix-crm/server/access";
+export { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope } from "@/lib/phoenix-crm/server/access";
 
 function text(value: unknown): string | null {
   const cleaned = typeof value === "string" ? value.trim() : "";
@@ -98,8 +98,9 @@ function text(value: unknown): string | null {
  * 🔴 A CLINIC CUSTOMER WITH ONLY ONE OR TWO NAMES IS NEVER APPROVED — HE IS SENT BACK FOR ALL THREE
  * (owner, 2026-11-07: "Don't accept from the beginning the two names"; for the validations already
  * waiting, "Send them back to the rep"). Approving him would validate a name every visit save then
- * refuses, so every approve path asks this first: a held review, a rejection taken back, and a place the
- * system never questioned. The screens disable Approve on the same rule (`approvalNeedsFullName`); this
+ * refuses, so every approve path the SFE Manager shares asks this first: a held review and a place the
+ * system never questioned. A rejection taken back does NOT — that is the Super Admin's alone and he is
+ * never blocked (owner, 2026-11-10); he approves as it stands or corrects the name (`restoreValidation`). The screens disable Approve on the same rule (`approvalNeedsFullName`); this
  * is the boundary. Nothing is refused in the data — the rejection, with `short_name`, is the decider's press.
  */
 async function refuseApprovalOfShortName(customerId: unknown): Promise<void> {
@@ -804,18 +805,32 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
  * single character `-`. Who reversed it, when, and what the rejection had said are all on the record
  * either way (`decided_by_hr_id`, `decided_at`, and the `google` payload the function carries over).
  */
-export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean }> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean; renamed: boolean }> {
+  // 🔴 THE SUPER ADMIN ALONE, AND NEVER BLOCKED (owner, 2026-11-10: "make the administrator able to approve
+  // a rejected validation from the SFE in place checks but the SFE cannot; the administrator is never
+  // blocked"). The short-name rule that greys out Approve does NOT stand in his way here: he approves the
+  // name as it stands, or sends the three names he corrected it to (`nameParts`) and the customer is
+  // renamed in the same transaction (his "Both", the same day). The rep still writes all three names before
+  // a visit to a short-named doctor saves — that gate is the visit's, not this one.
+  if (!canRestoreValidation(viewer)) throw forbiddenError("Only the Super Admin approves a validation after it was rejected.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the rejection to take back.");
   const note = cleanText(body.note, 500);
-  // Taking a rejection back validates him again, so the short-name rule holds here as on Approve.
-  await refuseApprovalOfShortName(await reviewCustomerId(String(body.reviewId).toLowerCase()));
+  let name: string | null = null;
+  if (body.nameParts !== undefined && body.nameParts !== null) {
+    // Held to the same three-name rules a rep's own boxes are (no title, no place word, one name a box).
+    const parsed = parseDoctorFullName(body.nameParts, null);
+    if (!parsed.ok) throw validationError(parsed.error);
+    name = parsed.value;
+  }
 
   // `review_not_found`, `review_not_rejected` and `place_not_retired` come back worded by the
   // module's refusal table (db.ts).
   const result = await callPhoenixCrm<Row>("phoenix_crm_restore_validation", {
-    p: { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note },
+    p:
+      name === null
+        ? { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note }
+        : { review_id: String(body.reviewId).toLowerCase(), actor_hr_id: viewer.hrId, note, name },
   });
   // The place is measurable again, so every visit to the customer gets its distance back.
   await restampVisitLocationsQuietly({
@@ -829,7 +844,7 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
   // The refusal is taken back, so the bell that asked him to capture it again goes with it.
   await withdrawValidationNotConfirmed(String(result.customer_id));
   await tellDecisionComment(viewer, "place", String(result.place_id), note);
-  return { reviewId: String(result.review_id), validated: result.validated === true };
+  return { reviewId: String(result.review_id), validated: result.validated === true, renamed: result.renamed === true };
 }
 
 // ── Refusing a validation the system never held ─────────────────────────────────────────────────
@@ -869,6 +884,11 @@ export type ValidatedPlaceRow = {
   pin: ValidationReviewReading | null;
   photo: ValidationReviewReading | null;
   photoPath: string | null;
+  /**
+   * Validated by the Super Admin on a trusted point (owner, 2026-11-10): no photograph exists, and the
+   * screen says so in words rather than drawing a missing file.
+   */
+  trustedPoint?: boolean;
   /** Visits already measured against this place — refusing it un-places every one of them. */
   visits: number;
   /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
@@ -962,7 +982,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // 🔴 ONE STRING, AND A COLUMN THAT IS NOT THERE YET FAILS THE WHOLE READ. `shared_place_id`
           // and `schedule_check` arrive with migration 20261010013001, which reaches staging and
           // production before this file ships.
-          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",
+          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check, point_source",
         )
         .eq("status", "active");
       return seatScoped(query, seats).order("id", { ascending: false });
@@ -1040,6 +1060,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         pin: reading(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
         photo: reading(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
         photoPath: text(row.photo_path),
+        trustedPoint: row.point_source === "trusted",
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),

@@ -353,7 +353,7 @@ export function OfferJobTitleCatalogue({
 
         <div className="flex flex-col gap-3 px-5 py-5 md:hidden">
           {jobTitles.map((row) => (
-            <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm" key={row.id}>
+            <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-none" key={row.id}>
               <p className="text-sm font-black text-slate-900">{row.title}</p>
               <p className="mt-1 text-xs text-slate-500">
                 Reports to {row.reportsTo || "—"} · {row.contractTerm || "—"}

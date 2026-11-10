@@ -1991,7 +1991,11 @@ function runCheckinDoorTests(plans: string): void {
     .concat(sourceFiles("app"))
     .filter((file) => file !== "src/lib/crm/tables.ts" && /\bCRM_CHECKINS_UNIFIED_VIEW\b|"crm_checkins_unified"/.test(stripComments(read(file))))
     .sort();
-  assert.deepEqual(direct, ["src/lib/crm/master.ts", "src/lib/crm/reads.ts", "src/lib/crm/reps-list.ts"], "who reads the check-in view directly: the door, the Super Admin's CRM Master, and the List's pins");
+  assert.deepEqual(
+    direct,
+    ["src/lib/crm/master.ts", "src/lib/crm/reads.ts", "src/lib/crm/reps-list.ts", "src/lib/crm/trusted-point-checkins.ts"],
+    "who reads the check-in view directly: the door, the Super Admin's CRM Master, the List's pins, and the Super Admin's trusted point (vendor rows only)",
+  );
   const repsList = stripComments(read("src/lib/crm/reps-list.ts"));
   const chains = repsList.split(".from(CRM_CHECKINS_UNIFIED_VIEW)").slice(1);
   assert.equal(chains.length, 2);

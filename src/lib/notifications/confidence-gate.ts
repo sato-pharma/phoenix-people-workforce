@@ -396,10 +396,11 @@ export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
   // 2026-09-28. Its baseline therefore reads ~1, ceiling 3, and would hold every offer copied to three
   // or more people: an offer letter sitting in a review queue while a candidate waits. `always`, for
   // the same reason as the market-awareness entry — the audience DESIGN changed, so the old baseline
-  // describes the one-recipient shape, not an incident. 11 is the candidate plus OFFER_COPY_MAX (10)
-  // copies; the send refuses more than that itself, so this ceiling can never be the thing that stops
-  // one. Pinned to OFFER_COPY_MAX by tests/offer-copy-recipients.test.ts.
-  "offers/offer_letter": { appliesTo: "always", ceiling: 11 },
+  // describes the one-recipient shape, not an incident. 12 is the candidate, OFFER_COPY_MAX (10) copies
+  // and the owner's own hidden copy of every offer (owner, 2026-11-10, src/lib/offers/owner-copy.ts); the
+  // send refuses more than that itself, so this ceiling can never be the thing that stops one. Pinned by
+  // tests/offer-copy-recipients.test.ts.
+  "offers/offer_letter": { appliesTo: "always", ceiling: 12 },
   // The Marketing Manager's "Approved requests" email (owner, 2026-11-08): To Finance (2), Cc every
   // requester in it, each one's managers up to the National Sales Manager, Dr Anwar, Omar Anwar, three
   // marketing and SFE managers and the sender — about 20 people for a week, by design. A brand-new pair would otherwise be capped at 10 and

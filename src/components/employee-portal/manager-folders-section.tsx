@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { Archive, ChevronDown, ChevronRight } from "lucide-react";
 
-import { Card } from "@/components/ui/card";
+import { ManagerCvList } from "@/components/employee-portal/manager-cv-list";
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
 import type { CandidateFolderShelf } from "@/lib/recruitment/candidate-folder";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -19,16 +22,20 @@ import type { Candidate } from "@/lib/recruitment/types";
  * renders every card it holds is the flat list this feature exists to replace. The second is because
  * an empty shelf is information ("nothing filed under District Manager yet"), while a shelf that
  * disappears when it empties makes the whole feature look broken the first time somebody opens it.
+ * While the page's find tray narrows the lists, a folder holding a match opens by itself.
  *
  * The candidate card itself is passed in rather than built here: the manager's own CVs and his
  * team's are two different cards with two different sets of buttons, and this component's job is the
  * cabinet, not what is in the envelopes.
  */
 export function ManagerFoldersSection({
+  narrowKey = "",
   renderCandidate,
   shelves,
   totalFiled,
 }: {
+  /** What the page's find tray is narrowing by, or "" when it shows everything. */
+  narrowKey?: string;
   renderCandidate: (candidate: Candidate) => React.ReactNode;
   shelves: CandidateFolderShelf[];
   totalFiled: number;
@@ -36,28 +43,32 @@ export function ManagerFoldersSection({
   // Nothing filed at all: say so once, rather than printing three empty shelves at somebody who has
   // never used the feature. The shelves appear as soon as the first CV is filed.
   if (totalFiled === 0) return null;
+  const narrowed = narrowKey !== "";
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold text-slate-900">Your folders</h2>
-        <p className="text-xs text-slate-500">
-          Good CVs you kept for later. They are out of the list above but not out of the system, and only you see this
-          shelf — the recruitment team&apos;s own folders are separate.
-        </p>
-      </div>
+    <RecruitmentPanel
+      bodyClassName="space-y-4 p-3 sm:p-4"
+      count={totalFiled}
+      description="Good CVs you kept for later. They are out of the list above but not out of the system, and only you see this shelf — the recruitment team's own folders are separate."
+      icon={<Archive aria-hidden="true" className="h-4 w-4" />}
+      title="Your folders"
+    >
       {shelves.map((shelf) => (
         <div className="space-y-2" key={shelf.kind}>
-          <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
-            <h3 className="whitespace-nowrap text-sm font-bold text-slate-800">{shelf.label}</h3>
-            <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-500">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-1.5">
+            <h3 className="min-w-0 break-words text-sm font-black text-slate-900">{shelf.label}</h3>
+            <span className="text-xs font-semibold tabular-nums text-slate-500">
               {shelf.candidateCount === 0
-                ? "Nothing filed"
+                ? narrowed
+                  ? "No match"
+                  : "Nothing filed"
                 : `${shelf.candidateCount} ${shelf.candidateCount === 1 ? "CV" : "CVs"}`}
             </span>
           </div>
           {shelf.folders.length === 0 ? (
-            <p className="text-phx-xs text-slate-400">{shelf.description}</p>
+            <p className="break-words text-phx-xs text-slate-500">
+              {narrowed ? "Nothing on this shelf matches." : shelf.description}
+            </p>
           ) : (
             shelf.folders.map((folder) => (
               <FolderRow
@@ -65,13 +76,14 @@ export function ManagerFoldersSection({
                 key={folder.key}
                 label={folder.label}
                 lastFiledAt={folder.lastFiledAt}
+                narrowKey={narrowKey}
                 renderCandidate={renderCandidate}
               />
             ))
           )}
         </div>
       ))}
-    </section>
+    </RecruitmentPanel>
   );
 }
 
@@ -79,29 +91,36 @@ function FolderRow({
   candidates,
   label,
   lastFiledAt,
+  narrowKey,
   renderCandidate,
 }: {
   candidates: Candidate[];
   label: string;
   lastFiledAt: string | null;
+  narrowKey: string;
   renderCandidate: (candidate: Candidate) => React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  // Opened or closed by hand under one narrowing; a new search opens every folder that holds a match.
+  const [picked, setPicked] = useState<{ key: string; open: boolean }>({ key: narrowKey, open: false });
+  const open = picked.key === narrowKey ? picked.open : narrowKey !== "" && candidates.length > 0;
+  const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
     <div className="space-y-3">
       <button
-        className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-slate-400"
-        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className={`flex w-full items-start gap-3 border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1 ${adminControlDepthClassName}`}
+        onClick={() => setPicked({ key: narrowKey, open: !open })}
         type="button"
       >
+        <Chevron aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
         <span className="min-w-0">
           {/* dir="auto" because a free-typed job-title folder can be Arabic, and this is a single
               language per value — the case where block-level auto is correct and is house style. */}
-          <span className="block whitespace-nowrap text-sm font-semibold text-slate-900" dir="auto">
-            {open ? "▾" : "▸"} {label}
+          <span className="block break-words text-sm font-bold text-slate-900" dir="auto">
+            {label}
           </span>
-          <span className="block whitespace-nowrap text-phx-xs text-slate-500">
+          <span className="block break-words text-phx-xs tabular-nums text-slate-500">
             {candidates.length === 1 ? "1 CV" : `${candidates.length} CVs`}
             {lastFiledAt ? ` · last filed ${cairoDateTime(lastFiledAt)}` : ""}
           </span>
@@ -110,11 +129,13 @@ function FolderRow({
       {open ? (
         <div className="space-y-3">
           {candidates.length === 0 ? (
-            <Card className="rounded-lg border border-gray-200 bg-white p-4 text-center text-xs text-slate-400">
+            <p className={`border border-slate-200 bg-slate-50/70 px-4 py-4 text-center text-xs text-slate-500 ${adminRecessedDepthClassName}`}>
               This folder is empty.
-            </Card>
+            </p>
           ) : (
-            candidates.map((candidate) => renderCandidate(candidate))
+            <ManagerCvList ids={candidates.map((candidate) => candidate.id)}>
+              {candidates.map((candidate) => renderCandidate(candidate))}
+            </ManagerCvList>
           )}
         </div>
       ) : null}

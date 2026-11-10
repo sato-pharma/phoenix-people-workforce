@@ -1394,6 +1394,8 @@ import { runOfferLetterheadInlineMarkTests } from "./offer-letterhead-inline-mar
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferCopyRecipientsTests } from "./offer-copy-recipients.test.ts";
+import { runOfferCopyPickerTests } from "./offer-copy-picker.test.ts";
+import { runOffersPagePolishTests } from "./offers-page-polish.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
 import { runOfferRoleSummaryTests } from "./offer-role-summary.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
@@ -2150,6 +2152,7 @@ import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts"
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
+import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
@@ -3027,6 +3030,7 @@ import { runDirectOrderShareLiveRateLimitTests } from "./direct-order-share-live
 import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test.ts";
 import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
 import { runMyCandidatesTidyTests } from "./my-candidates-tidy.test.ts";
+import { runMyCandidatesFindTests } from "./my-candidates-find.test.ts";
 import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag.test.ts";
 import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-approvals.test.ts";
 import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
@@ -6028,6 +6032,14 @@ await runTest(
     + "desktop row and the phone card of the Offers list)",
   runOfferCopyRecipientsTests,
 );
+await runTest(
+  "job offers: CC and BCC picked from Line → Region → Area lists (the area's District, Regional and National Sales Managers) and the HR team, with typing kept",
+  runOfferCopyPickerTests,
+);
+await runTest(
+  "job offers page polish: the list searches, filters by status with counts and shows 20 at a time; the form has five numbered sections and Save and Send pinned under it; the tabs are the Hiring Documents underline",
+  runOffersPagePolishTests,
+);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
 await runTest("sos BI workbook export", runSosBiWorkbookTests);
@@ -8266,6 +8278,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks filter bar (owner, 2026-10-05: filter by rep, line, region, period, list and any single thing): the pure filter module dedupes and sorts the dropdown options, cuts by period against each section's own date, matches rep/line/region/list exactly and searches the customer name, rep, territory, speciality, place, brick, area and address — a row with no line or region fails a line/region filter rather than passing as a wildcard, a whitespace search is no search, and the outcome selector alone is not a narrowing filter; the board wires that one module, declares the admin surface its combo-box dropdowns need, owns the search so the validated list's own box is off, and the page hands it all three sets",
   runPhoenixCrmValidationReviewFiltersTests,
+);
+
+await runTest(
+  "Phoenix CRM validates a customer on a trusted point (owner, 2026-11-10: \"we will search all locations for this customer in phx crm, then we will compare with the locations of checkins of this customer from the old crm until we find a trusted point\"): a tight cluster over months is trusted with the 600 m and 6 km strays left out, scattered readings or agreement on fewer than three days are not and say why, a Phoenix reading rougher than the visit line is dropped and the point is a median; a visit copied from iReports360 is never counted beside its own check-in, a retired place still counts and a pin equal to the photo reading counts once; the old check-ins are iReports360 rows only (never the view's Phoenix mirror) and never paged; the signboard reader skips a place with no photo; the route, the service, the button and the screen are the Super Admin's alone; and the migration keeps a photo required on every other place",
+  runPhoenixCrmTrustedPointTests,
 );
 
 await runTest(
@@ -12058,6 +12075,10 @@ await runTest(
 await runTest(
   "My Candidates tidy-up: a hired candidate is not shown an unanswered Applying-for chip, a position reads as its role and area and never its request code, and the team list hides a manager who has left with no CV and lists CV holders first",
   runMyCandidatesTidyTests,
+);
+await runTest(
+  "My Candidates find: every typed word must be on the CV (Arabic letter forms, vowels and Arabic-Indic digits folded, a number found in a spaced phone, a hidden phone never searchable), the quick views are waiting on you, not opened and you will call, the tab counts are people not cards, narrowed folders keep every area recounted, and the page draws every own list from the narrowed data with Previous / Next live on an opened CV",
+  runMyCandidatesFindTests,
 );
 await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",

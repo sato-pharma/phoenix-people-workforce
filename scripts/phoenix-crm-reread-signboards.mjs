@@ -346,6 +346,12 @@ async function main() {
       );
       continue;
     }
+    // 🔴 A TRUSTED POINT HAS NO PHOTO (point_source "trusted", photo_path null). Reading "" answers
+    // `no_bytes`, which maps to "retake" and would send a place the Super Admin validated back to the rep.
+    if (!place.photo_path) {
+      console.log(`- ${entry.placeId}: a trusted point with no photo; nothing to read, left exactly as it is.`);
+      continue;
+    }
     const customer = Array.isArray(place.customer) ? place.customer[0] : place.customer;
     const was = place.signboard_check ?? {};
     // 🔴 The count is CARRIED, never reset to 1 (2026-10-18): a reset handed every re-read place a fresh

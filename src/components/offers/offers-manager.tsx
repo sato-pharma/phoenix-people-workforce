@@ -26,6 +26,7 @@ import { OfferTemplateDesigner } from "@/components/offers/offer-template-design
 import { cn } from "@/lib/utils";
 import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 import type { OfferSenderInfo } from "@/components/offers/offer-ui";
+import type { OfferCopyDirectory } from "@/lib/offers/copy-directory";
 
 type Tab = "compose" | "design" | "titles";
 
@@ -39,6 +40,7 @@ export function OffersManager({
   canApprove,
   canDelete,
   canManage,
+  copyDirectory,
   initialError,
   jobTitles: initialJobTitles,
   offers: initialOffers,
@@ -56,6 +58,8 @@ export function OffersManager({
   /** `offers:approve` — the HR Manager. Without it, Send goes to him for approval (owner, 2026-11-10). */
   canApprove: boolean;
   canManage: boolean;
+  /** Who CC and BCC can be picked from (owner, 2026-11-10). Passed straight through to the composer. */
+  copyDirectory: OfferCopyDirectory;
   initialError: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
@@ -87,8 +91,11 @@ export function OffersManager({
     }
   }, []);
 
-  const sentCount = useMemo(() => offers.filter((offer) => offer.status !== "draft" && offer.status !== "pending_approval").length, [offers]);
-  const draftCount = offers.length - sentCount;
+  // Offers awaiting the HR Manager were counted as drafts (owner, 2026-11-10: "more and more" polish) —
+  // they are neither a draft nor issued, and they are the one count somebody has to act on.
+  const awaitingCount = useMemo(() => offers.filter((offer) => offer.status === "pending_approval").length, [offers]);
+  const draftCount = useMemo(() => offers.filter((offer) => offer.status === "draft").length, [offers]);
+  const sentCount = offers.length - awaitingCount - draftCount;
 
   return (
     <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
@@ -96,7 +103,8 @@ export function OffersManager({
         <AdminPageHero
           badges={
             <>
-              <AdminInsightChip tone="orange">{draftCount} drafts</AdminInsightChip>
+              {awaitingCount > 0 ? <AdminInsightChip tone="orange">{awaitingCount} awaiting approval</AdminInsightChip> : null}
+              <AdminInsightChip>{draftCount} {draftCount === 1 ? "draft" : "drafts"}</AdminInsightChip>
               <AdminInsightChip>{sentCount} issued</AdminInsightChip>
               <AdminInsightChip>{templates.length} templates</AdminInsightChip>
               <AdminInsightChip>{jobTitles.length} job titles</AdminInsightChip>
@@ -148,7 +156,7 @@ export function OffersManager({
 
         <div
           aria-label="Job offer sections"
-          className="flex flex-wrap gap-1 rounded-2xl border border-phx-line bg-white/95 p-1 shadow-sm"
+          className="flex flex-wrap border-b border-phx-line"
           role="tablist"
         >
           {TABS.map((entry) => {
@@ -157,10 +165,12 @@ export function OffersManager({
               <button
                 aria-selected={active}
                 className={cn(
-                  "inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition-all",
+                  // The Hiring Documents tab strip, so the two hiring screens read as one family
+                  // (owner, 2026-11-10: "premium polish") — an underline, never a gradient pill.
+                  "-mb-px inline-flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm transition-colors",
                   active
-                    ? "bg-gradient-to-r from-orange-500 to-amber-400 text-white shadow-[0_8px_20px_rgba(249,115,22,0.28)]"
-                    : "text-phx-ink-soft hover:bg-slate-100 hover:text-slate-900",
+                    ? "border-phx-accent font-black text-phx-ink"
+                    : "border-transparent font-bold text-phx-ink-soft hover:text-phx-ink",
                 )}
                 key={entry.value}
                 onClick={() => setTab(entry.value)}
@@ -178,6 +188,7 @@ export function OffersManager({
           <OfferComposer
             canApprove={canApprove}
             canManage={canManage}
+            copyDirectory={copyDirectory}
             jobTitles={jobTitles}
             offers={offers}
             onOffers={setOffers}

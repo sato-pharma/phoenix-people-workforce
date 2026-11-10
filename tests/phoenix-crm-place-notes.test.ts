@@ -157,10 +157,12 @@ function checkTeamScope(): void {
 
 function checkHeDecidesNothing(): void {
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
-  for (const name of ["decideValidationReview", "refuseValidatedPlace", "restoreValidation"]) {
+  for (const name of ["decideValidationReview", "refuseValidatedPlace"]) {
     const body = functionBody(reviews, name);
-    assert.match(body, /if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, `${name} is still the Super Admin's alone`);
+    assert.match(body, /if \(!canDecideValidationReviews\(viewer\)\) throw forbiddenError/, `${name} is still the deciders' alone`);
   }
+  // Taking a rejection back is narrower still — the Super Admin alone (owner, 2026-11-10).
+  assert.match(functionBody(reviews, "restoreValidation"), /if \(!canRestoreValidation\(viewer\)\) throw forbiddenError/, "restoreValidation is the Super Admin's alone");
 
   const notes = read("src/lib/phoenix-crm/server/place-notes.ts");
   for (const name of ["savePlaceNote", "savePlaceRecommendation"]) {

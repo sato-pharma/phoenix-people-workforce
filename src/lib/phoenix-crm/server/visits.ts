@@ -712,7 +712,7 @@ export type VisitCustomerOption = {
     address: string | null;
     lat: number;
     lon: number;
-    photoPath: string;
+    photoPath: string | null;
     capturedAt: string;
     /** Today's receiving hours at this place, or "Does not receive this day". */
     todayWindows: string;

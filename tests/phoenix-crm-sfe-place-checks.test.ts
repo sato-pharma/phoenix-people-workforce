@@ -78,6 +78,16 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   assert.equal(decides({ ...NOBODY, isSfeManager: true, isTestPersona: true, canApprove: true }), false, "a test account never decides — SFE Manager");
   assert.equal(decides({ ...NOBODY, canUpdate: true, canApprove: true }), false, "🔴 a district manager, a regional or national manager or the CEO holding `approve` does NOT decide");
 
+  // ── 1b. TAKING A REJECTION BACK IS THE SUPER ADMIN'S ALONE (owner, 2026-11-10) ──────────────────
+  // "make the administrator able to approve a rejected validation from the SFE in place checks but the SFE
+  // cannot; the administrator is never blocked".
+  const restores = predicate(access, "canRestoreValidation");
+  assert.equal(restores({ ...NOBODY, isSuperAdmin: true, canUpdate: true, canApprove: true }), true, "the Super Admin takes a rejection back");
+  assert.equal(restores({ ...NOBODY, isSfeManager: true, canApprove: true }), false, "🔴 the SFE Manager does NOT, though he still approves and rejects");
+  assert.equal(restores({ ...NOBODY, isSfeManager: true, canApprove: true, canUpdate: true }), false, "not even if he were ever given `update`");
+  assert.equal(restores({ ...NOBODY, isSuperAdmin: true, isTestPersona: true, canUpdate: true }), false, "a test account never does");
+  assert.equal(restores({ ...NOBODY, canUpdate: true, canApprove: true }), false, "nor a manager holding the grants");
+
   // The grant the whole design leans on: if someone "fixes" a red gate by handing the SFE Manager
   // `update`, every other `update` route in the module opens to him with it.
   const permissions = read("src/lib/auth/permissions.ts");
@@ -114,7 +124,8 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   const shared = read("src/lib/phoenix-crm/server/shared-places.ts");
   for (const name of ["decideSharedPlace", "restoreSharedPlace"]) {
     const text = functionText(shared, name);
-    assert.ok(text.includes("if (!canDecideValidationReviews(viewer)) throw forbiddenError("), `${name} asks the one place-check decider`);
+    const gate = name === "restoreSharedPlace" ? "canRestoreValidation" : "canDecideValidationReviews";
+    assert.ok(text.includes(`if (!${gate}(viewer)) throw forbiddenError(`), `${name} asks ${gate}`);
     assert.ok(!text.includes("canDecideSharedPlaces"), `${name} no longer asks the seating gate`);
   }
   const seating = predicate(shared, "canDecideSharedPlaces");
@@ -157,7 +168,20 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   );
 
   // ── 8. THE SFE MANAGER'S DECISIONS ARE STILL THE SYSTEM'S, NEVER A PERSON'S, TO THE REP ──
-  for (const name of ["decideValidationReview", "restoreValidation", "refuseValidatedPlace", "approveValidatedPlace"]) {
+  for (const name of ["decideValidationReview", "refuseValidatedPlace", "approveValidatedPlace"]) {
     assert.ok(functionText(reviews, name).includes("if (!canDecideValidationReviews(viewer)) throw forbiddenError("), `${name} asks the one decider before it reads or writes anything`);
   }
+  assert.ok(functionText(reviews, "restoreValidation").includes("if (!canRestoreValidation(viewer)) throw forbiddenError("), "restoreValidation asks for the Super Admin before it reads or writes anything");
+
+  // ── 9. HIS BOARD DRAWS NO TAKE-BACK (owner, 2026-11-10) ──────────────────────
+  assert.ok(page.includes("<PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>"), "the page says who takes a rejection back, from the server's own gate");
+  const restoreScreen = read("src/components/phoenix-crm/place-check-restore.tsx");
+  assert.ok(restoreScreen.includes("const RestoreContext = createContext(false);"), "🔴 and the screen defaults to NO take-back, so a board that forgets the provider draws none");
+  assert.ok(restoreScreen.includes("if (!canRestore || !reviewId) return null;"), "the take-back draws nothing for anybody else");
+  const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.ok(queue.includes('DECIDED_ACTIONS.filter((action) => action.key !== "approve-after-all")'), "the bulk take-back is left out of his bar");
+  assert.ok(queue.includes("row.refusable || (canRestore && row.restorable)"), "and he cannot tick a rejected row");
+  const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
+  assert.ok(venues.includes('VENUE_ACTIONS.filter((action) => action.key !== "restore")'), "nor bring a rejected building back in bulk");
+  assert.ok(venues.includes("{canRestore ? ("), "nor on its own row");
 }

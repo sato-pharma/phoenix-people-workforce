@@ -7,6 +7,7 @@ import { offerHireDate } from "@/lib/offers/hire-draft";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
+import { offerBccWithOwnerCopy } from "@/lib/offers/owner-copy";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
@@ -14,7 +15,7 @@ import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email"
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
 import { offerSendRefusal } from "@/lib/offers/approval-rules";
-import { offerIdempotencyKeyFor, offerSubjectFor, offerUpdateNote } from "@/lib/offers/revision-rules";
+import { offerAcceptsByReply, offerIdempotencyKeyFor, offerSubjectFor, offerUpdateNote } from "@/lib/offers/revision-rules";
 import {
   offerExpiryIdempotencyKey,
   offerExpiryRefusal,
@@ -239,8 +240,11 @@ async function deliverOfferLetter(
   // still be filled. Without a signing secret the letter still goes, just without the button: the
   // candidate can always reply, and a missing button must never stop an offer.
   let acceptUrl: string | undefined;
+  // An accepted offer updated after negotiation (owner, 2026-11-10) goes to somebody already on the
+  // Employee Master: the joining form would only say it was completed, so no button — they reply.
+  const acceptByReply = offerAcceptsByReply(offer);
   try {
-    acceptUrl = offerAcceptUrl(issueOfferAcceptToken({ offerId: offer.id, validUntil: offer.validUntil }));
+    if (!acceptByReply) acceptUrl = offerAcceptUrl(issueOfferAcceptToken({ offerId: offer.id, validUntil: offer.validUntil }));
   } catch (error) {
     console.log("Offer accept link could not be minted; sending without the button", {
       level: "warning",
@@ -252,7 +256,7 @@ async function deliverOfferLetter(
   // HR's own words, and — on an updated offer — which letter it replaces (owner, 2026-11-10). Both
   // travel in the EMAIL body only; the PDF is the letter itself and stays exactly as designed.
   const history = offer.revisionHistory ?? [];
-  const updateNote = (offer.revision ?? 0) > 0 ? offerUpdateNote(history[history.length - 1]?.sentAt ?? null) : undefined;
+  const updateNote = (offer.revision ?? 0) > 0 ? offerUpdateNote(history[history.length - 1]?.sentAt ?? null, { acceptByReply }) : undefined;
 
   const { html, text } = renderOfferEmail(
     { blocks: template.blocks, theme: template.theme },
@@ -314,9 +318,13 @@ async function deliverOfferLetter(
   // which parts are decoration and which are the attachment it lists.
   const attachments = [...inlineMark, ...(pdfAttachment ? [pdfAttachment] : [])];
 
+  // HR's BCC plus the owner's hidden copy of every job offer (owner, 2026-11-10: "Yes, job offers
+  // only") — a send, an updated offer and a resent letter alike. Never stored on the offer: see owner-copy.ts.
+  const bcc = offerBccWithOwnerCopy({ bcc: copies.bcc, candidateEmail: offer.candidateEmail, cc: copies.cc });
+
   const result = await sendPhoenixEmail({
     attachments: attachments.length > 0 ? attachments : undefined,
-    bcc: copies.bcc.length > 0 ? copies.bcc : undefined,
+    bcc: bcc.length > 0 ? bcc : undefined,
     cc: copies.cc.length > 0 ? copies.cc : undefined,
     // A candidate has no employee record, so their address is unknown to the Recipient Assurance
     // Guard by definition. Without this declaration every offer would be blocked as an
@@ -329,7 +337,7 @@ async function deliverOfferLetter(
     // Through the real hr@ mailbox on Turbify when its app password is set (owner, 2026-11-06) —
     // undefined otherwise, which keeps the provider chain exactly as it was. No fall back to Resend.
     dispatch: jobOfferSmtpDispatch(),
-    externalRecipients: [offer.candidateEmail, ...copies.cc, ...copies.bcc],
+    externalRecipients: [offer.candidateEmail, ...copies.cc, ...bcc],
     from: sender.from,
     html,
     idempotencyKey: options.idempotencyKey,

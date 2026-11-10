@@ -7,6 +7,7 @@ import {
   splitOfferCopyAddresses,
 } from "@/lib/offers/copy-recipients";
 import { computeRecipientVolumeCeiling, resolveCeilingOverride } from "../src/lib/notifications/confidence-gate.ts";
+import { OFFER_OWNER_BCC, offerBccWithOwnerCopy } from "../src/lib/offers/owner-copy.ts";
 
 /**
  * CC and BCC on a job offer (owner, 2026-09-28: "add option to CC or BCC in the job offer module",
@@ -82,8 +83,8 @@ export function runOfferCopyRecipientsTests() {
   const established = resolveCeilingOverride("offers", "offer_letter", "established");
   assert.ok(established !== undefined, "the override must survive the pair being established — that is the whole point");
   assert.ok(
-    established! >= 1 + OFFER_COPY_MAX,
-    "the gate's ceiling must cover the candidate plus every copy the send itself allows",
+    established! >= 1 + OFFER_COPY_MAX + 1,
+    "the gate's ceiling must cover the candidate, every copy the send itself allows, and the owner's own copy",
   );
   assert.ok(
     established! > computeRecipientVolumeCeiling([1, 1, 1, 1, 1, 1], 200).ceiling,
@@ -93,9 +94,36 @@ export function runOfferCopyRecipientsTests() {
   // ── The wiring: the addresses reach the provider, and the guard is told they were intended ──
   const send = readFileSync("src/lib/offers/send.ts", "utf8");
   assert.match(send, /planOfferCopies\(\{ bcc: options\.bcc, candidateEmail: offer\.candidateEmail, cc: options\.cc \}\)/);
-  assert.match(send, /externalRecipients: \[offer\.candidateEmail, \.\.\.copies\.cc, \.\.\.copies\.bcc\]/,
+  assert.match(send, /externalRecipients: \[offer\.candidateEmail, \.\.\.copies\.cc, \.\.\.bcc\]/,
     "every copy must be declared to the Recipient Assurance Guard, or an outside address is blocked after HR pressed Send");
-  assert.match(send, /bcc: copies\.bcc\.length > 0 \? copies\.bcc : undefined/);
+  assert.match(send, /bcc: bcc\.length > 0 \? bcc : undefined/);
+
+  // ── The owner's hidden copy of every job offer (owner, 2026-11-10: "all job offers i am by default
+  // in the bcc", then "Yes, job offers only") ──
+  // "Stop the BCC copies" (2026-11-06) took it off every automated email at once, offers included, and
+  // 9 offers left without him. It is back for offers ALONE, added after HR's copies were planned.
+  assert.deepEqual(
+    offerBccWithOwnerCopy({ bcc: ["a@satopharma.com"], candidateEmail: "samaa@example.com", cc: [] }),
+    ["a@satopharma.com", OFFER_OWNER_BCC],
+    "HR's BCC first, then the owner",
+  );
+  assert.deepEqual(
+    offerBccWithOwnerCopy({ bcc: [], candidateEmail: "samaa@example.com", cc: [] }),
+    [OFFER_OWNER_BCC],
+    "an offer with no copies at all still reaches him",
+  );
+  assert.deepEqual(
+    offerBccWithOwnerCopy({ bcc: [], candidateEmail: "samaa@example.com", cc: [OFFER_OWNER_BCC.toUpperCase()] }),
+    [],
+    "never a second copy when HR already put him on the CC line",
+  );
+  assert.deepEqual(offerBccWithOwnerCopy({ bcc: [OFFER_OWNER_BCC], candidateEmail: "samaa@example.com", cc: [] }), [OFFER_OWNER_BCC]);
+  const deliverAt = send.indexOf("async function deliverOfferLetter(");
+  assert.ok(
+    deliverAt > 0 &&
+      send.indexOf("offerBccWithOwnerCopy({ bcc: copies.bcc, candidateEmail: offer.candidateEmail, cc: copies.cc })", deliverAt) > deliverAt,
+    "added inside the one delivery every offer letter goes through — a send, an updated offer and a resend",
+  );
   assert.match(send, /cc: copies\.cc\.length > 0 \? copies\.cc : undefined/);
 
   const route = readFileSync("app/api/offers/[id]/send/route.ts", "utf8");
@@ -148,7 +176,7 @@ export function runOfferCopyRecipientsTests() {
   // The phone card's status badge must not shrink. Measured on production 2026-09-28 at 375px: the
   // first card carrying a copy line clipped "Sent" to 33 of its 36px, because a long copy line
   // widened the text column and flex took the difference out of the badge too.
-  const phoneCard = composer.slice(composer.indexOf('<div className="flex flex-col gap-3 px-5 py-5 md:hidden">'));
+  const phoneCard = composer.slice(composer.indexOf('<div className="flex flex-col gap-3 px-5 py-5 @4xl:hidden">'));
   assert.match(
     phoneCard,
     /<Badge className="shrink-0 capitalize" variant=\{STATUS_VARIANT\[offer\.status\]\}>/,

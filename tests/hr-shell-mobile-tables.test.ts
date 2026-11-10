@@ -51,17 +51,22 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 /**
  * A `<table>` is safe on a phone when it is hidden below `md`, or when it stops being a table
- * below `md`. Four spellings are in use and all four are correct:
+ * below `md`. Five spellings are in use and all five are correct:
  *   - `data-portal-desktop-table` — the attribute enterprise-shell.tsx display:none's
  *   - `hidden … md:block` on a wrapper div
  *   - `hidden … md:table` on the table itself
  *   - `portalStackingTableClassName`, whose value is `block … md:table` (pinned below)
+ *   - `hidden … @3xl:block` up to `@7xl:block` inside an `@container`: the table shows only once its
+ *     OWN list is 48rem (768px) wide or more, which a phone's window can never give it — stricter than
+ *     `md`, never looser. The Offers list switched this way on 2026-11-10, when its seventh column
+ *     broke headings mid-word in a 725px list that `md` read as desktop.
  */
 const DESKTOP_GATES = [
   /data-portal-desktop-table/,
   /\bmd:block\b/,
   /\bmd:table\b/,
   /\bportalStackingTableClassName\b/,
+  /(?<![\w-])@[3-7]xl:block\b/,
 ];
 
 /**
@@ -72,6 +77,7 @@ const MOBILE_CARD_PATHS = [
   /\bPortalResponsiveDataList\b/,
   /\bPortalStackingCell\b/,
   /\bmd:hidden\b/,
+  /(?<![\w-])@[3-7]xl:hidden\b/,
 ];
 
 /**
