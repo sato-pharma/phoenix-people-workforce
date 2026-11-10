@@ -14,6 +14,7 @@ import { getEmployeeDirectoryRows, isActiveLifecycleStatus, type EmployeeDirecto
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey, hrIdForStorage, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { monthEndDate, monthKeyOf, monthStartDate, shiftMonthKey } from "./months";
@@ -335,7 +336,7 @@ async function replaceItems(monthId: string, items: readonly MarketingFunctionIt
     keep = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
   }
   let stale = db.from(ITEMS_TABLE).delete().eq("month_id", monthId);
-  if (keep.length > 0) stale = stale.not("id", "in", `(${keep.join(",")})`);
+  if (keep.length > 0) stale = stale.not("id", "in", `(${quotedInList(keep)})`);
   const { error: deleteError } = await stale;
   if (deleteError) throw storeError(deleteError, "save the month");
 }
