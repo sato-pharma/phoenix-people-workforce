@@ -8064,7 +8064,9 @@ evidence for the rule, never a backlog to go and fix.**
 Two further reasons made September more than a constant change at that hour:
 
 - **September's net was FROZEN, for every line.** `isFrozenStoreSplitPeriod` matches
-  `monthly_closing_publications` by **period with no line predicate** (deliberately — PR 4848), so
+  `monthly_closing_publications` by **period with no line predicate** (then deliberate — PR 4848;
+  per line since 2026-11-10, owner: "Unfreeze Pedia + CNS only",
+  `20261110103127_freeze_only_the_published_line.sql`), so
   his publication of September *Anti Infective* froze CNS September too, and that frozen net was last
   stamped **4 October 16:52 Cairo**, before this rule and before thirteen of September's fourteen
   books. A respread gated at September would not have reached the matrix at all until the period's

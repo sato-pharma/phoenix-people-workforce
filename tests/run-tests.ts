@@ -2834,6 +2834,7 @@ import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts
 import { runCiTreeReuseDryrunTests } from "./ci-tree-reuse-dryrun.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
+import { runClosingFreezePerLineTests } from "./closing-freeze-per-line.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
 import { runPhoenixCrmTestApprovalTests } from "./phoenix-crm-test-approvals.test.ts";
 import { runSeatViewTests } from "./seat-view.test.ts";
@@ -11231,6 +11232,10 @@ await runTest(
 await runTest(
   "a published month's attribution is frozen: the last definition of phx_write_monthly_store_split_net and f_refresh_monthly_attribution each consults monthly_closing_publications, gates on unpublished_at is null, and returns early for a published period, so no later import can move a published month's store split or achievement rollup off the announced closing",
   runAttributionFreezesPublishedMonthsTests,
+);
+await runTest(
+  "a published closing freezes its own line, never the month: the store-split writer, the attribution refresh and the stale sweep rewrite only the lines not published for the period (the whole period stays frozen when a published line has no line_code), and the closing screen asks about the same line under normalizeClosingLine's key",
+  runClosingFreezePerLineTests,
 );
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager login decides no entry at all — every test decision is the Super Admin's, from his Test accounts tab; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",

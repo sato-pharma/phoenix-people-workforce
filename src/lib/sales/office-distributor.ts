@@ -52,8 +52,8 @@ export function isOfficeDistributorCode(value: unknown): boolean {
  * 🔴 SEPTEMBER WAS OCTOBER FOR ONE DAY, AND BOTH ANSWERS ARE HIS OWN. Asked on 9 October 2026 he
  * first ruled **"leave the Office respread at October"**, on two premises read live that afternoon:
  * September CNS held ZERO Office rows because its Office file had not been uploaded, and September
- * was FROZEN for every line because September Anti Infective was published (that freeze is
- * period-wide with no line predicate, deliberately — PR 4848) against a net stamped before this
+ * was FROZEN for every line because September Anti Infective was published (that freeze was
+ * period-wide with no line predicate until 20261110103127; it is per line now) against a net stamped before this
  * rule existed, so a live Office slice over that frozen matrix would have been out by the WHOLE
  * respread rather than by a post-publish drift.
  *

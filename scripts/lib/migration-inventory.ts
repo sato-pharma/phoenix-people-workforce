@@ -2270,6 +2270,13 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // authenticated or PUBLIC, 0 rows held. Re-applying is a no-op (`if not exists`, `drop policy if exists` then
   // create, the same revoke and grant).
   "20261110025541_marketing_functions_and_field_feedback.sql",
+  // Applied 10 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route, which writes NO ledger row; both answered applied:true. Three function bodies replaced, no table. Read back
+  // on ozucdzovmcqvepbozvqf from pg_proc: SECURITY DEFINER on all three, ACL {postgres=X,service_role=X}, md5(prosrc)
+  // of public.phx_write_monthly_store_split_net b0986163ff34a226c79139fbc7eefc99, au.f_refresh_monthly_attribution
+  // 3973db659991b7d34840f66f9677ff98, au.f_refresh_stale_attribution_periods f7498c9fe749cd6835fb5f20a5b27f03. Re-applying
+  // is a no-op (`create or replace`, the same revoke and grant).
+  "20261110103127_freeze_only_the_published_line.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
