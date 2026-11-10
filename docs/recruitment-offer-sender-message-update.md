@@ -43,7 +43,7 @@ Column: `offers.email_message`. Rules: `normalizeOfferEmailMessage` in `src/lib/
 An updated offer is the **same offer row**, not a new letter: the reference, the seat, the candidate
 link and the hire bridge all stay pointed at it.
 
-1. On a sent offer the candidate has not answered, **Update offer** (`POST /api/offers/:id/revise`,
+1. On any offer that went out (sent, accepted, declined or withdrawn), **Update offer** (`POST /api/offers/:id/revise`,
    `{ action: "start" }`, permission `offers:create`, audited) freezes the version that went out into
    `revision_history` (its terms, its letter snapshot, who sent and approved it, and when), puts the row
    back to draft and raises `revision` by one. Nothing is emailed.
@@ -55,21 +55,38 @@ link and the hire bridge all stay pointed at it.
    the revision (`offer-letter:<id>:rev:<n>`), so the updated letter is really sent and not answered with
    the first one. Revision 0 keeps the key every first send always used.
 5. **Cancel update** (`{ action: "cancel" }`) throws the edits away and puts the version that went out
-   back exactly as it was. It is refused while the update waits for approval: reject it to draft first.
+   back exactly as it was, with the answer it carried (sent, accepted, declined or withdrawn). It is
+   refused while the update waits for approval: reject it to draft first.
 
 While an update is in progress, the candidate's old link shows "being updated" (English and Arabic)
 instead of letting the old terms be accepted.
 
-Only a **sent** offer can be updated. A draft or a waiting offer is simply edited. An accepted, declined
-or withdrawn offer, or one whose joining form was already submitted, is refused: re-issuing it is a new
-offer. An offer with no candidate email or no saved letter copy is refused too.
+### Accepted, declined and withdrawn offers
+
+Owner, 2026-11-10, word for word: "accepted or declined or withdrawn may be i want after negtioation i
+want to update something with accepted offer". Asked what an updated accepted offer does, he chose
+"Back to Sent".
+
+- **Any offer that went out can be updated.** Only a draft or an offer waiting for approval is refused;
+  they are simply edited. An offer with no candidate email or no saved letter copy is refused too.
+- **Once the update is sent, the offer is Sent again** and the candidate answers it again. The answer it
+  had (and, for an acceptance, when and how) is kept in the frozen version; starting the update clears
+  `accepted_at` and `accepted_via` on the row.
+- **Somebody already on the Employee Master accepts by replying.** The employee pointer stays on the row,
+  so the joining form keeps saying it was completed and a second record is never made. Their email has
+  no Accept button; its update line ends "To accept this updated offer, please reply to this email.",
+  and HR marks the offer Accepted by hand. Nothing in the employee record or salary changes.
+- **A declined or withdrawn offer** gets the ordinary Accept button, and the joining form opens again
+  once the update is sent. A candidate the recruitment pipeline turned `rejected` when the offer was
+  declined stays `rejected` there.
 
 Both start and cancel are conditional on the status and the revision number in the database, so two
 presses cannot each freeze a copy.
 
 ## Where it lives
 
-- `src/lib/offers/revision-rules.ts`: the pure rules (message, refusals, subject, key, update line).
+- `src/lib/offers/revision-rules.ts`: the pure rules (message, refusals, subject, key, update line,
+  `offerIsAnswered`, `offerAcceptsByReply`).
 - `src/lib/offers/service.ts`: `startOfferRevision` and `cancelOfferRevision`.
 - `src/lib/offers/render-email.ts`: the message and the update line in the email.
 - `src/lib/offers/people.ts`: the names for the Sent by column.

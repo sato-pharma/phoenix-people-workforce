@@ -304,6 +304,14 @@ export type OfferRevision = {
   revision: number;
   sentAt: string | null;
   sentBy: string | null;
+  /**
+   * The answer it carried when the update started — sent, accepted, declined or withdrawn — and, for an
+   * acceptance, when and how. Cancel update puts them back. Absent on an entry frozen before answered
+   * offers could be updated (2026-11-10), which was always a sent one.
+   */
+  status?: OfferStatus;
+  acceptedAt?: string | null;
+  acceptedVia?: OfferRecord["acceptedVia"];
   /** When the update that replaced it was started, and who started it. */
   supersededAt: string;
   supersededBy: string | null;

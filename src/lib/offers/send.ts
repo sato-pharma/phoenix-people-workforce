@@ -14,7 +14,7 @@ import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email"
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
 import { offerSendRefusal } from "@/lib/offers/approval-rules";
-import { offerIdempotencyKeyFor, offerSubjectFor, offerUpdateNote } from "@/lib/offers/revision-rules";
+import { offerAcceptsByReply, offerIdempotencyKeyFor, offerSubjectFor, offerUpdateNote } from "@/lib/offers/revision-rules";
 import {
   offerExpiryIdempotencyKey,
   offerExpiryRefusal,
@@ -239,8 +239,11 @@ async function deliverOfferLetter(
   // still be filled. Without a signing secret the letter still goes, just without the button: the
   // candidate can always reply, and a missing button must never stop an offer.
   let acceptUrl: string | undefined;
+  // An accepted offer updated after negotiation (owner, 2026-11-10) goes to somebody already on the
+  // Employee Master: the joining form would only say it was completed, so no button — they reply.
+  const acceptByReply = offerAcceptsByReply(offer);
   try {
-    acceptUrl = offerAcceptUrl(issueOfferAcceptToken({ offerId: offer.id, validUntil: offer.validUntil }));
+    if (!acceptByReply) acceptUrl = offerAcceptUrl(issueOfferAcceptToken({ offerId: offer.id, validUntil: offer.validUntil }));
   } catch (error) {
     console.log("Offer accept link could not be minted; sending without the button", {
       level: "warning",
@@ -252,7 +255,7 @@ async function deliverOfferLetter(
   // HR's own words, and — on an updated offer — which letter it replaces (owner, 2026-11-10). Both
   // travel in the EMAIL body only; the PDF is the letter itself and stays exactly as designed.
   const history = offer.revisionHistory ?? [];
-  const updateNote = (offer.revision ?? 0) > 0 ? offerUpdateNote(history[history.length - 1]?.sentAt ?? null) : undefined;
+  const updateNote = (offer.revision ?? 0) > 0 ? offerUpdateNote(history[history.length - 1]?.sentAt ?? null, { acceptByReply }) : undefined;
 
   const { html, text } = renderOfferEmail(
     { blocks: template.blocks, theme: template.theme },

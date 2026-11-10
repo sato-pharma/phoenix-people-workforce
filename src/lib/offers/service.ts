@@ -1003,10 +1003,13 @@ export async function startOfferRevision(id: string, by: string | null): Promise
       totalMonthly: current.totalMonthly,
       validUntil: current.validUntil,
     },
+    acceptedAt: current.acceptedAt ?? null,
+    acceptedVia: current.acceptedVia ?? null,
     requestedBy: current.approval?.requestedBy ?? null,
     revision,
     sentAt: current.sentAt,
     sentBy: current.sentBy,
+    status: current.status,
     supersededAt: new Date().toISOString(),
     supersededBy: by,
     templateId: current.templateId,
@@ -1024,6 +1027,11 @@ export async function startOfferRevision(id: string, by: string | null): Promise
       approval_return_reason: null,
       approval_returned_at: null,
       approval_returned_by: null,
+      // An accepted offer reopened after negotiation is not accepted any more: the acceptance is kept
+      // in the frozen version, and the candidate answers the update. The employee pointer stays — the
+      // person is still on the Employee Master, and it is what keeps the joining form closed.
+      accepted_at: null,
+      accepted_via: null,
       revised_at: entry.supersededAt,
       revised_by: by,
       revision: revision + 1,
@@ -1031,7 +1039,7 @@ export async function startOfferRevision(id: string, by: string | null): Promise
       status: "draft",
     })
     .eq("id", id)
-    .eq("status", "sent")
+    .eq("status", current.status)
     .eq("revision", revision)
     .select("*")
     .maybeSingle();
@@ -1058,6 +1066,8 @@ export async function cancelOfferRevision(id: string): Promise<OfferRecord> {
     .from("offers")
     .update({
       ...toRow(previous.fields),
+      accepted_at: previous.acceptedAt ?? null,
+      accepted_via: previous.acceptedVia ?? null,
       approval_requested_at: null,
       approval_requested_by: previous.requestedBy,
       approval_return_reason: null,
@@ -1074,7 +1084,8 @@ export async function cancelOfferRevision(id: string): Promise<OfferRecord> {
       revision_history: history.slice(0, -1),
       sent_at: previous.sentAt,
       sent_by: previous.sentBy,
-      status: "sent",
+      // The answer it carried — an entry frozen before answered offers could be updated was sent.
+      status: previous.status ?? "sent",
       template_id: previous.templateId,
       template_snapshot: previous.templateSnapshot,
       vacancy_id: offerVacancyId(previous.vacancyId),
