@@ -3026,6 +3026,7 @@ import { runDirectOrderShareLiveRateLimitTests } from "./direct-order-share-live
 import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test.ts";
 import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
 import { runMyCandidatesTidyTests } from "./my-candidates-tidy.test.ts";
+import { runMyCandidatesFindTests } from "./my-candidates-find.test.ts";
 import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag.test.ts";
 import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-approvals.test.ts";
 import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
@@ -12053,6 +12054,10 @@ await runTest(
 await runTest(
   "My Candidates tidy-up: a hired candidate is not shown an unanswered Applying-for chip, a position reads as its role and area and never its request code, and the team list hides a manager who has left with no CV and lists CV holders first",
   runMyCandidatesTidyTests,
+);
+await runTest(
+  "My Candidates find: every typed word must be on the CV (Arabic letter forms, vowels and Arabic-Indic digits folded, a number found in a spaced phone, a hidden phone never searchable), the quick views are waiting on you, not opened and you will call, the tab counts are people not cards, narrowed folders keep every area recounted, and the page draws every own list from the narrowed data with Previous / Next live on an opened CV",
+  runMyCandidatesFindTests,
 );
 await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",

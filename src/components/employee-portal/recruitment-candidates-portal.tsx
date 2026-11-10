@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox, PhoneCall } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox, PhoneCall, SearchX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,9 @@ import {
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
+import { ManagerCvList, ManagerCvListContext } from "@/components/employee-portal/manager-cv-list";
 import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
+import { MyCandidatesFindBar } from "@/components/employee-portal/my-candidates-find-bar";
 import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
 import { CandidateRow, RowFlag } from "@/components/recruitment/workspace/candidate-row";
 import { managerWorkspaceRow } from "@/components/recruitment/workspace/manager-row";
@@ -52,6 +54,17 @@ import {
   type ManagerFolderFiling,
   type ManagerFolderFilings,
 } from "@/lib/recruitment/manager-folder-shelf";
+import {
+  countMyCandidatesViews,
+  findTokens,
+  isAwaitingManagerAnswer,
+  isFindActive,
+  matchesMyCandidatesFind,
+  narrowBoards,
+  type MyCandidatesEntry,
+  type MyCandidatesFind,
+  type MyCandidatesView,
+} from "@/lib/recruitment/my-candidates-find";
 import { requisitionRoleLabel, type RequisitionPlaces } from "@/lib/recruitment/my-candidates-tidy";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -175,12 +188,29 @@ type ManagerOpenState = {
 const ManagerOpenContext = createContext<ManagerOpenState>({ chips: {}, openId: null, today: "", toggle: () => undefined });
 
 function stayPut() {
-  // A CV opened on its own card has no list to walk; Previous and Next are not drawn.
+  // A CV opened outside any list has nothing to walk; Previous and Next are not drawn.
+}
+
+/** A key pressed while the reader is typing belongs to what he is typing in. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(element && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName)));
+}
+
+/** Open a neighbouring CV and bring its row to the top — after it has opened, so the scroll lands on it. */
+function openAndReveal(toggle: (candidateId: string) => void, candidateId: string) {
+  toggle(candidateId);
+  requestAnimationFrame(() => document.getElementById(`candidate-${candidateId}`)?.scrollIntoView({ block: "start" }));
 }
 
 /**
  * One CV on this screen: the workspace's two-line row, and under it — when pressed — the opened CV
  * with the manager's own controls. The frame is square and lifted, like every list on the portal.
+ *
+ * PREVIOUS AND NEXT WALK THE LIST THE CV SITS IN (owner, 2026-11-10: "god mode enhancements"). The
+ * workspace's opened CV always had the two buttons and the "3 of 12"; this screen drew them dead. Now
+ * the nearest `ManagerCvList` names the order, the buttons open the neighbour in place and bring it
+ * into view, and J/K (or ↓/↑) do the same from the keyboard — the keys the workspace already uses.
  */
 function ManagerCvFrame({
   candidate,
@@ -196,8 +226,29 @@ function ManagerCvFrame({
   slot: ReactNode;
 }) {
   const { chips, openId, today, toggle } = useContext(ManagerOpenContext);
+  const list = useContext(ManagerCvListContext);
   const opened = openId === candidate.id;
   const row = managerWorkspaceRow(candidate, { answers: chips[candidate.id], hasCvFile: files.length > 0 });
+  const index = list ? list.indexOf(candidate.id) : -1;
+  const previousId = list && index > 0 ? (list[index - 1] ?? null) : null;
+  const nextId = list && index >= 0 && index < list.length - 1 ? (list[index + 1] ?? null) : null;
+  const position = list && index >= 0 && list.length > 1 ? `${index + 1} of ${list.length}` : null;
+
+  useEffect(() => {
+    if (!opened) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      const target = key === "j" || key === "ArrowDown" ? nextId : key === "k" || key === "ArrowUp" ? previousId : null;
+      if (!target) return;
+      event.preventDefault();
+      openAndReveal(toggle, target);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nextId, opened, previousId, toggle]);
+
+  const goTo = (candidateId: string) => openAndReveal(toggle, candidateId);
   return (
     <div className={`scroll-mt-24 border-x border-t border-slate-200 bg-white ${adminPanelDepthClassName}`} id={`candidate-${candidate.id}`}>
       <CandidateRow canEdit={false} extraFlags={flags} mode="manager" onToggle={toggle} opened={opened} row={row} today={today} viewingTab={null} />
@@ -206,15 +257,15 @@ function ManagerCvFrame({
           <OpenedCv
             canWork={false}
             cvDocument={cvDocument}
-            hasNext={false}
-            hasPrevious={false}
+            hasNext={nextId !== null}
+            hasPrevious={previousId !== null}
             layout="split"
             managerSlot={slot}
             mode="manager"
             onClose={() => toggle(candidate.id)}
-            onNext={stayPut}
-            onPrevious={stayPut}
-            position={null}
+            onNext={nextId ? () => goTo(nextId) : stayPut}
+            onPrevious={previousId ? () => goTo(previousId) : stayPut}
+            position={position}
             row={row}
             today={today}
             viewingTab={null}
@@ -904,6 +955,70 @@ function RecruitmentCandidatesPortalBody({
     if (initialOpenId) document.getElementById(`candidate-${initialOpenId}`)?.scrollIntoView({ block: "start" });
   }, [initialOpenId]);
 
+  const sentById = useMemo(() => new Map(sentToMe.map((candidate) => [candidate.id, candidate])), [sentToMe]);
+  const unseenIds = useMemo(() => new Set(initialUnseenIds ?? []), [initialUnseenIds]);
+
+  // ── FIND: one search and four quick views over every list of his own (owner, 2026-11-10) ───────
+  //
+  // The lists are narrowed HERE, before any section sees them, so the sent list, his shelf, his area
+  // folders and his open positions all answer the same question at once. A folder CV is judged on
+  // the sent copy when there is one — the same copy its card draws. His team's CVs are not narrowed:
+  // that section reads its own data for the manager he picks, and it carries no obligation.
+  const [query, setQuery] = useState("");
+  const [view, setView] = useState<MyCandidatesView>("all");
+  const find = useMemo<MyCandidatesFind>(
+    () => ({ claims: callClaims, tokens: findTokens(query), unseenIds, view, viewerHrId }),
+    [callClaims, query, unseenIds, view, viewerHrId],
+  );
+  const narrowing = isFindActive(find);
+  // What the folders are narrowed by, so a folder can open its first match on a new search — "" is everything.
+  const narrowKey = narrowing ? `${view}|${find.tokens.join(" ")}` : "";
+  const keepSent = useCallback(
+    (candidate: Candidate) => matchesMyCandidatesFind(candidate, isAwaitingManagerAnswer(candidate.status), find),
+    [find],
+  );
+  const shownSentToMe = useMemo(() => (narrowing ? sentToMe.filter(keepSent) : sentToMe), [keepSent, narrowing, sentToMe]);
+  const shownBoards = useMemo(
+    () => (narrowing ? narrowBoards(initialDistrictBoards, (candidate) => keepSent(sentById.get(candidate.id) ?? candidate)) : initialDistrictBoards),
+    [initialDistrictBoards, keepSent, narrowing, sentById],
+  );
+  const shownApplications = useMemo(
+    () =>
+      narrowing
+        ? applications.filter((application) =>
+            application.candidate ? matchesMyCandidatesFind(application.candidate, application.stage === "hiring_manager_interview", find) : false,
+          )
+        : applications,
+    [applications, find, narrowing],
+  );
+  // Every person on his own lists once, with whether he still owes them an answer — the tab counts.
+  const findEntries = useMemo<MyCandidatesEntry[]>(
+    () => [
+      ...sentToMe.map((candidate) => ({ awaiting: isAwaitingManagerAnswer(candidate.status), candidate })),
+      ...initialDistrictBoards.flatMap((board) =>
+        board.folders.flatMap((folder) =>
+          folder.candidates.map((folderCandidate) => {
+            const candidate = sentById.get(folderCandidate.id) ?? folderCandidate;
+            return { awaiting: isAwaitingManagerAnswer(candidate.status), candidate };
+          }),
+        ),
+      ),
+      ...applications.flatMap((application) =>
+        application.candidate ? [{ awaiting: application.stage === "hiring_manager_interview", candidate: application.candidate }] : [],
+      ),
+    ],
+    [applications, initialDistrictBoards, sentById, sentToMe],
+  );
+  const viewCounts = useMemo(
+    () => countMyCandidatesViews(findEntries, { claims: callClaims, tokens: find.tokens, unseenIds, viewerHrId }),
+    [callClaims, find.tokens, findEntries, unseenIds, viewerHrId],
+  );
+  const peopleOnLists = useMemo(
+    () => countMyCandidatesViews(findEntries, { claims: callClaims, tokens: [], unseenIds, viewerHrId }).all,
+    [callClaims, findEntries, unseenIds, viewerHrId],
+  );
+  const nothingMatches = narrowing && viewCounts[view] === 0;
+
   // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
   // thing on both screens. `live` is what still needs him; `shelves` is what he kept for later.
   //
@@ -914,7 +1029,7 @@ function RecruitmentCandidatesPortalBody({
     live: liveAndFoldered,
     shelves,
     filedCount,
-  } = useMemo(() => partitionManagerCandidates(sentToMe, filings), [filings, sentToMe]);
+  } = useMemo(() => partitionManagerCandidates(shownSentToMe, filings), [filings, shownSentToMe]);
 
   // THE FOLDERS ARE HIS SENDS, so a CV sitting in one of his folders is not listed a second time
   // under "Sent to you" — it is drawn once, by the same card, inside its folder. What stays in
@@ -931,8 +1046,6 @@ function RecruitmentCandidatesPortalBody({
     () => liveAndFoldered.filter((candidate) => !foldered.has(candidate.id)),
     [foldered, liveAndFoldered],
   );
-  const sentById = useMemo(() => new Map(sentToMe.map((candidate) => [candidate.id, candidate])), [sentToMe]);
-  const unseenIds = useMemo(() => new Set(initialUnseenIds ?? []), [initialUnseenIds]);
 
   const onFilingChanged = (candidateId: string, filing: ManagerFolderFiling | null) => {
     setFilings((current) => withManagerFiling(current, candidateId, filing));
@@ -968,7 +1081,21 @@ function RecruitmentCandidatesPortalBody({
   // Every board is now a shelf of area folders, whatever the seat — a regional or national sales
   // manager holds every area beneath him — so there is no separate "district manager applicants"
   // section any more: an application for a district manager post is just a CV that was sent.
-  const areaBoards = initialDistrictBoards;
+  const areaBoards = shownBoards;
+  // The order the sent list is drawn in, for Previous and Next: the position folders, then the CVs
+  // with no position — the same order whether or not the headings are shown.
+  const liveSendOrder = useMemo(
+    () => [...positionFolders.flatMap((folder) => folder.candidates.map((candidate) => candidate.id)), ...unfiledSends.map((candidate) => candidate.id)],
+    [positionFolders, unfiledSends],
+  );
+  const applicationOrder = useMemo(
+    () => shownApplications.flatMap((application) => (application.candidate ? [application.candidate.id] : [])),
+    [shownApplications],
+  );
+  const showEverything = () => {
+    setQuery("");
+    setView("all");
+  };
 
   const reload = async () => {
     try {
@@ -1004,10 +1131,45 @@ function RecruitmentCandidatesPortalBody({
   return (
     <ManagerOpenContext.Provider value={openState}>
       <div className="space-y-6">
+        {/* The find tray, over his own lists and only when he has some: a National Sales Manager whose
+            page is only his team's folders has nothing here for it to narrow. */}
+        {peopleOnLists > 0 ? (
+          <MyCandidatesFindBar
+            counts={viewCounts}
+            onQueryChange={setQuery}
+            onViewChange={setView}
+            query={query}
+            shown={viewCounts[view]}
+            total={peopleOnLists}
+            view={view}
+          />
+        ) : null}
+
+        {/* Nothing matched: said once, in words, with the way back — never a page of empty folders,
+            each of which would claim that nothing was ever sent for its area. */}
+        {nothingMatches ? (
+          <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
+            <RecruitmentEmptyState
+              action={
+                <Button onClick={showEverything} size="sm" variant="outline">
+                  Show everything
+                </Button>
+              }
+              icon={<SearchX aria-hidden="true" className="h-5 w-5" />}
+              message={
+                query.trim()
+                  ? `No CV on your lists matches “${query.trim()}”${view === "all" ? "" : " in this view"}. Try fewer words, or part of a name or number.`
+                  : "No CV on your lists is in this view right now."
+              }
+              title="Nothing matches"
+            />
+          </div>
+        ) : null}
+
         {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
             one that needs an answer. The requisition-based applications below are the longer route
             and are already sitting in a workflow. */}
-        {liveSends.length > 0 ? (
+        {!nothingMatches && liveSends.length > 0 ? (
           <RecruitmentPanel
             bodyClassName="space-y-4 bg-slate-50/60 p-3 sm:p-4"
             count={liveSends.length}
@@ -1020,59 +1182,66 @@ function RecruitmentCandidatesPortalBody({
             icon={<Inbox aria-hidden="true" className="h-4 w-4" />}
             title="Sent to you"
           >
-            {/* ── One folder per position ───────────────────────────────────────────────────────
-                The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
-                look at the same page when he wants a certain position." A manager filling a seat
-                reads the CVs for that seat together, and a flat newest-first list interleaves five
-                vacancies, so comparing two candidates for one job means scrolling past three for
-                other ones.
+            <ManagerCvList ids={liveSendOrder}>
+              {/* ── One folder per position ───────────────────────────────────────────────────────
+                  The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
+                  look at the same page when he wants a certain position." A manager filling a seat
+                  reads the CVs for that seat together, and a flat newest-first list interleaves five
+                  vacancies, so comparing two candidates for one job means scrolling past three for
+                  other ones.
 
-                Headings appear only once there is more than one GROUP to separate — and the sends
-                with no position count as one of those groups. A lone folder with nothing beside it
-                is just a list, and a heading on it would separate nothing. */}
-            {showGroupHeadings
-              ? positionFolders.map((folder) => (
-                  <div className="space-y-3" key={folder.key}>
-                    <PositionFolderHeading count={folder.candidates.length} label={folder.label} />
-                    {folder.candidates.map((candidate) => (
-                      renderSentCard(candidate)
-                    ))}
-                  </div>
-                ))
-              : positionFolders.flatMap((folder) =>
-                  folder.candidates.map((candidate) => renderSentCard(candidate)),
-                )}
-            {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
-                real person somebody was asked to review — but kept apart from the folders rather than
-                filed under an invented heading that would read like a vacancy of its own. */}
-            {unfiledSends.length > 0 ? (
-              <div className="space-y-3">
-                {showGroupHeadings ? <PositionFolderHeading count={unfiledSends.length} label="No position given" /> : null}
-                {unfiledSends.map((candidate) => (
-                  renderSentCard(candidate)
-                ))}
-              </div>
-            ) : null}
+                  Headings appear only once there is more than one GROUP to separate — and the sends
+                  with no position count as one of those groups. A lone folder with nothing beside it
+                  is just a list, and a heading on it would separate nothing. */}
+              {showGroupHeadings
+                ? positionFolders.map((folder) => (
+                    <div className="space-y-3" key={folder.key}>
+                      <PositionFolderHeading count={folder.candidates.length} label={folder.label} />
+                      {folder.candidates.map((candidate) => (
+                        renderSentCard(candidate)
+                      ))}
+                    </div>
+                  ))
+                : positionFolders.flatMap((folder) =>
+                    folder.candidates.map((candidate) => renderSentCard(candidate)),
+                  )}
+              {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
+                  real person somebody was asked to review — but kept apart from the folders rather than
+                  filed under an invented heading that would read like a vacancy of its own. */}
+              {unfiledSends.length > 0 ? (
+                <div className="space-y-3">
+                  {showGroupHeadings ? <PositionFolderHeading count={unfiledSends.length} label="No position given" /> : null}
+                  {unfiledSends.map((candidate) => (
+                    renderSentCard(candidate)
+                  ))}
+                </div>
+              ) : null}
+            </ManagerCvList>
           </RecruitmentPanel>
         ) : null}
 
         {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
             be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
             until the first CV is filed. */}
-        <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
+        {nothingMatches ? null : (
+          <ManagerFoldersSection narrowKey={narrowKey} renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
+        )}
 
         {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
             go looking rather than a queue: nobody is waiting on him for anything in here, so it must
             not sit above the list that is. */}
-        <DistrictFoldersSection
-          boards={areaBoards}
-          callClaims={callClaims}
-          files={files}
-          ownFolders
-          renderOwnCard={(candidate) => renderSentCard(sentById.get(candidate.id) ?? candidate)}
-          unseenIds={unseenIds}
-          viewerHrId={viewerHrId}
-        />
+        {nothingMatches ? null : (
+          <DistrictFoldersSection
+            boards={areaBoards}
+            callClaims={callClaims}
+            files={files}
+            narrowKey={narrowKey}
+            ownFolders
+            renderOwnCard={(candidate) => renderSentCard(sentById.get(candidate.id) ?? candidate)}
+            unseenIds={unseenIds}
+            viewerHrId={viewerHrId}
+          />
+        )}
 
         {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
             answer on; his team's are for oversight and carry no obligation, so they must not push his
@@ -1082,32 +1251,30 @@ function RecruitmentCandidatesPortalBody({
           viewerHrId={viewerHrId}
         />
 
-        {applications.length > 0 ? (
-          <section className="space-y-4">
-            {sentToMe.length > 0 ? (
-              <div className="flex flex-wrap items-start gap-x-3 gap-y-1 border-b border-slate-200 pb-2">
-                <BriefcaseBusiness aria-hidden="true" className="mt-0.5 h-4 w-4 flex-none text-orange-500" />
-                <div className="min-w-0 grow basis-64">
-                  <h2 className="flex flex-wrap items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900">
-                    Your open positions
-                    <RecruitmentPill tone="slate">{applications.length}</RecruitmentPill>
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
-                </div>
-              </div>
-            ) : null}
-            {applications.map((application) => (
-              <CandidateCard
-                application={application}
-                claim={callClaims[application.candidate?.id ?? ""] ?? null}
-                files={files[application.candidate?.id ?? ""] ?? []}
-                key={application.id}
-                onChanged={reload}
-                places={requisitionPlaces}
-                viewerHrId={viewerHrId}
-              />
-            ))}
-          </section>
+        {/* His open positions, in the same panel every other list on this page wears — it used to be
+            a bare heading that appeared only when something had also been sent to him. */}
+        {!nothingMatches && shownApplications.length > 0 ? (
+          <RecruitmentPanel
+            bodyClassName="space-y-3 bg-slate-50/60 p-3 sm:p-4"
+            count={shownApplications.length}
+            description="Candidates assigned to a position you are the hiring manager for."
+            icon={<BriefcaseBusiness aria-hidden="true" className="h-4 w-4" />}
+            title="Your open positions"
+          >
+            <ManagerCvList ids={applicationOrder}>
+              {shownApplications.map((application) => (
+                <CandidateCard
+                  application={application}
+                  claim={callClaims[application.candidate?.id ?? ""] ?? null}
+                  files={files[application.candidate?.id ?? ""] ?? []}
+                  key={application.id}
+                  onChanged={reload}
+                  places={requisitionPlaces}
+                  viewerHrId={viewerHrId}
+                />
+              ))}
+            </ManagerCvList>
+          </RecruitmentPanel>
         ) : null}
       </div>
     </ManagerOpenContext.Provider>

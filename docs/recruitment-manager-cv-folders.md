@@ -101,3 +101,26 @@ grouping and its Cairo hours, and a source pin per route / job / screen. The old
 derived folders were rewritten to the send-driven shape: `tests/district-manager-folders.test.ts`,
 `tests/recruitment-district-returns.test.ts`, `tests/recruitment-manager-hold-window.test.ts`,
 `tests/candidate-call-claims.test.ts`.
+
+## Finding a CV on My Candidates (owner, 2026-11-10: "premium polish the page, god mode enhancements")
+
+The manager's page holds four lists of his own — the CVs sent to him, his shelf ("Your folders"), a folder
+per area he holds ("Your areas") and his open positions — and one applicant can sit in more than one.
+
+- **One find tray narrows all four at once**: a search box and four quick views — All, Waiting on you, Not
+  opened, You will call — each tab counting **people, not cards** (one applicant in a folder and on a
+  position is one CV; if he still owes that person an answer in either list, they count as waiting).
+  Rules: `src/lib/recruitment/my-candidates-find.ts`. Every word typed must be on the CV (AND); Arabic
+  letter forms, short vowels and Arabic-Indic digits are folded; a word of digits is matched against the
+  phone with its spaces and dashes removed. A phone the server hid is not on the candidate at all, so a
+  hidden number can never be searched out. His team's CVs are not narrowed (that section reads its own
+  data for the manager he picks).
+- **While narrowed, every area folder is still listed** — an area with no match says "No match", never
+  "Nothing has been sent", and the first folder holding a match opens by itself.
+- **Previous / Next walk the list the opened CV sits in** (`ManagerCvList`,
+  `src/components/employee-portal/manager-cv-list.tsx`), never jumping into another section; J/K or ↓/↑
+  do the same, and "/" puts the cursor in the search box.
+- "Your areas", "Your folders" and "Your open positions" wear the recruitment kit's panel like "Sent to
+  you"; the gradient banner and rounded chips they replaced are gone.
+
+Pinned by `tests/my-candidates-find.test.ts`.
