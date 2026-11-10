@@ -10,6 +10,8 @@ import {
   type CoverageFilterMapRow,
 } from "../src/lib/crm/coverage-filters.ts";
 import {
+  doctorListContactId,
+  marketingCustomerContactIds,
   matchContactTrade,
   venueKey,
   type TradeCounterparty,
@@ -1916,6 +1918,28 @@ export function runRepsListTests() {
         [party({ areaCode: null, channel: "marketing", contactCrmId: 4242, count: 3, name: "unrelated" })],
       );
       assert.equal(found.get(4242)?.marketingRequests, 3, "an explicit crm_code must bind on its own, with no name or area test — a human recorded it and nothing inferred outranks that");
+    }
+
+    // THE DOCTOR-LIST LINK IS AN ID A PERSON OR THE CHECK RECORDED (owner, 2026-11-10: "link all marketing
+    // requests with reps lists, the historical requests and the upcoming"). Validation's pick and the hourly
+    // doctor-list check write `marketing_customers.phoenix_crm_customer_id`; the Reps List row carries
+    // `coalesce(reference_contact_crm_id, own_contact_crm_id)`. On 2026-11-10 the old vendor code named a
+    // contact for 10 of 93 requests and this link for 47 — so dropping it hides most of the requests again.
+    {
+      assert.equal(doctorListContactId({ own_contact_crm_id: 1000031802, reference_contact_crm_id: 107236 }), 107236, "the reference contact is the id the rep's list row carries — the doctor's own id only when he has none");
+      assert.equal(doctorListContactId({ own_contact_crm_id: "1000031802", reference_contact_crm_id: null }), 1000031802, "a doctor a rep added himself is found by his own id");
+      assert.equal(doctorListContactId({ own_contact_crm_id: null, reference_contact_crm_id: null }), null, "a doctor with no id links nothing");
+      assert.equal(doctorListContactId(null), null, "a customer with no doctor link links nothing");
+      assert.deepEqual(marketingCustomerContactIds([], 107236), [107236], "a customer with only the doctor-list link still binds by rule 1");
+      assert.deepEqual(marketingCustomerContactIds([55, 107236], 107236), [107236, 55], "the doctor-list link and an old code naming the same contact count once");
+      assert.deepEqual(marketingCustomerContactIds([55], null), [55], "an old code alone keeps working");
+      const found = matchContactTrade(
+        [{ areaCode: "CA3", contactCrmId: 107236, name: "د. منى عادل" }],
+        marketingCustomerContactIds([], 107236).map((contactCrmId) =>
+          party({ areaCode: null, channel: "marketing", contactCrmId, count: 2, name: "عيادة الدكتورة منى" }),
+        ),
+      );
+      assert.equal(found.get(107236)?.marketingRequests, 2, "a request on a doctor picked from a rep's list must reach that row whatever name the customer was saved under");
     }
 
     // THE TWO CHANNELS ARE COUNTED APART. A pharmacy's orders and a doctor's marketing requests are

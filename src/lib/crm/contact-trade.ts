@@ -94,6 +94,19 @@
  * 72 existing venues predates it and still resolves by name and area alone. Do not read a low
  * number here as the matcher failing again; read `crm_contact_id is not null` first.
  *
+ * ## THE MARKETING HALF NOW READS THE DOCTOR-LIST LINK TOO (owner, 2026-11-10)
+ *
+ * "Link all marketing requests with reps lists, the historical requests and the upcoming." Since
+ * 2026-10-23 Customer Validation picks the doctor from a rep's Phoenix CRM list and writes
+ * `marketing_customers.phoenix_crm_customer_id`; since 2026-11-03 the hourly doctor-list check
+ * (src/lib/marketing-requests/crm-list-check.ts) writes the same column for the customers validated
+ * before that. This file never read it — it took rule 1 from the old vendor `crm_code` alone, which
+ * named a contact for 10 of the 93 Phoenix requests (production, 2026-11-10), while the doctor-list
+ * link named one for 47, overlapping on one. `loadMarketingDoctorContacts` turns that link into the
+ * contact id the Reps List rows carry — `coalesce(reference_contact_crm_id, own_contact_crm_id)`,
+ * the id every CRM door emits — and the marketing party fires rule 1 with it, beside any old code.
+ * A customer with neither still falls through to rules 2 and 3, unchanged.
+ *
  * DO NOT loosen the rules to raise the number. The candidates immediately below the current bar are
  * wrong in the expensive direction: `المنصورية الجديدة` against `المصرية الجديدة`,
  * `اسماء عبد العزيز` against `هند عبد العزيز`, `السيد ابو الفتوح` against `احمد ابو الفتوح`
@@ -325,6 +338,68 @@ async function loadDeclaredVenueContacts(): Promise<Map<string, number>> {
   return byPharmacyId;
 }
 
+type MarketingDoctorLinkRow = {
+  doctor:
+    | { own_contact_crm_id: number | string | null; reference_contact_crm_id: number | string | null }
+    | null;
+  id: string | null;
+};
+
+/**
+ * The contact id on a rep's list for a Phoenix CRM doctor — the reference contact first, his own id
+ * when he has none. The same `coalesce(reference_contact_crm_id, own_contact_crm_id)` the hourly
+ * refresh writes into `crm_contact_assignments`, so the id lands on the row the Reps List shows.
+ */
+export function doctorListContactId(
+  doctor: { own_contact_crm_id: number | string | null; reference_contact_crm_id: number | string | null } | null,
+): number | null {
+  if (!doctor) return null;
+  for (const value of [doctor.reference_contact_crm_id, doctor.own_contact_crm_id]) {
+    if (value == null) continue;
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+/**
+ * The rep-list contact each marketing customer is LINKED to — the doctor a validator picked from a
+ * rep's list, or the doctor-list check matched (`marketing_customers.phoenix_crm_customer_id`). A
+ * person's "not on the list" answer clears that column, so only a live link is read here.
+ *
+ * Read on its own, like the declared venue contacts above, so a database that predates the column
+ * answers "no links yet" instead of emptying the whole trade board.
+ */
+async function loadMarketingDoctorContacts(): Promise<Map<string, number>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("marketing_customers")
+    .select("id, doctor:phoenix_crm_customers(reference_contact_crm_id, own_contact_crm_id)")
+    .not("phoenix_crm_customer_id", "is", null);
+  if (error) {
+    if (isMissingColumnError(error) || isCrmSchemaMissingError(error)) return new Map();
+    throw new Error(`Could not read marketing doctor-list links: ${error.message}`);
+  }
+  const byCustomerId = new Map<string, number>();
+  for (const row of (data ?? []) as unknown as MarketingDoctorLinkRow[]) {
+    const contactCrmId = doctorListContactId(row.doctor);
+    if (!row.id || contactCrmId === null) continue;
+    byCustomerId.set(String(row.id), contactCrmId);
+  }
+  return byCustomerId;
+}
+
+/**
+ * Every contact id a marketing customer's requests attach to by rule 1: his doctor-list link and any
+ * old vendor code on his contacts, each once. Pure, so the merge is fixture-tested.
+ */
+export function marketingCustomerContactIds(
+  oldCodes: readonly number[],
+  doctorListContact: number | null,
+): number[] {
+  const ids = doctorListContact === null ? [...oldCodes] : [doctorListContact, ...oldCodes];
+  return [...new Set(ids)];
+}
+
 const TRADE_COUNTERPARTIES_LIMITS = { maxEntries: 1, maxRowsTotal: 20_000 };
 
 /**
@@ -345,7 +420,10 @@ async function readTradeCounterparties(): Promise<TradeCounterparty[]> {
   const supabase = getSupabaseAdmin();
   const parties: TradeCounterparty[] = [];
 
-  const declaredContacts = await loadDeclaredVenueContacts();
+  const [declaredContacts, doctorContacts] = await Promise.all([
+    loadDeclaredVenueContacts(),
+    loadMarketingDoctorContacts(),
+  ]);
 
   const [pharmacies, orders, customers, requests, crmLinks, areasResult] = await Promise.all([
     supabase.from("direct_order_pharmacies").select("id, pharmacy_name, area_code"),
@@ -434,7 +512,8 @@ async function readTradeCounterparties(): Promise<TradeCounterparty[]> {
     const counted = requestCounts.get(row.id);
     if (!counted || !row.display_name) continue;
     const areaCode = row.area_id ? (areaCodeById.get(String(row.area_id)) ?? null) : null;
-    const linked = crmIdsByCustomer.get(row.id) ?? [];
+    // The doctor-list link first (validation's pick or the hourly check's match), then any old code.
+    const linked = marketingCustomerContactIds(crmIdsByCustomer.get(row.id) ?? [], doctorContacts.get(row.id) ?? null);
     if (linked.length > 0) {
       // One counterparty per linked CRM id, so rule 1 binds each without a name test. A customer
       // with two linked contacts is two people at one clinic, and the request concerns both.
