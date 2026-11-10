@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { BellDot, Inbox, Layers, PhoneCall, Search, X } from "lucide-react";
+import { BellDot, Hourglass, Inbox, Layers, PhoneCall, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
@@ -12,6 +12,7 @@ import {
 } from "@/components/recruitment/recruitment-premium";
 import {
   MY_CANDIDATES_VIEW_LABELS,
+  MY_CANDIDATES_VIEWS,
   type MyCandidatesView,
 } from "@/lib/recruitment/my-candidates-find";
 import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -22,6 +23,7 @@ const kbdClassName = `border border-slate-300 bg-white px-1 font-mono text-phx-x
 const VIEW_ICONS: Record<MyCandidatesView, ReactNode> = {
   all: <Layers className="h-3.5 w-3.5" />,
   calling: <PhoneCall className="h-3.5 w-3.5" />,
+  leaving: <Hourglass className="h-3.5 w-3.5" />,
   unopened: <BellDot className="h-3.5 w-3.5" />,
   waiting: <Inbox className="h-3.5 w-3.5" />,
 };
@@ -37,6 +39,7 @@ export function MyCandidatesFindBar({
   onQueryChange,
   onViewChange,
   query,
+  showLeaving,
   shown,
   total,
   view,
@@ -45,6 +48,8 @@ export function MyCandidatesFindBar({
   onQueryChange: (query: string) => void;
   onViewChange: (view: MyCandidatesView) => void;
   query: string;
+  /** Whether "Going back soon" is offered — only where his sends run on the 45-day clock. */
+  showLeaving: boolean;
   /** How many different people the lists below now show. */
   shown: number;
   /** How many different people are on his lists at all. */
@@ -65,7 +70,7 @@ export function MyCandidatesFindBar({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const tabs: RecruitmentTab<MyCandidatesView>[] = (Object.keys(MY_CANDIDATES_VIEW_LABELS) as MyCandidatesView[]).map((key) => ({
+  const tabs: RecruitmentTab<MyCandidatesView>[] = MY_CANDIDATES_VIEWS.filter((key) => showLeaving || key !== "leaving").map((key) => ({
     count: counts[key],
     icon: VIEW_ICONS[key],
     key,
@@ -119,7 +124,7 @@ export function MyCandidatesFindBar({
               Press <kbd className={kbdClassName}>/</kbd> to search;
               in an open CV, <kbd className={kbdClassName}>J</kbd>{" "}
               and <kbd className={kbdClassName}>K</kbd> move to the
-              next and previous.
+              next and previous, and <kbd className={kbdClassName}>Esc</kbd> closes it.
             </>
           )}
         </p>

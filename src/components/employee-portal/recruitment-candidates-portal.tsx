@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Inbox, PhoneCall, SearchX } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, CheckCircle2, ClipboardCheck, Folder, Hourglass, Inbox, PhoneCall, SearchX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +47,8 @@ import {
 } from "@/lib/recruitment/candidate-status";
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
-import { MANAGER_HOLD_DAYS } from "@/lib/recruitment/manager-hold-window";
+import { CANDIDATE_LINK_PARAM } from "@/lib/recruitment/candidate-page-link";
+import { MANAGER_HOLD_DAYS, managerHoldExpiresAt } from "@/lib/recruitment/manager-hold-window";
 import {
   partitionManagerCandidates,
   withManagerFiling,
@@ -57,7 +58,11 @@ import {
 import {
   countMyCandidatesViews,
   findTokens,
+  goingBackInDays,
+  goingBackLabel,
+  goingBackSoonIds,
   isAwaitingManagerAnswer,
+  MANAGER_HOLD_WARN_DAYS,
   isFindActive,
   matchesMyCandidatesFind,
   narrowBoards,
@@ -171,6 +176,13 @@ type Props = {
    * still true and never differs between the server and the browser.
    */
   today?: string;
+  /**
+   * Whether this manager holds area folders on the organogram. Such a manager keeps his sends with no
+   * 45-day clock (manager-sends.ts drops the cutoff for him), so his CVs carry no countdown.
+   */
+  holdsFolders?: boolean;
+  /** The server's clock when the page was built, as an ISO instant — the countdowns read it, never the browser's. */
+  now?: string;
 };
 
 /**
@@ -180,12 +192,14 @@ type Props = {
  */
 type ManagerOpenState = {
   chips: Record<string, WorkspaceAnswerChip[]>;
+  /** Whether a sent CV's 45-day clock runs for this manager, and the instant the page was built. */
+  hold: { holdsFolders: boolean; now: Date } | null;
   openId: string | null;
   today: string;
   toggle: (candidateId: string) => void;
 };
 
-const ManagerOpenContext = createContext<ManagerOpenState>({ chips: {}, openId: null, today: "", toggle: () => undefined });
+const ManagerOpenContext = createContext<ManagerOpenState>({ chips: {}, hold: null, openId: null, today: "", toggle: () => undefined });
 
 function stayPut() {
   // A CV opened outside any list has nothing to walk; Previous and Next are not drawn.
@@ -239,6 +253,14 @@ function ManagerCvFrame({
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      // Escape closes the open CV, as on the workspace — unless a dialog or menu is open over it, which
+      // takes its own Escape first.
+      if (key === "Escape") {
+        if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+        event.preventDefault();
+        toggle(candidate.id);
+        return;
+      }
       const target = key === "j" || key === "ArrowDown" ? nextId : key === "k" || key === "ArrowUp" ? previousId : null;
       if (!target) return;
       event.preventDefault();
@@ -246,7 +268,7 @@ function ManagerCvFrame({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [nextId, opened, previousId, toggle]);
+  }, [candidate.id, nextId, opened, previousId, toggle]);
 
   const goTo = (candidateId: string) => openAndReveal(toggle, candidateId);
   return (
@@ -671,7 +693,10 @@ function SentCandidateCard({
   const [hidden, setHidden] = useState(false);
   // A CV sent to this manager is fully his — number, file, everything (owner, 2026-10-16).
   const call = useCandidateCall(initial, initialClaim, viewerHrId, true);
-  const { today } = useContext(ManagerOpenContext);
+  const { hold, today } = useContext(ManagerOpenContext);
+  // The 45-day clock on this send, when one runs for him: a flag in its last week, the date always.
+  const daysLeft = hold ? goingBackInDays(candidate, hold) : null;
+  const goesBackAt = daysLeft === null ? null : managerHoldExpiresAt(candidate.managerNotified?.sentAt);
 
   /**
    * Hide this CV from HIS folders — one press, no reason (owner, 2026-10-16: "make district manager
@@ -760,6 +785,11 @@ function SentCandidateCard({
     <>
       {awaitingAnswer ? <RowFlag tone="orange">Waiting on you</RowFlag> : null}
       {notified ? <RowFlag tone="slate">{`Sent to you · ${cairoDayLabel(notified.sentAt, today)}`}</RowFlag> : null}
+      {daysLeft !== null && daysLeft > 0 && daysLeft <= MANAGER_HOLD_WARN_DAYS ? (
+        <RowFlag icon={<Hourglass aria-hidden="true" className="h-3 w-3" />} tone={daysLeft <= 2 ? "rose" : "amber"}>
+          {goingBackLabel(daysLeft)}
+        </RowFlag>
+      ) : null}
       {call.claim ? (
         <RowFlag icon={<PhoneCall aria-hidden="true" className="h-3 w-3" />} tone={call.mine ? "emerald" : "amber"}>
           {call.mine ? "You will call" : `${call.claim.managerName ?? "Another manager"} will call`}
@@ -806,6 +836,7 @@ function SentCandidateCard({
         <Field label="Medical Rep experience" value={formatYesNo(candidate.hasMedicalRepExperience)} />
         <Field label="CV received" value={cairoDateTime(candidate.createdAt)} />
         <Field label="Sent to you" value={notified ? cairoDateTime(notified.sentAt) : null} />
+        {goesBackAt ? <Field label="Goes back to recruitment" value={cairoDateTime(goesBackAt)} /> : null}
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
@@ -936,6 +967,8 @@ function RecruitmentCandidatesPortalBody({
   initialSentToMe: sentToMe,
   initialTeam,
   initialUnseenIds,
+  holdsFolders = false,
+  now,
   requisitionPlaces,
   today,
   viewerHrId,
@@ -945,10 +978,26 @@ function RecruitmentCandidatesPortalBody({
   // The CV a notification named opens on arrival; after that one press opens, the same press closes.
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const toggle = useCallback((candidateId: string) => setOpenId((current) => (current === candidateId ? null : candidateId)), []);
+  // The server's instant, read once: no countdown runs without it, so the server and the browser agree.
+  const hold = useMemo(() => {
+    const at = now ? new Date(now) : null;
+    return at && Number.isFinite(at.getTime()) ? { holdsFolders, now: at } : null;
+  }, [holdsFolders, now]);
   const openState = useMemo(
-    () => ({ chips: initialAnswerChips ?? {}, openId, today: today ?? "", toggle }),
-    [initialAnswerChips, openId, today, toggle],
+    () => ({ chips: initialAnswerChips ?? {}, hold, openId, today: today ?? "", toggle }),
+    [hold, initialAnswerChips, openId, today, toggle],
   );
+
+  // THE ADDRESS FOLLOWS THE OPEN CV — `?candidate=` is the link a notification already uses, so a
+  // reload, Back after leaving, or the link copied to a colleague opens the same CV again. Replaced,
+  // never pushed: opening ten CVs must not cost ten presses of Back.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if ((url.searchParams.get(CANDIDATE_LINK_PARAM) ?? null) === openId) return;
+    if (openId) url.searchParams.set(CANDIDATE_LINK_PARAM, openId);
+    else url.searchParams.delete(CANDIDATE_LINK_PARAM);
+    window.history.replaceState(window.history.state, "", url);
+  }, [openId]);
 
   // Bring the linked CV into view once, on arrival. A DOM call, not state: nothing re-renders.
   useEffect(() => {
@@ -966,9 +1015,10 @@ function RecruitmentCandidatesPortalBody({
   // that section reads its own data for the manager he picks, and it carries no obligation.
   const [query, setQuery] = useState("");
   const [view, setView] = useState<MyCandidatesView>("all");
+  const leavingIds = useMemo(() => (hold ? goingBackSoonIds(sentToMe, hold) : new Set<string>()), [hold, sentToMe]);
   const find = useMemo<MyCandidatesFind>(
-    () => ({ claims: callClaims, tokens: findTokens(query), unseenIds, view, viewerHrId }),
-    [callClaims, query, unseenIds, view, viewerHrId],
+    () => ({ claims: callClaims, leavingIds, tokens: findTokens(query), unseenIds, view, viewerHrId }),
+    [callClaims, leavingIds, query, unseenIds, view, viewerHrId],
   );
   const narrowing = isFindActive(find);
   // What the folders are narrowed by, so a folder can open its first match on a new search — "" is everything.
@@ -1010,12 +1060,12 @@ function RecruitmentCandidatesPortalBody({
     [applications, initialDistrictBoards, sentById, sentToMe],
   );
   const viewCounts = useMemo(
-    () => countMyCandidatesViews(findEntries, { claims: callClaims, tokens: find.tokens, unseenIds, viewerHrId }),
-    [callClaims, find.tokens, findEntries, unseenIds, viewerHrId],
+    () => countMyCandidatesViews(findEntries, { claims: callClaims, leavingIds, tokens: find.tokens, unseenIds, viewerHrId }),
+    [callClaims, find.tokens, findEntries, leavingIds, unseenIds, viewerHrId],
   );
   const peopleOnLists = useMemo(
-    () => countMyCandidatesViews(findEntries, { claims: callClaims, tokens: [], unseenIds, viewerHrId }).all,
-    [callClaims, findEntries, unseenIds, viewerHrId],
+    () => countMyCandidatesViews(findEntries, { claims: callClaims, leavingIds, tokens: [], unseenIds, viewerHrId }).all,
+    [callClaims, findEntries, leavingIds, unseenIds, viewerHrId],
   );
   const nothingMatches = narrowing && viewCounts[view] === 0;
 
@@ -1139,6 +1189,7 @@ function RecruitmentCandidatesPortalBody({
             onQueryChange={setQuery}
             onViewChange={setView}
             query={query}
+            showLeaving={hold !== null && !hold.holdsFolders}
             shown={viewCounts[view]}
             total={peopleOnLists}
             view={view}

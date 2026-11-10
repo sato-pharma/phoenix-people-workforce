@@ -119,7 +119,18 @@ per area he holds ("Your areas") and his open positions — and one applicant ca
   "Nothing has been sent", and the first folder holding a match opens by itself.
 - **Previous / Next walk the list the opened CV sits in** (`ManagerCvList`,
   `src/components/employee-portal/manager-cv-list.tsx`), never jumping into another section; J/K or ↓/↑
-  do the same, and "/" puts the cursor in the search box.
+  do the same, Esc closes the open CV (unless a dialog or menu is open over it), and "/" puts the cursor
+  in the search box.
+- **The address follows the open CV** — `?candidate=<id>`, the link a notification already uses, is
+  written with `history.replaceState` (never pushed), so a reload, Back after leaving, or a copied link
+  opens the same CV again without filling the Back button.
+- **The 45-day clock is shown on the CV it applies to** (`goingBackInDays`, from `MANAGER_HOLD_DAYS` in
+  `manager-hold-window.ts`): every sent CV carries a "Goes back to recruitment" date, its last week adds a
+  "Goes back in N days" flag (amber, rose in the last two days), and a fifth quick view, **Going back
+  soon**, lists them. **Only where the clock runs** — a manager who holds area folders keeps his sends
+  with no cutoff, so the page (`managerHoldsFolders`, which fails to "holds", i.e. no countdown) shows
+  him neither the flag, the date nor the view. Requisition candidates are not governed and never count.
+  The instant comes from the server (`now`), so the server and the browser draw the same number.
 - "Your areas", "Your folders" and "Your open positions" wear the recruitment kit's panel like "Sent to
   you"; the gradient banner and rounded chips they replaced are gone.
 

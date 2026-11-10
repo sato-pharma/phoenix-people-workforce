@@ -20,15 +20,17 @@
 import { isViewersOwnClaim, type CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
 import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
+import { managerHoldDaysLeft } from "@/lib/recruitment/manager-hold-window";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** The quick views, in the order the tray shows them. */
-export const MY_CANDIDATES_VIEWS = ["all", "waiting", "unopened", "calling"] as const;
+export const MY_CANDIDATES_VIEWS = ["all", "waiting", "unopened", "calling", "leaving"] as const;
 export type MyCandidatesView = (typeof MY_CANDIDATES_VIEWS)[number];
 
 export const MY_CANDIDATES_VIEW_LABELS: Record<MyCandidatesView, string> = {
   all: "All",
   calling: "You will call",
+  leaving: "Going back soon",
   unopened: "Not opened",
   waiting: "Waiting on you",
 };
@@ -39,6 +41,8 @@ export type MyCandidatesFind = {
   claims: CandidateCallClaims;
   /** The folder CVs he has not opened since they were sent. */
   unseenIds: ReadonlySet<string>;
+  /** The CVs going back to the recruitment team within `MANAGER_HOLD_WARN_DAYS` — see `goingBackSoonIds`. */
+  leavingIds: ReadonlySet<string>;
   /** The words typed, already folded by `findTokens`. Empty = no search. */
   tokens: readonly string[];
   view: MyCandidatesView;
@@ -109,7 +113,7 @@ export function candidateMatchesTokens(candidate: Candidate, tokens: readonly st
 export function candidateInView(
   candidate: Candidate,
   awaiting: boolean,
-  find: Pick<MyCandidatesFind, "claims" | "unseenIds" | "view" | "viewerHrId">,
+  find: Pick<MyCandidatesFind, "claims" | "leavingIds" | "unseenIds" | "view" | "viewerHrId">,
 ): boolean {
   switch (find.view) {
     case "all":
@@ -120,6 +124,8 @@ export function candidateInView(
       return find.unseenIds.has(candidate.id);
     case "calling":
       return isViewersOwnClaim(find.claims[candidate.id] ?? null, find.viewerHrId);
+    case "leaving":
+      return find.leavingIds.has(candidate.id);
   }
 }
 
@@ -165,7 +171,7 @@ export function countMyCandidatesViews(
     const known = people.get(entry.candidate.id);
     if (!known || (entry.awaiting && !known.awaiting)) people.set(entry.candidate.id, entry);
   }
-  const counts: Record<MyCandidatesView, number> = { all: 0, calling: 0, unopened: 0, waiting: 0 };
+  const counts: Record<MyCandidatesView, number> = { all: 0, calling: 0, leaving: 0, unopened: 0, waiting: 0 };
   for (const { awaiting, candidate } of people.values()) {
     if (!candidateMatchesTokens(candidate, find.tokens)) continue;
     for (const view of MY_CANDIDATES_VIEWS) {
@@ -173,4 +179,48 @@ export function countMyCandidatesViews(
     }
   }
   return counts;
+}
+
+// ── GOING BACK: the 45-day window, as a countdown on his own sends ─────────────────────────────────
+//
+// A CV sent to a manager leaves his account 45 days after it was sent (manager-hold-window.ts), and
+// until now the page said so only in a sentence over the list. The countdown puts it on the CV that is
+// actually about to go, so he answers it before it quietly disappears.
+//
+// ONLY WHERE THE WINDOW APPLIES. A manager who holds area folders keeps his sends with no clock (the
+// send query drops the cutoff for him), so he is shown no countdown at all — a number counting down
+// to an event that will not happen is worse than none. A CV reached through a requisition he owns is a
+// hiring process, not an inbox, and is not governed either; only `initialSentToMe` is passed in here.
+
+/** How close to going back a CV must be before it is flagged and counted in "Going back soon". */
+export const MANAGER_HOLD_WARN_DAYS = 7;
+
+/** Whole days until this sent CV goes back to the recruitment team, or null when no clock runs on it. */
+export function goingBackInDays(
+  candidate: Pick<Candidate, "managerNotified">,
+  options: { holdsFolders: boolean; now: Date },
+): number | null {
+  if (options.holdsFolders) return null;
+  const sentAt = candidate.managerNotified?.sentAt;
+  if (!sentAt) return null;
+  return managerHoldDaysLeft(sentAt, options.now);
+}
+
+/** The sent CVs within `MANAGER_HOLD_WARN_DAYS` of going back — the "Going back soon" view. */
+export function goingBackSoonIds(
+  candidates: readonly Pick<Candidate, "id" | "managerNotified">[],
+  options: { holdsFolders: boolean; now: Date },
+): Set<string> {
+  const ids = new Set<string>();
+  for (const candidate of candidates) {
+    const days = goingBackInDays(candidate, options);
+    if (days !== null && days > 0 && days <= MANAGER_HOLD_WARN_DAYS) ids.add(candidate.id);
+  }
+  return ids;
+}
+
+/** The words on a CV's countdown flag: "Goes back in 3 days", "Goes back tomorrow". */
+export function goingBackLabel(days: number): string {
+  if (days <= 1) return "Goes back tomorrow";
+  return `Goes back in ${days} days`;
 }
