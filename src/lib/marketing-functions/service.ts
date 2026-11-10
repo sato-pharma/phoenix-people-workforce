@@ -6,7 +6,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertTestAccountWriteIsDryRun } from "@/lib/auth/test-dry-run";
-import { queryVisits } from "@/lib/crm/reads";
+import { getDoubleVisitRows } from "@/lib/crm/reads";
 import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { todayInCairo } from "@/lib/date-only";
 import { resolveDoubleVisitAccessScope } from "@/lib/double-visit-analytics/service";
@@ -14,6 +14,7 @@ import { getEmployeeDirectoryRows, isActiveLifecycleStatus, type EmployeeDirecto
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey, hrIdForStorage, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { monthEndDate, monthKeyOf, monthStartDate, shiftMonthKey } from "./months";
@@ -307,11 +308,14 @@ async function ensureOwnDraftMonth(access: AccessContext, monthKey: string): Pro
   return data as MonthRow;
 }
 
+/**
+ * Replaces a month's items. PostgREST has no transaction across two calls, so the NEW rows are written
+ * first and only then are the rest removed: a failed insert leaves the month exactly as it was (a delete
+ * first emptied it — for a carry-forward, next month's draft, which is on no screen to save again). A
+ * failed delete leaves both sets, and the next save removes every row it did not write.
+ */
 async function replaceItems(monthId: string, items: readonly MarketingFunctionItem[]): Promise<void> {
   const db = getSupabaseAdmin();
-  const { error: deleteError } = await db.from(ITEMS_TABLE).delete().eq("month_id", monthId);
-  if (deleteError) throw storeError(deleteError, "save the month");
-  if (items.length === 0) return;
   const rows = items.map((item, index) => ({
     month_id: monthId,
     category_key: item.categoryKey,
@@ -325,8 +329,16 @@ async function replaceItems(monthId: string, items: readonly MarketingFunctionIt
     note_end: item.noteEnd,
     sort: index,
   }));
-  const { error } = await db.from(ITEMS_TABLE).insert(rows);
-  if (error) throw storeError(error, "save the month");
+  let keep: string[] = [];
+  if (rows.length > 0) {
+    const { data, error } = await db.from(ITEMS_TABLE).insert(rows).select("id");
+    if (error) throw storeError(error, "save the month");
+    keep = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+  }
+  let stale = db.from(ITEMS_TABLE).delete().eq("month_id", monthId);
+  if (keep.length > 0) stale = stale.not("id", "in", `(${quotedInList(keep)})`);
+  const { error: deleteError } = await stale;
+  if (deleteError) throw storeError(deleteError, "save the month");
 }
 
 async function touchMonth(monthId: string, patch: Record<string, unknown> = {}): Promise<void> {
@@ -476,17 +488,27 @@ export async function fieldFeedbackVisibility(access: AccessContext): Promise<Fi
   return resolveFieldFeedbackVisibility(access, needsLine ? await lineRepKeysFor(access) : null);
 }
 
-export async function listFieldFeedback(access: AccessContext, input: { limit?: number } = {}): Promise<FieldFeedback[]> {
+/**
+ * Every form this viewer may see, newest visit first. Paged to the end: the Rep Tracking is built from
+ * this list, so a cut at the row cap would quietly drop a rep's older visits from "2 of the last 3".
+ * The National Sales Manager's reps go into the query itself rather than being filtered after a cut.
+ */
+export async function listFieldFeedback(access: AccessContext): Promise<FieldFeedback[]> {
   const visibility = await fieldFeedbackVisibility(access);
   if (visibility.kind === "none") return [];
-  let query = getSupabaseAdmin().from(FEEDBACK_TABLE).select(FEEDBACK_COLUMNS);
-  if (visibility.kind === "author") query = query.in("author_hr_id", hrIdSpellings(visibility.hrId));
-  else query = query.not("signed_at", "is", null);
-  const { data, error } = await query
-    .order("visit_date", { ascending: false })
-    .limit(Math.min(Math.max(input.limit ?? 1000, 1), 2000));
-  if (error) throw storeError(error, "read the field visit feedback");
-  const rows = ((data ?? []) as FeedbackRow[]).filter((row) =>
+  const lineReps = visibility.kind === "reps" ? [...visibility.repKeys].flatMap((key) => hrIdSpellings(key)) : null;
+  if (lineReps && lineReps.length === 0) return [];
+  const read = await fetchAllRows<FeedbackRow>(() => {
+    let query = getSupabaseAdmin().from(FEEDBACK_TABLE).select(FEEDBACK_COLUMNS);
+    if (visibility.kind === "author") query = query.in("author_hr_id", hrIdSpellings(visibility.hrId));
+    else query = query.not("signed_at", "is", null);
+    if (lineReps) query = query.in("rep_hr_id", lineReps);
+    return query;
+  }, "id").catch((error: unknown) => {
+    throw storeError(error as DbError, "read the field visit feedback");
+  });
+  read.sort((left, right) => right.visit_date.localeCompare(left.visit_date) || right.updated_at.localeCompare(left.updated_at));
+  const rows = read.filter((row) =>
     canViewFieldFeedback(visibility, { authorHrId: row.author_hr_id, repHrId: row.rep_hr_id, signedAt: row.signed_at }),
   );
   const names = await namesByHrId(rows.flatMap((row) => [row.author_hr_id, row.rep_hr_id, row.signed_by_hr_id]));
@@ -554,12 +576,16 @@ export async function listRideAlongDays(access: AccessContext, input: { days?: n
     source: string | null;
     crm_visit_id: number | null;
   };
-  // Through the CRM door: the visits he stood beside, in either partner slot or among the companions.
-  const visits = await queryVisits<VisitRow>({
+  // Through the CRM double-visit door: the visits he stood beside (either partner slot or the companions),
+  // real doubles only, a re-saved visit collapsed. The figures become the form's AM · PM · Pharmacies counts,
+  // so they read only the rows that COUNT (crm.md: every visit count passes kpiOnly) — never a campaign
+  // visit, an archived one, or an old visit beside its own Phoenix copy.
+  const visits = await getDoubleVisitRows<VisitRow>({
     columns: "visit_date, agent_hr_id, ampm, speciality, comment, visit_type, visit_type_description, source, crm_visit_id",
     dateFrom: from.toISOString().slice(0, 10),
     dateTo: today,
     doubleHrIds: [me],
+    kpiOnly: true,
     requireAgentHrId: true,
   });
   const byDay = new Map<string, { visitDate: string; repHrId: string; am: number; pm: number; pharmacies: number }>();
@@ -582,6 +608,7 @@ export async function listRideAlongDays(access: AccessContext, input: { days?: n
     .select("rep_hr_id, visit_date")
     .in("author_hr_id", hrIdSpellings(me))
     .gte("visit_date", from.toISOString().slice(0, 10));
+  if (filed.error) throw storeError(filed.error, "read your filed forms");
   const filedKeys = new Set(
     ((filed.data ?? []) as Array<{ rep_hr_id: string; visit_date: string }>).map(
       (row) => `${row.visit_date}|${canonicalHrIdKey(row.rep_hr_id)}`,
@@ -673,8 +700,9 @@ export async function saveFieldFeedback(
   };
 
   if (form.id) {
-    const { error } = await db.from(FEEDBACK_TABLE).update(row).eq("id", form.id).is("signed_at", null);
+    const { data, error } = await db.from(FEEDBACK_TABLE).update(row).eq("id", form.id).is("signed_at", null).select("id");
     if (error) throw storeError(error, "save the form");
+    if (((data ?? []) as unknown[]).length === 0) throw new MarketingFunctionsError("This form is signed and locked.", 409);
     return { id: form.id, signed: input.sign };
   }
   const { data, error } = await db.from(FEEDBACK_TABLE).insert(row).select("id").single();

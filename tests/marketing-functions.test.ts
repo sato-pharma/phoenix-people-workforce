@@ -268,4 +268,13 @@ export function runMarketingFunctionsLifecycleTests() {
   assert.equal(canEditFieldFeedback(AHMED, { authorHrId: "B-155", signedAt: "2026-11-09T12:00:00Z" }), false, "a signed form is locked");
   assert.equal(canEditFieldFeedback(OTHER_PM, { authorHrId: "B-155", signedAt: null }), false);
   assert.equal(canEditFieldFeedback(RASHA, null), false, "only a Product Manager starts a form");
+
+  // Saving a month writes the new items BEFORE removing the old ones: a delete first left a failed insert
+  // with an empty month (a carry-forward empties next month, which no screen holds to save again).
+  const service = readFileSync(new URL("../src/lib/marketing-functions/service.ts", import.meta.url), "utf8");
+  const replace = service.slice(service.indexOf("async function replaceItems("), service.indexOf("async function touchMonth("));
+  assert.ok(replace.includes(".insert(rows)") && replace.includes(".delete()"), "replaceItems writes and removes items");
+  assert.ok(replace.indexOf(".insert(rows)") < replace.indexOf(".delete()"), "a month's new items go in before its old ones leave");
+  // A form signed between the check and the write is refused, never answered "saved".
+  assert.ok(service.includes(`.is("signed_at", null).select("id")`), "the unsigned-only update reads back what it changed");
 }

@@ -5,6 +5,7 @@ import { phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { todayInCairo } from "@/lib/date-only";
 import { pickerMonthKeys, resolveMonthKey } from "@/lib/marketing-functions/months";
+import { listMarketingProductNames } from "@/lib/marketing-functions/products";
 import { canEditFieldFeedback, isMarketingFunctionsAuthor, seesEveryMarketingSheet } from "@/lib/marketing-functions/scope";
 import {
   getFieldFeedback,
@@ -47,7 +48,7 @@ export async function MarketingFunctionsBody({
   if (!monthOptions.includes(monthKey)) monthOptions.push(monthKey);
   monthOptions.sort().reverse();
 
-  const authors = await listMarketingAuthors(access);
+  const [authors, productNames] = await Promise.all([listMarketingAuthors(access), listMarketingProductNames(access)]);
   // A reader with no author named opens the first Product Manager rather than an empty page.
   const requested = one(params.author) ?? authors[0]?.hrId ?? null;
   const sheet = await loadMonthSheet(access, { authorHrId: requested, monthKey });
@@ -61,6 +62,7 @@ export async function MarketingFunctionsBody({
       key={`${sheet?.authorHrId ?? "none"}:${monthKey}:${sheet?.month?.status ?? "new"}`}
       monthKey={monthKey}
       monthOptions={monthOptions}
+      productNames={productNames}
       sheet={sheet}
       todayIso={today}
     />
