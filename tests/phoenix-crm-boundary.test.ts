@@ -649,8 +649,12 @@ function runIsolationTests() {
     // history (20261029212200), which the readers that judge filter on. It names no iReports360 table, so
     // it alone is taken out before the scan; any other `ireports360_` still fails. `ireports360_kpi_counted`
     // (owner, 2026-11-07) is the same kind: a column of phoenix_crm_visits, the trigger's "this converted old
-    // visit counts", naming no iReports360 table.
-    const source = readFileSync(file, "utf8").replaceAll("imported_from_ireports360_at", "").replaceAll("ireports360_kpi_counted", "");
+    // visit counts", naming no iReports360 table. `ireports360_checkin_id` too (owner, 2026-11-10): the column of
+    // phoenix_crm_visits naming the old check-in a copied visit came from, which the trusted point counts once.
+    const source = readFileSync(file, "utf8")
+      .replaceAll("imported_from_ireports360_at", "")
+      .replaceAll("ireports360_kpi_counted", "")
+      .replaceAll("ireports360_checkin_id", "");
     for (const [pattern, what] of NOT_THIS_MODULE) {
       assert.doesNotMatch(source, pattern, `${file} reaches ${what} — Phoenix CRM is built clean, never wired into the old CRM`);
     }

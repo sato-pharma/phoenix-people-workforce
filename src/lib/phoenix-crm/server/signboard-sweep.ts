@@ -194,11 +194,11 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
     .select(
       "id, customer_id, seat_id, created_by_hr_id, photo_path, lat, lon, accuracy_meters, captured_at, brick_name, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)",
     )
+    // A trusted point carries no photo (point_source "trusted") — nothing to read, and it must never fill the night.
+    .not("photo_path", "is", null)
     .eq("status", "active")
     .eq("is_test", false)
     .is("shared_place_id", null)
-    // A trusted point carries no photo (point_source "trusted") — nothing to read, and it must never fill the night.
-    .not("photo_path", "is", null)
     .neq("customer.list_type", "Pharmacy")
     .or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reread}))`)
     .order("captured_at", { ascending: true })
