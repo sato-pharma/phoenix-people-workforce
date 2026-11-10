@@ -68,6 +68,18 @@ export function managerHoldExpiresAt(since: string | null | undefined): string |
   return new Date(at + MANAGER_HOLD_DAYS * DAY_MS).toISOString();
 }
 
+/**
+ * Whole days a CV that reached a manager at `since` has left in his account, rounded UP — so the last
+ * day reads "1 day", never "0 days" while it is still there. 0 once the window has closed; null when
+ * the date is unreadable (the window fails closed, and no countdown is invented for it).
+ */
+export function managerHoldDaysLeft(since: string | null | undefined, now: Date = new Date()): number | null {
+  const expires = Date.parse(String(managerHoldExpiresAt(since) ?? ""));
+  if (!Number.isFinite(expires)) return null;
+  const remaining = expires - now.getTime();
+  return remaining <= 0 ? 0 : Math.ceil(remaining / DAY_MS);
+}
+
 /** Whole days since `since`, floored — "held 45 days" must not be true at 45 days minus a minute. */
 export function managerHoldDaysHeld(since: string | null | undefined, now: Date = new Date()): number {
   const at = Date.parse(String(since ?? ""));

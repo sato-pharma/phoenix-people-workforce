@@ -1,14 +1,19 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { CheckCircle2, FolderOpen } from "lucide-react";
 
 import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
 import { CandidateReturnControl } from "@/components/employee-portal/candidate-return-control";
-import { Card } from "@/components/ui/card";
+import { ManagerCvList } from "@/components/employee-portal/manager-cv-list";
 import { alarmGlowRef } from "@/components/layout/alarm-glow";
+import { adminControlDepthClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
+import { RecruitmentPanel } from "@/components/recruitment/recruitment-premium";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
+
+type FolderPick = { areaName: string; seatId: string };
 
 /**
  * A manager's folders — one per area on his part of the organogram, and one "Other CVs".
@@ -27,12 +32,18 @@ import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
  *
  * A folder with a CV he has not yet opened pulses, and the first such folder is open when he arrives,
  * so what was just sent is the first thing on the screen.
+ *
+ * His own folders wear the recruitment kit's panel (owner, 2026-11-10: "premium polish"), like every
+ * other list on My Candidates; the gradient banner and the rounded chips it replaced were the one
+ * part of the page off the module's look. While the page's find tray narrows the lists, a folder
+ * says "no match" rather than "nothing sent", and the first folder holding a match opens by itself.
  */
 export function DistrictFoldersSection({
   boards,
   callClaims,
   files,
   heading = "Your areas",
+  narrowKey = "",
   subheading = `Every area on your part of the organogram. A folder holds the CVs the recruitment team has sent you for that area, and nothing else. Open a folder to read them. A CV stays in your folder until you return it or the recruitment team takes it back.`,
   viewerHrId,
   ownFolders = false,
@@ -44,10 +55,15 @@ export function DistrictFoldersSection({
   callClaims: CandidateCallClaims;
   files: Record<string, TeamCandidateFile[]>;
   heading?: string;
+  /**
+   * What the page's find tray is narrowing by, or "" when it shows everything. The boards arrive
+   * already narrowed; this only changes what an empty folder says and which folder opens by itself.
+   */
+  narrowKey?: string;
   subheading?: string;
   viewerHrId: string | null;
   /**
-   * TRUE only when the viewer is looking at HIS OWN folders. It turns on the banner and the per-CV
+   * TRUE only when the viewer is looking at HIS OWN folders. It turns on the panel and the per-CV
    * "Return to administrator" control, and removes every restriction on the card: the number and the
    * file are his. A National Sales Manager reading a district manager's folders leaves it false.
    */
@@ -62,15 +78,26 @@ export function DistrictFoldersSection({
 }) {
   const unseenIn = (candidates: Candidate[]): number =>
     unseenIds ? candidates.filter((candidate) => unseenIds.has(candidate.id)).length : 0;
+  const narrowed = narrowKey !== "";
 
-  const [open, setOpen] = useState<{ areaName: string; seatId: string } | null>(() => {
+  const firstFolderWhere = (test: (candidates: Candidate[]) => boolean): FolderPick | null => {
     for (const board of boards) {
       for (const folder of board.folders) {
-        if (unseenIn(folder.candidates) > 0) return { areaName: folder.areaName, seatId: board.seatId };
+        if (test(folder.candidates)) return { areaName: folder.areaName, seatId: board.seatId };
       }
     }
     return null;
-  });
+  };
+
+  // The folder he opened, remembered WITH the narrowing it was opened under. A new search answers
+  // with its own first match instead of keeping a folder that may now hold nothing; clearing the
+  // search brings back the folder that was open before it. Derived, never set from an effect.
+  const [picked, setPicked] = useState<{ key: string; value: FolderPick | null }>(() => ({
+    key: narrowKey,
+    value: firstFolderWhere((candidates) => unseenIn(candidates) > 0),
+  }));
+  const open: FolderPick | null =
+    picked.key === narrowKey ? picked.value : narrowed ? firstFolderWhere((candidates) => candidates.length > 0) : null;
   // Which CVs the viewer has returned in THIS session, so the card can collapse in place the moment
   // he presses Return — the folders are read on the server and only refresh on reload.
   const [returnedIds, setReturnedIds] = useState<Set<string>>(() => new Set());
@@ -79,9 +106,8 @@ export function DistrictFoldersSection({
   if (boards.length === 0) return null;
 
   const toggle = (seatId: string, areaName: string) => {
-    setOpen((current) =>
-      current && current.seatId === seatId && current.areaName === areaName ? null : { areaName, seatId },
-    );
+    const isOpen = open && open.seatId === seatId && open.areaName === areaName;
+    setPicked({ key: narrowKey, value: isOpen ? null : { areaName, seatId } });
   };
 
   const handleReturned = (candidateId: string) => {
@@ -92,192 +118,191 @@ export function DistrictFoldersSection({
     });
   };
 
+  const totalCvs = boards.reduce((sum, board) => sum + board.candidateCount, 0);
+
+  const body = boards.map((board) => {
+    const openFolder =
+      open && open.seatId === board.seatId ? (board.folders.find((folder) => folder.areaName === open.areaName) ?? null) : null;
+    const areaCount = board.folders.filter((folder) => folder.kind === "area").length;
+    const shownCandidates = openFolder ? openFolder.candidates.filter((candidate) => !returnedIds.has(candidate.id)) : [];
+
+    return (
+      <div className="space-y-3" key={board.seatId}>
+        {/* The board's own line, so a manager holding two of them can tell them apart. Both halves
+            are named — a region without its line is ambiguous across three lines. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-1.5">
+          <h3 className="min-w-0 break-words text-sm font-black text-slate-900">
+            {[board.lineName, board.regionName].filter(Boolean).join(" · ") || board.seatLabel}
+          </h3>
+          <span className="text-xs font-semibold tabular-nums text-slate-500">
+            {areaCount === 1 ? "1 area" : `${areaCount} areas`} ·{" "}
+            {narrowed
+              ? `${board.candidateCount} ${board.candidateCount === 1 ? "match" : "matches"}`
+              : board.candidateCount === 1
+                ? "1 CV"
+                : `${board.candidateCount} CVs`}
+          </span>
+        </div>
+
+        {/* Why a district that is not his own is in front of him. */}
+        {board.coveringVacantSeat ? (
+          <p className="break-words text-phx-xs font-semibold text-amber-700">
+            You are covering this district while {board.coveringVacantSeat} is vacant.
+          </p>
+        ) : null}
+
+        {/* IT WRAPS; it does not scroll. The chips flow onto a second line and every area name stays
+            whole. Square, like every control on the page. */}
+        <div className="flex flex-wrap gap-2 pb-1">
+          {board.folders.map((folder) => {
+            const isOpen = openFolder?.areaName === folder.areaName;
+            const isCatchAll = folder.kind === "region";
+            const unseen = unseenIn(folder.candidates);
+            const count = folder.candidates.length;
+            const dimmed = narrowed && count === 0 && !isOpen;
+            return (
+              <button
+                aria-expanded={isOpen}
+                className={`relative max-w-full border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-1 ${adminControlDepthClassName} ${
+                  isCatchAll ? "border-dashed" : ""
+                } ${
+                  isOpen
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : dimmed
+                      ? "border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-orange-300"
+                }`}
+                key={folder.areaName}
+                onClick={() => toggle(board.seatId, folder.areaName)}
+                type="button"
+              >
+                <span className="block break-words text-sm font-bold" dir="auto">
+                  {folder.areaName}
+                </span>
+                <span className={`block text-phx-xs tabular-nums ${isOpen ? "text-slate-300" : "text-slate-500"}`}>
+                  {count === 0
+                    ? narrowed
+                      ? "No match"
+                      : "No CVs"
+                    : narrowed
+                      ? `${count} ${count === 1 ? "match" : "matches"}`
+                      : `${count} ${count === 1 ? "CV" : "CVs"}`}
+                </span>
+                {unseen > 0 ? (
+                  <span
+                    className="nav-badge-alarm absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center bg-[#F05A1A] px-1 text-phx-xs font-bold text-white"
+                    ref={alarmGlowRef}
+                    title={`${unseen} not opened yet`}
+                  >
+                    {unseen}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+
+        {openFolder ? (
+          <div className="space-y-3">
+            {openFolder.candidates.length === 0 ? (
+              <div className={`border border-slate-200 bg-slate-50/70 px-4 py-6 text-center ${adminRecessedDepthClassName}`}>
+                <p className="break-words text-sm font-bold text-slate-700">
+                  {narrowed
+                    ? `No CV in ${openFolder.areaName} matches`
+                    : openFolder.kind === "region"
+                      ? "Nothing has been sent to you without a matching area"
+                      : `Nothing has been sent to you for ${openFolder.areaName}`}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {narrowed
+                    ? "Clear the search or pick All to see everything in this folder."
+                    : "This is the real answer, not a filter — the folder is here so you can see it is empty."}
+                </p>
+              </div>
+            ) : (
+              <ManagerCvList ids={shownCandidates.map((candidate) => candidate.id)}>
+                {openFolder.candidates.map((candidate) =>
+                  returnedIds.has(candidate.id) ? (
+                    <ReturnedStrip key={candidate.id} name={candidate.fullName} />
+                  ) : ownFolders && renderOwnCard ? (
+                    <div className="space-y-2" key={candidate.id}>
+                      {renderOwnCard(candidate)}
+                      <CandidateReturnControl
+                        candidateId={candidate.id}
+                        context={{
+                          areaName: openFolder.areaName,
+                          lineName: board.lineName,
+                          regionName: board.regionName,
+                          seatId: board.seatId,
+                          seatLabel: board.seatLabel,
+                        }}
+                        onReturned={handleReturned}
+                      />
+                    </div>
+                  ) : (
+                    <CandidateReadCard
+                      candidate={candidate}
+                      claim={callClaims[candidate.id] ?? null}
+                      files={files[candidate.id] ?? []}
+                      footer={
+                        ownFolders ? (
+                          <CandidateReturnControl
+                            candidateId={candidate.id}
+                            context={{
+                              areaName: openFolder.areaName,
+                              lineName: board.lineName,
+                              regionName: board.regionName,
+                              seatId: board.seatId,
+                              seatLabel: board.seatLabel,
+                            }}
+                            onReturned={handleReturned}
+                          />
+                        ) : undefined
+                      }
+                      key={candidate.id}
+                      unrestricted={ownFolders}
+                      viewerHrId={viewerHrId}
+                    />
+                  ),
+                )}
+              </ManagerCvList>
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  });
+
+  if (ownFolders) {
+    return (
+      <RecruitmentPanel
+        bodyClassName="space-y-5 p-3 sm:p-4"
+        count={narrowed ? `${totalCvs} ${totalCvs === 1 ? "match" : "matches"}` : totalCvs}
+        description={
+          <>
+            A folder for every area you hold, filled by the recruitment team — nothing arrives by itself. A CV in a
+            folder is yours to use: read it, download it, see the phone number, answer, comment. A folder with a CV
+            you have not opened keeps alerting you until you open it. If a CV is not for you, open it and use{" "}
+            <span className="font-bold text-amber-200">Return to administrator</span> with a reason; the recruitment
+            team can also take any CV back. Nothing leaves your folders on its own.
+          </>
+        }
+        icon={<FolderOpen aria-hidden="true" className="h-4 w-4" />}
+        title={heading}
+      >
+        {body}
+      </RecruitmentPanel>
+    );
+  }
+
   return (
     <section className="space-y-4">
-      {ownFolders ? (
-        <FoldersBanner />
-      ) : (
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900">{heading}</h2>
-          <p className="text-xs text-slate-500">{subheading}</p>
-        </div>
-      )}
-
-      {boards.map((board) => {
-        const openFolder =
-          open && open.seatId === board.seatId
-            ? (board.folders.find((folder) => folder.areaName === open.areaName) ?? null)
-            : null;
-
-        return (
-          <div className="space-y-3" key={board.seatId}>
-            {/* The board's own line, so a manager holding two of them can tell them apart. Both
-                halves are named — a region without its line is ambiguous across three lines. */}
-            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-1">
-              <h3 className="whitespace-nowrap text-sm font-bold text-slate-800">
-                {[board.lineName, board.regionName].filter(Boolean).join(" · ") || board.seatLabel}
-              </h3>
-              <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-500">
-                {board.folders.filter((folder) => folder.kind === "area").length === 1
-                  ? "1 area"
-                  : `${board.folders.filter((folder) => folder.kind === "area").length} areas`}{" "}
-                · {board.candidateCount === 1 ? "1 CV" : `${board.candidateCount} CVs`}
-              </span>
-            </div>
-
-            {/* Why a district that is not his own is in front of him. */}
-            {board.coveringVacantSeat ? (
-              <p className="whitespace-nowrap text-phx-xs text-amber-700">
-                You are covering this district while {board.coveringVacantSeat} is vacant.
-              </p>
-            ) : null}
-
-            {/* IT WRAPS; it does not scroll. The chips flow onto a second line and every area name
-                still stays whole. `shrink-0` stays on each chip: a `shrink-0` CHILD of a wrapping
-                row wraps rather than being squeezed. */}
-            <div className="flex flex-wrap gap-2 pb-1">
-              {board.folders.map((folder) => {
-                const isOpen = openFolder?.areaName === folder.areaName;
-                const isCatchAll = folder.kind === "region";
-                const unseen = unseenIn(folder.candidates);
-                return (
-                  <button
-                    className={`relative max-w-full rounded-lg border px-3 py-2 text-left transition ${
-                      isCatchAll ? "border-dashed" : ""
-                    } ${
-                      isOpen
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-gray-200 bg-white text-slate-700 hover:border-slate-400"
-                    }`}
-                    key={folder.areaName}
-                    onClick={() => toggle(board.seatId, folder.areaName)}
-                    type="button"
-                  >
-                    <span className="block text-sm font-semibold" dir="auto">
-                      {folder.areaName}
-                    </span>
-                    <span
-                      className={`block text-phx-xs ${isOpen ? "text-slate-300" : "text-slate-500"}`}
-                    >
-                      {folder.candidates.length === 0
-                        ? "No CVs"
-                        : `${folder.candidates.length} ${folder.candidates.length === 1 ? "CV" : "CVs"}`}
-                    </span>
-                    {unseen > 0 ? (
-                      <span
-                        className="nav-badge-alarm absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded bg-[#F05A1A] px-1 text-phx-xs font-bold text-white"
-                        ref={alarmGlowRef}
-                        title={`${unseen} not opened yet`}
-                      >
-                        {unseen}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-
-            {openFolder ? (
-              <div className="space-y-3">
-                {openFolder.candidates.length === 0 ? (
-                  <Card className="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
-                    <p className="text-sm font-semibold text-slate-700">
-                      {openFolder.kind === "region"
-                        ? "Nothing has been sent to you without a matching area"
-                        : `Nothing has been sent to you for ${openFolder.areaName}`}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      This is the real answer, not a filter — the folder is here so you can see it is empty.
-                    </p>
-                  </Card>
-                ) : (
-                  openFolder.candidates.map((candidate) =>
-                    returnedIds.has(candidate.id) ? (
-                      <ReturnedStrip key={candidate.id} name={candidate.fullName} />
-                    ) : ownFolders && renderOwnCard ? (
-                      <div className="space-y-2" key={candidate.id}>
-                        {renderOwnCard(candidate)}
-                        <CandidateReturnControl
-                          candidateId={candidate.id}
-                          context={{
-                            areaName: openFolder.areaName,
-                            lineName: board.lineName,
-                            regionName: board.regionName,
-                            seatId: board.seatId,
-                            seatLabel: board.seatLabel,
-                          }}
-                          onReturned={handleReturned}
-                        />
-                      </div>
-                    ) : (
-                      <CandidateReadCard
-                        candidate={candidate}
-                        claim={callClaims[candidate.id] ?? null}
-                        files={files[candidate.id] ?? []}
-                        footer={
-                          ownFolders ? (
-                            <CandidateReturnControl
-                              candidateId={candidate.id}
-                              context={{
-                                areaName: openFolder.areaName,
-                                lineName: board.lineName,
-                                regionName: board.regionName,
-                                seatId: board.seatId,
-                                seatLabel: board.seatLabel,
-                              }}
-                              onReturned={handleReturned}
-                            />
-                          ) : undefined
-                        }
-                        key={candidate.id}
-                        unrestricted={ownFolders}
-                        viewerHrId={viewerHrId}
-                      />
-                    ),
-                  )
-                )}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-/**
- * The banner over a manager's OWN folders, in the portal's section-header identity — the orange accent
- * bar, the orange kicker, and the title on the white-to-slate gradient card. It says what the folders
- * are now: empty shelves that Talent Acquisition fills by sending, with nothing restricted once a CV
- * is in one.
- */
-function FoldersBanner() {
-  return (
-    <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-[0_12px_34px_rgba(15,23,42,0.05)] sm:p-6">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 h-8 w-[3px] shrink-0 rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
-        <div className="space-y-2">
-          <div>
-            <p className="text-phx-sm font-bold uppercase tracking-[0.18em] text-orange-500">
-              Your candidate folders
-            </p>
-            <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">
-              A folder for every area you hold — filled by the recruitment team
-            </h2>
-          </div>
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
-            Nothing reaches a folder by itself. When the recruitment team sends you a CV, it lands in the folder
-            for its area, and from then on it is yours to use: read it, download it, see the phone number, answer,
-            comment. A folder with a CV you have not opened keeps alerting you until you open it.
-          </p>
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
-            If a CV is not for you, open the card and use{" "}
-            <span className="font-semibold text-amber-700">Return to administrator</span> with a reason. The
-            recruitment team can also take any CV back at any time. Nothing leaves your folders on its own.
-          </p>
-        </div>
+      <div>
+        <h2 className="text-sm font-black text-slate-900">{heading}</h2>
+        <p className="break-words text-xs text-slate-500">{subheading}</p>
       </div>
-    </Card>
+      {body}
+    </section>
   );
 }
 
@@ -288,11 +313,12 @@ function FoldersBanner() {
  */
 function ReturnedStrip({ name }: { name: string | null }) {
   return (
-    <Card className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-      <span className="text-sm font-semibold text-emerald-900" dir="auto">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border border-emerald-200 border-l-4 border-l-emerald-500 bg-emerald-50/70 px-4 py-3">
+      <CheckCircle2 aria-hidden="true" className="h-4 w-4 flex-none text-emerald-600" />
+      <span className="break-words text-sm font-bold text-emerald-900" dir="auto">
         {name?.trim() ? name : "This CV"}
       </span>
-      <span className="text-phx-xs font-medium text-emerald-700">returned to the administrator.</span>
-    </Card>
+      <span className="text-phx-xs font-semibold text-emerald-700">returned to the administrator.</span>
+    </div>
   );
 }

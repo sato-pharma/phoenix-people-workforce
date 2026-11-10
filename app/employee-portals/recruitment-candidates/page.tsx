@@ -22,6 +22,7 @@ import {
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
 import { loadCandidateOpeners } from "@/lib/recruitment/candidate-openers-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
+import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
 import { listCandidateViews } from "@/lib/recruitment/candidate-views";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { unseenIdsOnBoards } from "@/lib/recruitment/manager-cv-folders";
@@ -110,7 +111,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
   //     final, each with its mandatory feedback form. Empty for anybody on none, and the panel then
   //     renders nothing. A failed read says so on the page rather than showing no interviews.
   const chipContextLoad = loadAnswerChipContext().catch(() => null);
-  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard, everyMrInterview] = await Promise.all([
+  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard, everyMrInterview, holdsFolders] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
@@ -118,6 +119,9 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
     listCandidateFolderAreaOptions(),
     listDistrictBoardsForManager(access.hrId),
     loadMyMrInterviews(access).catch(() => null),
+    // Whether his sends run on the 45-day clock — the same answer the send query used to list them.
+    // A failed read draws no countdown (true), never one that might be wrong.
+    managerHoldsFolders(access.hrId).catch(() => true),
   ]);
   // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is on none of these lists, so no
   // card, file, claim or count below can name one. Free for every viewer it does not apply to.
@@ -230,6 +234,8 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
         initialOpeners={openers}
         initialSentToMe={visibleSentToMe}
         initialTeam={team}
+        holdsFolders={holdsFolders}
+        now={new Date().toISOString()}
         requisitionPlaces={requisitionPlaces}
         today={cairoToday()}
         viewerHrId={access.hrId}

@@ -285,10 +285,17 @@ export async function runCandidatePositionFolderTests() {
   // be the SHELF-FILTERED list, and the order is the whole point: a CV he has kept for later has to
   // leave "Sent to you" entirely. Folding the unfiltered list would put it in a position folder AND
   // in a folder on his shelf — a candidate in two lists is a candidate answered twice.
+  // Since 2026-11-10 the list is first narrowed by the page's find tray (`shownSentToMe`, which IS
+  // `sentToMe` when nothing is searched); the shelf split still comes before the grouping.
   assert.match(
     portal,
-    /partitionManagerCandidates\(sentToMe, filings\)/,
+    /partitionManagerCandidates\(shownSentToMe, filings\)/,
     "the shelf split runs BEFORE the position grouping, so a filed CV is in exactly one list",
+  );
+  assert.match(
+    portal,
+    /const shownSentToMe = useMemo\(\(\) => \(narrowing \? sentToMe\.filter\(keepSent\) : sentToMe\)/,
+    "and the list it splits is the sent list itself whenever nothing is searched",
   );
   assert.match(
     portal,
