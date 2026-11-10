@@ -61,8 +61,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  *  6. **A free sample is a whole box of five capsules** (**"بوكس شريط واحد فيه خمسة"**), on the screen
  *     and in the sheet's own formulas, and no other product's figures move.
  *  7. **The foil is counted by the strip** (**"0.002285 aluminum quaty per box and the box is 3 شرايط
- *     sample is one so divide by 3"**, corrected 2026-11-11 to **"2.2 كيلو للألف علبة"**): 2.2 g a box,
- *     a third of that a sample, and only a product
+ *     sample is one so divide by 3"**): 2.285 g a box, a third of that a sample, and only a product
  *     that says how many strips its box holds can carry such a line.
  */
 
@@ -443,21 +442,21 @@ export async function runProductionPlanningSaginkgoTests() {
   assert.match(foilSql, /set strips_per_box = 3\s+where code = 'SAGINKGO'/, "three strips a box, on Saginkgo only");
   const foilRows = compositionRows(foilSql);
   assert.deepEqual(foilRows.map((row) => [row.code, row.basis, row.supplier]), [["BLISTER_ALU_SAGINKGO", "per_strip", "sato"]], "one line, Sato's");
-  // 2.2 kg a thousand boxes is 2,200,000 micrograms a box. A third of it, rounded UP so a formula never under-orders.
-  assert.equal(microgramsOf(foilRows[0]!.qty), Math.ceil(2_200_000 / 3), "his figure divided by 3");
+  // 0.002285 kg is 2,285,000 micrograms a box. A third of it, rounded UP so a formula never under-orders.
+  assert.equal(microgramsOf(foilRows[0]!.qty), Math.ceil(2_285_000 / 3), "his figure divided by 3");
 
   const foilBatch = computePlan(planningData(withFoil, [], stripped), { mode: "runs", productId: "prod-saginkgo", requestedQty: "1", sampleUnits: "0" });
   const foilInBatch = rowOf(foilBatch, "BLISTER_ALU_SAGINKGO");
   assert.equal(foilInBatch.basisCount, "3000", "1,000 boxes of 3 strips");
-  assert.equal(foilInBatch.rawNeeded, "2.200002", "2.2 kg a batch, the rounding costing two milligrams");
-  assert.equal(foilInBatch.needed, "2.266002", "plus the 3% default: 2.200002 × 1.03 = 2.26600206, to the field's six places");
+  assert.equal(foilInBatch.rawNeeded, "2.285001", "2.285 kg a batch, the rounding costing one milligram");
+  assert.equal(foilInBatch.needed, "2.353551", "plus the 3% default: 2.285001 × 1.03 = 2.35355103, to the field's six places");
   assert.equal(foilInBatch.excludedReason, null, "it has an amount now");
   assert.equal(foilInBatch.contributesToBuyList, true, "so it reaches Sato's buy list");
 
   const foilSampled = computePlan(planningData(withFoil, [], stripped), { mode: "total_boxes", productId: "prod-saginkgo", requestedQty: "1000", sampleUnits: "100" });
   const foilWithSamples = rowOf(foilSampled, "BLISTER_ALU_SAGINKGO");
   assert.equal(foilWithSamples.basisCount, "3052", "984 boxes of 3 strips plus 100 samples of one");
-  assert.equal(foilWithSamples.rawNeeded, "2.238135", "3,052 strips at 0.733334 g, 2.238135368 kg, to the field's six places");
+  assert.equal(foilWithSamples.rawNeeded, "2.324608", "3,052 strips at 0.761667 g, 2.324607684 kg, to the field's six places");
 
   // The other counts do not move because a product says how many strips it has.
   for (const code of ["GINKGO_EXTRACT", "CAPSULE_EMPTY_SAGINKGO", "BOX_SAGINKGO", "BOX_SAGINKGO_SAMPLE"]) {
