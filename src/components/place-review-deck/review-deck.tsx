@@ -52,6 +52,7 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import { integrityBoardRow } from "@/lib/crm-integrity/integrity-board-rows";
 import { adviseOnBuilding, adviseOnPlaceInUse, adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteAdviceLabel, placeNoteSubjectKey, type PlaceNoteAdvice } from "@/lib/phoenix-crm/place-note-rules";
+import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 import type { PlaceNoteIndex, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
@@ -253,14 +254,22 @@ function reviewSlide(row: ValidationReviewRow, noteIndex: PlaceNoteIndex): Slide
 
 function placeSlide(row: ValidatedPlaceRow, noteIndex: PlaceNoteIndex): SlideView {
   return {
-    stage: (
-      <DeckStagePhoto
-        alt={placeInUsePhotoAlt(row)}
-        caption={`${row.customerName} · validated ${row.validatedAtText} · ${row.repName}`}
-        label={photoWord(row.photoKind)}
-        path={row.photoPath}
-      />
-    ),
+    // A trusted point (owner, 2026-11-10) has no photograph: the stage says so in words.
+    stage:
+      row.trustedPoint && !row.photoPath ? (
+        <DeckStageEmpty
+          label="Trusted point"
+          lines={["Validated by the Super Admin on the point the reps' own readings agree on."]}
+          title={TRUSTED_POINT_NO_PHOTO}
+        />
+      ) : (
+        <DeckStagePhoto
+          alt={placeInUsePhotoAlt(row)}
+          caption={`${row.customerName} · validated ${row.validatedAtText} · ${row.repName}`}
+          label={photoWord(row.photoKind)}
+          path={row.photoPath}
+        />
+      ),
     column: (
       <>
         <DeckSubjectHeader

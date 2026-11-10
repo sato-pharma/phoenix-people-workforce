@@ -2150,6 +2150,7 @@ import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts"
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
+import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
@@ -8266,6 +8267,11 @@ await runTest(
 await runTest(
   "Phoenix CRM Place checks filter bar (owner, 2026-10-05: filter by rep, line, region, period, list and any single thing): the pure filter module dedupes and sorts the dropdown options, cuts by period against each section's own date, matches rep/line/region/list exactly and searches the customer name, rep, territory, speciality, place, brick, area and address — a row with no line or region fails a line/region filter rather than passing as a wildcard, a whitespace search is no search, and the outcome selector alone is not a narrowing filter; the board wires that one module, declares the admin surface its combo-box dropdowns need, owns the search so the validated list's own box is off, and the page hands it all three sets",
   runPhoenixCrmValidationReviewFiltersTests,
+);
+
+await runTest(
+  "Phoenix CRM validates a customer on a trusted point (owner, 2026-11-10: \"we will search all locations for this customer in phx crm, then we will compare with the locations of checkins of this customer from the old crm until we find a trusted point\"): a tight cluster over months is trusted with the 600 m and 6 km strays left out, scattered readings or agreement on fewer than three days are not and say why, a Phoenix reading rougher than the visit line is dropped and the point is a median; a visit copied from iReports360 is never counted beside its own check-in, a retired place still counts and a pin equal to the photo reading counts once; the old check-ins are iReports360 rows only (never the view's Phoenix mirror) and never paged; the signboard reader skips a place with no photo; the route, the service, the button and the screen are the Super Admin's alone; and the migration keeps a photo required on every other place",
+  runPhoenixCrmTrustedPointTests,
 );
 
 await runTest(

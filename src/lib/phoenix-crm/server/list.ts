@@ -281,7 +281,13 @@ export type ListPlace = {
   lon: number;
   accuracyMeters?: number | null;
   timings: PhoenixCrmTiming[];
-  photoPath: string;
+  /**
+   * The signboard photo's storage path. 🔴 NULL ON A TRUSTED POINT (`pointSource: "trusted"`, owner,
+   * 2026-11-10): the Super Admin validated the customer on the point the reps' own readings agree on,
+   * so no photograph exists. Never stringify it — `String(null)` is the path "null", which the photo
+   * signer refuses for the whole batch.
+   */
+  photoPath: string | null;
   capturedAt: string;
   /** The phone's clock was more than 15 minutes off the server's when the photo was taken. */
   clockOff?: boolean;
@@ -289,7 +295,7 @@ export type ListPlace = {
    * Where the fixed point came from (owner, 2026-09-29): the photo's own shutter reading, the
    * Capture-location pin when the photo had none, or a move by the Super Admin or the SFE Manager.
    */
-  pointSource?: "photo" | "pin" | "moved" | "shared_place";
+  pointSource?: "photo" | "pin" | "moved" | "shared_place" | "trusted";
   /**
    * The polyclinic, medical centre, medical tower or hospital outpatient suite this customer is SEATED
    * in — set only on a seated place, whose point is the venue's own (owner, 2026-10-09).
@@ -653,6 +659,11 @@ export type TerritoryListView = {
   /** The Super Admin alone moves standalone customers INTO a validated polyclinic (owner, 2026-10-10). */
   canSeatInVenue: boolean;
   /**
+   * The Super Admin alone validates a customer on the trusted point his reps' readings agree on (owner,
+   * 2026-11-10, server/trusted-point.ts) — the same set of people as `canSeatInVenue`.
+   */
+  canPlaceOnTrustedPoint: boolean;
+  /**
    * The viewer reads a place's measurements — its accuracy, the phone-clock warning, the raw readings
    * and where the fixed point came from: the Super Admin and the SFE Manager alone (owner, 2026-10-02,
    * `readsLocationDetail`). For everyone else the server sends none of them (`blindTerritoryList`).
@@ -743,11 +754,11 @@ export function mapPlaceRow(row: Row): ListPlace {
     lon: Number(row.lon),
     accuracyMeters: numberOrNull(row.accuracy_meters),
     timings: mapTimings(row.timings),
-    photoPath: String(row.photo_path),
+    photoPath: text(row.photo_path),
     capturedAt: String(row.captured_at),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     pointSource:
-      row.point_source === "photo" || row.point_source === "moved" || row.point_source === "shared_place"
+      row.point_source === "photo" || row.point_source === "moved" || row.point_source === "shared_place" || row.point_source === "trusted"
         ? row.point_source
         : "pin",
     sharedPlaceId: text(row.shared_place_id),
@@ -1883,6 +1894,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     canReview: canReviewTerritory(viewer, seat, isTest),
     canMovePlaces: canMovePlaces(viewer, seat, isTest),
     canSeatInVenue: canDecideSharedPlaces(viewer),
+    canPlaceOnTrustedPoint: canDecideSharedPlaces(viewer),
     seesMeasurements: readsLocationDetail(viewer),
     canBringBack: canDecideListRequest(viewer, seat, isTest, "sfe"),
     canCurateList: canCurate,
