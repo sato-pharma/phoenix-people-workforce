@@ -94,4 +94,19 @@ export function runOffersPagePolishTests() {
   for (const file of ["offer-template-designer.tsx", "offer-job-titles.tsx", "offer-rich-text.tsx", "offer-composer.tsx"]) {
     assert.doesNotMatch(readFileSync(`src/components/offers/${file}`, "utf8"), /\bshadow-(sm|md|lg|xl)\b/, `${file}: no drop shadow`);
   }
+
+  // …and "no shadow class" is NOT flat here: app/globals.css drops an ambient shadow on every bordered
+  // white panel in the admin shell whose class names no shadow. Measured on production after #258: the
+  // 20 phone cards, the 4 pay boxes, the pinned bar and the CC picker's two chip boxes all carried it.
+  // Each panel meant to be flat says `shadow-none`.
+  for (const [file, panel] of [
+    ["offer-composer.tsx", 'border border-phx-line bg-white p-4 shadow-none" key={offer.id}'],
+    ["offer-composer.tsx", 'border border-phx-line bg-white px-4 py-3 shadow-none" key={label}'],
+    ["offer-composer.tsx", "border border-t-0 border-slate-200/90 bg-white px-5 py-3 shadow-none"],
+    ["offer-copy-picker.tsx", 'border border-phx-line bg-white px-3 py-1 shadow-none"'],
+    ["offer-job-titles.tsx", 'border border-phx-line bg-white p-4 shadow-none" key={row.id}'],
+    ["offer-rich-text.tsx", 'border border-phx-line bg-white shadow-none"'],
+  ] as const) {
+    assert.ok(readFileSync(`src/components/offers/${file}`, "utf8").includes(panel), `${file}: ${panel} is flat`);
+  }
 }

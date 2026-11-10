@@ -743,7 +743,7 @@ export function OfferTemplateDesigner({
                 <div
                   className={cn(
                     "flex items-center gap-2 rounded-xl border px-3 py-2 transition",
-                    isSelected ? "border-phx-accent-line bg-orange-50/60" : "border-phx-line bg-white hover:bg-slate-50",
+                    isSelected ? "border-phx-accent-line bg-orange-50/60" : "border-phx-line bg-white shadow-none hover:bg-slate-50",
                   )}
                   key={block.id}
                 >
