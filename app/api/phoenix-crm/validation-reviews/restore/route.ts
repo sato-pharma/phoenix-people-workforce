@@ -11,8 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST = approve a place AFTER it was rejected (owner, 2026-10-03: "add the option to approve after
-// reject"). The Super Admin and the SFE Manager, exactly as the decision it reverses: `approve` here is gate one, and
-// the service refuses everyone but those two before anything is read.
+// reject"). The Super Admin ALONE since 2026-11-10 ("the SFE cannot"): `approve` here is gate one, and the
+// service (`canRestoreValidation`) refuses everyone but the Super Admin before anything is read.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
