@@ -1467,7 +1467,7 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       );
       for (const row of saves) touches.push({ rep_hr_id: row.rep_hr_id, visit_date: row.visit_date, at: row.created_at });
 
-      // Facts kept beside the visit: an approval moving, a recording claimed, reviewed or deleted, an edit.
+      // Facts kept beside the visit: an approval moving, a recording claimed, reviewed or deleted, an edit, a hold decided.
       const byVisit: Array<{ visit_id: string | null; at: string }> = [];
       // `tiebreak` is each table's own key, so the page order is total — and it is THAT TABLE'S key,
       // never the habitual `id`. phoenix_crm_visit_recordings is keyed on `path` and has no `id`
@@ -1481,6 +1481,8 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
         { table: "phoenix_crm_visit_recordings", column: "reviewed_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_recordings", column: "deleted_at", tiebreak: "path" },
         { table: "phoenix_crm_visit_edits", column: "edited_at", tiebreak: "id" },
+        // The SFE deciding a visit held for him (owner, 2026-11-10) moves it in or out of the countable views.
+        { table: "phoenix_crm_far_visit_holds", column: "decided_at", tiebreak: "visit_id" },
       ];
       for (const { table, column, tiebreak } of besides) {
         const rows = await readPaged<Record<string, string | null>>(table, (from, to) =>
@@ -1552,8 +1554,9 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       const recordings = new Map<string, Array<{ review_status: string | null; claimed_at: string | null; reviewed_at: string | null; deleted_at: string | null }>>();
       const removed = new Map<string, string>();
       const edits = new Map<string, string>();
+      const farHolds = new Map<string, { status: string | null; held_at: string | null; decided_at: string | null }>();
       for (const chunk of chunks(ids, ID_CHUNK)) {
-        const [unplannedRows, recordingRows, removedRows, editRows] = await Promise.all([
+        const [unplannedRows, recordingRows, removedRows, editRows, farHoldRows] = await Promise.all([
           readPaged<{ visit_id: string; status: string | null; updated_at: string | null }>("phoenix_crm_unplanned_visits", (from, to) =>
             supabase.from("phoenix_crm_unplanned_visits").select("visit_id,status,updated_at").in("visit_id", chunk).order("visit_id").range(from, to),
           ),
@@ -1574,11 +1577,20 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
           readPaged<{ visit_id: string; edited_at: string }>("phoenix_crm_visit_edits", (from, to) =>
             supabase.from("phoenix_crm_visit_edits").select("id,visit_id,edited_at").in("visit_id", chunk).order("id").range(from, to),
           ),
+          // A visit held for the SFE (owner, 2026-11-10): the countable views' NOT IN reads every hold not approved.
+          // One read, never paged: visit_id is the hold's primary key, so a chunk of ID_CHUNK ids holds at most
+          // ID_CHUNK rows, far under one page.
+          (async () => {
+            const { data, error } = await supabase.from("phoenix_crm_far_visit_holds").select("visit_id,status,held_at,decided_at").in("visit_id", chunk);
+            if (error) throw readError("phoenix_crm_far_visit_holds", error);
+            return (data ?? []) as Array<{ visit_id: string; status: string | null; held_at: string | null; decided_at: string | null }>;
+          })(),
         ]);
         for (const row of unplannedRows) unplanned.set(row.visit_id, row);
         for (const row of recordingRows) recordings.set(row.visit_id, [...(recordings.get(row.visit_id) ?? []), row]);
         for (const row of removedRows) removed.set(row.visit_id, row.removed_at);
         for (const row of editRows) edits.set(row.visit_id, laterOf(edits.get(row.visit_id), row.edited_at) ?? row.edited_at);
+        for (const row of farHoldRows) farHolds.set(row.visit_id, row);
       }
       const customers = new Map<string, { validated_at: string | null; list_type: string | null; reference_contact_crm_id: unknown; own_contact_crm_id: unknown }>();
       for (const chunk of chunks(unique(visits.map((visit) => visit.customer_id).filter(Boolean)), ID_CHUNK)) {
@@ -1594,6 +1606,7 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       return visits.map((visit) => {
         const approval = unplanned.get(visit.id) ?? null;
         const claimed = recordings.get(visit.id) ?? [];
+        const farHold = farHolds.get(visit.id) ?? null;
         const customer = customers.get(visit.customer_id) ?? null;
         return {
           id: visit.id,
@@ -1612,6 +1625,7 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
           unplannedKind: visit.unplanned_kind,
           unplannedStatus: approval?.status ?? null,
           recordingStatuses: claimed.map((recording) => String(recording.review_status ?? "")),
+          farHoldStatus: farHold?.status ?? null,
           // `coalesce(c.validated_at is not null or c.list_type = 'Pharmacy', false)` — a missing customer is false.
           customerValidated: customer ? customer.validated_at !== null || customer.list_type === "Pharmacy" : false,
           contactCrmId: customer ? (toNumber(customer.reference_contact_crm_id) ?? toNumber(customer.own_contact_crm_id)) : null,
@@ -1620,6 +1634,8 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
               visit.created_at,
               approval?.updated_at,
               ...claimed.flatMap((recording) => [recording.claimed_at, recording.reviewed_at, recording.deleted_at]),
+              farHold?.held_at,
+              farHold?.decided_at,
               removed.get(visit.id),
               edits.get(visit.id),
             ) ?? visit.created_at,

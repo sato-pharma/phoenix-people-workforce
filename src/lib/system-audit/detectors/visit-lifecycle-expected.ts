@@ -19,6 +19,8 @@
  *   · a visit the Super Admin removed is gone (`phoenix_crm_removed_visits`);
  *   · an off-plan visit counts once approved — `out_of_list` always counts — and a recorded visit once
  *     the Administrator approves the recording (`20261023040102_countable_visits_customer_join_is_removable`);
+ *   · a visit saved and held for the SFE after five far refusals from one spot counts once he approves it
+ *     (`phoenix_crm_far_visit_holds`, 20261110170000);
  *   · the door serves a REP seat of a started team, from its start, before its stop — and, from the day
  *     iReports360 was retired, every REP seat whatever its start or stop (`phoenix_crm_counted_seat_windows()`,
  *     inner-joined in `crm_visits_unified`, 20261106235920);
@@ -63,6 +65,8 @@ export type SavedVisit = {
   unplannedStatus: string | null;
   /** `review_status` of every recording claimed by this visit. */
   recordingStatuses: string[];
+  /** `phoenix_crm_far_visit_holds.status` — a visit held for the SFE (owner, 2026-11-10). Absent or null: no hold. */
+  farHoldStatus?: string | null;
   /** The countable view's `customer_validated`: validated, or a pharmacy. Null when the customer was not read. */
   customerValidated: boolean | null;
   /** `coalesce(reference_contact_crm_id, own_contact_crm_id)` — the contact id every door emits. */
@@ -127,6 +131,7 @@ export type LifecycleExclusion =
   | "offplan_pending_sfe"
   | "offplan_refused"
   | "recording_not_approved"
+  | "far_visit_held"
   | "seat_not_in_started_team"
   | "team_not_started"
   | "team_stopped"
@@ -169,6 +174,7 @@ export type CountableVerdict =
  * `phoenix_crm_countable_visits`' WHERE clause, word for word:
  *   (not is_unplanned or u.status = 'approved' or unplanned_kind = 'out_of_list')
  *   and not exists (a recording of this visit whose review_status <> 'approved')
+ *   and id not in (a far-visit hold whose status <> 'approved')
  */
 export function countableVerdict(visit: SavedVisit): CountableVerdict {
   if (visit.isUnplanned && visit.unplannedKind !== "out_of_list" && visit.unplannedStatus !== "approved") {
@@ -189,6 +195,9 @@ export function countableVerdict(visit: SavedVisit): CountableVerdict {
   }
   if (visit.recordingStatuses.some((status) => status !== "approved")) {
     return { countable: false, stuck: false, reason: "recording_not_approved" };
+  }
+  if (visit.farHoldStatus && visit.farHoldStatus !== "approved") {
+    return { countable: false, stuck: false, reason: "far_visit_held" };
   }
   return { countable: true };
 }
