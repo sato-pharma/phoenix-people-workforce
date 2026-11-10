@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 
 import {
   cnsLineMemberEmailHashes,
+  cnsLineMemberRows,
+  requireFeedLines,
   handleCnsLineMembersRequest,
   hashMemberEmail,
   type CnsLineMemberRow,
@@ -19,8 +21,10 @@ import {
 //    503 before any read, and the body names the format (`hash: "hmac-sha256"`). A plain SHA-256 of
 //    a first.second@satopharma.com roster can be reversed in seconds by guessing names;
 //  - the answer is hashes ONLY — no address, name or HR id ever leaves Phoenix;
-//  - WHO is in: active by the directory's own rule, on the line whose `lines.code` is `cns`, both
-//    the work and the personal address, each once.
+//  - WHO is in: active by the directory's own rule, AND on the line whose `lines.code` is `cns`, OR
+//    anywhere up the `manager_hr_id` chain of an active CNS-line employee (DM, NSM and above), OR on
+//    Head Office (`lines.code = 'head_office'`) — owner, 2026-11-10: "not only reps and dms and nsms
+//    and marketing manager and all head office employees". Both addresses, each once.
 
 const TOKEN = "cns-line-members-test-token";
 const KEY = "cns-line-members-test-hash-key";
@@ -42,6 +46,7 @@ function request(authorization?: string) {
 
 const CNS = { code: "cns", name: "CNS" };
 const PEDIA = { code: "pedia", name: "Pedia" };
+const HEAD_OFFICE = { code: "head_office", name: "Head Office" };
 
 function row(over: Partial<CnsLineMemberRow> & { hr_id: string }): CnsLineMemberRow {
   return {
@@ -184,6 +189,80 @@ export async function runCnsLineMembersFeedTests() {
     "the whole list changes with the key",
   );
 
+
+  // ── THE WIDER AUDIENCE (owner, 2026-11-10) ──────────────────────────────────────────────────────
+  // A rep's manager_hr_id names their DM, the DM's names the NSM. Managers here sit on NO line or on
+  // Pedia, so the only way in is the chain; hr ids are written in mixed case, as production stores them.
+  const CHAIN: CnsLineMemberRow[] = [
+    row({ hr_id: "R-1", full_name: "Cns Rep One", manager_hr_id: "dm-1", work_email: "cns.rep.one@satopharma.com" }),
+    row({ hr_id: "DM-1", full_name: "District Manager", job_title: "District Manager", line_id: null, lines: null, manager_hr_id: "NSM-1", work_email: "district.manager@satopharma.com" }),
+    row({ hr_id: "NSM-1", full_name: "National Sales Manager", job_title: "National Sales Manager", line_id: null, lines: null, work_email: "national.sales@satopharma.com", personal_email: "nsm.home@gmail.com" }),
+    // A Pedia DM over Pedia reps only: out, whatever the title says.
+    row({ hr_id: "P-2", full_name: "Pedia Rep Two", line_id: 2, lines: PEDIA, manager_hr_id: "PDM-1", work_email: "pedia.rep.two@satopharma.com" }),
+    row({ hr_id: "PDM-1", full_name: "Pedia District Manager", job_title: "District Manager", line_id: 2, lines: PEDIA, work_email: "pedia.dm@satopharma.com" }),
+    // Head Office: the Marketing Manager and a head-office employee nobody on CNS reports to — both in.
+    row({ hr_id: "A-9", full_name: "Marketing Manager", job_title: "Marketing Manager", line_id: 4, lines: HEAD_OFFICE, work_email: "marketing.manager@satopharma.com" }),
+    row({ hr_id: "HO-2", full_name: "Head Office Accountant", job_title: "Accountant", line_id: 4, lines: HEAD_OFFICE, work_email: "ho.accountant@satopharma.com" }),
+    // A Head Office person who resigned: out.
+    row({ hr_id: "HO-3", full_name: "Head Office Leaver", job_title: "Accountant", line_id: 4, lines: HEAD_OFFICE, employment_status: "resigned", organogram_visible: false, work_email: "ho.leaver@satopharma.com" }),
+    // A resigned DM between a CNS rep and an active NSM: the DM is out, the NSM above is still in.
+    row({ hr_id: "R-2", full_name: "Cns Rep Two", manager_hr_id: "RDM-1", work_email: "cns.rep.two@satopharma.com" }),
+    row({ hr_id: "RDM-1", full_name: "Resigned District Manager", job_title: "District Manager", line_id: null, lines: null, employment_status: "resigned", organogram_visible: false, manager_hr_id: "NSM-2", work_email: "resigned.dm@satopharma.com" }),
+    row({ hr_id: "NSM-2", full_name: "Second National Manager", job_title: "National Sales Manager", line_id: null, lines: null, work_email: "second.nsm@satopharma.com" }),
+    // A cycle in the data (CY-A manages CY-B manages CY-A) above a CNS rep: both in, and no endless loop.
+    row({ hr_id: "R-3", full_name: "Cns Rep Three", manager_hr_id: "CY-A", work_email: "cns.rep.three@satopharma.com" }),
+    row({ hr_id: "CY-A", full_name: "Cycle Manager A", job_title: "District Manager", line_id: null, lines: null, manager_hr_id: "CY-B", work_email: "cycle.a@satopharma.com" }),
+    row({ hr_id: "CY-B", full_name: "Cycle Manager B", job_title: "National Sales Manager", line_id: null, lines: null, manager_hr_id: "CY-A", work_email: "cycle.b@satopharma.com" }),
+    // A rep whose manager is not in the table at all: the rep is in, nothing else happens.
+    row({ hr_id: "R-4", full_name: "Cns Rep Four", manager_hr_id: "GONE-1", work_email: "cns.rep.four@satopharma.com" }),
+  ];
+  const admittedIds = new Set(cnsLineMemberRows(CHAIN).map((member) => member.hr_id));
+  const chainHashes = new Set(cnsLineMemberEmailHashes(CHAIN, KEY));
+  const admits = (hrId: string, email: string, why: string) => {
+    assert.ok(admittedIds.has(hrId), why);
+    assert.ok(chainHashes.has(sha(email)), `${why} (their address is in the list)`);
+  };
+  const refuses = (hrId: string, email: string, why: string) => {
+    assert.ok(!admittedIds.has(hrId), why);
+    assert.ok(!chainHashes.has(sha(email)), `${why} (their address is not in the list)`);
+  };
+
+  admits("R-1", "cns.rep.one@satopharma.com", "a CNS rep is in");
+  admits("DM-1", "district.manager@satopharma.com", "the DM over a CNS rep is in through the manager chain");
+  admits("NSM-1", "national.sales@satopharma.com", "the NSM over that DM is in through the manager chain");
+  assert.ok(chainHashes.has(sha("nsm.home@gmail.com")), "a manager's personal address counts too");
+  refuses("PDM-1", "pedia.dm@satopharma.com", "a manager of only non-CNS people is out");
+  refuses("P-2", "pedia.rep.two@satopharma.com", "a Pedia rep is out");
+  admits("A-9", "marketing.manager@satopharma.com", "the Marketing Manager on Head Office is in");
+  admits("HO-2", "ho.accountant@satopharma.com", "every active Head Office employee is in");
+  refuses("HO-3", "ho.leaver@satopharma.com", "a resigned Head Office employee is out");
+  refuses("RDM-1", "resigned.dm@satopharma.com", "a resigned manager is out");
+  admits("NSM-2", "second.nsm@satopharma.com", "the active manager above a resigned one is still in");
+  admits("CY-A", "cycle.a@satopharma.com", "a manager in a cycle is in");
+  admits("CY-B", "cycle.b@satopharma.com", "the other manager in the cycle is in");
+  admits("R-4", "cns.rep.four@satopharma.com", "a rep whose manager is missing is still in");
+  assert.equal(admittedIds.size, 11, "exactly the eleven people admitted above, no one else");
+
+  // Through the route too: the contract body is unchanged, only the audience grew.
+  const wider = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), {
+    token: TOKEN,
+    hashKey: KEY,
+    loadRows: async () => CHAIN,
+    now: () => NOW,
+  });
+  const widerBody = (await wider.json()) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(widerBody).sort(), ["count", "emailHashes", "generatedAt", "hash", "line"]);
+  assert.equal(widerBody.line, "cns");
+  assert.equal(widerBody.count, 12, "eleven people, twelve addresses (the NSM's personal one)");
+
+  // ── BOTH LINES MUST EXIST, OR THE FEED REFUSES (the app then keeps its last good list) ───────
+  const cnsLine = { id: 3, code: "cns" };
+  const headOffice = { id: 4, code: "head_office" };
+  requireFeedLines([{ id: 1, code: "anti_infective" }, cnsLine, headOffice]);
+  assert.throws(() => requireFeedLines([cnsLine]), /head_office/, "a missing Head Office line refuses");
+  assert.throws(() => requireFeedLines([headOffice]), /'cns'/, "a missing CNS line refuses");
+  assert.throws(() => requireFeedLines([cnsLine, { id: null, code: "head_office" }]), /head_office/, "a line with no id does not count");
+
   // --- a failed read is a 500 that says nothing about the data --------------------------------
   const failed = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), {
     token: TOKEN,
@@ -211,8 +290,8 @@ export async function runCnsLineMembersFeedTests() {
   assert.doesNotMatch(libCode, /\bline_name\b/, "never the dead line_name column");
   assert.match(
     lib,
-    /loadReferenceLines\(\)\)\s*\.filter\(\(line\) => line\.id !== null && \(line\.code \?\? ""\)\.trim\(\)\.toLowerCase\(\) === CNS_LINE_CODE\)/,
-    "the line resolves by code from the cached reference list, never by id",
+    /requireFeedLines\(await loadReferenceLines\(\)\)/,
+    "the lines resolve by code from the cached reference list, never by id",
   );
 
   const registry = readFileSync(new URL("../src/lib/security/access-registry.ts", import.meta.url), "utf8");
