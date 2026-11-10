@@ -56,6 +56,7 @@ export type JoiningFormState =
   | "withdrawn"
   | "declined"
   | "not_sent"
+  | "being_updated"
   | "seat_unavailable"
   | "start_date_pending";
 
@@ -67,6 +68,8 @@ export type JoiningFormState =
 export function joiningFormState(input: {
   employeeHrId: string | null;
   requiresSeat: boolean;
+  /** Above 0 once HR has updated the offer (owner, 2026-11-10). Absent reads as never updated. */
+  revision?: number;
   seatOpen: boolean;
   status: OfferStatus;
 }): JoiningFormState {
@@ -74,7 +77,11 @@ export function joiningFormState(input: {
   if (input.status === "withdrawn") return "withdrawn";
   if (input.status === "declined") return "declined";
   // Waiting for the HR Manager is not sent either (owner, 2026-11-10): nothing reached the candidate.
-  if (input.status === "draft" || input.status === "pending_approval") return "not_sent";
+  // An offer HR is UPDATING went out once, so the candidate holds a link: it says the offer is being
+  // updated, and the old terms cannot be accepted while new ones are being written.
+  if (input.status === "draft" || input.status === "pending_approval") {
+    return input.revision && input.revision > 0 ? "being_updated" : "not_sent";
+  }
   if (input.requiresSeat && !input.seatOpen) return "seat_unavailable";
   return "open";
 }
@@ -87,6 +94,10 @@ export const JOINING_FORM_STATE_MESSAGE: Record<Exclude<JoiningFormState, "open"
   not_sent: {
     body: "This offer has not been issued yet. Please use the link in the offer email you receive.",
     title: "This offer is not open yet",
+  },
+  being_updated: {
+    body: "Our HR team is updating your offer. You will receive the updated offer by email shortly; please use the button in that email.",
+    title: "Your offer is being updated",
   },
   seat_unavailable: {
     body: "Our HR team needs to confirm your position before you can complete this form. They will contact you shortly — you can also reply to the offer email.",

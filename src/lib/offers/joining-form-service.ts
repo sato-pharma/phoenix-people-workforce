@@ -251,6 +251,7 @@ async function loadOffer(token: string): Promise<Loaded | null> {
   const state = joiningFormState({
     employeeHrId: offer.employeeHrId ?? null,
     requiresSeat,
+    revision: offer.revision ?? 0,
     seatOpen: Boolean(vacancy),
     status: offer.status,
   });

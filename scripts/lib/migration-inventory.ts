@@ -2289,6 +2289,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // far check c0a60faacd98baa3c7163d998a262cda. Re-applying is a no-op (`if not exists`, `drop ... if exists` then add,
   // `create or replace view` with the same body).
   "20261110170000_phoenix_crm_far_visit_safeguards.sql",
+  // Applied 10 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route, which writes NO ledger row: the session's Supabase connector reaches a different account and lists neither
+  // Phoenix project. Both answered applied:true. Five columns added to public.offers, no table, no function, no grant.
+  // Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf and equal on both: md5 of the five columns as
+  // name:type:nullable:default 054f23555528ba9357ae600b4bb908c6, of the two CHECK definitions
+  // be60ae8291e3e6884e95bb1b4eb9152e; production's 86 offers all read revision 0. Re-applying is a no-op
+  // (`add column if not exists`, `drop constraint if exists` then add).
+  "20261110195450_offer_email_message_and_revisions.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

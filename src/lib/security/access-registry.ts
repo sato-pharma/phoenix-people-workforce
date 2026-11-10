@@ -799,6 +799,11 @@ export const accessRegistry = [
   // candidate never received. It changes no offer row, but it puts the same binding figure in a
   // stranger's inbox, so it carries Send's gate and audits every copy that leaves.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/resend", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  // Update offer (owner, 2026-11-10): start an update on a sent offer (the version sent is frozen and the
+  // offer returns to draft) or cancel one (that version comes back). It emails nobody — the update goes
+  // out through Send, behind the HR Manager's approval — but it takes the candidate's offer out of their
+  // hands until then, so it carries Send's gate and audits both.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/revise", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
   // Expire (owner, 2026-10-07): tell a sent offer's candidate it has lapsed and withdraw it. Like
   // Resend it puts a message in a stranger's inbox, so it carries Send's gate and audits the notice;
   // unlike Resend it then changes the offer row (to withdrawn), which the required audit records.

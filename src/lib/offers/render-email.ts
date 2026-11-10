@@ -458,6 +458,48 @@ function renderEmailBlock(
 
 export type RenderedOfferEmail = { html: string; text: string };
 
+/**
+ * HR's own message, and an updated offer's note, at the top of the email (owner, 2026-11-10: "add a
+ * field for the HR to write whatever he wants and this goes in the job offer email body").
+ *
+ * PLAIN TEXT, escaped here and nowhere else: whatever HR types prints as typed, and nothing typed can
+ * become markup in a stranger's inbox. Blank lines split paragraphs; a single line break stays a break.
+ * Flat on the white sheet with one hairline under it — the letter's own body colour, no tint, no box.
+ */
+function renderCoverNote(message: string | undefined, updateNote: string | undefined, theme: Required<OfferTheme>): string {
+  const paragraphs = (message ?? "")
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map(
+      (chunk) =>
+        `<p style="margin:0 0 10px;color:${theme.body};font-size:14px;line-height:1.6">${escapeHtml(chunk).replace(/\n/g, "<br>")}</p>`,
+    )
+    .join("");
+  const update = updateNote
+    ? `<p style="margin:0 0 10px;color:${theme.ink};font-size:14px;line-height:1.6;font-weight:bold">${escapeHtml(updateNote)}</p>`
+    : "";
+  if (!update && !paragraphs) return "";
+  return (
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;margin-top:20px">` +
+    `<tr><td style="padding:0 0 8px;border-bottom:1px solid ${theme.frame}">${update}${paragraphs}</td></tr></table>`
+  );
+}
+
+/** The cover note's plain-text twin, so a client that shows the text part reads the same words. */
+function coverNoteText(message: string | undefined, updateNote: string | undefined): string[] {
+  const lines: string[] = [];
+  if (updateNote) lines.push(updateNote, "");
+  if (message?.trim()) lines.push(message.trim(), "");
+  return lines;
+}
+
+/** Where the cover note sits: under the letterhead (and its rail), before the letter's first words. */
+function coverNoteIndex(types: readonly string[]): number {
+  const at = types.findIndex((type) => type !== "rail" && type !== "letterhead");
+  return at >= 0 ? at : types.length;
+}
+
 /** The button's words and the decline sentence — one place, so the HTML and the text part agree. */
 export const OFFER_ACCEPT_BUTTON_LABEL = "Accept the offer — complete your joining form";
 export const OFFER_ACCEPT_LEAD = "To accept this offer, press the button below and complete your joining form.";
@@ -497,7 +539,7 @@ function renderAcceptBlock(acceptUrl: string, theme: Required<OfferTheme>): stri
 export function renderOfferEmail(
   template: { blocks: OfferBlock[]; theme?: OfferTheme },
   fields: OfferFields,
-  options: { acceptUrl?: string; logoUrl?: string } = {},
+  options: { acceptUrl?: string; logoUrl?: string; message?: string; updateNote?: string } = {},
 ): RenderedOfferEmail {
   const tokens = buildOfferTokens(fields);
   const theme = { ...OFFER_DEFAULT_THEME, ...(template.theme ?? {}) } as Required<OfferTheme>;
@@ -513,6 +555,10 @@ export function renderOfferEmail(
     const beforeFooter = rendered.findIndex((part) => part.type === "footer");
     const index = at >= 0 ? at : beforeFooter >= 0 ? beforeFooter : rendered.length;
     rendered.splice(index, 0, { html: renderAcceptBlock(options.acceptUrl, theme), type: "accept" });
+  }
+  const cover = renderCoverNote(options.message, options.updateNote, theme);
+  if (cover) {
+    rendered.splice(coverNoteIndex(rendered.map((part) => part.type)), 0, { html: cover, type: "cover" });
   }
   const body = rendered
     .map((part) => part.html)
@@ -532,7 +578,10 @@ export function renderOfferEmail(
     `<tr><td style="padding:0 24px 28px">${body}</td></tr>` +
     "</table></td></tr></table></body></html>";
 
-  return { html, text: buildPlainText(template.blocks, tokens, options.acceptUrl) };
+  return {
+    html,
+    text: buildPlainText(template.blocks, tokens, options.acceptUrl, coverNoteText(options.message, options.updateNote)),
+  };
 }
 
 /**
@@ -541,11 +590,18 @@ export function renderOfferEmail(
  * Not optional: a multipart email with no text part scores worse with spam filters, and an offer
  * that lands in a candidate's junk folder is an offer that was never made.
  */
-function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, acceptUrl?: string): string {
+function buildPlainText(
+  blocks: OfferBlock[],
+  tokens: Record<string, string>,
+  acceptUrl?: string,
+  cover: readonly string[] = [],
+): string {
   const lines: string[] = [];
+  const coverAt = coverNoteIndex(blocks.map((block) => String(block.type)));
   const f = (value: unknown) => decodeEntities(textOf(fillOfferTokens(value, tokens)));
 
-  for (const block of blocks) {
+  blocks.forEach((block, index) => {
+    if (index === coverAt) lines.push(...cover);
     const p = block.props ?? {};
     const items = Array.isArray(p.items) ? (p.items as Record<string, unknown>[]) : [];
 
@@ -598,7 +654,8 @@ function buildPlainText(blocks: OfferBlock[], tokens: Record<string, string>, ac
       default:
         break;
     }
-  }
+  });
+  if (coverAt >= blocks.length) lines.push(...cover);
 
   if (acceptUrl) {
     lines.push("", "YOUR ANSWER", OFFER_ACCEPT_LEAD, `${OFFER_ACCEPT_BUTTON_LABEL}: ${acceptUrl}`, OFFER_DECLINE_LINE);

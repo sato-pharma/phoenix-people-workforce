@@ -129,7 +129,8 @@ export async function runOfferHrManagerApprovalTests() {
 
   // ── 12. The screen says where Send goes ──────────────────────────────────────────────────────
   const composer = readFileSync("src/components/offers/offer-composer.tsx", "utf8");
-  assert.match(composer, /!canApprove \? "Send for approval" : reviewing \? "Approve and send" : "Send offer"/);
+  // An updated offer (2026-11-10) adds its own label for the HR Manager; Talent Acquisition's Send still only asks approval.
+  assert.match(composer, /!canApprove \? "Send for approval" : reviewing \? "Approve and send" : updating \? "Send updated offer" : "Send offer"/);
   assert.match(composer, /payload\.pendingApproval/, "a request is never reported as sent");
   for (const page of ["app/(admin)/offers/page.tsx", "app/employee-portals/offers/page.tsx"]) {
     assert.match(readFileSync(page, "utf8"), /canAccess\(access, "offers", "approve"\)/, `${page} reads the approve grant`);

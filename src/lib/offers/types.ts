@@ -218,6 +218,19 @@ export type OfferFields = {
 
 export type OfferRecord = OfferFields & {
   /**
+   * HR's own words for the candidate, printed at the top of the offer EMAIL body and never on the PDF
+   * (owner, 2026-11-10). Empty for no message. Optional, like every column added after the module
+   * shipped: a database without migration 20261110195450 has no such column.
+   */
+  emailMessage?: string;
+  /** 0 as first issued; 1, 2, … once HR issues an updated offer (owner, 2026-11-10). */
+  revision?: number;
+  /** Every earlier version that went out, newest last. Empty for an offer never updated. */
+  revisionHistory?: OfferRevision[];
+  /** When the current update was started, and who started it. Null for an offer never updated. */
+  revisedAt?: string | null;
+  revisedBy?: string | null;
+  /**
    * The HR Manager's approval (owner, 2026-11-10). Optional, like every column added after the module
    * shipped: an offer written before it, or read from a database without migration 20261110190002,
    * simply has none of them.
@@ -271,6 +284,31 @@ export type OfferRecord = OfferFields & {
    * Null is the answer for every offer written before 2026-09-29, and stays a valid answer
    * afterwards: a letter may be issued before anybody has settled which seat it fills.
    */
+  vacancyId: number | null;
+};
+
+/**
+ * One earlier version of an offer that went out, frozen when HR started an update (owner, 2026-11-10:
+ * "i may need to update a job offer"). Kept on the row in `revision_history`, newest last, so the
+ * letter a candidate once held is never lost when its terms change.
+ */
+export type OfferRevision = {
+  approvedAt: string | null;
+  approvedBy: string | null;
+  bcc: string[];
+  cc: string[];
+  emailMessage: string | null;
+  fields: OfferFields;
+  requestedBy: string | null;
+  /** 0 for the offer as first issued, 1 for the first update, and so on. */
+  revision: number;
+  sentAt: string | null;
+  sentBy: string | null;
+  /** When the update that replaced it was started, and who started it. */
+  supersededAt: string;
+  supersededBy: string | null;
+  templateId: string | null;
+  templateSnapshot: OfferRecord["templateSnapshot"];
   vacancyId: number | null;
 };
 
