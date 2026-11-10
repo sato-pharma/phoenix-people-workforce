@@ -370,7 +370,7 @@ export const MODULES = [
   {
     id: "phoenix-crm-refused-readings",
     title: "Phoenix CRM — the refusals a capture leaves behind",
-    scope: "Every capture Phoenix CRM did not keep: the three server refusals (no fix, too rough, off its Google listing), the browser's own report that it blocked location or the camera, and the one board the SFE and the Super Admin read them on.",
+    scope: "Every capture Phoenix CRM did not keep: the three server refusals (no fix, too rough, off its Google listing), the browser's own report that it blocked location or the camera, and the one board the SFE and the Super Admin read them on. Since 10 Nov 2026 also the four far-visit safeguards: the impossible-location refusal, the stuck-rep alert, the far-visit hold the SFE decides, and the 500 m line of an account.",
     globs: [
       "src/lib/phoenix-crm/refused-readings-rules.ts",
       "src/lib/phoenix-crm/server/refused-readings.ts",
@@ -380,9 +380,16 @@ export const MODULES = [
       "app/**/phoenix-crm/refused-readings/**",
       "app/api/phoenix-crm/refused-readings/**",
       "tests/phoenix-crm-refused-readings*",
+      "src/lib/phoenix-crm/far-visit-safeguards.ts",
+      "src/lib/phoenix-crm/server/far-visit-safeguards.ts",
+      "src/components/admin/far-visit-hold-actions.tsx",
+      "app/**/phoenix-crm/far-visit-holds/**",
+      "app/api/phoenix-crm/far-visit-holds/**",
+      "supabase/migrations/*phoenix_crm_far_visit_safeguards*",
+      "tests/phoenix-crm-far-visit-safeguards*",
     ],
-    keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location"],
-    tables: ["phoenix_crm_refused_readings"],
+    keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location", "impossible travel", "impossible location", "stuck rep", "far-visit hold", "held for SFE"],
+    tables: ["phoenix_crm_refused_readings", "phoenix_crm_far_visit_holds"],
   },
   // 🔴 SPLIT, 2026-10-26: the signed-out 401 rule took `phoenix-crm`'s pointer to 4,031, over the 4,000
   // margin. What a Phoenix CRM request hands the screen is one family — the value it returns, the sentence a

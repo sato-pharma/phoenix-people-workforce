@@ -465,6 +465,9 @@ const ROUTE_GATES: RouteGate[] = [
   // A mutation, since it writes a row, but never REQUIRED in the audit — the row IS the record, and
   // an audit entry beside it would be a second copy of the same fact.
   { route: "refused-readings", method: "POST", action: "read", audit: "mutation", auditRequired: false },
+  // The SFE's answer on a visit held for him after five far refusals from one spot (owner, 2026-11-10);
+  // the service asks canDecideFarVisitHolds again — the Super Admin and the SFE Manager only.
+  post("far-visit-holds/decide", "approve"),
   // The pulsing "new" badge clearing (owner, 2026-10-08): the viewer has a module on screen, so his OWN
   // unread notices that open it are marked read. `read` — a manager who only reads the module has
   // notices too — and a mutation that is not REQUIRED in the audit, since it is one flag on rows that
@@ -621,14 +624,15 @@ const NOT_THIS_MODULE: ReadonlyArray<readonly [RegExp, string]> = [
   [/["'`]\/api\/crm\//, "the old CRM's and the pilot's API routes"],
   // 🔴 `/admin/phoenix-crm` and `/employee-portals/phoenix-crm` are the retired 2026-09-14 pilot's
   // own pages — the first only forwards to `/admin/field-crm` (see src/lib/needs-you/types.ts), and a
-  // module file linking to either is the defect this catches. Five sub-paths beneath it are NOT the
-  // pilot's: the integrity board, the duplicate sweep, the refused readings, the list template and the
-  // visits archive (owner, 2026-11-07) are this module's own admin screens, linked from
+  // module file linking to either is the defect this catches. Six sub-paths beneath it are NOT the
+  // pilot's: the integrity board, the duplicate sweep, the refused readings, the visits held for SFE
+  // (owner, 2026-11-10), the list template and the visits archive (owner, 2026-11-07) are this module's
+  // own admin screens, linked from
   // system-navigation.ts, and the board page is pinned as
   // a blind reader in tests/phoenix-crm-blind-half.test.ts. They are named one at a time on purpose —
   // anything else under the retired path still fails, so a real pilot link cannot ride in behind them.
   [
-    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|list-template|visits-archive)\b)\b/,
+    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|far-visit-holds|list-template|visits-archive)\b)\b/,
     "the pilot's pages",
   ],
 ];

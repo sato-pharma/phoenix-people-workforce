@@ -433,8 +433,8 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     const allowed = [...reasonCheck[1]!.matchAll(/'([a-z_]+)'::text/g)].map((match) => match[1]!);
     assert.deepEqual(
       [...allowed].sort(),
-      ["blocked", "far_from_place", "no_fix", "off_listing", "rough", "signboard_no_plate", "signboard_unreadable", "timetable_missing", "timetable_unreadable"],
-      "nine reasons (far_from_place joined 2026-10-20), and the migration is where that list lives",
+      ["blocked", "far_from_place", "impossible_travel", "no_fix", "off_listing", "rough", "signboard_no_plate", "signboard_unreadable", "timetable_missing", "timetable_unreadable"],
+      "ten reasons (far_from_place joined 2026-10-20, impossible_travel 2026-11-10), and the migration is where that list lives",
     );
     const sentences = new Map<string, string>();
     for (const reason of allowed) {
