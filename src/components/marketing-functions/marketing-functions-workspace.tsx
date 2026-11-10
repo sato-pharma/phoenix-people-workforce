@@ -16,6 +16,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { monthStartDate, monthTitle, shortDateLabel } from "@/lib/marketing-functions/months";
 import { categoryFigures, monthFigures } from "@/lib/marketing-functions/rules";
 import type { MarketingFunctionItem, MarketingMonthSheet, RepOption } from "@/lib/marketing-functions/types";
@@ -54,6 +55,8 @@ type Props = {
   basePath: string;
   feedbackBasePath: string;
   todayIso: string;
+  /** Names for the Product picker: his own products first, then every product. Free text is still kept. */
+  productNames: string[];
 };
 
 const STATUS_CHIP: Record<MarketingFunctionStatus, string> = {
@@ -102,11 +105,14 @@ function CategoryLabel({ category }: { category: MarketingFunctionCategory }) {
 function StatusChip({
   value,
   editable,
+  disabled = false,
   label,
   onChange,
 }: {
   value: MarketingFunctionStatus | null;
   editable: boolean;
+  /** True while a save is in flight. */
+  disabled?: boolean;
   label: string;
   onChange: (next: MarketingFunctionStatus | null) => void;
 }) {
@@ -123,6 +129,7 @@ function StatusChip({
     <select
       aria-label={label}
       className={cn(phxSelectClassName, "h-9 text-xs font-bold")}
+      disabled={disabled}
       onChange={(event) => onChange((event.target.value || null) as MarketingFunctionStatus | null)}
       value={value ?? ""}
     >
@@ -143,6 +150,7 @@ function ItemEditor({
   onCancel,
   onDelete,
   saving,
+  productNames,
 }: {
   draft: Row;
   onChange: (next: Row) => void;
@@ -150,6 +158,7 @@ function ItemEditor({
   onCancel: () => void;
   onDelete: (() => void) | null;
   saving: boolean;
+  productNames: string[];
 }) {
   const category = MARKETING_FUNCTION_CATEGORIES.find((entry) => entry.key === draft.categoryKey)!;
   return (
@@ -160,11 +169,17 @@ function ItemEditor({
         <FormField className="md:col-span-2" label="Product">
           <input
             className={phxFieldClassName}
+            list="marketing-functions-products"
             maxLength={160}
             onChange={(event) => onChange({ ...draft, product: event.target.value })}
             placeholder="Which product"
             value={draft.product ?? ""}
           />
+          <datalist id="marketing-functions-products">
+            {productNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </FormField>
         <FormField className="md:col-span-4" label={`${MARKETING_FUNCTION_COLUMNS.description} ${MARKETING_FUNCTION_COLUMNS.descriptionDetail}`} required>
           <textarea
@@ -255,7 +270,16 @@ function ItemEditor({
   );
 }
 
-export function MarketingFunctionsWorkspace({ sheet, monthKey, monthOptions, authors, basePath, feedbackBasePath, todayIso }: Props) {
+export function MarketingFunctionsWorkspace({
+  sheet,
+  monthKey,
+  monthOptions,
+  authors,
+  basePath,
+  feedbackBasePath,
+  todayIso,
+  productNames,
+}: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(() => withKeys(sheet?.items ?? []));
   const [draft, setDraft] = useState<Row | null>(null);
@@ -464,7 +488,7 @@ export function MarketingFunctionsWorkspace({ sheet, monthKey, monthOptions, aut
               <p className="mt-1 text-sm text-slate-600">
                 {status ? MARKETING_MONTH_STATUS_LABELS[status] : "Not started"}
                 {sheet.month?.reviewedAt && sheet.month.reviewedByName
-                  ? ` by ${sheet.month.reviewedByName}`
+                  ? ` by ${sheet.month.reviewedByName}, ${cairoDateTime(sheet.month.reviewedAt)}`
                   : ""}
               </p>
               {sheet.month?.reviewNote ? (
@@ -513,175 +537,186 @@ export function MarketingFunctionsWorkspace({ sheet, monthKey, monthOptions, aut
           <FormError>{error}</FormError>
           {notice ? <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">{notice}</p> : null}
 
-          {/* Desktop: her sheet. One table, her five column heads, a band per category. */}
-          <div className="hidden border border-slate-300 bg-white md:block">
-            <table className="w-full table-fixed border-collapse text-sm">
-              <colgroup>
-                <col className="w-[22%]" />
-                <col className="w-[36%]" />
-                <col className="w-[12%]" />
-                <col className="w-[15%]" />
-                <col className="w-[15%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-slate-400 text-left text-slate-900">
-                  <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.category}</th>
-                  <th className="px-3 py-2 font-black">
-                    {MARKETING_FUNCTION_COLUMNS.description}{" "}
-                    <span className="text-xs font-medium">{MARKETING_FUNCTION_COLUMNS.descriptionDetail}</span>
-                  </th>
-                  <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.dueDate}</th>
-                  <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.statusMid}</th>
-                  <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.statusEnd}</th>
-                </tr>
-              </thead>
+          {/* Her sheet switches on its OWN width: the portal rail takes 324px from lg, so a viewport
+              breakpoint left the status columns too narrow for "In progress" between 768px and ~1250px. */}
+          <div className="@container">
+            {/* Wide: her sheet. One table, her five column heads, a band per category. */}
+            <div className="hidden border border-slate-300 bg-white @4xl:block">
+              <table className="w-full table-fixed border-collapse text-sm">
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[34%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-slate-400 text-left text-slate-900">
+                    <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.category}</th>
+                    <th className="px-3 py-2 font-black">
+                      {MARKETING_FUNCTION_COLUMNS.description}{" "}
+                      <span className="text-xs font-medium">{MARKETING_FUNCTION_COLUMNS.descriptionDetail}</span>
+                    </th>
+                    <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.dueDate}</th>
+                    <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.statusMid}</th>
+                    <th className="px-3 py-2 font-black">{MARKETING_FUNCTION_COLUMNS.statusEnd}</th>
+                  </tr>
+                </thead>
+                {MARKETING_FUNCTION_CATEGORIES.map((category) => {
+                  const bandRows = rows.filter((row) => row.categoryKey === category.key);
+                  const lines = category.key === "field" ? sheet.fieldActivity : [];
+                  const span = Math.max(1, bandRows.length + lines.length + (editable ? 1 : 0));
+                  const figures = byCategory[category.key];
+                  return (
+                    <tbody className="border-b border-slate-300" key={category.key} style={{ backgroundColor: category.fill }}>
+                      {Array.from({ length: span }).map((_, index) => {
+                        const row = bandRows[index];
+                        const line = row ? null : lines[index - bandRows.length];
+                        const isAddRow = !row && !line && editable;
+                        return (
+                          <tr className="border-t border-black/10 align-top" key={row?.key ?? line?.id ?? `add-${category.key}`}>
+                            {index === 0 ? (
+                              <th className="border-r border-black/10 px-3 py-2 text-left align-top font-normal" rowSpan={span} scope="rowgroup">
+                                <CategoryLabel category={category} />
+                                {figures.planned + figures.actual > 0 ? (
+                                  <span className="mt-2 block text-xs font-bold text-slate-700">
+                                    {figures.done} done of {figures.planned + figures.actual}
+                                  </span>
+                                ) : null}
+                              </th>
+                            ) : null}
+                            {row ? (
+                              <>
+                                <td className="px-3 py-2">
+                                  <p className="whitespace-pre-wrap break-words text-slate-900">
+                                    {row.product ? <span className="font-black">{row.product}: </span> : null}
+                                    {row.description}
+                                  </p>
+                                  <p className="mt-1 text-xs font-bold text-slate-600">
+                                    {MARKETING_FUNCTION_ORIGIN_LABELS[row.origin]}
+                                    {editable ? (
+                                      <button className="ml-2 font-black text-slate-900 underline underline-offset-2" onClick={() => setDraft(row)} type="button">
+                                        Edit
+                                      </button>
+                                    ) : null}
+                                  </p>
+                                </td>
+                                <td className="px-3 py-2 tabular-nums" style={category.dueDateFill ? { backgroundColor: category.dueDateFill } : undefined}>
+                                  {row.dueDate ? shortDateLabel(row.dueDate) : ""}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <StatusChip editable={editable} label={`${MARKETING_FUNCTION_COLUMNS.statusMid}: ${row.description}`} disabled={busy} onChange={(value) => setStatus(row, "statusMid", value)} value={row.statusMid} />
+                                  {row.noteMid ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteMid}</p> : null}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <StatusChip editable={editable} label={`${MARKETING_FUNCTION_COLUMNS.statusEnd}: ${row.description}`} disabled={busy} onChange={(value) => setStatus(row, "statusEnd", value)} value={row.statusEnd} />
+                                  {row.noteEnd ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteEnd}</p> : null}
+                                </td>
+                              </>
+                            ) : line ? (
+                              <>
+                                <td className="px-3 py-2">
+                                  <Link className="font-bold text-slate-900 underline underline-offset-2" href={`${feedbackBasePath}/${line.id}`}>
+                                    {FIELD_VISIT_TYPE_LABELS[line.visitType]} visit with {line.repName}
+                                  </Link>
+                                  <p className="mt-1 text-xs font-bold text-slate-600">From the signed field visit feedback</p>
+                                </td>
+                                <td className="px-3 py-2 tabular-nums" style={category.dueDateFill ? { backgroundColor: category.dueDateFill } : undefined}>
+                                  {shortDateLabel(line.visitDate)}
+                                </td>
+                                <td className="px-3 py-2" />
+                                <td className="px-3 py-2">
+                                  <span className={cn("inline-block border px-2 py-0.5 text-xs font-bold", STATUS_CHIP.done)}>Done</span>
+                                </td>
+                              </>
+                            ) : isAddRow ? (
+                              <td className="px-3 py-2" colSpan={4}>
+                                <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => startNew(category.key)} type="button">
+                                  Add an item to {category.title}
+                                </button>
+                              </td>
+                            ) : (
+                              <td className="px-3 py-2 text-slate-600" colSpan={4}>
+                                Nothing in this category.
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  );
+                })}
+              </table>
+            </div>
+
+            {/* Narrow: one card per band, the band's own fill on its head. */}
+            <div className="space-y-3 @4xl:hidden">
               {MARKETING_FUNCTION_CATEGORIES.map((category) => {
                 const bandRows = rows.filter((row) => row.categoryKey === category.key);
                 const lines = category.key === "field" ? sheet.fieldActivity : [];
-                const span = Math.max(1, bandRows.length + lines.length + (editable ? 1 : 0));
-                const figures = byCategory[category.key];
                 return (
-                  <tbody className="border-b border-slate-300" key={category.key} style={{ backgroundColor: category.fill }}>
-                    {Array.from({ length: span }).map((_, index) => {
-                      const row = bandRows[index];
-                      const line = row ? null : lines[index - bandRows.length];
-                      const isAddRow = !row && !line && editable;
-                      return (
-                        <tr className="border-t border-black/10 align-top" key={row?.key ?? line?.id ?? `add-${category.key}`}>
-                          {index === 0 ? (
-                            <th className="border-r border-black/10 px-3 py-2 text-left align-top font-normal" rowSpan={span} scope="rowgroup">
-                              <CategoryLabel category={category} />
-                              {figures.planned + figures.actual > 0 ? (
-                                <span className="mt-2 block text-xs font-bold text-slate-700">
-                                  {figures.done} done of {figures.planned + figures.actual}
-                                </span>
-                              ) : null}
-                            </th>
+                  <section className="border border-slate-300 bg-white" key={category.key}>
+                    <header className="px-3 py-2" style={{ backgroundColor: category.fill }}>
+                      <CategoryLabel category={category} />
+                      {byCategory[category.key].planned + byCategory[category.key].actual > 0 ? (
+                        <span className="mt-2 block text-xs font-bold text-slate-700">
+                          {byCategory[category.key].done} done of {byCategory[category.key].planned + byCategory[category.key].actual}
+                        </span>
+                      ) : null}
+                    </header>
+                    <ul className="divide-y divide-slate-200">
+                      {bandRows.map((row) => (
+                        <li className="space-y-2 px-3 py-3" key={row.key}>
+                          <p className="whitespace-pre-wrap break-words text-sm text-slate-900">
+                            {row.product ? <span className="font-black">{row.product}: </span> : null}
+                            {row.description}
+                          </p>
+                          <p className="text-xs font-bold text-slate-600">
+                            {MARKETING_FUNCTION_ORIGIN_LABELS[row.origin]}
+                            {row.dueDate ? ` · ${MARKETING_FUNCTION_COLUMNS.dueDate} ${shortDateLabel(row.dueDate)}` : ""}
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="mb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">{MARKETING_FUNCTION_COLUMNS.statusMid}</p>
+                              <StatusChip editable={editable} label={MARKETING_FUNCTION_COLUMNS.statusMid} disabled={busy} onChange={(value) => setStatus(row, "statusMid", value)} value={row.statusMid} />
+                              {row.noteMid ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteMid}</p> : null}
+                            </div>
+                            <div>
+                              <p className="mb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">{MARKETING_FUNCTION_COLUMNS.statusEnd}</p>
+                              <StatusChip editable={editable} label={MARKETING_FUNCTION_COLUMNS.statusEnd} disabled={busy} onChange={(value) => setStatus(row, "statusEnd", value)} value={row.statusEnd} />
+                              {row.noteEnd ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteEnd}</p> : null}
+                            </div>
+                          </div>
+                          {editable ? (
+                            <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => setDraft(row)} type="button">
+                              Edit
+                            </button>
                           ) : null}
-                          {row ? (
-                            <>
-                              <td className="px-3 py-2">
-                                <p className="whitespace-pre-wrap break-words text-slate-900">
-                                  {row.product ? <span className="font-black">{row.product}: </span> : null}
-                                  {row.description}
-                                </p>
-                                <p className="mt-1 text-xs font-bold text-slate-600">
-                                  {MARKETING_FUNCTION_ORIGIN_LABELS[row.origin]}
-                                  {editable ? (
-                                    <button className="ml-2 font-black text-slate-900 underline underline-offset-2" onClick={() => setDraft(row)} type="button">
-                                      Edit
-                                    </button>
-                                  ) : null}
-                                </p>
-                              </td>
-                              <td className="px-3 py-2 tabular-nums" style={category.dueDateFill ? { backgroundColor: category.dueDateFill } : undefined}>
-                                {row.dueDate ? shortDateLabel(row.dueDate) : ""}
-                              </td>
-                              <td className="px-3 py-2">
-                                <StatusChip editable={editable} label={`${MARKETING_FUNCTION_COLUMNS.statusMid}: ${row.description}`} onChange={(value) => setStatus(row, "statusMid", value)} value={row.statusMid} />
-                                {row.noteMid ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteMid}</p> : null}
-                              </td>
-                              <td className="px-3 py-2">
-                                <StatusChip editable={editable} label={`${MARKETING_FUNCTION_COLUMNS.statusEnd}: ${row.description}`} onChange={(value) => setStatus(row, "statusEnd", value)} value={row.statusEnd} />
-                                {row.noteEnd ? <p className="mt-1 break-words text-xs text-slate-700">{row.noteEnd}</p> : null}
-                              </td>
-                            </>
-                          ) : line ? (
-                            <>
-                              <td className="px-3 py-2">
-                                <Link className="font-bold text-slate-900 underline underline-offset-2" href={`${feedbackBasePath}/${line.id}`}>
-                                  {FIELD_VISIT_TYPE_LABELS[line.visitType]} visit with {line.repName}
-                                </Link>
-                                <p className="mt-1 text-xs font-bold text-slate-600">From the signed field visit feedback</p>
-                              </td>
-                              <td className="px-3 py-2 tabular-nums" style={category.dueDateFill ? { backgroundColor: category.dueDateFill } : undefined}>
-                                {shortDateLabel(line.visitDate)}
-                              </td>
-                              <td className="px-3 py-2" />
-                              <td className="px-3 py-2">
-                                <span className={cn("inline-block border px-2 py-0.5 text-xs font-bold", STATUS_CHIP.done)}>Done</span>
-                              </td>
-                            </>
-                          ) : isAddRow ? (
-                            <td className="px-3 py-2" colSpan={4}>
-                              <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => startNew(category.key)} type="button">
-                                Add an item to {category.title}
-                              </button>
-                            </td>
-                          ) : (
-                            <td className="px-3 py-2 text-slate-600" colSpan={4}>
-                              Nothing in this category.
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
+                        </li>
+                      ))}
+                      {lines.map((line) => (
+                        <li className="px-3 py-3" key={line.id}>
+                          <Link className="text-sm font-bold text-slate-900 underline underline-offset-2" href={`${feedbackBasePath}/${line.id}`}>
+                            {FIELD_VISIT_TYPE_LABELS[line.visitType]} visit with {line.repName}
+                          </Link>
+                          <p className="mt-1 text-xs font-bold text-slate-600">{shortDateLabel(line.visitDate)} · Done</p>
+                        </li>
+                      ))}
+                      {editable ? (
+                        <li className="px-3 py-3">
+                          <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => startNew(category.key)} type="button">
+                            Add an item to {category.title}
+                          </button>
+                        </li>
+                      ) : null}
+                      {!editable && bandRows.length === 0 && lines.length === 0 ? (
+                        <li className="px-3 py-3 text-sm text-slate-500">Nothing in this category.</li>
+                      ) : null}
+                    </ul>
+                  </section>
                 );
               })}
-            </table>
-          </div>
-
-          {/* Phone: one card per band, the band's own fill on its head. */}
-          <div className="space-y-3 md:hidden">
-            {MARKETING_FUNCTION_CATEGORIES.map((category) => {
-              const bandRows = rows.filter((row) => row.categoryKey === category.key);
-              const lines = category.key === "field" ? sheet.fieldActivity : [];
-              return (
-                <section className="border border-slate-300 bg-white" key={category.key}>
-                  <header className="px-3 py-2" style={{ backgroundColor: category.fill }}>
-                    <CategoryLabel category={category} />
-                  </header>
-                  <ul className="divide-y divide-slate-200">
-                    {bandRows.map((row) => (
-                      <li className="space-y-2 px-3 py-3" key={row.key}>
-                        <p className="whitespace-pre-wrap break-words text-sm text-slate-900">
-                          {row.product ? <span className="font-black">{row.product}: </span> : null}
-                          {row.description}
-                        </p>
-                        <p className="text-xs font-bold text-slate-600">
-                          {MARKETING_FUNCTION_ORIGIN_LABELS[row.origin]}
-                          {row.dueDate ? ` · ${MARKETING_FUNCTION_COLUMNS.dueDate} ${shortDateLabel(row.dueDate)}` : ""}
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <p className="mb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">{MARKETING_FUNCTION_COLUMNS.statusMid}</p>
-                            <StatusChip editable={editable} label={MARKETING_FUNCTION_COLUMNS.statusMid} onChange={(value) => setStatus(row, "statusMid", value)} value={row.statusMid} />
-                          </div>
-                          <div>
-                            <p className="mb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">{MARKETING_FUNCTION_COLUMNS.statusEnd}</p>
-                            <StatusChip editable={editable} label={MARKETING_FUNCTION_COLUMNS.statusEnd} onChange={(value) => setStatus(row, "statusEnd", value)} value={row.statusEnd} />
-                          </div>
-                        </div>
-                        {editable ? (
-                          <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => setDraft(row)} type="button">
-                            Edit
-                          </button>
-                        ) : null}
-                      </li>
-                    ))}
-                    {lines.map((line) => (
-                      <li className="px-3 py-3" key={line.id}>
-                        <Link className="text-sm font-bold text-slate-900 underline underline-offset-2" href={`${feedbackBasePath}/${line.id}`}>
-                          {FIELD_VISIT_TYPE_LABELS[line.visitType]} visit with {line.repName}
-                        </Link>
-                        <p className="mt-1 text-xs font-bold text-slate-600">{shortDateLabel(line.visitDate)} · Done</p>
-                      </li>
-                    ))}
-                    {editable ? (
-                      <li className="px-3 py-3">
-                        <button className="text-sm font-black text-slate-900 underline underline-offset-2" onClick={() => startNew(category.key)} type="button">
-                          Add an item to {category.title}
-                        </button>
-                      </li>
-                    ) : null}
-                    {!editable && bandRows.length === 0 && lines.length === 0 ? (
-                      <li className="px-3 py-3 text-sm text-slate-500">Nothing in this category.</li>
-                    ) : null}
-                  </ul>
-                </section>
-              );
-            })}
+            </div>
           </div>
 
           {draft ? (
@@ -696,6 +731,7 @@ export function MarketingFunctionsWorkspace({ sheet, monthKey, monthOptions, aut
                 onChange={setDraft}
                 onDelete={rows.some((row) => row.key === draft.key) ? removeDraft : null}
                 onSave={saveDraft}
+                productNames={productNames}
                 saving={busy}
               />
             </div>

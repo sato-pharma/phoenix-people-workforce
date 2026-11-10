@@ -133,7 +133,7 @@ function FormsList({ forms, basePath, showAuthor }: { forms: FieldFeedback[]; ba
             </Link>
             <p className="mt-1 text-xs text-slate-600">
               {shortDateLabel(form.visitDate)} · {FIELD_VISIT_TYPE_LABELS[form.visitType]}
-              {form.repArea ? ` · ${form.repArea}` : ""}
+              {[form.repJobTitle, form.repArea].filter(Boolean).map((part) => ` · ${part}`).join("")}
             </p>
             <p className="mt-1 text-xs font-bold">
               {form.signedAt ? <span className="text-slate-900">Signed</span> : <span className="text-orange-700">Draft</span>}

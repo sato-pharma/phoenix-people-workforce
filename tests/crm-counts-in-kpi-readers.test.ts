@@ -51,6 +51,8 @@ const KPI_READERS: Record<string, number> = {
   "src/lib/crm/rep-kpi-reports-data.ts": 1,
   "src/lib/crm/call-rate-service.ts": 1,
   "src/lib/crm/reps-list-activity-data.ts": 1,
+  // The Marketing Field Visit Feedback prefill: its AM · PM · Pharmacies figures are clinic counts.
+  "src/lib/marketing-functions/service.ts": 1,
   // The person's own record and an earlier record of a re-hired person; both feed the visit mix and counts.
   "src/lib/employee-360/service.ts": 2,
   // The coaching impact's productive visits, and the double visits a leader conducted.

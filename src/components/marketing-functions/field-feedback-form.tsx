@@ -256,7 +256,7 @@ export function FieldFeedbackForm({ initial, rideAlongDays, people, basePath, to
         </ul>
       </FormBlock>
 
-      <FormBlock label={<span className="text-sm font-black text-slate-900">{FIELD_FEEDBACK_LABELS.comments}</span>}>
+      <FormBlock label={<span className="text-sm font-black text-slate-900">{FIELD_FEEDBACK_LABELS.comments.split("/")[0]!.trim()}</span>}>
         <div className="grid grid-cols-1 gap-4">
           <FormField label={FIELD_FEEDBACK_LABELS.comments}>
             <textarea className={phxTextareaClassName} maxLength={2000} onChange={(event) => setComments(event.target.value)} rows={3} value={comments} />
