@@ -49,6 +49,7 @@ const acronymCases: ReadonlyArray<{
   { code: "hr_operations_coordinator", expected: "HR Operations Coordinator", note: "position 12" },
   { code: "cns", expected: "CNS", note: "line" },
   { code: "alex_bhr", expected: "Alex BHR", note: "team, 16 rows" },
+  { code: "toll_manufacturing_manager_tmm", expected: "Toll Manufacturing Manager TMM", note: "position 18 since 2026-11-10" },
   // Ordinary names must be untouched by all of the above.
   {
     code: "medical_representative",
@@ -132,6 +133,12 @@ export async function runOrgTitleCaseAcronymTests() {
   }
 
   assert.equal(setFailures.join(" | "), "", "an ORG_TITLE_ACRONYMS entry is unsafe");
+
+  // An acronym in brackets is still an acronym (2026-11-10). "Toll Manufacturing Manager (TMM)" is a
+  // live title, and the bare-word match turned it into "(tmm)" on every import of it.
+  assert.equal(toOrgTitleCase("Toll Manufacturing Manager (TMM)"), "Toll Manufacturing Manager (TMM)");
+  assert.equal(toOrgTitleCase("toll manufacturing manager (tmm)"), "Toll Manufacturing Manager (TMM)");
+  assert.equal(toOrgTitleCase("Delta (2)"), "Delta (2)", "a bracketed number is still left alone");
   assert.ok(ORG_TITLE_ACRONYMS.size > 0, "the acronym set was emptied");
   assert.ok(ORG_TITLE_PHRASES.length > 0, "the phrase rules were emptied");
 

@@ -20,7 +20,7 @@ import {
 /**
  * Production Planner — the access gate, which is the one edit in this module that can leak.
  *
- * The owner named five people on 2026-10-05: Dr. Sahar Khalil (R&D Manager) and the CEO as the main
+ * The owner named five people on 2026-10-05: Dr. Sahar Khalil (then R&D Manager, the Toll Manufacturing Manager since 2026-11-10) and the CEO as the main
  * controllers, the Super Admin as usual, and Mr. Ahmed Al Maraghi and Reham Elwiy read-only.
  *
  * 🔴 TWO of those five hold app roles that are shared with people he did NOT name, and the figures
@@ -107,7 +107,7 @@ export function runProductionPlanningAccessTests() {
   // ── The five people the owner named ───────────────────────────────────────────────────────────
   assert.equal(level("B-10", "Super Admin"), "full", "Omar Gawish — the owner");
   assert.equal(level("AA", "CEO"), "full", "Anwar Gaweesh — the CEO");
-  assert.equal(level("AB", "Manager"), "full", "Dr. Sahar Khalil — the R&D Manager, the module's main user");
+  assert.equal(level("AB", "Manager"), "full", "Dr. Sahar Khalil — the Toll Manufacturing Manager, the module's main user");
   assert.equal(level("B-185", "Finance Manager"), "read", "Ahmed Al Maraghi — read only");
   assert.equal(level("OF-0004", "Employee"), "read", "Reham Elwiy — read only, for now");
 

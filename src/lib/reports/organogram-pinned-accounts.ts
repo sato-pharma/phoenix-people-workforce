@@ -11,8 +11,8 @@ import { hrIdsMatch } from "@/lib/hr-id";
  * A-3 — Samaa Mosaad Khalil, QPPV, Head Office (owner, 2026-09-02: "show the full organogram to
  * sama mosaad account").
  *
- * AB — Dr. Sahar Khalil, R&D Manager, the person the QPPV reports to (owner, 2026-10-20: give the
- * R&D Manager the same company chart the QPPV has, Head Office included).
+ * AB — Dr. Sahar Khalil, Toll Manufacturing Manager (R&D Manager until 2026-11-10), the person the QPPV reports to (owner, 2026-10-20: give the
+ * then R&D Manager the same company chart the QPPV has, Head Office included).
  *
  * Both hold the legacy Head-Office `Manager` app role. The third account on that rung, A-14
  * Regulatory Affairs, is deliberately NOT listed: the owner has named two people, not the rung.

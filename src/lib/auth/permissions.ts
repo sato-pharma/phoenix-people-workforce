@@ -105,6 +105,11 @@ export const phoenixCompanyJobTitles = [
   "HR Manager",
   "R&D Manager",
   "Research and Development Manager",
+  // Dr. Sahar Khalil's title since 2026-11-10 (owner), replacing "R&D Manager" on her record. Like
+  // every title here it is a label and carries no access: hers comes from her `Manager` role and the
+  // named lists (Production Planner, the pinned organogram accounts). "R&D Manager" stays listed
+  // because contracts and older records name it.
+  "Toll Manufacturing Manager (TMM)",
   "Financial Advisor",
 ] as const;
 export type PhoenixCompanyJobTitle = (typeof phoenixCompanyJobTitles)[number];
@@ -1870,7 +1875,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // keys on role_name and there is no user-scoped equivalent — but the OWNER'S DECISION was one
     // account, not the rung. So the two page gates in src/lib/reports/organogram.ts pin the actual
     // view to named HR_IDs (isFullOrganogramPinnedAccount, reading
-    // src/lib/reports/organogram-pinned-accounts.ts): A-3, and since 2026-10-20 AB, the R&D Manager
+    // src/lib/reports/organogram-pinned-accounts.ts): A-3, and since 2026-10-20 AB, the Toll Manufacturing Manager
     // the QPPV reports to (owner). This grant is deliberately the widest of the three conditions
     // rather than the operative one.
     //

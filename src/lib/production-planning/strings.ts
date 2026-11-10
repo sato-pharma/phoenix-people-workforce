@@ -7,7 +7,7 @@
  *
  * ── Genderless by construction, and why it is not optional here ──────────────────────────────────
  *
- * Both primary users are women: Dr. Sahar Khalil, the R&D Manager, and Reham Elwiy, the Regulatory
+ * Both primary users are women: Dr. Sahar Khalil, the Toll Manufacturing Manager, and Reham Elwiy, the Regulatory
  * Affairs Supervisor. Arabic marks gender on verbs in the imperative and on the second-person
  * pronoun, so the ordinary way to write a UI — "اختر", "احسب", "بياناتك" — addresses a man. The whole
  * app was swept neutral in English on 2026-10-05 for exactly this reason; this file is that ruling

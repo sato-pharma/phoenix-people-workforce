@@ -157,7 +157,7 @@ function classifyAreaAndTeam(rowNumber: number, areaValue: unknown, teamValue: u
 
   // An Area with a blank Team is how four people reached production carrying no team at all
   // between 2026-08-17 and 2026-09-01, with nothing complaining: Team is not a required column,
-  // and making it one would be wrong anyway - Head Office staff (the CEO, the R&D Manager)
+  // and making it one would be wrong anyway - Head Office staff (the CEO, the Toll Manufacturing Manager)
   // legitimately sit in no sales team, and `requiredEmployeeImportFields` only asserts that a
   // COLUMN exists, never that a row carries a value. So warn instead of blocking, and only when
   // an Area is present: a row carrying neither is a Head Office row, not a mistake.

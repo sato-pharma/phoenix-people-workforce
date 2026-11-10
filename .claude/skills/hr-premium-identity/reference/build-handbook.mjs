@@ -899,7 +899,7 @@ const teamRows = [
       ["maraghy", "Ahmed El Maraghy", "Finance and Admin Manager"],
       ["omar", "Omar Gawish", "HR Manager"],
       ["hossam", "Hossam AboElftouh", "Marketing Manager"],
-      ["sahar", "Sahar Khalil", "R&amp;D Manager"],
+      ["sahar", "Sahar Khalil", "Toll Manufacturing Manager"],
       ["khaled", "Khaled Bedair", "SFE Manager"],
     ]],
   ],

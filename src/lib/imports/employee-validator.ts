@@ -28,6 +28,7 @@ import type {
   EmployeeImportPlanOptions,
   EmployeeImportRecord,
   EmployeeImportValidationResult,
+  ExistingEmployeeOrgSeat,
   OrganizationEntityCounts,
   OrganizationEntitiesToCreate,
   OrganizationEntityToCreate,
@@ -571,6 +572,53 @@ function employeeOrgSeatLabel(record: Pick<
     `Region: ${record.regionName ?? "-"}`,
     `Line: ${record.lineName ?? "-"}`,
   ].join(", ");
+}
+
+export const JOB_TITLE_KEPT_CODE = "job_title_kept";
+
+function jobTitleKey(value: string | null | undefined) {
+  const text = normalizeTextValue(value);
+  return text ? toOrgTitleCase(text).replace(/\s+/g, " ").trim().toLowerCase() : null;
+}
+
+/**
+ * Keeps every existing employee's stored title against a file that names a different one, and the
+ * seat position that title implies when the row has no Position cell of its own (the position is
+ * then the title, see buildRecord). Mutates the records and returns one warning per kept title.
+ * `seats` is the directory's active employees; an inactive one is refused upstream anyway.
+ */
+function keepStoredJobTitles(
+  records: EmployeeImportRecord[],
+  mapping: HeaderMapping,
+  seats: ExistingEmployeeOrgSeat[] | undefined,
+): EmployeeImportIssue[] {
+  const storedByHrIdKey = new Map<string, ExistingEmployeeOrgSeat>();
+  for (const seat of seats ?? []) {
+    const key = canonicalHrIdKey(seat.hrId);
+    if (key && !storedByHrIdKey.has(key)) storedByHrIdKey.set(key, seat);
+  }
+
+  const warnings: EmployeeImportIssue[] = [];
+  for (const record of records) {
+    if (record.rowType !== "employee" || !record.hrId || !record.jobTitle) continue;
+    const stored = storedByHrIdKey.get(canonicalHrIdKey(record.hrId) ?? "");
+    const storedKey = jobTitleKey(stored?.jobTitle);
+    if (!stored || !storedKey || storedKey === jobTitleKey(record.jobTitle)) continue;
+
+    warnings.push({
+      rowNumber: record.rowNumber,
+      field: "jobTitle",
+      code: JOB_TITLE_KEPT_CODE,
+      message: `Title kept as "${stored.jobTitle}" — the file says "${record.jobTitle}". An import never changes an employee's title; change it on the employee's record in Employee Master.`,
+    });
+    record.jobTitle = null;
+    if (normalizeTextValue(valueFor(record.source, mapping, "position")) === null) {
+      record.codes.positionCode = stored.positionCode;
+      record.positionTitle = null;
+      record.normalizedOrganizationNames.position = null;
+    }
+  }
+  return warnings;
 }
 
 function teamAreaKey(name: string, areaCode: string | null) {
@@ -1445,6 +1493,16 @@ export function validateEmployeeImportRows(
       }
     }
   }
+
+  // AN IMPORT NEVER CHANGES THE TITLE AN EMPLOYEE ALREADY HOLDS (owner, 2026-11-10, after Dr. Sahar
+  // Khalil's title moved from "R&D Manager" to "Toll Manufacturing Manager (TMM)": "fix the risk").
+  // A master sheet saved before a title change still carries the old title, and re-importing it
+  // would quietly put the old title back and, through the Position fallback, move her seat onto the
+  // old one. So a differing title is KEPT, the row still imports everything else, and the row warns
+  // by name. A title is changed on the employee's record in Employee Master. A casing-only
+  // difference ("R And D Manager" against "R&D Manager") is not a change and still writes, so the
+  // import's casing repair keeps working. A new hire, and a record with no title yet, take the file's.
+  validationWarnings.push(...keepStoredJobTitles(records, mapping, options.existingState?.employeeOrgSeats));
 
   const failedRowNumbers = new Set(
     validationErrors

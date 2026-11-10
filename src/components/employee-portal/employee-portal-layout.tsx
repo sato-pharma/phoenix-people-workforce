@@ -517,7 +517,7 @@ function buildEmployeePortalSections({
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlanningCalendarTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
         // Production Planner — Ivyronc's raw-material buy list, for the five people the owner named
-        // by HR id rather than by role (the R&D Manager and the R&D Supervisor are the two who sit
+        // by HR id rather than by role (the Toll Manufacturing Manager and the R&D Supervisor are the two who sit
         // in this shell). The flag carries the named list in; the page re-asks the database.
         ...(showProductionPlanningTab ? [{ href: "/employee-portals/production-planning", label: "Production Planner", icon: FlaskConical }] : []),
         // PV Training Evidence — the signed PV training sheets, for the QPPV alone (owner, 2026-11-09). The flag

@@ -284,7 +284,7 @@ export type EmployeePortalNavVisibility = {
   showMilestonesTab?: boolean;
   // Production Planner — the toll-manufacturing buy list for Ivyronc, made by EGPI out of raw
   // materials Sato supplies. 🔴 THIS FLAG IS KEYED TO A NAMED LIST OF PEOPLE, NOT TO A ROLE, and it
-  // is the only one here that is. The owner named five: the R&D Manager (its main user), the CEO,
+  // is the only one here that is. The owner named five: the Toll Manufacturing Manager (its main user), the CEO,
   // himself, the Finance Manager and the R&D Supervisor. Two of them sit in this shell, and their
   // roles cannot be used as the key — `Manager` would also open it to the QPPV, and `Employee` is
   // the whole company. So it reads `isNamedProductionPlanningPerson(viewerHrId)`, and a sixth
@@ -294,7 +294,7 @@ export type EmployeePortalNavVisibility = {
   showProductionPlanningTab?: boolean;
   // PV Training Evidence — the signed PV training sheets, for the QPPV's own account alone (owner,
   // 2026-11-09: "only in Dr. Sama account"). By HR id, never by role: her `Manager` role is shared
-  // with the R&D Manager. The page re-asks the same helper (src/lib/pv-training/access.ts).
+  // with the Toll Manufacturing Manager. The page re-asks the same helper (src/lib/pv-training/access.ts).
   showPvTrainingEvidenceTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
@@ -613,7 +613,7 @@ export function resolveEmployeePortalNavVisibility(
   /**
    * The Head-Office people-manager rung, folded into `isDistrictManager` above as a legacy alias.
    *
-   * It is NOT a district seat, and the two live accounts on it are Head Office (QPPV, R&D Manager),
+   * It is NOT a district seat, and the two live accounts on it are Head Office (QPPV, Toll Manufacturing Manager),
    * so five rows it inherited through that alias opened to an empty page or an outright refusal:
    * Team Performance ("only available for District Sales Managers"), Sales vs Target and Monthly
    * Closing (no territory, no line — Head Office is stripped from every closing viewer), Early
@@ -880,7 +880,7 @@ export function resolveEmployeePortalNavVisibility(
     //
     // The pinned accounts are read from src/lib/reports/organogram-pinned-accounts.ts, the SAME list
     // the two enforcing gates read, so the link and the page cannot disagree. That list gained AB,
-    // the R&D Manager the QPPV reports to (owner, 2026-10-20); A-14 stays outside, with no link.
+    // the Toll Manufacturing Manager the QPPV reports to (owner, 2026-10-20); A-14 stays outside, with no link.
     // `isA3Account` is no longer the organogram door — it still carries her other carve-outs only.
     showOrganogramTab:
       isFullOrganogramPinnedHrId(viewerHrId) ||
@@ -1009,7 +1009,7 @@ export function resolveEmployeePortalNavVisibility(
     // Personally device-tracked employees see their own punch history; a head-of-department
     // Marketing Manager also gets the tab to review their team's attendance (self + her subtree,
     // gated server-side by assertCanViewEmployeeAttendance on /employee-portals/fingerprint-analytics).
-    // So does the generic "Manager" seat (the R&D Manager has reports): the page admits him through
+    // So does the generic "Manager" seat (the Toll Manufacturing Manager has reports): the page admits him through
     // his attendance:read grant and the picker lists the same team (owner, 2026-10-20).
     showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager || isHeadOfficeManagerRung,
     // No role test on purpose. `phoenixCrmEntryAvailable` (src/lib/phoenix-crm/server/page.ts) is the

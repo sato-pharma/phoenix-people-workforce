@@ -10,7 +10,7 @@
  *
  * ── DUAL-SURFACE, and that is not a convenience ──────────────────────────────────────────────────
  *
- * Dr. Sahar Khalil, the R&D Manager and this module's main user, holds the `Manager` app role, and
+ * Dr. Sahar Khalil, the Toll Manufacturing Manager and this module's main user, holds the `Manager` app role, and
  * Reham Elwiy holds `Employee`. Both are portal-shell roles (src/lib/auth/portal-shell-roles.ts),
  * and `app/(admin)/layout.tsx` redirects a portal-mode viewer to /employee-portals BEFORE any page
  * in that group runs. An admin-only module would therefore redirect its own main user straight back

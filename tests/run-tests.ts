@@ -2532,6 +2532,7 @@ import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manage
 import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
+import { runEmployeeImportKeepsStoredJobTitleTests } from "./employee-import-keeps-stored-job-title.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 import { runContractRenewalReminderLadderTests } from "./contract-renewal-reminder-ladder.test.ts";
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
@@ -9732,6 +9733,10 @@ await runTest(
   "employee import job title casing (Ceo/Qppv/Sfe Manager/R And D Manager canonicalize on upload; ordinary titles, minor words like \"Finance and Admin Manager\", and blanks unaffected)",
   runEmployeeImportJobTitleCasingTests,
 );
+await runTest(
+  "an import never changes an existing employee's title: an old sheet keeps the stored title and the seat it implies, warns by name, and still imports the row (casing repairs, blanks and new hires still write)",
+  runEmployeeImportKeepsStoredJobTitleTests,
+);
 
 await runTest(
   "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
@@ -11621,7 +11626,7 @@ await runTest(
   runProductionPlanningStringsTests,
 );
 await runTest(
-  "PV Training Evidence opens for the QPPV's own account alone: the door is ONE HR id (A-3) matched in any case, and the R&D Manager who shares her Manager role, the Super Admin and a plain employee are refused; every one of the 30 scanned pages has exactly one scan, kept in assets/ and never public/ because each carries real signatures, and next.config.ts traces them into the build; the owner's own example, Nahed Hatab, brings up serial 01/2026 and also 03/2026; the crossed-out row is not offered; and the portal sidebar reads the gate from the data-free access file so no attendee name ships to the whole company",
+  "PV Training Evidence opens for the QPPV's own account alone: the door is ONE HR id (A-3) matched in any case, and the Toll Manufacturing Manager who shares her Manager role, the Super Admin and a plain employee are refused; every one of the 30 scanned pages has exactly one scan, kept in assets/ and never public/ because each carries real signatures, and next.config.ts traces them into the build; the owner's own example, Nahed Hatab, brings up serial 01/2026 and also 03/2026; the crossed-out row is not offered; and the portal sidebar reads the gate from the data-free access file so no attendee name ships to the whole company",
   runPvTrainingEvidenceTests,
 );
 await runTest(
