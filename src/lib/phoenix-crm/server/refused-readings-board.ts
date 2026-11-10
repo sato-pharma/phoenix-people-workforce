@@ -21,16 +21,21 @@
  * and nobody is told they were looked at.
  */
 
+import { buildCaseMap, type CaseMap } from "@/lib/crm-integrity/integrity-case-map";
 import { notFoundError } from "@/lib/http/api-errors";
 import {
   attemptOutcome,
   parseBlockedPermission,
   parseRefusedReason,
+  savedPlaceForTry,
   summariseByRep,
+  tryPointOf,
   type AttemptOutcome,
   type LaterSave,
   type RefusedAttempt,
   type RepRefusals,
+  type SavedPlacePoint,
+  type TryPoint,
 } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -69,7 +74,20 @@ export type RefusedAttemptRow = RefusedAttempt & {
    * a link: the page signs it through the scoped photo route, which is what keeps it ten minutes long.
    */
   photoPath: string | null;
+  /** Where the phone was when the try was refused, or null when it sent no position (blocked, no fix). */
+  tryPoint: TryPoint | null;
+  /** The customer's saved place the try is set against (`savedPlaceForTry`), or null when none is saved. */
+  savedPlace: { lat: number; lon: number; address: string | null } | null;
+  /** The two on one small map (owner, 2026-11-10), or null when the try has no position to place. */
+  map: CaseMap | null;
 };
+
+/** The map's two labels, in the reader's words: where the phone was, and where the customer is saved. */
+export const TRY_POINT_LABEL = "Where the phone was";
+export const SAVED_PLACE_LABEL = "Customer's saved place";
+
+/** Small enough for a phone card, wide enough to show two points kilometres apart. */
+const TRY_MAP_SIZE = { width: 256, height: 256, padding: 32 };
 
 /** A stored pointer is shown only if it is the shape of a real slot — anything else is a row with no photo. */
 function storedPhotoPath(value: unknown): string | null {
@@ -162,6 +180,40 @@ async function loadLaterSaves(attempts: readonly RefusedAttempt[]): Promise<Late
 }
 
 /**
+ * The saved places of the customers on the printed tries — their active places and any a try was
+ * measured to, retired since or not. Non-fatal, like the saves: a failed chunk leaves those tries with
+ * their position and no comparison, never a board that will not open.
+ */
+async function loadSavedPlaces(customerIds: readonly string[]): Promise<SavedPlacePoint[]> {
+  if (customerIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const pages = await mapWithConcurrency(chunkStarts(customerIds.length), CHUNK_READS_AT_ONCE, async (index) =>
+    await supabase
+      .from("phoenix_crm_places")
+      .select("id, customer_id, lat, lon, address, status")
+      .in("customer_id", customerIds.slice(index, index + CHUNK))
+      .eq("is_test", false),
+  );
+  const places: SavedPlacePoint[] = [];
+  for (const { data, error } of pages) {
+    if (error) continue;
+    for (const row of (data ?? []) as Row[]) {
+      const point = tryPointOf(row.lat, row.lon, null);
+      if (!point) continue;
+      places.push({
+        id: String(row.id),
+        customerId: String(row.customer_id),
+        lat: point.lat,
+        lon: point.lon,
+        address: typeof row.address === "string" && row.address.trim() ? row.address.trim() : null,
+        active: row.status === "active",
+      });
+    }
+  }
+  return places;
+}
+
+/**
  * Load the board. Checked here as well as on the page, because this is the one place where reading
  * the data IS the sensitive act.
  */
@@ -179,7 +231,9 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   // switch is off" and "the reading was wide", and the SFE is exactly who acts on the first.
   // `distance_meters` is asked for EVERYONE: on a visit refused for being logged away from the customer's
   // validated photo (owner, 2026-10-20) the metres ARE the refusal, and both readers act on them.
-  const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, distance_meters, photo_path${mock ? ", device_mocked" : ""}`;
+  // `lat`, `lon` and `place_id` are asked for EVERYONE: where the phone was, set beside the customer's
+  // saved place on a small map, for both readers (owner, 2026-11-10, asked and answered "both").
+  const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, distance_meters, photo_path, lat, lon, place_id${mock ? ", device_mocked" : ""}`;
   // Paged to the last row (a window of two weeks can hold more than a thousand), newest first with the id as
   // the tie-break. A refusal written while the walk runs shifts a seam, so a repeated row is dropped by its id.
   const read = await fetchAllRows<Row>(
@@ -221,9 +275,12 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   }
 
   const customerIds = [...new Set(attempts.map((attempt) => attempt.customerId).filter((id): id is string => id !== null))];
-  // The customers' names, the reps' names and the later saves do not depend on one another, so the
-  // three are asked at once instead of the names first and the other two after.
-  const [customerPages, people, saves] = await Promise.all([
+  // Only the printed tries are mapped, so only their customers' places are read.
+  const printed = attempts.slice(0, LATEST_LIMIT);
+  const printedCustomerIds = [...new Set(printed.map((attempt) => attempt.customerId).filter((id): id is string => id !== null))];
+  // The customers' names, the reps' names, their saved places and the later saves do not depend on one
+  // another, so the four are asked at once instead of the names first and the others after.
+  const [customerPages, people, savedPlaces, saves] = await Promise.all([
     mapWithConcurrency(chunkStarts(customerIds.length), CHUNK_READS_AT_ONCE, async (index) =>
       await supabase
         .from("phoenix_crm_customers")
@@ -231,6 +288,7 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
         .in("id", customerIds.slice(index, index + CHUNK)),
     ),
     loadPeopleNames(attempts.map((attempt) => attempt.repHrId)),
+    loadSavedPlaces(printedCustomerIds),
     loadLaterSaves(attempts),
   ]);
   const customerNames = new Map<string, string>();
@@ -247,6 +305,7 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
     const photoPath = storedPhotoPath(row.photo_path);
     if (photoPath) photoById.set(String(row.id), photoPath);
   }
+  const rowById = new Map<string, Row>(rows.map((row) => [String(row.id), row]));
   const mocked = new Map<string, boolean | null>();
   if (mock) {
     for (const row of rows) mocked.set(String(row.id), typeof row.device_mocked === "boolean" ? row.device_mocked : null);
@@ -258,13 +317,34 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
     truncated: false,
     reps,
     stuckReps: reps.filter((entry) => entry.targets - entry.gotThrough > 0).length,
-    latest: attempts.slice(0, LATEST_LIMIT).map((attempt) => ({
-      ...attempt,
-      repName: nameOf(people, attempt.repHrId) || attempt.repHrId,
-      customerName: attempt.customerId ? customerNames.get(attempt.customerId) ?? null : null,
-      outcome: attemptOutcome(attempt, saves),
-      deviceMocked: mocked.get(attempt.id) ?? null,
-      photoPath: photoById.get(attempt.id) ?? null,
-    })),
+    latest: printed.map((attempt) => {
+      const row = rowById.get(attempt.id) ?? {};
+      const tryPoint = tryPointOf(row.lat, row.lon, row.accuracy_meters);
+      const place = savedPlaceForTry(
+        { customerId: attempt.customerId, placeId: row.place_id ? String(row.place_id) : null, tryPoint },
+        savedPlaces,
+      );
+      const savedPlace = place ? { lat: place.lat, lon: place.lon, address: place.address } : null;
+      const map = tryPoint
+        ? buildCaseMap(
+            [
+              { label: TRY_POINT_LABEL, lat: tryPoint.lat, lon: tryPoint.lon, accuracyMeters: tryPoint.accuracyMeters },
+              ...(savedPlace ? [{ label: SAVED_PLACE_LABEL, lat: savedPlace.lat, lon: savedPlace.lon, accuracyMeters: null }] : []),
+            ],
+            TRY_MAP_SIZE,
+          )
+        : null;
+      return {
+        ...attempt,
+        repName: nameOf(people, attempt.repHrId) || attempt.repHrId,
+        customerName: attempt.customerId ? customerNames.get(attempt.customerId) ?? null : null,
+        outcome: attemptOutcome(attempt, saves),
+        deviceMocked: mocked.get(attempt.id) ?? null,
+        photoPath: photoById.get(attempt.id) ?? null,
+        tryPoint,
+        savedPlace,
+        map,
+      };
+    }),
   };
 }

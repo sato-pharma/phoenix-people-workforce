@@ -3,6 +3,7 @@ import { CheckCircle2, MapPinOff, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
+import { TryLocationsMap } from "@/components/phoenix-crm/try-locations-map";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -109,6 +110,15 @@ function SentPhoto({ entry, size }: { entry: RefusedAttemptRow; size: string }) 
   if (!entry.photoPath) return <span className="text-xs text-slate-500">None kept</span>;
   const caption = [entry.repName, entry.customerName ?? "No customer chosen yet", cairo(entry.refusedAt)].join(" · ");
   return <CrmPhotoThumb alt={`Photo the phone sent: ${caption}`} caption={caption} className={size} lazy path={entry.photoPath} />;
+}
+
+/**
+ * Where the phone was on this try, beside the customer's saved place, on a small map (owner, 2026-11-10).
+ * One component for the table cell AND the phone card, so the two cannot place a try differently. It
+ * sits in the row's own "What happened" cell: a panel row under every row is a second row per try.
+ */
+function TryLocations({ entry }: { entry: RefusedAttemptRow }) {
+  return <TryLocationsMap map={entry.map} savedPlace={entry.savedPlace} tryPoint={entry.tryPoint} />;
 }
 
 export default async function PhoenixCrmRefusedReadingsPage() {
@@ -236,17 +246,17 @@ export default async function PhoenixCrmRefusedReadingsPage() {
       {board.latest.length > 0 ? (
         <AdminTableShell
           title="Latest refusals"
-          description="Newest first. A retry resends the same photo, so several refusals in a row with the same photo reading mean the photo itself could not improve. Tap a photo to open it."
+          description="Newest first. A retry resends the same photo, so several refusals in a row with the same photo reading mean the photo itself could not improve. Tap a photo to open it. Each try with a position carries a small map: where the phone was beside the customer's saved place, with the distance between them."
         >
           {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
           <div className="hidden lg:block">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col className="w-[13%]" />
-                <col className="w-[22%]" />
-                <col className="w-[14%]" />
-                <col className="w-[33%]" />
+                <col className="w-[12%]" />
                 <col className="w-[18%]" />
+                <col className="w-[11%]" />
+                <col className="w-[43%]" />
+                <col className="w-[16%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -273,6 +283,9 @@ export default async function PhoenixCrmRefusedReadingsPage() {
                     </td>
                     <td className="px-5 py-4">
                       <Readings entry={entry} showMock={showMock} />
+                      <div className="mt-3">
+                        <TryLocations entry={entry} />
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <Outcome outcome={entry.outcome} />
@@ -299,6 +312,9 @@ export default async function PhoenixCrmRefusedReadingsPage() {
                 </div>
                 <div className="mt-3">
                   <SentPhoto entry={entry} size="h-20 w-20" />
+                </div>
+                <div className="mt-3">
+                  <TryLocations entry={entry} />
                 </div>
                 <div className="mt-3 border-t border-slate-100 pt-3">
                   <Outcome outcome={entry.outcome} />

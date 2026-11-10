@@ -376,6 +376,7 @@ export const MODULES = [
       "src/lib/phoenix-crm/server/refused-readings.ts",
       "src/lib/phoenix-crm/server/refused-readings-board.ts",
       "src/components/phoenix-crm/report-blocked-permission.ts",
+      "src/components/phoenix-crm/try-locations-map.tsx",
       "app/**/phoenix-crm/refused-readings/**",
       "app/api/phoenix-crm/refused-readings/**",
       "tests/phoenix-crm-refused-readings*",

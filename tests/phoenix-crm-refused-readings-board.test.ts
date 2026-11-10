@@ -4,15 +4,19 @@ import path from "node:path";
 
 import {
   attemptOutcome,
+  mapsLinkOf,
   parseBlockedPermission,
   parseRefusedReason,
   refusalSentence,
   refusedSubjectLabel,
+  savedPlaceForTry,
   stillBlocked,
   summariseByRep,
+  tryPointOf,
   widestReading,
   type LaterSave,
   type RefusedAttempt,
+  type SavedPlacePoint,
 } from "../src/lib/phoenix-crm/refused-readings-rules.ts";
 import {
   canReadRefusedReadings,
@@ -227,8 +231,8 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     // names there, a failed saves chunk is skipped — so the board prints what it printed before.
     assert.equal(
       (board.match(/mapWithConcurrency\(chunkStarts\([a-zA-Z]+\.length\), CHUNK_READS_AT_ONCE,/g) ?? []).length,
-      2,
-      "both chunked reads — the customers' names and the later saves — go a few at a time",
+      3,
+      "all three chunked reads — the customers' names, the later saves and the saved places the map sets each try against — go a few at a time",
     );
     assert.ok(board.includes("if (customerError) break;"), "a failed name chunk still ends the names there, as the one-at-a-time walk did");
     assert.ok(board.includes("if (visits.error || places.error) continue;"), "and a failed saves chunk is still skipped, never fatal");
@@ -510,5 +514,96 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
       assert.doesNotMatch(refusalSentence(byId.get("o1")!), /too rough/, "so a rep standing 5 m away is no longer told his position was too rough");
       assert.equal(board.total, 3, "all three refusals are on the board");
     }
+  }
+
+  // ── 10 · Where the phone was, beside the customer's saved place (owner, 2026-11-10) ─────────────
+  {
+    // The point a refused try stood on: real coordinates only. Zero-zero is a phone that had nothing.
+    assert.deepEqual(tryPointOf("31.2294413", 29.9684822, "12.6"), { lat: 31.2294413, lon: 29.9684822, accuracyMeters: 12.6 });
+    assert.equal(tryPointOf(null, 29.9, 10), null, "a blocked or no-fix try has no position, and is never drawn at 0, 29.9");
+    assert.equal(tryPointOf(0, 0, 10), null, "zero-zero is the phone sending nothing, not a point in the Gulf of Guinea");
+    assert.equal(tryPointOf(91, 29.9, 10), null, "and a latitude past the pole is no point at all");
+    assert.equal(tryPointOf(31.2, 29.9, null)?.accuracyMeters, null, "no reported radius stays none, never 0 m");
+
+    const clinic: SavedPlacePoint = { id: "p-clinic", customerId: CUSTOMER, lat: 31.1871706, lon: 29.9014871, address: "95 Ragheb Basha", active: true };
+    const far: SavedPlacePoint = { id: "p-far", customerId: CUSTOMER, lat: 31.3, lon: 30.1, address: null, active: true };
+    const retired: SavedPlacePoint = { id: "p-retired", customerId: CUSTOMER, lat: 31.2295, lon: 29.9685, address: null, active: false };
+    const elsewhere: SavedPlacePoint = { id: "p-other", customerId: OTHER_CUSTOMER, lat: 31.2294, lon: 29.9684, address: null, active: true };
+    const places = [far, clinic, retired, elsewhere];
+    const phone = tryPointOf(31.2294413, 29.9684822, 12.6);
+    assert.equal(savedPlaceForTry({ customerId: CUSTOMER, placeId: "p-retired", tryPoint: phone }, places)?.id, "p-retired", "the place the refusal was MEASURED to wins, even one retired since — that is the point the door used");
+    assert.equal(savedPlaceForTry({ customerId: CUSTOMER, placeId: null, tryPoint: phone }, places)?.id, "p-clinic", "otherwise the customer's nearest ACTIVE place — never the retired one beside the phone, nor another customer's");
+    assert.equal(savedPlaceForTry({ customerId: null, placeId: null, tryPoint: phone }, places), null, "a try before a customer was chosen has nothing to be set against");
+    assert.equal(savedPlaceForTry({ customerId: OTHER_CUSTOMER, placeId: null, tryPoint: phone }, [clinic]), null, "nor a customer with no saved place yet");
+    assert.equal(mapsLinkOf({ lat: 31.2294413, lon: 29.9684822 }), "https://www.google.com/maps?q=31.2294413,29.9684822", "each point opens in Google Maps, to the metre");
+
+    // Through the real reader, for both audiences: the try's position and the place are both asked for.
+    const tryRows = [
+      { id: "t1", subject_kind: "visit", reason: "far_from_place", blocked_permission: null, rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-11-10T11:34:00.000Z", accuracy_meters: 12.6, photo_accuracy_meters: null, max_accuracy_meters: 100, distance_meters: 7900, photo_path: null, lat: 31.2294413, lon: 29.9684822, place_id: "p-clinic", device_mocked: null },
+      { id: "t2", subject_kind: "place", reason: "no_fix", blocked_permission: null, rep_hr_id: REP, customer_id: CUSTOMER, refused_at: "2026-11-10T11:30:00.000Z", accuracy_meters: null, photo_accuracy_meters: null, max_accuracy_meters: 100, distance_meters: null, photo_path: null, lat: null, lon: null, place_id: null, device_mocked: null },
+    ];
+    async function loadTries(who: PhoenixCrmViewer) {
+      const original = globalThis.fetch;
+      const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+      const selects: string[] = [];
+      const placeReads: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = new URL(String(input instanceof Request ? input.url : input));
+        const table = url.pathname.split("/").pop() ?? "";
+        const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+        if (table === "phoenix_crm_refused_readings") {
+          selects.push(url.searchParams.get("select") ?? "");
+          return json(tryRows);
+        }
+        if (table === "employees") return json([{ hr_id: REP, full_name: "Test Rep", nickname: null }]);
+        if (table === "phoenix_crm_places" && /\bstatus\b/.test(url.searchParams.get("select") ?? "")) {
+          placeReads.push(url.search);
+          return json([{ id: "p-clinic", customer_id: CUSTOMER, lat: 31.1871706, lon: 29.9014871, address: "95 Ragheb Basha", status: "active" }]);
+        }
+        return json([]);
+      }) as typeof fetch;
+      try {
+        return { board: await loadRefusedReadingsBoard(who), selects, placeReads };
+      } finally {
+        globalThis.fetch = original;
+        if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+        else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+        if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+      }
+    }
+
+    for (const who of [viewer({ sfe: true }), viewer({ superAdmin: true })]) {
+      const { board, selects, placeReads } = await loadTries(who);
+      assert.match(selects[0] ?? "", /\blat\b.*\blon\b.*\bplace_id\b/, "the try's position and the place it was measured to are asked of the database for BOTH readers");
+      assert.equal(placeReads.length, 1, "the saved places are read once, for the printed tries' customers");
+      assert.match(placeReads[0] ?? "", /is_test=eq\.false/, "and never a test place");
+      const byId = new Map(board.latest.map((entry) => [entry.id, entry]));
+      const located = byId.get("t1")!;
+      assert.deepEqual(located.tryPoint, { lat: 31.2294413, lon: 29.9684822, accuracyMeters: 12.6 }, "where the phone was");
+      assert.deepEqual(located.savedPlace, { lat: 31.1871706, lon: 29.9014871, address: "95 Ragheb Basha" }, "beside where the customer is saved");
+      assert.equal(located.map?.markers.length, 2, "both on one map");
+      assert.equal(located.map?.markers[0]?.label, "Where the phone was", "marker 1 is the phone");
+      assert.equal(located.map?.markers[1]?.label, "Customer's saved place", "marker 2 the saved place");
+      const spread = located.map?.spreadMeters ?? 0;
+      assert.ok(spread > 7000 && spread < 8500, `and the distance between them is the real one, about 7.9 km (read ${spread} m)`);
+      const blank = byId.get("t2")!;
+      assert.equal(blank.tryPoint, null, "a try with no position has nothing to place");
+      assert.equal(blank.map, null, "so no map is drawn for it, rather than half a comparison");
+    }
+
+    // The page draws it through one component for the table row AND the phone card.
+    const code = stripComments(read("app/(admin)/admin/phoenix-crm/refused-readings/page.tsx"));
+    assert.equal((code.match(/<TryLocations entry=\{entry\} \/>/g) ?? []).length, 2, "the map comes from one component, so the table and the card cannot place a try differently");
+    assert.doesNotMatch(code, /colSpan/, "on desktop it sits in the try's own cell, never a second row under every row");
+    const view = stripComments(read("src/components/phoenix-crm/try-locations-map.tsx"));
+    assert.match(view, /loading="lazy"/, "lazy tiles — a hundred tries, twice over, must not load every tile on open");
+    assert.ok(view.includes("map.attribution"), "the tile host's attribution travels with the tiles");
+    assert.ok(view.includes("mapsLinkOf("), "each point opens in Google Maps");
+    assert.doesNotMatch(view, /overflow-x|min-w-\[|rounded|<(?:button|form|input)\b|onClick|fetch\(|"use client"/, "square, no horizontal scroll, and nothing on it acts");
+    assert.doesNotMatch(view, /\b(?:violation|fraud|cheat|caught|suspicio|fake|spoof)/i, "a refused try is a fact about a phone, not a finding about a person");
   }
 }

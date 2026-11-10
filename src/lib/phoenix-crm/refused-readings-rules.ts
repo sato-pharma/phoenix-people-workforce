@@ -22,6 +22,8 @@
  * attempt prints both readings and why the summary leads with whether he got through afterwards.
  */
 
+import { distanceMeters } from "@/lib/phoenix-crm/geo";
+
 /**
  * 🔴 `off_listing` IS NOT ABOUT THE POSITION'S QUALITY, AND THE BOARD MUST NOT READ IT AS ONE. The two
  * original reasons are the phone's own fault — no fix, or a fix too rough for the line — and both
@@ -386,4 +388,62 @@ export function summariseByRep(attempts: readonly RefusedAttempt[], saves: reado
 /** How many customers a rep is still blocked on, by the same arithmetic as the sort. */
 export function stillBlocked(entry: Pick<RepRefusals, "targets" | "gotThrough">): number {
   return entry.targets - entry.gotThrough;
+}
+
+// ── Where the phone was, against where the customer is saved (owner, 2026-11-10) ───────────────────
+
+/**
+ * 🔴 EVERY REFUSED TRY IS SHOWN WHERE IT WAS MADE, BESIDE THE CUSTOMER'S SAVED PLACE, ON A SMALL MAP —
+ * FOR THE SUPER ADMIN AND THE SFE MANAGER ONLY (owner, 2026-11-10: "make any location of a logged visit
+ * even if failed to be saved and shown only in admin account vs the correct location"; asked, he chose
+ * both readers and a small map on each row). The day it was asked, a rep was refused 51 times at one
+ * doctor and the only way to see that every try stood 8 km from the clinic's saved point was a query.
+ *
+ * The saved place a try is set against is the one the refusal was MEASURED to when the row names it
+ * (`place_id`, a visit refused for being logged away from the place) — even a place retired since,
+ * because that is the point the door used. Otherwise it is the customer's nearest ACTIVE place. A try
+ * with no position (blocked, no fix) has nothing to place, and a customer with no saved place yet has
+ * nothing to set it against: both say so in words rather than drawing half a comparison.
+ */
+export type SavedPlacePoint = {
+  id: string;
+  customerId: string;
+  lat: number;
+  lon: number;
+  address: string | null;
+  active: boolean;
+};
+
+export type TryPoint = { lat: number; lon: number; accuracyMeters: number | null };
+
+/** A stored coordinate pair that is a real point, or null. Zero-zero is a phone that had nothing. */
+export function tryPointOf(lat: unknown, lon: unknown, accuracy: unknown): TryPoint | null {
+  if (lat === null || lat === undefined || lat === "" || lon === null || lon === undefined || lon === "") return null;
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || (latitude === 0 && longitude === 0)) return null;
+  const accuracyMeters = accuracy === null || accuracy === undefined || accuracy === "" ? null : Number(accuracy);
+  return { lat: latitude, lon: longitude, accuracyMeters: accuracyMeters !== null && Number.isFinite(accuracyMeters) ? accuracyMeters : null };
+}
+
+export function savedPlaceForTry(
+  attempt: { customerId: string | null; placeId: string | null; tryPoint: TryPoint | null },
+  places: readonly SavedPlacePoint[],
+): SavedPlacePoint | null {
+  if (attempt.placeId) {
+    const measured = places.find((place) => place.id === attempt.placeId);
+    if (measured) return measured;
+  }
+  if (!attempt.customerId) return null;
+  const active = places.filter((place) => place.customerId === attempt.customerId && place.active);
+  if (active.length === 0) return null;
+  const from = attempt.tryPoint;
+  if (!from) return active[0] ?? null;
+  return active.reduce((nearest, place) => (distanceMeters(from, place) < distanceMeters(from, nearest) ? place : nearest));
+}
+
+/** A Google Maps address for one point — opened by the reader, never fetched by this app. */
+export function mapsLinkOf(point: { lat: number; lon: number }): string {
+  return `https://www.google.com/maps?q=${point.lat.toFixed(7)},${point.lon.toFixed(7)}`;
 }
