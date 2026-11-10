@@ -189,6 +189,10 @@ export type PermissionResource =
   | "weekly_plans"
   | "expenses"
   | "market_awareness"
+  // Monthly Marketing Functions and the Marketing Field Visit Feedback (owner, 2026-11-10): a Product
+  // Manager fills both; his Group Product Manager reviews the month. Row narrowing: marketing-functions/scope.ts.
+  | "marketing_functions"
+  | "marketing_field_feedback"
   | "vacancies"
   | "organogram"
   | "offers"
@@ -346,6 +350,8 @@ export const permissionResources: PermissionResource[] = [
   "weekly_plans",
   "expenses",
   "market_awareness",
+  "marketing_functions",
+  "marketing_field_feedback",
   "employees",
   "team",
   "offers",
@@ -1064,6 +1070,8 @@ function applyHardPermissionBoundaries<T extends PermissionMap>(matrix: T): T {
 const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     market_awareness: allActions,
+    marketing_functions: allActions,
+    marketing_field_feedback: allActions,
     field_absence: ["read"],
     // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
@@ -1179,6 +1187,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // threshold skips him (owner answer 36). `approve` here is HIS action; nothing in this module
     // may ever write a decision row on his behalf.
     market_awareness: ["read", "approve", "export"],
+    marketing_functions: ["read", "export"],
+    marketing_field_feedback: ["read", "export"],
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
@@ -1591,6 +1601,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // per line. Without it he was routed a decision the route refused him, which is a queue that
     // cannot be cleared by the only person allowed to clear it.
     market_awareness: ["read", "approve", "export"],
+    // Marketing Field Visit Feedback (owner, 2026-11-10): reads the signed forms on reps of his own line
+    // only (scope.ts narrows); never the Product Manager's monthly sheet.
+    marketing_field_feedback: ["read"],
     // His own line only — the scope is the NSM seat he holds (src/lib/field-absence/access.ts).
     field_absence: ["read"],
     direct_orders: ["read", "create", "update", "approve", "export"],
@@ -1631,6 +1644,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // Market Awareness: raises activities, sees his OWN only. The narrowing to his own rows is in
     // scope.ts, not here — the matrix says he may read the module, never whose rows.
     market_awareness: ["read", "create", "export"],
+    marketing_functions: ["read", "create", "update", "export"],
+    marketing_field_feedback: ["read", "create", "update"],
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
@@ -1669,6 +1684,8 @@ const defaultPermissionMatrix: PermissionMap = {
   "Group Product Manager": {
     // Market Awareness: raises activities AND is the manager step for the PMs who report to her.
     market_awareness: ["read", "create", "approve", "export"],
+    marketing_functions: ["read", "approve", "export"],
+    marketing_field_feedback: ["read", "export"],
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
@@ -1798,6 +1815,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // His own request skips the manager step and goes straight to the CEO — he reports to the CEO,
     // so there is no step underneath (owner answer 35).
     market_awareness: ["read", "create", "approve", "export"],
+    marketing_functions: ["read", "approve", "export"],
+    marketing_field_feedback: ["read", "export"],
     attendance: ["read"],
     // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
     // Marketing Manager set the norms themselves). The CRM visit MIRROR stays read-only for

@@ -137,6 +137,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // the holders of one seat: a report is ready (the HR Operations Specialist, in-app), a report waits
   // on the decision (the Super Admin, in-app and Telegram), every row is decided (back to her,
   // in-app). Never email; the call site passes the channels, which is what binds.
+  // Marketing Functions (owner, 2026-11-10): a Product Manager's month submitted to his manager, and
+  // the reviewer's stamp or reopen back to him. The bell only — no email, no Telegram.
+  "marketing_functions.*": { actionUrlRequired: true, channels: ["in_app"], permissionResource: null, priority: "normal", recipientStrategy: ["direct_manager", "request_owner"] },
   "hr_ops_reports.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["role_based"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },

@@ -346,6 +346,8 @@ function buildEmployeePortalSections({
   showIncentiveTab = true,
   showMarketAwarenessInboxTab = false,
   showMarketAwarenessTab = false,
+  showMarketingFunctionsTab = false,
+  showMarketingFeedbackTab = false,
   showVisualAidsTab: _showVisualAidsTab = false,
   showMarketingRequestsTab = false,
   showMarketingValidationTab = false,
@@ -671,6 +673,9 @@ function buildEmployeePortalSections({
           ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }]
           : []),
         ...(showMarketAwarenessTab ? [{ href: "/employee-portals/market-awareness", label: "Market Awareness", icon: Sparkles }] : []),
+        // Dr. Rasha's two sheets (2026-11-10): the Product Manager fills both; his managers read them.
+        ...(showMarketingFunctionsTab ? [{ href: "/employee-portals/marketing-functions", label: "Marketing Functions", icon: ClipboardList }] : []),
+        ...(showMarketingFeedbackTab ? [{ href: "/employee-portals/marketing-feedback", label: "Field Visit Feedback", icon: ClipboardCheck }] : []),
         // The Sales-Marketing-Intelligence module — distinct from ROI Tracker above.
         ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
