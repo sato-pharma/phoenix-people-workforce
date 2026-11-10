@@ -423,6 +423,7 @@ import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import { runWhatsAppInboundVideoTests } from "./whatsapp-inbound-video.test.ts";
 import { runFtpVideoHandoffTests } from "./ftp-video-handoff.test.ts";
+import { runCnsLineMembersFeedTests } from "./cns-line-members-feed.test.ts";
 import { runWhatsAppUsernameSenderTests } from "./whatsapp-username-sender.test.ts";
 import { runWhatsAppInboxTests } from "./whatsapp-inbox.test.ts";
 import { runWhatsAppInboxFilterAndCvTests } from "./whatsapp-inbox-filter-and-cv.test.ts";
@@ -4136,6 +4137,7 @@ await runTest(
 );
 await runTest("whatsapp inbound video (kept, and never a candidate)", runWhatsAppInboundVideoTests);
 await runTest("ftp video handoff (a claim is exact, and the door is on its own token)", runFtpVideoHandoffTests);
+await runTest("cns line members feed (own token, hashes only, active CNS members by the directory rule)", runCnsLineMembersFeedTests);
 await runTest("whatsapp username sender (a BSUID with no phone is kept, never dropped)", runWhatsAppUsernameSenderTests);
 await runTest("whatsapp inbox (both numbers, both directions, Super Admin only)", runWhatsAppInboxTests);
 await runTest("whatsapp inbox filters and Open CV (Position → Region → Area, newest CV)", runWhatsAppInboxFilterAndCvTests);
