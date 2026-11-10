@@ -112,6 +112,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   // You card is shared, so a Marketing Manager or National Sales Manager following it lands on his
   // own inbox instead of the workspace.
   { from: "/admin/market-awareness/inbox", to: "/employee-portals/market-awareness/inbox" },
+  { from: "/admin/marketing-functions", to: "/employee-portals/marketing-functions", carryQuery: ["month", "author"] },
+  { from: "/admin/marketing-feedback", to: "/employee-portals/marketing-feedback", carryQuery: ["tab"] },
+  { from: "/admin/marketing-feedback/:id", to: "/employee-portals/marketing-feedback/:id" },
   // The Doctor-List Check's card is shared, and the Marketing Manager reads it in the portal.
   { from: "/admin/marketing-requests/list-check", to: "/employee-portals/marketing-requests/list-check" },
   // CEO Approvals is the Marketing Manager's report (owner, 2026-11-08), and she reads it in the portal.

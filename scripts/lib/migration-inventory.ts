@@ -2259,6 +2259,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // through PostgREST with the service role: public.automated_payroll_held_entered answers a count of 0 rows.
   // Re-applying is a no-op (`if not exists`, `drop policy if exists` then create, the same revoke and grant).
   "20261109085429_automated_payroll_held_entered.sql",
+  // Applied 10 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route: supabase-staging's apply_migration answered {"status":"declined"} twice and supabase-production's once,
+  // and a read straight after each showed nothing had landed. That route writes NO ledger row. Three new tables, no
+  // function, so the digest is of the catalog's own structure, read in one query on BOTH ozucdzovmcqvepbozvqf and
+  // cifwmndunmlxjhyjugxa and equal on both: public.marketing_function_months, marketing_function_items and
+  // marketing_field_feedback; md5 of every column as table.name:type:notnull ef9bf22c6843b74aeeefb8bbbfd81341, of
+  // every constraint definition ccbae806c7ff37b32ad3d31b00c75ced, of every index definition
+  // edf5a7e96d7f9bccf543a6a83fb7195c; RLS on all three, one service_role policy each, 0 grants to anon,
+  // authenticated or PUBLIC, 0 rows held. Re-applying is a no-op (`if not exists`, `drop policy if exists` then
+  // create, the same revoke and grant).
+  "20261110025541_marketing_functions_and_field_feedback.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

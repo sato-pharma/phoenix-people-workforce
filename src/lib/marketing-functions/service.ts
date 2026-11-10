@@ -6,12 +6,14 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertTestAccountWriteIsDryRun } from "@/lib/auth/test-dry-run";
+import { queryVisits } from "@/lib/crm/reads";
 import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { todayInCairo } from "@/lib/date-only";
 import { resolveDoubleVisitAccessScope } from "@/lib/double-visit-analytics/service";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey, hrIdForStorage, normalizeHrIdForAccess } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { monthEndDate, monthKeyOf, monthStartDate, shiftMonthKey } from "./months";
@@ -222,8 +224,8 @@ async function readFieldActivity(authorHrId: string, monthKey: string): Promise<
 export async function listMarketingAuthors(access: AccessContext): Promise<RepOption[]> {
   if (!seesEveryMarketingSheet(access)) return [];
   const directory = await getEmployeeDirectoryRows({ includeInactive: true });
-  const { data } = await getSupabaseAdmin().from(MONTHS_TABLE).select("author_hr_id").limit(1000);
-  const withSheet = new Set(((data ?? []) as Array<{ author_hr_id: string }>).map((row) => canonicalHrIdKey(row.author_hr_id)));
+  const sheets = await fetchAllRows<{ author_hr_id: string }>(() => getSupabaseAdmin().from(MONTHS_TABLE).select("id, author_hr_id"), "id");
+  const withSheet = new Set(sheets.map((row) => canonicalHrIdKey(row.author_hr_id)));
   return directory
     .filter(
       (employee) =>
@@ -541,16 +543,6 @@ export async function listRideAlongDays(access: AccessContext, input: { days?: n
   const from = new Date(`${today}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - Math.min(Math.max(input.days ?? 60, 1), 180));
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("crm_visits_unified")
-    .select("visit_date, agent_hr_id, ampm, speciality, comment, visit_type, visit_type_description, source, crm_visit_id")
-    .overlaps("companion_hr_ids", hrIdSpellings(me))
-    .gte("visit_date", from.toISOString().slice(0, 10))
-    .lte("visit_date", today)
-    .order("visit_date", { ascending: false })
-    .limit(2000);
-  if (error) throw new Error(`Could not read your field days: ${error.message}`);
-
   type VisitRow = {
     visit_date: string;
     agent_hr_id: string | null;
@@ -562,8 +554,16 @@ export async function listRideAlongDays(access: AccessContext, input: { days?: n
     source: string | null;
     crm_visit_id: number | null;
   };
+  // Through the CRM door: the visits he stood beside, in either partner slot or among the companions.
+  const visits = await queryVisits<VisitRow>({
+    columns: "visit_date, agent_hr_id, ampm, speciality, comment, visit_type, visit_type_description, source, crm_visit_id",
+    dateFrom: from.toISOString().slice(0, 10),
+    dateTo: today,
+    doubleHrIds: [me],
+    requireAgentHrId: true,
+  });
   const byDay = new Map<string, { visitDate: string; repHrId: string; am: number; pm: number; pharmacies: number }>();
-  for (const row of (data ?? []) as VisitRow[]) {
+  for (const row of visits) {
     const repHrId = hrIdForStorage(row.agent_hr_id);
     if (!repHrId) continue;
     const key = `${row.visit_date}|${repHrId}`;
@@ -588,7 +588,9 @@ export async function listRideAlongDays(access: AccessContext, input: { days?: n
     ),
   );
 
-  return [...byDay.values()].map((day) => {
+  // Newest day first, as the picker lists them.
+  const days = [...byDay.values()].sort((left, right) => right.visitDate.localeCompare(left.visitDate));
+  return days.map((day) => {
     const employee = byKey.get(canonicalHrIdKey(day.repHrId));
     return {
       visitDate: day.visitDate,
