@@ -33,7 +33,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * seats), which here would have handed the whole company chart to two people the owner did not
  * name. He was asked directly and chose her account alone.
  *
- * On 2026-10-20 the owner named a SECOND account: AB, Dr. Sahar Khalil, the R&D Manager the QPPV
+ * On 2026-10-20 the owner named a SECOND account: AB, Dr. Sahar Khalil, then the R&D Manager (the Toll Manufacturing Manager since 2026-11-10) the QPPV
  * reports to, gets the same company chart, Head Office included (block 5). Still by HR_ID — A-14
  * stays outside, and blocks 2 and 4 still hold for her.
  *
@@ -155,7 +155,7 @@ export async function runA3FullOrganogramTests() {
       "their row from showOrganogramTab",
   );
 
-  // ── 5. AB, the R&D Manager the QPPV reports to: the same chart (owner, 2026-10-20) ────────────
+  // ── 5. AB, the Toll Manufacturing Manager the QPPV reports to: the same chart (owner, 2026-10-20) ────────────
   const sahar = createAccessContext({ hrId: "AB", role: "Manager" });
   assert.deepEqual([...FULL_ORGANOGRAM_PINNED_HR_IDS], ["A-3", "AB"], "exactly two pinned accounts — never the rung");
   assert.equal(await canAccess(sahar, "organogram", "read"), true, "AB holds the rung's organogram:read");

@@ -81,7 +81,7 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   // that a DM whose session role resolves to the alias must reach the same scoped closing.
   //
   // REMOVED 2026-09-29, with its sidebar row, at the owner's instruction. No live account on that
-  // rung is a district seat — the two are Head Office (QPPV, R&D Manager) — and Head Office is
+  // rung is a district seat — the two are Head Office (QPPV, Toll Manufacturing Manager) — and Head Office is
   // stripped from `allowedLines` for every viewer, so the page could only ever answer "we couldn't
   // resolve a product line". The gate and the nav flag move together on purpose: that pair is what
   // tests/marketing-manager-monthly-closing.test.ts exists to keep honest, because a gate admitting

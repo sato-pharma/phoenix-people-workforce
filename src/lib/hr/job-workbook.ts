@@ -958,7 +958,7 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     jobTitle: "QPPV",
     role: null,
     purpose:
-      "Qualified Person for Pharmacovigilance. Reports to the R&D Manager and works in the Report It adverse-event register, which is patient data and is gated per person rather than by role.",
+      "Qualified Person for Pharmacovigilance. Reports to the Toll Manufacturing Manager and works in the Report It adverse-event register, which is patient data and is gated per person rather than by role.",
     hasWrittenJd: false,
   },
   {
@@ -977,6 +977,13 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     jobTitle: "Research and Development Manager",
     role: null,
     purpose: "The long spelling of R&D Manager, kept because employee records use both.",
+    hasWrittenJd: false,
+  },
+  {
+    jobTitle: "Toll Manufacturing Manager (TMM)",
+    role: null,
+    purpose:
+      "Toll manufacturing of Ivyronc and Guamusin: the production plan and its raw-material buy list in the Production Planner, with the QPPV reporting into the seat.",
     hasWrittenJd: false,
   },
 ];

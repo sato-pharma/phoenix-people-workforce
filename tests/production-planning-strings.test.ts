@@ -55,7 +55,7 @@ import { stripComments } from "./support/comment-strip.ts";
 /**
  * Production Planner — the Arabic stays genderless, and the digits stay Latin.
  *
- * Both primary users are women: Dr. Sahar Khalil, the R&D Manager, and Reham Elwiy, the Regulatory
+ * Both primary users are women: Dr. Sahar Khalil, the Toll Manufacturing Manager, and Reham Elwiy, the Regulatory
  * Affairs Supervisor. Arabic marks gender on the imperative and on the second person, so the
  * ordinary way to write a UI — "اختر", "احسب", "بياناتك" — addresses a man. The whole app was swept
  * neutral in English on 2026-10-05 for exactly that reason; this is that ruling applied to a new

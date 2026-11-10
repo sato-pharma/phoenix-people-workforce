@@ -10,7 +10,7 @@ import { hrIdsMatch } from "@/lib/hr-id";
 
 /**
  * A-3 — Dr. Samaa Mosaad Khalil, the company's QPPV. The owner (2026-11-09): "only in Dr. Sama
- * account". Named by HR id because her app role (`Manager`) is shared with the R&D Manager, so a
+ * account". Named by HR id because her app role (`Manager`) is shared with the Toll Manufacturing Manager, so a
  * role grant would open these signatures to someone he did not name.
  */
 export const PV_TRAINING_EVIDENCE_HR_IDS: readonly string[] = ["A-3"];

@@ -98,7 +98,7 @@ export function runEmployeePortalFingerprintVisibilityTests() {
     "omitting hasDeviceMapping defaults the tab off — which is exactly why callers must pass it",
   );
 
-  // The generic "Manager" seat (the R&D Manager, who has reports) gets the tab without a device
+  // The generic "Manager" seat (the Toll Manufacturing Manager, who has reports) gets the tab without a device
   // mapping (owner, 2026-10-20): the page admits him by his attendance:read grant and its picker
   // lists his team. The tab and the page gate must agree, so the grant is asserted with it.
   const managerSeat = resolveEmployeePortalNavVisibility("Manager", "Manager", null, null, "A-3", false);

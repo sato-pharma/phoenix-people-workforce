@@ -625,7 +625,7 @@ export function runEmployeePortalNavigationTests() {
   // The legacy "Manager" alias USED to resolve to the same access as District Manager here. Both
   // halves — this flag and PORTAL_CLOSING_ROLES in monthly-closing-portal.ts — dropped it on
   // 2026-09-29 at the owner's instruction: the rung is not a district seat (the two live accounts
-  // are Head Office, QPPV and R&D Manager), and Head Office is stripped from every closing viewer,
+  // are Head Office, QPPV and Toll Manufacturing Manager), and Head Office is stripped from every closing viewer,
   // so the page could only ever answer "we couldn't resolve a product line". They move together, or
   // one of them is a grant nobody can reach — see tests/marketing-manager-monthly-closing.test.ts.
   assert.equal(

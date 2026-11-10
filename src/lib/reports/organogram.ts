@@ -64,12 +64,12 @@ function uniqueCount(values: Array<string | null>) {
  *
  * A-3 — Samaa Mosaad Khalil, QPPV, Head Office. Owner instruction 2026-09-02: "show the full
  * organogram to sama mosaad account". Her app role is the legacy Head-Office `Manager` rung,
- * which two other people also hold (A-14 Regulatory Affairs, AB R&D Manager). The owner was asked
+ * which two other people also hold (A-14 Regulatory Affairs, AB Toll Manufacturing Manager). The owner was asked
  * directly whether they should get it too and chose her account alone, so naming the ROLE here —
  * the shape used for the Finance Manager and both HR seats — is precisely what must NOT happen.
  *
- * AB — Dr. Sahar Khalil, R&D Manager, the person the QPPV reports to, pinned the same way (owner,
- * 2026-10-20: the R&D Manager gets the same company chart the QPPV has, Head Office included).
+ * AB — Dr. Sahar Khalil, Toll Manufacturing Manager (R&D Manager until 2026-11-10), the person the QPPV reports to, pinned the same way (owner,
+ * 2026-10-20: the then R&D Manager gets the same company chart the QPPV has, Head Office included).
  * Still by HR_ID, never the rung: A-14 Regulatory Affairs stays outside.
  *
  * The list lives in src/lib/reports/organogram-pinned-accounts.ts, dependency-free, because the
@@ -88,7 +88,7 @@ export function isFullOrganogramPinnedAccount(access: Pick<AccessContext, "hrId"
 
 export function canAccessHeadOffice(access: AccessContext) {
   return (
-    // A-3 is Head Office staff herself (QPPV), and so is AB, the R&D Manager she reports to (pinned
+    // A-3 is Head Office staff herself (QPPV), and so is AB, the Toll Manufacturing Manager she reports to (pinned
     // owner, 2026-10-20). Without this they would hold the company chart and have their own
     // department filtered out of it — the same trap documented for the Finance Manager below, where
     // the one part of the tree the viewer sits in is the part that vanishes.

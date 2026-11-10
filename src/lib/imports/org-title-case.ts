@@ -53,7 +53,19 @@ export const ORG_TITLE_ACRONYMS: ReadonlySet<string> = new Set([
   // fixed point of itself is a trap waiting for the first caller that re-normalizes a display name.
   "r&d",
   "sfe",
+  // `TMM`, Toll Manufacturing Manager — Dr. Sahar Khalil's title is "Toll Manufacturing Manager (TMM)"
+  // since 2026-11-10 (owner). Matched inside its brackets by isOrgAcronym below.
+  "tmm",
 ]);
+
+/**
+ * Whether a word is one of the acronyms above, ignoring brackets and punctuation around it, so
+ * "(TMM)" and "HR," are recognised as well as the bare word. Before 2026-11-10 only the bare word
+ * matched, and "Toll Manufacturing Manager (TMM)" came out of the importer as "(tmm)".
+ */
+function isOrgAcronym(lowerCasedWord: string): boolean {
+  return ORG_TITLE_ACRONYMS.has(lowerCasedWord.replace(/^[^a-z&]+|[^a-z&]+$/g, ""));
+}
 
 /**
  * Words left lower-case in the MIDDLE of a name — ordinary English title case.
@@ -140,7 +152,7 @@ export function toOrgTitleCase(value: string): string {
 
       // An acronym wins over everything, including the minor-word rule below. The two sets are
       // asserted disjoint by the test, so this ordering is belt-and-braces rather than load-bearing.
-      if (ORG_TITLE_ACRONYMS.has(lowerCased)) {
+      if (isOrgAcronym(lowerCased)) {
         return word.toUpperCase();
       }
 
@@ -204,7 +216,7 @@ export function suggestOrgTitleCasing(value: string): string | null {
 
       // A known acronym typed as anything but full caps — "Ceo", "Hr", "Sfe Manager". This is the
       // case that put a mangled title on the CEO's own record.
-      if (ORG_TITLE_ACRONYMS.has(lowerCased)) {
+      if (isOrgAcronym(lowerCased)) {
         return word.toUpperCase();
       }
 
