@@ -1089,6 +1089,9 @@ const LATER_MIGRATIONS = [
   // The Super Admin's corrected full name (owner, 8 Nov 2026): REPLACES phoenix_crm_decide_full_name with the same
   // body plus an optional name honoured on approve only. It replaces nothing save_visit depends on.
   "supabase/migrations/20261108204731_phoenix_crm_full_name_corrected.sql",
+  // The four far-visit safeguards (owner, 10 Nov 2026): one NEW table (a visit held for the SFE), a tenth refusal
+  // reason, and the two countable views REPLACED with the same body plus the held clause. No function.
+  "supabase/migrations/20261110170000_phoenix_crm_far_visit_safeguards.sql",
 ];
 
 /**

@@ -650,17 +650,18 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     ownSeat ? loadDayActivityOn(ownSeat.seatId, isTest, date) : Promise.resolve(null),
     productManagerRolesFor(viewer.org, seat.seatId),
     loadDayStartOn(seat.seatId, isTest, date),
+    // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it, as the views
+    // say. It needs only the date, so it starts beside the rows with the other early reads.
+    loadUncountedFarVisitHolds({ from: date, to: date }),
   ]);
   dayReads.catch(() => undefined);
   const rows = await rowsRead;
   // The visit recordings. Their LENGTH (what draws the player) goes only to a reader who may hear them;
   // the Administrator's approval is read for every reader, because a recorded visit he has not approved
   // counts in nothing (owner, 2026-10-16) and `countsInKpi` must say what the countable view says.
-  // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it, as the views say.
-  const [names, recordings, farHolds, [activity, ownDayActivity, productManagerRoles, dayStart]] = await Promise.all([
+  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart, farHolds]] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadRecordingsByVisit(rows.map((row) => String(row.id))),
-    rows.length > 0 ? loadUncountedFarVisitHolds({ from: date, to: date }) : Promise.resolve(new Map<string, string>()),
     dayReads,
   ]);
   const sight = locationSight(viewer, seat);
@@ -1763,10 +1764,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // 🔴 HELD, NOT REFUSED, AFTER FIVE FAR REFUSALS FROM ONE SPOT (owner, 2026-11-10, far-visit-safeguards.ts):
   // the place is then almost certainly wrong, so the visit saves and waits for the SFE, counted in nothing.
   let heldForSfe = false;
+  // 🔴 AN ACCOUNT (AM — a hospital, a big building) IS REFUSED ONLY PAST 500 m; a clinic keeps the
+  // settings' line (owner, 2026-11-10: "500 m"). The refusal alone: the flag below keeps the settings' line.
+  const visitedListType = unvalidatedCustomer ? (unvalidatedCustomer.data as Row | null)?.list_type : null;
   if (enteredAs === "rep" && farVisitRefusalApplies(captureDay)) {
-    // 🔴 AN ACCOUNT (AM — a hospital, a big building) IS REFUSED ONLY PAST 500 m; a clinic keeps the
-    // settings' line (owner, 2026-11-10: "500 m"). The refusal alone: the flag below keeps the settings' line.
-    const visitedListType = unvalidatedCustomer ? (unvalidatedCustomer.data as Row | null)?.list_type : null;
     const away = visitAwayFromValidatedPlace({
       fix: { lat: visit.lat, lon: visit.lon },
       places: placeRows.map((row) => ({

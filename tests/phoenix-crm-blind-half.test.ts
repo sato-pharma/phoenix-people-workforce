@@ -187,6 +187,11 @@ const BLIND_READERS: ReadonlyArray<string> = [
   // the Super Admin to decide — it reads ids and flags only, settles nothing, and answers nobody: its
   // one caller is `scripts/phoenix-crm-reread-signboards.mjs`, and check 4 keeps every rep route away.
   "src/lib/phoenix-crm/server/signboard-sweep.ts",
+  // The far-visit safeguards (owner, 2026-11-10). Inside a rep's own validation they read capture provenance
+  // for visit IDS only, to LEAVE OUT a save the phone held for want of signal as a travel anchor (it arrived
+  // late, so its time is not when he stood there). That can only make the impossible-location refusal rarer;
+  // nothing read reaches a payload, and the rep reads the same "location has not settled" sentence either way.
+  "src/lib/phoenix-crm/server/far-visit-safeguards.ts",
 ];
 
 /**

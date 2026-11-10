@@ -1578,9 +1578,13 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
             supabase.from("phoenix_crm_visit_edits").select("id,visit_id,edited_at").in("visit_id", chunk).order("id").range(from, to),
           ),
           // A visit held for the SFE (owner, 2026-11-10): the countable views' NOT IN reads every hold not approved.
-          readPaged<{ visit_id: string; status: string | null; held_at: string | null; decided_at: string | null }>("phoenix_crm_far_visit_holds", (from, to) =>
-            supabase.from("phoenix_crm_far_visit_holds").select("visit_id,status,held_at,decided_at").in("visit_id", chunk).order("visit_id").range(from, to),
-          ),
+          // One read, never paged: visit_id is the hold's primary key, so a chunk of ID_CHUNK ids holds at most
+          // ID_CHUNK rows, far under one page.
+          (async () => {
+            const { data, error } = await supabase.from("phoenix_crm_far_visit_holds").select("visit_id,status,held_at,decided_at").in("visit_id", chunk);
+            if (error) throw readError("phoenix_crm_far_visit_holds", error);
+            return (data ?? []) as Array<{ visit_id: string; status: string | null; held_at: string | null; decided_at: string | null }>;
+          })(),
         ]);
         for (const row of unplannedRows) unplanned.set(row.visit_id, row);
         for (const row of recordingRows) recordings.set(row.visit_id, [...(recordings.get(row.visit_id) ?? []), row]);

@@ -484,7 +484,7 @@ export async function loadFarVisitHolds(viewer: PhoenixCrmViewer): Promise<FarVi
   const customerIds = [...new Set(holds.map((row) => String(row.customer_id)))];
   const placeIds = [...new Set(holds.map((row) => (row.place_id ? String(row.place_id) : null)).filter((id): id is string => id !== null))];
   const [visits, customers, places, people] = await Promise.all([
-    supabase.from("phoenix_crm_visits").select("id").in("id", visitIds),
+    supabase.from("phoenix_crm_visits").select("id").in("id", visitIds).is("imported_from_ireports360_at", null),
     supabase.from("phoenix_crm_customers").select("id, name").in("id", customerIds),
     placeIds.length > 0 ? supabase.from("phoenix_crm_places").select("id, lat, lon, address").in("id", placeIds) : Promise.resolve({ data: [], error: null }),
     loadPeopleNames([...holds.map((row) => String(row.rep_hr_id)), ...holds.map((row) => (row.decided_by_hr_id ? String(row.decided_by_hr_id) : "")).filter(Boolean)]),
