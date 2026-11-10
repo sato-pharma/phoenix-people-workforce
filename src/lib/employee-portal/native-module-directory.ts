@@ -155,6 +155,8 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/kpis/call-rate": { icon: "call-outline", section: "KPIs" },
   // ── Marketing & ROI ───────────────────────────────────────────────────────────────────────────
   "/employee-portals/market-awareness": { icon: "megaphone-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-functions": { icon: "calendar-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-feedback": { icon: "chatbox-ellipses-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/validation": { icon: "shield-checkmark-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests": { icon: "send-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/control": { icon: "options-outline", section: "Marketing & ROI" },

@@ -10,6 +10,7 @@ import { isNamedProductionPlanningPerson } from "@/lib/production-planning/acces
 import { canOpenPvTrainingEvidence } from "@/lib/pv-training/access";
 import { isFullOrganogramPinnedHrId } from "@/lib/reports/organogram-pinned-accounts";
 import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
+import { FIELD_FEEDBACK_PORTAL_ROLES, MARKETING_FUNCTIONS_PORTAL_ROLES } from "@/lib/marketing-functions/scope";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -28,6 +29,10 @@ export type EmployeePortalNavVisibility = {
   showMarketAwarenessTab?: boolean;
   /** The Market Awareness approvals queue — its own inbox under Approvals Hub, beside Marketing. */
   showMarketAwarenessInboxTab?: boolean;
+  // Dr. Rasha's two sheets (owner, 2026-11-10): the Product Manager's Monthly Marketing Functions and
+  // the Marketing Field Visit Feedback. UX only; the pages and routes gate on their own resources.
+  showMarketingFunctionsTab?: boolean;
+  showMarketingFeedbackTab?: boolean;
   // Visual Aids — the flyers a rep shows a doctor on the tablet (owner, 2026-09-18). The rep, his
   // DM, RM and NSM read their own line; the Marketing Manager and the GPM also upload. The list is
   // VISUAL_AIDS_PORTAL_ROLES in src/lib/visual-aids/rules.ts, pinned against the matrix by a test.
@@ -728,6 +733,8 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingValidationTab = canUseEmployeePortalMarketingValidation(resolvedRole);
   const showMarketAwarenessTab = MARKET_AWARENESS_PORTAL_ROLES.includes(resolvedRole);
+  const showMarketingFunctionsTab = MARKETING_FUNCTIONS_PORTAL_ROLES.includes(resolvedRole);
+  const showMarketingFeedbackTab = FIELD_FEEDBACK_PORTAL_ROLES.includes(resolvedRole);
   const showVisualAidsTab = VISUAL_AIDS_PORTAL_ROLES.includes(resolvedRole);
   // Only the seats that can actually hold a decision: the two manager-step holders and the CEO.
   // An empty queue for everyone else is noise, and the page scopes itself server-side anyway.
@@ -816,6 +823,8 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingValidationTab,
     showMarketAwarenessInboxTab,
     showMarketAwarenessTab,
+    showMarketingFunctionsTab,
+    showMarketingFeedbackTab,
     showVisualAidsTab,
     showMarketingRequestsTab,
     showMarketingRoiTrackingTab,

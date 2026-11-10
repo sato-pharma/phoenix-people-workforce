@@ -2557,6 +2557,12 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMarketAwarenessTests } from "./market-awareness.test.ts";
+import {
+  runMarketingFunctionsAccessTests,
+  runMarketingFunctionsLifecycleTests,
+  runMarketingFunctionsTrackingTests,
+  runMarketingFunctionsVocabularyTests,
+} from "./marketing-functions.test.ts";
 import { runNotificationChannelWiringTests } from "./notification-channel-wiring.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
@@ -9824,6 +9830,10 @@ await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
   runMarketAwarenessTests,
 );
+await runTest("marketing functions: her words and colours, word for word and fill for fill", runMarketingFunctionsVocabularyTests);
+await runTest("marketing functions: product managers fill, the NSM reads only his line's signed feedback, every route asserts", runMarketingFunctionsAccessTests);
+await runTest("marketing functions: strengths and recurring gaps from signed forms only", runMarketingFunctionsTrackingTests);
+await runTest("marketing functions: a reviewed month and a signed form lock; carry-forward leaves done behind", runMarketingFunctionsLifecycleTests);
 await runTest(
   "notification channel wiring (both telegram gates, the workflow cc, one subject per email)",
   runNotificationChannelWiringTests,

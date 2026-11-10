@@ -1999,6 +1999,28 @@ const employeePortalNavigationSectionSeeds = [
     label: "Market Awareness",
   },
   {
+    // Dr. Rasha's two sheets (owner, 2026-11-10). Mirrors MARKETING_FUNCTIONS_PORTAL_ROLES and
+    // FIELD_FEEDBACK_PORTAL_ROLES, which draw the portal links; UX only, the routes gate.
+    id: "employee-marketing-functions",
+    items: [
+      {
+        href: "/employee-portals/marketing-functions",
+        icon: ClipboardList,
+        label: "Marketing Functions",
+        permissions: [{ resource: "marketing_functions", action: "read" }],
+        roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "CEO", "Super Admin"],
+      },
+      {
+        href: "/employee-portals/marketing-feedback",
+        icon: ClipboardCheck,
+        label: "Field Visit Feedback",
+        permissions: [{ resource: "marketing_field_feedback", action: "read" }],
+        roles: ["Product Manager", "Group Product Manager", "Marketing Manager", "National Sales Manager", "CEO", "Super Admin"],
+      },
+    ],
+    label: "Marketing Functions",
+  },
+  {
     id: "employee-visual-aids",
     items: [
       {
@@ -3860,6 +3882,22 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Marketing Manager", "Group Product Manager", "Finance Manager"],
   },
   {
+    href: "/admin/marketing-functions",
+    icon: ClipboardList,
+    label: "Marketing Functions",
+    description: "Each Product Manager's Monthly Marketing Functions sheet: planned, actual, and where each item stands.",
+    permissions: [{ resource: "marketing_functions", action: "read" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
+    href: "/admin/marketing-feedback",
+    icon: ClipboardCheck,
+    label: "Field Visit Feedback",
+    description: "The Product Managers' signed field visit forms, and each representative's strengths and recurring gaps.",
+    permissions: [{ resource: "marketing_field_feedback", action: "read" }],
+    roles: ["Super Admin", "CEO"],
+  },
+  {
     href: "/admin/visual-aids",
     icon: Presentation,
     label: "Visual Aids",
@@ -5566,6 +5604,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // than under ROI, which is where a reporting-shaped name would have put it. Naming it
           // here is what stops it being appended silently to the FIRST band.
           "/admin/market-awareness",
+          // Dr. Rasha's two sheets: a Product Manager's month and his field visit forms (2026-11-10).
+          "/admin/marketing-functions",
+          "/admin/marketing-feedback",
           // Visual Aids is marketing MATERIAL the field uses, managed like a request's artwork, so it
           // sits beside Market Awareness rather than being appended silently to the first band.
           "/admin/visual-aids",

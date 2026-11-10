@@ -130,6 +130,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   marketing_customer: true,
   marketing_finance_ageing_export: true,
   marketing_list_check_export: true,
+  marketing_functions_export: true,
   marketing_pharmacy: true,
   marketing_request: true,
   new_hire_mailbox: true,

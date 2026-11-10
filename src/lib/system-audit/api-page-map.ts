@@ -249,6 +249,9 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/marketing": { admin: "/admin/sales-marketing-intelligence", portal: "/employee-portals/roi" },
   "/api/market-awareness": { admin: "/admin/market-awareness", portal: "/employee-portals/market-awareness" },
   "/api/market-awareness/inbox": { admin: "/admin/market-awareness/inbox", portal: "/employee-portals/market-awareness/inbox" },
+  // Product Managers only — the map checks a portal target as a Medical Rep, who never sees these, so admin only.
+  "/api/marketing-functions": { admin: "/admin/marketing-functions" },
+  "/api/marketing-field-feedback": { admin: "/admin/marketing-feedback" },
   "/api/marketing-requests": { admin: "/admin/marketing-requests", portal: "/employee-portals/marketing-requests" },
   "/api/marketing-requests/all": { admin: "/admin/marketing-requests/all", portal: "/employee-portals/marketing-requests/all" },
   "/api/marketing-requests/bulk-upload": { admin: "/admin/marketing-requests/bulk-upload" },

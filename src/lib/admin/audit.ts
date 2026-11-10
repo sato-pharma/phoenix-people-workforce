@@ -358,6 +358,8 @@ export type AuditEntityType =
   // the building. `audit_logs.entity_type` is plain `text`, so no migration.
   | "marketing_finance_ageing_export"
   | "marketing_list_check_export"
+  // Who took a Product Manager's Monthly Marketing Functions sheet as a file (2026-11-10).
+  | "marketing_functions_export"
   | "notification"
   | "outstation_expense_access"
   | "outstation_request"

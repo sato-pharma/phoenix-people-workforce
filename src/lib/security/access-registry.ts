@@ -2275,6 +2275,15 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/:id/decide", permission: { resource: "hr_ops_reports", action: "approve" }, csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/hr-ops-reports/:id/priced", permission: { resource: "hr_ops_reports", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/hr-ops-reports/rebuild", permission: { resource: "hr_ops_reports", action: "approve" }, csrfRequired: true }),
+  // Monthly Marketing Functions and the Marketing Field Visit Feedback (owner, 2026-11-10): Dr. Rasha's two
+  // sheets. The Product Manager fills, his Group Product Manager or the Marketing Manager reviews; the
+  // service narrows rows (marketing-functions/scope.ts). Bell only, never an email.
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT"], pattern: "/api/marketing-functions/items", permission: { resource: "marketing_functions", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/marketing-functions/submit", permission: { resource: "marketing_functions", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/marketing-functions/review", permission: { resource: "marketing_functions", action: "approve" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/marketing-functions/carry-forward", permission: { resource: "marketing_functions", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-functions/export", permission: { resource: "marketing_functions", action: "export" } }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST"], pattern: "/api/marketing-field-feedback", permission: { resource: "marketing_field_feedback", action: "create" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/weekly-plans/export", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),

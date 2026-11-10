@@ -939,6 +939,23 @@ export const MODULES = [
     keywords: ["pharmacy code sync", "pharmacy-code sync", "hidden vendor", "not found code", "code resolver", "marketing_pharmacy_distributor_codes"],
     tables: ["marketing_pharmacy_distributor_codes"],
   },
+  // Dr. Rasha's two sheets (owner, 2026-11-10), their own module rather than more globs on `marketing`,
+  // whose pointer sits near its 4,000-byte margin. The migration and tests also match `marketing`'s
+  // own globs, so those files load the pair.
+  {
+    id: "marketing-functions",
+    title: "Monthly Marketing Functions and the Marketing Field Visit Feedback",
+    scope: "The Product Manager's Monthly Marketing Functions sheet (eight categories, Planned and Actual, mid-month and end-of-month status, submit and review) and the Marketing Field Visit Feedback form with its rep tracking, in the Group Product Manager's own wording and colours.",
+    globs: [
+      "src/lib/marketing-functions/**",
+      "src/components/marketing-functions/**",
+      "app/**/{marketing-functions,marketing-feedback,marketing-field-feedback}/**",
+      "tests/marketing-functions*",
+      "supabase/migrations/*marketing_functions*",
+    ],
+    keywords: ["marketing functions", "monthly marketing functions", "field visit feedback", "marketing feedback", "call remarks", "rep tracking"],
+    tables: ["marketing_function_months", "marketing_function_items", "marketing_field_feedback"],
+  },
   // 🔴 SPLIT 2026-10-16, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `marketing` had 85 bytes
   // of pointer left under the 4,000-byte margin `tests/module-memory.test.ts` holds (3,915), and the
   // hourly fact rebuild's period-read rule took it to 4,085. The ROI half is the clean cut — the verdict
