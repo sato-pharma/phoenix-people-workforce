@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import JSZip from "jszip";
 
 import { checkWorkbook } from "../scripts/check-workbook-integrity.mjs";
 import {
@@ -610,4 +611,18 @@ export async function runEmployeeMasterWorkbookTests() {
     `the generated workbook must be structurally clean — Excel repairs silently, and a repair drops ` +
       `the dropdowns and defined names this file depends on. Problems: ${problems.join("; ")}`,
   );
+
+  // ── 8. the export is UNPROTECTED — no sheet and no workbook protection (owner, 2026-11-10) ──
+  const zip = await JSZip.loadAsync(Buffer.from(buffer));
+  const sheetParts = Object.keys(zip.files).filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path));
+  assert.ok(sheetParts.length >= 5, `expected the five sheets, found ${sheetParts.length}`);
+  for (const path of sheetParts) {
+    const xml = await zip.file(path)!.async("string");
+    assert.ok(!/<sheetProtection\b/.test(xml), `${path} must carry no <sheetProtection> — the export ships unprotected`);
+  }
+  const workbookXml = await zip.file("xl/workbook.xml")!.async("string");
+  assert.ok(!/<workbookProtection\b/.test(workbookXml), "the workbook must carry no <workbookProtection>");
+  for (const worksheet of reloaded.worksheets) {
+    assert.ok(!worksheet.sheetProtection, `"${worksheet.name}" must not be protected`);
+  }
 }
