@@ -41,7 +41,9 @@ import {
   todayInCairo,
   toLetterDate,
 } from "@/lib/offers/dates";
-import { OFFER_COPY_MAX, planOfferCopies } from "@/lib/offers/copy-recipients";
+import { OFFER_COPY_MAX, appendOfferCopyAddress, planOfferCopies } from "@/lib/offers/copy-recipients";
+import type { OfferCopyDirectory } from "@/lib/offers/copy-directory";
+import { OfferCopyPicker } from "@/components/offers/offer-copy-picker";
 import { offerDraftWarnings, offerWarningsFor, type OfferDraftWarning } from "@/lib/offers/draft-checks";
 import { deriveOfferPay } from "@/lib/offers/pay";
 import {
@@ -368,6 +370,7 @@ function OfferApprovalLine({ offer }: { offer: OfferRecord }) {
 export function OfferComposer({
   canApprove,
   canManage,
+  copyDirectory,
   jobTitles,
   offers,
   onOffers,
@@ -384,6 +387,8 @@ export function OfferComposer({
    */
   canApprove: boolean;
   canManage: boolean;
+  /** Who CC and BCC can be picked from, Line → Region → Area (owner, 2026-11-10). Empty when unread. */
+  copyDirectory: OfferCopyDirectory;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
   onOffers: (offers: OfferRecord[]) => void;
@@ -1413,6 +1418,14 @@ export function OfferComposer({
               : "Blank uses the candidate name.",
           )}
           {text("candidateEmail", "Email address", "name@example.com", "The offer and its PDF go here.")}
+          {/* CC and BCC picked from lists, Line → Region → Area (owner, 2026-11-10); typing stays. */}
+          <OfferCopyPicker
+            bcc={draft.bcc}
+            cc={draft.cc}
+            directory={copyDirectory}
+            disabled={!canManage}
+            onAdd={(key, email) => setDraft((current) => ({ ...current, [key]: appendOfferCopyAddress(current[key], email) }))}
+          />
           {/* One address as the example, not two: measured on production at 375px the pair was cut
               off at "hr@sa" in a 275px box. The hint underneath is what says several may go. */}
           {copyField(
