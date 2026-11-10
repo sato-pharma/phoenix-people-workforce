@@ -150,7 +150,39 @@ export function doctorFullNameProblem(parts: DoctorNameParts): string | null {
   // The joined name is counted the way doctorNeedsFullName counts it, or a name every box passed can still
   // be saved short — an open compound (عبد, ابو) swallows the next box's word.
   if (doctorNameWordCount(joinDoctorName(parts)) < 3) return "Write the first, middle and last name.";
+  const doubled = doubledNamePart(joinDoctorName(parts));
+  if (doubled) return doubledNameSentence(doubled);
   return null;
+}
+
+/**
+ * 🔴 A NAME WRITTEN TWICE SIDE BY SIDE IS NOT A FULL NAME (owner, 2026-11-10: "block later validations
+ * like this example mostafa mostafa shalaby … mostafa shalaby shalaby blocked"). A rep validated
+ * "مصطفي مصطفي شلش" off a signboard reading "دكتور مصطفى شلش": the first name copied into the middle box
+ * to make up the third name the door asks for. Measured that day: 160 clinic doctors on the lists with
+ * the same first and middle name, 56 of them محمد محمد. 🔴 محمد محمد AS FIRST AND MIDDLE NAME IS STILL A
+ * NAME — a son named after his father is common, and the owner chose "Block all but محمد محمد". Any other
+ * name beside itself, in any two neighbouring places, is refused, and one name written with and without
+ * its ال (شلبي الشلبي) is the same name. Returns the doubled name, or null.
+ */
+export function doubledNamePart(name: string | null | undefined): string | null {
+  const words = personNameWords(name ?? "").map((entry) => entry.word);
+  for (let index = 1; index < words.length; index += 1) {
+    if (bareName(words[index - 1]) !== bareName(words[index])) continue;
+    if (index === 1 && words[0] === "محمد") continue;
+    return words[index];
+  }
+  return null;
+}
+
+/** A name without the ال in front of it, when what is left is still a name. */
+function bareName(word: string): string {
+  return word.startsWith("ال") && word.length >= 5 ? word.slice(2) : word;
+}
+
+/** What the rep reads when one name fills two boxes: his own fix, never that anybody looked. */
+export function doubledNameSentence(word: string): string {
+  return `${word} is written twice. Write the first, middle and last name, each one once.`;
 }
 
 export function joinDoctorName(parts: DoctorNameParts): string {
@@ -175,6 +207,8 @@ export function parseDoctorFullName(
   }
   const whole = cleanPart(name);
   if (doctorNameWordCount(whole) < 3) return { ok: false, error: "Write the first, middle and last name." };
+  const doubled = doubledNamePart(whole);
+  if (doubled) return { ok: false, error: doubledNameSentence(doubled) };
   return { ok: true, value: whole };
 }
 
@@ -335,11 +369,14 @@ export type HeldFullNameBoard = {
  * doctor carried over from iReports360 or loaded from the SFE's sheet whose name is one or two words is
  * asked for the first, middle and last name on the validation screen itself; the full name is what his
  * signboard or timetable is read against, and it is saved with the validation — one step, never a
- * validation the plan then refuses.
+ * validation the plan then refuses. A name written twice (`doubledNamePart`, owner, 2026-11-10) is asked
+ * for again the same way, so "مصطفي مصطفي شلش" sent back opens on the three boxes rather than validating
+ * under the same made-up third name.
  */
 export function validationNeedsFullName(subject: { listType: unknown; name: unknown }): boolean {
   if (String(subject.listType ?? "").toUpperCase() !== "PM") return false;
-  return doctorNameWordCount(String(subject.name ?? "")) < 3;
+  const name = String(subject.name ?? "");
+  return doctorNameWordCount(name) < 3 || doubledNamePart(name) !== null;
 }
 
 /** What the rep reads above the three boxes at the door: his own fix, in his own words. */
@@ -362,4 +399,4 @@ export function approvalNeedsFullName(row: { listType: unknown; customerName: un
 
 /** Beside the disabled Approve, and the server's refusal of one. */
 export const APPROVAL_NEEDS_FULL_NAME =
-  "This customer has only one or two names. Send it back so the rep writes the first, middle and last name.";
+  "This customer has only one or two names, or one name written twice. Send it back so the rep writes the first, middle and last name.";
