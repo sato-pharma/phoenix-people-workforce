@@ -14,14 +14,16 @@
 
 import {
   CalendarX2,
+  ChevronDown,
   Eye,
-  FilePenLine,
   FileDown,
+  FilePenLine,
   Loader2,
   Mail,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Send,
   TriangleAlert,
   Undo2,
@@ -64,6 +66,13 @@ import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
 import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
 import { offerStatusLabel } from "@/lib/offers/approval-rules";
+import {
+  OFFER_LIST_PAGE,
+  OFFER_LIST_STATUSES,
+  filterOffers,
+  offerStatusCounts,
+  type OfferListFilter,
+} from "@/lib/offers/list-filter";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   OFFER_EMAIL_MESSAGE_MAX,
@@ -304,7 +313,15 @@ function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferV
   return (
     <span className="mt-0.5 block text-xs text-slate-500 [overflow-wrap:anywhere]">
       <span className="font-bold text-phx-ink-soft">Seat</span>{" "}
-      {vacancy ? formatOfferVacancyLabel(vacancy) : "no longer open — choose it again on Add Employee"}
+      {vacancy
+        ? formatOfferVacancyLabel(vacancy)
+        : // Measured on production 2026-11-10: every accepted offer read "no longer open — choose it again
+          // on Add Employee", although its OWN hire had closed the seat and nothing was left to do.
+          offer.employeeHrId
+          ? "filled by this hire"
+          : offer.status === "sent"
+            ? "no longer open — choose it again on Add Employee"
+            : "no longer open"}
     </span>
   );
 }
@@ -443,6 +460,16 @@ export function OfferComposer({
   const linkedOfferRef = useRef<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>("");
+  // The Offers list's search, status filter and page (owner, 2026-11-10: "ease and perfection").
+  const [listQuery, setListQuery] = useState("");
+  const [listStatus, setListStatus] = useState<OfferListFilter["status"]>("all");
+  const [listLimit, setListLimit] = useState(OFFER_LIST_PAGE);
+  const listCounts = useMemo(() => offerStatusCounts(offers), [offers]);
+  const matchingOffers = useMemo(
+    () => filterOffers(offers, { query: listQuery, status: listStatus }),
+    [offers, listQuery, listStatus],
+  );
+  const shownOffers = matchingOffers.slice(0, listLimit);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -1200,10 +1227,27 @@ export function OfferComposer({
   }
 
   const money = (label: string, value: number, note?: string) => (
-    <div className="rounded-2xl border border-phx-line bg-white px-4 py-3 shadow-sm" key={label}>
+    <div className="border border-phx-line bg-white px-4 py-3" key={label}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
-      <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">EGP {offerMoney(value)}</p>
-      {note ? <p className="mt-0.5 whitespace-nowrap text-phx-xs text-phx-ink-faint">{note}</p> : null}
+      {/* A dash until there is a package: an empty form read as four boxes of "EGP 0 · 0 a year". */}
+      <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">
+        {value > 0 ? `EGP ${offerMoney(value)}` : "—"}
+      </p>
+      {note && value > 0 ? <p className="mt-0.5 whitespace-nowrap text-phx-xs text-phx-ink-faint">{note}</p> : null}
+    </div>
+  );
+
+  /**
+   * A numbered heading across the form's full width (owner, 2026-11-10: "premium polish"): the form was
+   * one unbroken run of eighteen fields. Type and a hairline only — no panel, no colour fill.
+   */
+  const sectionHeading = (step: number, title: string, note: string) => (
+    <div className="border-t border-phx-line pt-4 first:border-t-0 first:pt-0 md:col-span-2 xl:col-span-3" key={title}>
+      <p className="flex items-baseline gap-2 text-sm font-black text-phx-ink">
+        <span className="tabular-nums text-[#B45309]">{step}</span>
+        {title}
+      </p>
+      <p className={offerHintClassName}>{note}</p>
     </div>
   );
 
@@ -1281,7 +1325,7 @@ export function OfferComposer({
   /** A one-click date shortcut. Sets the field and nothing else. */
   const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
     <button
-      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-phx-xs font-bold whitespace-nowrap text-phx-ink-2 shadow-sm transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
+      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-phx-xs font-bold whitespace-nowrap text-phx-ink-2 transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={!canManage || !value}
       key={label}
       onClick={() => setDraft((current) => ({ ...current, [key]: value }))}
@@ -1330,6 +1374,40 @@ export function OfferComposer({
     );
   };
 
+  /** Save and Send — drawn in the form's header and again in the bar pinned under it. */
+  const composerActions = (
+    <div className="flex flex-wrap gap-2">
+      <Button disabled={!canManage || busy !== null} onClick={() => void saveDraft()} size="lg" type="button" variant="secondary">
+        {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+        {reviewing ? "Save changes" : "Save draft"}
+      </Button>
+      {updatingOffer && canManage ? (
+        <Button disabled={busy !== null} onClick={() => void cancelUpdate(updatingOffer)} size="lg" type="button" variant="outline">
+          <Undo2 className="h-4 w-4" /> Cancel update
+        </Button>
+      ) : null}
+      {reviewing && canApprove ? (
+        <Button
+          disabled={busy !== null}
+          onClick={() => {
+            const offer = offers.find((entry) => entry.id === savedId);
+            if (offer) void rejectOffer(offer);
+          }}
+          size="lg"
+          type="button"
+          variant="destructive"
+        >
+          <Undo2 className="h-4 w-4" /> Reject
+        </Button>
+      ) : null}
+      <Button disabled={!canManage || busy !== null} onClick={() => void sendOffer()} size="lg" type="button">
+        {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        {/* Talent Acquisition's Send never emails (owner, 2026-11-10); the button says where it goes. */}
+        {!canApprove ? "Send for approval" : reviewing ? "Approve and send" : updating ? "Send updated offer" : "Send offer"}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-5">
       {canApprove && awaitingApproval.length > 0 ? (
@@ -1359,39 +1437,9 @@ export function OfferComposer({
           </div>
         </AdminTableShell>
       ) : null}
+      <div>
       <AdminTableShell
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={!canManage || busy !== null} onClick={() => void saveDraft()} size="lg" type="button" variant="secondary">
-              {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {reviewing ? "Save changes" : "Save draft"}
-            </Button>
-            {updatingOffer && canManage ? (
-              <Button disabled={busy !== null} onClick={() => void cancelUpdate(updatingOffer)} size="lg" type="button" variant="outline">
-                <Undo2 className="h-4 w-4" /> Cancel update
-              </Button>
-            ) : null}
-            {reviewing && canApprove ? (
-              <Button
-                disabled={busy !== null}
-                onClick={() => {
-                  const offer = offers.find((entry) => entry.id === savedId);
-                  if (offer) void rejectOffer(offer);
-                }}
-                size="lg"
-                type="button"
-                variant="destructive"
-              >
-                <Undo2 className="h-4 w-4" /> Reject
-              </Button>
-            ) : null}
-            <Button disabled={!canManage || busy !== null} onClick={() => void sendOffer()} size="lg" type="button">
-              {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {/* Talent Acquisition's Send never emails (owner, 2026-11-10); the button says where it goes. */}
-              {!canApprove ? "Send for approval" : reviewing ? "Approve and send" : updating ? "Send updated offer" : "Send offer"}
-            </Button>
-          </div>
-        }
+        action={composerActions}
         description={
           canApprove
             ? `The letter goes out as ${sender.from}. Replies land at ${sender.replyTo}.`
@@ -1406,6 +1454,7 @@ export function OfferComposer({
         }
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-3">
+          {sectionHeading(1, "Candidate", "Who the offer is for, and how the letter greets them.")}
           {text("candidateName", "Candidate name", "SAMAA SHALABY")}
           {text(
             "salutationName",
@@ -1418,6 +1467,7 @@ export function OfferComposer({
               : "Blank uses the candidate name.",
           )}
           {text("candidateEmail", "Email address", "name@example.com", "The offer and its PDF go here.")}
+          {sectionHeading(2, "The email", "Who is copied, and anything you want the candidate to read first.")}
           {/* CC and BCC picked from lists, Line → Region → Area (owner, 2026-11-10); typing stays. */}
           <OfferCopyPicker
             bcc={draft.bcc}
@@ -1466,6 +1516,7 @@ export function OfferComposer({
             </p>
           </div>
 
+          {sectionHeading(3, "The job", "The title fills the territory, reporting line, contract and wording from the catalogue.")}
           <div>
             <label className={offerLabelClassName} htmlFor="offer-title">Job title</label>
             <input
@@ -1553,6 +1604,7 @@ export function OfferComposer({
             </p>
           </div>
 
+          {sectionHeading(4, "Reference and dates", "Each date shows the exact words the letter prints.")}
           <div>
             <label className={offerLabelClassName} htmlFor="offer-reference">Reference</label>
             <div className="flex gap-2">
@@ -1606,6 +1658,7 @@ export function OfferComposer({
             { label: "In 1 month", value: addDays(draft.dateOfIssue, 30) },
           ])}
 
+          {sectionHeading(5, "Pay and letter design", "Type the total package; the breakdown below is worked out from it.")}
           <div>
             <label className={offerLabelClassName} htmlFor="offer-total">Total monthly package (EGP)</label>
             <input
@@ -1674,6 +1727,25 @@ export function OfferComposer({
           </p>
         </div>
       </AdminTableShell>
+      {/* Save and Send stay in reach while the form scrolls (owner, 2026-11-10: "ease and perfection") —
+          the header's buttons sit about 2,700px above the last field. Sticky inside the wrapper that
+          ends with the form, so the bar settles under the form once it has scrolled past and never
+          floats over the preview or the list. Flat: a hairline and white, no shadow. */}
+      {canManage ? (
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border border-t-0 border-slate-200/90 bg-white px-5 py-3 sm:px-6">
+          <p className="hidden min-w-0 text-phx-xs font-semibold text-phx-ink-soft sm:block">
+            {reviewing
+              ? "Offer awaiting your approval"
+              : updatingOffer
+                ? `Updating offer ${updatingOffer.reference}`
+                : draft.candidateName.trim()
+                  ? `Offer for ${draft.candidateName.trim()}`
+                  : "New offer"}
+          </p>
+          {composerActions}
+        </div>
+      ) : null}
+      </div>
 
       <AdminTableShell
         action={
@@ -1687,7 +1759,7 @@ export function OfferComposer({
         <div className="max-h-[720px] overflow-auto bg-slate-100 p-4">
           {previewHtml ? (
             <iframe
-              className="mx-auto block w-full max-w-[860px] rounded-xl border border-phx-line bg-white shadow-lg"
+              className="mx-auto block w-full max-w-[860px] border border-phx-line bg-white"
               height={900}
               sandbox=""
               srcDoc={previewHtml}
@@ -1700,6 +1772,74 @@ export function OfferComposer({
       </AdminTableShell>
 
       <AdminTableShell description="Newest first. A sent offer keeps the exact letter it was sent with." title="Offers">
+        {/* Search, a status filter with counts, and pages of 20 (owner, 2026-11-10: "ease and
+            perfection") — 86 offers were one column about 21,000px tall. Narrowing only: every offer is
+            still loaded. */}
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 px-5 py-4 sm:px-6">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
+            <input
+              aria-label="Search offers"
+              autoComplete="off"
+              className={cn(offerInputClassName, "pl-9")}
+              onChange={(event) => {
+                setListQuery(event.target.value);
+                setListLimit(OFFER_LIST_PAGE);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && listQuery) {
+                  event.preventDefault();
+                  setListQuery("");
+                  setListLimit(OFFER_LIST_PAGE);
+                }
+              }}
+              placeholder="Search by name, email, job title or reference"
+              type="search"
+              value={listQuery}
+            />
+          </div>
+          <div aria-label="Filter offers by status" className="flex flex-wrap gap-1.5" role="group">
+            {(["all", ...OFFER_LIST_STATUSES] as const)
+              .filter((status) => status === "all" || listCounts[status] > 0 || listStatus === status)
+              .map((status) => {
+                const active = listStatus === status;
+                return (
+                  <button
+                    aria-pressed={active}
+                    className={cn(
+                      "min-h-9 border px-3 text-phx-xs font-bold whitespace-nowrap transition-colors",
+                      active
+                        ? "border-phx-ink bg-phx-ink text-white"
+                        : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-accent-line hover:text-[#B45309]",
+                    )}
+                    key={status}
+                    onClick={() => {
+                      setListStatus(status);
+                      setListLimit(OFFER_LIST_PAGE);
+                    }}
+                    type="button"
+                  >
+                    {status === "all" ? "All" : offerStatusLabel(status)}{" "}
+                    <span className="tabular-nums">{listCounts[status]}</span>
+                  </button>
+                );
+              })}
+            {/* One press back to every offer, shown only while a search or a status narrows the list. */}
+            {listQuery.trim() || listStatus !== "all" ? (
+              <button
+                className="min-h-9 px-2 text-phx-xs font-bold text-phx-ink-soft underline-offset-4 hover:text-phx-ink hover:underline"
+                onClick={() => {
+                  setListQuery("");
+                  setListStatus("all");
+                  setListLimit(OFFER_LIST_PAGE);
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
         {/*
           Desktop: mobile already gets the cards below, so the rule's mobile half was met — the
           desktop half was not. `overflow-x-auto` over a `min-w-[860px]` floor is the shape the
@@ -1749,7 +1889,7 @@ export function OfferComposer({
               </tr>
             </thead>
             <tbody>
-              {offers.map((offer) => (
+              {shownOffers.map((offer) => (
                 <tr className="border-b border-slate-100 last:border-0" key={offer.id}>
                   <td className="break-words px-5 py-3">
                     <span className="block font-bold text-slate-900">{offer.candidateName}</span>
@@ -1797,42 +1937,53 @@ export function OfferComposer({
                           >
                             Declined
                           </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void resendOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Send className="h-3.5 w-3.5" /> Resend offer
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void startUpdate(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <FilePenLine className="h-3.5 w-3.5" /> Update offer
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void withdrawOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Undo2 className="h-3.5 w-3.5" /> Withdraw
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void expireOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
-                          </Button>
+                          {/* Accepted and Declined are the answer, so they stay in view; Resend, Update, Withdraw and
+                              Expire are rarer and fold under More (owner, 2026-11-10: "more and more" polish) — a sent
+                              row carried seven buttons. A disclosure, not a floating menu: it opens in the row, so
+                              nothing can be clipped or cover the next offer. */}
+                          <details className="group text-right open:basis-full">
+                            <summary className="inline-flex h-7 cursor-pointer list-none items-center gap-1 border border-border bg-background px-2.5 text-[0.8rem] font-medium text-phx-ink-2 transition-colors hover:bg-muted [&::-webkit-details-marker]:hidden">
+                              More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                            </summary>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 justify-end">
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void resendOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Send className="h-3.5 w-3.5" /> Resend offer
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void startUpdate(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void withdrawOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void expireOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
+                              </Button>
+                            </div>
+                          </details>
                         </>
                       ) : null}
                       {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn
@@ -1904,10 +2055,10 @@ export function OfferComposer({
                   </td>
                 </tr>
               ))}
-              {offers.length === 0 ? (
+              {shownOffers.length === 0 ? (
                 <tr>
                   <td className="px-5 py-8 text-center text-slate-500" colSpan={7}>
-                    No offers yet.
+                    {offers.length === 0 ? "No offers yet." : "No offer matches this search."}
                   </td>
                 </tr>
               ) : null}
@@ -1916,8 +2067,8 @@ export function OfferComposer({
         </div>
 
         <div className="flex flex-col gap-3 px-5 py-5 @4xl:hidden">
-          {offers.map((offer) => (
-            <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm" key={offer.id}>
+          {shownOffers.map((offer) => (
+            <div className="border border-phx-line bg-white p-4" key={offer.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   {/* No `truncate` here on purpose — the owner's standing rule is that text is
@@ -1932,9 +2083,10 @@ export function OfferComposer({
                       card could have shown that. `break-all` because an email has no space to break
                       at, and no `truncate` because a half-shown address is worse than a wrapped one:
                       the whole value of this line is telling two addresses apart. */}
+                  {/* The job second, then who it went to (owner, 2026-11-10: "premium polish"). */}
+                  <p className="mt-0.5 break-words text-xs font-semibold text-slate-700">{offer.title}</p>
                   <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <OfferCopiedTo offer={offer} />
-                  <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                   <OfferSeat offer={offer} vacancies={vacancies} />
                   <OfferApprovalNote offer={offer} />
                 </div>
@@ -1946,11 +2098,25 @@ export function OfferComposer({
                   {offerStatusLabel(offer.status)}
                 </Badge>
               </div>
-              <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</p>
-              <p className="mt-1 text-xs text-slate-500">{offerWhen(offer.sentAt)}</p>
-              <div className="mt-1 text-xs text-slate-500">
-                <span className="font-bold text-phx-ink-soft">Sent by</span> <OfferSentBy offer={offer} people={people} />
-              </div>
+              {/* Package, when and by whom as one labelled strip (owner, 2026-11-10: "premium polish") —
+                  they were three unlabelled lines, and the date read as nothing in particular. A
+                  hairline above, no panel. Three columns from 640px, two below with Sent by under. */}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:grid-cols-3">
+                <div>
+                  <dt className="font-bold text-phx-ink-soft">Package</dt>
+                  <dd className="text-sm font-black tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-phx-ink-soft">Sent</dt>
+                  <dd className="tabular-nums">{offer.sentAt ? offerWhen(offer.sentAt) : "Not yet"}</dd>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <dt className="font-bold text-phx-ink-soft">Sent by</dt>
+                  <dd>
+                    <OfferSentBy offer={offer} people={people} />
+                  </dd>
+                </div>
+              </dl>
               {/* Wraps, like the table's cell: three controls do not fit one line at 375px, and
                   the fits-the-screen rule makes wrapping the answer rather than a sideways scroll. */}
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1984,42 +2150,53 @@ export function OfferComposer({
                     >
                       Declined
                     </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void resendOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Send className="h-3.5 w-3.5" /> Resend offer
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void startUpdate(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <FilePenLine className="h-3.5 w-3.5" /> Update offer
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void withdrawOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Undo2 className="h-3.5 w-3.5" /> Withdraw
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void expireOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
-                    </Button>
+                    {/* Accepted and Declined are the answer, so they stay in view; Resend, Update, Withdraw and
+                        Expire are rarer and fold under More (owner, 2026-11-10: "more and more" polish) — a sent
+                        row carried seven buttons. A disclosure, not a floating menu: it opens in the row, so
+                        nothing can be clipped or cover the next offer. */}
+                    <details className="group open:basis-full">
+                      <summary className="inline-flex h-7 cursor-pointer list-none items-center gap-1 border border-border bg-background px-2.5 text-[0.8rem] font-medium text-phx-ink-2 transition-colors hover:bg-muted [&::-webkit-details-marker]:hidden">
+                        More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void resendOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Send className="h-3.5 w-3.5" /> Resend offer
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void startUpdate(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void withdrawOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void expireOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
+                        </Button>
+                      </div>
+                    </details>
                   </>
                 ) : null}
                 {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn
@@ -2090,9 +2267,26 @@ export function OfferComposer({
               </div>
             </div>
           ))}
-          {offers.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No offers yet.</p> : null}
+          {shownOffers.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">
+              {offers.length === 0 ? "No offers yet." : "No offer matches this search."}
+            </p>
+          ) : null}
         </div>
         </div>
+        {matchingOffers.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 px-5 py-3 sm:px-6">
+            <p className="text-phx-xs font-semibold text-phx-ink-soft">
+              Showing {shownOffers.length} of {matchingOffers.length}
+              {matchingOffers.length !== offers.length ? ` matching, ${offers.length} in all` : ""}
+            </p>
+            {shownOffers.length < matchingOffers.length ? (
+              <Button onClick={() => setListLimit((limit) => limit + OFFER_LIST_PAGE)} size="sm" type="button" variant="outline">
+                Show {Math.min(OFFER_LIST_PAGE, matchingOffers.length - shownOffers.length)} more
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </AdminTableShell>
 
       {!canManage ? (
