@@ -267,7 +267,7 @@ export function runPlaceReviewDeckTests(): void {
     ["src/components/phoenix-crm/validation-review-queue.tsx", "Restore"],
     ["src/components/phoenix-crm/shared-place-customers.tsx", "RestoreSeated"],
   ] as const) {
-    assert.match(functionBody(stripComments(read(path)), name), /<RestoreAfterRejection/, `${path} ${name} draws the one take-back control, which reports through usePlaceCheckDone`);
+    assert.match(functionBody(read(path), name), /<RestoreAfterRejection\s/, `${path} ${name} draws the one take-back control, which reports through usePlaceCheckDone`);
   }
   {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
