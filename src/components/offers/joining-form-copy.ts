@@ -387,6 +387,9 @@ export const AR_MESSAGES: Record<string, string> = {
   "This offer was recorded as declined. If that is not right, please reply to the offer email and our HR team will help.":
     "سُجّل هذا العرض على أنه مرفوض. إذا لم يكن ذلك صحيحاً، يُرجى الرد على بريد العرض وسيساعدك فريق الموارد البشرية.",
   "This offer is not open yet": "هذا العرض غير متاح بعد",
+  "Your offer is being updated": "جارٍ تحديث عرضك",
+  "Our HR team is updating your offer. You will receive the updated offer by email shortly; please use the button in that email.":
+    "يقوم فريق الموارد البشرية بتحديث عرضك. سيصلك العرض المحدَّث عبر البريد الإلكتروني قريباً؛ يُرجى استخدام الزر الموجود في ذلك البريد.",
   "This offer has not been issued yet. Please use the link in the offer email you receive.":
     "لم يصدر هذا العرض بعد. يُرجى استخدام الرابط الموجود في بريد العرض عند وصوله.",
   "Your position is being confirmed": "جارٍ تأكيد الوظيفة",

@@ -8,6 +8,7 @@ import { offerJsonError } from "@/lib/offers/http";
 import { readOfferVacancyId } from "@/lib/offers/hire-draft";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import type { OfferFields } from "@/lib/offers/types";
+import { normalizeOfferEmailMessage } from "@/lib/offers/revision-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,6 +94,12 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const fields = readFields(body);
+    // HR's own words for the email body (owner, 2026-11-10). Judged here, so an over-long one is refused
+    // in a sentence rather than by the database.
+    const email = normalizeOfferEmailMessage(body.emailMessage);
+    if (email.problem) {
+      return NextResponse.json({ message: email.problem, success: false }, { status: 400 });
+    }
 
     if (!fields.candidateName) {
       return NextResponse.json({ message: "A candidate name is required.", success: false }, { status: 400 });
@@ -115,7 +122,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const offer = await createOffer(fields, access.hrId ?? null);
+    const offer = await createOffer({ ...fields, emailMessage: email.message }, access.hrId ?? null);
     return NextResponse.json({ offer, success: true });
   } catch (error) {
     return offerJsonError(error, "Failed to create this offer.");

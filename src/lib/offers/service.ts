@@ -19,11 +19,13 @@ import type {
   OfferJobTitle,
   OfferJobTitleInput,
   OfferRecord,
+  OfferRevision,
   OfferStatus,
   OfferTemplate,
   OfferTemplateInput,
   OfferTheme,
 } from "@/lib/offers/types";
+import { offerRevisionCancelRefusal, offerRevisionRefusal } from "@/lib/offers/revision-rules";
 
 /**
  * The job-offer module's data layer.
@@ -583,8 +585,14 @@ type OfferRow = {
   created_at: string | null;
   created_by: string | null;
   date_of_issue: string | null;
+  // Optional: HR's message and the update columns (20261110195450). Absent reads as "no message, never updated".
+  email_message?: string | null;
   id: string;
   reference: string | null;
+  revised_at?: string | null;
+  revised_by?: string | null;
+  revision?: number | string | null;
+  revision_history?: unknown;
   reports_to: string | null;
   // Optional for the same reason as the copy lists above: an environment without the role-summary
   // migration returns no such key, and that must read as "the standard paragraph", not throw.
@@ -631,9 +639,14 @@ function toOffer(row: OfferRow): OfferRecord {
     createdAt: row.created_at,
     createdBy: row.created_by,
     dateOfIssue: row.date_of_issue ?? "",
+    emailMessage: row.email_message ?? "",
     employeeHrId: row.employee_hr_id?.trim() || null,
     id: row.id,
     reference: row.reference ?? "",
+    revisedAt: row.revised_at ?? null,
+    revisedBy: row.revised_by ?? null,
+    revision: Math.max(0, Math.trunc(Number(row.revision) || 0)),
+    revisionHistory: Array.isArray(row.revision_history) ? (row.revision_history as OfferRevision[]) : [],
     reportsTo: row.reports_to ?? "",
     roleSummary: row.role_summary ?? "",
     salutationName: row.salutation_name ?? "",
@@ -793,7 +806,7 @@ export async function allocateOfferReference(title: string, year: number): Promi
 const UNIQUE_VIOLATION = "23505";
 
 export async function createOffer(
-  fields: OfferFields & { templateId?: string | null; vacancyId?: number | null },
+  fields: OfferFields & { emailMessage?: string | null; templateId?: string | null; vacancyId?: number | null },
   createdBy: string | null,
 ): Promise<OfferRecord> {
   const db = getSupabaseAdmin();
@@ -826,6 +839,8 @@ export async function createOffer(
       .insert({
         ...toRow({ ...fields, reference }),
         created_by: createdBy,
+        // Only when one was written: an insert that names the column fails on a database without it.
+        ...(fields.emailMessage ? { email_message: fields.emailMessage } : {}),
         status: "draft",
         template_id: templateId,
         vacancy_id: offerVacancyId(fields.vacancyId),
@@ -850,7 +865,7 @@ export async function createOffer(
 
 export async function updateOffer(
   id: string,
-  fields: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null },
+  fields: Partial<OfferFields> & { emailMessage?: string | null; templateId?: string | null; vacancyId?: number | null },
   options: { canApprove?: boolean } = {},
 ): Promise<OfferRecord> {
   const current = await getOffer(id);
@@ -868,6 +883,11 @@ export async function updateOffer(
   // written as null. An explicit null IS meaningful here — it is how a seat is un-chosen — so the
   // `undefined` check is what tells the two apart.
   if (fields.vacancyId !== undefined) patch.vacancy_id = offerVacancyId(fields.vacancyId);
+  // HR's message for the email (owner, 2026-11-10). Only written when it changed, so a database without
+  // the column still saves every other edit as long as nobody has typed a message.
+  if (fields.emailMessage !== undefined && (fields.emailMessage ?? "") !== (current.emailMessage ?? "")) {
+    patch.email_message = fields.emailMessage || null;
+  }
   if (Object.keys(patch).length === 0) return current;
 
   const db = getSupabaseAdmin();
@@ -883,8 +903,9 @@ export function offerEditRefusal(status: OfferStatus): string {
     return "This offer is waiting for the HR Manager's approval. Only the HR Manager can edit it now, or reject it back to draft.";
   }
   // A sent offer is a document the candidate already holds. Editing it would make Phoenix's copy
-  // disagree with theirs, silently — withdraw and reissue instead.
-  return "This offer has already been sent and can no longer be edited. Withdraw it and create a new one.";
+  // disagree with theirs, silently — so a change goes through Update offer, which keeps the version
+  // that went out and sends the candidate the new one (owner, 2026-11-10).
+  return "This offer has already been sent and can no longer be edited here. Use Update offer to change it and send the candidate the updated offer.";
 }
 
 /**
@@ -942,6 +963,130 @@ export async function returnOfferToDraft(id: string, returnedBy: string | null, 
 
   assertReadable(error, "offers");
   if (!data) throw new Error("This offer is not waiting for approval any more — it may already have been sent or rejected.");
+  return toOffer(data as OfferRow);
+}
+
+/**
+ * "Update offer" (owner, 2026-11-10: "i may need to update a job offer"). The version that went out is
+ * frozen into `revision_history` — its terms, its letter, who sent and approved it — and the SAME row
+ * returns to draft with `revision` raised by one, ready to edit and send again through the ordinary Send
+ * (so Talent Acquisition's update waits for the HR Manager like any send).
+ *
+ * Conditional on the status AND the revision it read, so two presses, or two people, cannot each freeze
+ * a copy: the second finds the row moved and is refused.
+ */
+export async function startOfferRevision(id: string, by: string | null): Promise<OfferRecord> {
+  const current = await getOffer(id);
+  const refusal = offerRevisionRefusal(current);
+  if (refusal) throw new Error(refusal);
+
+  const revision = current.revision ?? 0;
+  const entry: OfferRevision = {
+    approvedAt: current.approval?.approvedAt ?? null,
+    approvedBy: current.approval?.approvedBy ?? null,
+    bcc: current.bccRecipients,
+    cc: current.ccRecipients,
+    emailMessage: current.emailMessage?.trim() || null,
+    fields: {
+      candidateEmail: current.candidateEmail,
+      candidateName: current.candidateName,
+      contractTerm: current.contractTerm,
+      costOfLiving: current.costOfLiving,
+      dateOfIssue: current.dateOfIssue,
+      reference: current.reference,
+      reportsTo: current.reportsTo,
+      roleSummary: current.roleSummary,
+      salutationName: current.salutationName,
+      startDate: current.startDate,
+      territory: current.territory,
+      title: current.title,
+      totalMonthly: current.totalMonthly,
+      validUntil: current.validUntil,
+    },
+    requestedBy: current.approval?.requestedBy ?? null,
+    revision,
+    sentAt: current.sentAt,
+    sentBy: current.sentBy,
+    supersededAt: new Date().toISOString(),
+    supersededBy: by,
+    templateId: current.templateId,
+    templateSnapshot: current.templateSnapshot,
+    vacancyId: current.vacancyId,
+  };
+
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({
+      // A fresh approval cycle: the last request and rejection belong to the version just frozen.
+      approval_requested_at: null,
+      approval_requested_by: null,
+      approval_return_reason: null,
+      approval_returned_at: null,
+      approval_returned_by: null,
+      revised_at: entry.supersededAt,
+      revised_by: by,
+      revision: revision + 1,
+      revision_history: [...(current.revisionHistory ?? []), entry],
+      status: "draft",
+    })
+    .eq("id", id)
+    .eq("status", "sent")
+    .eq("revision", revision)
+    .select("*")
+    .maybeSingle();
+
+  assertReadable(error, "offers");
+  if (!data) throw new Error("This offer changed while you were looking at it — it may already be being updated, or answered. Reload and try again.");
+  return toOffer(data as OfferRow);
+}
+
+/**
+ * "Cancel update": the version that went out comes back exactly as it was — terms, letter, who sent it
+ * and when, the copies and the message — and the row is `sent` again, so the candidate's link opens it.
+ * Whatever was typed into the update is discarded. Conditional like the start, for the same reason.
+ */
+export async function cancelOfferRevision(id: string): Promise<OfferRecord> {
+  const current = await getOffer(id);
+  const refusal = offerRevisionCancelRefusal(current);
+  if (refusal) throw new Error(refusal);
+
+  const history = current.revisionHistory ?? [];
+  const previous = history[history.length - 1];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({
+      ...toRow(previous.fields),
+      approval_requested_at: null,
+      approval_requested_by: previous.requestedBy,
+      approval_return_reason: null,
+      approval_returned_at: null,
+      approval_returned_by: null,
+      approved_at: previous.approvedAt,
+      approved_by: previous.approvedBy,
+      bcc_recipients: previous.bcc ?? [],
+      cc_recipients: previous.cc ?? [],
+      email_message: previous.emailMessage,
+      revised_at: null,
+      revised_by: null,
+      revision: previous.revision,
+      revision_history: history.slice(0, -1),
+      sent_at: previous.sentAt,
+      sent_by: previous.sentBy,
+      status: "sent",
+      template_id: previous.templateId,
+      template_snapshot: previous.templateSnapshot,
+      vacancy_id: offerVacancyId(previous.vacancyId),
+    })
+    .eq("id", id)
+    .eq("status", "draft")
+    .eq("revision", current.revision ?? 0)
+    .select("*")
+    .maybeSingle();
+
+  assertReadable(error, "offers");
+  if (!data) throw new Error("This offer changed while you were looking at it — the update may already have been sent. Reload and try again.");
   return toOffer(data as OfferRow);
 }
 

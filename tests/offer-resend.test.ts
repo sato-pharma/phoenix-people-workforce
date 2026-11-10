@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { parseLetterDate, toLetterDate } from "../src/lib/offers/dates.ts";
 import { normalizeResendRequestId, offerResendIdempotencyKey, offerResendRefusal } from "../src/lib/offers/resend-rules.ts";
+import { offerIdempotencyKeyFor } from "../src/lib/offers/revision-rules.ts";
 
 /**
  * Resend offer (owner, 2026-09-28).
@@ -34,7 +35,9 @@ export async function runOfferResendTests() {
   // send's key would answer with the very message that failed and deliver nothing.
   const firstSendKey = "offer-letter:OFFER-1"; // offerIdempotencyKey in src/lib/offers/send.ts
   const sendSource = readFileSync("src/lib/offers/send.ts", "utf8");
-  assert.ok(sendSource.includes("return `offer-letter:${offerId}`;"), "the first-send key format this test compares against");
+  // The key lives in revision-rules.ts since updated offers (2026-11-10); revision 0 is the first send's key, unchanged.
+  assert.equal(offerIdempotencyKeyFor("OFFER-1"), firstSendKey, "the first-send key format this test compares against");
+  assert.ok(sendSource.includes("return offerIdempotencyKeyFor(offerId, revision);"), "send.ts takes its key from that one function");
   const resendKey = offerResendIdempotencyKey("OFFER-1", "press-0001");
   assert.notEqual(resendKey, firstSendKey);
   assert.ok(resendKey.startsWith(`${firstSendKey}:resend:`), "a resend key is traceable to its offer");

@@ -15,6 +15,7 @@
 import {
   CalendarX2,
   Eye,
+  FilePenLine,
   FileDown,
   Loader2,
   Mail,
@@ -61,6 +62,13 @@ import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
 import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
 import { offerStatusLabel } from "@/lib/offers/approval-rules";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import {
+  OFFER_EMAIL_MESSAGE_MAX,
+  cairoLongDate,
+  offerIsBeingUpdated,
+  offerVersionLabel,
+} from "@/lib/offers/revision-rules";
 import type {
   OfferFields,
   OfferJobTitle,
@@ -97,6 +105,12 @@ type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
   bcc: string;
   cc: string;
   costOfLiving: string;
+  /**
+   * HR's own words for the candidate, printed at the top of the offer EMAIL (never the PDF) — owner,
+   * 2026-11-10: "add a field for the HR to write whatever he wants and this goes in the job offer email
+   * body". Saved with the draft, so the HR Manager reads and approves it with the rest.
+   */
+  emailMessage: string;
   templateId: string;
   totalMonthly: string;
   /**
@@ -124,6 +138,7 @@ function blankDraft(templates: OfferTemplate[]): Draft {
     contractTerm: "",
     costOfLiving: "",
     dateOfIssue: today,
+    emailMessage: "",
     reference: "",
     reportsTo: "",
     // Blank is a real, meaningful value: it prints the standard paragraph. Prefilled from the job
@@ -156,13 +171,16 @@ function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
     // Copies are typed per send and never saved with a draft (see `Draft`), so an opened draft has none
     // — except an offer waiting for the HR Manager, which keeps the copies Talent Acquisition typed so
     // his Approve and send copies the same people (owner, 2026-11-10).
-    bcc: offer.status === "pending_approval" ? offer.bccRecipients.join(", ") : "",
+    // An offer being UPDATED (owner, 2026-11-10) keeps the copies of the version it replaces, so the
+    // updated letter reaches the same people unless somebody changes them.
+    bcc: keepsCopies(offer) ? offer.bccRecipients.join(", ") : "",
     candidateEmail: offer.candidateEmail,
     candidateName: offer.candidateName,
-    cc: offer.status === "pending_approval" ? offer.ccRecipients.join(", ") : "",
+    cc: keepsCopies(offer) ? offer.ccRecipients.join(", ") : "",
     contractTerm: offer.contractTerm,
     costOfLiving: offer.costOfLiving > 0 ? String(offer.costOfLiving) : "",
     dateOfIssue: parseLetterDate(offer.dateOfIssue) ?? "",
+    emailMessage: offer.emailMessage ?? "",
     reference: offer.reference,
     reportsTo: offer.reportsTo,
     roleSummary: offer.roleSummary,
@@ -175,6 +193,52 @@ function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
     vacancyId: offer.vacancyId === null ? "" : String(offer.vacancyId),
     validUntil: parseLetterDate(offer.validUntil) ?? "",
   };
+}
+
+/** Whether an opened offer brings its stored copies with it: one waiting for approval, or one being updated. */
+function keepsCopies(offer: OfferRecord): boolean {
+  return offer.status === "pending_approval" || offerIsBeingUpdated(offer);
+}
+
+/** A person's name from the workspace's map, or null when it is not known. Never an HR code on screen. */
+function personName(people: Record<string, string>, hrId: string | null | undefined): string | null {
+  const key = canonicalHrIdKey(hrId);
+  return key ? (people[key] ?? null) : null;
+}
+
+/**
+ * Who sent the offer (owner, 2026-11-10: "add a column to show the job offer was sent by whom"), on the
+ * desktop row and the phone card alike.
+ *
+ * The person who pressed Send for it: on an offer that went through approval, the person who asked
+ * for it (Talent Acquisition), with the HR Manager who approved it underneath; otherwise whoever sent
+ * it. A draft names who drafted it, and an offer waiting names who sent it for approval.
+ */
+function OfferSentBy({ offer, people }: { offer: OfferRecord; people: Record<string, string> }) {
+  const requester = personName(people, offer.approval?.requestedBy);
+  const sender = personName(people, offer.sentBy);
+  const approver = personName(people, offer.approval?.approvedBy);
+  const drafter = personName(people, offer.createdBy);
+  const unknown = "Not recorded";
+
+  if (offer.status === "draft") {
+    return <span className="block break-words">{drafter ? `Drafted by ${drafter}` : unknown}</span>;
+  }
+  if (offer.status === "pending_approval") {
+    return (
+      <>
+        <span className="block break-words font-semibold text-slate-800">{requester ?? unknown}</span>
+        <span className="block text-xs text-[#B45309]">awaiting approval</span>
+      </>
+    );
+  }
+  const who = requester ?? sender;
+  return (
+    <>
+      <span className="block break-words font-semibold text-slate-800">{who ?? unknown}</span>
+      {approver && approver !== who ? <span className="block break-words text-xs text-slate-500">Approved by {approver}</span> : null}
+    </>
+  );
 }
 
 /**
@@ -248,6 +312,40 @@ function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferV
  * draft: his note, so Talent Acquisition knows what to change. Nothing at all otherwise.
  */
 function OfferApprovalNote({ offer }: { offer: OfferRecord }) {
+  return (
+    <>
+      <OfferApprovalLine offer={offer} />
+      <OfferVersionLine offer={offer} />
+    </>
+  );
+}
+
+/**
+ * An updated offer says so (owner, 2026-11-10): which version it is and when the one it replaces went
+ * out — and, while the update is being written, that the candidate's link is paused.
+ */
+function OfferVersionLine({ offer }: { offer: OfferRecord }) {
+  const revision = offer.revision ?? 0;
+  if (revision <= 0) return null;
+  const history = offer.revisionHistory ?? [];
+  const replaced = cairoLongDate(history[history.length - 1]?.sentAt ?? null);
+  if (offerIsBeingUpdated(offer)) {
+    return (
+      <span className="mt-0.5 block text-xs font-semibold text-[#B45309] [overflow-wrap:anywhere]">
+        Being updated ({offerVersionLabel(revision)}). The candidate&apos;s link is paused until the update is sent
+        {replaced ? `; the version sent on ${replaced} is kept.` : "."}
+      </span>
+    );
+  }
+  return (
+    <span className="mt-0.5 block text-xs text-slate-500 [overflow-wrap:anywhere]">
+      <span className="font-bold text-phx-ink-soft">Updated offer</span> · {offerVersionLabel(revision)}
+      {replaced ? ` · replaces the one sent on ${replaced}` : ""}
+    </span>
+  );
+}
+
+function OfferApprovalLine({ offer }: { offer: OfferRecord }) {
   if (offer.status === "pending_approval") {
     return (
       <span className="mt-0.5 block text-xs font-semibold text-[#B45309] [overflow-wrap:anywhere]">
@@ -273,6 +371,7 @@ export function OfferComposer({
   offers,
   onOffers,
   onReport,
+  people,
   sender,
   templates,
   vacancies,
@@ -288,6 +387,8 @@ export function OfferComposer({
   offers: OfferRecord[];
   onOffers: (offers: OfferRecord[]) => void;
   onReport: (message: string | null, kind: "error" | "success") => void;
+  /** Who drafted, sent and approved each offer, by lower-case HR id — the "Sent by" column. */
+  people: Record<string, string>;
   sender: OfferSenderInfo;
   templates: OfferTemplate[];
   /** The open seats a letter can be written against. Empty is a state, not a failure. */
@@ -306,6 +407,9 @@ export function OfferComposer({
   const [savedId, setSavedId] = useState<string | null>(null);
   // The offer in the form is one waiting for the HR Manager — he is reviewing it.
   const reviewing = offers.find((offer) => offer.id === savedId)?.status === "pending_approval";
+  // The offer in the form is a sent one being updated (owner, 2026-11-10).
+  const updatingOffer = offers.find((offer) => offer.id === savedId && offerIsBeingUpdated(offer)) ?? null;
+  const updating = updatingOffer !== null;
   const awaitingApproval = useMemo(() => offers.filter((offer) => offer.status === "pending_approval"), [offers]);
 
   /**
@@ -848,6 +952,8 @@ export function OfferComposer({
       // fields feed the letter's tokens, and neither a design nor a seat id prints on a letter.
       const body = {
         ...fields,
+        // HR's message for the email body rides beside the letter's fields: it prints in the email only.
+        emailMessage: draft.emailMessage,
         templateId: draft.templateId || null,
         vacancyId: draft.vacancyId ? Number(draft.vacancyId) : null,
       };
@@ -887,10 +993,72 @@ export function OfferComposer({
     onReport(
       offer.status === "pending_approval"
         ? `Opened the offer for ${offer.candidateName} (${offer.reference}) for your approval. Edit anything, then press Approve and send, or Reject.`
-        : `Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press ${canApprove ? "Send offer" : "Send for approval"}.`,
+        : offerIsBeingUpdated(offer)
+          ? `Updating the offer for ${offer.candidateName} (${offer.reference}). Change anything, then press ${canApprove ? "Send updated offer" : "Send for approval"}. The version already sent is kept.`
+          : `Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press ${canApprove ? "Send offer" : "Send for approval"}.`,
       "success",
     );
     window.scrollTo({ behavior: "smooth", top: 0 });
+  }
+
+  /**
+   * Update a sent offer (owner, 2026-11-10: "i may need to update a job offer"). The version that went
+   * out is kept, the same offer opens in the form to change, and it reaches the candidate only through
+   * Send — so Talent Acquisition's update waits for the HR Manager like any send. Asked first, because
+   * the candidate's link pauses until the update goes.
+   */
+  async function startUpdate(offer: OfferRecord) {
+    if (
+      !window.confirm(
+        `Update offer ${offer.reference} to ${offer.candidateName}?\n\n` +
+          "The version already sent is kept. The offer opens here for you to change; nothing is emailed until you press " +
+          (canApprove ? "Send updated offer" : "Send for approval") +
+          ". Until then the candidate's link to the joining form says the offer is being updated.",
+      )
+    ) {
+      return;
+    }
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}/revise`, "POST", { action: "start" })) as { offer?: OfferRecord };
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+        openDraft(payload.offer);
+      }
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not start updating this offer.", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Throw an unsent update away: the version that went out comes back exactly as it was. */
+  async function cancelUpdate(offer: OfferRecord) {
+    if (
+      !window.confirm(
+        `Cancel the update to offer ${offer.reference}?\n\n` +
+          "Your changes are discarded and the offer goes back to the version already sent, which the candidate can accept again.",
+      )
+    ) {
+      return;
+    }
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}/revise`, "POST", { action: "cancel" })) as { offer?: OfferRecord };
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+      if (savedId === offer.id) {
+        setSavedId(null);
+        markReferenceTyped(false);
+        setDraft(blankDraft(templates));
+      }
+      onReport(`The update was cancelled. Offer ${offer.reference} is back to the version already sent to ${offer.candidateName}.`, "success");
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not cancel this update.", "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   /**
@@ -1188,6 +1356,11 @@ export function OfferComposer({
               {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {reviewing ? "Save changes" : "Save draft"}
             </Button>
+            {updatingOffer && canManage ? (
+              <Button disabled={busy !== null} onClick={() => void cancelUpdate(updatingOffer)} size="lg" type="button" variant="outline">
+                <Undo2 className="h-4 w-4" /> Cancel update
+              </Button>
+            ) : null}
             {reviewing && canApprove ? (
               <Button
                 disabled={busy !== null}
@@ -1205,7 +1378,7 @@ export function OfferComposer({
             <Button disabled={!canManage || busy !== null} onClick={() => void sendOffer()} size="lg" type="button">
               {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {/* Talent Acquisition's Send never emails (owner, 2026-11-10); the button says where it goes. */}
-              {!canApprove ? "Send for approval" : reviewing ? "Approve and send" : "Send offer"}
+              {!canApprove ? "Send for approval" : reviewing ? "Approve and send" : updating ? "Send updated offer" : "Send offer"}
             </Button>
           </div>
         }
@@ -1214,7 +1387,13 @@ export function OfferComposer({
             ? `The letter goes out as ${sender.from}. Replies land at ${sender.replyTo}.`
             : `Send goes to the HR Manager for approval first. Nothing reaches the candidate until the HR Manager approves; then the letter goes out as ${sender.from}.`
         }
-        title={reviewing ? "Offer awaiting your approval" : "New offer"}
+        title={
+          reviewing
+            ? "Offer awaiting your approval"
+            : updatingOffer
+              ? `Updating offer ${updatingOffer.reference} (${offerVersionLabel(updatingOffer.revision ?? 0)})`
+              : "New offer"
+        }
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-3">
           {text("candidateName", "Candidate name", "SAMAA SHALABY")}
@@ -1245,6 +1424,29 @@ export function OfferComposer({
             "Copied secretly to",
             `Optional. Nobody else sees who is copied here. Up to ${OFFER_COPY_MAX} copies across CC and BCC.`,
           )}
+
+          {/* HR's own words in the email (owner, 2026-11-10). Full width because it is prose, like the
+              job paragraph below; it prints at the top of the email body and never on the PDF letter. */}
+          <div className="md:col-span-2 xl:col-span-3">
+            <label className={offerLabelClassName} htmlFor="offer-email-message">
+              Message to the candidate (in the email)
+            </label>
+            <textarea
+              className={offerTextareaClassName}
+              disabled={!canManage}
+              id="offer-email-message"
+              maxLength={OFFER_EMAIL_MESSAGE_MAX}
+              onChange={(event) => setDraft((current) => ({ ...current, emailMessage: event.target.value }))}
+              placeholder="Write anything you want the candidate to read first — it appears at the top of the offer email."
+              rows={4}
+              value={draft.emailMessage}
+            />
+            <p className={offerHintClassName}>
+              {draft.emailMessage.trim()
+                ? `Prints at the top of the email body, as typed. Not on the PDF letter. ${draft.emailMessage.length} of ${OFFER_EMAIL_MESSAGE_MAX} characters.`
+                : "Optional. Whatever you write prints at the top of the offer email, above the letter. It never prints on the PDF."}
+            </p>
+          </div>
 
           <div>
             <label className={offerLabelClassName} htmlFor="offer-title">Job title</label>
@@ -1499,17 +1701,19 @@ export function OfferComposer({
                 is the fits-the-screen rule's answer, and the reason adding a fifth costs no width:
                 `flex-wrap` with no `min-width` anywhere under it can never produce a sideways
                 scroll, however many controls a row grows. */}
+            {/* "Sent by" (owner, 2026-11-10) took its width from Candidate, Title and Package, which wrap. */}
             <colgroup>
-              <col className="w-[25%]" />
-              <col className="w-[15%]" />
-              <col className="w-[14%]" />
+              <col className="w-[21%]" />
               <col className="w-[13%]" />
+              <col className="w-[11%]" />
+              <col className="w-[11%]" />
+              <col className="w-[11%]" />
               <col className="w-[13%]" />
               <col className="w-[20%]" />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
-                {["Candidate", "Title", "Package", "Status", "Sent", ""].map((heading) => (
+                {["Candidate", "Title", "Package", "Status", "Sent", "Sent by", ""].map((heading) => (
                   <th
                     className="break-words px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                     key={heading}
@@ -1542,6 +1746,9 @@ export function OfferComposer({
                     </Badge>
                   </td>
                   <td className="break-words px-5 py-3 text-slate-600">{offerWhen(offer.sentAt)}</td>
+                  <td className="break-words px-5 py-3 text-slate-600">
+                    <OfferSentBy offer={offer} people={people} />
+                  </td>
                   <td className="px-5 py-3">
                     {/* Wraps rather than scrolls: the fits-the-screen rule, and three controls do
                         not fit one line at 375px. */}
@@ -1576,6 +1783,15 @@ export function OfferComposer({
                           </Button>
                           <Button
                             disabled={busy !== null}
+                            onClick={() => void startUpdate(offer)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                          </Button>
+                          <Button
+                            disabled={busy !== null}
                             onClick={() => void withdrawOffer(offer)}
                             size="sm"
                             type="button"
@@ -1603,6 +1819,17 @@ export function OfferComposer({
                           variant="outline"
                         >
                           <Eye className="h-3.5 w-3.5" /> Open draft
+                        </Button>
+                      ) : null}
+                      {canManage && offer.status === "draft" && offerIsBeingUpdated(offer) ? (
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void cancelUpdate(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" /> Cancel update
                         </Button>
                       ) : null}
                       {offer.status === "pending_approval" && canApprove ? (
@@ -1641,7 +1868,7 @@ export function OfferComposer({
               ))}
               {offers.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-slate-500" colSpan={6}>
+                  <td className="px-5 py-8 text-center text-slate-500" colSpan={7}>
                     No offers yet.
                   </td>
                 </tr>
@@ -1683,6 +1910,9 @@ export function OfferComposer({
               </div>
               <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</p>
               <p className="mt-1 text-xs text-slate-500">{offerWhen(offer.sentAt)}</p>
+              <div className="mt-1 text-xs text-slate-500">
+                <span className="font-bold text-phx-ink-soft">Sent by</span> <OfferSentBy offer={offer} people={people} />
+              </div>
               {/* Wraps, like the table's cell: three controls do not fit one line at 375px, and
                   the fits-the-screen rule makes wrapping the answer rather than a sideways scroll. */}
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1727,6 +1957,15 @@ export function OfferComposer({
                     </Button>
                     <Button
                       disabled={busy !== null}
+                      onClick={() => void startUpdate(offer)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                    </Button>
+                    <Button
+                      disabled={busy !== null}
                       onClick={() => void withdrawOffer(offer)}
                       size="sm"
                       type="button"
@@ -1754,6 +1993,17 @@ export function OfferComposer({
                     variant="outline"
                   >
                     <Eye className="h-3.5 w-3.5" /> Open draft
+                  </Button>
+                ) : null}
+                {canManage && offer.status === "draft" && offerIsBeingUpdated(offer) ? (
+                  <Button
+                    disabled={busy !== null}
+                    onClick={() => void cancelUpdate(offer)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" /> Cancel update
                   </Button>
                 ) : null}
                 {offer.status === "pending_approval" && canApprove ? (

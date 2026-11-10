@@ -63,7 +63,7 @@ export default async function EmployeePortalOffersPage() {
           />
         }
       >
-        <OffersContent canApprove={canApprove} canDelete={canDelete} canManage={canManage} />
+        <OffersContent canApprove={canApprove} canDelete={canDelete} canManage={canManage} viewerHrId={access.hrId ?? null} />
       </Suspense>
     </EmployeePortalPageShell>
   );
@@ -73,12 +73,14 @@ async function OffersContent({
   canApprove,
   canDelete,
   canManage,
+  viewerHrId,
 }: {
   canApprove: boolean;
   canDelete: boolean;
   canManage: boolean;
+  viewerHrId: string | null;
 }) {
-  const workspace = await loadOffersWorkspace();
+  const workspace = await loadOffersWorkspace({ viewerHrId });
 
   return (
     <OffersManager
@@ -88,6 +90,7 @@ async function OffersContent({
       initialError={workspace.error}
       jobTitles={workspace.jobTitles}
       offers={workspace.offers}
+      people={workspace.people}
       sender={workspace.sender}
       templates={workspace.templates}
       vacancies={workspace.vacancies}

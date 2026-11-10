@@ -9,6 +9,7 @@ import { readOfferVacancyId } from "@/lib/offers/hire-draft";
 import { recordOfferDeclinedByCandidate } from "@/lib/recruitment/offer-outcome-sync";
 import type { OfferFields, OfferStatus } from "@/lib/offers/types";
 import { canApproveOffers, offerStatusMoveRefusal } from "@/lib/offers/approval";
+import { normalizeOfferEmailMessage } from "@/lib/offers/revision-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     // Only keys the caller actually sent are forwarded. Building a full object here would write a
     // blank over every field the edit form did not include.
-    const patch: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null } = {};
+    const patch: Partial<OfferFields> & { emailMessage?: string | null; templateId?: string | null; vacancyId?: number | null } = {};
     const textKeys: (keyof OfferFields)[] = [
       "candidateEmail", "candidateName", "contractTerm", "dateOfIssue", "reference",
       "reportsTo", "roleSummary", "salutationName", "startDate", "territory", "title", "validUntil",
@@ -90,6 +91,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // Sent only when the seat field was part of the edit. An explicit null is how a seat is
     // un-chosen, which is why the presence of the key and its value have to be read separately.
     if (body.vacancyId !== undefined) patch.vacancyId = readOfferVacancyId(body.vacancyId);
+    // HR's message for the email body (owner, 2026-11-10). Sent as text; an empty one clears it.
+    if (body.emailMessage !== undefined) {
+      const email = normalizeOfferEmailMessage(body.emailMessage);
+      if (email.problem) {
+        return NextResponse.json({ message: email.problem, success: false }, { status: 400 });
+      }
+      patch.emailMessage = email.message;
+    }
 
     const current = await getOffer(id);
     const total = patch.totalMonthly ?? current.totalMonthly;
