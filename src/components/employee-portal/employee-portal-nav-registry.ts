@@ -238,6 +238,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Market Awareness
   { label: "Awr Appr", fullLabel: "Awareness Inbox", href: "/employee-portals/market-awareness/inbox", icon: Inbox, flags: ["showMarketAwarenessInboxTab"], permission: { resource: "market_awareness", action: "read" }, navBadge: "market-awareness-approvals-pending" },
   { label: "Awareness", fullLabel: "Market Awareness", href: "/employee-portals/market-awareness", icon: Sparkles, flags: ["showMarketAwarenessTab"], permission: { resource: "market_awareness", action: "read" } },
+  // Monthly Marketing Functions and Marketing Field Visit Feedback (2026-11-10)
+  { label: "Functions", fullLabel: "Marketing Functions", href: "/employee-portals/marketing-functions", icon: ClipboardList, flags: ["showMarketingFunctionsTab"], permission: { resource: "marketing_functions", action: "read" } },
+  { label: "Feedback", fullLabel: "Field Visit Feedback", href: "/employee-portals/marketing-feedback", icon: ClipboardCheck, flags: ["showMarketingFeedbackTab"], permission: { resource: "marketing_field_feedback", action: "read" } },
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingValidationTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },

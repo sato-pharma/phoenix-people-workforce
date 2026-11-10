@@ -86,6 +86,8 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   mailbox_monitor: "Mailbox Monitor",
   mailbox_offboarding: "Mailbox Revocation",
   market_awareness: "Market Awareness",
+  marketing_functions: "Marketing Functions",
+  marketing_field_feedback: "Marketing Field Feedback",
   milestones: "Milestones",
   offers: "Offers",
   organogram: "Organogram",

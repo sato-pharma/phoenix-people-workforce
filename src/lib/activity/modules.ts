@@ -241,6 +241,8 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/visual-aids", key: "visual_aids", label: "Visual Aids" },
   { prefix: "/medical-insurance", key: "medical_insurance", label: "Medical Insurance" },
   { prefix: "/market-awareness", key: "market_awareness", label: "Market Awareness" },
+  { prefix: "/marketing-functions", key: "marketing_functions", label: "Marketing Functions" },
+  { prefix: "/marketing-feedback", key: "marketing_field_feedback", label: "Marketing Field Feedback" },
 
   // ── Marketing ─────────────────────────────────────────────────────────────
   { prefix: "/marketing-requests", key: "marketing_requests", label: "Marketing Requests" },
