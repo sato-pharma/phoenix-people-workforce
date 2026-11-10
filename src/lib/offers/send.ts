@@ -7,6 +7,7 @@ import { offerHireDate } from "@/lib/offers/hire-draft";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
+import { offerBccWithOwnerCopy } from "@/lib/offers/owner-copy";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
@@ -317,9 +318,13 @@ async function deliverOfferLetter(
   // which parts are decoration and which are the attachment it lists.
   const attachments = [...inlineMark, ...(pdfAttachment ? [pdfAttachment] : [])];
 
+  // HR's BCC plus the owner's hidden copy of every job offer (owner, 2026-11-10: "Yes, job offers
+  // only") — a send, an updated offer and a resent letter alike. Never stored on the offer: see owner-copy.ts.
+  const bcc = offerBccWithOwnerCopy({ bcc: copies.bcc, candidateEmail: offer.candidateEmail, cc: copies.cc });
+
   const result = await sendPhoenixEmail({
     attachments: attachments.length > 0 ? attachments : undefined,
-    bcc: copies.bcc.length > 0 ? copies.bcc : undefined,
+    bcc: bcc.length > 0 ? bcc : undefined,
     cc: copies.cc.length > 0 ? copies.cc : undefined,
     // A candidate has no employee record, so their address is unknown to the Recipient Assurance
     // Guard by definition. Without this declaration every offer would be blocked as an
@@ -332,7 +337,7 @@ async function deliverOfferLetter(
     // Through the real hr@ mailbox on Turbify when its app password is set (owner, 2026-11-06) —
     // undefined otherwise, which keeps the provider chain exactly as it was. No fall back to Resend.
     dispatch: jobOfferSmtpDispatch(),
-    externalRecipients: [offer.candidateEmail, ...copies.cc, ...copies.bcc],
+    externalRecipients: [offer.candidateEmail, ...copies.cc, ...bcc],
     from: sender.from,
     html,
     idempotencyKey: options.idempotencyKey,

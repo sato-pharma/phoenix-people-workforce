@@ -6,8 +6,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * The one standing admin who receives a copy of EVERY automated email the system sends, as a
  * Telegram message (mirrorEmailToAdminTelegram below). Until 2026-11-06 he was also blind-copied on
  * the mail itself; the owner stopped that ("Stop the BCC copies" — the copies taught Yahoo that
- * satopharma.com mail is junk), so the Telegram mirror is now his only copy. The address is still
- * the offers' Reply-To and the Sato composer's, so it is declared once here.
+ * satopharma.com mail is junk), so the Telegram mirror is now his only copy of an automated email —
+ * except a job offer, which blind-copies him again on its own (owner, 2026-11-10, offers/owner-copy.ts).
+ * The address is still the offers' Reply-To and the Sato composer's, so it is declared once here.
  */
 export const ADMIN_STANDING_EMAIL = "omar.anwar@satopharma.com";
 
