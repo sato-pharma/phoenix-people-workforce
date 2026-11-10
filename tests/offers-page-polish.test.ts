@@ -72,4 +72,26 @@ export function runOffersPagePolishTests() {
   assert.match(composer, /value > 0 \? `EGP \$\{offerMoney\(value\)\}` : "—"/, "an empty pay box is a dash, never EGP 0");
   const designer = readFileSync("src/components/offers/offer-template-designer.tsx", "utf8");
   assert.doesNotMatch(designer, /block whitespace-nowrap text-phx-xs text-phx-ink-faint/, "a sample line wraps, never cut mid-word");
+
+  // ── Third pass ("more and more"): a sent row folds its rarer actions; the list clears in one press ──
+  const details = [...composer.matchAll(/<details className="group[^"]*open:basis-full">/g)].map((m) => m.index ?? -1);
+  assert.equal(details.length, 2, "More on the desktop row AND the phone card");
+  for (const at of details) {
+    const gate = composer.lastIndexOf('canManage && offer.status === "sent"', at);
+    const close = composer.indexOf("</details>", at);
+    const blockEnd = composer.indexOf(") : null}", gate);
+    assert.ok(gate > -1 && close < blockEnd, "More lives inside the sent-only gate, so it never reaches a draft or an answered offer");
+    const inside = composer.slice(at, close);
+    for (const action of ["resendOffer(offer)", "startUpdate(offer)", "withdrawOffer(offer)", "expireOffer(offer)"]) {
+      assert.ok(inside.includes(action), `${action} folds under More`);
+    }
+    assert.ok(!inside.includes("recordAnswer("), "Accepted and Declined stay in view, never folded");
+  }
+  assert.match(composer, /event\.key === "Escape" && listQuery/, "Esc empties the search");
+  assert.match(composer, /listQuery\.trim\(\) \|\| listStatus !== "all" \? \(/, "Clear shows only while the list is narrowed");
+  assert.match(manager, /offer\.status === "pending_approval"\)\.length/, "awaiting approval is its own count, never a draft");
+  assert.match(manager, /\{awaitingCount\} awaiting approval/);
+  for (const file of ["offer-template-designer.tsx", "offer-job-titles.tsx", "offer-rich-text.tsx", "offer-composer.tsx"]) {
+    assert.doesNotMatch(readFileSync(`src/components/offers/${file}`, "utf8"), /\bshadow-(sm|md|lg|xl)\b/, `${file}: no drop shadow`);
+  }
 }

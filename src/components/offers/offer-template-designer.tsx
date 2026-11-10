@@ -715,7 +715,7 @@ export function OfferTemplateDesigner({
                           title={placeholder.note}
                           type="button"
                         >
-                          <span className="block whitespace-nowrap font-mono text-phx-sm font-bold text-[#B45309]">
+                          <span className="block font-mono text-phx-sm font-bold text-[#B45309] [overflow-wrap:anywhere]">
                             {`{{${placeholder.key}}}`}
                           </span>
                           <span className="block break-words text-phx-xs text-phx-ink-faint">
@@ -743,7 +743,7 @@ export function OfferTemplateDesigner({
                 <div
                   className={cn(
                     "flex items-center gap-2 rounded-xl border px-3 py-2 transition",
-                    isSelected ? "border-phx-accent-line bg-orange-50/60 shadow-sm" : "border-phx-line bg-white hover:bg-slate-50",
+                    isSelected ? "border-phx-accent-line bg-orange-50/60" : "border-phx-line bg-white hover:bg-slate-50",
                   )}
                   key={block.id}
                 >
@@ -922,7 +922,7 @@ export function OfferTemplateDesigner({
             <div className="max-h-[760px] overflow-auto bg-slate-100 p-4">
               {previewHtml ? (
                 <iframe
-                  className="mx-auto block w-full max-w-[860px] rounded-xl border border-phx-line bg-white shadow-lg"
+                  className="mx-auto block w-full max-w-[860px] rounded-xl border border-phx-line bg-white"
                   height={940}
                   sandbox=""
                   srcDoc={previewHtml}

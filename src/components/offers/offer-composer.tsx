@@ -14,9 +14,10 @@
 
 import {
   CalendarX2,
+  ChevronDown,
   Eye,
-  FilePenLine,
   FileDown,
+  FilePenLine,
   Loader2,
   Mail,
   Plus,
@@ -1324,7 +1325,7 @@ export function OfferComposer({
   /** A one-click date shortcut. Sets the field and nothing else. */
   const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
     <button
-      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-phx-xs font-bold whitespace-nowrap text-phx-ink-2 shadow-sm transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
+      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-phx-xs font-bold whitespace-nowrap text-phx-ink-2 transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={!canManage || !value}
       key={label}
       onClick={() => setDraft((current) => ({ ...current, [key]: value }))}
@@ -1785,6 +1786,13 @@ export function OfferComposer({
                 setListQuery(event.target.value);
                 setListLimit(OFFER_LIST_PAGE);
               }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && listQuery) {
+                  event.preventDefault();
+                  setListQuery("");
+                  setListLimit(OFFER_LIST_PAGE);
+                }
+              }}
               placeholder="Search by name, email, job title or reference"
               type="search"
               value={listQuery}
@@ -1816,6 +1824,20 @@ export function OfferComposer({
                   </button>
                 );
               })}
+            {/* One press back to every offer, shown only while a search or a status narrows the list. */}
+            {listQuery.trim() || listStatus !== "all" ? (
+              <button
+                className="min-h-9 px-2 text-phx-xs font-bold text-phx-ink-soft underline-offset-4 hover:text-phx-ink hover:underline"
+                onClick={() => {
+                  setListQuery("");
+                  setListStatus("all");
+                  setListLimit(OFFER_LIST_PAGE);
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
           </div>
         </div>
         {/*
@@ -1915,42 +1937,53 @@ export function OfferComposer({
                           >
                             Declined
                           </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void resendOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Send className="h-3.5 w-3.5" /> Resend offer
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void startUpdate(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <FilePenLine className="h-3.5 w-3.5" /> Update offer
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void withdrawOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <Undo2 className="h-3.5 w-3.5" /> Withdraw
-                          </Button>
-                          <Button
-                            disabled={busy !== null}
-                            onClick={() => void expireOffer(offer)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
-                          </Button>
+                          {/* Accepted and Declined are the answer, so they stay in view; Resend, Update, Withdraw and
+                              Expire are rarer and fold under More (owner, 2026-11-10: "more and more" polish) — a sent
+                              row carried seven buttons. A disclosure, not a floating menu: it opens in the row, so
+                              nothing can be clipped or cover the next offer. */}
+                          <details className="group text-right open:basis-full">
+                            <summary className="inline-flex h-7 cursor-pointer list-none items-center gap-1 border border-border bg-background px-2.5 text-[0.8rem] font-medium text-phx-ink-2 transition-colors hover:bg-muted [&::-webkit-details-marker]:hidden">
+                              More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                            </summary>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 justify-end">
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void resendOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Send className="h-3.5 w-3.5" /> Resend offer
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void startUpdate(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void withdrawOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                              </Button>
+                              <Button
+                                disabled={busy !== null}
+                                onClick={() => void expireOffer(offer)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
+                              </Button>
+                            </div>
+                          </details>
                         </>
                       ) : null}
                       {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn
@@ -2117,42 +2150,53 @@ export function OfferComposer({
                     >
                       Declined
                     </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void resendOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Send className="h-3.5 w-3.5" /> Resend offer
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void startUpdate(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <FilePenLine className="h-3.5 w-3.5" /> Update offer
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void withdrawOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Undo2 className="h-3.5 w-3.5" /> Withdraw
-                    </Button>
-                    <Button
-                      disabled={busy !== null}
-                      onClick={() => void expireOffer(offer)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
-                    </Button>
+                    {/* Accepted and Declined are the answer, so they stay in view; Resend, Update, Withdraw and
+                        Expire are rarer and fold under More (owner, 2026-11-10: "more and more" polish) — a sent
+                        row carried seven buttons. A disclosure, not a floating menu: it opens in the row, so
+                        nothing can be clipped or cover the next offer. */}
+                    <details className="group open:basis-full">
+                      <summary className="inline-flex h-7 cursor-pointer list-none items-center gap-1 border border-border bg-background px-2.5 text-[0.8rem] font-medium text-phx-ink-2 transition-colors hover:bg-muted [&::-webkit-details-marker]:hidden">
+                        More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void resendOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Send className="h-3.5 w-3.5" /> Resend offer
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void startUpdate(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void withdrawOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                        </Button>
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void expireOffer(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
+                        </Button>
+                      </div>
+                    </details>
                   </>
                 ) : null}
                 {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn

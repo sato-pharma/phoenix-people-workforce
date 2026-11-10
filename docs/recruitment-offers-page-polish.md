@@ -33,4 +33,18 @@ shadow; the sibling hiring screen, Hiring Documents, uses a flat underline.
 - **An empty form's pay boxes show a dash**, not four boxes of "EGP 0".
 - **The letter designer's sample lines wrap** — they were cut mid-word in the field and block lists.
 
+## Third pass — "more and more" (10 Nov 2026)
+
+- **A sent offer's row is calmer.** It carried seven buttons. Accepted and Declined (the answer) and PDF
+  stay in view; Resend offer, Update offer, Withdraw and Expire offer fold under **More**, on the desktop
+  row and the phone card alike. It is a disclosure that opens inside the row, not a floating menu, so
+  nothing is clipped and nothing covers the next offer. It stays inside the sent-only gate.
+- **The list clears in one press:** Esc empties the search, and a **Clear** appears beside the status
+  filter while a search or a status narrows the list.
+- **The header counts are honest:** offers awaiting the HR Manager were counted as drafts. They are now
+  their own count, shown only when there are any.
+- **No drop shadows left on the three tabs:** the date shortcut chips, the letter designer's preview and
+  selected block, the job titles' phone cards and the wording editor's toolbar. A long placeholder key in
+  the designer wraps instead of running out of its column.
+
 Pinned by `tests/offers-page-polish.test.ts`.

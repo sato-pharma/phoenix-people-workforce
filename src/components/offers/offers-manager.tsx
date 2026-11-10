@@ -91,8 +91,11 @@ export function OffersManager({
     }
   }, []);
 
-  const sentCount = useMemo(() => offers.filter((offer) => offer.status !== "draft" && offer.status !== "pending_approval").length, [offers]);
-  const draftCount = offers.length - sentCount;
+  // Offers awaiting the HR Manager were counted as drafts (owner, 2026-11-10: "more and more" polish) —
+  // they are neither a draft nor issued, and they are the one count somebody has to act on.
+  const awaitingCount = useMemo(() => offers.filter((offer) => offer.status === "pending_approval").length, [offers]);
+  const draftCount = useMemo(() => offers.filter((offer) => offer.status === "draft").length, [offers]);
+  const sentCount = offers.length - awaitingCount - draftCount;
 
   return (
     <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
@@ -100,7 +103,8 @@ export function OffersManager({
         <AdminPageHero
           badges={
             <>
-              <AdminInsightChip tone="orange">{draftCount} drafts</AdminInsightChip>
+              {awaitingCount > 0 ? <AdminInsightChip tone="orange">{awaitingCount} awaiting approval</AdminInsightChip> : null}
+              <AdminInsightChip>{draftCount} {draftCount === 1 ? "draft" : "drafts"}</AdminInsightChip>
               <AdminInsightChip>{sentCount} issued</AdminInsightChip>
               <AdminInsightChip>{templates.length} templates</AdminInsightChip>
               <AdminInsightChip>{jobTitles.length} job titles</AdminInsightChip>
