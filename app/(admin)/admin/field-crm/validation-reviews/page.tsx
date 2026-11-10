@@ -4,11 +4,12 @@ import { Building2, CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
 import { FullNameChecks } from "@/components/phoenix-crm/full-name-checks";
+import { PlaceCheckRestoreProvider } from "@/components/phoenix-crm/place-check-restore";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
-import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canRestoreValidation, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
@@ -174,16 +175,19 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
 
       <FullNameChecks canCorrect={canCorrectHeldFullName(viewer)} rows={heldFullNames} />
 
-      <PlaceChecksWithDeck
-        capped={capped}
-        decided={decided}
-        noteIndex={noteIndex}
-        openOn={openOn}
-        pending={waiting}
-        reopened={reopened}
-        sharedPlaces={sharedPlaces}
-        validated={validated}
-      />
+      {/* Taking a rejection back — the Super Admin alone, never the SFE Manager (owner, 2026-11-10). */}
+      <PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>
+        <PlaceChecksWithDeck
+          capped={capped}
+          decided={decided}
+          noteIndex={noteIndex}
+          openOn={openOn}
+          pending={waiting}
+          reopened={reopened}
+          sharedPlaces={sharedPlaces}
+          validated={validated}
+        />
+      </PlaceCheckRestoreProvider>
     </div>
   );
 }

@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 // `/validation-reviews`: the rules are different ones — a rejection may be taken back only while the
 // venue is still retired — and they belong to a function of their own.
 //
-// The Super Admin and the SFE Manager, gated in the service by `canDecideValidationReviews` as well as here (`approve` is gate one).
+// The Super Admin ALONE since 2026-11-10 ("the SFE cannot"), gated in the service by `canRestoreValidation`; `approve` here is gate one.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

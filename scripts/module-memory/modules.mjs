@@ -592,7 +592,7 @@ export const MODULES = [
     globs: [
       "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters}.ts",
       "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews}.ts",
-      "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done}.tsx",
+      "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx",
       "app/**/field-crm/validation-reviews/**",
       "app/api/phoenix-crm/validation-reviews/**",
       // The one-by-one review (owner, 2026-10-18): its shell, its pure slides, the integrity slide and
