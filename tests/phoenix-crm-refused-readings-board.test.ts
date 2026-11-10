@@ -599,7 +599,8 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     const code = stripComments(read("app/(admin)/admin/phoenix-crm/refused-readings/page.tsx"));
     assert.equal((code.match(/<TryLocations entry=\{entry\} \/>/g) ?? []).length, 2, "the map comes from one component, so the table and the card cannot place a try differently");
     assert.doesNotMatch(code, /colSpan/, "on desktop it sits in the try's own cell, never a second row under every row");
-    const view = stripComments(read("src/components/phoenix-crm/try-locations-map.tsx"));
+    assert.match(code, /import \{ TryLocationsMap \} from "@\/components\/admin\/refused-try-map"/,"the map is an ADMIN component — never under components/phoenix-crm, the rep-facing surface the blind half sweeps");
+    const view = stripComments(read("src/components/admin/refused-try-map.tsx"));
     assert.match(view, /loading="lazy"/, "lazy tiles — a hundred tries, twice over, must not load every tile on open");
     assert.ok(view.includes("map.attribution"), "the tile host's attribution travels with the tiles");
     assert.ok(view.includes("mapsLinkOf("), "each point opens in Google Maps");

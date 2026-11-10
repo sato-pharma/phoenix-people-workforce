@@ -8,6 +8,9 @@
  * words; each point opens in Google Maps. A server component with no state: it draws what the board
  * built (`buildCaseMap`) and asks nothing. The tiles are `lazy` because the board lists up to a hundred
  * tries and the hidden copy (desktop or phone) of an eager image still loads.
+ *
+ * 🔴 It lives under `components/admin`, never `components/phoenix-crm`: that folder is the rep-facing
+ * surface the blind half sweeps, and this map is drawn only on the Super Admin's and the SFE Manager's board.
  */
 
 import type { CaseMap } from "@/lib/crm-integrity/integrity-case-map";

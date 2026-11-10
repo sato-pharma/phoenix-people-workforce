@@ -3,7 +3,7 @@ import { CheckCircle2, MapPinOff, Users } from "lucide-react";
 
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { TryLocationsMap } from "@/components/phoenix-crm/try-locations-map";
+import { TryLocationsMap } from "@/components/admin/refused-try-map";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
