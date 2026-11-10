@@ -120,7 +120,13 @@ export const JOB_TITLE_AR_SEEDS: readonly ArabicSeed[] = [
   // against `Admin Assistant`. EDITING the older row instead would have been wrong twice over: it
   // is the wording on contracts already signed against it, and this table's stated job is to MATCH
   // the data rather than to correct it. Two rows, one answer, no row rewritten.
-  { en: "R&D Manager", ar: "مدير البحث والتطوير", confirmed: true, people: 1 },
+  // Nobody holds "R&D Manager" since 2026-11-10: the owner renamed Dr. Sahar Khalil's seat (the
+  // position keeps its code r_and_d_manager). The row stays, because papers already signed carry it.
+  { en: "R&D Manager", ar: "مدير البحث والتطوير", confirmed: true, people: 0 },
+  // THE OWNER'S OWN WORDING, 2026-11-11, for the title he gave that seat on 2026-11-10. `en` must
+  // match employees.job_title character for character, brackets included: `key()` does not fold
+  // punctuation. Do not "simplify" it to a literal rendering of "toll manufacturing".
+  { en: "Toll Manufacturing Manager (TMM)", ar: "مدير التصنيع لدى الغير", confirmed: true, people: 1 },
   { en: "Regulatory Affairs", ar: "أخصائي الشئون التنظيمية", confirmed: true, people: 2 },
   // HIS WORDING, NOT THE PROPOSAL. The draft read أخصائي استقطاب المواهب, a literal rendering of
   // "talent acquisition". He answered اخصائي موارد بشرية — the same title he confirmed for
