@@ -3,6 +3,7 @@ import { deductionsAttendanceReconciliationChecks } from "@/lib/reconciliation/c
 import { directOrdersReconciliationChecks } from "@/lib/reconciliation/checks/direct-orders";
 import { notificationsIntegrityReconciliationChecks } from "@/lib/reconciliation/checks/notifications-integrity";
 import { payrollReconciliationChecks } from "@/lib/reconciliation/checks/payroll";
+import { phoenixCrmPlacesReconciliationChecks } from "@/lib/reconciliation/checks/phoenix-crm-places";
 import { recruitmentReconciliationChecks } from "@/lib/reconciliation/checks/recruitment";
 import type { ReconciliationCheck } from "@/lib/reconciliation/types";
 
@@ -18,4 +19,5 @@ export const reconciliationChecks: ReconciliationCheck[] = [
   ...notificationsIntegrityReconciliationChecks,
   ...recruitmentReconciliationChecks,
   ...directOrdersReconciliationChecks,
+  ...phoenixCrmPlacesReconciliationChecks,
 ];

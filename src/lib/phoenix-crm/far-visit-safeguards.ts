@@ -118,10 +118,69 @@ export function judgeImpossibleLocation(input: {
   return { impossible: false };
 }
 
+// ── E · two readings of one capture that cannot both be the door ───────────────────────────────
+
+/**
+ * 🔴 A PLACE WHOSE PIN AND PHOTO READING CANNOT BOTH BE THE DOOR IS NOT SAVED (owner, 2026-11-11, "Build
+ * all six fixes"). Until now the door judged the PIN's accuracy alone (`placeReadingsPrecise`) and then
+ * fixed the place on the PHOTO's reading whenever that one claimed 250 m or better (`pickPlacePoint`); the
+ * gap between the two was only filed, silently, after the save. Measured on production that day: 34 active
+ * places hold a pin and a photo reading more than 250 m apart — Kristina Samy 65.9 km, Tharwat Milad
+ * 10.1 km, Ashmoun Fever Hospital 869 m with all eight visits at the pin and none at the saved point — and
+ * 23 of them were captured AFTER the camera's own cold-reading fix of 22 October.
+ *
+ * The rule is the camera's own (`readingsContradict`, photo-reading-rules.ts): further apart than both
+ * claimed accuracies together, and never on less than the place's own line. It asks ONLY when the photo's
+ * reading is the one that would fix the point — a rough photo reading (iPhone Safari's 650–2,000 m) never
+ * fixes it, so a sharp pin still validates beside it exactly as his 2026-10-11 ruling says. On every
+ * capture ever saved this refuses 35 of 5,599, and 3 of the last fortnight's 1,691.
+ */
+export const READINGS_APART_FLOOR_METERS = 250;
+
+/**
+ * What the rep reads. His own work and the way out — the photo AND the location again, because either
+ * reading may be the stale one — never the check or a distance (Golden Rule #1).
+ */
+export const READINGS_APART_REFUSED =
+  "Your location has not settled yet. Step outside the building, wait a moment for the location to settle, then take the photo and capture the location again.";
+
+/** What the door needs of a draft to ask: the pin (`lat`/`lon`) and the photo's own reading. */
+export type TwoReadings = {
+  lat: number;
+  lon: number;
+  accuracyMeters: number | null;
+  photoLat: number | null;
+  photoLon: number | null;
+  photoAccuracyMeters: number | null;
+};
+
+function knownAccuracy(value: number | null): number {
+  return value !== null && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/** The metres between the two readings when they cannot both be the door; null when they can, or one is missing. */
+export function readingsApartMeters(place: TwoReadings): number | null {
+  if (place.photoLat === null || place.photoLon === null) return null;
+  if (!isUsableFix(place.lat, place.lon) || !isUsableFix(place.photoLat, place.photoLon)) return null;
+  // A photo reading rougher than the place's line never fixes the point, so it cannot put it wrong.
+  const photoAccuracy = place.photoAccuracyMeters;
+  if (photoAccuracy !== null && Number.isFinite(photoAccuracy) && photoAccuracy > READINGS_APART_FLOOR_METERS) return null;
+  const metres = distanceMeters({ lat: place.lat, lon: place.lon }, { lat: place.photoLat, lon: place.photoLon });
+  const line = Math.max(READINGS_APART_FLOOR_METERS, knownAccuracy(place.accuracyMeters) + knownAccuracy(photoAccuracy));
+  return metres > line ? metres : null;
+}
+
 // ── B and C · a rep stuck at one spot ──────────────────────────────────────────────────────────
 
-/** Five far refusals on one customer in one day, from one spot, mean the PLACE is wrong — not the rep. */
+/** Five far refusals on one customer, from one spot, mean the PLACE is wrong — not the rep. */
 export const STUCK_MIN_TRIES = 5;
+
+/**
+ * How many Cairo days of far tries are read together (owner, 2026-11-11). One day was the first rule, and
+ * it missed the rep who gives up after two or three tries and comes back the next day: 74 customer-days on
+ * production stopped at two to four refusals, and 15 places were refused on two or more days.
+ */
+export const STUCK_LOOKBACK_DAYS = 7;
 
 /** "One spot": every try within this distance of the first one's neighbourhood. */
 export const STUCK_SPREAD_METERS = 50;
@@ -178,6 +237,54 @@ export function holdInsteadOfRefuse(earlierTries: readonly FarTry[], reading: Fa
     verdict.stuck && verdict.centre !== null && sharp(reading) && distanceMeters(verdict.centre, reading) <= STUCK_SPREAD_METERS;
   return { ...verdict, hold: atTheSpot };
 }
+
+// ── F · a visit logged before the customer had a place ─────────────────────────────────────────
+
+/**
+ * 🔴 A VISIT LOGGED BEFORE THE CUSTOMER HAD A PLACE IS MEASURED WHEN HE GETS ONE, AND HELD IF IT IS PAST
+ * THE LINE (owner, 2026-11-11, "Build all six fixes"). A customer can be visited before he is validated
+ * (owner, 2026-09-29): the visit saves with nothing to measure against, and the day he is validated it
+ * starts counting. The far rule of 20 October lives only in the save, so such a visit was never asked
+ * where it was taken — measured on production that day, 45 rep visits since 20 October sat past the line
+ * of the place the customer was later validated at, and every one of them counted.
+ *
+ * It is HELD for the SFE, exactly as C holds one — never refused and never deleted: the rep may have stood
+ * at the right door with the place then saved at the wrong one, and only a person can tell. Only the visit
+ * the save itself would have refused: the rep's own entry, on or after the far rule's first day, never a
+ * copied old visit and never an archived one.
+ */
+export type FarVisitHoldBasis = "stuck" | "before_place";
+
+/** An unread or unknown basis is the first rule's — the only one a row written before 2026-11-11 can hold. */
+export function parseFarVisitHoldBasis(value: unknown): FarVisitHoldBasis {
+  return value === "before_place" ? "before_place" : "stuck";
+}
+
+export function visitHeldBeforePlace(input: {
+  /** The far rule applies to the visit's own day (`farVisitRefusalApplies`). */
+  farRuleApplies: boolean;
+  enteredByRep: boolean;
+  copiedFromOldSystem: boolean;
+  archived: boolean;
+  /** Past the refusal's own line of the place it is now measured against (`visitAwayFromValidatedPlace`). */
+  pastTheLine: boolean;
+}): boolean {
+  return input.farRuleApplies && input.enteredByRep && !input.copiedFromOldSystem && !input.archived && input.pastTheLine;
+}
+
+// ── G · the places worth a second look ─────────────────────────────────────────────────────────
+
+/** How far back the re-check list reads refusals and visits. */
+export const RECHECK_LOOKBACK_DAYS = 30;
+
+/**
+ * Three sharp refusals from one spot in a month put a place on the re-check list — below the five that
+ * hold a visit, because a rep who gives up at three never reaches five (74 customer-days on production).
+ */
+export const RECHECK_MIN_TRIES = 3;
+
+/** A place with this many measured visits and not one of them inside the line is on the list. */
+export const RECHECK_MIN_FAR_VISITS = 2;
 
 /** What the rep reads on a held visit: it is saved, and when it counts. Never why, never a distance. */
 export const FAR_VISIT_HELD_NOTE = "Saved. This visit counts once SFE approves it.";

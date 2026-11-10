@@ -572,7 +572,13 @@ function runOldVisitConversionTests(): void {
   assert.ok(restamp.length > 500 && restamp.includes("returning v.id"), "the whole restamp body");
   assert.match(restamp, /set place_id = x\.place_id, distance_meters = x\.distance_meters, location_flag = x\.location_flag/, "the restamp writes the flag the trigger reads");
   assert.doesNotMatch(restamp, /archived_at/, "and does not skip an archived row, so a far one can come back when it is no longer far");
-  assert.doesNotMatch(stripComments(read("src/lib/phoenix-crm/server/visit-locations.ts")), /archived_at/, "the restamp's reader measures every visit of the customer");
+  // Since 2026-11-11 the reader SELECTS archived_at — a visit logged before the customer had a place is held
+  // for the SFE, and an archived one never is (far-visit-safeguards.ts F) — but it still never filters on it.
+  assert.doesNotMatch(
+    stripComments(read("src/lib/phoenix-crm/server/visit-locations.ts")),
+    /\.(?:is|eq|neq|not|filter|or)\(\s*"[^"]*archived_at/,
+    "the restamp's reader measures every visit of the customer",
+  );
   const farArchive = sqlObject(convertSql, "create or replace function public.phoenix_crm_visits_old_system_far_archive(");
   assert.match(farArchive, /if new\.archive_reason is distinct from 'far' then delete from public\.phoenix_crm_visit_archive a where a\.visit_id = new\.id and a\.reason = 'far'; return null; end if;/, "a lifted far mark takes only its own far rows");
   assert.match(farArchive, /0, 'far', new\.id, new\.seat_id, new\.line_code, new\.archived_at, new\.distance_meters, new\.lat, new\.lon, new\.place_id, pl\.lat, pl\.lon/, "each far old visit is archived with its distance and both points");

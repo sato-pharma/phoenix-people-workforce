@@ -253,8 +253,14 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     }
     assert.deepEqual(
       namers.sort(),
-      ["src/lib/phoenix-crm/server/refused-readings-board.ts", "src/lib/phoenix-crm/server/refused-readings.ts"],
-      "the recorder writes it and the board reads it — no rep-facing screen, payload or report names it",
+      [
+        // The places worth a second look (2026-11-11): far refusals from one spot, read for the Super Admin and
+        // the SFE Manager only (`canDecideFarVisitHolds`), on the held-visits page.
+        "src/lib/phoenix-crm/server/places-to-recheck.ts",
+        "src/lib/phoenix-crm/server/refused-readings-board.ts",
+        "src/lib/phoenix-crm/server/refused-readings.ts",
+      ],
+      "the recorder writes it, and the board and the re-check list read it — no rep-facing screen, payload or report names it",
     );
     // And nothing a rep's bundle imports reaches the board.
     const importers: string[] = [];
@@ -433,8 +439,8 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     const allowed = [...reasonCheck[1]!.matchAll(/'([a-z_]+)'::text/g)].map((match) => match[1]!);
     assert.deepEqual(
       [...allowed].sort(),
-      ["blocked", "far_from_place", "impossible_travel", "no_fix", "off_listing", "rough", "signboard_no_plate", "signboard_unreadable", "timetable_missing", "timetable_unreadable"],
-      "ten reasons (far_from_place joined 2026-10-20, impossible_travel 2026-11-10), and the migration is where that list lives",
+      ["blocked", "far_from_place", "impossible_travel", "no_fix", "off_listing", "readings_apart", "rough", "signboard_no_plate", "signboard_unreadable", "timetable_missing", "timetable_unreadable"],
+      "eleven reasons (far_from_place joined 2026-10-20, impossible_travel 2026-11-10, readings_apart 2026-11-11), and the migration is where that list lives",
     );
     const sentences = new Map<string, string>();
     for (const reason of allowed) {

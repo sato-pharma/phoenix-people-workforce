@@ -81,6 +81,12 @@ import { distanceMeters } from "@/lib/phoenix-crm/geo";
  * visit; null for a bare repeat) and never `place_id`. A photo reading judged impossible beside a good pin
  * is filed here too, and the place is saved from the pin.
  */
+/**
+ * 🔴 `readings_apart` (owner, 11 Nov 2026, `readingsApartMeters`, far-visit-safeguards.ts) is a PLACE or a
+ * BUILDING capture refused because its Capture-location pin and its photo's own reading cannot both be
+ * the door. `lat`/`lon` hold the pin, `photo_lat`/`photo_lon` the photo's reading, and `distance_meters`
+ * the gap between the two. Never `place_id`.
+ */
 export type RefusedReason =
   | "no_fix"
   | "rough"
@@ -91,7 +97,8 @@ export type RefusedReason =
   | "signboard_unreadable"
   | "signboard_no_plate"
   | "far_from_place"
-  | "impossible_travel";
+  | "impossible_travel"
+  | "readings_apart";
 export type RefusedSubject = "visit" | "place";
 /** Which permission the browser blocked. Only these two are capable of ending a capture. */
 export type BlockedPermission = "location" | "camera";
@@ -108,6 +115,7 @@ export const REFUSED_REASONS: readonly RefusedReason[] = [
   "signboard_no_plate",
   "far_from_place",
   "impossible_travel",
+  "readings_apart",
 ];
 
 /**
@@ -190,8 +198,8 @@ export type RefusedAttempt = {
   /** Which permission the browser blocked, for `blocked` only. Null for every server refusal. */
   blockedPermission: BlockedPermission | null;
   /**
-   * For `far_from_place` (and `impossible_travel`, to the rep's own visit): the metres from the reading to the customer's validated
-   * photograph. Absent or null for every other reason, and never printed as 0 m when unknown.
+   * For `far_from_place` (and `impossible_travel`, to the rep's own visit; and `readings_apart`, between the
+   * capture's own two readings): the metres from the reading to the customer's validated photograph. Absent or null for every other reason, and never printed as 0 m when unknown.
    */
   distanceMeters?: number | null;
 };
@@ -246,6 +254,17 @@ export function refusalSentence(
         ? "at a point already refused as impossible"
         : `${(distance / 1000).toFixed(1)} km from the rep's own visit saved minutes earlier`;
     return `The phone placed the rep ${away}, closer in time than anyone can travel, so the location was not saved. A reading taken indoors often guesses its position from nearby Wi-Fi; the rep was asked to step outside and capture it again.`;
+  }
+  if (attempt.reason === "readings_apart") {
+    // Never "too rough" either: both readings claimed to be sharp, and they cannot both be the door.
+    const distance = attempt.distanceMeters;
+    const apart =
+      distance === null || distance === undefined || !Number.isFinite(distance)
+        ? "too far apart to be one door"
+        : distance < 1000
+          ? `${Math.round(distance)} m apart`
+          : `${(distance / 1000).toFixed(1)} km apart`;
+    return `The Capture location pin and the photo's own reading were ${apart}, so the place was not saved. One of the two was taken somewhere else or had not settled; the rep was asked to step outside, take the photo and capture the location again.`;
   }
   if (attempt.reason === "far_from_place") {
     // Never the accuracy radius: the reading was good enough to measure. What refused it was WHERE it
