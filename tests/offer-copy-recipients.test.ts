@@ -148,7 +148,7 @@ export function runOfferCopyRecipientsTests() {
   // The phone card's status badge must not shrink. Measured on production 2026-09-28 at 375px: the
   // first card carrying a copy line clipped "Sent" to 33 of its 36px, because a long copy line
   // widened the text column and flex took the difference out of the badge too.
-  const phoneCard = composer.slice(composer.indexOf('<div className="flex flex-col gap-3 px-5 py-5 md:hidden">'));
+  const phoneCard = composer.slice(composer.indexOf('<div className="flex flex-col gap-3 px-5 py-5 @4xl:hidden">'));
   assert.match(
     phoneCard,
     /<Badge className="shrink-0 capitalize" variant=\{STATUS_VARIANT\[offer\.status\]\}>/,
