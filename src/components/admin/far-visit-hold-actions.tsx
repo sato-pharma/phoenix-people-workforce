@@ -115,7 +115,7 @@ export function FarVisitHoldActions({
             rows={2}
             value={reason}
           />
-          <span className={phxHintClassName}>At least {MOVE_REASON_MIN} characters. It is kept with the place's history.</span>
+          <span className={phxHintClassName}>At least {MOVE_REASON_MIN} characters. It is kept with the place&apos;s history.</span>
           <button className={phxButtonGhostClassName} disabled={busy || reason.trim().length < MOVE_REASON_MIN} onClick={() => void movePlace()} type="button">
             Move it
           </button>
