@@ -469,6 +469,8 @@ export type AuditEntityType =
   | "medical_insurance_member"
   | "production_planning_access_grant"
   | "production_planning_settings"
+  // A product's box packaging (units and strips per box) changed from the planner's Settings (owner, 2026-11-11).
+  | "production_product"
   | "production_run"
   | "production_stock_entry"
   | "visual_aid"
