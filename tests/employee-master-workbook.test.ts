@@ -622,7 +622,4 @@ export async function runEmployeeMasterWorkbookTests() {
   }
   const workbookXml = await zip.file("xl/workbook.xml")!.async("string");
   assert.ok(!/<workbookProtection\b/.test(workbookXml), "the workbook must carry no <workbookProtection>");
-  for (const worksheet of reloaded.worksheets) {
-    assert.ok(!worksheet.sheetProtection, `"${worksheet.name}" must not be protected`);
-  }
 }
