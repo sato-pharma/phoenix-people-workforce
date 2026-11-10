@@ -90,7 +90,13 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 // explicitly client-safe, so the editor's selects offer exactly the values the service accepts.
 // Retyping them here is how a select and a server-side CHECK start to disagree.
 import { costCoverage } from "@/lib/production-planning/costing";
-import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
+import {
+  fromBaseUnits,
+  isPerThousandBoxBasis,
+  perThousandBoxesToBase,
+  toBaseUnits,
+} from "@/lib/production-planning/display-units";
+import { dataGapsFor, type DataGap } from "@/lib/production-planning/gaps";
 import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
 import { basisFitsProduct, COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
@@ -109,6 +115,7 @@ import type {
   WireExpiryVerdict,
   WireGrant,
   WireMaterial,
+  WireMaterialRef,
   WireStockRow,
   WirePlan,
   WirePlanRow,
@@ -769,6 +776,8 @@ export function ProductionPlanningWorkspace() {
           {notice}
         </p>
       ) : null}
+
+      {data ? <DataGapsBanner gaps={dataGapsFor(data.materials)} /> : null}
 
       {/* flex-wrap, never a scroller: on an RTL page a horizontal scroller opens at the line's end. */}
       <div className="mt-4 flex flex-wrap gap-2" role="tablist">
@@ -1574,6 +1583,32 @@ export function StockTab({
         <LotExpiryEditor busy={busy} locationName={locationName} materials={data.materials} onSave={onSave} />
       ) : null}
 
+      {canWrite ? (
+        <StockMoveEditor
+          allMaterials={data.allMaterials}
+          busy={busy}
+          locationName={locationName}
+          locations={ownLocations.map((location) => ({ id: location.id, label: S.name(location) }))}
+          materials={data.materials}
+          mode="location"
+          onSave={onSave}
+          products={data.products}
+        />
+      ) : null}
+
+      {canWrite ? (
+        <StockMoveEditor
+          allMaterials={data.allMaterials}
+          busy={busy}
+          locationName={locationName}
+          locations={[]}
+          materials={workspace?.materials ?? data.materials}
+          mode="material"
+          onSave={onSave}
+          products={data.products}
+        />
+      ) : null}
+
       {data.expiry.length > 0 ? <ExpiryBanner rows={data.expiry} /> : null}
 
       <section className="min-w-0">
@@ -1835,6 +1870,242 @@ function LotExpiryEditor({
               toExpiryDate,
             });
           }}
+          type="button"
+        >
+          {t.save}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Move a lot — to another of this product's stores, or onto the material it should have been
+ * entered on (owner, 2026-11-11). One panel per job, the same three-step pick as the expiry editor:
+ * material, lot, destination. The quantity is typed in the display unit and may be left blank to move
+ * the whole lot; the arithmetic is the service's, in base units.
+ */
+function StockMoveEditor({
+  mode,
+  materials,
+  allMaterials,
+  products,
+  locations,
+  locationName,
+  busy,
+  onSave,
+}: {
+  mode: "location" | "material";
+  materials: WireMaterial[];
+  allMaterials: WireMaterialRef[];
+  products: WireProduct[];
+  locations: { id: string; label: string }[];
+  locationName: (id: string) => string;
+  busy: boolean;
+  onSave: SaveFn;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const [materialId, setMaterialId] = useState("");
+  const [lotKey, setLotKey] = useState("");
+  const [target, setTarget] = useState("");
+  const [qty, setQty] = useState("");
+  const [asOfDate, setAsOfDate] = useState("");
+
+  const keyOf = (lot: WireStockRow) => `${lot.locationId}/${lot.expiryDate ?? ""}`;
+  const lotsOf = (material: WireMaterial) =>
+    [...material.stock, ...(material.expiredStock ?? [])].filter((lot) => /[1-9]/.test(lot.qty));
+  const material = materials.find((candidate) => candidate.id === materialId) ?? null;
+  const lots = material ? lotsOf(material) : [];
+  const lot = lots.find((candidate) => keyOf(candidate) === lotKey) ?? null;
+  const productName = (id: string) => {
+    const found = products.find((product) => product.id === id);
+    return found ? S.name(found) : id;
+  };
+  const targets =
+    mode === "location"
+      ? locations.filter((location) => location.id !== lot?.locationId)
+      : allMaterials
+          .filter((candidate) => candidate.id !== materialId && candidate.unitKind === material?.unitKind)
+          .map((candidate) => ({
+            id: candidate.id,
+            label: `${S.name(candidate)} · ${t.stockMaterialUsedBy}: ${
+              candidate.productIds.length === 0
+                ? t.stockMaterialUsedByNone
+                : candidate.productIds.map(productName).join(t.listSeparator)
+            }`,
+          }));
+  const chosen = targets.find((candidate) => candidate.id === target) ?? null;
+
+  return (
+    <section className={PANEL}>
+      <SectionTitle
+        subtitle={mode === "location" ? t.stockMoveSubtitle : t.stockFixMaterialSubtitle}
+        title={mode === "location" ? t.stockMove : t.stockFixMaterial}
+      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label={t.colMaterial}>
+          <select
+            className={INPUT}
+            onChange={(event) => {
+              setMaterialId(event.target.value);
+              setLotKey("");
+              setTarget("");
+            }}
+            value={materialId}
+          >
+            <option value="">{t.colMaterial}</option>
+            {materials
+              .filter((candidate) => lotsOf(candidate).length > 0)
+              .map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {S.name(candidate)}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label={t.stockLot}>
+          <select
+            className={INPUT}
+            onChange={(event) => {
+              setLotKey(event.target.value);
+              if (mode === "location") setTarget("");
+            }}
+            value={lot ? lotKey : ""}
+          >
+            <option value="">{t.stockLot}</option>
+            {lots.map((candidate) => (
+              <option key={keyOf(candidate)} value={keyOf(candidate)}>
+                {locationName(candidate.locationId)} · {candidate.expiryDate ?? t.stockNoExpiry} ·{" "}
+                {formatNumberLatin(candidate.qtyDisplay)} {S.unitLabel(material?.displayUnit)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={mode === "location" ? t.stockMoveTo : t.stockFixTo}>
+          <select className={INPUT} onChange={(event) => setTarget(event.target.value)} value={chosen ? target : ""}>
+            <option value="">{mode === "location" ? t.stockMoveTo : t.stockFixTo}</option>
+            {targets.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field hint={t.stockMoveQtyHint} label={`${t.stockMoveQty} (${S.unitLabel(material?.displayUnit)})`}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            inputMode="decimal"
+            onChange={(event) => setQty(event.target.value)}
+            value={qty}
+          />
+        </Field>
+        <Field hint={t.stockMoveDateHint} label={t.stockMoveDate}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            onChange={(event) => setAsOfDate(event.target.value)}
+            type="date"
+            value={asOfDate}
+          />
+        </Field>
+      </div>
+      <div className="mt-3">
+        <button
+          className={BUTTON}
+          disabled={busy || !lot || !chosen}
+          onClick={() => {
+            if (!lot || !chosen || !material) return;
+            void onSave("/stock/move", {
+              materialId,
+              locationId: lot.locationId,
+              expiryDate: lot.expiryDate,
+              qty: qty.trim() === "" ? null : toBaseUnits(qty, material),
+              asOfDate: asOfDate.trim() === "" ? null : asOfDate.trim(),
+              ...(mode === "location" ? { toLocationId: chosen.id } : { toMaterialId: chosen.id }),
+            });
+          }}
+          type="button"
+        >
+          {t.save}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The materials Sato buys that are missing an amount or any stock — the two holes one night found
+ * on Saginkgo, both of which read as ordinary everywhere else (owner, 2026-11-11). Above the tabs,
+ * because it is about the product as a whole and not about one tab.
+ */
+function DataGapsBanner({ gaps }: { gaps: DataGap[] }) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  if (gaps.length === 0) return null;
+  return (
+    <section className="mt-4 border border-amber-300 bg-amber-50 px-3 py-3" role="status">
+      <p className="text-[12px] font-black text-amber-950">{t.gapsTitle}</p>
+      <ul className="mt-2 space-y-1">
+        {gaps.map((gap) => (
+          <li className="text-[12px] leading-5 text-amber-950 break-words" key={gap.materialId}>
+            <span className="font-bold">{S.name(gap)}</span>
+            {" — "}
+            {gap.missing.map((kind) => (kind === "amount" ? t.gapsNoAmount : t.gapsNoStock)).join(t.listSeparator)}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] leading-5 text-amber-900">{t.gapsHint}</p>
+    </section>
+  );
+}
+
+/**
+ * How many units and strips one box holds, for the selected product (owner, 2026-11-11 — until then
+ * neither had an edit on any screen). Keyed on the product and both figures, so a reload after a save
+ * re-seeds the fields from what the database now says.
+ */
+function ProductPackagingEditor({ product, busy, onSave }: { product: WireProduct; busy: boolean; onSave: SaveFn }) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const [unitsPerBox, setUnitsPerBox] = useState(product.unitsPerBox);
+  const [stripsPerBox, setStripsPerBox] = useState(product.stripsPerBox ?? "");
+  const unchanged = unitsPerBox.trim() === product.unitsPerBox && stripsPerBox.trim() === (product.stripsPerBox ?? "");
+  return (
+    <section className={PANEL}>
+      <SectionTitle subtitle={t.settingsPackagingHint} title={`${t.settingsPackaging} · ${S.name(product)}`} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label={t.settingsUnitsPerBox}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            inputMode="numeric"
+            onChange={(event) => setUnitsPerBox(event.target.value)}
+            value={unitsPerBox}
+          />
+        </Field>
+        <Field hint={t.settingsStripsPerBoxHint} label={t.settingsStripsPerBox}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            inputMode="numeric"
+            onChange={(event) => setStripsPerBox(event.target.value)}
+            value={stripsPerBox}
+          />
+        </Field>
+      </div>
+      <div className="mt-3">
+        <button
+          className={BUTTON}
+          disabled={busy || unchanged}
+          onClick={() =>
+            void onSave("/products", {
+              productId: product.id,
+              unitsPerBox: unitsPerBox.trim(),
+              stripsPerBox: stripsPerBox.trim() === "" ? null : stripsPerBox.trim(),
+            })
+          }
           type="button"
         >
           {t.save}
@@ -2433,6 +2704,9 @@ export function SettingsTab({
   const [lineOverage, setLineOverage] = useState("");
   const [lineFrom, setLineFrom] = useState("");
   const [lineError, setLineError] = useState<string | null>(null);
+  // "2.285 kg per 1,000 boxes", the way the factory gives packaging (owner, 2026-11-11). Converted
+  // into the line's own basis on a button, so the quantity field above stays the one that is saved.
+  const [linePerThousand, setLinePerThousand] = useState("");
 
   const loadGrants = useCallback(async () => {
     if (!canWrite) return;
@@ -2483,6 +2757,7 @@ export function SettingsTab({
     setLineSupplier(line?.supplier ?? material.supplier ?? "factory");
     setLineOverage(line?.overagePct ?? "");
     setLineFrom("");
+    setLinePerThousand("");
   };
 
   const closeLine = () => {
@@ -2746,6 +3021,45 @@ export function SettingsTab({
                   value={lineOverage}
                 />
               </Field>
+              {isPerThousandBoxBasis(lineBasis) ? (
+                <Field
+                  hint={t.compositionPerThousandHint}
+                  label={`${t.compositionPerThousand} (${S.unitLabel(editingMaterial.displayUnit)})`}
+                >
+                  <div className="flex min-w-0 gap-2">
+                    <input
+                      className={INPUT}
+                      dir="ltr"
+                      inputMode="decimal"
+                      onChange={(event) => setLinePerThousand(event.target.value)}
+                      value={linePerThousand}
+                    />
+                    <button
+                      className={cn(BUTTON_QUIET, "mt-1 shrink-0")}
+                      disabled={busy || linePerThousand.trim() === ""}
+                      onClick={() => {
+                        const product = selectedProductOf(data);
+                        const perBasis = perThousandBoxesToBase({
+                          basis: lineBasis,
+                          material: editingMaterial,
+                          stripsPerBox: product?.stripsPerBox,
+                          typed: linePerThousand.trim(),
+                          unitsPerBox: product?.unitsPerBox,
+                        });
+                        if (perBasis === null) {
+                          setLineError(t.compositionPerThousandCannot);
+                          return;
+                        }
+                        setLineError(null);
+                        setLineQty(fromBaseUnits(perBasis, editingMaterial));
+                      }}
+                      type="button"
+                    >
+                      {t.compositionPerThousandApply}
+                    </button>
+                  </div>
+                </Field>
+              ) : null}
             </div>
 
             {/* 🔴 The stored figure, echoed back in its own unit before the save. The aluminium film
@@ -2782,6 +3096,15 @@ export function SettingsTab({
           </div>
         ) : null}
       </section>
+
+      {canWrite && selectedProductOf(data) ? (
+        <ProductPackagingEditor
+          busy={busy}
+          key={`${selectedProductOf(data)?.id}/${selectedProductOf(data)?.unitsPerBox}/${selectedProductOf(data)?.stripsPerBox}`}
+          onSave={onSave}
+          product={selectedProductOf(data) as WireProduct}
+        />
+      ) : null}
 
       {/* The way back. Without it the control above would be a one-way door: the workspace reads
           materials with `is_active = true`, so a retired material leaves every tab and only a

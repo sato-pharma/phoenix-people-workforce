@@ -275,6 +275,7 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
       wholeRunsOnly: product.geometry.wholeRunsOnly,
     })),
     retiredMaterials: [],
+    allMaterials: [],
     runs: [],
     settings: {
       alarmDryRun: true,

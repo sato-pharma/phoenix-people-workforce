@@ -247,6 +247,7 @@ function workspaceFor(plan: WirePlan): WireWorkspace {
     // The workbook must not read this — it is a Settings-tab control, and a retired material has no
     // place on a buy list. Empty here is the assertion.
     retiredMaterials: [],
+    allMaterials: [],
     runs: [],
     settings: {
       alarmDryRun: true,
