@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import {
   isActiveDirectoryEmployee,
@@ -19,9 +19,15 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * belongs to somebody working on the CNS line today (owner: "integrate with phoenix and accept any
  * email from cns line"). This is the one thing Phoenix tells it, and it is deliberately thin:
  *
- *  - ONLY HASHES LEAVE. Each address is trimmed, lower-cased and SHA-256'd; the app hashes what the
- *    person typed the same way and looks it up. No address, name or HR id is ever in the answer, so
- *    a leaked token discloses nothing anyone can read off the response.
+ *  - ONLY KEYED HASHES LEAVE. Each address is trimmed, lower-cased and run through HMAC-SHA256 under
+ *    `CNS_LINE_MEMBERS_HASH_KEY`; the app does the same to what the person typed and looks it up.
+ *    No address, name or HR id is in the answer. A plain SHA-256 was NOT enough: work addresses
+ *    follow first.second@satopharma.com, so an unkeyed list can be reversed in seconds by guessing
+ *    names. A leaked list (the app's SQLite file, its backups) cannot be reversed without the hash
+ *    key. Someone holding BOTH the token and the key can still confirm addresses they guess.
+ *  - THE KEY IS NOT THE TOKEN, so the token can be rotated without changing a single hash. Either one
+ *    unset or blank answers 503 before any read. The body names `hash: "hmac-sha256"` so the app
+ *    refuses a list in any other format.
  *  - WHO IS IN is the directory's own rule, never a second copy: the line resolves through
  *    `employees.line_id → public.lines` where `lines.code = 'cns'` (never the dead `line_name`
  *    column, never the id), and "active" is `isActiveDirectoryEmployee`, fed exactly the fields and
@@ -50,10 +56,13 @@ export type CnsLineMemberRow = {
   lines?: { code?: string | null; name?: string | null } | Array<{ code?: string | null; name?: string | null }> | null;
 };
 
+export const CNS_LINE_MEMBERS_HASH = "hmac-sha256";
+
 export type CnsLineMembersBody = {
   line: typeof CNS_LINE_CODE;
   generatedAt: string;
   count: number;
+  hash: typeof CNS_LINE_MEMBERS_HASH;
   emailHashes: string[];
 };
 
@@ -74,11 +83,14 @@ function text(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-/** SHA-256 hex of the address trimmed and lower-cased, or null when it is not a well-formed address. */
-export function hashMemberEmail(value: string | null | undefined): string | null {
+/**
+ * Hex HMAC-SHA256, under `key`, of the address trimmed and lower-cased; null when it is not a
+ * well-formed address.
+ */
+export function hashMemberEmail(value: string | null | undefined, key: string): string | null {
   const email = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (!email || !isWorkEmailFormat(email)) return null;
-  return createHash("sha256").update(email, "utf8").digest("hex");
+  return createHmac("sha256", key).update(email, "utf8").digest("hex");
 }
 
 /** Is this row on the CNS line, read from the joined `lines.code` (never the dead `line_name`)? */
@@ -104,13 +116,13 @@ export function isActiveCnsMember(row: CnsLineMemberRow): boolean {
   return isActiveDirectoryEmployee(candidate);
 }
 
-/** Every active CNS member's work and personal address, hashed, de-duplicated and sorted. */
-export function cnsLineMemberEmailHashes(rows: readonly CnsLineMemberRow[]): string[] {
+/** Every active CNS member's work and personal address, HMAC'd under `key`, de-duplicated and sorted. */
+export function cnsLineMemberEmailHashes(rows: readonly CnsLineMemberRow[], key: string): string[] {
   const hashes = new Set<string>();
   for (const row of rows) {
     if (!isActiveCnsMember(row)) continue;
     for (const email of [row.work_email, row.personal_email]) {
-      const hash = hashMemberEmail(email);
+      const hash = hashMemberEmail(email, key);
       if (hash) hashes.add(hash);
     }
   }
@@ -136,6 +148,8 @@ export async function loadCnsLineMemberRows(): Promise<CnsLineMemberRow[]> {
 
 export type CnsLineMembersDeps = {
   token: string | undefined;
+  /** `CNS_LINE_MEMBERS_HASH_KEY` — the HMAC key, kept apart from the token. */
+  hashKey: string | undefined;
   loadRows?: () => Promise<CnsLineMemberRow[]>;
   now?: () => Date;
 };
@@ -150,17 +164,25 @@ export async function handleCnsLineMembersRequest(request: Request, deps: CnsLin
     });
     return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
   }
+  const hashKey = deps.hashKey?.trim();
+  if (!hashKey) {
+    logError("CNS Line members feed called while CNS_LINE_MEMBERS_HASH_KEY is unset", {
+      labels: { event: "cns_line_members_not_configured", job: CNS_LINE_MEMBERS_JOB },
+    });
+    return Response.json({ error: "not_configured" }, { status: 503, headers: NO_STORE });
+  }
   if (!requiredTokenAuthorized(request, deps.token, "cns_line_members_not_configured", "Not configured.")) {
     logCronUnauthorized(CNS_LINE_MEMBERS_JOB, request);
     return Response.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
   }
   try {
     const rows = await (deps.loadRows ?? loadCnsLineMemberRows)();
-    const emailHashes = cnsLineMemberEmailHashes(rows);
+    const emailHashes = cnsLineMemberEmailHashes(rows, hashKey);
     const body: CnsLineMembersBody = {
       line: CNS_LINE_CODE,
       generatedAt: (deps.now ?? (() => new Date()))().toISOString(),
       count: emailHashes.length,
+      hash: CNS_LINE_MEMBERS_HASH,
       emailHashes,
     };
     return Response.json(body, { headers: NO_STORE });

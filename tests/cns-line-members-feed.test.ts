@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
@@ -15,14 +15,22 @@ import {
 //
 //  - the door is on its own token: unset answers 503 (no development bypass), a missing or wrong
 //    bearer 401, and the read is never reached on either;
+//  - the hashes are HMAC-SHA256 under their own key, CNS_LINE_MEMBERS_HASH_KEY: an unset key answers
+//    503 before any read, and the body names the format (`hash: "hmac-sha256"`). A plain SHA-256 of
+//    a first.second@satopharma.com roster can be reversed in seconds by guessing names;
 //  - the answer is hashes ONLY — no address, name or HR id ever leaves Phoenix;
 //  - WHO is in: active by the directory's own rule, on the line whose `lines.code` is `cns`, both
 //    the work and the personal address, each once.
 
 const TOKEN = "cns-line-members-test-token";
+const KEY = "cns-line-members-test-hash-key";
 const NOW = new Date("2026-11-10T08:00:00.000Z");
 
-function sha(email: string) {
+function sha(email: string, key = KEY) {
+  return createHmac("sha256", key).update(email.trim().toLowerCase(), "utf8").digest("hex");
+}
+
+function plainSha256(email: string) {
   return createHash("sha256").update(email.trim().toLowerCase(), "utf8").digest("hex");
 }
 
@@ -82,7 +90,7 @@ const EXPECTED = [
   "karim.samy@yahoo.com",
   "hala.nabil@satopharma.com",
   "omar.fathy@outlook.com",
-].map(sha).sort();
+].map((email) => sha(email)).sort();
 
 const EXCLUDED = [
   "resigned.rep@satopharma.com",
@@ -92,7 +100,7 @@ const EXCLUDED = [
   "pedia.rep@satopharma.com",
   "no.line@satopharma.com",
   "vacant@satopharma.com",
-].map(sha);
+].map((email) => sha(email));
 
 export async function runCnsLineMembersFeedTests() {
   const noRead = async (): Promise<CnsLineMemberRow[]> => {
@@ -101,14 +109,22 @@ export async function runCnsLineMembersFeedTests() {
 
   // --- unset token: 503, never a dev bypass, never a read -------------------------------------
   for (const token of [undefined, "", "   "]) {
-    const response = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), { token, loadRows: noRead });
+    const response = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), { token, hashKey: KEY, loadRows: noRead });
     assert.equal(response.status, 503, `an unset token (${JSON.stringify(token)}) answers 503`);
     assert.equal(response.headers.get("cache-control"), "no-store");
   }
 
+  // --- unset hash key: 503 exactly like a missing token, never a read -------------------------
+  for (const hashKey of [undefined, "", "   "]) {
+    const response = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), { token: TOKEN, hashKey, loadRows: noRead });
+    assert.equal(response.status, 503, `an unset hash key (${JSON.stringify(hashKey)}) answers 503`);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), { error: "not_configured" });
+  }
+
   // --- missing or wrong bearer: 401, never a read ---------------------------------------------
   for (const authorization of [undefined, "Bearer wrong-token", `Basic ${TOKEN}`, `Bearer ${TOKEN}x`, "Bearer "]) {
-    const response = await handleCnsLineMembersRequest(request(authorization), { token: TOKEN, loadRows: noRead });
+    const response = await handleCnsLineMembersRequest(request(authorization), { token: TOKEN, hashKey: KEY, loadRows: noRead });
     assert.equal(response.status, 401, `authorization ${JSON.stringify(authorization)} answers 401`);
     assert.equal(response.headers.get("cache-control"), "no-store");
   }
@@ -116,6 +132,7 @@ export async function runCnsLineMembersFeedTests() {
   // --- the right bearer: 200, the contract shape, hashes only ---------------------------------
   const ok = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), {
     token: TOKEN,
+    hashKey: KEY,
     loadRows: async () => ROWS,
     now: () => NOW,
   });
@@ -123,10 +140,17 @@ export async function runCnsLineMembersFeedTests() {
   assert.equal(ok.headers.get("cache-control"), "no-store");
   const raw = await ok.text();
   const body = JSON.parse(raw) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(body).sort(), ["count", "emailHashes", "generatedAt", "line"]);
+  assert.deepEqual(Object.keys(body).sort(), ["count", "emailHashes", "generatedAt", "hash", "line"]);
+  assert.equal(body.hash, "hmac-sha256", "the body names its hash format, so the app refuses an old-format list");
   assert.equal(body.line, "cns");
   assert.equal(body.generatedAt, NOW.toISOString());
-  assert.deepEqual(body.emailHashes, EXPECTED, "exactly the active CNS members' addresses, hashed, sorted");
+  assert.deepEqual(body.emailHashes, EXPECTED, "exactly the active CNS members' addresses, HMAC'd under the key, sorted");
+  for (const email of ["Mona.Adel@SatoPharma.com", "omar.fathy@outlook.com"]) {
+    assert.ok(
+      !(body.emailHashes as string[]).includes(plainSha256(email)),
+      "never a plain SHA-256: an unkeyed first.second@satopharma.com list reverses in seconds",
+    );
+  }
   assert.equal(body.count, EXPECTED.length);
   for (const hash of body.emailHashes as string[]) assert.match(hash, /^[0-9a-f]{64}$/);
 
@@ -142,15 +166,28 @@ export async function runCnsLineMembersFeedTests() {
   assert.equal(new Set(body.emailHashes as string[]).size, (body.emailHashes as string[]).length, "no duplicates");
 
   // --- the hash is of the address trimmed and lower-cased; a malformed one is skipped -----------
-  assert.equal(hashMemberEmail("  Mona.Adel@SatoPharma.com "), sha("mona.adel@satopharma.com"));
-  assert.equal(hashMemberEmail("not-an-email"), null);
-  assert.equal(hashMemberEmail("a b@c.com"), null);
-  assert.equal(hashMemberEmail(null), null);
-  assert.deepEqual(cnsLineMemberEmailHashes([]), []);
+  assert.equal(hashMemberEmail("  Mona.Adel@SatoPharma.com ", KEY), sha("mona.adel@satopharma.com"));
+  assert.equal(hashMemberEmail("not-an-email", KEY), null);
+  assert.equal(hashMemberEmail("a b@c.com", KEY), null);
+  assert.equal(hashMemberEmail(null, KEY), null);
+  assert.deepEqual(cnsLineMemberEmailHashes([], KEY), []);
+
+  // --- the key is in the hash: one address under two keys gives two different hashes ----------
+  const underA = hashMemberEmail("mona.adel@satopharma.com", "key-a");
+  const underB = hashMemberEmail("mona.adel@satopharma.com", "key-b");
+  assert.ok(underA && underB);
+  assert.notEqual(underA, underB, "the same email under two keys must hash differently");
+  assert.equal(underA, sha("mona.adel@satopharma.com", "key-a"));
+  assert.notDeepEqual(
+    cnsLineMemberEmailHashes(ROWS, "key-a"),
+    cnsLineMemberEmailHashes(ROWS, "key-b"),
+    "the whole list changes with the key",
+  );
 
   // --- a failed read is a 500 that says nothing about the data --------------------------------
   const failed = await handleCnsLineMembersRequest(request(`Bearer ${TOKEN}`), {
     token: TOKEN,
+    hashKey: KEY,
     loadRows: async () => {
       throw new Error('relation "employees" does not exist: secret.person@satopharma.com');
     },
@@ -161,7 +198,11 @@ export async function runCnsLineMembersFeedTests() {
 
   // --- the route reads its own token and never the shared cron secret -------------------------
   const route = readFileSync(new URL("../app/api/integrations/cns-line/members/route.ts", import.meta.url), "utf8");
-  assert.match(route, /handleCnsLineMembersRequest\(request, \{ token: process\.env\.CNS_LINE_MEMBERS_TOKEN \}\)/);
+  assert.match(
+    route,
+    /handleCnsLineMembersRequest\(request, \{\s*token: process\.env\.CNS_LINE_MEMBERS_TOKEN,\s*hashKey: process\.env\.CNS_LINE_MEMBERS_HASH_KEY,\s*\}\)/,
+    "the route reads its own token and its own, separate hash key",
+  );
   assert.doesNotMatch(route.replace(/\/\/.*$/gm, ""), /\bCRON_SECRET\b/);
   assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/, "GET only");
 
