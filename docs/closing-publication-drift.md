@@ -41,8 +41,17 @@ drifted pairs against a real 6. The two implementations agree to the cent — bo
 
 ## The freeze cuts the other way too
 
-`isFrozenStoreSplitPeriod` matches `monthly_closing_publications` by **period, with no line filter**
-(deliberate — PR 4848 closed the per-line version). So publishing *one* line freezes
+> **Fixed 2026-11-10 — a published closing now freezes its own line only** (owner: "Unfreeze Pedia +
+> CNS only"; migration `20261110103127_freeze_only_the_published_line.sql`, pinned by
+> `tests/closing-freeze-per-line.test.ts`). The section below is the history that led there: on
+> 2026-11-10 the same shape read the Qalubeya Pedia rep at 648% for October, because Anti Infective
+> October was published on 4 November and El Qema's October book landed on the 8th into a frozen
+> month. Rebuilt per line, Qalubeya read EGP 73,405 against 178,241 (41%), and Anti Infective's
+> published rows kept their fingerprints exactly. A published line with no `line_code` still freezes
+> the whole period (fail closed).
+
+Until then `isFrozenStoreSplitPeriod` matched `monthly_closing_publications` by **period, with no line
+filter** (PR 4848 had closed an earlier per-line version). So publishing *one* line froze
 `au.monthly_store_split_net` for **every** line in that month. An unpublished line's frozen net then
 goes stale with nothing announced for it, and the exposure runs in the opposite direction: it is what
 the month will be published **onto** unless the net is rebuilt first.
