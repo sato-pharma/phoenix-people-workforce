@@ -168,7 +168,11 @@ export async function runCnsLineMembersFeedTests() {
   const lib = readFileSync(new URL("../src/lib/employees/cns-line-members.ts", import.meta.url), "utf8");
   const libCode = lib.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(libCode, /\bline_name\b/, "never the dead line_name column");
-  assert.match(lib, /\.eq\("code", CNS_LINE_CODE\)/, "the line resolves by code, never by id");
+  assert.match(
+    lib,
+    /loadReferenceLines\(\)\)\s*\.filter\(\(line\) => line\.id !== null && \(line\.code \?\? ""\)\.trim\(\)\.toLowerCase\(\) === CNS_LINE_CODE\)/,
+    "the line resolves by code from the cached reference list, never by id",
+  );
 
   const registry = readFileSync(new URL("../src/lib/security/access-registry.ts", import.meta.url), "utf8");
   assert.match(

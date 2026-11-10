@@ -7,6 +7,7 @@ import {
   type DirectoryMembershipFields,
 } from "@/lib/employees/employee-directory";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -118,10 +119,12 @@ export function cnsLineMemberEmailHashes(rows: readonly CnsLineMemberRow[]): str
 
 /** Reads the CNS line's employees with the service-role client. Throws rather than answer short. */
 export async function loadCnsLineMemberRows(): Promise<CnsLineMemberRow[]> {
+  // The line comes from the minute-cached reference list (throws on a failed read), never a direct
+  // read of `lines`; matched by CODE, never by id.
+  const lineIds = (await loadReferenceLines())
+    .filter((line) => line.id !== null && (line.code ?? "").trim().toLowerCase() === CNS_LINE_CODE)
+    .map((line) => line.id as number);
   const admin = getSupabaseAdmin();
-  const { data: lines, error: lineError } = await admin.from("lines").select("id,code").eq("code", CNS_LINE_CODE);
-  if (lineError) throw lineError;
-  const lineIds = (lines ?? []).map((line: { id: number }) => line.id);
   // No CNS line is a broken master, not an empty line: refuse, so the app keeps its last good list
   // instead of locking every CNS representative out.
   if (lineIds.length === 0) throw new Error("The CNS line (lines.code = 'cns') was not found.");
