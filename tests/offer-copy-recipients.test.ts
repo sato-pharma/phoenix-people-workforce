@@ -99,7 +99,8 @@ export function runOfferCopyRecipientsTests() {
   assert.match(send, /cc: copies\.cc\.length > 0 \? copies\.cc : undefined/);
 
   const route = readFileSync("app/api/offers/[id]/send/route.ts", "utf8");
-  assert.match(route, /sendOfferEmail\(id, \{ bcc: body\?\.bcc, cc: body\?\.cc,/, "the route must hand the copies to the domain send");
+  // `approvedByHrManager: true` first: only the HR Manager's Send reaches the domain send (owner, 2026-11-10).
+  assert.match(route, /sendOfferEmail\(id, \{ approvedByHrManager: true, bcc: body\?\.bcc, cc: body\?\.cc,/, "the route must hand the copies to the domain send");
   assert.match(route, /cc: outcome\.cc/, "the audit row must record who was copied");
   assert.match(route, /bcc: outcome\.bcc/, "including who was copied secretly");
 
@@ -118,7 +119,8 @@ export function runOfferCopyRecipientsTests() {
   const markSentBody = markSent.slice(0, markSent.indexOf("\n}\n"));
   assert.match(markSentBody, /bcc_recipients: copies\.bcc,/, "markOfferSent must write the BCC list");
   assert.match(markSentBody, /cc_recipients: copies\.cc,/, "markOfferSent must write the CC list");
-  assert.match(markSentBody, /\.eq\("status", "draft"\)/, "in the same guarded update that stamps the send");
+  // A draft (the HR Manager's own) or an offer waiting for his approval (owner, 2026-11-10).
+  assert.match(markSentBody, /\.in\("status", \["draft", "pending_approval"\]\)/, "in the same guarded update that stamps the send");
   assert.match(
     send,
     /options\.sentBy \?\? null,[\s\S]{0,200}\{ bcc: copies\.bcc, cc: copies\.cc \},\s*\)/,

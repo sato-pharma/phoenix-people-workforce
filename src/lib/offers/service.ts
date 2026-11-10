@@ -563,6 +563,14 @@ type OfferRow = {
   // migration returns no such keys, and that must read as "not answered through the form".
   accepted_at?: string | null;
   accepted_via?: string | null;
+  // Optional: the HR Manager's approval columns (20261110190002). Absent reads as "no approval on record".
+  approval_requested_at?: string | null;
+  approval_requested_by?: string | null;
+  approval_return_reason?: string | null;
+  approval_returned_at?: string | null;
+  approval_returned_by?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
   employee_hr_id?: string | null;
   // Optional: `select("*")` against a database that has not had 20260928225001 applied returns no
   // such key, and that must read as "nobody copied", not throw.
@@ -605,6 +613,15 @@ function toOffer(row: OfferRow): OfferRecord {
   return {
     acceptedAt: row.accepted_at ?? null,
     acceptedVia: row.accepted_via === "candidate_form" || row.accepted_via === "hr" ? row.accepted_via : null,
+    approval: {
+      approvedAt: row.approved_at ?? null,
+      approvedBy: row.approved_by ?? null,
+      requestedAt: row.approval_requested_at ?? null,
+      requestedBy: row.approval_requested_by ?? null,
+      returnedAt: row.approval_returned_at ?? null,
+      returnedBy: row.approval_returned_by ?? null,
+      returnReason: row.approval_return_reason ?? null,
+    },
     bccRecipients: Array.isArray(row.bcc_recipients) ? row.bcc_recipients : [],
     candidateEmail: row.candidate_email,
     candidateName: row.candidate_name,
@@ -834,12 +851,15 @@ export async function createOffer(
 export async function updateOffer(
   id: string,
   fields: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null },
+  options: { canApprove?: boolean } = {},
 ): Promise<OfferRecord> {
   const current = await getOffer(id);
-  // A sent offer is a document the candidate already holds. Editing it would make Phoenix's copy
-  // disagree with theirs, silently — withdraw and reissue instead.
-  if (current.status !== "draft") {
-    throw new Error("This offer has already been sent and can no longer be edited. Withdraw it and create a new one.");
+  // An offer waiting for the HR Manager is HIS to edit (owner, 2026-11-10: "I have the option to edit
+  // anything in the offer") and nobody else's — Talent Acquisition changing it under him would make
+  // what he approves differ from what he read.
+  const editable = current.status === "draft" || (current.status === "pending_approval" && options.canApprove === true);
+  if (!editable) {
+    throw new Error(offerEditRefusal(current.status));
   }
 
   const patch = toRow(fields);
@@ -857,15 +877,83 @@ export async function updateOffer(
   return toOffer(data as OfferRow);
 }
 
+/** Why an offer of this status cannot be edited by this person. */
+export function offerEditRefusal(status: OfferStatus): string {
+  if (status === "pending_approval") {
+    return "This offer is waiting for the HR Manager's approval. Only the HR Manager can edit it now, or reject it back to draft.";
+  }
+  // A sent offer is a document the candidate already holds. Editing it would make Phoenix's copy
+  // disagree with theirs, silently — withdraw and reissue instead.
+  return "This offer has already been sent and can no longer be edited. Withdraw it and create a new one.";
+}
+
+/**
+ * Talent Acquisition's Send: park the draft for the HR Manager (owner, 2026-11-10). Nothing is
+ * emailed. The copies typed on the screen are kept on the row so his Approve and send uses them.
+ * Conditional on `draft`, so a double press or a stale tab cannot re-stamp a request already waiting.
+ */
+export async function markOfferPendingApproval(
+  id: string,
+  requestedBy: string | null,
+  copies: { bcc: string[]; cc: string[] },
+): Promise<OfferRecord> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({
+      approval_requested_at: new Date().toISOString(),
+      approval_requested_by: requestedBy,
+      // A fresh request clears the last rejection, so the row never shows an old reason as current.
+      approval_return_reason: null,
+      approval_returned_at: null,
+      approval_returned_by: null,
+      bcc_recipients: copies.bcc,
+      cc_recipients: copies.cc,
+      status: "pending_approval",
+    })
+    .eq("id", id)
+    .eq("status", "draft")
+    .select("*")
+    .maybeSingle();
+
+  assertReadable(error, "offers");
+  if (!data) throw new Error("This offer is no longer a draft — it may already be waiting for approval or sent.");
+  return toOffer(data as OfferRow);
+}
+
+/**
+ * The HR Manager's Reject: the offer goes back to draft, unsent, with his reason for Talent
+ * Acquisition. Conditional on `pending_approval`, so it can never pull back an offer already sent.
+ */
+export async function returnOfferToDraft(id: string, returnedBy: string | null, reason: string): Promise<OfferRecord> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from("offers")
+    .update({
+      approval_return_reason: reason.trim() || null,
+      approval_returned_at: new Date().toISOString(),
+      approval_returned_by: returnedBy,
+      status: "draft",
+    })
+    .eq("id", id)
+    .eq("status", "pending_approval")
+    .select("*")
+    .maybeSingle();
+
+  assertReadable(error, "offers");
+  if (!data) throw new Error("This offer is not waiting for approval any more — it may already have been sent or rejected.");
+  return toOffer(data as OfferRow);
+}
+
 /**
  * Freeze the template onto the offer and mark it sent.
  *
  * The snapshot is the point. Once an offer has gone out, editing the template it used must not
  * change what Phoenix believes was sent — the candidate holds a PDF, and that PDF is the offer.
  *
- * The `.eq("status", "draft")` in the WHERE clause is a precondition, not decoration: two clicks
- * on Send, or a retry after a timeout, would otherwise each mark it sent and each move `sent_at`.
- * A zero-row result here means somebody else already sent it.
+ * The status filter in the WHERE clause (a draft, or an offer waiting for the HR Manager) is a
+ * precondition, not decoration: two clicks on Send, or a retry after a timeout, would otherwise each
+ * mark it sent and each move `sent_at`. A zero-row result here means somebody else already sent it.
  *
  * Who was copied is written in the same UPDATE (owner, 2026-09-28: "show who was copied on each
  * offer in the offers list"). One statement, so a sent offer can never exist without its copy list,
@@ -876,11 +964,15 @@ export async function markOfferSent(
   template: Pick<OfferTemplate, "blocks" | "fontFamily" | "fontSizePt" | "theme" | "variant">,
   sentBy: string | null,
   copies: { bcc: string[]; cc: string[] } = { bcc: [], cc: [] },
+  approvedBy: string | null = sentBy,
 ): Promise<OfferRecord> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("offers")
     .update({
+      // Only the HR Manager sends (owner, 2026-11-10), so the send IS the approval.
+      approved_at: new Date().toISOString(),
+      approved_by: approvedBy,
       bcc_recipients: copies.bcc,
       cc_recipients: copies.cc,
       sent_at: new Date().toISOString(),
@@ -895,7 +987,7 @@ export async function markOfferSent(
       },
     })
     .eq("id", id)
-    .eq("status", "draft")
+    .in("status", ["draft", "pending_approval"])
     .select("*")
     .maybeSingle();
 

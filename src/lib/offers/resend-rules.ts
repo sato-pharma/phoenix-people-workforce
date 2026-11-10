@@ -22,6 +22,8 @@ export function offerResendRefusal(offer: Pick<OfferRecord, "candidateEmail" | "
   switch (offer.status) {
     case "draft":
       return "This offer has not been sent yet. Use Send, not Resend.";
+    case "pending_approval":
+      return "This offer is waiting for the HR Manager's approval and has not been sent yet.";
     case "accepted":
     case "declined":
       return "The candidate has already answered this offer, so it is not resent.";

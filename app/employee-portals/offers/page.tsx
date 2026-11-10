@@ -30,10 +30,13 @@ export default async function EmployeePortalOffersPage() {
 
   // `delete` is asked separately because HR Advisory — the role that now holds `offers` — carries
   // read/create/update/export and not delete. See the admin page's note.
-  const [canRead, canManage, canDelete] = await Promise.all([
+  // `approve` is the HR Manager's (owner, 2026-11-10): with it Send emails the candidate, without it
+  // Send parks the offer for his approval. The routes enforce it; the screen only draws the buttons.
+  const [canRead, canManage, canDelete, canApprove] = await Promise.all([
     canAccess(access, "offers", "read"),
     canAccess(access, "offers", "create"),
     canAccess(access, "offers", "delete"),
+    canAccess(access, "offers", "approve"),
   ]);
 
   if (!canRead) {
@@ -60,17 +63,26 @@ export default async function EmployeePortalOffersPage() {
           />
         }
       >
-        <OffersContent canDelete={canDelete} canManage={canManage} />
+        <OffersContent canApprove={canApprove} canDelete={canDelete} canManage={canManage} />
       </Suspense>
     </EmployeePortalPageShell>
   );
 }
 
-async function OffersContent({ canDelete, canManage }: { canDelete: boolean; canManage: boolean }) {
+async function OffersContent({
+  canApprove,
+  canDelete,
+  canManage,
+}: {
+  canApprove: boolean;
+  canDelete: boolean;
+  canManage: boolean;
+}) {
   const workspace = await loadOffersWorkspace();
 
   return (
     <OffersManager
+      canApprove={canApprove}
       canDelete={canDelete}
       canManage={canManage}
       initialError={workspace.error}
