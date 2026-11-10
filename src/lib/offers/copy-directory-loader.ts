@@ -11,6 +11,7 @@ import {
   type OfferCopyPersonRecord,
   type OfferCopySeatRow,
 } from "@/lib/offers/copy-directory";
+import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -32,10 +33,11 @@ export async function loadOfferCopyDirectory(): Promise<OfferCopyDirectory> {
         .select("seat_id, parent_seat_id, seat_tier, occupant_hr_id, is_other_pseudo_dm")
         .in("seat_tier", ["DM", "ACTING_DM", "RSM", "NSM", "CEO"]),
       db.from("au_v_regions").select("region_code, region_name"),
-      db.from("lines").select("code, name"),
+      // Line names from the shared reference list, read once a minute per process.
+      loadReferenceLines().catch(() => []),
       db.from("app_auth_users").select("hr_id, role, is_test_persona").in("role", [...REMINDER_TEAM_ROLES]).eq("is_active", true),
     ]);
-    if (mapRes.error || seatRes.error || regionRes.error || lineRes.error) return EMPTY_OFFER_COPY_DIRECTORY;
+    if (mapRes.error || seatRes.error || regionRes.error) return EMPTY_OFFER_COPY_DIRECTORY;
 
     type Row = Record<string, unknown>;
     const text = (value: unknown) => (typeof value === "string" ? value : null);
@@ -86,7 +88,8 @@ export async function loadOfferCopyDirectory(): Promise<OfferCopyDirectory> {
 
     return buildOfferCopyDirectory({
       hrTeam,
-      lineNames: names((lineRes.data ?? []) as Row[], "code", "name"),
+      // A line whose name could not be read shows its code rather than hiding the lists.
+      lineNames: new Map(lineRes.flatMap((line) => (line.code && line.name?.trim() ? [[line.code, line.name.trim()] as const] : []))),
       mapRows: ((mapRes.data ?? []) as Row[]).map((row) => ({
         areaCode: text(row.area_code),
         areaName: text(row.area_name),
