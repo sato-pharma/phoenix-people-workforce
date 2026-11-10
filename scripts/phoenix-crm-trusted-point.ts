@@ -26,7 +26,9 @@ const argv = process.argv.slice(2);
 for (let index = 0; index < argv.length; index += 1) {
   const entry = argv[index];
   if (!entry.startsWith("--")) throw new Error(`Unexpected argument ${entry} — refused rather than ignored.`);
-  const [rawName, inline] = entry.slice(2).split(/=(.*)/s, 2);
+  const body = entry.slice(2);
+  const eq = body.indexOf("=");
+  const [rawName, inline] = eq === -1 ? [body, undefined] : [body.slice(0, eq), body.slice(eq + 1)];
   if (!known.has(rawName)) throw new Error(`Unknown flag ${entry} — refused rather than ignored.`);
   if (rawName === "apply") {
     flags.set("apply", "true");
