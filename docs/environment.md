@@ -575,6 +575,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 |---|---|
 | CRON_SECRET | Bearer-token auth for cron-job.org's calls into `/api/cron/*` |
 | FTP_VIDEO_HANDOFF_SECRET | Bearer token the Future Talents Portal sends to `/api/integrations/ftp-videos` to list and claim WhatsApp closing videos. Its own token, deliberately never `CRON_SECRET`; unset means the route refuses every call. The portal holds the same value as `PHOENIX_VIDEO_RELAY_SECRET` |
+| CNS_LINE_MEMBERS_TOKEN | Bearer token the CNS Line detailing app's server sends to `GET /api/integrations/cns-line/members` to learn who may sign in: SHA-256 hashes of every active CNS-line employee's work and personal email (trimmed, lower-cased), never an address, name or HR id. Its own token, never `CRON_SECRET`, compared in constant time; unset means the route answers 503 to every call (no development bypass), a missing or wrong bearer 401. The CNS Line server holds the same value |
 
 ### Maps & geo
 | Secret | Purpose |
