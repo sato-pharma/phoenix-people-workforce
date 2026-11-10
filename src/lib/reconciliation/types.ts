@@ -106,7 +106,7 @@ export type ReconciliationCheck = {
  * breached   — they disagree and were expected to agree. This is the one that pages a human.
  * known-open — they disagree exactly as documented; reported, not paged.
  * errored    — the check itself failed. Recorded as a result, never thrown: one broken check
- *              must not blind the others (22 are registered in checks/index.ts).
+ *              must not blind the others (23 are registered in checks/index.ts).
  */
 export type ReconciliationStatus = "holds" | "breached" | "known-open" | "errored";
 

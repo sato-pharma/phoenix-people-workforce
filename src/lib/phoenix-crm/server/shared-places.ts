@@ -47,6 +47,7 @@ import {
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
+import { refuseReadingsApart } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -387,6 +388,10 @@ export async function createSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
     });
     throw validationError(draft.error);
   }
+
+  // 🔴 A BUILDING IS FIXED FOR EVERY CUSTOMER SEATED IN IT, so its two readings are asked the same question
+  // a place's are (owner, 2026-11-11, `refuseReadingsApart`): apart, and it is nobody's door.
+  await refuseReadingsApart({ place: draft.value, seatId: seat.seatId, repHrId: viewer.hrId, customerId: null, isTest });
 
   const point = placePoint(draft.value);
   const [issuedAt, located, signboard] = await Promise.all([

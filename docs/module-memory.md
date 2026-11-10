@@ -103,7 +103,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-week-plan` — Phoenix CRM — the rep's weekly plan, its review and asking to edit it | `src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules}.ts` and 4 more |
 | `phoenix-crm-boards` — Phoenix CRM — the silent detectors and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules}.ts` and 12 more |
 | `phoenix-crm-visit-report` — Phoenix CRM — the Visit Report generator | `src/lib/phoenix-crm/{visit-report-*,server/visit-report*}.ts` and 4 more |
-| `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 14 more |
+| `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 21 more |
 | `phoenix-crm-requests` — Phoenix CRM — how a request answers the screen | `src/components/phoenix-crm/api.ts` and 10 more |
 | `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 11 more |
 | `phoenix-crm-manager-customer-marks` — Phoenix CRM — the marks on each customer of a manager's plan board | `src/lib/phoenix-crm/manager-customer-marks-rules.ts` and 9 more |

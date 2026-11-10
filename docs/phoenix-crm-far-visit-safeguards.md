@@ -70,3 +70,68 @@ The system audit's visit-lifecycle detector expects a held visit to be absent fr
 ## Still open on 10 November 2026
 
 Seven other reps refused at one spot that day were never checked.
+
+## 11 November 2026 — the validation audit, and six gaps closed
+
+The owner asked for every validation mistake in Phoenix CRM, its root cause and the gap behind it
+("Build all six fixes"). Each number below was read on production that day, real work only.
+
+| What was found | Root cause | What closes it |
+| --- | --- | --- |
+| 34 active places with a pin and a photo reading more than 250 m apart | The door never compared a capture's two readings | `readingsApartMeters` and `refuseReadingsApart`: a rep's place, a manager's capture and a venue are refused and filed `readings_apart` |
+| 26 validated customers with no place (23 by an add approval, 3 stamped by hand on 29 October) | `phoenix_crm_decide_request` stamped `validated_at` whatever had happened to the door since the request was filed | The approval admits to "To validate" when no active place exists; two deferred constraint triggers refuse any other route |
+| 41 rep visits since 20 October (13 reps) logged before the customer had a place, past the line of the place he was then validated at (300 m, 500 m for an account), all counting | The far rule lived only in the save | `visitsToHoldBeforePlace`: the re-stamp writes a `before_place` hold before it measures the visit |
+| 722 far refusals on 181 places since 20 October; 74 customer-days stopped at two to four refusals | The stuck rule read one day | `STUCK_LOOKBACK_DAYS` = 7 |
+| Nobody read any of it until five refusals in one day | No list | Places to re-check on the held-visits page, and three nightly checks |
+| 30 active places with no brick | Saved before the seat's own area could reach past the trust radius | `scripts/phoenix-crm-refile-no-brick-places.ts` plans the re-file; a bulk change, applied only on the owner's word |
+
+### Decisions worth keeping
+
+- **The guard is two triggers, not one.** A `WHEN` clause may read `OLD` only on an update, and the update
+  must ask only when the stamp goes from empty to set: an edit that carries `validated_at` along must never
+  re-judge a customer. Both are deferred, so a function that stamps the customer and inserts the place in
+  one transaction passes.
+- **The triggers guard a NEW validation only**, so the doors that return a customer who already holds
+  the stamp carry the test themselves (`20261111013233`, found by the review of the first file): a
+  bring-back (`phoenix_crm_decide_request`, kind `restore`) and the Administrator's undo of a drop
+  (`phoenix_crm_reverse_list_request`) put him on the list only while he holds an active place, and
+  otherwise in "To validate" with the stamp cleared. His last place can be retired while he sits in the
+  Archive, because a rejected venue or review un-validates only an active customer. The nightly check
+  (`phoenix-crm-validated-customer-holds-a-place`) reads whatever is left.
+- **An add that admitted to "To validate" can still be undone.** The Administrator's undo of an add
+  required status `active`; it now accepts `pending` too. Anything that moved the customer since the
+  decision is refused earlier in the same function, as before.
+- **`phoenix_crm_reverse_list_request` on production was the October file's body with its comment lines
+  removed** (md5 `8393e50a…` against the file's `6e7a1837…`). Read the live body before replacing a
+  function: a hash that differs from the file is not always a different function.
+- **The rep is told his location has not settled** (`READINGS_APART_REFUSED`): what is wrong with the
+  capture, never the distance or the check's name, like every other capture refusal. It is not a fifth
+  exception to the blind app.
+- **A before-place hold leaves the counts until SFE decides**, like every hold: the countable views drop
+  any hold that is not approved, whatever its basis. 12 of the 41 visits found on 11 November were double
+  visits the rep entered with his manager beside him.
+- **Pharmacies are exempt.** A pharmacy is validated by its own pin and holds no place row.
+- **Test customers are not a defect.** 1,026 customers marked `is_test` were validated before 21 October
+  with no place at all; nothing has validated a test customer without one since. Every count and every
+  nightly check filters `is_test = false`.
+- **A before-place hold holds only a visit never measured** (`location_flag = 'no_place'`). A moved place
+  re-measures every visit, and holding those would un-count work the door once accepted.
+- **A seated place is never filed on its own.** A seating copies its venue's location and never resolves
+  it again, so the re-file script files the venue once and every seat in it takes that answer.
+- **The migration went through `scripts/apply-sql-file.mjs`.** The database connector declined it on
+  staging; staging also lacked the 10 November holds table, which was applied there first.
+
+### The three nightly checks
+
+`src/lib/reconciliation/checks/phoenix-crm-places.ts`, all `known-open` until the data is repaired:
+every validated doctor and account holds a place; every active place holds a brick; no active place holds
+two readings that disagree. The third reads the page's own list (`readPlacesToRecheck`), so the page and
+the check cannot disagree.
+
+### Still open on 11 November 2026
+
+- The data repairs wait for the owner's word: 23 add-approved customers back to "To validate", 41 visits
+  into holds, 29 places and 6 venues re-filed.
+- Three hospital accounts stamped validated on 29 October with no place and no event: the writer was not found.
+- 59 validated places with an unread signboard or timetable and no review were not traced.
+- A before-place hold raises no notice of its own; the SFE finds it on the page and in the nightly check.

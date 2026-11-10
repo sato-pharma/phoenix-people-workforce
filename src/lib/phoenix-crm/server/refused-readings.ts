@@ -24,6 +24,7 @@
  */
 
 import { afterResponse } from "@/lib/http/after-response";
+import { addDaysIso } from "@/lib/crm/dates";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft, type VisitDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
@@ -499,6 +500,13 @@ export async function countSignboardRefusals(input: { key: string; repHrId: stri
 }
 
 export type ImpossibleTravelRefusalInput = {
+  /**
+   * `readings_apart` (owner, 2026-11-11) files a capture whose pin and photo reading cannot both be the
+   * door: `reading` is the pin, `photo` the photo's reading, `metres` the gap between the two. Such a row
+   * is NEVER remembered by the repeat rule (`loadImpossiblePoints` reads `impossible_travel` alone) —
+   * one of its two points is honest, and nobody knows which.
+   */
+  reason?: "impossible_travel" | "readings_apart";
   /** The reading judged impossible — the pin, or the photo's own reading beside a good pin. */
   reading: { lat: number; lon: number; accuracyMeters: number | null };
   /** The photo's reading too, only when IT was judged impossible as well; null otherwise. */
@@ -529,7 +537,7 @@ export async function recordImpossibleTravelRefusal(input: ImpossibleTravelRefus
       .from("phoenix_crm_refused_readings")
       .insert({
         subject_kind: "place",
-        reason: "impossible_travel",
+        reason: input.reason ?? "impossible_travel",
         seat_id: input.seatId,
         rep_hr_id: input.repHrId.toUpperCase(),
         customer_id: input.customerId,
@@ -588,16 +596,19 @@ export async function loadImpossiblePoints(input: { repHrId: string; isTest: boo
 }
 
 /**
- * This rep's far refusals on this customer on one Cairo visit day, as readings — what decides whether he
+ * This rep's far refusals on this customer over the last few Cairo visit days, as readings — what decides whether he
  * is stuck at one spot (`stuckAtOneSpot`). Empty on any error: a count the save cannot read refuses as
  * before, never holds, and never alerts.
  */
-export async function loadFarTriesOnDay(input: {
+export async function loadRecentFarTries(input: {
   seatId: string;
   repHrId: string;
   customerId: string;
   isTest: boolean;
+  /** The last Cairo visit day read. */
   visitDate: string;
+  /** How many visit days are read, that one included (`STUCK_LOOKBACK_DAYS`). */
+  days: number;
 }): Promise<Array<{ lat: number; lon: number; accuracyMeters: number | null }>> {
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -609,7 +620,10 @@ export async function loadFarTriesOnDay(input: {
       .eq("customer_id", input.customerId)
       .eq("rep_hr_id", input.repHrId.toUpperCase())
       .eq("is_test", input.isTest)
-      .eq("visit_date", input.visitDate)
+      // 🔴 A WEEK, NOT A DAY (owner, 2026-11-11): the rep who gives up after two or three refusals and
+      // comes back tomorrow was never counted as stuck, and his place stayed wrong.
+      .gte("visit_date", addDaysIso(input.visitDate, -(Math.max(1, Math.floor(input.days)) - 1)))
+      .lte("visit_date", input.visitDate)
       .limit(500);
     if (error) {
       console.error("[phoenix-crm] far tries not read", { seatId: input.seatId, message: error.message });
