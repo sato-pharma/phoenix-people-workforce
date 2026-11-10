@@ -315,7 +315,37 @@ function checkAddVisitOffersTheWayToTheFullName(): void {
   assert.ok(list.includes("pendingFullName.seatId === seatId && pendingFullName.test === test"), "one territory, one world");
 }
 
+function checkANameWrittenTwiceIsRefused(): void {
+  // Owner, 2026-11-10: "مصطفي مصطفي شلش" was validated off a sign reading "دكتور مصطفى شلش" — "block later
+  // validations like this example mostafa mostafa shalaby … mostafa shalaby shalaby blocked".
+  const twice = (first: string, middle: string, last: string) => doctorFullNameProblem({ first, middle, last }) ?? "";
+  assert.match(twice("مصطفى", "مصطفي", "شلبي"), /is written twice/, "the first name copied into the middle box is refused, ى and ي alike");
+  assert.match(twice("مصطفى", "شلبي", "شلبي"), /is written twice/, "and the family name copied into the middle box");
+  assert.match(twice("مصطفى", "شلبي", "الشلبي"), /is written twice/, "with or without its ال it is the same name");
+  assert.match(twice("أحمد", "احمد", "سعيد"), /is written twice/, "أ and ا alike");
+  assert.match(twice("عبد الله", "عبدالله", "سعيد"), /is written twice/, "a compound written twice too");
+  assert.match(twice("على", "محمد", "محمد"), /is written twice/, "محمد is let through as the first and middle name only");
+  assert.equal(twice("محمد", "محمد", "عيسى"), "", "محمد محمد as first and middle name is a real name (owner chose \"Block all but محمد محمد\")");
+  assert.equal(twice("حسن", "محمد", "حسن"), "", "a son named after his grandfather is not side by side, and stays a name");
+  assert.equal(twice("مصطفى", "كامل", "شلبي"), "", "three different names pass as before");
+  assert.ok(!/\b(accounts?|doctors?)\b/i.test(twice("مصطفى", "مصطفى", "شلبي")), "the screen words obey the AM · PM rule");
+
+  // The server takes the same answer, from the three boxes and from a caller one release behind.
+  assert.equal(parseDoctorFullName({ first: "مصطفى", middle: "مصطفى", last: "شلبي" }, null).ok, false, "the boxes are refused on the server");
+  assert.equal(parseDoctorFullName(null, "مصطفى شلبي شلبي").ok, false, "and a whole name too");
+  assert.equal(parseDoctorFullName(null, "محمد محمد عيسى").ok, true, "محمد محمد still saves");
+
+  // A doctor already on the list under a doubled name is asked for the three names at his next
+  // validation, and Place checks never approves him — sent back, the boxes open on what is there.
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "مصطفي مصطفي شلش" }), true, "the doubled name is asked for again");
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "ياسر الدغيدي الدغيدي" }), true, "a doubled family name too");
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "محمد محمد عيسى" }), false, "محمد محمد validates as before");
+  assert.equal(validationNeedsFullName({ listType: "AM", name: "مستشفى مستشفى" }), false, "an AM place is never asked");
+  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "اسامه اسامه يونس" }), true, "Place checks sends it back");
+}
+
 export function runPhoenixCrmDoctorFullNameTests(): void {
+  checkANameWrittenTwiceIsRefused();
   checkACompoundIsNeverSplitAcrossTwoBoxes();
   checkAddVisitOffersTheWayToTheFullName();
   checkTheThreeNamesAreAskedAtValidation();
