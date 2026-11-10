@@ -125,12 +125,12 @@ export type PublicationDriftReport = {
   /** Lines the publication check calls clean while the split layer has moved money. */
   splitOnlyLines: string[];
   /**
-   * 🔴 Lines that are NOT published for this period but whose split is frozen anyway, and whose
-   * frozen net no longer matches the rule.
+   * 🔴 Lines that are NOT published for this period whose stored net no longer matches the rule.
    *
-   * `isFrozenStoreSplitPeriod` matches `monthly_closing_publications` by PERIOD with no line
-   * filter, so publishing ONE line freezes `au.monthly_store_split_net` for every line in that
-   * month (deliberate — PR 4848 closed the per-line version). Nothing has been announced for these
+   * Until 20261110103127 the freeze was per PERIOD — publishing ONE line froze
+   * `au.monthly_store_split_net` for every line in that month — and this field is how that showed.
+   * The freeze is per line now, so an unpublished line's net is rebuilt by the next upload or by
+   * the publish gate; what is left here is a net nothing has rebuilt yet. Nothing has been announced for these
    * lines, so none of this is a restatement yet; the exposure is the opposite direction — they will
    * be published ONTO the stale net unless it is rebuilt first. Measured 2026-10-09 on 2026-09:
    * Anti Infective alone was published, and Pedia carried 839,283.83 EGP sitting on a different
@@ -246,8 +246,9 @@ export function mergePublicationDrift(input: {
   }
   lines.sort((a, b) => b.areaValueMoved - a.areaValueMoved || a.line.localeCompare(b.line));
 
-  // The other direction of the period-wide freeze: a line with no publication row of its own, whose
-  // split is frozen by somebody else's publication and has gone stale underneath it. Nothing is
+  // The other direction: a line with no publication row of its own whose stored split has gone stale
+  // (before 20261110103127 because somebody else's publication froze it; now only until the next
+  // upload or the publish gate rebuilds it). Nothing is
   // announced, so this is never mixed into `lines` — it is reported apart, as the exposure it is.
   // Split lines are named from ATTRIBUTION_SPLIT_LINES through the same resolver the rest of the
   // module uses, so there is no second code -> label table to drift out of step.

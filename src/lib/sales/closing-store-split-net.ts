@@ -254,9 +254,9 @@ export async function loadClosingStoreSplit(
     // published month is supposed to mean.
     //
     // 🔴 THE ONE CASE WHERE THAT WOULD BE THE WRONG WAY ROUND, AND WHY THE RULE STOPS AT SEPTEMBER.
-    // `isFrozenStoreSplitPeriod` matches `monthly_closing_publications` by PERIOD with NO line
-    // predicate (deliberately — PR 4848), so publishing ONE line freezes EVERY line's net for that
-    // month. A frozen net stamped BEFORE this rule existed carries no respread at all, and a live
+    // Until 20261110103127 `isFrozenStoreSplitPeriod` matched `monthly_closing_publications` by
+    // PERIOD with no line predicate, so publishing ONE line froze EVERY line's net for that month
+    // (it is per line now). A frozen net stamped BEFORE this rule existed carries no respread at all, and a live
     // Office slice against it would be out by the WHOLE respread rather than by a post-publish
     // drift. That is reachable only for a month frozen before the rule. Since his 2026-10-13 ruling
     // the window starts 2026-01, and on that day no 2026 month held a live publication row, so no
@@ -312,11 +312,16 @@ export async function loadClosingStoreSplit(
  * recomputes live, exactly as before.
  */
 /**
- * Whether a (line, period)'s store split is FROZEN — split-active, split-eligible, and the PERIOD is
- * published. The freeze in 20260927213000 is PER-PERIOD: publishing ANY line freezes
- * au.monthly_store_split_net and the attribution rollup for the WHOLE period, so match that (any
- * publication row for the period with unpublished_at IS NULL), never the specific line — an unpublished
- * line in a partially-published period is frozen too.
+ * Whether a (line, period)'s store split is FROZEN — split-active, split-eligible, and THAT LINE is
+ * published for the period.
+ *
+ * 🔒 PER LINE SINCE 20261110103127 (owner, 2026-11-10: "Unfreeze Pedia + CNS only"). Until then the
+ * freeze was per PERIOD — publishing ANY line froze every line's net and rollup for the month — and
+ * this predicate matched it. That is how Anti Infective October, published 2026-11-04 19:36 Cairo,
+ * froze Pedia October at its 18:47 net: El Qema's book landed on 8 November, was never spread, and
+ * the unpublished Pedia closing put all 4,114 Lacto packs on Qalubeya and read its rep at 648%.
+ * The database writers (phx_write_monthly_store_split_net, au.f_refresh_monthly_attribution) now
+ * keep only the published lines' rows, so this asks the same question: is THIS line published.
  *
  * The ONE predicate both the frozen split (loadFrozenStoreSplitIfPublished) and the export's frozen
  * banner (route.ts) read, so the sheet's numbers and the banner explaining them cannot disagree about
@@ -334,9 +339,23 @@ export async function isFrozenStoreSplitPeriod(
     .from("monthly_closing_publications")
     .select("id")
     .eq("period", trimmedPeriod)
+    .eq("normalized_line", publicationLineKey(trimmedLine))
     .is("unpublished_at", null)
     .limit(1);
   return !error && Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * The `normalized_line` a publication row is stored under — identical to `normalizeClosingLine` in
+ * monthly-closing-publication.ts, which writes it. Kept here rather than imported so this loader does
+ * not pull the publish workflow (and its notifications) into every closing read; the equality is
+ * pinned by tests/closing-freeze-per-line.test.ts.
+ */
+export function publicationLineKey(line: string | null | undefined): string {
+  return String(line ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 async function loadFrozenStoreSplitIfPublished(
