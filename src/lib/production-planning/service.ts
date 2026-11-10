@@ -87,7 +87,7 @@ import {
   productionPlanningStrings,
   storedPlanTitle,
 } from "./strings";
-import { expiryChangeRows, isStockMovement, isStockSource, storedStockQty, type StockSource } from "./stock";
+import { expiryChangeRows, isStockMovement, isStockSource, moveStockRows, storedStockQty, type StockSource } from "./stock";
 
 const T = {
   products: "prodplan_products",
@@ -1359,6 +1359,21 @@ export async function getProductionPlanningWorkspace(
     canWrite: data.level === "full",
     productId,
     retiredMaterials,
+    // EVERY material in the module, names and units only — the list "Fix a wrong material" picks
+    // the right one from (owner, 2026-11-11: Saginkgo's foil had been entered on Guamusin's film).
+    // `materials` stays the selected product's own, for the reason on `WireWorkspace.materials`.
+    allMaterials: data.materials.map((material) => ({
+      id: material.id,
+      code: material.code,
+      nameAr: material.nameAr,
+      nameEn: material.nameEn,
+      unitKind: material.unitKind,
+      displayUnit: material.displayUnit,
+      basePerDisplay: formatQty(material.basePerDisplay),
+      productIds: data.products
+        .filter((product) => materialsForProduct(data, product.id).some((own) => own.id === material.id))
+        .map((product) => product.id),
+    })),
     products: data.products.map((product) => ({
       id: product.id,
       code: product.code,
@@ -1747,6 +1762,212 @@ export async function changeStockLotExpiry(access: AccessContext, body: Record<s
   });
 
   return { qty: formatQty(fromQty), toExpiryDate };
+}
+
+/**
+ * Move stock out of one lot and into another — to a different store, or onto the material it should
+ * have been entered on (owner, 2026-11-11, who chose both tools after one night needed each of them by
+ * hand: Saginkgo's stock split between the factory and Sato's store, and 576.885 kg of Saginkgo's
+ * foil recorded on Guamusin's sachet film).
+ *
+ * Exactly one of `toLocationId` and `toMaterialId`. The lot keeps its expiry date either way — a move
+ * is not a re-dating, which has its own tool. A blank quantity moves the whole lot. Two materials must
+ * be counted the same way (weight, volume or count), because a number of grams is not a number of
+ * pieces. Append-only, two rows, the arithmetic in `moveStockRows`; recorded with
+ * `writeRequiredAuditLog`, because a move nobody can trace is stock that vanished from one place and
+ * appeared in another.
+ */
+export async function moveStock(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const materialId = asText(body.materialId);
+  const locationId = asText(body.locationId);
+  if (!materialId || !locationId) {
+    throw new ProductionPlanningInputError(errorsFor(body).materialAndLocationRequired, "materialId");
+  }
+  const expiryDate = asText(body.expiryDate);
+  if (expiryDate !== null && !isIsoDate(expiryDate)) {
+    throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "expiryDate");
+  }
+  const toLocationId = asText(body.toLocationId);
+  const toMaterialId = asText(body.toMaterialId);
+  const destinations = [toLocationId && toLocationId !== locationId, toMaterialId && toMaterialId !== materialId];
+  if (destinations.filter(Boolean).length !== 1) {
+    throw new ProductionPlanningInputError(
+      errorsFor(body).moveDestinationRequired,
+      toMaterialId ? "toMaterialId" : "toLocationId",
+    );
+  }
+  const targetMaterialId = toMaterialId ?? materialId;
+  const targetLocationId = toLocationId ?? locationId;
+  const typedQty = asScalar(body.qty);
+  const asOfDate = asText(body.asOfDate) ?? todayCairo();
+  if (!isIsoDate(asOfDate)) throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "asOfDate");
+
+  const db = getSupabaseAdmin();
+  const standingOn = (material: string, location: string) => {
+    const query = db
+      .from(T.stock)
+      .select("qty::text, as_of_date, unit_kind")
+      .eq("material_id", material)
+      .eq("location_id", location);
+    return (expiryDate === null ? query.is("expiry_date", null) : query.eq("expiry_date", expiryDate))
+      .order("as_of_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  };
+  const [fromRes, targetRes, materialsRes, locationRes] = await Promise.all([
+    standingOn(materialId, locationId),
+    standingOn(targetMaterialId, targetLocationId),
+    db.from(T.materials).select("id, unit_kind").in("id", [materialId, targetMaterialId]),
+    db.from(T.locations).select("id").eq("id", targetLocationId).maybeSingle(),
+  ]);
+  if (fromRes.error) failure(fromRes.error, "read the lot being moved");
+  if (targetRes.error) failure(targetRes.error, "read the lot it moves into");
+  if (materialsRes.error) failure(materialsRes.error, "read the two materials");
+  if (locationRes.error) failure(locationRes.error, "read the store it moves into");
+
+  const unitKindOf = new Map((materialsRes.data ?? []).map((row) => [String(row.id), String(row.unit_kind)]));
+  if (!unitKindOf.has(targetMaterialId)) {
+    throw new ProductionPlanningInputError(errorsFor(body).materialNotFound, "toMaterialId");
+  }
+  if (!locationRes.data) {
+    throw new ProductionPlanningInputError(errorsFor(body).materialAndLocationRequired, "toLocationId");
+  }
+  if (unitKindOf.get(targetMaterialId) !== unitKindOf.get(materialId)) {
+    throw new ProductionPlanningInputError(errorsFor(body).moveUnitKindMismatch, "toMaterialId");
+  }
+
+  const fromQty = fromRes.data?.qty ? parseNonNegativeQty(fromRes.data.qty, "qty") : BigInt(0);
+  if (!fromRes.data || fromQty <= BigInt(0)) {
+    throw new ProductionPlanningInputError(errorsFor(body).stockLotNotFound, "expiryDate");
+  }
+  const qty = typedQty === null || String(typedQty).trim() === "" ? fromQty : parseNonNegativeQty(typedQty, "qty");
+  if (qty <= BigInt(0)) throw new ProductionPlanningInputError(errorsFor(body).qtyMustBePositive, "qty");
+
+  const rows = moveStockRows({
+    asOfDate,
+    from: { asOfDate: String(fromRes.data.as_of_date), qty: fromQty },
+    qty,
+    target: targetRes.data
+      ? { asOfDate: String(targetRes.data.as_of_date), qty: parseNonNegativeQty(targetRes.data.qty, "qty") }
+      : null,
+  });
+  if (!rows) throw new ProductionPlanningInputError(errorsFor(body).moveQtyTooLarge, "qty");
+
+  const what = toMaterialId
+    ? `moved from material ${materialId} to material ${targetMaterialId}`
+    : `moved from ${locationId} to ${targetLocationId}`;
+  const note = asText(body.note) ?? `Stock ${what}`;
+  const unitKind = unitKindOf.get(materialId);
+  const base = {
+    expiry_date: expiryDate,
+    note,
+    recorded_by_hr_id: who.hrId,
+    recorded_by_login: who.login,
+    source: "adjustment",
+    unit_kind: unitKind,
+  };
+  const { error } = await db.from(T.stock).insert([
+    { ...base, as_of_date: rows.from.asOfDate, location_id: locationId, material_id: materialId, qty: formatQty(rows.from.qty) },
+    {
+      ...base,
+      as_of_date: rows.to.asOfDate,
+      location_id: targetLocationId,
+      material_id: targetMaterialId,
+      qty: formatQty(rows.to.qty),
+    },
+  ]);
+  if (error) failure(error, "move the stock");
+
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_stock_entry",
+    entityId: null,
+    newValues: {
+      materialId,
+      locationId,
+      expiryDate,
+      toMaterialId: targetMaterialId,
+      toLocationId: targetLocationId,
+      qty: formatQty(qty),
+      fromLeft: formatQty(rows.from.qty),
+      toNow: formatQty(rows.to.qty),
+      asOfDate: rows.from.asOfDate,
+    },
+    summary: `Production planner: ${formatQty(qty)} ${what}${expiryDate ? ` (lot expiring ${expiryDate})` : ""} — ${formatQty(rows.from.qty)} left, ${formatQty(rows.to.qty)} now there, as of ${rows.from.asOfDate}`,
+  });
+
+  return { qty: formatQty(qty), fromLeft: formatQty(rows.from.qty), toNow: formatQty(rows.to.qty) };
+}
+
+/**
+ * How many units and strips one box of a product holds — the two figures a per-box, per-strip or
+ * per-packaging-set formula line divides by.
+ *
+ * Until 2026-11-11 neither had a Settings edit, so a wrong strip count could only be fixed in the
+ * database. The owner chose to have them editable that night, beside the per-1,000-boxes entry that
+ * reads them. Strips per box may be cleared only while no per-strip line is in force for the product:
+ * a strip line on a product with no strips would ask for nothing, for ever (the same refusal the
+ * formula save makes from the other side). The limits are the table's own CHECKs, checked here so a
+ * refusal reads as a sentence and not a raw database message.
+ */
+export async function updateProductPackaging(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const productId = asText(body.productId);
+  if (!productId) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
+  const unitsText = asText(asScalar(body.unitsPerBox) === null ? null : String(asScalar(body.unitsPerBox)));
+  const stripsText = asText(asScalar(body.stripsPerBox) === null ? null : String(asScalar(body.stripsPerBox)));
+  const wholeInRange = (text: string | null) =>
+    text !== null && /^\d{1,4}$/.test(text) && Number(text) >= 1 && Number(text) <= 1000;
+  if (!wholeInRange(unitsText)) {
+    throw new ProductionPlanningInputError(errorsFor(body).unitsPerBoxInvalid, "unitsPerBox");
+  }
+  if (stripsText !== null && !wholeInRange(stripsText)) {
+    throw new ProductionPlanningInputError(errorsFor(body).stripsPerBoxInvalid, "stripsPerBox");
+  }
+  const unitsPerBox = Number(unitsText);
+  const stripsPerBox = stripsText === null ? null : Number(stripsText);
+
+  const db = getSupabaseAdmin();
+  const today = todayCairo();
+  const [previous, stripLines] = await Promise.all([
+    db.from(T.products).select("units_per_box, strips_per_box").eq("id", productId).maybeSingle(),
+    db
+      .from(T.compositions)
+      .select("id")
+      .eq("product_id", productId)
+      .eq("basis", "per_strip")
+      .lte("effective_from", today)
+      .or(`effective_to.is.null,effective_to.gt.${today}`)
+      .limit(1),
+  ]);
+  if (previous.error) failure(previous.error, "read the product");
+  if (stripLines.error) failure(stripLines.error, "read the product's per-strip lines");
+  if (!previous.data) throw new ProductionPlanningInputError(errorsFor(body).productNotFound, "productId");
+  if (stripsPerBox === null && (stripLines.data ?? []).length > 0) {
+    throw new ProductionPlanningInputError(errorsFor(body).stripsInUse, "stripsPerBox");
+  }
+
+  const { error } = await db
+    .from(T.products)
+    .update({ strips_per_box: stripsPerBox, units_per_box: unitsPerBox, updated_at: new Date().toISOString() })
+    .eq("id", productId);
+  if (error) failure(error, "save the packaging");
+
+  const before = { stripsPerBox: previous.data.strips_per_box ?? null, unitsPerBox: previous.data.units_per_box };
+  await writeRequiredAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_product",
+    entityId: productId,
+    oldValues: before,
+    newValues: { stripsPerBox, unitsPerBox },
+    summary: `Production planner: product ${productId} packaging — units per box ${before.unitsPerBox} → ${unitsPerBox}, strips per box ${before.stripsPerBox ?? "none"} → ${stripsPerBox ?? "none"}`,
+  });
+
+  return { productId, stripsPerBox: stripsPerBox === null ? null : String(stripsPerBox), unitsPerBox: String(unitsPerBox) };
 }
 
 /**

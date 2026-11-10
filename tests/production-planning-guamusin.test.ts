@@ -326,6 +326,7 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
     // The sheet never reads the retired list — it is a Settings-tab control — and an empty one here
     // is what proves the workbook did not start depending on it.
     retiredMaterials: [],
+    allMaterials: [],
     runs: [],
     settings: {
       alarmDryRun: true,

@@ -65,3 +65,62 @@ export function fromBaseUnits(stored: string, material: DisplayScaledMaterial | 
   const tail = `${padded.slice(padded.length - zeros)}${fraction}`.replace(/0+$/, "");
   return tail === "" ? head : `${head}.${tail}`;
 }
+
+/**
+ * The bases a "per 1,000 boxes" figure can be turned into — the ones counted off the box itself.
+ *
+ * The owner gives packaging the way the factory measures it, per thousand boxes ("2.2 كيلو للألف
+ * علبة … الألف علبة اللي هي 3 شرايط", 2026-11-11), and twice that night the per-strip figure had to
+ * be worked out by hand. A per-dose or per-sample line is not a fraction of a box, so it is not offered.
+ */
+export const PER_THOUSAND_BOX_BASES = ["per_box", "per_strip", "per_packaging_set"] as const;
+
+export type PerThousandBoxBasis = (typeof PER_THOUSAND_BOX_BASES)[number];
+
+export function isPerThousandBoxBasis(basis: string): basis is PerThousandBoxBasis {
+  return (PER_THOUSAND_BOX_BASES as readonly string[]).includes(basis);
+}
+
+const MICRO_DIGITS = 6;
+const WORK_DIGITS = 12;
+
+/** A plain decimal string as an integer scaled by 10^digits, or null if it has more places than that. */
+function scaled(text: string, digits: number): bigint | null {
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const [whole, fraction = ""] = text.split(".");
+  if (fraction.length > digits) return null;
+  return BigInt(`${whole}${fraction.padEnd(digits, "0")}`);
+}
+
+/**
+ * A figure typed per 1,000 boxes, in the material's DISPLAY unit, as the amount per ONE basis unit in
+ * the material's BASE unit — the string the composition row stores.
+ *
+ * Rounded UP to the six decimals the column holds, because a formula never under-orders (the rule the
+ * Saginkgo foil migration followed by hand: 2.285 kg ÷ 3,000 strips = 0.761667 g a strip). Integer
+ * arithmetic throughout, never floating point — the same reason the converters above shift digits.
+ * `null` for an empty or malformed figure, a basis that is not a share of a box, or a product that
+ * does not say how many strips or units its box holds.
+ */
+export function perThousandBoxesToBase(args: {
+  readonly typed: string;
+  readonly material: DisplayScaledMaterial;
+  readonly basis: string;
+  readonly unitsPerBox: string | null | undefined;
+  readonly stripsPerBox: string | null | undefined;
+}): string | null {
+  if (!isPerThousandBoxBasis(args.basis)) return null;
+  const divisorText =
+    args.basis === "per_box" ? "1" : args.basis === "per_strip" ? args.stripsPerBox : args.unitsPerBox;
+  if (!divisorText || !/^[1-9]\d*$/.test(divisorText)) return null;
+  const base = toBaseUnits(args.typed, args.material);
+  const perThousand = scaled(base, WORK_DIGITS);
+  if (perThousand === null || perThousand <= BigInt(0)) return null;
+  // per basis (micro) = perThousand / 10^12 × 10^6 / (1000 × divisor), rounded up.
+  const denominator = BigInt(10) ** BigInt(WORK_DIGITS - MICRO_DIGITS) * BigInt(1000) * BigInt(divisorText);
+  const micro = (perThousand + denominator - BigInt(1)) / denominator;
+  const digits = micro.toString().padStart(MICRO_DIGITS + 1, "0");
+  const whole = digits.slice(0, digits.length - MICRO_DIGITS);
+  const fraction = digits.slice(digits.length - MICRO_DIGITS).replace(/0+$/, "");
+  return fraction === "" ? whole : `${whole}.${fraction}`;
+}

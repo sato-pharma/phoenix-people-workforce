@@ -366,6 +366,19 @@ export type WireRetiredMaterial = {
   nameEn: string;
 };
 
+/** One material of the whole module, for a picker that crosses products. */
+export type WireMaterialRef = {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  unitKind: WireMaterial["unitKind"];
+  displayUnit: string;
+  basePerDisplay: string;
+  /** The products it belongs to, so a picker can say where each one is used. */
+  productIds: string[];
+};
+
 export type WireWorkspace = {
   level: WireLevel;
   canWrite: boolean;
@@ -380,6 +393,8 @@ export type WireWorkspace = {
    * the opposite direction.
    */
   retiredMaterials: WireRetiredMaterial[];
+  /** Every material across every product — names and units only. `materials` is the selected product's. */
+  allMaterials: WireMaterialRef[];
   /**
    * 🔴 THE MATERIALS OF THE SELECTED PRODUCT ONLY, and `productId` says which one.
    *

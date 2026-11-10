@@ -246,6 +246,18 @@ export const PP = {
   stockLot: "الرصيد",
   stockNewExpiry: "تاريخ الانتهاء الجديد",
   stockNewExpiryHint: "يُترك فارغًا لو المادة لا تنتهي",
+  stockMove: "نقل مخزون إلى مخزن آخر",
+  stockMoveSubtitle: "تُخصم الكمية من الرصيد وتُضاف إلى نفس الرصيد في المخزن الآخر، بنفس تاريخ الانتهاء",
+  stockMoveTo: "إلى مخزن",
+  stockMoveQty: "الكمية المنقولة",
+  stockMoveQtyHint: "الفراغ يعني نقل الرصيد كله",
+  stockMoveDate: "تاريخ النقل",
+  stockMoveDateHint: "الفراغ يعني اليوم",
+  stockFixMaterial: "تصحيح مادة سُجِّل عليها مخزون بالخطأ",
+  stockFixMaterialSubtitle: "تنتقل الكمية إلى المادة الصحيحة في نفس المخزن وبنفس تاريخ الانتهاء، ويبقى السجل القديم في التاريخ",
+  stockFixTo: "المادة الصحيحة",
+  stockMaterialUsedBy: "مستخدمة في",
+  stockMaterialUsedByNone: "غير مرتبطة بمنتج",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "التكلفة",
@@ -356,6 +368,20 @@ export const PP = {
   compositionUnsettledWarning:
     "التوريد غير المحسوم يُظهر الاحتياج ولا يضيف إلى قائمة الشراء، ويمنع اعتماد أي خطة حتى يُحسم",
   compositionNoRemoval: "تصفير السطر مرفوض — إيقاف المادة هو طريق إخراجها",
+  compositionPerThousand: "الاستهلاك لكل 1000 علبة",
+  compositionPerThousandHint: "بنفس وحدة الكمية، كما يذكرها المصنع؛ التحويل يملأ خانة الكمية حسب الأساس وعدد الشرائط أو الوحدات في العلبة",
+  compositionPerThousandApply: "تحويل",
+  compositionPerThousandCannot: "لا يمكن التحويل: الرقم غير صحيح، أو المنتج لا يحدد عدد الشرائط أو الوحدات في العلبة",
+  settingsPackaging: "تعبئة العلبة",
+  settingsPackagingHint: "عدد الوحدات (الكبسولات أو الأكياس) وعدد الشرائط في علبة واحدة؛ عليهما يُحسب كل سطر لكل علبة أو لكل شريط",
+  settingsUnitsPerBox: "الوحدات في العلبة",
+  settingsStripsPerBox: "الشرائط في العلبة",
+  settingsStripsPerBoxHint: "الفراغ يعني أن المنتج لا يُعبأ في شرائط",
+  listSeparator: "، ",
+  gapsTitle: "بيانات ناقصة قبل التخطيط",
+  gapsNoAmount: "الكمية غير مُدخلة",
+  gapsNoStock: "لا يوجد مخزون مسجل",
+  gapsHint: "هذه المواد يشتريها ساتو؛ بدون كمية تخرج من قائمة الشراء، وبدون مخزون تُشترى كاملة. الكمية تُدخل من الإعدادات والمخزون من تبويب المخزون.",
   settingsGeometry: "حجم التشغيلة والعبوات",
   settingsAccess: "الصلاحيات",
   settingsAccessHint: "الأشخاص الذين سمّاهم المالك مُثبتون في الكود — هنا تُضاف صلاحية إضافية بالاسم",
@@ -587,6 +613,18 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   stockLot: "Lot",
   stockNewExpiry: "New expiry date",
   stockNewExpiryHint: "Left blank if the material does not expire",
+  stockMove: "Move stock to another store",
+  stockMoveSubtitle: "The quantity leaves this lot and joins the same lot in the other store, with the same expiry date",
+  stockMoveTo: "To store",
+  stockMoveQty: "Quantity to move",
+  stockMoveQtyHint: "Left blank to move the whole lot",
+  stockMoveDate: "Date of the move",
+  stockMoveDateHint: "Left blank for today",
+  stockFixMaterial: "Fix stock entered on the wrong material",
+  stockFixMaterialSubtitle: "The quantity moves to the right material in the same store, with the same expiry date, and the old entry stays in the history",
+  stockFixTo: "Right material",
+  stockMaterialUsedBy: "Used in",
+  stockMaterialUsedByNone: "not linked to a product",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "Cost",
@@ -701,6 +739,20 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   compositionUnsettledWarning:
     "An unsettled supplier shows the requirement, adds nothing to the buy list, and blocks a committed plan until it is settled",
   compositionNoRemoval: "A line cannot be zeroed — retiring the material is how it comes off",
+  compositionPerThousand: "Usage per 1,000 boxes",
+  compositionPerThousandHint: "In the same unit as the quantity, the way the factory gives it; Convert fills the quantity from the basis and the strips or units in a box",
+  compositionPerThousandApply: "Convert",
+  compositionPerThousandCannot: "Cannot convert: the figure is not a number, or the product does not say how many strips or units its box holds",
+  settingsPackaging: "Box packaging",
+  settingsPackagingHint: "How many units (capsules or sachets) and how many strips one box holds; every per-box and per-strip line is counted from these",
+  settingsUnitsPerBox: "Units per box",
+  settingsStripsPerBox: "Strips per box",
+  settingsStripsPerBoxHint: "Left blank when the product is not packed in strips",
+  listSeparator: ", ",
+  gapsTitle: "Missing before planning",
+  gapsNoAmount: "No amount entered",
+  gapsNoStock: "No stock recorded",
+  gapsHint: "Sato buys these materials. With no amount a material leaves the buy list, and with no stock it is bought in full. Amounts are entered in Settings and stock on the Stock tab.",
   settingsGeometry: "Run volume and packaging",
   settingsAccess: "Access",
   settingsAccessHint:
@@ -1641,7 +1693,13 @@ export type ProductionPlanningErrorKey =
   | "unknownUnitKind"
   | "expiryDateInvalid"
   | "expiryDateUnchanged"
-  | "stockLotNotFound";
+  | "stockLotNotFound"
+  | "moveDestinationRequired"
+  | "moveQtyTooLarge"
+  | "moveUnitKindMismatch"
+  | "unitsPerBoxInvalid"
+  | "stripsPerBoxInvalid"
+  | "stripsInUse";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1668,6 +1726,12 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   expiryDateInvalid: "تاريخ الانتهاء يجب أن يكون بالشكل سنة-شهر-يوم (مثال 2027-04-27).",
   expiryDateUnchanged: "التاريخ الجديد هو نفس تاريخ الرصيد الحالي.",
   stockLotNotFound: "لا توجد كمية في هذا الرصيد لنقلها.",
+  moveDestinationRequired: "يلزم تحديد جهة واحدة للنقل: مخزن آخر أو مادة أخرى.",
+  moveQtyTooLarge: "الكمية المطلوب نقلها أكبر من الموجود في هذا الرصيد.",
+  moveUnitKindMismatch: "لا يمكن النقل بين مادتين بوحدتين مختلفتين (وزن وعدد مثلًا).",
+  unitsPerBoxInvalid: "عدد الوحدات في العلبة يجب أن يكون عددًا صحيحًا بين 1 و1000.",
+  stripsPerBoxInvalid: "عدد الشرائط في العلبة يجب أن يكون عددًا صحيحًا بين 1 و1000، أو يُترك فارغًا.",
+  stripsInUse: "لا يمكن حذف عدد الشرائط ما دامت هناك مادة محسوبة لكل شريط في هذا المنتج.",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1695,6 +1759,12 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   expiryDateInvalid: "An expiry date must be written year-month-day (for example 2027-04-27).",
   expiryDateUnchanged: "The new date is the date this lot already has.",
   stockLotNotFound: "This lot holds no quantity to move.",
+  moveDestinationRequired: "Choose one place to move it to: another store or another material.",
+  moveQtyTooLarge: "That is more than this lot holds.",
+  moveUnitKindMismatch: "Stock cannot move between two materials counted in different units (weight and count, for example).",
+  unitsPerBoxInvalid: "Units per box must be a whole number from 1 to 1000.",
+  stripsPerBoxInvalid: "Strips per box must be a whole number from 1 to 1000, or left blank.",
+  stripsInUse: "Strips per box cannot be cleared while a material in this product is counted per strip.",
 };
 
 /**
