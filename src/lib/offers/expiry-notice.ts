@@ -44,6 +44,7 @@ function escapeHtml(value: string): string {
 export function offerExpiryRefusal(offer: Pick<OfferRecord, "candidateEmail" | "status">): string | null {
   switch (offer.status) {
     case "draft":
+    case "pending_approval":
       return "This offer has not been sent yet, so there is nothing to expire.";
     case "accepted":
     case "declined":

@@ -515,6 +515,7 @@ function tile(
 /** The offer statuses in the order an offer moves through them, in the owner's words. */
 const OFFER_STATUS_ORDER: ReadonlyArray<{ label: string; status: OfferStatus }> = [
   { label: "Draft", status: "draft" },
+  { label: "Awaiting HR Manager approval", status: "pending_approval" },
   { label: "Sent, awaiting reply", status: "sent" },
   { label: "Accepted", status: "accepted" },
   { label: "Declined", status: "declined" },

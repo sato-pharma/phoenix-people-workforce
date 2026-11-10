@@ -7,6 +7,17 @@ import { offerJsonError } from "@/lib/offers/http";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { sendOfferEmail } from "@/lib/offers/send";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { afterResponse } from "@/lib/http/after-response";
+import { hrIdForStorage } from "@/lib/hr-id";
+import { planOfferCopies } from "@/lib/offers/copy-recipients";
+import { getOffer, markOfferPendingApproval } from "@/lib/offers/service";
+import {
+  announceOfferApprovalDecision,
+  announceOfferAwaitingApproval,
+  canApproveOffers,
+  offerSendPath,
+  offerSendRefusal,
+} from "@/lib/offers/approval";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +49,43 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     // existed. The addresses are judged in `sendOfferEmail`, not here, so the screen and the server
     // cannot disagree about which of them may go.
     const body = (await request.json().catch(() => null)) as { bcc?: unknown; cc?: unknown } | null;
-    const outcome = await sendOfferEmail(id, { bcc: body?.bcc, cc: body?.cc, sentBy: access.hrId ?? null });
+    const actor = hrIdForStorage(access.hrId) ?? null;
+
+    // THE HR MANAGER'S APPROVAL FIRST (owner, 2026-11-10: "she never automatic sent. My approval
+    // first"). Whoever cannot approve offers parks it for him; nothing is emailed.
+    const canApprove = await canApproveOffers(access);
+    const current = await getOffer(id);
+    const refusal = offerSendRefusal(current.status, canApprove);
+    if (refusal) {
+      return NextResponse.json({ message: refusal, success: false }, { status: 409 });
+    }
+
+    if (offerSendPath(canApprove) === "request_approval") {
+      const copies = planOfferCopies({ bcc: body?.bcc, candidateEmail: current.candidateEmail, cc: body?.cc });
+      if (copies.problems.length > 0) {
+        return NextResponse.json({ message: `The offer cannot be sent. ${copies.problems.join(" ")}`, success: false }, { status: 400 });
+      }
+      const pending = await markOfferPendingApproval(id, actor, { bcc: copies.bcc, cc: copies.cc });
+      await writeRequiredAuditLog({
+        actorLoginId: access.loginId ?? access.hrId,
+        entityId: id,
+        entityType: "job_offer",
+        newValues: {
+          bcc: copies.bcc,
+          candidateName: pending.candidateName,
+          cc: copies.cc,
+          jobTitle: pending.title,
+          startDate: pending.startDate,
+          status: "pending_approval",
+          totalMonthly: pending.totalMonthly,
+        },
+        summary: `Offer for ${pending.candidateName} (${pending.title}) sent to the HR Manager for approval — nothing emailed to the candidate`,
+      });
+      await afterResponse("offers.approvalRequested", () => announceOfferAwaitingApproval(pending, actor));
+      return NextResponse.json({ offer: pending, pendingApproval: true, success: true });
+    }
+
+    const outcome = await sendOfferEmail(id, { approvedByHrManager: true, bcc: body?.bcc, cc: body?.cc, sentBy: actor });
 
     // Only when mail actually left. A skipped send stamps nothing on the offer row and must not
     // leave a trail saying an offer was issued — that reading is worse than no row at all.
@@ -67,8 +114,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         summary:
           `Offer of employment sent to ${outcome.offer.candidateName} <${outcome.recipient}> for ${outcome.offer.title}` +
           (outcome.cc.length > 0 ? `; CC ${outcome.cc.join(", ")}` : "") +
-          (outcome.bcc.length > 0 ? `; BCC ${outcome.bcc.join(", ")}` : ""),
+          (outcome.bcc.length > 0 ? `; BCC ${outcome.bcc.join(", ")}` : "") +
+          (current.status === "pending_approval" ? "; approved by the HR Manager" : ""),
       });
+      if (current.status === "pending_approval") {
+        const requestedBy = current.approval?.requestedBy ?? null;
+        await afterResponse("offers.approvalApproved", () =>
+          announceOfferApprovalDecision(outcome.offer, { by: actor, outcome: "approved", requestedBy }),
+        );
+      }
     }
 
     return NextResponse.json({ ...outcome, success: true });

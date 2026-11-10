@@ -8,11 +8,12 @@ import { offerJsonError } from "@/lib/offers/http";
 import { readOfferVacancyId } from "@/lib/offers/hire-draft";
 import { recordOfferDeclinedByCandidate } from "@/lib/recruitment/offer-outcome-sync";
 import type { OfferFields, OfferStatus } from "@/lib/offers/types";
+import { canApproveOffers, offerStatusMoveRefusal } from "@/lib/offers/approval";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const statuses: readonly OfferStatus[] = ["accepted", "declined", "draft", "sent", "withdrawn"];
+const statuses: readonly OfferStatus[] = ["accepted", "declined", "draft", "pending_approval", "sent", "withdrawn"];
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -56,6 +57,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           { status: 400 },
         );
       }
+      // Approval moves only through its own buttons (owner, 2026-11-10): Send parks it, the HR
+      // Manager's Approve and send or Reject decides it. A hand-set status must not skip him.
+      const moveRefusal = offerStatusMoveRefusal((await getOffer(id)).status, body.status as OfferStatus);
+      if (moveRefusal) {
+        return NextResponse.json({ message: moveRefusal, success: false }, { status: 409 });
+      }
       const offer = await setOfferStatus(id, body.status as OfferStatus);
       // A candidate who says no is no longer a live candidate. The offers module knows nothing about
       // candidates, so this route is where the two meet; it never throws and sends no notice.
@@ -94,7 +101,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       );
     }
 
-    return NextResponse.json({ offer: await updateOffer(id, patch), success: true });
+    // While an offer waits for approval only the HR Manager edits it (owner, 2026-11-10: "I have the
+    // option to edit anything in the offer"); the service refuses everybody else.
+    const canApprove = await canApproveOffers(access);
+    return NextResponse.json({ offer: await updateOffer(id, patch, { canApprove }), success: true });
   } catch (error) {
     return offerJsonError(error, "Failed to update this offer.");
   }

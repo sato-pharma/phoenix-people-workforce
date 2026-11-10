@@ -30,10 +30,13 @@ export const dynamic = "force-dynamic";
 
 export default async function OffersPage() {
   const access = await resolveAccessContextFromPage();
-  const [canRead, canManage, canDelete] = await Promise.all([
+  // `approve` is the HR Manager's (owner, 2026-11-10): with it Send emails the candidate, without it
+  // Send parks the offer for his approval. The routes enforce it; the screen only draws the buttons.
+  const [canRead, canManage, canDelete, canApprove] = await Promise.all([
     canAccess(access, "offers", "read"),
     canAccess(access, "offers", "create"),
     canAccess(access, "offers", "delete"),
+    canAccess(access, "offers", "approve"),
   ]);
 
   if (!canRead) redirect("/employee-portals");
@@ -47,16 +50,25 @@ export default async function OffersPage() {
         />
       }
     >
-      <OffersContent canDelete={canDelete} canManage={canManage} />
+      <OffersContent canApprove={canApprove} canDelete={canDelete} canManage={canManage} />
     </Suspense>
   );
 }
 
-async function OffersContent({ canDelete, canManage }: { canDelete: boolean; canManage: boolean }) {
+async function OffersContent({
+  canApprove,
+  canDelete,
+  canManage,
+}: {
+  canApprove: boolean;
+  canDelete: boolean;
+  canManage: boolean;
+}) {
   const workspace = await loadOffersWorkspace();
 
   return (
     <OffersManager
+      canApprove={canApprove}
       canDelete={canDelete}
       canManage={canManage}
       initialError={workspace.error}
