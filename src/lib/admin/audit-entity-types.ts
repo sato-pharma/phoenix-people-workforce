@@ -201,6 +201,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   production_plan: true,
   production_planning_access_grant: true,
   production_planning_settings: true,
+  production_product: true,
   production_run: true,
   production_stock_entry: true,
   visual_aid: true,

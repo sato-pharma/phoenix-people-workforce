@@ -87,3 +87,34 @@ export function expiryChangeRows(args: {
     { asOfDate, expiryDate: args.toExpiryDate, qty: from.qty + (target?.qty ?? BigInt(0)) },
   ];
 }
+
+/**
+ * The two rows that MOVE an amount from one lot to another — between two stores, or from a material
+ * it was entered on by mistake to the right one (owner, 2026-11-11, after both happened in one night:
+ * Saginkgo's stock went to the factory and the rest to Sato's store, and 576.885 kg of Saginkgo's foil
+ * sat on Guamusin's sachet film).
+ *
+ * Append-only like every stock report: the source lot is written again with what is left, the target
+ * with what it held plus the amount, and both old reports stay in the history. Each row is dated no
+ * earlier than the newest report standing on EITHER lot, because the load reads the newest
+ * `as_of_date` first and an older-dated row would lose to the report it means to replace.
+ *
+ * `null` when there is nothing to move: a zero, or more than the source lot holds. Moving more than
+ * is there would invent stock in the target and leave a negative nobody counted in the source.
+ */
+export function moveStockRows(args: {
+  readonly from: StandingLot;
+  readonly target: StandingLot | null;
+  readonly qty: bigint;
+  readonly asOfDate: string;
+}): { readonly from: StandingLot; readonly to: StandingLot } | null {
+  const { from, target, qty } = args;
+  if (qty <= BigInt(0) || qty > from.qty) return null;
+  const asOfDate = [args.asOfDate, from.asOfDate, target?.asOfDate ?? ""].reduce((latest, date) =>
+    date > latest ? date : latest,
+  );
+  return {
+    from: { asOfDate, qty: from.qty - qty },
+    to: { asOfDate, qty: (target?.qty ?? BigInt(0)) + qty },
+  };
+}
