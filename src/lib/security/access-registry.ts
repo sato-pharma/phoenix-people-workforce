@@ -791,6 +791,10 @@ export const accessRegistry = [
   // The module's irreversible route, and (with Resend below) the only ones that audit. `create`
   // rather than `update` because sending is what makes the offer exist to somebody outside the company.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/send", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  // Reject (owner, 2026-11-10): the HR Manager sends an offer waiting for his approval back to draft,
+  // unsent. `approve`, which only the Super Admin holds — Talent Acquisition's Send parks an offer for
+  // him and cannot clear its own request. It emails nobody; the audit records his decision.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/reject", permission: { resource: "offers", action: "approve" }, csrfRequired: true }),
   // Resend (owner, 2026-09-28): the SAME letter to the same address again, for a sent offer the
   // candidate never received. It changes no offer row, but it puts the same binding figure in a
   // stranger's inbox, so it carries Send's gate and audits every copy that leaves.

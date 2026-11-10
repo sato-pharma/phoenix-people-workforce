@@ -73,7 +73,8 @@ export function joiningFormState(input: {
   if (input.employeeHrId) return "submitted";
   if (input.status === "withdrawn") return "withdrawn";
   if (input.status === "declined") return "declined";
-  if (input.status === "draft") return "not_sent";
+  // Waiting for the HR Manager is not sent either (owner, 2026-11-10): nothing reached the candidate.
+  if (input.status === "draft" || input.status === "pending_approval") return "not_sent";
   if (input.requiresSeat && !input.seatOpen) return "seat_unavailable";
   return "open";
 }

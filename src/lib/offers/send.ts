@@ -13,6 +13,7 @@ import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
+import { offerSendRefusal } from "@/lib/offers/approval-rules";
 import {
   offerExpiryIdempotencyKey,
   offerExpiryRefusal,
@@ -97,14 +98,24 @@ type OfferLetterDesign = Pick<OfferTemplate, "blocks" | "fontFamily" | "fontSize
 
 type OfferLetterDelivery = Omit<OfferSendOutcome, "offer" | "recipient">;
 
+/**
+ * `approvedByHrManager: true` is REQUIRED, never defaulted (owner, 2026-11-10: "she never automatic sent. My
+ * approval first"). The only caller is the Send route, and it passes it only for a person holding
+ * `offers:approve` — everybody else's Send parks the offer with `markOfferPendingApproval` instead.
+ * A new caller has to say, in its own code, that an approver pressed the button.
+ */
 export async function sendOfferEmail(
   offerId: string,
-  options: { bcc?: unknown; cc?: unknown; logoUrl?: string; sentBy?: string | null } = {},
+  options: { approvedByHrManager: true; bcc?: unknown; cc?: unknown; logoUrl?: string; sentBy?: string | null },
 ): Promise<OfferSendOutcome> {
+  if (options?.approvedByHrManager !== true) {
+    throw new Error("A job offer is emailed only on the HR Manager's approval.");
+  }
   const offer = await getOffer(offerId);
 
-  if (offer.status !== "draft") {
-    throw new Error("This offer has already been sent. Use Resend on its row to send the same letter again.");
+  const refusal = offerSendRefusal(offer.status, true);
+  if (refusal) {
+    throw new Error(refusal);
   }
   if (!offer.candidateEmail.trim()) {
     throw new Error("This offer has no candidate email address, so it cannot be sent.");

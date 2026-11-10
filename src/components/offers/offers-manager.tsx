@@ -36,6 +36,7 @@ const TABS: { icon: ReactNode; label: string; value: Tab }[] = [
 ];
 
 export function OffersManager({
+  canApprove,
   canDelete,
   canManage,
   initialError,
@@ -51,6 +52,8 @@ export function OffersManager({
    * cannot be collapsed into one flag without showing it buttons that answer 403.
    */
   canDelete: boolean;
+  /** `offers:approve` — the HR Manager. Without it, Send goes to him for approval (owner, 2026-11-10). */
+  canApprove: boolean;
   canManage: boolean;
   initialError: string | null;
   jobTitles: OfferJobTitle[];
@@ -81,7 +84,7 @@ export function OffersManager({
     }
   }, []);
 
-  const sentCount = useMemo(() => offers.filter((offer) => offer.status !== "draft").length, [offers]);
+  const sentCount = useMemo(() => offers.filter((offer) => offer.status !== "draft" && offer.status !== "pending_approval").length, [offers]);
   const draftCount = offers.length - sentCount;
 
   return (
@@ -170,6 +173,7 @@ export function OffersManager({
 
         {tab === "compose" ? (
           <OfferComposer
+            canApprove={canApprove}
             canManage={canManage}
             jobTitles={jobTitles}
             offers={offers}

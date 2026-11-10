@@ -83,12 +83,20 @@ export async function runOfferResendTests() {
   // The same night the owner saved a draft and asked "how to open it and send": a draft's row carried
   // only a PDF button, so once the form cleared it could be neither edited nor sent (Alaa Mohsen's
   // had sat that way since 17 September).
-  const opens = composer.split("onClick={() => openDraft(offer)}").length - 1;
+  // Counted by the button's own label: `openDraft` also opens an offer waiting for the HR Manager's
+  // approval (owner, 2026-11-10), from its row, its card and his queue — those are his, gated below.
+  const label = '<Eye className="h-3.5 w-3.5" /> Open draft';
+  const opens = composer.split(label).length - 1;
   assert.equal(opens, 2, "Open draft on the desktop row AND the phone card");
-  for (const at of [composer.indexOf("openDraft(offer)}"), composer.lastIndexOf("openDraft(offer)}")]) {
+  for (const at of [composer.indexOf(label), composer.lastIndexOf(label)]) {
     const gate = composer.lastIndexOf('canManage && offer.status === "draft"', at);
     const blockEnd = composer.indexOf(") : null}", gate);
     assert.ok(gate > -1 && at < blockEnd, "Open draft is offered only to a manager, only on a draft");
+  }
+  const review = "/> Review and approve";
+  for (let at = composer.indexOf(review); at > -1; at = composer.indexOf(review, at + 1)) {
+    const gate = composer.lastIndexOf("canApprove", at);
+    assert.ok(gate > -1 && composer.indexOf(") : null}", gate) > at, "Review and approve is offered only to the HR Manager");
   }
   const openFn = composer.slice(composer.indexOf("function openDraft("), composer.indexOf("async function sendOffer("));
   assert.ok(openFn.includes("markReferenceTyped(true)"), "an opened draft keeps its number — the title must never renumber it");

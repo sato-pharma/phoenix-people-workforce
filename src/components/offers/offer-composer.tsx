@@ -60,6 +60,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
 import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
+import { offerStatusLabel } from "@/lib/offers/approval-rules";
 import type {
   OfferFields,
   OfferJobTitle,
@@ -152,11 +153,13 @@ function blankDraft(templates: OfferTemplate[]): Draft {
  */
 function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
   return {
-    // Copies are typed per send and never saved with a draft (see `Draft`), so an opened draft has none.
-    bcc: "",
+    // Copies are typed per send and never saved with a draft (see `Draft`), so an opened draft has none
+    // — except an offer waiting for the HR Manager, which keeps the copies Talent Acquisition typed so
+    // his Approve and send copies the same people (owner, 2026-11-10).
+    bcc: offer.status === "pending_approval" ? offer.bccRecipients.join(", ") : "",
     candidateEmail: offer.candidateEmail,
     candidateName: offer.candidateName,
-    cc: "",
+    cc: offer.status === "pending_approval" ? offer.ccRecipients.join(", ") : "",
     contractTerm: offer.contractTerm,
     costOfLiving: offer.costOfLiving > 0 ? String(offer.costOfLiving) : "",
     dateOfIssue: parseLetterDate(offer.dateOfIssue) ?? "",
@@ -185,6 +188,8 @@ const STATUS_VARIANT: Record<OfferStatus, "danger" | "neutral" | "success" | "wa
   accepted: "success",
   declined: "danger",
   draft: "neutral",
+  // Waiting on the HR Manager — waiting on somebody, like a sent offer (owner, 2026-11-10).
+  pending_approval: "warning",
   sent: "warning",
   withdrawn: "neutral",
 };
@@ -237,7 +242,32 @@ function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferV
   );
 }
 
+/**
+ * Where an offer stands with the HR Manager (owner, 2026-11-10), on the desktop row and the phone card
+ * alike. Waiting: when it was sent to him, and that the candidate has nothing yet. Rejected back to
+ * draft: his note, so Talent Acquisition knows what to change. Nothing at all otherwise.
+ */
+function OfferApprovalNote({ offer }: { offer: OfferRecord }) {
+  if (offer.status === "pending_approval") {
+    return (
+      <span className="mt-0.5 block text-xs font-semibold text-[#B45309] [overflow-wrap:anywhere]">
+        Sent to the HR Manager for approval {offerWhen(offer.approval?.requestedAt ?? null)}. Nothing emailed to the candidate yet.
+      </span>
+    );
+  }
+  if (offer.status === "draft" && offer.approval?.returnedAt) {
+    const reason = offer.approval.returnReason?.trim();
+    return (
+      <span className="mt-0.5 block text-xs font-semibold text-red-700 [overflow-wrap:anywhere]">
+        Rejected by the HR Manager {offerWhen(offer.approval.returnedAt)}{reason ? `: ${reason}` : "."}
+      </span>
+    );
+  }
+  return null;
+}
+
 export function OfferComposer({
+  canApprove,
   canManage,
   jobTitles,
   offers,
@@ -247,6 +277,12 @@ export function OfferComposer({
   templates,
   vacancies,
 }: {
+  /**
+   * `offers:approve` — the HR Manager (owner, 2026-11-10). With it, Send emails the candidate and an
+   * offer waiting for approval can be opened, edited, approved and sent, or rejected. Without it,
+   * Send parks the offer for him and nothing is emailed. The routes decide; this only draws it.
+   */
+  canApprove: boolean;
   canManage: boolean;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
@@ -268,6 +304,9 @@ export function OfferComposer({
 
   const [draft, setDraft] = useState<Draft>(() => blankDraft(templates));
   const [savedId, setSavedId] = useState<string | null>(null);
+  // The offer in the form is one waiting for the HR Manager — he is reviewing it.
+  const reviewing = offers.find((offer) => offer.id === savedId)?.status === "pending_approval";
+  const awaitingApproval = useMemo(() => offers.filter((offer) => offer.status === "pending_approval"), [offers]);
 
   /**
    * "Send an offer" from the recruitment workspace opens this screen as
@@ -845,8 +884,44 @@ export function OfferComposer({
     setLinkCandidateId(null);
     setSavedId(offer.id);
     setDraft(draftFromOffer(offer, templates));
-    onReport(`Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press Send offer.`, "success");
+    onReport(
+      offer.status === "pending_approval"
+        ? `Opened the offer for ${offer.candidateName} (${offer.reference}) for your approval. Edit anything, then press Approve and send, or Reject.`
+        : `Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press ${canApprove ? "Send offer" : "Send for approval"}.`,
+      "success",
+    );
     window.scrollTo({ behavior: "smooth", top: 0 });
+  }
+
+  /**
+   * The HR Manager's Reject (owner, 2026-11-10: "If I reject or leave it pending, it leaves as it
+   * is"). The offer goes back to draft, unsent, with his note for Talent Acquisition. Asked first,
+   * with the note in the same box, because the note is the only thing she will have to go on.
+   */
+  async function rejectOffer(offer: OfferRecord) {
+    const reason = window.prompt(
+      `Reject the offer for ${offer.candidateName} (${offer.reference})?\n\n` +
+        "It goes back to draft and nothing is sent to the candidate. Add a note for Talent Acquisition (optional):",
+      "",
+    );
+    if (reason === null) return;
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}/reject`, "POST", { reason })) as { offer?: OfferRecord };
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+      if (savedId === offer.id) {
+        setSavedId(null);
+        markReferenceTyped(false);
+        setDraft(blankDraft(templates));
+      }
+      onReport(`The offer for ${offer.candidateName} was rejected and is back in draft. Nothing was sent.`, "success");
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not reject this offer.", "error");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function sendOffer() {
@@ -881,6 +956,7 @@ export function OfferComposer({
     try {
       const payload = (await call(`/api/offers/${id}/send`, "POST", { bcc: copies.bcc, cc: copies.cc })) as {
         attachmentWarning?: string | null;
+        pendingApproval?: boolean;
         bcc?: string[];
         cc?: string[];
         copyNotes?: string[];
@@ -893,6 +969,20 @@ export function OfferComposer({
 
       if (payload.offer) {
         onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+
+      if (payload.pendingApproval) {
+        // Talent Acquisition's Send (owner, 2026-11-10): the offer waits for the HR Manager and the
+        // candidate has received nothing. Said in those words so nobody reads it as sent.
+        setSavedId(null);
+        setLinkCandidateId(null);
+        markReferenceTyped(false);
+        setDraft(blankDraft(templates));
+        onReport(
+          `Sent to the HR Manager for approval. Nothing has been emailed to ${payload.offer?.candidateName ?? "the candidate"}; the offer goes out only once the HR Manager approves it.`,
+          "success",
+        );
+        return;
       }
 
       if (payload.skipped) {
@@ -1064,21 +1154,67 @@ export function OfferComposer({
 
   return (
     <div className="flex flex-col gap-5">
+      {canApprove && awaitingApproval.length > 0 ? (
+        <AdminTableShell
+          description="Talent Acquisition sent these for your approval. Nothing has reached the candidate. Open one to edit anything, then approve and send it, or reject it back to draft."
+          title={`${awaitingApproval.length} ${awaitingApproval.length === 1 ? "offer awaits" : "offers await"} your approval`}
+        >
+          <div className="flex flex-col divide-y divide-slate-100">
+            {awaitingApproval.map((offer) => (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6" key={offer.id}>
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-black text-slate-900">{offer.candidateName}</p>
+                  <p className="break-words text-xs text-slate-500">
+                    {offer.title} · EGP {offerMoney(offer.totalMonthly)} · starts {offer.startDate || "not set"} · sent {offerWhen(offer.approval?.requestedAt ?? null)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={busy !== null} onClick={() => openDraft(offer)} size="sm" type="button">
+                    <Eye className="h-3.5 w-3.5" /> Review and approve
+                  </Button>
+                  <Button disabled={busy !== null} onClick={() => void rejectOffer(offer)} size="sm" type="button" variant="destructive">
+                    <Undo2 className="h-3.5 w-3.5" /> Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </AdminTableShell>
+      ) : null}
       <AdminTableShell
         action={
           <div className="flex flex-wrap gap-2">
             <Button disabled={!canManage || busy !== null} onClick={() => void saveDraft()} size="lg" type="button" variant="secondary">
               {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save draft
+              {reviewing ? "Save changes" : "Save draft"}
             </Button>
+            {reviewing && canApprove ? (
+              <Button
+                disabled={busy !== null}
+                onClick={() => {
+                  const offer = offers.find((entry) => entry.id === savedId);
+                  if (offer) void rejectOffer(offer);
+                }}
+                size="lg"
+                type="button"
+                variant="destructive"
+              >
+                <Undo2 className="h-4 w-4" /> Reject
+              </Button>
+            ) : null}
             <Button disabled={!canManage || busy !== null} onClick={() => void sendOffer()} size="lg" type="button">
               {busy === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Send offer
+              {/* Talent Acquisition's Send never emails (owner, 2026-11-10); the button says where it goes. */}
+              {!canApprove ? "Send for approval" : reviewing ? "Approve and send" : "Send offer"}
             </Button>
           </div>
         }
-        description={`The letter goes out as ${sender.from}. Replies land at ${sender.replyTo}.`}
-        title="New offer"
+        description={
+          canApprove
+            ? `The letter goes out as ${sender.from}. Replies land at ${sender.replyTo}.`
+            : `Send goes to the HR Manager for approval first. Nothing reaches the candidate until the HR Manager approves; then the letter goes out as ${sender.from}.`
+        }
+        title={reviewing ? "Offer awaiting your approval" : "New offer"}
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-3">
           {text("candidateName", "Candidate name", "SAMAA SHALABY")}
@@ -1395,13 +1531,14 @@ export function OfferComposer({
                   <td className="break-words px-5 py-3 text-slate-600">
                     {offer.title}
                     <OfferSeat offer={offer} vacancies={vacancies} />
+                    <OfferApprovalNote offer={offer} />
                   </td>
                   <td className="break-words px-5 py-3 text-right tabular-nums text-slate-900">
                     EGP {offerMoney(offer.totalMonthly)}
                   </td>
                   <td className="px-5 py-3">
                     <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>
-                      {offer.status}
+                      {offerStatusLabel(offer.status)}
                     </Badge>
                   </td>
                   <td className="break-words px-5 py-3 text-slate-600">{offerWhen(offer.sentAt)}</td>
@@ -1468,6 +1605,22 @@ export function OfferComposer({
                           <Eye className="h-3.5 w-3.5" /> Open draft
                         </Button>
                       ) : null}
+                      {offer.status === "pending_approval" && canApprove ? (
+                        <>
+                          <Button disabled={busy !== null} onClick={() => openDraft(offer)} size="sm" type="button">
+                            <Eye className="h-3.5 w-3.5" /> Review and approve
+                          </Button>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void rejectOffer(offer)}
+                            size="sm"
+                            type="button"
+                            variant="destructive"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </>
+                      ) : null}
                       {offer.employeeHrId ? (
                         <span className="text-xs font-semibold text-emerald-700">{joinedLabel(offer)}</span>
                       ) : canManage && offer.status === "accepted" ? (
@@ -1518,13 +1671,14 @@ export function OfferComposer({
                   <OfferCopiedTo offer={offer} />
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                   <OfferSeat offer={offer} vacancies={vacancies} />
+                  <OfferApprovalNote offer={offer} />
                 </div>
                 {/* `shrink-0`: the status never gives up width to the column beside it. Measured on
                     production 2026-09-28 at 375px: once a card carried a long copy line, flex shrank
                     both sides and "Sent" was clipped to 33 of its 36px. The text column wraps
                     instead — it is `min-w-0`, and every line in it can break. */}
                 <Badge className="shrink-0 capitalize" variant={STATUS_VARIANT[offer.status]}>
-                  {offer.status}
+                  {offerStatusLabel(offer.status)}
                 </Badge>
               </div>
               <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</p>
@@ -1601,6 +1755,22 @@ export function OfferComposer({
                   >
                     <Eye className="h-3.5 w-3.5" /> Open draft
                   </Button>
+                ) : null}
+                {offer.status === "pending_approval" && canApprove ? (
+                  <>
+                    <Button disabled={busy !== null} onClick={() => openDraft(offer)} size="sm" type="button">
+                      <Eye className="h-3.5 w-3.5" /> Review and approve
+                    </Button>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void rejectOffer(offer)}
+                      size="sm"
+                      type="button"
+                      variant="destructive"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> Reject
+                    </Button>
+                  </>
                 ) : null}
                 {offer.employeeHrId ? (
                   <span className="text-xs font-semibold text-emerald-700">{joinedLabel(offer)}</span>

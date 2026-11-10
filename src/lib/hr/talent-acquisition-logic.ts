@@ -400,7 +400,7 @@ export function liveLetterKeys(offers: readonly OfferRecord[]): { emails: Set<st
   const emails = new Set<string>();
   const ids = new Set<string>();
   for (const offer of offers) {
-    if (offer.status === "withdrawn" || offer.status === "draft") continue;
+    if (offer.status === "withdrawn" || offer.status === "draft" || offer.status === "pending_approval") continue;
     if (offer.id) ids.add(String(offer.id));
     const address = (offer.candidateEmail ?? "").trim().toLowerCase();
     if (address) emails.add(address);

@@ -169,7 +169,23 @@ export type OfferJobTitleInput = {
   title: string;
 };
 
-export type OfferStatus = "accepted" | "declined" | "draft" | "sent" | "withdrawn";
+/**
+ * `pending_approval` (owner, 2026-11-10): Talent Acquisition pressed Send and the offer is waiting for
+ * the HR Manager. Nothing has reached the candidate; only his Approve and send does
+ * (`src/lib/offers/approval.ts`).
+ */
+export type OfferStatus = "accepted" | "declined" | "draft" | "pending_approval" | "sent" | "withdrawn";
+
+/** Who asked for an offer's approval, who decided, and what he said when he sent it back. */
+export type OfferApproval = {
+  approvedAt: string | null;
+  approvedBy: string | null;
+  requestedAt: string | null;
+  requestedBy: string | null;
+  returnedAt: string | null;
+  returnedBy: string | null;
+  returnReason: string | null;
+};
 
 /** Everything that varies between one offer and the next. Feeds the template's `{{tokens}}`. */
 export type OfferFields = {
@@ -201,6 +217,12 @@ export type OfferFields = {
 };
 
 export type OfferRecord = OfferFields & {
+  /**
+   * The HR Manager's approval (owner, 2026-11-10). Optional, like every column added after the module
+   * shipped: an offer written before it, or read from a database without migration 20261110190002,
+   * simply has none of them.
+   */
+  approval?: OfferApproval;
   /** When the candidate submitted the joining form (his acceptance). Null otherwise. */
   acceptedAt?: string | null;
   /** "candidate_form" — he pressed Submit on the joining form; "hr" — HR recorded his reply by hand. */
