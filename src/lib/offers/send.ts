@@ -14,6 +14,7 @@ import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email"
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
 import { offerSendRefusal } from "@/lib/offers/approval-rules";
+import { offerIdempotencyKeyFor, offerSubjectFor, offerUpdateNote } from "@/lib/offers/revision-rules";
 import {
   offerExpiryIdempotencyKey,
   offerExpiryRefusal,
@@ -76,9 +77,9 @@ function offerFields(offer: OfferRecord): OfferFields {
   };
 }
 
-export function offerSubject(offer: Pick<OfferRecord, "title">): string {
-  const title = offer.title.trim();
-  return title ? `Offer of Employment — ${title}` : "Offer of Employment";
+export function offerSubject(offer: Pick<OfferRecord, "revision" | "title">): string {
+  // An updated offer says so first (owner, 2026-11-10), so it is never read as a copy of the first one.
+  return offerSubjectFor(offer.title, offer.revision ?? 0);
 }
 
 /**
@@ -89,8 +90,10 @@ export function offerSubject(offer: Pick<OfferRecord, "title">): string {
  * reason to send the same offer row twice. (`markOfferSent` guards the same thing at the database
  * end with its draft precondition; this guards the mail itself.)
  */
-export function offerIdempotencyKey(offerId: string): string {
-  return `offer-letter:${offerId}`;
+export function offerIdempotencyKey(offerId: string, revision = 0): string {
+  // Each updated version gets its own key (owner, 2026-11-10: "i may need to update a job offer"):
+  // re-used, the provider would answer an update with the first letter. Revision 0 is unchanged.
+  return offerIdempotencyKeyFor(offerId, revision);
 }
 
 /** The five things a letter's look is made of — a live template, or the snapshot frozen at send. */
@@ -146,7 +149,7 @@ export async function sendOfferEmail(
 
   const delivery = await deliverOfferLetter(offer, template, {
     copies,
-    idempotencyKey: offerIdempotencyKey(offer.id),
+    idempotencyKey: offerIdempotencyKey(offer.id, offer.revision ?? 0),
     logoUrl: options.logoUrl,
   });
 
@@ -246,11 +249,18 @@ async function deliverOfferLetter(
     });
   }
 
+  // HR's own words, and — on an updated offer — which letter it replaces (owner, 2026-11-10). Both
+  // travel in the EMAIL body only; the PDF is the letter itself and stays exactly as designed.
+  const history = offer.revisionHistory ?? [];
+  const updateNote = (offer.revision ?? 0) > 0 ? offerUpdateNote(history[history.length - 1]?.sentAt ?? null) : undefined;
+
   const { html, text } = renderOfferEmail(
     { blocks: template.blocks, theme: template.theme },
     fields,
     {
       acceptUrl,
+      message: offer.emailMessage?.trim() || undefined,
+      updateNote,
       logoUrl: options.logoUrl ?? (mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl)),
     },
   );

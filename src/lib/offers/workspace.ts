@@ -7,12 +7,18 @@ import {
 } from "@/lib/offers/service";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { loadOfferVacancyOptions } from "@/lib/offers/vacancies";
+import { loadOfferPeopleNames } from "@/lib/offers/people";
 import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 
 export type OffersWorkspace = {
   error: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
+  /**
+   * Display names of everybody who drafted, sent or approved an offer on screen, and of the viewer, keyed
+   * by lower-case HR id (owner, 2026-11-10: the Offers list's "Sent by" column). Empty when unread.
+   */
+  people: Record<string, string>;
   sender: {
     allowedFrom: readonly string[];
     from: string;
@@ -34,7 +40,7 @@ export type OffersWorkspace = {
  * portal-shell roles (Talent Acquisition, the role that actually issues offers) out of the entire
  * admin route group before any page in it renders.
  */
-export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
+export async function loadOffersWorkspace(options: { viewerHrId?: string | null } = {}): Promise<OffersWorkspace> {
   const sender = resolveOfferSender();
   const senderInfo = {
     allowedFrom: sender.allowedFrom,
@@ -55,7 +61,9 @@ export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
       listOfferTemplates(),
       listOfferJobTitles(),
     ]);
-    return { error: null, jobTitles, offers, sender: senderInfo, templates, vacancies };
+    // The viewer is named too, so an offer they send in this sitting shows their name without a reload.
+    const people = await loadOfferPeopleNames(offers, [options.viewerHrId]);
+    return { error: null, jobTitles, offers, people, sender: senderInfo, templates, vacancies };
   } catch (error) {
     // The migration being absent gets its own sentence — the raw PostgREST message names a table
     // and tells HR nothing they can act on.
@@ -65,6 +73,7 @@ export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
         : offerErrorMessage(error),
       jobTitles: [],
       offers: [],
+      people: {},
       sender: senderInfo,
       templates: [],
       vacancies,

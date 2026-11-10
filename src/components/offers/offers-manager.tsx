@@ -42,6 +42,7 @@ export function OffersManager({
   initialError,
   jobTitles: initialJobTitles,
   offers: initialOffers,
+  people,
   sender,
   templates: initialTemplates,
   vacancies,
@@ -58,6 +59,8 @@ export function OffersManager({
   initialError: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
+  /** Who drafted, sent and approved each offer, by lower-case HR id — the list's "Sent by" column. */
+  people: Record<string, string>;
   sender: OfferSenderInfo;
   templates: OfferTemplate[];
   /**
@@ -179,6 +182,7 @@ export function OffersManager({
             offers={offers}
             onOffers={setOffers}
             onReport={report}
+            people={people}
             sender={sender}
             templates={templates}
             vacancies={vacancies}
