@@ -154,7 +154,7 @@ export function OfferCopyPicker({
       </div>
 
       <div className="mt-3 grid gap-4 lg:grid-cols-2">
-        <div className="border border-phx-line bg-white px-3 py-1">
+        <div className="border border-phx-line bg-white px-3 py-1 shadow-none">
           <p className="pt-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
             {area ? `${area.name} managers` : "Area managers"}
           </p>
@@ -171,7 +171,7 @@ export function OfferCopyPicker({
             </p>
           )}
         </div>
-        <div className="border border-phx-line bg-white px-3 py-1">
+        <div className="border border-phx-line bg-white px-3 py-1 shadow-none">
           <p className="pt-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">HR team</p>
           {directory.hrTeam.length > 0 ? (
             <ul>{directory.hrTeam.map(person)}</ul>

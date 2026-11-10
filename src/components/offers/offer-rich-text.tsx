@@ -213,7 +213,7 @@ export function OfferRichText({
   );
 
   return (
-    <div className="rounded-xl border border-phx-line bg-white">
+    <div className="rounded-xl border border-phx-line bg-white shadow-none">
       <style>{`
         .phx-offer-prose p { margin: 0 0 10px; }
         .phx-offer-prose p:last-child { margin-bottom: 0; }

@@ -1227,7 +1227,7 @@ export function OfferComposer({
   }
 
   const money = (label: string, value: number, note?: string) => (
-    <div className="border border-phx-line bg-white px-4 py-3" key={label}>
+    <div className="border border-phx-line bg-white px-4 py-3 shadow-none" key={label}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
       {/* A dash until there is a package: an empty form read as four boxes of "EGP 0 · 0 a year". */}
       <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">
@@ -1732,7 +1732,7 @@ export function OfferComposer({
           ends with the form, so the bar settles under the form once it has scrolled past and never
           floats over the preview or the list. Flat: a hairline and white, no shadow. */}
       {canManage ? (
-        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border border-t-0 border-slate-200/90 bg-white px-5 py-3 sm:px-6">
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border border-t-0 border-slate-200/90 bg-white px-5 py-3 shadow-none sm:px-6">
           <p className="hidden min-w-0 text-phx-xs font-semibold text-phx-ink-soft sm:block">
             {reviewing
               ? "Offer awaiting your approval"
@@ -2068,7 +2068,10 @@ export function OfferComposer({
 
         <div className="flex flex-col gap-3 px-5 py-5 @4xl:hidden">
           {shownOffers.map((offer) => (
-            <div className="border border-phx-line bg-white p-4" key={offer.id}>
+            <div className="border border-phx-line bg-white p-4 shadow-none" key={offer.id}>
+              {/* `shadow-none`, not merely no shadow class: app/globals.css gives every bordered white
+                  panel in the admin shell an ambient drop shadow UNLESS its class names a shadow —
+                  removing the small shadow class alone handed these cards the larger one (production, 10 Nov). */}
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   {/* No `truncate` here on purpose — the owner's standing rule is that text is

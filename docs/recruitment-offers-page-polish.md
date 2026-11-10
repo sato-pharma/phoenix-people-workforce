@@ -47,4 +47,12 @@ shadow; the sibling hiring screen, Hiring Documents, uses a flat underline.
   selected block, the job titles' phone cards and the wording editor's toolbar. A long placeholder key in
   the designer wraps instead of running out of its column.
 
+## Flat means `shadow-none` here (10 Nov 2026, after #258 went live)
+
+Measured on production once #258 was serving: the phone cards, the pay boxes, the pinned Save and Send bar
+and the CC picker's two chip boxes still carried a drop shadow. `app/globals.css` gives every bordered
+white panel in the admin shell an ambient shadow unless its class names a shadow, so taking `shadow-sm`
+off a panel swapped the light shadow for the larger one. Each panel meant to be flat now says
+`shadow-none`. The shared section frames and the form fields keep the site-wide treatment.
+
 Pinned by `tests/offers-page-polish.test.ts`.
