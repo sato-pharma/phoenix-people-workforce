@@ -46,33 +46,38 @@ export function normalizeOfferEmailMessage(value: unknown): { message: string | 
   return { message: tidy, problem: null };
 }
 
+/** The answers an offer can carry and still be updated after negotiation (owner, 2026-11-10). */
+const ANSWERED_STATUSES: readonly OfferStatus[] = ["accepted", "declined", "withdrawn"];
+
+/** Whether the candidate has answered this offer, or HR took it back. */
+export function offerIsAnswered(status: OfferStatus): boolean {
+  return ANSWERED_STATUSES.includes(status);
+}
+
 /**
  * Why this offer cannot be updated, or null when it can.
  *
- * Only a SENT offer the candidate has not answered. A draft or an offer waiting for approval is simply
- * edited. An accepted offer has become an employee record (or is about to), a declined one was refused,
- * and a withdrawn one was taken back — re-issuing any of them is a new letter, not an update.
+ * Any offer that went out: sent, accepted, declined or withdrawn (owner, 2026-11-10: "accepted or
+ * declined or withdrawn may be i want after negtioation i want to update something with accepted
+ * offer"). Once the update is sent it is back to Sent and the candidate answers it again — he chose
+ * "Back to Sent" for an accepted one. A draft or an offer waiting for approval is simply edited.
  */
 export function offerRevisionRefusal(
-  offer: Pick<OfferRecord, "candidateEmail" | "status" | "templateSnapshot"> & { employeeHrId?: string | null },
+  offer: Pick<OfferRecord, "candidateEmail" | "status" | "templateSnapshot">,
 ): string | null {
   switch (offer.status) {
     case "draft":
       return "This offer has not been sent yet, so it can simply be edited.";
     case "pending_approval":
       return "This offer is waiting for the HR Manager's approval. It can be edited there, or rejected back to draft.";
-    case "accepted":
-      return "The candidate has already accepted this offer, so it can no longer be updated.";
-    case "declined":
-      return "The candidate declined this offer, so it is not updated. Create a new offer instead.";
-    case "withdrawn":
-      return "This offer was withdrawn, so it is not updated. Create a new offer instead.";
     case "sent":
+    case "accepted":
+    case "declined":
+    case "withdrawn":
       break;
     default:
-      return "Only a sent offer can be updated.";
+      return "Only an offer that was sent can be updated.";
   }
-  if (offer.employeeHrId) return "The candidate has already completed the joining form, so this offer can no longer be updated.";
   if (!offer.candidateEmail.trim()) return "This offer has no candidate email address, so an update could not reach anybody.";
   // The version being replaced is kept as it went out; without its letter there is nothing to keep.
   if (!offer.templateSnapshot) return "This offer has no copy of the letter it was sent with, so it cannot be updated. Withdraw it and create a new one.";
@@ -139,12 +144,25 @@ export function cairoLongDate(iso: string | null | undefined): string {
   return month ? `${part("day")} ${month} ${part("year")}` : "";
 }
 
+/**
+ * Whether an updated offer is accepted by replying rather than through the joining form: the candidate
+ * is already on the Employee Master (an accepted offer updated after negotiation), so the form would
+ * only say it was completed, and a second record must never be made. HR marks it Accepted by hand.
+ */
+export function offerAcceptsByReply(offer: { employeeHrId?: string | null; revision?: number }): boolean {
+  return Boolean(offer.employeeHrId) && Boolean(offer.revision && offer.revision > 0);
+}
+
+/** The sentence that tells such a candidate how to accept. */
+export const OFFER_ACCEPT_BY_REPLY_TEXT = "To accept this updated offer, please reply to this email.";
+
 /** The line an updated offer's email opens with: that it is an update, and which letter it replaces. */
-export function offerUpdateNote(previousSentAt: string | null | undefined): string {
+export function offerUpdateNote(previousSentAt: string | null | undefined, options: { acceptByReply?: boolean } = {}): string {
   const when = cairoLongDate(previousSentAt);
-  return when
+  const note = when
     ? `This is an updated offer. It replaces the offer we sent you on ${when}; please read it in full. The attached PDF is your current offer letter.`
     : "This is an updated offer. It replaces the offer we sent you earlier; please read it in full. The attached PDF is your current offer letter.";
+  return options.acceptByReply ? `${note} ${OFFER_ACCEPT_BY_REPLY_TEXT}` : note;
 }
 
 /** "2nd version", "3rd version" — how the Offers list names an updated offer. */

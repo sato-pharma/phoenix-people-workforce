@@ -16,6 +16,9 @@ import {
   offerRevisionCancelRefusal,
   offerRevisionRefusal,
   offerSubjectFor,
+  OFFER_ACCEPT_BY_REPLY_TEXT,
+  offerAcceptsByReply,
+  offerIsAnswered,
   offerUpdateNote,
   offerVersionLabel,
 } from "../src/lib/offers/revision-rules.ts";
@@ -94,7 +97,7 @@ export async function runOfferEmailMessageAndUpdateTests() {
   const updated = renderOfferEmail({ blocks, theme: {} }, FIELDS, { updateNote: offerUpdateNote("2026-11-03T08:00:00Z") });
   assert.ok(updated.html.includes("This is an updated offer.") && updated.text.includes("This is an updated offer."));
   assert.match(send, /idempotencyKey: offerIdempotencyKey\(offer\.id, offer\.revision \?\? 0\)/);
-  assert.match(send, /offerUpdateNote\(history\[history\.length - 1\]\?\.sentAt \?\? null\)/, "the note names the version it replaces");
+  assert.match(send, /offerUpdateNote\(history\[history\.length - 1\]\?\.sentAt \?\? null, \{ acceptByReply \}\)/, "the note names the version it replaces");
   assert.equal(offerVersionLabel(1), "2nd version");
   assert.equal(offerVersionLabel(2), "3rd version");
   assert.equal(offerVersionLabel(10), "11th version");
@@ -103,10 +106,29 @@ export async function runOfferEmailMessageAndUpdateTests() {
   const snapshot = { blocks: [], fontFamily: "Inter", fontSizePt: 11, theme: {}, variant: "classic" } as never;
   const sent = { candidateEmail: "c@example.com", status: "sent" as const, templateSnapshot: snapshot };
   assert.equal(offerRevisionRefusal(sent), null, "a sent, unanswered offer can be updated");
-  assert.ok(offerRevisionRefusal({ ...sent, employeeHrId: "MR-500" }), "never once the joining form made the employee");
-  for (const status of ["draft", "pending_approval", "accepted", "declined", "withdrawn"] as const) {
-    assert.ok(offerRevisionRefusal({ ...sent, status }), `a ${status} offer is not updated`);
+  // Owner, 2026-11-10: "accepted or declined or withdrawn may be i want after negtioation i want to
+  // update something with accepted offer" — every offer that went out can be updated.
+  for (const status of ["accepted", "declined", "withdrawn"] as const) {
+    assert.equal(offerRevisionRefusal({ ...sent, status }), null, `a ${status} offer can be updated after negotiation`);
+    assert.equal(offerIsAnswered(status), true);
   }
+  assert.equal(offerIsAnswered("sent"), false);
+  for (const status of ["draft", "pending_approval"] as const) {
+    assert.ok(offerRevisionRefusal({ ...sent, status }), `a ${status} offer is edited, not updated`);
+  }
+  // Somebody already on the Employee Master answers the update by reply, never through the form.
+  assert.equal(offerAcceptsByReply({ employeeHrId: "MR-500", revision: 1 }), true);
+  assert.equal(offerAcceptsByReply({ employeeHrId: "MR-500", revision: 0 }), false, "a first send is untouched");
+  assert.equal(offerAcceptsByReply({ employeeHrId: null, revision: 1 }), false, "a declined or withdrawn update keeps its button");
+  assert.ok(offerUpdateNote("2026-11-03T10:00:00Z", { acceptByReply: true }).endsWith(OFFER_ACCEPT_BY_REPLY_TEXT));
+  assert.ok(!offerUpdateNote("2026-11-03T10:00:00Z").includes(OFFER_ACCEPT_BY_REPLY_TEXT));
+  assert.match(send, /const acceptByReply = offerAcceptsByReply\(offer\);/);
+  assert.match(send, /if \(!acceptByReply\) acceptUrl = offerAcceptUrl\(/, "no Accept button for somebody already hired");
+  assert.equal(
+    joiningFormState({ employeeHrId: "MR-500", requiresSeat: true, revision: 1, seatOpen: false, status: "sent" }),
+    "submitted",
+    "the joining form stays closed for somebody already on the Employee Master — no second record",
+  );
   assert.ok(offerRevisionRefusal({ ...sent, templateSnapshot: null }), "without the sent letter there is nothing to keep");
   assert.equal(offerRevisionCancelRefusal({ revision: 1, revisionHistory: [{}], status: "draft" }), null);
   assert.ok(offerRevisionCancelRefusal({ revision: 0, revisionHistory: [], status: "draft" }), "a plain draft has nothing to cancel");
@@ -133,10 +155,14 @@ export async function runOfferEmailMessageAndUpdateTests() {
   assert.match(start, /offerRevisionRefusal\(current\)/);
   assert.match(start, /revision_history: \[\.\.\.\(current\.revisionHistory \?\? \[\]\), entry\]/, "the sent version is appended, never overwritten");
   assert.match(start, /status: "draft"/);
-  assert.match(start, /\.eq\("status", "sent"\)[\s\S]*\.eq\("revision", revision\)/, "two presses cannot each freeze a copy");
+  assert.match(start, /\.eq\("status", current\.status\)[\s\S]*\.eq\("revision", revision\)/, "two presses cannot each freeze a copy");
+  assert.match(start, /status: current\.status,/, "the frozen version keeps the answer it carried");
+  assert.match(start, /accepted_at: null,\s*accepted_via: null,/, "a reopened acceptance is not an acceptance any more");
+  assert.doesNotMatch(start, /employee_hr_id/, "the employee pointer stays: it keeps the joining form closed");
   assert.match(start, /templateSnapshot: current\.templateSnapshot/, "the letter as sent is kept");
   const cancel = service.slice(service.indexOf("export async function cancelOfferRevision("), service.indexOf("export async function markOfferSent("));
-  assert.match(cancel, /status: "sent"/);
+  assert.match(cancel, /status: previous\.status \?\? "sent"/, "cancel puts back the answer it carried");
+  assert.match(cancel, /accepted_at: previous\.acceptedAt \?\? null/);
   assert.match(cancel, /template_snapshot: previous\.templateSnapshot/);
   assert.match(cancel, /sent_at: previous\.sentAt/, "the version comes back with its own send date");
   assert.match(cancel, /\.eq\("status", "draft"\)/, "a sent update is never rolled back");
@@ -168,10 +194,16 @@ export async function runOfferEmailMessageAndUpdateTests() {
   assert.match(composer, /maxLength=\{OFFER_EMAIL_MESSAGE_MAX\}/);
   assert.match(composer, /emailMessage: draft\.emailMessage/, "the message is saved with the draft, so the HR Manager approves it");
   const updateLabel = "<FilePenLine className=\"h-3.5 w-3.5\" /> Update offer";
-  assert.equal(composer.split(updateLabel).length - 1, 2, "Update offer on the desktop row and the phone card");
+  // Twice for a sent offer (beside Resend) and twice for an answered one, each on the desktop row and the phone card.
+  assert.equal(composer.split(updateLabel).length - 1, 4, "Update offer on the desktop row and the phone card, sent and answered");
+  assert.equal(composer.split("{canManage && offerIsAnswered(offer.status) ? (").length - 1, 2, "an accepted, declined or withdrawn row offers it too");
   for (let at = composer.indexOf(updateLabel); at > -1; at = composer.indexOf(updateLabel, at + 1)) {
-    const gate = composer.lastIndexOf('canManage && offer.status === "sent"', at);
-    assert.ok(gate > -1 && composer.indexOf(") : null}", gate) > at, "only a manager, only on a sent offer");
+    // The nearer of the two gates: a sent row's block, or the answered row's own.
+    const gate = Math.max(
+      composer.lastIndexOf('canManage && offer.status === "sent"', at),
+      composer.lastIndexOf("canManage && offerIsAnswered(offer.status)", at),
+    );
+    assert.ok(gate > -1 && composer.indexOf(") : null}", gate) > at, "only a manager, only on an offer that went out");
   }
   assert.match(composer, /call\(`\/api\/offers\/\$\{offer\.id\}\/revise`, "POST", \{ action: "start" \}\)/);
   for (const page of ["app/(admin)/offers/page.tsx", "app/employee-portals/offers/page.tsx"]) {

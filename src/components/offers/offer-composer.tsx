@@ -66,6 +66,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   OFFER_EMAIL_MESSAGE_MAX,
   cairoLongDate,
+  offerIsAnswered,
   offerIsBeingUpdated,
   offerVersionLabel,
 } from "@/lib/offers/revision-rules";
@@ -1013,7 +1014,11 @@ export function OfferComposer({
         `Update offer ${offer.reference} to ${offer.candidateName}?\n\n` +
           "The version already sent is kept. The offer opens here for you to change; nothing is emailed until you press " +
           (canApprove ? "Send updated offer" : "Send for approval") +
-          ". Until then the candidate's link to the joining form says the offer is being updated.",
+          ". Until then the candidate's link to the joining form says the offer is being updated." +
+          (offerIsAnswered(offer.status)
+            ? `\n\nThis offer is ${offerStatusLabel(offer.status).toLowerCase()}. Once the update is sent it is back to Sent, and the candidate answers it again.` +
+              (offer.employeeHrId ? " They are already on the Employee Master, so they accept by replying to the email and you mark it Accepted." : "")
+            : ""),
       )
     ) {
       return;
@@ -1817,6 +1822,19 @@ export function OfferComposer({
                           </Button>
                         </>
                       ) : null}
+                      {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn
+                          may be i want after negtioation"); once the update is sent it is back to Sent. */}
+                      {canManage && offerIsAnswered(offer.status) ? (
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => void startUpdate(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                        </Button>
+                      ) : null}
                       {canManage && offer.status === "draft" ? (
                         <Button
                           disabled={busy !== null}
@@ -1990,6 +2008,19 @@ export function OfferComposer({
                       <CalendarX2 className="h-3.5 w-3.5" /> Expire offer
                     </Button>
                   </>
+                ) : null}
+                {/* An answered offer can be updated too (owner, 2026-11-10: "accepted or declined or withdrawn
+                    may be i want after negtioation"); once the update is sent it is back to Sent. */}
+                {canManage && offerIsAnswered(offer.status) ? (
+                  <Button
+                    disabled={busy !== null}
+                    onClick={() => void startUpdate(offer)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <FilePenLine className="h-3.5 w-3.5" /> Update offer
+                  </Button>
                 ) : null}
                 {canManage && offer.status === "draft" ? (
                   <Button
