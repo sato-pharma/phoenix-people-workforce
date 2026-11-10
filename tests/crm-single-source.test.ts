@@ -83,6 +83,9 @@ export const CRM_OTHER_MIRROR_ALLOW_LIST: readonly string[] = [
   "src/lib/crm/shared-customers.ts",
   "src/lib/crm/rep-doctor-lists.ts",
   "src/lib/crm/reps-list.ts",
+  // The Super Admin's trusted point (owner, 2026-11-10): one customer's old-CRM check-ins, vendor rows
+  // only (source <> 'phoenix'), read once when he validates on the point the readings agree on.
+  "src/lib/crm/trusted-point-checkins.ts",
 ];
 
 function walkTsFiles(dir: string, out: string[]): void {

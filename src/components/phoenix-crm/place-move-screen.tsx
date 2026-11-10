@@ -35,6 +35,7 @@ import {
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
 import { distanceMeters, formatDistance } from "@/lib/phoenix-crm/geo";
+import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import type { ListCustomer, ListPlace, PlaceMoveResult, PlaceMoveTarget, PlaceReading } from "@/lib/phoenix-crm/view-types";
 
 /** The written reason a move needs — the bounds place-move.ts and phoenix_crm_move_place hold. */
@@ -68,6 +69,7 @@ export function pointSourceText(place: Pick<ListPlace, "pointSource" | "moved">)
     return place.moved ? `Moved on ${cairoStamp(place.moved.at)} — ${place.moved.reason ?? "no reason on record"}` : "Moved";
   }
   if (place.pointSource === "photo") return "Fixed on the photo's own reading";
+  if (place.pointSource === "trusted") return "Fixed by the Super Admin on the trusted point the reps' readings agree on (no photo)";
   return "Fixed on the Capture-location pin (the photo had no reading)";
 }
 
@@ -183,7 +185,12 @@ function PlaceMoveForm({
         <p className="break-words text-base font-black text-slate-950">{customer.name}</p>
         <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</p>
         <div className="mt-3 flex min-w-0 flex-wrap items-start gap-3">
-          <CrmPhotoThumb alt={`Signboard photo: ${customer.name}, ${name}`} caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`} path={place.photoPath} />
+          <CrmPhotoThumb
+            alt={`Signboard photo: ${customer.name}, ${name}`}
+            caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`}
+            missingText={place.pointSource === "trusted" ? TRUSTED_POINT_NO_PHOTO : undefined}
+            path={place.photoPath}
+          />
           <div className="min-w-0 flex-1 basis-56">
             <p className="break-words text-sm font-black text-slate-950">{name}</p>
             <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-600">{where || "No address or brick on record"}</p>

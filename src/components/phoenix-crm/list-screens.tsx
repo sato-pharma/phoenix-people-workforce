@@ -214,6 +214,8 @@ export type ListScreen =
   | { name: "move-place"; customerId: string; placeId: string }
   /** The Super Admin moves several standalone customers into one validated polyclinic (owner, 2026-10-10). */
   | { name: "seat-in-venue"; customerId: string }
+  /** The Super Admin validates a customer on the point the reps' readings agree on (owner, 2026-11-10). */
+  | { name: "trusted-point"; customerId: string }
   /** A polyclinic's timetable photographed on its own, from the page of a customer waiting for it. */
   | { name: "venue-timetable"; customerId: string; sharedPlaceId: string }
   | { name: "grade"; customerId: string }
@@ -1591,8 +1593,8 @@ function EditPlaceForm({
         <div className="mt-3 flex min-w-0 flex-wrap items-start gap-3">
           <CrmPhotoThumb alt={`Signboard photo: ${customer.name}`} caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`} path={place.photoPath} />
           <p className="min-w-0 flex-1 break-words text-xs font-semibold leading-5 text-slate-600">
-            Signboard photo and location taken {cairoStamp(place.capturedAt)}. They are this clinic&apos;s fixed record; the days and hours and the
-            clinic&apos;s name are yours to change.
+            {place.photoPath ? "Signboard photo and location taken" : "Location set"} {cairoStamp(place.capturedAt)}. {place.photoPath ? "They are" : "It is"}{" "}
+            this clinic&apos;s fixed record; the days and hours and the clinic&apos;s name are yours to change.
           </p>
         </div>
       </CrmBlock>

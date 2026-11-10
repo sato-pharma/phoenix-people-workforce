@@ -50,6 +50,7 @@ import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
@@ -550,7 +551,7 @@ export function ValidatedPlaceList({
               <div key={row.placeId} className="space-y-3 px-4 py-4">
                 {bulk ? <BulkPick picks={picks} row={row} /> : null}
                 {/* The photograph IS the question on this list, so on a phone it takes the card's whole width. */}
-                <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+                <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
                 <Who mode={mode} row={row} />
                 <Place row={row} />
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
@@ -571,7 +572,7 @@ export function ValidatedPlaceList({
                 <tr key={row.placeId} className="even:bg-slate-50/60">
                   <td className={crmTdClassName}>
                     <div className="min-w-0 space-y-2">
-                      <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
+                      <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
                       {bulk ? <BulkPick picks={picks} row={row} /> : null}
                     </div>
                   </td>

@@ -68,6 +68,7 @@ import { PlaceMoveScreen } from "@/components/phoenix-crm/place-move-screen";
 import { VenueTimetableScreen } from "@/components/phoenix-crm/venue-timetable-screen";
 import { SignboardRetakeScreen } from "@/components/phoenix-crm/signboard-retake-screen";
 import { SeatInVenueScreen } from "@/components/phoenix-crm/seat-in-venue-screen";
+import { TrustedPointScreen } from "@/components/phoenix-crm/trusted-point-screen";
 import type { PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import type { SeatedDraftState } from "@/components/phoenix-crm/shared-place-screens";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
@@ -532,6 +533,21 @@ export function ListTab({
             {...base}
             customerId={customerId}
             key={`seat-in-venue-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+          />
+        );
+        break;
+      }
+      case "trusted-point": {
+        // The Super Admin's alone: the customer's page offers it only where `view.canPlaceOnTrustedPoint`,
+        // and the screen refuses to draw for anyone else.
+        const { customerId } = current;
+        body = (
+          <TrustedPointScreen
+            {...base}
+            customerId={customerId}
+            key={`trusted-point-${customerId}`}
             onBack={() => openCustomer(customerId)}
             onDone={(next) => customerChanged(customerId, next)}
           />

@@ -139,6 +139,7 @@ export function CrmPhotoThumb({
   caption,
   className,
   lazy,
+  missingText,
   path,
   rotatable,
 }: {
@@ -147,6 +148,11 @@ export function CrmPhotoThumb({
   className?: string;
   /** For a long list: the picture is fetched when it nears the screen, not when the page opens. */
   lazy?: boolean;
+  /**
+   * What the tile says when there is no photo at all. A trusted point (owner, 2026-11-10) passes
+   * `TRUSTED_POINT_NO_PHOTO`, plain words and no image, so an administrator never reads it as a lost file.
+   */
+  missingText?: string;
   path: string | null;
   /**
    * Place checks only: the photo is shown WHOLE (never cropped to the tile) with ↺ ↻ on it, because a
@@ -178,6 +184,13 @@ export function CrmPhotoThumb({
   }
   if (state.status === "loading") {
     return <span aria-label="Loading photo" className={cn(box, "animate-pulse")} role="img" />;
+  }
+  if (!path && missingText) {
+    return (
+      <span aria-label={missingText} className={cn(box, "flex items-center justify-center p-1.5 text-center text-slate-600")} role="img">
+        <span className="break-words text-phx-sm font-black uppercase leading-4 tracking-[0.08em]">{missingText}</span>
+      </span>
+    );
   }
   return (
     <span aria-label="No photo" className={cn(box, "flex flex-col items-center justify-center gap-1 text-slate-400")} role="img">

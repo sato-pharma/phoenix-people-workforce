@@ -69,6 +69,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/pm-name-rules";
+import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
@@ -410,6 +411,17 @@ export function CustomerScreen({
             <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · polyclinics</p>
             <div className="grid gap-2 sm:flex sm:flex-wrap">
               <CrmButton onClick={() => onOpen({ name: "seat-in-venue", customerId: customer.customerId })}>Move into a polyclinic</CrmButton>
+            </div>
+          </div>
+        ) : null}
+        {/* The Super Admin validates a customer with no place on the point his reps' own readings agree
+            on (owner, 2026-11-10) — the doctor with no signboard no rep can validate at the door. On the
+            customer's page, never a list row; the rep never sees it (golden rule #1). */}
+        {view.canPlaceOnTrustedPoint && customer.listType !== "Pharmacy" && (active || pending) && !checking && customer.places.length === 0 ? (
+          <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-100 pt-3">
+            <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">Super Admin · trusted point</p>
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton onClick={() => onOpen({ name: "trusted-point", customerId: customer.customerId })}>Validate on a trusted point</CrmButton>
             </div>
           </div>
         ) : null}
@@ -999,6 +1011,8 @@ function PlaceCard({
         <CrmPhotoThumb
           alt={`Signboard photo: ${customer.name}, ${name}`}
           caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`}
+          // `pointSource` reaches the movers alone; everyone else reads the plain "No photo" tile.
+          missingText={place.pointSource === "trusted" ? TRUSTED_POINT_NO_PHOTO : undefined}
           path={place.photoPath}
         />
         <div className="min-w-0 flex-1 basis-56">
@@ -1009,7 +1023,7 @@ function PlaceCard({
             {details.length > 0 ? details.join(" · ") : "No street address or brick was found for this location."}
           </p>
           <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500">
-            Signboard photo taken {cairoStamp(place.capturedAt)} · fixed location
+            {place.photoPath ? `Signboard photo taken ${cairoStamp(place.capturedAt)}` : `Location set ${cairoStamp(place.capturedAt)}`} · fixed location
           </p>
           {measured ? (
             // The managers', the SFE Manager's and the Super Admin's. toFixed, never toLocaleString: the

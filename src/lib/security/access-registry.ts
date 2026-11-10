@@ -1100,6 +1100,10 @@ export const accessRegistry = [
   // `approve` at the route, `canDecideFarVisitHolds` (the Super Admin and the SFE Manager) in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/far-visit-holds/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/seat", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Validating a customer on a trusted point (owner, 2026-11-10): the Super Admin alone — `update` at the route,
+  // `canPlaceOnTrustedPoint` in the service. GET is the preview, POST writes the place.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/trusted-point", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // The rep drops a customer he met outside his list (no approval: he was never on it).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/outside/drop", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The SFE Manager brings a customer back from the Archive himself.

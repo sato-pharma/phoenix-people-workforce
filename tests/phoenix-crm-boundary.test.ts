@@ -176,6 +176,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/move", "approve"),
   // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
   post("list/places/seat", "update"),
+  // Validating a customer on the trusted point his reps' own readings agree on (owner, 2026-11-10): the Super
+  // Admin alone — `update` at the route, `canPlaceOnTrustedPoint` (= canDecideSharedPlaces) in the service.
+  get("list/places/trusted-point", "update"),
+  post("list/places/trusted-point", "update"),
   // The Master List's confirm / not confirmed / clear and its chosen photo (owner, 2026-10-26: "my click
   // and automatic"): the Super Admin alone — `update` at the route, `saveMasterDecision` refuses everyone
   // else in the service. It writes only the decisions table; no rep's place moves.
@@ -645,8 +649,12 @@ function runIsolationTests() {
     // history (20261029212200), which the readers that judge filter on. It names no iReports360 table, so
     // it alone is taken out before the scan; any other `ireports360_` still fails. `ireports360_kpi_counted`
     // (owner, 2026-11-07) is the same kind: a column of phoenix_crm_visits, the trigger's "this converted old
-    // visit counts", naming no iReports360 table.
-    const source = readFileSync(file, "utf8").replaceAll("imported_from_ireports360_at", "").replaceAll("ireports360_kpi_counted", "");
+    // visit counts", naming no iReports360 table. `ireports360_checkin_id` too (owner, 2026-11-10): the column of
+    // phoenix_crm_visits naming the old check-in a copied visit came from, which the trusted point counts once.
+    const source = readFileSync(file, "utf8")
+      .replaceAll("imported_from_ireports360_at", "")
+      .replaceAll("ireports360_kpi_counted", "")
+      .replaceAll("ireports360_checkin_id", "");
     for (const [pattern, what] of NOT_THIS_MODULE) {
       assert.doesNotMatch(source, pattern, `${file} reaches ${what} — Phoenix CRM is built clean, never wired into the old CRM`);
     }
@@ -1092,6 +1100,9 @@ const LATER_MIGRATIONS = [
   // The four far-visit safeguards (owner, 10 Nov 2026): one NEW table (a visit held for the SFE), a tenth refusal
   // reason, and the two countable views REPLACED with the same body plus the held clause. No function.
   "supabase/migrations/20261110170000_phoenix_crm_far_visit_safeguards.sql",
+  // The Super Admin's trusted point (owner, 10 Nov 2026): one NEW function, phoenix_crm_place_on_trusted_point; places
+  // gain trusted_basis and a nullable photo_path for that place alone. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261110213959_phoenix_crm_trusted_point_places.sql",
 ];
 
 /**

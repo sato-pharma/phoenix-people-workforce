@@ -197,6 +197,11 @@ const REFUSALS: Record<string, Refusal> = {
   not_outside: { status: 409, message: "This customer is no longer waiting outside the list. Reload the page." },
   not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
   not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add them to your list first." },
+  // The Super Admin's trusted point (owner, 2026-11-10, server/trusted-point.ts).
+  already_has_place: {
+    status: 409,
+    message: "This customer already has a validated place. Move that place instead of validating on a trusted point.",
+  },
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
   // Moving a customer from one rep's list to another's (owner, 2026-10-06). The reason's own refusal is
   // `note_required` above, in the same words a place move uses.
@@ -360,6 +365,7 @@ export const CUSTOMER_360_PHOENIX_WRITERS: ReadonlySet<string> = new Set([
   "phoenix_crm_edit_visit_detail",
   "phoenix_crm_move_customer",
   "phoenix_crm_move_place",
+  "phoenix_crm_place_on_trusted_point",
   "phoenix_crm_rename_customer",
   "phoenix_crm_restore_shared_place",
   "phoenix_crm_restore_validation",

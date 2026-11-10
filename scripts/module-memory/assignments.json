@@ -100,6 +100,7 @@
   "a-narrowed-select-disarms-every-gate-downstream-of-it": "database",
   "a-new-cron-auto-arms-on-deploy-via-cron-autoarm": "engineering",
   "a-new-crons-paperwork-trips-two-guards-nothing-warns-about": "platform",
+  "a-new-phoenix-crm-server-file-trips-five-repo-wide-tests": "phoenix-crm",
   "a-new-portal-route-needs-its-companion-declarations": "portal",
   "a-new-resend-accounts-domain-starts-with-tracking-off": "notifications",
   "a-new-source-pinning-test-must-use-the-shared-comment-lexer": "sessions",
