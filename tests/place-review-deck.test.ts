@@ -245,10 +245,12 @@ export function runPlaceReviewDeckTests(): void {
 
   // ── 4 · One decision path: the board's own controls, reporting through one hook ─────────────────
   const CONTROLS: ReadonlyArray<[string, ReadonlyArray<string>]> = [
-    ["src/components/phoenix-crm/validation-review-queue.tsx", ["Decision", "Restore", "RejectAfterApproval"]],
+    ["src/components/phoenix-crm/validation-review-queue.tsx", ["Decision", "RejectAfterApproval"]],
+    // The take-back of a rejection is one control since 2026-11-10, drawn by the queue and a seated customer alike.
+    ["src/components/phoenix-crm/place-check-restore.tsx", ["RestoreAfterRejection"]],
     ["src/components/phoenix-crm/validated-place-list.tsx", ["Approve", "Refuse"]],
     ["src/components/phoenix-crm/shared-place-list.tsx", ["Decision", "RestoreVenue"]],
-    ["src/components/phoenix-crm/shared-place-customers.tsx", ["RejectNotOnTimetable", "WaitingDecision", "RestoreSeated"]],
+    ["src/components/phoenix-crm/shared-place-customers.tsx", ["RejectNotOnTimetable", "WaitingDecision"]],
     ["src/components/crm-integrity/integrity-settle.tsx", ["IntegritySettleControl"]],
   ];
   for (const [path, names] of CONTROLS) {
@@ -260,6 +262,12 @@ export function runPlaceReviewDeckTests(): void {
       assert.match(body, /done\([^;\n]*"[a-z]+"[^;\n]*\);/, `${path} ${name} must say what it decided`);
       assert.doesNotMatch(body, /router\.refresh\(\)/, `${path} ${name} refreshes through the hook, never beside it`);
     }
+  }
+  for (const [path, name] of [
+    ["src/components/phoenix-crm/validation-review-queue.tsx", "Restore"],
+    ["src/components/phoenix-crm/shared-place-customers.tsx", "RestoreSeated"],
+  ] as const) {
+    assert.match(functionBody(stripComments(read(path)), name), /<RestoreAfterRejection/, `${path} ${name} draws the one take-back control, which reports through usePlaceCheckDone`);
   }
   {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
