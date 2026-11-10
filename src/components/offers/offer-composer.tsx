@@ -1692,8 +1692,15 @@ export function OfferComposer({
           `table-fixed` + `<colgroup>` instead, with the cells wrapping. The candidate's name and
           email were one nowrap line and are now stacked, which is the column merge the rule asks
           for rather than a narrower font.
+
+          Table or cards is decided by the LIST's own width, not the window's (2026-11-10). With the
+          seventh column, Sent by, a table under 896px broke its headings mid-word ("PACK AGE",
+          "STATU S") — measured on production in an 890px window with the sidebar collapsed, where the
+          list is 725px wide although `md` reads the window as desktop. At 896px every heading and
+          every word measured fits ("Representative" 63px in 75), so below it the cards take over.
         */}
-        <div className="hidden md:block">
+        <div className="@container">
+        <div className="hidden @4xl:block">
           <table className="w-full table-fixed text-sm">
             {/* The actions column carries FIVE controls on a sent offer since Withdraw joined
                 Accepted, Declined, Resend and PDF (2026-09-29), so it takes 6 points from Title and
@@ -1877,7 +1884,7 @@ export function OfferComposer({
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 px-5 py-5 md:hidden">
+        <div className="flex flex-col gap-3 px-5 py-5 @4xl:hidden">
           {offers.map((offer) => (
             <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm" key={offer.id}>
               <div className="flex items-start justify-between gap-3">
@@ -2040,6 +2047,7 @@ export function OfferComposer({
             </div>
           ))}
           {offers.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No offers yet.</p> : null}
+        </div>
         </div>
       </AdminTableShell>
 
