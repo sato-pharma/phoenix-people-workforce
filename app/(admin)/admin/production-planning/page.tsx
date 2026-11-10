@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * The admin-shell half of the Production Planner: the CEO, the Super Admin and the Finance Manager.
  *
  * 🔴 THE GATE IS NOT `canAccess`. `production_planning` is granted to three roles in the matrix, and
- * the module's main user — Dr. Sahar Khalil, the R&D Manager — holds none of them: her role is
+ * the module's main user — Dr. Sahar Khalil, the Toll Manufacturing Manager — holds none of them: her role is
  * `Manager`, which the matrix grants nothing because its other holder is the QPPV. So the gate is
  * `resolveProductionPlanningLevel`, the same named-list-plus-stored-grant answer the API routes use.
  * A matrix check here would refuse her at the door of her own module.

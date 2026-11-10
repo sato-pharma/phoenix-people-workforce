@@ -2215,7 +2215,7 @@ export const accessRegistry = [
   // size, how much of each material is needed, already held, still to buy and to deliver, at what
   // cost, and when does the next order have to be placed.
   // 🔴 Enforcement is the resolveProductionPlanningLevel domain helper, NOT a bare assertPermission.
-  // The owner named five PEOPLE, and two of them -- Dr. Sahar Khalil the R&D Manager, who is the
+  // The owner named five PEOPLE, and two of them -- Dr. Sahar Khalil the Toll Manufacturing Manager, who is the
   // module's main user, and Reham Elwiy the Regulatory Affairs Supervisor -- hold `Manager` and
   // `Employee`, which the matrix deliberately grants NOTHING: `Manager` also covers the QPPV, and
   // `Employee` is the whole company, so granting either role would publish every raw-material price
