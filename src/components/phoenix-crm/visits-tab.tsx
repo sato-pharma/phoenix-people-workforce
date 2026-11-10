@@ -561,6 +561,8 @@ function SavedNote({ onOpenList, saved }: { onOpenList?: () => void; saved: Save
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
       {/* A recorded visit counts once it is approved (owner, 2026-10-16). An off-plan one already says so above. */}
       {visit.recordingNote && visit.unplannedKind !== "out_of_plan" ? <span className="mt-1 block">{visit.recordingNote}</span> : null}
+      {/* A visit held for the SFE instead of refused (owner, 2026-11-10): saved, and counts once approved. */}
+      {visit.farHoldNote ? <span className="mt-1 block">{visit.farHoldNote}</span> : null}
       {/* "Arrange a double visit" asked his manager by itself (owner, 2026-10-02) — his own request. */}
       {visit.visitAskNote ? <span className="mt-1 block break-words">{visit.visitAskNote}</span> : null}
       {/* The LAST question: the people asked for a double visit (owner, 2026-10-16). Their answers show on the customer's page. */}

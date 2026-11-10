@@ -74,6 +74,13 @@ import { distanceMeters } from "@/lib/phoenix-crm/geo";
  * 3 Nov 2026 a row of `subject_kind` "place" is a SEATING refused the same way: its metres are to the
  * building, which it names in `shared_place_id`, and its `place_id` stays null.
  */
+/**
+ * 🔴 `impossible_travel` (owner, 10 Nov 2026, `far-visit-safeguards.ts`) is a PLACE reading refused at
+ * validation because the rep could not have reached it from his own visit saved minutes earlier, or because
+ * it repeats, to the last decimal, a point already refused that way. It carries `distance_meters` (to that
+ * visit; null for a bare repeat) and never `place_id`. A photo reading judged impossible beside a good pin
+ * is filed here too, and the place is saved from the pin.
+ */
 export type RefusedReason =
   | "no_fix"
   | "rough"
@@ -83,7 +90,8 @@ export type RefusedReason =
   | "timetable_missing"
   | "signboard_unreadable"
   | "signboard_no_plate"
-  | "far_from_place";
+  | "far_from_place"
+  | "impossible_travel";
 export type RefusedSubject = "visit" | "place";
 /** Which permission the browser blocked. Only these two are capable of ending a capture. */
 export type BlockedPermission = "location" | "camera";
@@ -99,6 +107,7 @@ export const REFUSED_REASONS: readonly RefusedReason[] = [
   "signboard_unreadable",
   "signboard_no_plate",
   "far_from_place",
+  "impossible_travel",
 ];
 
 /**
@@ -181,7 +190,7 @@ export type RefusedAttempt = {
   /** Which permission the browser blocked, for `blocked` only. Null for every server refusal. */
   blockedPermission: BlockedPermission | null;
   /**
-   * For `far_from_place` only: the metres from the visit's reading to the customer's validated
+   * For `far_from_place` (and `impossible_travel`, to the rep's own visit): the metres from the reading to the customer's validated
    * photograph. Absent or null for every other reason, and never printed as 0 m when unknown.
    */
   distanceMeters?: number | null;
@@ -227,6 +236,17 @@ function metres(value: number | null): string {
 export function refusalSentence(
   attempt: Pick<RefusedAttempt, "subjectKind" | "reason" | "accuracyMeters" | "photoAccuracyMeters" | "maxAccuracyMeters" | "blockedPermission" | "distanceMeters">,
 ): string {
+  if (attempt.reason === "impossible_travel") {
+    // Never "too rough": the reading claimed to be sharp, and that is the trouble — an indoor Wi-Fi guess
+    // claims 46 m while sitting kilometres off (owner, 10 Nov 2026, far-visit-safeguards.ts). The SFE
+    // reads how far it was from the rep's own visit, so a car on a ring road and a stairwell read apart.
+    const distance = attempt.distanceMeters;
+    const away =
+      distance === null || distance === undefined || !Number.isFinite(distance)
+        ? "at a point already refused as impossible"
+        : `${(distance / 1000).toFixed(1)} km from the rep's own visit saved minutes earlier`;
+    return `The phone placed the rep ${away}, closer in time than anyone can travel, so the location was not saved. A reading taken indoors often guesses its position from nearby Wi-Fi; the rep was asked to step outside and capture it again.`;
+  }
   if (attempt.reason === "far_from_place") {
     // Never the accuracy radius: the reading was good enough to measure. What refused it was WHERE it
     // was, so the SFE reads the metres and the line, and can tell a rep in the car outside from one

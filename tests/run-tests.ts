@@ -2188,6 +2188,7 @@ import { runPhoenixCrmRefusedReadingsTests } from "./phoenix-crm-refused-reading
 import { runPhoenixCrmSignedOutAnswers401Tests } from "./phoenix-crm-signed-out-answers-401.test.ts";
 import { runPhoenixCrmRefusedReadingsBoardTests } from "./phoenix-crm-refused-readings-board.test.ts";
 import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refusal.test.ts";
+import { runPhoenixCrmFarVisitSafeguardsTests } from "./phoenix-crm-far-visit-safeguards.test.ts";
 import { runPhoenixCrmUnvalidatedVisitCapTests } from "./phoenix-crm-unvalidated-visit-cap.test.ts";
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
@@ -7882,6 +7883,11 @@ await runTest(
 await runTest(
   "a medical rep visit logged more than 300 m from the customer validated photo is REFUSED (owner, 2026-10-20: \"not accept medical reps visits logged away from the validated picture of the customer with maximum 300 m apart\"; 97 of 2,558 measurable rep visits sat past the line on 6-19 October). Pinned: the nearest validated place decides; the photograph anchors only when its reading is within the place line, else the place point; no place refuses nobody; the line is visit_far_meters with 300 m behind it; only the REP save is asked, before the recording claim and before any write; the attempt is kept for the SFE board as far_from_place with its metres and place; and the rep reads his own work, never the line, his metres or a check)",
   runPhoenixCrmVisitFarRefusalTests,
+);
+
+await runTest(
+  "the four safeguards around a Phoenix CRM customer's place (owner, 2026-11-10: \"how to avoid these issues so they never happen again?\", after Momen Fathy's Dr. Doria Darraz was saved 8.3 km off from an indoor Wi-Fi guess and every visit to her was refused at her door). Pinned: a place reading the rep could not have reached from his own visit saved in the last hour (3 km and 80 km/h) is refused, and the same point again for six hours, never reaching back before 10 November; five far refusals from one tight spot tell the Super Admin and the SFE Manager once, never by email; the next visit from that spot is SAVED and held, written before the visit, counting in no view, list or report until the SFE approves it; an account is refused only past 500 m; and the rep reads only his own way out",
+  runPhoenixCrmFarVisitSafeguardsTests,
 );
 
 await runTest(

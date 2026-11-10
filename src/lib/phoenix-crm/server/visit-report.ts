@@ -84,6 +84,8 @@ import {
   type VisitReportView,
 } from "@/lib/phoenix-crm/visit-report-fields";
 import { isUnplannedKind, isUnplannedVisitStatus, kpiHoldBackOf, type KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
+import { type FarVisitHoldStatus } from "@/lib/phoenix-crm/far-visit-safeguards";
+import { loadUncountedFarVisitHolds } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -469,7 +471,7 @@ function groupBy<T extends Row>(rows: ReadonlyArray<T>, key: (row: T) => string 
 const idOf = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
 
 /** Why a visit is in no KPI — the two halves of `visitCountsInKpi`, read off the rows this report already holds. */
-function visitReportHoldBack(visit: Row, customer: Row | null, approval: Row | null): KpiHoldBack | null {
+function visitReportHoldBack(visit: Row, customer: Row | null, approval: Row | null, farHoldStatus: FarVisitHoldStatus | null): KpiHoldBack | null {
   const isUnplanned = visit.is_unplanned === true;
   const unplannedKind = isUnplanned ? (isUnplannedKind(visit.unplanned_kind) ? visit.unplanned_kind : "out_of_plan") : null;
   const status = approval?.status;
@@ -480,6 +482,7 @@ function visitReportHoldBack(visit: Row, customer: Row | null, approval: Row | n
     unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
     copiedFromOldSystem: typeof visit.imported_from_ireports360_at === "string",
     oldSystemKpiCounted: visit.ireports360_kpi_counted === true,
+    farHoldStatus,
   });
 }
 
@@ -677,7 +680,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const sharedIds = dedupeIds(places.map((place) => idOf(place.shared_place_id)));
   const placeFilterIds = placeIds;
 
-  const [sharedPlaces, notes, recommendations, reviews, unplannedRows, provenanceRows, editRows, askRows] = await Promise.all([
+  const [sharedPlaces, notes, recommendations, reviews, unplannedRows, provenanceRows, editRows, askRows, farHolds] = await Promise.all([
     needsShared ? selectByIds<Row>("phoenix_crm_shared_places", "id, name", "id", sharedIds, byIds) : Promise.resolve<Row[]>([]),
     needsNotes
       ? selectByIds<Row>("phoenix_crm_place_notes", "id, place_id, author_source, rep_visible, body, created_at", "place_id", placeFilterIds, byIds)
@@ -730,6 +733,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       ? selectByIds<Row>("phoenix_crm_visit_edits", "id, visit_id, edited_at", "visit_id", visitIds, byIds)
       : Promise.resolve<Row[]>([]),
     needsDay ? selectByIds<Row>("phoenix_crm_visit_asks", "id, visit_id, kind, status", "visit_id", visitIds, byIds) : Promise.resolve<Row[]>([]),
+    // Always, as the off-plan approval above: a visit held for the SFE counts in nothing until he approves it
+    // (owner, 2026-11-10), and the tiles count only what the KPIs count. One small read for the whole period.
+    visits.length > 0 ? loadUncountedFarVisitHolds({ from: period.from, to: period.to }) : Promise.resolve(new Map<string, FarVisitHoldStatus>()),
   ]);
 
   // ── The day around the visit ──
@@ -998,7 +1004,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       visitLat: typeof visit.lat === "number" ? visit.lat : null,
       visitLon: typeof visit.lon === "number" ? visit.lon : null,
       visitType: phoenixVisitKindLabel(visit.kind) ?? "",
-      kpiHoldBack: visitReportHoldBack(visit, customer, unplannedByVisit.get(visitId) ?? null),
+      kpiHoldBack: visitReportHoldBack(visit, customer, unplannedByVisit.get(visitId) ?? null, farHolds.get(visitId) ?? null),
     };
   });
 

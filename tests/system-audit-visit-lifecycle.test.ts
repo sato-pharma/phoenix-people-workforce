@@ -317,6 +317,9 @@ export async function runSystemAuditVisitLifecycleTests() {
         // out_of_list always counts, approved or not.
         fixture({ isUnplanned: true, unplannedKind: "out_of_list", unplannedStatus: "manager_pending" }),
         fixture({ recordingStatuses: ["approved", "pending"] }, NONE),
+        // Held for the SFE after five far refusals from one spot (owner, 2026-11-10); an approved hold counts.
+        fixture({ farHoldStatus: "sfe_pending" }, NONE),
+        fixture({ farHoldStatus: "approved" }),
         fixture({ seatId: "SEAT-X" }, { ...NONE, inCountable: true }),
         fixture({ seatId: "SEAT-B" }, { ...NONE, inCountable: true }),
         fixture({ seatId: "SEAT-C" }, { ...NONE, inCountable: true }),
@@ -345,6 +348,7 @@ export async function runSystemAuditVisitLifecycleTests() {
       offplan_pending_sfe: 1,
       offplan_refused: 1,
       recording_not_approved: 1,
+      far_visit_held: 1,
       seat_not_in_started_team: 1,
       team_not_started: 1,
       team_stopped: 1,
@@ -676,6 +680,7 @@ export async function runSystemAuditVisitLifecycleTests() {
       phoenix_crm_unplanned_visits: "visit_id",
       phoenix_crm_visit_edits: "id",
       phoenix_crm_visits: "id",
+      phoenix_crm_far_visit_holds: "visit_id",
     };
     for (const [table, key] of Object.entries(KEY_OF)) {
       for (const entry of source.matchAll(new RegExp(`\\{ table: "${table}", column: "[a-z_]+", tiebreak: "([a-z_]+)" \\}`, "g"))) {

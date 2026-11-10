@@ -2277,6 +2277,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 3973db659991b7d34840f66f9677ff98, au.f_refresh_stale_attribution_periods f7498c9fe749cd6835fb5f20a5b27f03. Re-applying
   // is a no-op (`create or replace`, the same revoke and grant).
   "20261110103127_freeze_only_the_published_line.sql",
+  // Applied 10 Nov 2026 to production only by scripts/apply-sql-file.mjs with the aws-1 pooler (the standing route,
+  // NO ledger row) after supabase-production's apply_migration answered declined and left nothing behind. Answered
+  // applied:true. Read back on ozucdzovmcqvepbozvqf: md5(pg_get_viewdef) of phoenix_crm_countable_visits
+  // f35c6fb8d4f1923f4c374e0d29b13448 (pre-image ecfc39e99695fe7f56226af5ea4750a5) and of
+  // phoenix_crm_countable_visits_with_history c408348d961dcda819b8761e8ba6bb04 (pre-image
+  // 2b1338eeb1e0b7e707f44b40d346288b), both security_invoker=true, grants postgres and service_role only; in one
+  // read the views and their pre-image bodies counted the same rows (44,569 and 96,100). phoenix_crm_far_visit_holds:
+  // column md5 4f2aff30d766c7873cc79b25688e7687, constraint md5 6fcb93d8f2af5d3b553023c14da6fe66, RLS on, one
+  // service_role policy, 0 grants to anon or authenticated, 0 rows. Reason check md5 affa6c87c5746dd2ef76f611086e6eaf,
+  // far check c0a60faacd98baa3c7163d998a262cda. Re-applying is a no-op (`if not exists`, `drop ... if exists` then add,
+  // `create or replace view` with the same body).
+  "20261110170000_phoenix_crm_far_visit_safeguards.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

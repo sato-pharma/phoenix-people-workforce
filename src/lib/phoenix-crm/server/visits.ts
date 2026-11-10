@@ -63,6 +63,7 @@ import {
   type VisitDraft,
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
+import { FAR_VISIT_HELD_NOTE, farRefusalLineFor } from "@/lib/phoenix-crm/far-visit-safeguards";
 import { BLIND_LOCATION, visitLocationFor, type VisitLocationFlag } from "@/lib/phoenix-crm/visit-location-words";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { isEnteredForRep } from "@/lib/phoenix-crm/missed-records";
@@ -132,7 +133,8 @@ import { offPlanAllowance, offPlanWeekWindow, type OffPlanAllowance } from "@/li
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { recordFarVisitRefusal, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import { farVisitOutcome, loadUncountedFarVisitHolds, stampFarVisitHoldDay } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import {
   claimRequiredRecording,
@@ -648,13 +650,16 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     ownSeat ? loadDayActivityOn(ownSeat.seatId, isTest, date) : Promise.resolve(null),
     productManagerRolesFor(viewer.org, seat.seatId),
     loadDayStartOn(seat.seatId, isTest, date),
+    // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it, as the views
+    // say. It needs only the date, so it starts beside the rows with the other early reads.
+    loadUncountedFarVisitHolds({ from: date, to: date }),
   ]);
   dayReads.catch(() => undefined);
   const rows = await rowsRead;
   // The visit recordings. Their LENGTH (what draws the player) goes only to a reader who may hear them;
   // the Administrator's approval is read for every reader, because a recorded visit he has not approved
   // counts in nothing (owner, 2026-10-16) and `countsInKpi` must say what the countable view says.
-  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart]] = await Promise.all([
+  const [names, recordings, [activity, ownDayActivity, productManagerRoles, dayStart, farHolds]] = await Promise.all([
     loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
     loadRecordingsByVisit(rows.map((row) => String(row.id))),
     dayReads,
@@ -666,7 +671,8 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     isTest,
     date,
     visits: rows.map((row) => {
-      const visit = mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId });
+      const mapped = mapVisitRow(row, names, { sight, org: viewer.org, productManagerRoles, actorHrId: viewer.hrId });
+      const visit = farHolds.has(mapped.visitId) ? { ...mapped, countsInKpi: false } : mapped;
       const recording = recordings.get(visit.visitId);
       if (!recording) return visit;
       const countsInKpi = visit.countsInKpi && recording.reviewStatus === "approved";
@@ -1431,6 +1437,11 @@ export type SavedVisit = {
   /** A recorded visit's own line (owner, 2026-10-16): it counts once it is approved. Null otherwise. */
   recordingNote: string | null;
   /**
+   * A visit saved and HELD for the SFE instead of refused, after five far refusals from one spot (owner,
+   * 2026-11-10, `holdInsteadOfRefuse`): it counts once SFE approves it. Null for every other visit.
+   */
+  farHoldNote: string | null;
+  /**
    * The district manager's own visit on a VACANT territory went into his own single visits, not this
    * territory's visits (owner, 2026-10-19) — so the Visits tab reloads My single visits rather than the
    * day it is showing. False for every other visit.
@@ -1516,6 +1527,7 @@ async function fileAsOwnSingleVisit(viewer: PhoenixCrmViewer, visitId: string, v
     doubleVisitNote: null,
     pharmacyNote: null,
     recordingNote: null,
+    farHoldNote: null,
     filedAsOwnSingleVisit: true,
   };
 }
@@ -1749,6 +1761,12 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // day is the day the visit was CAPTURED, as the save itself will date it — the offline anchor, else the
   // photo slot, else now — so a visit taken before the rule existed and arriving after it is never refused.
   const captureDay = cairoBusinessDay(new Date(offlineCapturedAt ?? issuedAt ?? Date.now()));
+  // 🔴 HELD, NOT REFUSED, AFTER FIVE FAR REFUSALS FROM ONE SPOT (owner, 2026-11-10, far-visit-safeguards.ts):
+  // the place is then almost certainly wrong, so the visit saves and waits for the SFE, counted in nothing.
+  let heldForSfe = false;
+  // 🔴 AN ACCOUNT (AM — a hospital, a big building) IS REFUSED ONLY PAST 500 m; a clinic keeps the
+  // settings' line (owner, 2026-11-10: "500 m"). The refusal alone: the flag below keeps the settings' line.
+  const visitedListType = unvalidatedCustomer ? (unvalidatedCustomer.data as Row | null)?.list_type : null;
   if (enteredAs === "rep" && farVisitRefusalApplies(captureDay)) {
     const away = visitAwayFromValidatedPlace({
       fix: { lat: visit.lat, lon: visit.lon },
@@ -1764,20 +1782,25 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         pinAccuracyMeters: numberOrNull(row.pin_accuracy_meters),
         pointSource: typeof row.point_source === "string" ? row.point_source : null,
       })),
-      farMeters: settings.visitFarMeters,
+      farMeters: farRefusalLineFor(visitedListType, settings.visitFarMeters),
     });
     if (away.refused) {
-      await recordFarVisitRefusal({
+      // The refusal files its reading (and the fifth one from one spot alerts the SFE), or — after five —
+      // the hold is written before the save, so the visit is never counted for an instant.
+      const outcome = await farVisitOutcome({
+        visitId,
         visit,
-        seatId: seat.seatId,
+        seat,
         repHrId: viewer.hrId,
         customerId: visit.customerId,
         placeId: away.placeId,
         metres: away.metres,
         farMeters: away.farMeters,
         isTest,
+        captureDay,
       });
-      throw validationError(VISIT_AWAY_FROM_PLACE);
+      if (!outcome.hold) throw validationError(VISIT_AWAY_FROM_PLACE);
+      heldForSfe = true;
     }
   }
   const check = checkVisitLocation({
@@ -1939,6 +1962,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     });
   }
 
+  // A held visit's hold carries the day the save just gave the visit — the day every reader finds it by.
+  if (heldForSfe) await stampFarVisitHoldDay(visitId, String(result.visit_date));
+
   const isUnplanned = result.is_unplanned === true;
   const unplannedKind: UnplannedKind | null = isUnplanned ? (isUnplannedKind(result.unplanned_kind) ? result.unplanned_kind : "out_of_plan") : null;
   // An out-of-plan visit is the ONE visit that tells anybody (notifications.ts): it counts in nothing
@@ -2042,6 +2068,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     // Every recorded visit, of every type, waits for approval before it counts. Said once, plainly,
     // with no person and no check named (Golden Rule #1).
     recordingNote: recorded ? RECORDED_VISIT_REP_NOTE : null,
+    farHoldNote: heldForSfe ? FAR_VISIT_HELD_NOTE : null,
     visitAskNote: visitAskSavedNote(visitAsk),
     doubleVisitNote: doubleVisitSavedNote(doubleVisit),
     pharmacyNote: savedPharmacyNote(result),

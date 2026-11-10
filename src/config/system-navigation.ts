@@ -4831,6 +4831,19 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // A rep's visit SAVED and held for the SFE instead of refused, after five far refusals from one tight
+    // spot on one customer in one day (owner, 2026-11-10, after Momen Fathy was refused 51 times at Dr. Doria
+    // Darraz's door). The SFE approves or refuses it, and can move the customer's place to where the rep
+    // stood. The enforcing gate is `canDecideFarVisitHolds` inside the page, the service and the route; this
+    // card only draws the link. The stuck-rep alert opens it too.
+    href: "/admin/phoenix-crm/far-visit-holds",
+    icon: Hourglass,
+    label: "Visits Held for SFE",
+    description: "Visits saved and waiting for the SFE because the rep was refused five times from one spot — the customer's saved place is probably wrong. Approve, refuse, or move the place to where the rep stood.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // The visits archive (owner, 2026-11-07): the old iReports360 visits Phoenix CRM did not take over as
     // visits — campaign visits and visits with no check-in location — read-only, a page at a time. The
     // admin CRM workspace's two people: `canUseAdminCrmWorkspace` is the enforcing gate inside the page
@@ -5542,6 +5555,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/master-list",
           // A rep turned away on his location: housekeeping like the duplicates row, same band.
           "/admin/phoenix-crm/refused-readings",
+          // A visit held for the SFE after five far refusals from one spot: the same stuck rep, the same band.
+          "/admin/phoenix-crm/far-visit-holds",
           // The old CRM's visits Phoenix did not take over as visits: a record kept, read-only, same band.
           "/admin/phoenix-crm/visits-archive",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.

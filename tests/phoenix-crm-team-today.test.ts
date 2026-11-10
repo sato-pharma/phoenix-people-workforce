@@ -131,13 +131,19 @@ export function runPhoenixCrmTeamTodayTests(): void {
     assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "refused" }), "refused");
     assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: "approved" }), null);
     assert.equal(kpiHoldBackOf({ ...base, isUnplanned: true, unplannedKind: "out_of_list", unplannedStatus: null }), null, "an out-of-list visit to a validated customer counts");
+    // A visit held for the SFE after five far refusals from one spot (owner, 2026-11-10) waits for him, or is refused for good.
+    assert.equal(kpiHoldBackOf({ ...base, farHoldStatus: "sfe_pending" }), "approval", "a held visit waits for the SFE");
+    assert.equal(kpiHoldBackOf({ ...base, farHoldStatus: "refused" }), "refused", "a held visit the SFE refused never counts");
+    assert.equal(kpiHoldBackOf({ ...base, farHoldStatus: "approved" }), null, "an approved hold counts");
+    assert.equal(kpiHoldBackOf({ ...base, customerValidated: false, farHoldStatus: "sfe_pending" }), "validation", "validation first, whatever the hold says");
 
     const onlyWaiting = { ...emptyTeamToday(), awaitingApproval: 1 };
     assert.notEqual(teamTodayLine(onlyWaiting, "09:00"), "No plan sent for today · no visit logged yet", "a rep whose only visit waits for approval did work today");
     assert.equal(teamTodayTone({ ...onlyWaiting, planSent: true, amPlanned: 2 }), "progress", "and his row is not idle");
 
     const team = source("src/lib/phoenix-crm/server/team.ts");
-    assert.match(team, /holdBack: teamTodayHoldBack\(row\)/, "every visit on the line carries its hold-back");
+    assert.match(team, /holdBack: teamTodayHoldBack\(row, farHolds\.get\(String\(row\.id\)\) \?\? null\)/, "every visit on the line carries its hold-back, the SFE's hold included");
+    assert.match(team, /const farHolds = await loadUncountedFarVisitHolds\(\{ from: date, to: date \}\);/, "the day's far-visit holds are read once");
     assert.match(team, /unplanned:phoenix_crm_unplanned_visits!visit_id\(status\)/, "the approval is read with the visit");
     assert.match(team, /customer:phoenix_crm_customers!customer_id\(validated_at\)/, "and the customer's validation");
   }

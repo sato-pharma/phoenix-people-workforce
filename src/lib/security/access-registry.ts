@@ -1091,6 +1091,9 @@ export const accessRegistry = [
   // Moving or removing a validated place: the Super Admin and the SFE Manager only (owner, 2026-09-29),
   // `approve` at the route and the movers' own check in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/move", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // The SFE's answer on a visit held for him after five far refusals from one spot (owner, 2026-11-10):
+  // `approve` at the route, `canDecideFarVisitHolds` (the Super Admin and the SFE Manager) in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/far-visit-holds/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/seat", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // The rep drops a customer he met outside his list (no approval: he was never on it).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/outside/drop", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

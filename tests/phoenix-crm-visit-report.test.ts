@@ -851,7 +851,11 @@ function checkSource(): void {
     /const needsUnplanned = categories\.has\("approval"\) \|\| visits\.some\(\(visit\) => visit\.is_unplanned === true\);/,
     "the approval table is read when its category was chosen, or when an off-plan visit's approval decides whether a tile counts it",
   );
-  assert.match(loader, /kpiHoldBack: visitReportHoldBack\(visit, customer, unplannedByVisit\.get\(visitId\) \?\? null\)/, "every row says whether it counts in a KPI");
+  assert.match(
+    loader,
+    /kpiHoldBack: visitReportHoldBack\(visit, customer, unplannedByVisit\.get\(visitId\) \?\? null, farHolds\.get\(visitId\) \?\? null\)/,
+    "every row says whether it counts in a KPI — a visit held for the SFE included (owner, 2026-11-10)",
+  );
   assert.match(loader, /const needsDay = categories\.has\("day"\);/, "and the day's tables");
   assert.match(loader, /if \(needsEvidence \|\| needsBehaviour\) \{/, "the integrity cases are asked for only when an evidence field was chosen");
   assert.match(loader, /VISIT_REPORT_MAX_ROWS/, "a choice that would read an unbounded number of visits is refused");

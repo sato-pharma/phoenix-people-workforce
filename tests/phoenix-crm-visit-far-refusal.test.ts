@@ -238,9 +238,11 @@ export function runPhoenixCrmVisitFarRefusalTests() {
     "the rule asks the day the visit was captured, never the day it happened to arrive",
   );
   assert.ok(saveVisit.indexOf("const captureDay =") < guard, "and asks it before the guard reads it");
-  const recordAt = saveVisit.indexOf("await recordFarVisitRefusal(", ruleAt);
-  const throwAt = saveVisit.indexOf("throw validationError(VISIT_AWAY_FROM_PLACE)", ruleAt);
-  assert.ok(recordAt > ruleAt && throwAt > recordAt, "the refused attempt is kept for the SFE's board, then the rep reads his refusal");
+  // Since 2026-11-10 the refusal goes through `farVisitOutcome`, which files it exactly as before — or, after
+  // five refusals from one spot, writes the SFE's hold and lets the visit save (far-visit-safeguards.ts).
+  const recordAt = saveVisit.indexOf("await farVisitOutcome(", ruleAt);
+  const throwAt = saveVisit.indexOf("if (!outcome.hold) throw validationError(VISIT_AWAY_FROM_PLACE)", ruleAt);
+  assert.ok(recordAt > ruleAt && throwAt > recordAt, "the refused attempt is kept for the SFE's board, then the rep reads his refusal — unless the visit is held");
   const claimAt = saveVisit.indexOf("claimRequiredRecording(");
   const saveRpcAt = saveVisit.indexOf('"phoenix_crm_save_visit"');
   assert.ok(claimAt > throwAt, "🔴 refused BEFORE a required recording is claimed, so a refused visit never spends it");
@@ -251,7 +253,12 @@ export function runPhoenixCrmVisitFarRefusalTests() {
     "the place read carries the photograph's reading AND the pin, the two a visit is measured against",
   );
   assert.match(saveVisit, /pinLat: numberOrNull\(row\.pin_lat\),/, "🔴 and hands the PIN to the rule — never only the settled point");
-  assert.match(saveVisit, /farMeters: settings\.visitFarMeters/, "the line is the module's setting, the same figure the flag and the board use");
+  // 🔴 The line is the module's setting for a clinic, and at least 500 m for an account (owner, 2026-11-10: "500 m").
+  assert.match(
+    saveVisit,
+    /farMeters: farRefusalLineFor\(visitedListType, settings\.visitFarMeters\)/,
+    "the line is the module's setting, widened to 500 m for an AM account — the refusal alone, never the flag",
+  );
 
   // The manager's own single visits never reach this door at all: they are filed through their own path.
   const ownVisitAt = saveVisit.indexOf("fileAsOwnSingleVisit(");
@@ -299,11 +306,14 @@ export function runPhoenixCrmVisitFarRefusalTests() {
   assert.ok(reasonCheckFile, "a migration still defines the reason CHECK");
   const sql = stripSqlComments(read(`supabase/migrations/${reasonCheckFile}`));
   assert.match(sql, /'far_from_place'::text/, "the newest reason CHECK allows far_from_place");
-  assert.match(sql, /add column if not exists place_id uuid/, "the place column exists");
-  assert.match(sql, /add column if not exists distance_meters integer/, "and the metres column");
+  const columns = stripSqlComments(read("supabase/migrations/20261020034610_phoenix_crm_refused_visit_far_from_place.sql"));
+  assert.match(columns, /add column if not exists place_id uuid/, "the place column exists");
+  assert.match(columns, /add column if not exists distance_meters integer/, "and the metres column");
+  // Since 2026-11-10 an impossible-location refusal carries the metres too (from the rep's own last visit),
+  // never a place: it is refused before any place exists (20261110170000).
   assert.match(
     sql,
-    /reason = 'far_from_place'::text\s+or \(place_id is null and distance_meters is null\)/,
-    "and no other reason may carry either of them",
+    /reason = 'far_from_place'::text\s+or \(reason = 'impossible_travel'::text and place_id is null\)\s+or \(place_id is null and distance_meters is null\)/,
+    "and no other reason may carry either of them — an impossible location only the metres",
   );
 }

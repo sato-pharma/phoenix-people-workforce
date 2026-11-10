@@ -498,6 +498,136 @@ export async function countSignboardRefusals(input: { key: string; repHrId: stri
   }
 }
 
+export type ImpossibleTravelRefusalInput = {
+  /** The reading judged impossible — the pin, or the photo's own reading beside a good pin. */
+  reading: { lat: number; lon: number; accuracyMeters: number | null };
+  /** The photo's reading too, only when IT was judged impossible as well; null otherwise. */
+  photo: { lat: number; lon: number; accuracyMeters: number | null } | null;
+  photoPath: string | null;
+  deviceCapturedAt: string | null;
+  deviceMocked: boolean | null;
+  seatId: string;
+  repHrId: string;
+  customerId: string | null;
+  /** Metres from the rep's own visit saved minutes earlier; null for a bare repeat. */
+  metres: number | null;
+  isTest: boolean;
+};
+
+/**
+ * File a place reading refused as IMPOSSIBLE (owner, 10 Nov 2026 — `judgeImpossibleLocation`,
+ * far-visit-safeguards.ts). 🔴 `lat`/`lon` hold THE READING JUDGED IMPOSSIBLE, and `photo_lat`/`photo_lon`
+ * hold the photo's reading only when it was judged impossible too — so every point on such a row is a
+ * point the repeat rule may refuse again, and a good pin beside a bad photo is never remembered as bad.
+ * The same three rules as above: nothing more reaches the rep, it never throws, it is awaited — the
+ * repeat rule on his very next try reads this row.
+ */
+export async function recordImpossibleTravelRefusal(input: ImpossibleTravelRefusalInput): Promise<void> {
+  try {
+    const refusedAt = new Date();
+    const { error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "place",
+        reason: "impossible_travel",
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        lat: input.reading.lat,
+        lon: input.reading.lon,
+        accuracy_meters: input.reading.accuracyMeters,
+        photo_lat: input.photo?.lat ?? null,
+        photo_lon: input.photo?.lon ?? null,
+        photo_accuracy_meters: input.photo?.accuracyMeters ?? null,
+        photo_path: input.photoPath,
+        distance_meters: input.metres === null || !Number.isFinite(input.metres) ? null : Math.round(input.metres),
+        device_captured_at: input.deviceCapturedAt,
+        device_mocked: input.deviceMocked,
+        is_test: input.isTest,
+      });
+    if (error) {
+      console.error("[phoenix-crm] impossible-location refusal not recorded", { seatId: input.seatId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] impossible-location refusal record failed", { seatId: input.seatId, error });
+  }
+}
+
+/**
+ * Every point this rep has had refused as impossible since `since` — both readings of each row, which
+ * are impossible by construction (`recordImpossibleTravelRefusal`). Empty on any error: a read that fails
+ * never refuses a rep on a point it cannot see.
+ */
+export async function loadImpossiblePoints(input: { repHrId: string; isTest: boolean; since: Date }): Promise<Array<{ lat: number; lon: number }>> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("lat, lon, photo_lat, photo_lon")
+      .eq("reason", "impossible_travel")
+      .eq("rep_hr_id", input.repHrId.toUpperCase())
+      .eq("is_test", input.isTest)
+      .gte("refused_at", input.since.toISOString())
+      .limit(200);
+    if (error) {
+      console.error("[phoenix-crm] impossible points not read", { message: error.message });
+      return [];
+    }
+    const points: Array<{ lat: number; lon: number }> = [];
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      for (const [lat, lon] of [[row.lat, row.lon], [row.photo_lat, row.photo_lon]] as const) {
+        if (typeof lat === "number" && typeof lon === "number") points.push({ lat, lon });
+      }
+    }
+    return points;
+  } catch (error) {
+    console.error("[phoenix-crm] impossible points not read", { error });
+    return [];
+  }
+}
+
+/**
+ * This rep's far refusals on this customer on one Cairo visit day, as readings — what decides whether he
+ * is stuck at one spot (`stuckAtOneSpot`). Empty on any error: a count the save cannot read refuses as
+ * before, never holds, and never alerts.
+ */
+export async function loadFarTriesOnDay(input: {
+  seatId: string;
+  repHrId: string;
+  customerId: string;
+  isTest: boolean;
+  visitDate: string;
+}): Promise<Array<{ lat: number; lon: number; accuracyMeters: number | null }>> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("lat, lon, accuracy_meters")
+      .eq("reason", "far_from_place")
+      .eq("subject_kind", "visit")
+      .eq("seat_id", input.seatId)
+      .eq("customer_id", input.customerId)
+      .eq("rep_hr_id", input.repHrId.toUpperCase())
+      .eq("is_test", input.isTest)
+      .eq("visit_date", input.visitDate)
+      .limit(500);
+    if (error) {
+      console.error("[phoenix-crm] far tries not read", { seatId: input.seatId, message: error.message });
+      return [];
+    }
+    const tries: Array<{ lat: number; lon: number; accuracyMeters: number | null }> = [];
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      if (typeof row.lat !== "number" || typeof row.lon !== "number") continue;
+      const accuracy = row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters);
+      tries.push({ lat: row.lat, lon: row.lon, accuracyMeters: accuracy !== null && Number.isFinite(accuracy) ? accuracy : null });
+    }
+    return tries;
+  } catch (error) {
+    console.error("[phoenix-crm] far tries not read", { seatId: input.seatId, error });
+    return [];
+  }
+}
+
 export type BlockedPermissionInput = {
   subjectKind: "visit" | "place";
   /** Which permission the browser blocked — already parsed, never a string off the wire. */

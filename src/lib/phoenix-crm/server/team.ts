@@ -84,6 +84,8 @@ import {
   type TeamTodayVisit,
 } from "@/lib/phoenix-crm/team-today";
 import { isUnplannedKind, isUnplannedVisitStatus, kpiHoldBackOf, type KpiHoldBack } from "@/lib/phoenix-crm/unplanned-rules";
+import { type FarVisitHoldStatus } from "@/lib/phoenix-crm/far-visit-safeguards";
+import { loadUncountedFarVisitHolds } from "@/lib/phoenix-crm/server/far-visit-safeguards";
 import { sortVendorLeftovers, type VendorLeftoverRep } from "@/lib/phoenix-crm/vendor-leftovers";
 import type { PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -152,11 +154,11 @@ function withClock(
  * this one (owner, 2026-10-02, "Still planned"), and only the returned day reads as not sent.
  */
 const TEAM_TODAY_VISIT_COLUMNS =
-  "seat_id, customer_id, list_type, captured_at, is_unplanned, unplanned_kind, imported_from_ireports360_at, ireports360_kpi_counted, " +
+  "id, seat_id, customer_id, list_type, captured_at, is_unplanned, unplanned_kind, imported_from_ireports360_at, ireports360_kpi_counted, " +
   "customer:phoenix_crm_customers!customer_id(validated_at), unplanned:phoenix_crm_unplanned_visits!visit_id(status)";
 
 /** Why a visit is in no KPI — read off the row the same way the visit list reads it (visits.ts). */
-export function teamTodayHoldBack(row: Row): KpiHoldBack | null {
+export function teamTodayHoldBack(row: Row, farHoldStatus: FarVisitHoldStatus | null = null): KpiHoldBack | null {
   const one = (value: unknown): Row => {
     const entry = Array.isArray(value) ? value[0] : value;
     return (entry && typeof entry === "object" ? entry : {}) as Row;
@@ -171,11 +173,14 @@ export function teamTodayHoldBack(row: Row): KpiHoldBack | null {
     unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
     copiedFromOldSystem: typeof row.imported_from_ireports360_at === "string",
     oldSystemKpiCounted: row.ireports360_kpi_counted === true,
+    farHoldStatus,
   });
 }
 
 async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, date: string): Promise<Map<string, TeamTodayFigures>> {
   const supabase = getSupabaseAdmin();
+  // A visit held for the SFE (owner, 2026-11-10) counts in nothing until he approves it: one read for the day.
+  const farHolds = await loadUncountedFarVisitHolds({ from: date, to: date });
   // The batches run four at a time rather than one after another — an SFE Manager's whole company is
   // four batches of three steps each — and are folded back in batch order below, so the figures are
   // summed from the same rows in the same order as before.
@@ -233,7 +238,7 @@ async function loadTeamToday(seatIds: ReadonlyArray<string>, isTest: boolean, da
         customerId: String(row.customer_id),
         listType: visitListType,
         capturedAt: String(row.captured_at),
-        holdBack: teamTodayHoldBack(row),
+        holdBack: teamTodayHoldBack(row, farHolds.get(String(row.id)) ?? null),
       });
     }
     return { seatsWithPlan, planned, visits };

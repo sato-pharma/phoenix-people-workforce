@@ -274,9 +274,16 @@ export function visitCountsInKpi(input: {
    * visit on exactly this, so a copied visit without it counts in nothing, whatever else it says.
    */
   oldSystemKpiCounted?: boolean;
+  /**
+   * The far-visit hold's status, where the visit has one (`phoenix_crm_far_visit_holds`, owner 2026-11-10): a
+   * visit saved and held for the SFE after five far refusals from one spot. It counts only once approved —
+   * the countable views ask exactly this. Absent or null: no hold.
+   */
+  farHoldStatus?: "sfe_pending" | "approved" | "refused" | null;
 }): boolean {
   if (!input.customerValidated) return false;
   if (input.copiedFromOldSystem) return input.oldSystemKpiCounted === true;
+  if (input.farHoldStatus && input.farHoldStatus !== "approved") return false;
   if (!input.isUnplanned) return true;
   if (input.unplannedKind === "out_of_list") return true;
   return input.unplannedStatus === "approved";
@@ -302,6 +309,8 @@ export function kpiHoldBackOf(input: Parameters<typeof visitCountsInKpi>[0]): Kp
   // A copied visit that does not count is waiting for a validated PLACE (no place, so nothing was measured):
   // the visit is shown and counted the day its customer's place is validated (the restamp sets the flag).
   if (input.copiedFromOldSystem) return "validation";
+  // A held visit waits for the SFE, or was refused by him for good — whatever its off-plan approval says.
+  if (input.farHoldStatus && input.farHoldStatus !== "approved") return input.farHoldStatus === "refused" ? "refused" : "approval";
   return input.unplannedStatus === "refused" ? "refused" : "approval";
 }
 
