@@ -40,7 +40,7 @@ export default async function AdminMarketingFeedbackPage({ searchParams }: PageP
         </div>
       </div>
 
-      <FieldFeedbackBoardBody access={access} basePath="/admin/marketing-feedback" params={params} />
+      <FieldFeedbackBoardBody access={access} basePath="/admin/marketing-feedback" newHref={null} params={params} />
     </div>
   );
 }

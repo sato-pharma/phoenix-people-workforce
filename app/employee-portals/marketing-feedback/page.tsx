@@ -30,7 +30,12 @@ export default async function EmployeePortalMarketingFeedbackPage({ searchParams
       description="One form per single or double visit with a representative, and the tracking of each representative's strengths and gaps over time."
       title="Marketing Field Visit Feedback"
     >
-      <FieldFeedbackBoardBody access={access} basePath="/employee-portals/marketing-feedback" params={params} />
+      <FieldFeedbackBoardBody
+        access={access}
+        basePath="/employee-portals/marketing-feedback"
+        newHref="/employee-portals/marketing-feedback/new"
+        params={params}
+      />
     </EmployeePortalPageShell>
   );
 }

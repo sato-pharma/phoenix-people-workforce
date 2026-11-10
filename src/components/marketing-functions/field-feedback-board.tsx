@@ -31,6 +31,8 @@ type Props = {
   tracks: RepTrack[];
   teamGaps: TeamGap[];
   basePath: string;
+  /** The new-form page, written out in full by the page so the reachability check can read the link; null where no one creates. */
+  newHref: string | null;
   canCreate: boolean;
   showAuthor: boolean;
 };
@@ -251,13 +253,13 @@ function Tracking({ tracks, teamGaps }: { tracks: RepTrack[]; teamGaps: TeamGap[
   );
 }
 
-export function FieldFeedbackBoard({ tab, forms, tracks, teamGaps, basePath, canCreate, showAuthor }: Props) {
+export function FieldFeedbackBoard({ tab, forms, tracks, teamGaps, basePath, newHref, canCreate, showAuthor }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <Tabs basePath={basePath} tab={tab} />
-        {canCreate ? (
-          <Link className={phxButtonAccentClassName} href={`${basePath}/new`}>
+        {canCreate && newHref ? (
+          <Link className={phxButtonAccentClassName} href={newHref}>
             New field visit feedback
           </Link>
         ) : null}

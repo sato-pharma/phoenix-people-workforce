@@ -67,14 +67,25 @@ export async function MarketingFunctionsBody({
   );
 }
 
-export async function FieldFeedbackBoardBody({ access, params, basePath }: { access: AccessContext; params: Params; basePath: string }) {
+export async function FieldFeedbackBoardBody({
+  access,
+  params,
+  basePath,
+  newHref,
+}: {
+  access: AccessContext;
+  params: Params;
+  basePath: string;
+  newHref: string | null;
+}) {
   const tab: FieldFeedbackTab = one(params.tab) === "tracking" ? "tracking" : "forms";
   const board = await loadFieldFeedbackBoard(access);
   return (
     <FieldFeedbackBoard
       basePath={basePath}
-      canCreate={isMarketingFunctionsAuthor(access)}
+      canCreate={isMarketingFunctionsAuthor(access) && newHref !== null}
       forms={board.forms}
+      newHref={newHref}
       showAuthor={!isMarketingFunctionsAuthor(access)}
       tab={tab}
       teamGaps={board.teamGaps}
