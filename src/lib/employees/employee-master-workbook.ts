@@ -584,11 +584,11 @@ function styleMasterSheet(
   // ── a salary-blind export HIDES the money columns, it never REMOVES them ─────
   //
   // Every position on this sheet is computed from the static `columns` contract — `columnIndex`,
-  // `letterOf`, the row check, the formats, the protection loop — so dropping a column would shift
+  // `letterOf`, the row check, the formats, the read-only marks — so dropping a column would shift
   // every letter after it and point the importer's alias map and the row check at the wrong cells.
-  // Hidden, empty and locked keeps every letter where it is; the protected sheet does not offer
-  // "format columns", so they cannot be unhidden either. (The cells are already empty: this seat's
-  // directory reaches the builder with every figure redacted.)
+  // Hidden and empty keeps every letter where it is. The sheet is unprotected, so a reader can
+  // unhide them — and finds nothing: this seat's directory reaches the builder with every figure
+  // redacted, so the money columns of a salary-blind export are hidden AND empty.
   if (omitMoney) {
     sheetColumns.forEach((column, index) => {
       if (column.kind === "money") sheet.getColumn(index + 1).hidden = true;
@@ -765,7 +765,9 @@ function styleMasterSheet(
     }
   }
 
-  // --- protection: formulas and reference columns locked, everything else open ---
+  // --- read-only marks: formulas and reference columns flagged locked, everything else open ---
+  // The sheet is unprotected (owner, 2026-11-10), so these flags lock nothing; they only mark the
+  // read-only columns, and the importer ignores those columns whatever is typed into them.
   for (let rowNumber = 1; rowNumber <= lastFormulaRow; rowNumber += 1) {
     sheetColumns.forEach((column, index) => {
       sheet.getCell(rowNumber, index + 1).protection = {
@@ -1355,19 +1357,7 @@ export async function buildEmployeeMasterWorkbook(
   addUploadRulesSheet(workbook, { canCreate, omitMoney });
   addReferenceDataSheet(workbook, lookups);
 
-  // Everything but the data sheet is reference material — protect it from a stray keystroke while
-  // leaving selection free. The master sheet keeps its own protection (formulas only).
-  for (const name of ["Start Here", "Field Guide", "Upload Rules", "Reference Data"]) {
-    const reference = workbook.getWorksheet(name);
-    if (reference) await reference.protect("", { selectLockedCells: true, selectUnlockedCells: true });
-  }
-  await sheet.protect("", {
-    autoFilter: true,
-    formatCells: true,
-    selectLockedCells: false,
-    selectUnlockedCells: true,
-    sort: true,
-  });
+  // The export is deliberately UNPROTECTED on the owner's word (2026-11-10): no sheet and no workbook protection.
 
   // Open on the cover, even though the data sheet has to be first in the file.
   const startHereIndex = workbook.worksheets.findIndex((worksheet) => worksheet.name === "Start Here");
