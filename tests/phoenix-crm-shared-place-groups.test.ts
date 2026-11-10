@@ -443,7 +443,11 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
     customersSource.includes('"/api/phoenix-crm/validation-reviews/refuse", { placeId: customer.placeId, note, refusalReason: reason }'),
     "one the system never questioned goes through the refuse route, body for body",
   );
-  assert.ok(customersSource.includes("/api/phoenix-crm/validation-reviews/restore"), "a rejection can be taken back");
+  assert.ok(customersSource.includes("<RestoreAfterRejection"), "a rejection can be taken back");
+  assert.ok(
+    readFileSync("src/components/phoenix-crm/place-check-restore.tsx", "utf8").includes("/api/phoenix-crm/validation-reviews/restore"),
+    "through the review restore route",
+  );
   assert.match(customersSource, /armed \?/, "a rejection is confirmed before it is sent");
   assert.match(customersSource, /disabled=\{reason === "" \|\| saving\}/, "and cannot be armed before a reason is chosen");
   assert.doesNotMatch(customersSource, /note\.trim\(\)\.length === 0/, "never gated on the free-text note — it is optional");

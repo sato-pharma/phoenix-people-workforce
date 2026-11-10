@@ -29,6 +29,7 @@ import { useState } from "react";
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { RestoreAfterRejection } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
@@ -381,56 +382,20 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 
 /** Taking a rejection back — the mirror of the reject, through the review restore route. */
 function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
-  const done = usePlaceCheckDone();
-  // Bringing them back validates them again, so the short-name rule holds here as on Approve.
-  const shortName = approvalNeedsFullName(customer);
-  const { saved, markSaved } = useSavedOutcome(customer);
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  async function restore() {
-    if (saving || !customer.reviewId) return;
-    setSaving(true);
-    setProblem(null);
-    try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: customer.reviewId, note }, "restored");
-      markSaved(done("restored"));
-      setSaving(false);
-    } catch (error) {
-      if (isAlreadyDecided(error)) {
-        markSaved(done("already"));
-        setSaving(false);
-        return;
-      }
-      setProblem(messageOf(error));
-      setSaving(false);
-    }
-  }
-
-  if (saved) return <PlaceCheckSaved outcome={saved} />;
-
+  // Who refused them and when stays on the card for every decider; the take-back under it is the Super
+  // Admin's alone and never greyed out for a short name (owner, 2026-11-10) — place-check-restore.tsx.
   return (
     <div className="min-w-0 space-y-2">
       <p className="break-words text-xs text-slate-500">{[customer.decidedByName, customer.decidedAtText].filter(Boolean).join(" · ")}</p>
       {customer.decisionNote ? <p className="break-words text-xs text-slate-600">{customer.decisionNote}</p> : null}
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`seated-restore-note-${scope}-${customer.key}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving}
-        id={`seated-restore-note-${scope}-${customer.key}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
+      <RestoreAfterRejection
+        busyLabel="Bringing them back"
+        customerName={customer.customerName}
+        idKey={`seated-${scope}-${customer.key}`}
+        listType={customer.listType}
+        reviewId={customer.reviewId}
+        row={customer}
       />
-      <CrmButton busy={saving} disabled={saving || shortName} onClick={() => void restore()} variant="primary">
-        {saving ? "Bringing them back" : "Approve it after all"}
-      </CrmButton>
-      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
 }

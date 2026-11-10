@@ -27,6 +27,7 @@ import { useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
+import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
@@ -287,6 +288,9 @@ function Cost({ row }: { row: SharedPlaceBoardRow }) {
  * validate, and the answer says so by name.
  */
 function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope }) {
+  // Taking a rejection back is the Super Admin's alone (owner, 2026-11-10: "the SFE cannot"); the SFE
+  // Manager reads who rejected it and why, and no button.
+  const canRestore = useCanRestoreValidation();
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
@@ -319,6 +323,8 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
       <CrmPill tone="bad">Rejected</CrmPill>
       <p className="break-words text-xs text-slate-500">{[row.decidedByName, row.decidedAtText].filter(Boolean).join(" · ")}</p>
       {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
+      {canRestore ? (
+        <>
       <p className="break-words text-xs text-slate-600">
         Bringing it back makes the building live again and gives every customer it retired their place back. One whose timetable still cannot
         answer for them stays under To validate.
@@ -339,6 +345,8 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
         {saving ? "Bringing it back" : "Approve it after all"}
       </CrmButton>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -520,12 +528,16 @@ export function SharedPlaceList({
 }) {
   const bulk = mode === "company";
   const rows = useMemo(() => groups.map((group) => group.venue), [groups]);
-  const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId);
+  // A rejected building is ticked and brought back by the Super Admin alone (owner, 2026-11-10).
+  const canRestore = useCanRestoreValidation();
+  const canPick = (row: SharedPlaceBoardRow) => canRestore || !row.restorable;
+  const picks = useRowPicks<SharedPlaceBoardRow>(bulk ? rows : [], (row) => row.sharedPlaceId, canPick);
+  const venueActions = canRestore ? VENUE_ACTIONS : VENUE_ACTIONS.filter((action) => action.key !== "restore");
   return (
     <>
       {bulk ? (
         <BulkDecideBar
-          actions={VENUE_ACTIONS}
+          actions={venueActions}
           kind="building"
           adviceOf={(row) => (row.restorable ? null : adviseOnBuilding(row).kind)}
           nameOf={(row) => row.name}
@@ -537,7 +549,7 @@ export function SharedPlaceList({
           <div key={row.sharedPlaceId} className="space-y-3 border-t-4 border-slate-200 first:border-t-0">
             <div className="space-y-4 px-4 pt-4">
               <div className="flex min-w-0 items-start gap-3">
-                {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                 <VenueHeader mode={mode} row={row} />
               </div>
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
@@ -568,7 +580,7 @@ export function SharedPlaceList({
             <tr key={row.sharedPlaceId}>
               <td className={crmTdClassName}>
                 <div className="flex min-w-0 items-start gap-3">
-                  {bulk ? <BulkPick picks={picks} row={row} /> : null}
+                  {bulk && canPick(row) ? <BulkPick picks={picks} row={row} /> : null}
                   <VenueHeader mode={mode} row={row} />
                 </div>
                 <div className="-mx-3 mt-3 border-t border-slate-100">

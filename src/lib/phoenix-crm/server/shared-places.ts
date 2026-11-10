@@ -37,6 +37,7 @@ import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
   canDecideValidationReviews,
+  canRestoreValidation,
   placeChecksSeatScope,
   readTestFlag,
   territoryForRead,
@@ -950,7 +951,8 @@ export type SharedPlaceRestore = {
  * comment written with the restore is the one exception: he and his manager read it (owner, 2026-11-01).
  */
 export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRestore> {
-  if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
+  // The Super Admin alone, like every rejection taken back (owner, 2026-11-10: "the SFE cannot").
+  if (!canRestoreValidation(viewer)) throw forbiddenError("Only the Super Admin approves a validation after it was rejected.");
   const body = record(raw);
   if (!isUuid(body.sharedPlaceId)) throw validationError("Choose the polyclinic or centre to bring back.");
 

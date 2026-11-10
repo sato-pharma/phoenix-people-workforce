@@ -19,6 +19,7 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { RestoreAfterRejection, restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
@@ -190,58 +191,17 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
  * database makes. The note is OPTIONAL since 2026-10-15, as it is everywhere on this page.
  */
 function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
-  const done = usePlaceCheckDone();
-  // Bringing it back validates the customer again, so a clinic customer with one or two names cannot be.
-  const shortName = approvalNeedsFullName(row);
-  const { saved, markSaved } = useSavedOutcome(row);
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  async function restore() {
-    if (saving) return;
-    setSaving(true);
-    setProblem(null);
-    try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note }, "restored");
-      markSaved(done("restored"));
-      setSaving(false);
-    } catch (error) {
-      if (isAlreadyDecided(error)) {
-        markSaved(done("already"));
-        setSaving(false);
-        return;
-      }
-      setProblem(messageOf(error));
-      setSaving(false);
-    }
-  }
-
-  if (saved) return <PlaceCheckSaved outcome={saved} />;
-
+  // The Super Admin alone, and never greyed out for a short name (owner, 2026-11-10) — place-check-restore.tsx.
   return (
-    <div className="space-y-2 border-t border-slate-100 pt-2">
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${scope}${row.reviewId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving}
-        id={`restore-note-${scope}${row.reviewId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <CrmButton disabled={saving || shortName} onClick={() => void restore()} variant="primary">
-        {saving ? "Bringing it back…" : "Approve it after all"}
-      </CrmButton>
-      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      <p className="break-words text-xs text-slate-500">
-        The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. Their visits are measured against it again.
-      </p>
-      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
-    </div>
+    <RestoreAfterRejection
+      busyLabel="Bringing it back…"
+      customerName={row.customerName}
+      explanation={<>The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. Their visits are measured against it again.</>}
+      idKey={`${scope}${row.reviewId}`}
+      listType={row.listType}
+      reviewId={row.reviewId}
+      row={row}
+    />
   );
 }
 
@@ -518,8 +478,10 @@ const DECIDED_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     busyLabel: "Bringing back",
     variant: "primary",
     needsReason: false,
-    takes: (row) => row.restorable && !approvalNeedsFullName(row),
-    run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note: answer.note }, "restored"),
+    // The Super Admin's alone (the board leaves this action out for anybody else), and never held back for a
+    // short name: his approval goes through as it stands (owner, 2026-11-10, "the administrator is never blocked").
+    takes: (row) => row.restorable,
+    run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", restoreRequest(row.reviewId, answer.note), "restored"),
   },
 ];
 
@@ -536,7 +498,11 @@ export function ValidationReviewQueue({
   section: "waiting" | "decided";
 }) {
   const bulk = mode === "company";
-  const canPick = (row: ValidationReviewRow) => (section === "waiting" ? row.status === "pending" : row.refusable || row.restorable);
+  // Taking a rejection back is the Super Admin's alone (owner, 2026-11-10: "the SFE cannot") — the SFE
+  // Manager's board neither ticks a rejected row nor offers "Approve after all".
+  const canRestore = useCanRestoreValidation();
+  const canPick = (row: ValidationReviewRow) => (section === "waiting" ? row.status === "pending" : row.refusable || (canRestore && row.restorable));
+  const decidedActions = canRestore ? DECIDED_ACTIONS : DECIDED_ACTIONS.filter((action) => action.key !== "approve-after-all");
   const picks = useRowPicks<ValidationReviewRow>(bulk ? rows : [], (row) => row.reviewId, canPick);
   // 🔴 THE PICK-LIST FOLLOWS THE PHOTOGRAPHS IN THE PICK. All timetables → the timetable reasons; a
   // mixed pick takes the signboard list, whose reasons are all sayable about a building's sign.
@@ -546,7 +512,7 @@ export function ValidationReviewQueue({
     <>
       {bulk ? (
         <BulkDecideBar
-          actions={section === "waiting" ? WAITING_ACTIONS : DECIDED_ACTIONS}
+          actions={section === "waiting" ? WAITING_ACTIONS : decidedActions}
           // Only the waiting rows: a settled row's quick pick would tick rows no action can answer.
           adviceOf={section === "waiting" ? (row) => adviseOnReview(row).kind : undefined}
           kind={kind}

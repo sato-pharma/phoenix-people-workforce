@@ -945,6 +945,21 @@ export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
+ * Who approves a validation AFTER it was rejected — a place, a customer seated in a polyclinic, or the
+ * polyclinic itself (owner, 2026-11-10: "make the administrator able to approve a rejected validation from
+ * the SFE in place checks but the SFE cannot; the administrator is never blocked"). The Super Admin alone,
+ * whoever rejected it; never the SFE Manager, never a test account, never a district manager.
+ *
+ * 🔴 NARROWER THAN `canDecideValidationReviews`, BY HIS WORD — the SFE Manager still approves, rejects and
+ * rejects-after-approval on the company board; taking a REJECTION back is the one decision he lost. And the
+ * Super Admin's take-back is never refused for a short name: he approves as it stands or corrects the name
+ * in the same press (his "Both", the same day).
+ */
+export function canRestoreValidation(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+}
+
+/**
  * The controls the Super Admin and the SFE Manager share over a rep's field work: Rep Exceptions, Polyclinic Caps and
  * New Hire Accounts (owner, 2026-11-03: "I want the SFE to have the access"). Never a test account.
  *

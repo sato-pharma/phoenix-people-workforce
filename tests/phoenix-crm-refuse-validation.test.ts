@@ -98,11 +98,11 @@ function checkService(): void {
  * database is the authority on what may be reversed, so it is pinned first.
  */
 function checkRestoreDatabase(): void {
-  // 🔴 THE LIVE BODY IS THE ONE 20261015212903 INSTALLED, not the 2026-10-03 original: that migration
-  // replaced the function to stop requiring the note. Reading the older file would pin a rule the
-  // database no longer has.
+  // 🔴 THE LIVE BODY IS THE ONE 20261110214512 INSTALLED (the Super Admin's corrected name, 2026-11-10),
+  // which restated 20261015212903's (the note made optional) whole. Reading an older file would pin a
+  // body the database no longer has.
   const migration = readFileSync(
-    new URL("supabase/migrations/20261015212903_phoenix_crm_reject_after_approve_and_optional_note.sql", ROOT),
+    new URL("supabase/migrations/20261110214512_phoenix_crm_restore_validation_corrected_name.sql", ROOT),
     "utf8",
   ).replace(/\r\n/g, "\n");
   const fn = /create or replace function public\.phoenix_crm_restore_validation\(p jsonb\)([\s\S]*?)\n\$\$;/.exec(migration);
@@ -141,7 +141,11 @@ function checkRestoreService(): void {
   const service = read("src/lib/phoenix-crm/server/validation-reviews.ts");
   const restore = functionBody(service, "restoreValidation");
 
-  assert.ok(restore.indexOf("canDecideValidationReviews(viewer)") < restore.indexOf("callPhoenixCrm"), "restoreValidation asks who before it calls anything");
+  assert.ok(restore.indexOf("canRestoreValidation(viewer)") < restore.indexOf("callPhoenixCrm"), "restoreValidation asks who before it calls anything");
+  // 🔴 THE SUPER ADMIN ALONE, AND NEVER BLOCKED (owner, 2026-11-10). The SFE Manager's gate is not the
+  // one asked, and the short-name refusal every shared approve path makes is not made here.
+  assert.doesNotMatch(restore, /canDecideValidationReviews\(viewer\)/, "the SFE Manager does not take a rejection back");
+  assert.doesNotMatch(restore, /refuseApprovalOfShortName/, "a short name never blocks the Super Admin's take-back");
   assert.doesNotMatch(restore, /if \(!note\) throw/, "the reversal's note is optional here too (owner, 2026-10-15)");
   assert.match(restore, /cleanText\(body\.note, 500\)/, "and is still trimmed to the column's 500 characters");
   assert.match(restore, /callPhoenixCrm<Row>\("phoenix_crm_restore_validation"/, "it goes through the database function, which owns the rules");
@@ -162,12 +166,16 @@ function checkRestoreService(): void {
 
 function checkRestoreScreen(): void {
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
-  assert.match(queue, /"\/api\/phoenix-crm\/validation-reviews\/restore"/, "the rejected row posts to the restore route");
-  assert.match(queue, /\{ reviewId: row\.reviewId, note \}/, "with the review and the written reason");
+  // The control itself lives in place-check-restore.tsx since 2026-11-10, shared with a seated customer's
+  // card, so the take-back is one control for the Super Admin alone wherever it is drawn.
+  const control = read("src/components/phoenix-crm/place-check-restore.tsx");
+  assert.match(queue, /<RestoreAfterRejection/, "the rejected row draws the one take-back control");
+  assert.match(control, /"\/api\/phoenix-crm\/validation-reviews\/restore"/, "which posts to the restore route");
+  assert.match(control, /return nameParts \? \{ reviewId, note, nameParts \} : \{ reviewId, note \};/, "with the review, the written reason, and the corrected names only when he edited them");
   // `scope` is the one-by-one review's (2026-10-18): it tells the control which slide it decides.
   assert.match(queue, /\{row\.restorable \? <Restore row=\{row\}(?: scope=\{scope\})? \/> : null\}/, "and the option appears only where the server says it still can");
   assert.doesNotMatch(queue, /disabled=\{saving \|\| note\.trim\(\)\.length === 0\}/, "the button no longer waits for a written note (owner, 2026-10-15)");
-  assert.match(queue, /Approve it after all/, "worded as what it does");
+  assert.match(control, /Approve it after all/, "worded as what it does");
 }
 
 /**
@@ -264,7 +272,9 @@ function checkBulkDecide(): void {
   // ── The three sections that wire it, each to its own request ───────────────────────────────────
   const queue = read("src/components/phoenix-crm/validation-review-queue.tsx");
   assert.match(queue, /section: "waiting" \| "decided"/, "the queue is told which set it is drawing");
-  assert.match(queue, /actions=\{section === "waiting" \? WAITING_ACTIONS : DECIDED_ACTIONS\}/, "and that decides what a bulk answer can be");
+  assert.match(queue, /actions=\{section === "waiting" \? WAITING_ACTIONS : decidedActions\}/, "and that decides what a bulk answer can be");
+  // The decided set loses its take-back for anybody but the Super Admin (owner, 2026-11-10: "the SFE cannot").
+  assert.match(queue, /const decidedActions = canRestore \? DECIDED_ACTIONS : DECIDED_ACTIONS\.filter/, "and only the Super Admin is offered the bulk take-back");
   assert.match(queue, /takes: \(row\) => row\.status === "pending"/, "the waiting actions reach pending rows");
   assert.match(queue, /takes: \(row\) => row\.refusable/, "a bulk reject-after-all reaches only the approvals the server says can still be taken back");
   assert.match(queue, /takes: \(row\) => row\.restorable/, "and a bulk approve-after-all only the rejections it says can");
@@ -283,7 +293,8 @@ function checkBulkDecide(): void {
   assert.match(list, /useRowPicks<ValidatedPlaceRow>\(bulk \? shown : \[\]/, "and only the rows actually on screen can be ticked");
 
   const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
-  assert.match(venues, /actions=\{VENUE_ACTIONS\}/, "the polyclinics decide in bulk too");
+  assert.match(venues, /actions=\{venueActions\}/, "the polyclinics decide in bulk too");
+  assert.match(venues, /const venueActions = canRestore \? VENUE_ACTIONS : VENUE_ACTIONS\.filter/, "and only the Super Admin brings a building back in bulk");
   assert.match(venues, /\{ sharedPlaceId: row\.sharedPlaceId, decision: "reject", note: answer\.note, refusalReason: answer\.reason \}/, "through the venue's own decision route, body for body");
 
   // 🔴 AND IT IS THE SUPER ADMIN'S ALONE — a district manager's board decides nothing (owner, 2026-10-13).

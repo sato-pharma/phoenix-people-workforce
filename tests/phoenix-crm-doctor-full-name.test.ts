@@ -230,8 +230,11 @@ function checkPlaceChecksSendsAShortNameBack(): void {
   // Every approve path asks the server first.
   const decide = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function decideValidationReview(");
   assert.ok(decide.includes(`if (decision === "approve") await refuseApprovalOfShortName(await reviewCustomerId(reviewId));`), "a held review");
+  // 🔴 EXCEPT a rejection taken back, which is the Super Admin's alone and never blocked (owner, 2026-11-10,
+  // "Both"): he approves as it stands, or corrects the name in the same press.
   const restore = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function restoreValidation(");
-  assert.ok(restore.includes("await refuseApprovalOfShortName(await reviewCustomerId("), "a rejection taken back");
+  assert.ok(!restore.includes("refuseApprovalOfShortName"), "a rejection taken back is never refused for a short name");
+  assert.ok(restore.includes("parseDoctorFullName(body.nameParts, null)"), "and a corrected name is held to the rep's own three-box rules");
   const approve = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function approveValidatedPlace(");
   assert.ok(approve.includes("await refuseApprovalOfShortName(place.customer_id);"), "a place the system never questioned");
   const gate = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "async function refuseApprovalOfShortName(");
@@ -239,11 +242,12 @@ function checkPlaceChecksSendsAShortNameBack(): void {
   assert.ok(gate.includes("throw validationError(APPROVAL_NEEDS_FULL_NAME, VALIDATION_FULL_NAME_CODE)"), "the gate refuses");
 
   // Every screen disables its Approve on the same rule, says why, and no bulk approve takes him.
-  // Counted, so one approve losing its gate on a screen that has two still fails: the queue's Decision and
-  // Restore, a seated customer's Decision and take-back, and the in-use place's Approve.
+  // Counted, so one approve losing its gate on a screen that has two still fails: the queue's Decision, a
+  // seated customer's Decision, and the in-use place's Approve. The two take-backs left this count on
+  // 2026-11-10 — they are the Super Admin's and never greyed out (place-check-restore.tsx).
   const approveButtons: ReadonlyArray<[string, number]> = [
-    ["src/components/phoenix-crm/validation-review-queue.tsx", 2],
-    ["src/components/phoenix-crm/shared-place-customers.tsx", 2],
+    ["src/components/phoenix-crm/validation-review-queue.tsx", 1],
+    ["src/components/phoenix-crm/shared-place-customers.tsx", 1],
     ["src/components/phoenix-crm/validated-place-list.tsx", 1],
   ];
   for (const [path, count] of approveButtons) {
@@ -254,7 +258,10 @@ function checkPlaceChecksSendsAShortNameBack(): void {
   }
   const queue = readFileSync("src/components/phoenix-crm/validation-review-queue.tsx", "utf8");
   assert.ok(queue.includes(`takes: (row) => row.status === "pending" && !approvalNeedsFullName(row)`), "the waiting bulk approve skips him");
-  assert.ok(queue.includes("takes: (row) => row.restorable && !approvalNeedsFullName(row)"), "and so does the bulk take-back");
+  assert.ok(queue.includes("takes: (row) => row.restorable,"), "the bulk take-back is the Super Admin's and takes him as he stands");
+  const restoreScreen = readFileSync("src/components/phoenix-crm/place-check-restore.tsx", "utf8");
+  assert.ok(!restoreScreen.includes("|| shortName}"), "the take-back is never disabled for a short name");
+  assert.ok(restoreScreen.includes("Edit name"), "and offers Edit name beside it");
   assert.ok(queue.includes(`shortName ? "short_name"`), "the refusal opens on the short-name reason");
   const inUse = readFileSync("src/components/phoenix-crm/validated-place-list.tsx", "utf8");
   assert.ok(inUse.includes("takes: (row) => !approvalNeedsFullName(row)"), "the in-use bulk approve skips him");
