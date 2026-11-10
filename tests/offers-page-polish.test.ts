@@ -63,4 +63,13 @@ export function runOffersPagePolishTests() {
   assert.match(manager, /border-b-2 px-4 py-2 text-sm transition-colors/);
   assert.doesNotMatch(composer, /max-w-\[860px\][^"]*shadow-lg/, "the letter preview has no drop shadow");
   assert.doesNotMatch(composer, /bg-white px-4 py-3 shadow-sm" key=\{label\}/, "the pay boxes have no drop shadow");
+
+  // ── Second pass: the seat tells the truth, the phone card reads in order, an empty form shows a dash ──
+  assert.match(composer, /offer\.employeeHrId\n\s+\? "filled by this hire"/, "an accepted offer's own hire filled the seat");
+  assert.match(composer, /offer\.status === "sent"\n\s+\? "no longer open — choose it again on Add Employee"/, "only a sent offer is told to choose again");
+  assert.match(composer, /<dt className="font-bold text-phx-ink-soft">Package<\/dt>/, "the phone card labels its package");
+  assert.match(composer, /<dt className="font-bold text-phx-ink-soft">Sent by<\/dt>/);
+  assert.match(composer, /value > 0 \? `EGP \$\{offerMoney\(value\)\}` : "—"/, "an empty pay box is a dash, never EGP 0");
+  const designer = readFileSync("src/components/offers/offer-template-designer.tsx", "utf8");
+  assert.doesNotMatch(designer, /block whitespace-nowrap text-phx-xs text-phx-ink-faint/, "a sample line wraps, never cut mid-word");
 }

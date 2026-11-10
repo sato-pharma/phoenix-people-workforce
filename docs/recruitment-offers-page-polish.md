@@ -23,5 +23,14 @@ shadow; the sibling hiring screen, Hiring Documents, uses a flat underline.
   approval wording ("Send for approval", "Approve and send", "Send updated offer") is identical in both.
 - **Restraint:** the tabs are the Hiring Documents underline; the letter preview, the pay boxes and the
   phone cards lost their drop shadows.
+- **The seat line tells the truth.** Every accepted offer read "Seat: no longer open — choose it again on
+  Add Employee", although its own hire had filled the seat. Now: "filled by this hire" when the offer
+  produced an employee; "no longer open" for a declined or withdrawn one; the "choose it again" advice only
+  on a sent offer, where it is still something to do.
+- **The phone card reads in order:** name and status, then the job, then email, CC and seat; under a
+  hairline, Package, Sent and Sent by as one labelled strip (they were three loose lines, and the date had
+  no label).
+- **An empty form's pay boxes show a dash**, not four boxes of "EGP 0".
+- **The letter designer's sample lines wrap** — they were cut mid-word in the field and block lists.
 
 Pinned by `tests/offers-page-polish.test.ts`.

@@ -312,7 +312,15 @@ function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferV
   return (
     <span className="mt-0.5 block text-xs text-slate-500 [overflow-wrap:anywhere]">
       <span className="font-bold text-phx-ink-soft">Seat</span>{" "}
-      {vacancy ? formatOfferVacancyLabel(vacancy) : "no longer open — choose it again on Add Employee"}
+      {vacancy
+        ? formatOfferVacancyLabel(vacancy)
+        : // Measured on production 2026-11-10: every accepted offer read "no longer open — choose it again
+          // on Add Employee", although its OWN hire had closed the seat and nothing was left to do.
+          offer.employeeHrId
+          ? "filled by this hire"
+          : offer.status === "sent"
+            ? "no longer open — choose it again on Add Employee"
+            : "no longer open"}
     </span>
   );
 }
@@ -1220,8 +1228,11 @@ export function OfferComposer({
   const money = (label: string, value: number, note?: string) => (
     <div className="border border-phx-line bg-white px-4 py-3" key={label}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
-      <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">EGP {offerMoney(value)}</p>
-      {note ? <p className="mt-0.5 whitespace-nowrap text-phx-xs text-phx-ink-faint">{note}</p> : null}
+      {/* A dash until there is a package: an empty form read as four boxes of "EGP 0 · 0 a year". */}
+      <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">
+        {value > 0 ? `EGP ${offerMoney(value)}` : "—"}
+      </p>
+      {note && value > 0 ? <p className="mt-0.5 whitespace-nowrap text-phx-xs text-phx-ink-faint">{note}</p> : null}
     </div>
   );
 
@@ -2039,9 +2050,10 @@ export function OfferComposer({
                       card could have shown that. `break-all` because an email has no space to break
                       at, and no `truncate` because a half-shown address is worse than a wrapped one:
                       the whole value of this line is telling two addresses apart. */}
+                  {/* The job second, then who it went to (owner, 2026-11-10: "premium polish"). */}
+                  <p className="mt-0.5 break-words text-xs font-semibold text-slate-700">{offer.title}</p>
                   <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <OfferCopiedTo offer={offer} />
-                  <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                   <OfferSeat offer={offer} vacancies={vacancies} />
                   <OfferApprovalNote offer={offer} />
                 </div>
@@ -2053,11 +2065,25 @@ export function OfferComposer({
                   {offerStatusLabel(offer.status)}
                 </Badge>
               </div>
-              <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</p>
-              <p className="mt-1 text-xs text-slate-500">{offerWhen(offer.sentAt)}</p>
-              <div className="mt-1 text-xs text-slate-500">
-                <span className="font-bold text-phx-ink-soft">Sent by</span> <OfferSentBy offer={offer} people={people} />
-              </div>
+              {/* Package, when and by whom as one labelled strip (owner, 2026-11-10: "premium polish") —
+                  they were three unlabelled lines, and the date read as nothing in particular. A
+                  hairline above, no panel. Three columns from 640px, two below with Sent by under. */}
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-500 sm:grid-cols-3">
+                <div>
+                  <dt className="font-bold text-phx-ink-soft">Package</dt>
+                  <dd className="text-sm font-black tabular-nums text-slate-900">EGP {offerMoney(offer.totalMonthly)}</dd>
+                </div>
+                <div>
+                  <dt className="font-bold text-phx-ink-soft">Sent</dt>
+                  <dd className="tabular-nums">{offer.sentAt ? offerWhen(offer.sentAt) : "Not yet"}</dd>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <dt className="font-bold text-phx-ink-soft">Sent by</dt>
+                  <dd>
+                    <OfferSentBy offer={offer} people={people} />
+                  </dd>
+                </div>
+              </dl>
               {/* Wraps, like the table's cell: three controls do not fit one line at 375px, and
                   the fits-the-screen rule makes wrapping the answer rather than a sideways scroll. */}
               <div className="mt-3 flex flex-wrap gap-2">

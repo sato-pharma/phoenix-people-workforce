@@ -718,7 +718,7 @@ export function OfferTemplateDesigner({
                           <span className="block whitespace-nowrap font-mono text-phx-sm font-bold text-[#B45309]">
                             {`{{${placeholder.key}}}`}
                           </span>
-                          <span className="block whitespace-nowrap text-phx-xs text-phx-ink-faint">
+                          <span className="block break-words text-phx-xs text-phx-ink-faint">
                             {placeholder.label}
                             {SAMPLE_TOKENS[placeholder.key] ? ` · ${SAMPLE_TOKENS[placeholder.key]}` : ""}
                           </span>
@@ -753,7 +753,7 @@ export function OfferTemplateDesigner({
                     type="button"
                   >
                     <span className="block whitespace-nowrap text-sm font-bold text-slate-900">{def.label}</span>
-                    <span className="block whitespace-nowrap text-phx-xs text-phx-ink-faint">
+                    <span className="block break-words text-phx-xs text-phx-ink-faint">
                       {index + 1} of {blocks.length}
                     </span>
                   </button>
