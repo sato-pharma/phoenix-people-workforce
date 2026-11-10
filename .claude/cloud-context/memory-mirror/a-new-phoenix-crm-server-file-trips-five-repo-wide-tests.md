@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 69cc291e-284a-4a94-a402-f31715861ec2
-  modified: 2026-11-10T17:43:48.357Z
+  modified: 2026-11-10T20:08:18.731Z
 ---
 
 On 10 Nov 2026 the far-visit safeguards PR (sato-pharma/phoenix-people-workforce#246) went red in CI on five tests that none of the touched module tests mention. Each one fires on ANY new Phoenix CRM server file of the same shape:
@@ -17,6 +17,13 @@ On 10 Nov 2026 the far-visit safeguards PR (sato-pharma/phoenix-people-workforce
 5. `tests/page-change-fewer-waves.test.ts` — `loadVisitDay`'s second `Promise.all` is pinned to exactly names, recordings, dayReads; a new date-only read joins `dayReads`.
 
 Also `tests/phoenix-crm-visit-far-refusal.test.ts` requires the rep-only far guard within 200 characters of `visitAwayFromValidatedPlace(`.
+
+The trusted-point PR (sato-pharma/phoenix-people-workforce#254, 10 Nov 2026) tripped four MORE of the same kind:
+- A new `src/lib/crm/*` file reading `CRM_CHECKINS_UNIFIED_VIEW` must join `CRM_OTHER_MIRROR_ALLOW_LIST` in `tests/crm-single-source.test.ts` AND the `direct` list in `tests/phoenix-crm-visits-everywhere.test.ts` ("who reads the check-in view directly").
+- Naming a `phoenix_crm_visits` column that contains `ireports360_` (e.g. `ireports360_checkin_id`) trips the `/ireports360_/i` isolation scan in `tests/phoenix-crm-boundary.test.ts`; Phoenix's own columns are exempted with a `replaceAll` there.
+- Any filter added to the signboard backlog query must sit ABOVE `.is("shared_place_id", null)`: `tests/phoenix-crm-signboard-check.test.ts` allows only 400 characters between it and `.limit(limit)`.
+
+A file-scan test runs locally in seconds with a throwaway runner that imports just those `run…Tests` functions.
 
 **Why:** the spare laptop was unreachable, so the touched-tests run never happened and CI found them; each red costs a full CI run.
 
