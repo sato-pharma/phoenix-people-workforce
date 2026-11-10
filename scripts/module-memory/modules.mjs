@@ -394,6 +394,7 @@ export const MODULES = [
       "supabase/migrations/*phoenix_crm_validation_gap_fixes*",
       "supabase/migrations/*phoenix_crm_bring_back_never_validates_without_place*",
       "scripts/phoenix-crm-refile-no-brick-places.ts",
+      "scripts/phoenix-crm-validation-repair-plan.ts",
     ],
     keywords: ["refused reading", "refused readings", "blocked permission", "location blocked", "camera blocked", "off listing", "off_listing", "rough location", "impossible travel", "impossible location", "stuck rep", "far-visit hold", "held for SFE"],
     tables: ["phoenix_crm_refused_readings", "phoenix_crm_far_visit_holds"],

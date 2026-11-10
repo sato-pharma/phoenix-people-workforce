@@ -55,9 +55,10 @@ const validatedCustomerHoldsAPlace: ReconciliationCheck = {
   title: "Every validated doctor and account on a list holds a place its visits are measured against",
   domain: "crm-sales",
   severity: "high",
-  expectation: "known-open",
-  openDefect:
-    "26 on 11 Nov 2026: 23 admitted by an add approval after their only place had been rejected and retired, and 3 hospital accounts stamped validated on 29 Oct 2026 with no place. Migration 20261111004733 closed the door (the approval no longer validates without a place, and a trigger refuses any other route). The 26 rows wait for the owner's word on their repair; once they are repaired this check holds and the expectation is tightened.",
+  // It HOLDS since 11 Nov 2026: the 26 found that day (23 admitted by an add approval after their only place had
+  // been retired, 3 hospital accounts stamped on 29 Oct with no place) went back to "To validate" on the owner's
+  // word (scripts/phoenix-crm-validation-repair-plan.ts), and 20261111004733 and 20261111013233 closed the doors.
+  expectation: "holds",
   run: async (): Promise<ReconciliationOutcome> => {
     const supabase = getSupabaseAdmin();
     const [customerRows, placeRows] = await Promise.all([
@@ -106,7 +107,7 @@ const activePlaceHoldsABrick: ReconciliationCheck = {
   severity: "medium",
   expectation: "known-open",
   openDefect:
-    "30 on 11 Nov 2026, all saved before the seat's own area could reach past the trust radius; 29 file under today's rule (scripts/phoenix-crm-refile-no-brick-places.ts, a bulk change waiting for the owner's word) and one sits 12.6 km from the nearest brick. Once the 29 are filed this check reports that one place until a person moves it or a brick is added for it.",
+    "1 since 11 Nov 2026. 30 were found that day, all saved before the seat's own area could reach past the trust radius; 29 were filed under today's rule on the owner's word (scripts/phoenix-crm-refile-no-brick-places.ts) and one sits 12.6 km from the nearest brick. The check reports that one place until a person moves it or a brick is added for it.",
   run: async (): Promise<ReconciliationOutcome> => {
     const places = await readActivePlaces();
     const unfiled = places.filter((row) => row.brick_id === null || row.brick_id === undefined);

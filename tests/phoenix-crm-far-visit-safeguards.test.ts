@@ -397,6 +397,11 @@ export function runPhoenixCrmFarVisitSafeguardsTests() {
       assert.ok(checks.includes(`id: "${id}"`), `the nightly check ${id} exists`);
     }
     assert.match(checks, /const \{ list, places \} = await readPlacesToRecheck\(\);/, "the page and the nightly check can never disagree about the list");
+    assert.match(
+      checks.slice(checks.indexOf('id: "phoenix-crm-validated-customer-holds-a-place"'), checks.indexOf('id: "phoenix-crm-active-place-holds-a-brick"')),
+      /expectation: "holds",/,
+      "🔴 repaired on 11 November: a validated customer with no place is a breach from now on, never a known finding",
+    );
     assert.equal(checks.match(/\.eq\("is_test", false\)/g)?.length, 2, "🔴 test customers were validated with no place by design — they are never counted as a defect");
   }
 

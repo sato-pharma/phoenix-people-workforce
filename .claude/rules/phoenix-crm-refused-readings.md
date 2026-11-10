@@ -22,6 +22,7 @@ paths:
   - "supabase/migrations/*phoenix_crm_validation_gap_fixes*"
   - "supabase/migrations/*phoenix_crm_bring_back_never_validates_without_place*"
   - "scripts/phoenix-crm-refile-no-brick-places.ts"
+  - "scripts/phoenix-crm-validation-repair-plan.ts"
 ---
 
 # Module memory — Phoenix CRM — the refusals a capture leaves behind
