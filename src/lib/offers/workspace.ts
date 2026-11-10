@@ -8,9 +8,13 @@ import {
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { loadOfferVacancyOptions } from "@/lib/offers/vacancies";
 import { loadOfferPeopleNames } from "@/lib/offers/people";
+import { EMPTY_OFFER_COPY_DIRECTORY, type OfferCopyDirectory } from "@/lib/offers/copy-directory";
+import { loadOfferCopyDirectory } from "@/lib/offers/copy-directory-loader";
 import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 
 export type OffersWorkspace = {
+  /** Who CC and BCC can be picked from: Line → Region → Area managers, and the HR team. Empty when unread. */
+  copyDirectory: OfferCopyDirectory;
   error: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
@@ -53,7 +57,11 @@ export async function loadOffersWorkspace(options: { viewerHrId?: string | null 
   // OUTSIDE the try, and swallowing its own failures inside `loadOfferVacancyOptions`. The seats
   // come from a different table in a different module; a vacancy read that fails is a picker with
   // nothing in it, never an Offers screen that will not load.
-  const vacancies = await loadOfferVacancyOptions();
+  // The CC/BCC picker's lists the same way: they never stop the screen loading, and typing still works.
+  const [vacancies, copyDirectory] = await Promise.all([
+    loadOfferVacancyOptions(),
+    loadOfferCopyDirectory().catch(() => EMPTY_OFFER_COPY_DIRECTORY),
+  ]);
 
   try {
     const [offers, templates, jobTitles] = await Promise.all([
@@ -63,11 +71,12 @@ export async function loadOffersWorkspace(options: { viewerHrId?: string | null 
     ]);
     // The viewer is named too, so an offer they send in this sitting shows their name without a reload.
     const people = await loadOfferPeopleNames(offers, [options.viewerHrId]);
-    return { error: null, jobTitles, offers, people, sender: senderInfo, templates, vacancies };
+    return { copyDirectory, error: null, jobTitles, offers, people, sender: senderInfo, templates, vacancies };
   } catch (error) {
     // The migration being absent gets its own sentence — the raw PostgREST message names a table
     // and tells HR nothing they can act on.
     return {
+      copyDirectory,
       error: isOfferSchemaMissing(error)
         ? "The job-offer module is not set up in this environment yet. Its database migration has not been applied."
         : offerErrorMessage(error),

@@ -77,6 +77,19 @@ export function isOfferCopyAddress(value: string): boolean {
 }
 
 /**
+ * The CC or BCC box with one more address on the end, as the "Add to CC" / "Add to BCC" buttons write
+ * it (owner, 2026-11-10). Whatever was typed is kept exactly; an address already there is not added
+ * twice, whatever its case.
+ */
+export function appendOfferCopyAddress(value: string, email: string): string {
+  const address = email.trim().toLowerCase();
+  if (!address) return value;
+  if (splitOfferCopyAddresses(value).some((entry) => entry.toLowerCase() === address)) return value;
+  const kept = value.trim().replace(/[,;\s]+$/, "");
+  return kept ? `${kept}, ${address}` : address;
+}
+
+/**
  * The CC and BCC an offer will actually carry.
  *
  * Every address lower-cased and de-duplicated. The candidate's own address is left off both lines

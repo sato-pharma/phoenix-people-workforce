@@ -1394,6 +1394,7 @@ import { runOfferLetterheadInlineMarkTests } from "./offer-letterhead-inline-mar
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferCopyRecipientsTests } from "./offer-copy-recipients.test.ts";
+import { runOfferCopyPickerTests } from "./offer-copy-picker.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
 import { runOfferRoleSummaryTests } from "./offer-role-summary.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
@@ -6028,6 +6029,10 @@ await runTest(
     + "who was copied is stored in the same update that marks the offer sent and shown on both the "
     + "desktop row and the phone card of the Offers list)",
   runOfferCopyRecipientsTests,
+);
+await runTest(
+  "job offers: CC and BCC picked from Line → Region → Area lists (the area's District, Regional and National Sales Managers) and the HR team, with typing kept",
+  runOfferCopyPickerTests,
 );
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);

@@ -26,6 +26,7 @@ import { OfferTemplateDesigner } from "@/components/offers/offer-template-design
 import { cn } from "@/lib/utils";
 import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 import type { OfferSenderInfo } from "@/components/offers/offer-ui";
+import type { OfferCopyDirectory } from "@/lib/offers/copy-directory";
 
 type Tab = "compose" | "design" | "titles";
 
@@ -39,6 +40,7 @@ export function OffersManager({
   canApprove,
   canDelete,
   canManage,
+  copyDirectory,
   initialError,
   jobTitles: initialJobTitles,
   offers: initialOffers,
@@ -56,6 +58,8 @@ export function OffersManager({
   /** `offers:approve` — the HR Manager. Without it, Send goes to him for approval (owner, 2026-11-10). */
   canApprove: boolean;
   canManage: boolean;
+  /** Who CC and BCC can be picked from (owner, 2026-11-10). Passed straight through to the composer. */
+  copyDirectory: OfferCopyDirectory;
   initialError: string | null;
   jobTitles: OfferJobTitle[];
   offers: OfferRecord[];
@@ -178,6 +182,7 @@ export function OffersManager({
           <OfferComposer
             canApprove={canApprove}
             canManage={canManage}
+            copyDirectory={copyDirectory}
             jobTitles={jobTitles}
             offers={offers}
             onOffers={setOffers}

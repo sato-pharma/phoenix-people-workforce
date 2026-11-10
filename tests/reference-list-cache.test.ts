@@ -63,6 +63,7 @@ const ADOPTERS: ReadonlyArray<{ file: string; what: string }> = [
   { file: "src/lib/employees/cns-line-members.ts", what: "lines, to find the CNS line's id by its code for the CNS Line members feed (membership itself is read uncached from employees)" },
   { file: "src/lib/hiring-pack/field-fill-rate.ts", what: "departments, for the fill-rate report" },
   { file: "src/lib/hiring-pack/service.ts", what: "lines, for the facts editor's picker" },
+  { file: "src/lib/offers/copy-directory-loader.ts", what: "lines, for the line names on the offer's CC and BCC picker" },
   { file: "src/lib/outstation/area-rep-options.ts", what: "employees, for the rep names on the wizard" },
   { file: "src/lib/probation/intelligence/manual-dv-day.ts", what: "lines, for the scorecard's line name" },
   { file: "src/lib/recruitment/manager-cv-engagement.ts", what: "lines, for each manager's product line" },

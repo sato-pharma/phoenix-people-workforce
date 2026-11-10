@@ -87,6 +87,7 @@ async function OffersContent({
       canApprove={canApprove}
       canDelete={canDelete}
       canManage={canManage}
+      copyDirectory={workspace.copyDirectory}
       initialError={workspace.error}
       jobTitles={workspace.jobTitles}
       offers={workspace.offers}
