@@ -197,6 +197,8 @@ async function loadBacklog(limit: number): Promise<SweepPlace[]> {
     .eq("status", "active")
     .eq("is_test", false)
     .is("shared_place_id", null)
+    // A trusted point carries no photo (point_source "trusted") — nothing to read, and it must never fill the night.
+    .not("photo_path", "is", null)
     .neq("customer.list_type", "Pharmacy")
     .or(`signboard_check.is.null,and(signboard_check->>verdict.eq.unjudged,signboard_check->>reason.in.(${reread}))`)
     .order("captured_at", { ascending: true })
@@ -372,6 +374,8 @@ export async function loadUnreadableBacklog(placeIds?: readonly string[]): Promi
         .eq("status", "active")
         .eq("is_test", false)
         .is("shared_place_id", null)
+        // A trusted point carries no photo (point_source "trusted") — nothing to read, and it must never fill the night.
+        .not("photo_path", "is", null)
         .neq("customer.list_type", "Pharmacy");
       query = part
         ? query.in("id", part)
@@ -520,6 +524,8 @@ async function loadStoredSignboards(): Promise<Row[]> {
       .eq("status", "active")
       .eq("is_test", false)
       .is("shared_place_id", null)
+      // A trusted point carries no photo (point_source "trusted") — nothing to read, and it must never fill the night.
+      .not("photo_path", "is", null)
       .neq("customer.list_type", "Pharmacy")
       .not("signboard_check", "is", null)
       .order("id", { ascending: true })

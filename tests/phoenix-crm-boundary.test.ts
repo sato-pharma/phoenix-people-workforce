@@ -176,6 +176,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/places/move", "approve"),
   // Seating customers in a validated polyclinic (owner, 2026-10-10): the Super Admin alone — `update` at the route, `canDecideSharedPlaces` in the service.
   post("list/places/seat", "update"),
+  // Validating a customer on the trusted point his reps' own readings agree on (owner, 2026-11-10): the Super
+  // Admin alone — `update` at the route, `canPlaceOnTrustedPoint` (= canDecideSharedPlaces) in the service.
+  get("list/places/trusted-point", "update"),
+  post("list/places/trusted-point", "update"),
   // The Master List's confirm / not confirmed / clear and its chosen photo (owner, 2026-10-26: "my click
   // and automatic"): the Super Admin alone — `update` at the route, `saveMasterDecision` refuses everyone
   // else in the service. It writes only the decisions table; no rep's place moves.
@@ -1092,6 +1096,9 @@ const LATER_MIGRATIONS = [
   // The four far-visit safeguards (owner, 10 Nov 2026): one NEW table (a visit held for the SFE), a tenth refusal
   // reason, and the two countable views REPLACED with the same body plus the held clause. No function.
   "supabase/migrations/20261110170000_phoenix_crm_far_visit_safeguards.sql",
+  // The Super Admin's trusted point (owner, 10 Nov 2026): one NEW function, phoenix_crm_place_on_trusted_point; places
+  // gain trusted_basis and a nullable photo_path for that place alone. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261110213959_phoenix_crm_trusted_point_places.sql",
 ];
 
 /**

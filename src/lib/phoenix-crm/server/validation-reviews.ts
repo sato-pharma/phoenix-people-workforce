@@ -869,6 +869,11 @@ export type ValidatedPlaceRow = {
   pin: ValidationReviewReading | null;
   photo: ValidationReviewReading | null;
   photoPath: string | null;
+  /**
+   * Validated by the Super Admin on a trusted point (owner, 2026-11-10): no photograph exists, and the
+   * screen says so in words rather than drawing a missing file.
+   */
+  trustedPoint?: boolean;
   /** Visits already measured against this place — refusing it un-places every one of them. */
   visits: number;
   /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
@@ -962,7 +967,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // 🔴 ONE STRING, AND A COLUMN THAT IS NOT THERE YET FAILS THE WHOLE READ. `shared_place_id`
           // and `schedule_check` arrive with migration 20261010013001, which reaches staging and
           // production before this file ships.
-          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",
+          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check, point_source",
         )
         .eq("status", "active");
       return seatScoped(query, seats).order("id", { ascending: false });
@@ -1040,6 +1045,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         pin: reading(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
         photo: reading(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
         photoPath: text(row.photo_path),
+        trustedPoint: row.point_source === "trusted",
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),
