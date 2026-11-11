@@ -8,7 +8,7 @@ import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import { pharmacyNameKey, pharmacyNamesOnVisit, visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { groupByRegionAndManager } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { locationSight, readsRegionOrDistrictReports, regionalReportWorlds, teamReportRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { locationSight, readsAnyTeamReport, regionalReportWorlds, teamReportRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatDayActivities, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { loadSeatsLeaveLabels } from "@/lib/phoenix-crm/server/leave-days";
 import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay } from "@/lib/phoenix-crm/server/manager-dm-day";
@@ -442,7 +442,7 @@ async function readCustomerNames(customerIds: string[]): Promise<Map<string, str
 }
 
 export async function loadTeamVisitsReport(viewer: PhoenixCrmViewer): Promise<TeamVisitsReport> {
-  if (!readsRegionOrDistrictReports(viewer)) throw forbiddenError("This report is for a Regional Sales Manager or a District Manager.");
+  if (!readsAnyTeamReport(viewer)) throw forbiddenError("This report is for a Regional Sales Manager, a District Manager or the Super Admin.");
   const today = viewer.visitDay;
   const yesterday = addDaysIso(today, -1);
   const seats = teamReportRepSeats(viewer);

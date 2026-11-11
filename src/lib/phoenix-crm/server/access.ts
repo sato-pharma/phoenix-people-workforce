@@ -1263,12 +1263,29 @@ export function readsRegionOrDistrictReports(viewer: PhoenixCrmViewer): boolean 
 }
 
 /**
+ * The same three team reports over the WHOLE COMPANY, for the Super Admin (owner, 2026-11-11: "add for the admin the
+ * reports u added to hany saad in his overview dashboard"). They open in the admin shell (/admin/field-crm/…) from the
+ * Team Reports band on /admin; the portal pages keep `readsRegionOrDistrictReports` and still send the Super Admin home.
+ *
+ * 🔴 THE SUPER ADMIN ALONE — never the CEO or the SFE Manager, whom the RSM's own gate already left out on purpose.
+ */
+export function readsCompanyTeamReports(viewer: Pick<PhoenixCrmViewer, "isSuperAdmin">): boolean {
+  return viewer.isSuperAdmin;
+}
+
+/** The gate every team-report LOADER and EXPORT asks: a Regional Sales Manager, a District Manager, or the Super Admin. */
+export function readsAnyTeamReport(viewer: PhoenixCrmViewer): boolean {
+  return readsRegionOrDistrictReports(viewer) || readsCompanyTeamReports(viewer);
+}
+
+/**
  * The rep seats a team report covers — the viewer's own scope, reps only, never a blind seat (an acting District
  * Manager's own rep seat). `scopeTerritories` is already the viewer's tree, so the same filter gives a Regional
  * Sales Manager the region and a District Manager the district.
  */
 export function teamReportRepSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
-  if (!readsRegionOrDistrictReports(viewer)) return [];
+  // The Super Admin's `scopeTerritories` is every seat in the company, every line, so the same filter gives him all reps.
+  if (!readsAnyTeamReport(viewer)) return [];
   return viewer.scopeTerritories.filter((seat) => seat.tier === "REP" && !isLocationBlind(viewer, seat));
 }
 
