@@ -1,6 +1,7 @@
 import { systemContractDefaults } from "@/config/system-settings";
 import { getCustodyDeviceFacts } from "@/lib/devices/service";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { autoFillHiringPackFacts } from "@/lib/hiring-pack/auto-fill";
 import {
   COMPANY_DETAILS_DEFAULT,
   type CompanyDetails,
@@ -211,6 +212,9 @@ const DOCUMENT_BINDINGS: Record<
 export type EmployeeDbRow = {
   base_salary: number | string | null;
   birth_date: string | null;
+  birth_place?: string | null;
+  education?: string | null;
+  qualification?: string | null;
   department_id: number | null;
   employment_status: string | null;
   full_name: string | null;
@@ -825,7 +829,7 @@ export function collectHiringPackGaps(
  * and nothing would error.
  */
 export const HIRING_PACK_EMPLOYEE_COLUMNS =
-  "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date";
+  "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date, birth_place, qualification, education";
 
 async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts> {
   const supabase = getSupabaseAdmin();
@@ -905,6 +909,9 @@ export function mapEmployeeFacts(
     employmentStatus: cleanText(row.employment_status),
     departed: hasDepartedEmployment(row.employment_status),
     lastWorkingDate: row.last_working_date,
+    recordBirthPlace: cleanText(row.birth_place ?? null),
+    recordQualification: cleanText(row.qualification ?? null),
+    education: cleanText(row.education ?? null),
   };
 }
 
@@ -1215,7 +1222,7 @@ export async function getHiringPack(
   const hrId = requireHrId(hrIdInput);
   // The company is read alongside the person, not after: it is on the critical path of every print,
   // and a missing table answers `{}` rather than throwing, so this adds a query and no failure mode.
-  const [employee, profile, offboarding, exit, renewal, company, custodyDevice] = await Promise.all([
+  const [storedEmployee, storedProfile, offboarding, exit, renewal, company, custodyDevice] = await Promise.all([
     loadEmployeeFacts(hrId),
     loadProfile(hrId),
     loadOffboardingProfile(hrId),
@@ -1227,11 +1234,15 @@ export async function getHiringPack(
     // missed would be a worse failure than the blanks it falls back to.
     getCustodyDeviceFacts(custodyDeviceId),
   ]);
-  const suggestedJobTitleAr = await loadSuggestedJobTitleAr(employee.jobTitle);
+  const suggestedJobTitleAr = await loadSuggestedJobTitleAr(storedEmployee.jobTitle);
+  // Every blank the system can answer is answered HERE, once, so every paper, the gap list and the
+  // fill screen see the same values — see `auto-fill.ts`. A stored value is never replaced.
+  const { employee, profile, autoFilled } = autoFillHiringPackFacts(storedEmployee, storedProfile);
 
   return {
     employee,
     profile,
+    autoFilled,
     offboarding,
     company,
     exit,

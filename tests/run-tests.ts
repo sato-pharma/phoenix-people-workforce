@@ -1386,6 +1386,7 @@ import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
 import { runHrFormsNationalIdTests } from "./hr-forms-national-id.test.ts";
 import { runEmployeeNationalIdAutofillTests } from "./employee-national-id-autofill.test.ts";
 import { runHrFormsReadinessTests } from "./hr-forms-readiness.test.ts";
+import { runHiringPackAutoFillTests } from "./hiring-pack-auto-fill.test.ts";
 import { runHrFormsWorkerDataTests } from "./hr-forms-worker-data.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
@@ -5946,6 +5947,14 @@ await runTest(
     + "form instead of printing three blank runs, and the company nationality default is reported as "
     + "derived rather than applied silently or written onto the stored profile)",
   runHrFormsReadinessTests,
+);
+
+await runTest(
+  "hiring pack auto-fill (every paper fills its blanks from what the system already knows — the "
+    + "birth date and birthplace from the national ID or the Employee Master, the owner's confirmed "
+    + "Arabic job title and qualification, Form 1's governorate from the residence city — and never "
+    + "touches a stored answer or guesses what cannot be known)",
+  runHiringPackAutoFillTests,
 );
 
 await runTest(

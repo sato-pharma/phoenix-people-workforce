@@ -66,6 +66,8 @@ const en = {
     fromId: "From your ID",
     fullName: "Full name",
     fullNameHint: "In English, as written on your national ID card.",
+    fullNameAr: "Full name in Arabic",
+    fullNameArHint: "In Arabic letters, exactly as written on your national ID card — your name, your father's and your grandfather's at least.",
     gender: "Gender",
     groups: { contact: "Contact", education: "Education", identity: "Identity", photo: "Photo", photos: "National ID photos", residence: "Residence" },
     mobile: "Mobile number",
@@ -225,6 +227,8 @@ const ar: JoiningCopy = {
     fromId: "من بطاقتك",
     fullName: "الاسم الكامل",
     fullNameHint: "بالإنجليزية، كما هو مكتوب في بطاقة الرقم القومي.",
+    fullNameAr: "الاسم الكامل بالعربية",
+    fullNameArHint: "بالحروف العربية، كما هو مكتوب في بطاقة الرقم القومي تماماً — الاسم واسم الأب والجد على الأقل.",
     gender: "النوع",
     groups: { contact: "التواصل", education: "المؤهل الدراسي", identity: "الهوية", photo: "الصورة", photos: "صور بطاقة الرقم القومي", residence: "محل الإقامة" },
     mobile: "رقم الموبايل",
@@ -362,6 +366,8 @@ export const AR_GENDER: Record<string, string> = { female: "أنثى", male: "ذ
 export const AR_MESSAGES: Record<string, string> = {
   // The form's own check — src/lib/offers/joining-form.ts
   "Please write your full name, at least your first and second name.": "يُرجى كتابة الاسم الكامل، على الأقل الاسم الأول والثاني.",
+  "Please write your full name in Arabic letters, exactly as it is on your national ID card.": "يُرجى كتابة الاسم الكامل بالحروف العربية، كما هو مكتوب في بطاقة الرقم القومي تماماً.",
+  "Please write your full Arabic name as on your card — at least your name, your father's and your grandfather's.": "يُرجى كتابة الاسم العربي الكامل كما في البطاقة — الاسم واسم الأب والجد على الأقل.",
   "Please write an Egyptian mobile number, 11 digits starting with 01.": "يُرجى كتابة رقم موبايل مصري من 11 رقماً يبدأ بـ 01.",
   "Please write a valid email address.": "يُرجى كتابة بريد إلكتروني صحيح.",
   "Please write your own private email, not a Sato Pharma address.": "يُرجى كتابة البريد الشخصي، وليس بريداً على نطاق ساتو فارما.",

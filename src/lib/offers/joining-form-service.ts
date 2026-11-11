@@ -654,6 +654,8 @@ export async function submitJoiningForm(
     lineId: seat?.lineId ?? null,
     managerHrId: seat?.managerHrId ?? null,
     mobileNumber: value.mobileNumber,
+    // The Arabic name from his own card — the name the hiring papers print, so HR no longer types it.
+    nameAr: value.fullNameAr,
     nationalId: value.nationalId,
     personalEmail: value.personalEmail,
     positionId: seat?.positionId ?? null,

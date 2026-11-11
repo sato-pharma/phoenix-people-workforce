@@ -26,12 +26,9 @@
  * credentials and a readiness check that reached for a client would read live payroll data.
  */
 
-import {
-  arabicAnswersOutstanding,
-  resolveJobTitleAr,
-  resolveQualificationAr,
-} from "@/lib/hiring-pack/arabic-lookups";
-import { describeNationalIdConflict, fillFromNationalId } from "@/lib/hiring-pack/national-id";
+import { arabicAnswersOutstanding } from "@/lib/hiring-pack/arabic-lookups";
+import { autoFillHiringPackFacts, type AutoFilledValue } from "@/lib/hiring-pack/auto-fill";
+import { describeNationalIdConflict } from "@/lib/hiring-pack/national-id";
 import { resolveNationality } from "@/lib/hiring-pack/nationality";
 import type {
   HiringPackDocument,
@@ -46,7 +43,7 @@ export const READINESS_DOCUMENTS = ["contract", "form1"] as const satisfies read
 export type ReadinessDocument = (typeof READINESS_DOCUMENTS)[number];
 
 /** Which value a row filled without anybody typing it, so the screen can say where it came from. */
-export type DerivedValue = "birthDate" | "birthPlace" | "jobTitleAr" | "qualification" | "nationality";
+export type DerivedValue = AutoFilledValue | "nationality";
 
 export type ReadinessRow = {
   hrId: string;
@@ -115,44 +112,18 @@ function emptyDocumentRecord<T>(value: () => T): Record<ReadinessDocument, T> {
 /**
  * Fill what the system can work out for itself, so the gaps that remain are the real ones.
  *
- * Returns NEW objects — the inputs are never mutated, because the same facts feed the fill screen
- * and a derived value silently appearing there as though it were stored is exactly the confusion
- * this module exists to remove. What is derived is reported in `derived` and shown as such.
+ * The same `autoFillHiringPackFacts` the papers print through (`getHiringPack`), so the board can
+ * never call a value missing that the paper would print, or the reverse — plus the nationality
+ * default, which is reported here because a board must say when a nationality was assumed.
+ *
+ * Returns NEW objects — the inputs are never mutated. What is derived is reported in `derived`.
  */
 export function enrichForReadiness(
   employee: HiringPackEmployeeFacts,
   profile: HiringPackProfile,
 ): { employee: HiringPackEmployeeFacts; profile: HiringPackProfile; derived: DerivedValue[] } {
-  const derived: DerivedValue[] = [];
-
-  const fromId = fillFromNationalId({
-    nationalId: employee.nationalId,
-    birthDate: employee.birthDate,
-    birthPlace: profile.birthPlace,
-  });
-  for (const value of fromId.derived) derived.push(value);
-
-  // Only a CONFIRMED seed returns a value — see `arabic-lookups.ts`. Until the owner answers the
-  // question sheet these both resolve to null and the gaps stand, which is the intended state.
-  let jobTitleAr = profile.jobTitleAr;
-  if (!jobTitleAr) {
-    const seeded = resolveJobTitleAr(employee.jobTitle);
-    if (seeded) {
-      jobTitleAr = seeded;
-      derived.push("jobTitleAr");
-    }
-  }
-
-  let qualification = profile.qualification;
-  if (!qualification) {
-    // The education value lives on the employee record; the qualification the form prints lives on
-    // the profile. This is the one place the two meet.
-    const seeded = resolveQualificationAr(readEducation(employee));
-    if (seeded) {
-      qualification = seeded;
-      derived.push("qualification");
-    }
-  }
+  const filled = autoFillHiringPackFacts(employee, profile);
+  const derived: DerivedValue[] = [...filled.autoFilled];
 
   // The company default. Reported as derived rather than applied quietly — see the module header
   // in `nationality.ts` for why a nationality is the one default that must stay visible.
@@ -160,29 +131,10 @@ export function enrichForReadiness(
   if (resolvedNationality.defaulted) derived.push("nationality");
 
   return {
-    employee: { ...employee, birthDate: fromId.birthDate },
-    profile: {
-      ...profile,
-      birthPlace: fromId.birthPlace,
-      jobTitleAr,
-      nationality: resolvedNationality.value,
-      qualification,
-    },
+    employee: filled.employee,
+    profile: { ...filled.profile, nationality: resolvedNationality.value },
     derived,
   };
-}
-
-/**
- * The employee's stored education, when the loader supplied it.
- *
- * `HiringPackEmployeeFacts` does not carry `education` — the fill screen never needed it — so the
- * bulk loader attaches it and this reads it defensively rather than widening a type five other
- * screens depend on. A missing value simply means no qualification can be seeded, which leaves the
- * gap standing.
- */
-function readEducation(employee: HiringPackEmployeeFacts): string | null {
-  const withEducation = employee as HiringPackEmployeeFacts & { education?: string | null };
-  return withEducation.education ?? null;
 }
 
 /**
