@@ -248,12 +248,24 @@ export function buildContributionRespread(input: {
   wholeUnits?: boolean;
   /** The weights: the line's sales value (the default, the Office rule) or one product's units. */
   shareBy?: "units" | "value";
+  /**
+   * A last step on the weights, after the rule has computed them — the owner's named-month Office
+   * exception (office-owner-exception.ts) and nothing else. Handed the rule's shares and the moved
+   * rows' whole VALUE; returns the shares to spread on. Absent → the rule's shares, untouched.
+   */
+  adjustShares?: (areaShare: ReadonlyMap<string, number>, movedValue: number) => Map<string, number>;
 }): ContributionRespread {
   const { moved, base } = input;
   if (moved.length === 0) return emptyContributionRespread();
 
-  const areaShare = input.shareBy === "units" ? areaUnitShares(base) : areaValueShares(base);
-  if (areaShare.size === 0) return emptyContributionRespread();
+  const ruleShare = input.shareBy === "units" ? areaUnitShares(base) : areaValueShares(base);
+  if (ruleShare.size === 0) return emptyContributionRespread();
+  const areaShare = input.adjustShares
+    ? input.adjustShares(
+        ruleShare,
+        moved.reduce((sum, row) => sum + (Number(row.salesValue) || 0), 0),
+      )
+    : ruleShare;
 
   // ── The spread, PER PRODUCT, on ONE blended set of weights ─────────────────────────────────
   // One share for every product on the line is the rule, not a shortcut — it is what "the same

@@ -6,6 +6,7 @@ import { runClosingFrozenSplitNetTests } from "./closing-frozen-split-net.test.t
 import { runClosingBulkAllocationTests } from "./closing-bulk-allocation.test.ts";
 import { runEpdaBonusDeductionTests } from "./epda-bonus-deduction.test.ts";
 import { runClosingOfficeRespreadTests } from "./closing-office-respread.test.ts";
+import { runOfficeOwnerExceptionTests } from "./office-owner-exception.test.ts";
 import { runClosingStoreSplitGeographyStampTests } from "./closing-store-split-geography-stamp.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
@@ -3217,6 +3218,10 @@ await runTest(
 await runTest(
   "Office read-time respread (from the 2026-10 closing CNS Office units are respread on TODAY's value shares, an aligned month nets to exactly zero, the shares equal the LOCKED Office rule's, the total cannot move, and every matrix, workbook, attribution net and Office grid takes it)",
   runClosingOfficeRespreadTests,
+);
+await runTest(
+  "Office owner exception (CNS 2026-10 only: the approved table sums to zero, each area's Office value moves by exactly its approved EGP after the rule, no product total moves, every other month and line is the bare rule, and it is all or nothing)",
+  runOfficeOwnerExceptionTests,
 );
 await runTest(
   "closing store-split cache keys on the geography version stamp (a direct SQL geography re-stamp changes the key, a missing stamp falls back to the hour bucket, and every table the split reads bumps it)",

@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [A new Phoenix CRM server file trips five repo-wide tests](a-new-phoenix-crm-server-file-trips-five-repo-wide-tests.md) — boundary LATER_MIGRATIONS, blind-half BLIND_READERS, imported-history mark, performance-phase-3 .range cap, visit-day waves.
 
 
 
