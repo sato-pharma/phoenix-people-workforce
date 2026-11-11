@@ -19,7 +19,10 @@ import { validateMedicalRepSimpleExpenseInput } from "@/lib/outstation/medical-r
 
 function baseInput() {
   return {
-    attachments: [{ bytes: Buffer.from("x"), contentType: "image/png", fileName: "t.png", size: 1 }],
+    attachments: [
+      { bytes: Buffer.from("x"), contentType: "image/png", fileName: "t.png", size: 1 },
+      { bytes: Buffer.from("y"), contentType: "image/png", fileName: "u.png", size: 1 },
+    ],
     goTicketAmount: 210,
     notes: "Conference travel",
     returnTicketAmount: 210,
