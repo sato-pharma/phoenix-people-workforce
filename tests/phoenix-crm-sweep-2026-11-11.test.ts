@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { hasLeftBy, SEAT_REP_LEFT } from "../src/lib/phoenix-crm/departure-rules.ts";
+import { hasLeftBy, leftLabel } from "../src/lib/phoenix-crm/departure-rules.ts";
 import { needsAddRequest, needsGradeText, sameNameOnSeatText } from "../src/lib/phoenix-crm/list-request-rules.ts";
 import { customerNameKey } from "../src/lib/phoenix-crm/name-fold.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
@@ -142,12 +142,28 @@ export function runPhoenixCrmSweepTests(): void {
     assert.equal(hasLeftBy({ statusEnded: false, lastWorkingDate: "" }, "2026-11-11"), false, "nothing known is never 'left'");
     assert.equal(hasLeftBy(null, "2026-11-11"), false, "an unread record fails open");
 
+    // 🔴 The owner's ruling, 11 Nov 2026: a manager's double visit with a rep who has since left is SHOWN and
+    // credited as entered, and the Visit Report marks her "Resigned on <date>" — never refused.
     const visits = source("src/lib/phoenix-crm/server/visits.ts");
-    assert.match(visits, /departedBy\(\[seat\.occupantHrId\], viewer\.visitDay\)/, "the visit save asks whether the seat's rep had left by the visit day");
-    assert.match(visits, /occupantLeft,\s*\}\);/, "and hands the answer to the participant check");
-    assert.match(visits, /isVacantTerritory\(seat\) \|\| occupantLeft/, "a leaver's seat files the manager's own visit exactly as a vacant one does");
-    assert.match(source("src/lib/phoenix-crm/scope.ts"), /if \(rep && input\.occupantLeft\) return \{ ok: false, error: SEAT_REP_LEFT \}/);
-    assert.match(SEAT_REP_LEFT, /left/);
+    assert.match(visits, /departedBy\(\[seat\.occupantHrId\], viewer\.visitDay\)/, "the visit save still asks whether the seat's rep had left by the visit day");
+    assert.match(visits, /isVacantTerritory\(seat\) \|\| occupantLeft/, "his own SINGLE visit on a leaver's seat is filed as his own, exactly as on a vacant one");
+    assert.doesNotMatch(visits, /occupantLeft,\s*\}\);/, "the answer is never handed to the participant check");
+    assert.doesNotMatch(source("src/lib/phoenix-crm/scope.ts"), /occupantLeft/, "the participant check never refuses a double visit for a leaver");
+
+    const omaima = { statusEnded: true, lastWorkingDate: "2026-10-31", employmentStatus: "resigned" };
+    assert.equal(leftLabel(omaima, "2026-11-03"), "Resigned on 31 Oct 2026", "Omaima Wael on Mahmoud Badawy's double visit of 3 Nov");
+    assert.equal(leftLabel(omaima, "2026-10-31"), null, "on her last working day she carries no mark");
+    assert.equal(leftLabel({ statusEnded: true, lastWorkingDate: "2026-09-30", employmentStatus: "terminated" }, "2026-10-03"), "Left on 30 Sep 2026");
+    assert.equal(leftLabel({ statusEnded: true, lastWorkingDate: null, employmentStatus: "Resigned" }, "2026-10-03"), "Resigned", "no date on the record: the word alone");
+    assert.equal(leftLabel({ statusEnded: false, lastWorkingDate: "2026-11-20", employmentStatus: "active" }, "2026-11-11"), null, "serving notice: no mark");
+    assert.equal(leftLabel(null, "2026-11-11"), null, "an unread record marks nobody");
+
+    const report = source("src/lib/phoenix-crm/server/visit-report.ts");
+    assert.match(report, /repLeft: leftLabel\(departures\.get\(personKey\(personHrId\) \?\? ""\) \?\? null, visitDate\)/, "every Visit Report row carries the mark for the visit's own day");
+    assert.match(report, /loadDepartureRecords\(visits\.map\(\(visit\) => whoseVisit\(visit\)\)\)\.catch\(/, "read once for the visits' people, and an unread answer never fails the report");
+    const table = source("src/components/phoenix-crm/visit-report/visit-report-table.tsx");
+    assert.equal((table.match(/<LeftPill row=\{row\} \/>/g) ?? []).length, 2, "the mark shows on the phone card and on the desktop table");
+    assert.match(source("src/lib/phoenix-crm/server/visit-report-workbook.ts"), /return `\$\{name\} \(\$\{row\.repLeft\}\)`;/, "and in the Excel file beside the name");
 
     const missed = source("src/lib/phoenix-crm/server/missed-records.ts");
     assert.equal(

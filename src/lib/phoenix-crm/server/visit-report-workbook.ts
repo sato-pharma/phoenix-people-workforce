@@ -132,6 +132,11 @@ export function visitReportWorkbookColumns(fields: ReadonlyArray<VisitReportFiel
 /** A lead column's value: the chosen field's when it was ticked, else the row's own head, which every row carries. */
 function leadValue(row: VisitReportRow, key: string): VisitReportValue {
   const chosen = row.values[key];
+  // A rep who had left by the visit day reads "Omaima Wael (Resigned on 31 Oct 2026)" (owner, 11 Nov 2026).
+  if (key === "repName" && row.repLeft) {
+    const name = chosen !== null && chosen !== undefined && chosen !== "" ? String(chosen) : row.repName;
+    return `${name} (${row.repLeft})`;
+  }
   if (chosen !== null && chosen !== undefined && chosen !== "") return chosen;
   if (key === "visitDate") return row.visitDate || null;
   if (key === "repName") return row.repName || null;
