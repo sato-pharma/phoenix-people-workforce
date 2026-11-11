@@ -190,6 +190,12 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/coaching/:id/edit", to: "/employee-portals/coaching/:id", roles: COACHING_PORTAL_ROLES },
 
   // ── One-to-one pages ───────────────────────────────────────────────────────
+  // Contract Renewal (owner, 2026-11-11). The renewal reminder reaches the employee's manager chain,
+  // and its button — /contracts, and now /contracts/recommend/<hrId> — sent every portal-shell
+  // manager to the portal home. The portal page shows a manager his team's renewals; the
+  // recommend page takes his Renew / Do not renew.
+  { from: "/contracts", to: "/employee-portals/contracts" },
+  { from: "/contracts/recommend/:hrId", to: "/employee-portals/contracts/recommend/:hrId" },
   { from: "/admin/report-it", to: "/employee-portals/report-it" },
   { from: "/admin/visual-aids", to: "/employee-portals/visual-aids" },
   // The Production Planner is dual-surface because two of the five people the owner named for it
