@@ -314,7 +314,8 @@ export async function enterMissedActivity(
   const parsed = parseMissedActivity(body, viewer.visitDay);
   if (!parsed.ok) throw validationError(parsed.error);
   const entry = parsed.value;
-  await refuseADayAfterTheRepLeft(repHrId, entry.visitDate, isTest);
+  // Clearing a day he entered himself stays open: only filling one dated after the rep left is refused.
+  if (!entry.clear) await refuseADayAfterTheRepLeft(repHrId, entry.activityDate, isTest);
 
   // 🔴 The rep's own record stays his. The Super Admin fills a day the rep left empty, and changes or
   // clears only what he entered himself.

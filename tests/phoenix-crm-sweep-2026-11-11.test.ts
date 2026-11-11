@@ -140,8 +140,13 @@ export function runPhoenixCrmSweepTests(): void {
     const missed = source("src/lib/phoenix-crm/server/missed-records.ts");
     assert.equal(
       (missed.match(/await refuseADayAfterTheRepLeft\(repHrId, entry\.visitDate, isTest\)/g) ?? []).length,
-      2,
-      "a missed visit and a missed day are both refused on a day after the rep left",
+      1,
+      "a missed visit is refused on a day after the rep left",
+    );
+    assert.match(
+      missed,
+      /if \(!entry\.clear\) await refuseADayAfterTheRepLeft\(repHrId, entry\.activityDate, isTest\)/,
+      "🔴 and a missed day is asked by its activityDate — a day activity has no visitDate, and asking by it refused nothing",
     );
 
     const notifications = source("src/lib/phoenix-crm/server/notifications.ts");
