@@ -145,6 +145,7 @@ export type JoiningFormAnswers = {
   education: string;
   educationOther: string;
   fullName: string;
+  fullNameAr: string;
   gender: string;
   mobileNumber: string;
   nationalId: string;
@@ -161,6 +162,8 @@ export type JoiningFormClean = {
   birthDate: string;
   education: string;
   fullName: string;
+  /** The name in Arabic as the national ID writes it — the name every hiring paper prints. */
+  fullNameAr: string;
   gender: "female" | "male";
   mobileNumber: string;
   nationalId: string;
@@ -171,6 +174,9 @@ export type JoiningFormClean = {
 };
 
 export const JOINING_FORM_OTHER_AREA = "__other__";
+
+const ARABIC_LETTER = /[ء-ي]/u;
+const LATIN_LETTER = /[A-Za-z]/;
 
 function text(value: unknown, max = 200): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
@@ -242,6 +248,17 @@ export function validateJoiningForm(
   const fullName = text(raw.fullName, 120);
   if (fullName.split(" ").filter(Boolean).length < 2) errors.fullName = "Please write your full name, at least your first and second name.";
 
+  // The Arabic name is the one every hiring paper prints — the contract, Form 1 and the rest refuse
+  // to print without it — and nobody at the company can type it more reliably than he can from his
+  // own card. Three names at least, because an Egyptian ID always carries his, his father's and his
+  // grandfather's; Arabic letters only, so the English name cannot be pasted in twice.
+  const fullNameAr = text(raw.fullNameAr, 160);
+  if (!fullNameAr || !ARABIC_LETTER.test(fullNameAr) || LATIN_LETTER.test(fullNameAr)) {
+    errors.fullNameAr = "Please write your full name in Arabic letters, exactly as it is on your national ID card.";
+  } else if (fullNameAr.split(" ").filter(Boolean).length < 3) {
+    errors.fullNameAr = "Please write your full Arabic name as on your card — at least your name, your father's and your grandfather's.";
+  }
+
   const mobileNumber = normalizeEgyptianMobile(text(raw.mobileNumber, 40));
   if (!mobileNumber) errors.mobileNumber = "Please write an Egyptian mobile number, 11 digits starting with 01.";
 
@@ -307,6 +324,7 @@ export function validateJoiningForm(
       birthDate,
       education,
       fullName,
+      fullNameAr,
       gender: gender as "female" | "male",
       mobileNumber: mobileNumber as string,
       nationalId: nationalIdDigits,

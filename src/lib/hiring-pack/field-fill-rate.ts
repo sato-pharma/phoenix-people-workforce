@@ -42,6 +42,7 @@ import {
   ACTIVE_EMPLOYMENT_STATUSES_IN_LIST,
   DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
 } from "@/lib/auth/session-lifecycle";
+import { autoFillHiringPackFacts } from "@/lib/hiring-pack/auto-fill";
 import { loadCompanyDetails } from "@/lib/hiring-pack/company-details-store";
 import { paperFieldBinding, paperFieldCurrentValue } from "@/lib/hiring-pack/paper-fields";
 import { loadReferenceDepartments } from "@/lib/reference/reference-lists";
@@ -214,9 +215,15 @@ async function loadRosterRecords(): Promise<RosterRecords> {
     // reader and the one that prints the paper cannot drift apart on what the field holds.
     const departmentName =
       row.department_id === null ? null : (departmentNames.get(row.department_id) ?? null);
+    // Through the same auto-fill the papers print through (`getHiringPack`), or this count would
+    // call a birthplace blank that the paper fills from the national ID.
+    const filled = autoFillHiringPackFacts(
+      mapEmployeeFacts(row, departmentName),
+      profileRow ? mapProfile(profileRow) : emptyProfile(row.hr_id),
+    );
     return {
-      employee: mapEmployeeFacts(row, departmentName),
-      profile: profileRow ? mapProfile(profileRow) : emptyProfile(row.hr_id),
+      employee: filled.employee,
+      profile: filled.profile,
       offboarding: offboardingRow
         ? mapOffboardingProfile(offboardingRow)
         : emptyOffboardingProfile(row.hr_id),

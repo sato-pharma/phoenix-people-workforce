@@ -67,6 +67,7 @@ import {
   type CustomDocumentNames,
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
+import { AUTO_FILLED_LABELS } from "@/lib/hiring-pack/auto-fill";
 import { describePrintInstruction } from "@/lib/hiring-pack/custom-templates";
 import { documentTakesAddressChoice, type PrintAddressChoice } from "@/lib/hiring-pack/print-address";
 import {
@@ -893,6 +894,7 @@ export function HiringPackManager({
 
   const blockingGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => gap.blocking), [pack]);
   const advisoryGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => !gap.blocking), [pack]);
+  const autoFilled = useMemo(() => pack?.autoFilled ?? [], [pack]);
 
   /**
    * Which exit route is in play right now — what has been typed, falling back to what is saved.
@@ -1543,8 +1545,25 @@ export function HiringPackManager({
                 />
               </div>
 
-              {blockingGaps.length > 0 || advisoryGaps.length > 0 ? (
+              {blockingGaps.length > 0 || advisoryGaps.length > 0 || autoFilled.length > 0 ? (
                 <div className="mt-4 flex flex-col gap-3 border-t border-phx-line pt-4">
+                  {autoFilled.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-emerald-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {autoFilled.length} filled automatically — nobody needs to type{" "}
+                        {autoFilled.length === 1 ? "it" : "them"}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {autoFilled.map((value) => (
+                          <Badge key={value} tone="ok">
+                            {AUTO_FILLED_LABELS[value].labelEn} · from {AUTO_FILLED_LABELS[value].source}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {blockingGaps.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
                       <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
