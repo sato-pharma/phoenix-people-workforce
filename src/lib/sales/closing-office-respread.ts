@@ -67,6 +67,7 @@ import {
   type RespreadMergeableSplit,
   type RespreadRow,
 } from "@/lib/sales/contribution-respread";
+import { applyOfficeOwnerException, officeOwnerExceptionFor } from "@/lib/sales/office-owner-exception";
 
 /** A closing detail row, narrowed to what this rule reads. See RespreadRow. */
 export type OfficeRespreadRow = RespreadRow;
@@ -116,7 +117,30 @@ export function buildOfficeRespread(
     else base.push(row);
   }
 
-  return buildContributionRespread({ base, line: String(line ?? ""), moved });
+  // THE OWNER'S NAMED-MONTH EXCEPTION, if this line and month carry one — applied to the rule's
+  // shares AFTER the rule, never instead of it. See office-owner-exception.ts for his words and the
+  // approved table. Every other line and month passes straight through.
+  const exception = officeOwnerExceptionFor(line ?? moved[0]?.officialLine, period);
+  return buildContributionRespread({
+    base,
+    line: String(line ?? ""),
+    moved,
+    ...(exception
+      ? {
+          adjustShares: (ruleShare: ReadonlyMap<string, number>, officeValue: number) => {
+            const result = applyOfficeOwnerException(ruleShare, exception, officeValue);
+            if (!result.applied && result.reason) {
+              console.warn("Office owner exception NOT applied — the rule's own shares are used.", {
+                line: exception.line,
+                period: exception.period,
+                reason: result.reason,
+              });
+            }
+            return result.areaShare;
+          },
+        }
+      : {}),
+  });
 }
 
 /**
