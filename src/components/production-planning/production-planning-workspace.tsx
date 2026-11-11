@@ -1462,6 +1462,9 @@ export function StockTab({
   // factories, and the other one's store is no place to record this product's stock.
   const ownFactoryId = selectedProductOf(data)?.factoryLocationId ?? null;
   const ownLocations = data.locations.filter((location) => !location.isFactory || location.id === ownFactoryId);
+  // Sato's own warehouse: every store that is not a factory. Never "any location not found", which
+  // would count an unknown store as Sato's.
+  const satoStoreIds = new Set(data.locations.filter((location) => !location.isFactory).map((location) => location.id));
 
   // A delivery is the amount SENT and is added to what is already held, so the field asks for a
   // different number from the other three sources and says which balance it lands on. The sum
@@ -1624,10 +1627,12 @@ export function StockTab({
 
       <section className="min-w-0">
         <FactoryHiddenNote count={factoryHidden} />
-        {/* 34/22/22/22, UNCHANGED. The Expired column made four figures for four columns, so the
-            factory and the Sato store are MERGED into one Available column, the way the planner
-            table carries them: a fifth column takes this table below its natural width, and merging
-            is the fits-the-screen rule's own remedy (AGENTS.md §4). */}
+        {/* 34/22/22/22. The factory and Sato's warehouse each have their OWN column (2026-11-11, a
+            reviewer after a factory-to-Sato transfer: "separate the stock quantities to clearly
+            indicate available stock at the factory, available stock at SATO warehouse"). They used to
+            share one Available cell under 11px grey labels, and a move between the two read as no
+            change. Still four columns, the fits-the-screen limit: the soonest expiry is now read
+            INSIDE each store's cell, where its lot actually stands, instead of a column of its own. */}
         <table className={TABLE}>
           <colgroup>
             <col className="w-[34%]" />
@@ -1637,7 +1642,7 @@ export function StockTab({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[t.colMaterial, t.colAvailable, t.stockExpiry, t.stockExpired].map((heading) => (
+              {[t.colMaterial, t.stockColFactory, t.stockColSato, t.stockExpired].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -1650,53 +1655,29 @@ export function StockTab({
               // rows share a location, and `find` would show one batch as if it were the whole
               // balance — reading 100 kg where 230 kg is held.
               const factory = material.heldByLocation.find((row) => row.locationId === ownFactoryId);
-              const own = material.heldByLocation.find(
-                (row) => !data.locations.find((location) => location.id === row.locationId)?.isFactory,
-              );
-              const dated = material.stock.filter((row) => row.expiryDate !== null);
-              const soonest = dated[0] ?? null;
+              const own = material.heldByLocation.find((row) => satoStoreIds.has(row.locationId));
               const expiredLots = material.expiredStock ?? [];
               return (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
                     <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
+                    {!factory && !own ? (
+                      <p className="mt-0.5 break-words text-[11px] text-slate-500">{t.stockNoneYet}</p>
+                    ) : null}
                   </td>
                   <td className={TD}>
-                    {factory || own ? (
-                      [
-                        { held: factory, label: t.atFactory },
-                        { held: own, label: t.atOwnStore },
-                      ].map(({ held, label }) =>
-                        held ? (
-                          <div className="mt-1 first:mt-0" key={label}>
-                            <p className="break-words">
-                              <span className="text-[11px] text-slate-500">{label}</span>{" "}
-                              <Qty unit={material.displayUnit} value={held.qtyDisplay} />
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              <Num>{held.newestAsOfDate}</Num>
-                              {held.lots > 1 ? ` · ${formatNumberLatin(held.lots)}` : ""}
-                            </p>
-                          </div>
-                        ) : null,
-                      )
-                    ) : (
-                      <span className="break-words text-[11px] text-slate-500">{t.stockNoneYet}</span>
-                    )}
+                    <StoreHeld
+                      held={factory}
+                      lots={material.stock.filter((row) => row.locationId === ownFactoryId)}
+                      unit={material.displayUnit}
+                    />
                   </td>
                   <td className={TD}>
-                    {soonest?.expiryDate ? (
-                      <>
-                        <Num>{soonest.expiryDate}</Num>
-                        {dated.length > 1 ? (
-                          <p className="mt-0.5 break-words text-[11px] text-slate-500">{t.stockLotNote}</p>
-                        ) : null}
-                      </>
-                    ) : expiredLots.length > 0 ? (
-                      "—"
-                    ) : (
-                      <span className="break-words text-[11px] text-slate-500">{t.stockNoExpiry}</span>
-                    )}
+                    <StoreHeld
+                      held={own}
+                      lots={material.stock.filter((row) => satoStoreIds.has(row.locationId))}
+                      unit={material.displayUnit}
+                    />
                   </td>
                   <td className={TD}>
                     {material.expiredTotalDisplay ? (
@@ -1718,40 +1699,116 @@ export function StockTab({
         </table>
 
         <div className="space-y-2 lg:hidden">
-          {data.materials.map((material) => (
-            <article className={CARD} key={material.id}>
-              <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
-              <dl className="mt-2 space-y-1 text-[12px] text-slate-700">
-                {material.stock.length === 0 ? (
-                  <p className="text-[11px] text-slate-500">{t.stockNoneYet}</p>
-                ) : (
-                  // One line per LOT on mobile, which is where the detail belongs: the card has the
-                  // room the desktop table does not, so each batch shows its own expiry rather than
-                  // only the soonest.
-                  material.stock.map((row) => (
-                    <div
-                      className="flex flex-wrap justify-between gap-2"
-                      key={`${row.locationId}-${row.expiryDate ?? "none"}-${row.asOfDate}`}
-                    >
-                      <dt className="font-bold break-words">
-                        {locationName(row.locationId)}
-                        <span className="ms-1 font-normal text-slate-500">
-                          {row.expiryDate ? <Num>{row.expiryDate}</Num> : t.stockNoExpiry}
-                        </span>
-                      </dt>
-                      <dd>
-                        <Qty unit={material.displayUnit} value={row.qtyDisplay} /> <Num>{row.asOfDate}</Num>
-                      </dd>
+          {data.materials.map((material) => {
+            const stores = [
+              {
+                key: "factory",
+                label: t.stockColFactory,
+                held: material.heldByLocation.find((row) => row.locationId === ownFactoryId),
+                lots: material.stock.filter((row) => row.locationId === ownFactoryId),
+              },
+              {
+                key: "sato",
+                label: t.stockColSato,
+                held: material.heldByLocation.find((row) => satoStoreIds.has(row.locationId)),
+                lots: material.stock.filter((row) => satoStoreIds.has(row.locationId)),
+              },
+            ];
+            return (
+              <article className={CARD} key={material.id}>
+                <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
+                <div className="mt-2 space-y-2 text-[12px] text-slate-700">
+                  {stores.map((store) => (
+                    // One block per store, its total first, then one line per LOT: the card has the
+                    // room the desktop table does not, so each batch shows its own expiry.
+                    <div className="border-t border-slate-200 pt-2 first:border-t-0 first:pt-0" key={store.key}>
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <p className="font-bold break-words">{store.label}</p>
+                        <p className="font-bold text-slate-900">
+                          {store.held ? <Qty unit={material.displayUnit} value={store.held.qtyDisplay} /> : "—"}
+                        </p>
+                      </div>
+                      {store.held ? (
+                        <ul className="mt-1 space-y-0.5 text-[11px] text-slate-500">
+                          {store.lots.map((row) => (
+                            <li
+                              className="flex flex-wrap justify-between gap-2"
+                              key={`${row.locationId}-${row.expiryDate ?? "none"}-${row.asOfDate}`}
+                            >
+                              <span className="break-words">
+                                {row.expiryDate ? <Num>{row.expiryDate}</Num> : t.stockNoExpiry}
+                              </span>
+                              <span>
+                                <Qty unit={material.displayUnit} value={row.qtyDisplay} /> <Num>{row.asOfDate}</Num>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-0.5 break-words text-[11px] text-slate-500">{t.stockNothingHere}</p>
+                      )}
                     </div>
-                  ))
-                )}
-              </dl>
-            </article>
-          ))}
+                  ))}
+                  {material.expiredTotalDisplay ? (
+                    <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 pt-2">
+                      <p className="font-bold break-words">{t.stockExpired}</p>
+                      <p>
+                        <Qty unit={material.displayUnit} value={material.expiredTotalDisplay} />
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
       <ExpiredStock locationName={locationName} materials={data.materials} />
+    </>
+  );
+}
+
+/**
+ * One store's cell in the stock table: what it holds now, the date of its newest report, how many
+ * lots make up the figure and the soonest expiry among them. A recorded zero is SHOWN — after a
+ * transfer out, "0 at Sato warehouse, as of today" is the very line the reviewer needs to read.
+ */
+function StoreHeld({
+  held,
+  lots,
+  unit,
+}: {
+  held: WireMaterial["heldByLocation"][number] | undefined;
+  lots: WireStockRow[];
+  unit: string;
+}) {
+  const t = useProductionPlanningStrings().t;
+  if (!held) return <span className="break-words text-[11px] text-slate-500">{t.stockNothingHere}</span>;
+  // The server sends the live lots soonest-expiry first; packaging lots carry no date at all.
+  const soonest = lots.find((row) => row.expiryDate !== null)?.expiryDate ?? null;
+  return (
+    <>
+      <p className="font-bold text-slate-900">
+        <Qty unit={unit} value={held.qtyDisplay} />
+      </p>
+      <p className="mt-0.5 break-words text-[11px] text-slate-500">
+        {t.stockAsOf} <Num>{held.newestAsOfDate}</Num>
+      </p>
+      {held.lots > 1 ? (
+        <p className="mt-0.5 break-words text-[11px] text-slate-500">
+          {t.stockLotsCount} <Num>{formatNumberLatin(held.lots)}</Num>
+        </p>
+      ) : null}
+      <p className="mt-0.5 break-words text-[11px] text-slate-500">
+        {soonest ? (
+          <>
+            {t.stockSoonestExpiry} <Num>{soonest}</Num>
+          </>
+        ) : (
+          t.stockNoExpiry
+        )}
+      </p>
     </>
   );
 }

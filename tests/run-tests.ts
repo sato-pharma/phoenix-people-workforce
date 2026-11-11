@@ -2937,6 +2937,7 @@ import { runProductionPlanningLeafletSplitTests } from "./production-planning-le
 import { runProductionPlanningStockDeliveryTests } from "./production-planning-stock-delivery.test.ts";
 import { runProductionPlanningExpiryTests } from "./production-planning-expiry.test.ts";
 import { runProductionPlanningExpiredStockTests } from "./production-planning-expired-stock.test.ts";
+import { runProductionPlanningStockByStoreTests } from "./production-planning-stock-by-store.test.ts";
 import { runProductionPlanningGuamusinTests } from "./production-planning-guamusin.test.ts";
 import { runProductionPlanningRoyanoxicamTests } from "./production-planning-royanoxicam.test.ts";
 import { runProductionPlanningCarvibradineTests } from "./production-planning-carvibradine.test.ts";
@@ -11683,6 +11684,10 @@ await runTest(
 await runTest(
   "when an expiry date comes the quantity leaves stock by itself and stays readable for the accounts: the owner asked on 2026-11-03 for an Expired column, an editable expiry date and an automatic move, so a lot is expired ON its date and every held figure reads only the live lots, because a dead lot left in the figure covers a batch it cannot go into and the buy list comes up short while the row looks ordinary; the move is a reading and never a stored step, so no missed cron can leave it behind and a corrected date brings the lot back; changing a date closes the old lot at zero and opens the new one in one insert, because a report carrying the corrected date opens a second lot and counts the material twice; and the alarm reports a lot the morning it expires and never again, or the email repeats a written-off lot every day",
   runProductionPlanningExpiredStockTests,
+);
+await runTest(
+  "the Stock tab shows the factory and Sato warehouse in their own columns: a reviewer could not see a factory-to-Sato transfer on 2026-11-11 because both figures shared one Available cell, so each store now has its own column and its own phone block with its own total, report date and soonest expiry, a recorded zero is shown rather than hidden because it is the evidence of the move, and Sato warehouse is every non-factory store so another factory lot never reads as Sato's",
+  runProductionPlanningStockByStoreTests,
 );
 await runTest(
   "Guamusin arrives without moving Ivyronc by a microgram, and the three defects that were latent until it did are pinned: a per-packaging-set material is NOT the box count once a carton holds twelve sachets (120,000 against 10,000 - one cell and one basis carried both, which is correct only at Ivyronc's one bottle a box, and a per-packaging-set line would have been understated twelve-fold), one product's materials never reach the other's buy list (an unscoped data.materials would have put Guamusin's thirteen lines on Ivyronc's as \"formula not entered\" and Ivyronc's on Guamusin's), and the factory is named on the PRODUCT (the held/send split read the FIRST is_factory row, so flagging DBK beside EGPI would have moved 72 kg of ivy extract from \"the factory already has it\" to \"send it\"); his own figures from the sheet he told a session to follow 100% - a fixed 100 kg batch counted in grams, 5 g a sachet, 12 to a carton, six runs making exactly 120,000 sachets and 10,000 cartons with nothing left over, 120 kg of paracetamol and 24 kg of guaifenesin - computed from a fixture where DBK IS also flagged a factory and both products' materials share one table, with the lots summed so 200,000 g and 54,610 g answer 254.61 kg exactly as one row did, and Ivyronc's verified 8 runs / 96,000 / 106,000 / 6,000 unchanged beside it",
