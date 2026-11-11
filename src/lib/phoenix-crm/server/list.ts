@@ -56,7 +56,6 @@ import {
   parseDropDraft,
   parseGrade,
   parseNewCustomer,
-  parseOutsideCustomer,
   parsePharmacyPin,
   parsePlaceDraft,
   parsePotentialGrade,
@@ -111,7 +110,8 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { blindTerritoryList } from "@/lib/phoenix-crm/server/blind-payloads";
-import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { customerNameKey } from "@/lib/phoenix-crm/name-fold";
+import { callPhoenixCrm, chunk, numberOrNull, phoenixCrmRefusal, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
@@ -625,6 +625,12 @@ export type ListRequest = {
    * everyone who does not decide that step — never the rep (Golden Rule #1).
    */
   placeCheckHold: string | null;
+  /**
+   * A waiting add the viewer decides, whose name key (`customerNameKey` = `phoenix_crm_fold_name`) matches another
+   * customer of the same kind on the territory: those customers' names, for the card (`withSameNameMatches`).
+   * Null for everyone else, the rep included.
+   */
+  sameNameOnSeat: string[] | null;
 };
 
 /**
@@ -1498,6 +1504,7 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     repliedAt: text(row.replied_at),
     canReturn: false,
     placeCheckHold: null,
+    sameNameOnSeat: null,
   };
 }
 
@@ -1553,6 +1560,56 @@ export async function withPlaceCheckHolds<T extends ListRequest>(viewer: Phoenix
   const message = placeCheckHoldMessage(canDecideValidationReviews(viewer));
   const askedSet = new Set<T>(asked);
   return requests.map((request) => (askedSet.has(request) && held.has(request.customerId as string) ? { ...request, placeCheckHold: message } : request));
+}
+
+/**
+ * Sets `sameNameOnSeat` on every waiting add the viewer decides (or overrides) whose name key matches another
+ * customer of the same kind on that territory, on the list, waiting outside it or waiting to be validated — the
+ * set the door's own same-name check reads. The rep's "a different person" press was never saved, so the
+ * deciders now read the match from the list itself (sweep of 11 Nov 2026). A failed read leaves every card as it
+ * was: it is a warning, never a gate.
+ */
+export async function withSameNameMatches<T extends ListRequest & { seatId?: string }>(
+  viewer: PhoenixCrmViewer,
+  isTest: boolean,
+  seatOf: (request: T) => string | null,
+  requests: T[],
+): Promise<T[]> {
+  const override = canOverrideDecision(viewer, isTest);
+  const asked = requests.filter(
+    (request) => request.kind === "add" && request.status === "pending" && !request.withRep && (request.canDecide || override) && seatOf(request),
+  );
+  if (asked.length === 0) return requests;
+  const seats = [...new Set(asked.map((request) => seatOf(request) as string))];
+  let byKey: Map<string, Array<{ id: string; name: string }>>;
+  try {
+    byKey = new Map();
+    for (const part of chunk(seats, 50)) {
+      const { data, error } = await getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, seat_id, list_type, name")
+        .in("seat_id", part)
+        .eq("is_test", isTest)
+        .in("status", ["active", "pending", "outside"]);
+      throwIfError(error);
+      for (const row of (data ?? []) as Row[]) {
+        const key = customerNameKey(text(row.name));
+        if (!key) continue;
+        const slot = `${String(row.seat_id)}|${String(row.list_type)}|${key}`;
+        byKey.set(slot, [...(byKey.get(slot) ?? []), { id: String(row.id), name: String(row.name) }]);
+      }
+    }
+  } catch (error) {
+    logError("Phoenix CRM list: the same-name matches could not be read", { error, labels: { event: "phoenix_crm_same_name_matches_failed" } });
+    return requests;
+  }
+  const askedSet = new Set<T>(asked);
+  return requests.map((request) => {
+    if (!askedSet.has(request)) return request;
+    const key = customerNameKey(request.customerName);
+    const others = (byKey.get(`${seatOf(request)}|${request.listType}|${key}`) ?? []).filter((match) => match.id !== request.customerId);
+    return others.length > 0 ? { ...request, sameNameOnSeat: others.map((match) => match.name) } : request;
+  });
 }
 
 const REQUEST_COLUMNS =
@@ -1717,7 +1774,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   ] = await wave;
   // A comment on a building sits on the card of every customer seated there, beside his own.
   for (const [customerId, notes] of buildingNotes.byCustomer) repNotes.set(customerId, [...(repNotes.get(customerId) ?? []), ...notes]);
-  const requests = await withPlaceCheckHolds(
+  const heldRequests = await withPlaceCheckHolds(
     viewer,
     isTest,
     requestRows.map((row) => {
@@ -1725,6 +1782,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       return { ...request, ...requestRights(viewer, seat, isTest, request) };
     }),
   );
+  // An add whose name is on the territory already says so to whoever decides it (`withSameNameMatches`).
+  const requests = await withSameNameMatches(viewer, isTest, () => seat.seatId, heldRequests);
   const pendingByCustomer = new Map<string, Partial<Record<PhoenixCrmRequestKind, ListRequest>>>();
   const pendingDropByContact = new Map<number, ListRequest>();
   for (const request of requests) {
@@ -2421,8 +2480,9 @@ async function refuseSeatingAwayFromBuilding(input: {
  *   reference — a customer carried over from iReports360 goes on the list (refused for one in the Archive);
  *   new       — "Add new customer": he waits outside the list, and the add request (district manager
  *               with the A/B/C grade and the potential, then SFE) is filed at once;
- *   outside   — met on an out-of-list visit: he waits outside the list and the rep chooses later —
- *               "Request to add" or "Drop".
+ *   outside   — met on an out-of-list visit: he waits outside the list, and the add request carrying the grade
+ *               he proposes is filed at once, exactly as for `new` (sweep of 11 Nov 2026). "Request to add"
+ *               stays for a customer met before that day, and "Drop" for one he no longer wants.
  *
  * 🔴 THERE WAS A FOURTH, `restore`, AND IT IS RETIRED — IT WAS A HOLE THROUGH THE FROZEN ARCHIVE. It
  * was "kept for a caller that still sends a fresh place with Bring back", and no caller sends it: the
@@ -2557,13 +2617,18 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       allow_same_name: body.allowSameName === true,
     });
   } else if (mode === "outside") {
-    const draft = parseOutsideCustomer(body.customer);
+    // 🔴 An out-of-list customer carries the grade the rep proposes, and the add request is filed in the same
+    // transaction (sweep of 11 Nov 2026): it used to wait on a "Request to add" press nothing prompted, and 159
+    // of 205 customers met outside a list had none, their visits counting nowhere for good.
+    const draft = parseNewCustomer(body.customer);
     if (!draft.ok) throw validationError(draft.error);
+    proposedGrade = draft.value.proposedGrade;
     Object.assign(payload, {
       mode: "outside",
       name: draft.value.name,
       list_type: draft.value.listType,
       speciality: draft.value.speciality,
+      proposed_grade: draft.value.proposedGrade,
       allow_same_name: body.allowSameName === true,
     });
   } else {
@@ -3348,6 +3413,7 @@ export async function createListRequest(
   } else {
     payload.note = cleanText(body.note, 500);
   }
+  if (kind === "restore" && customerId) await refuseAMergedDuplicate(customerId);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_create_request", { p: payload });
   const requestId = String(result.request_id);
@@ -3362,6 +3428,19 @@ export async function createListRequest(
     dropReason,
   });
   return { requestId, kind, stage };
+}
+
+/**
+ * A row merged away as the same doctor as another on the list is never brought back by a request (sweep, 11 Nov
+ * 2026: three came back on 13 Oct and one list held each doctor twice). Asked here, at the filing, so nobody
+ * approves a request only for the last step to refuse it; the database trigger
+ * (public.phoenix_crm_customers_no_merged_return) refuses it again whatever the door. The owner's own reversal,
+ * two different doctors sharing one name, is recorded as `merge_reversed` and passes.
+ */
+async function refuseAMergedDuplicate(customerId: string): Promise<void> {
+  const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_customer_merged_away", { p_customer_id: customerId });
+  throwIfError(error);
+  if (data === true) throw phoenixCrmRefusal({ message: "phoenix_crm:merged_duplicate" }) ?? new Error("phoenix_crm:merged_duplicate");
 }
 
 /**
@@ -3397,6 +3476,7 @@ export async function sfeBringBack(viewer: PhoenixCrmViewer, raw: unknown): Prom
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to bring back.");
   const customerId = String(body.customerId).toLowerCase();
   const note = cleanText(body.note, 500);
+  await refuseAMergedDuplicate(customerId);
   const created = await callPhoenixCrm<Row>("phoenix_crm_create_request", {
     p: {
       seat_id: seat.seatId,

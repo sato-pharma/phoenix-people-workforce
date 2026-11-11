@@ -37,6 +37,12 @@ const REFUSALS: Record<string, Refusal> = {
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",
   },
   customer_not_found: { status: 404, message: "This customer is not on the territory's list. Reload the list." },
+  // The guard on a merged duplicate (sweep, 11 Nov 2026; public.phoenix_crm_customers_no_merged_return): three rows
+  // merged away as the same doctor came back through ordinary bring-back requests, so one list held him twice.
+  merged_duplicate: {
+    status: 409,
+    message: "This customer was merged into the same customer already on the list, so this entry cannot be brought back. Visit the customer under the entry kept.",
+  },
   // The trigger that refuses a LATE reference id (public.phoenix_crm_customers_no_late_reference).
   // It existed only in production until its migration was written, so this table had never seen the
   // code and the refusal reached the screen as the generic "could not be saved". The person who

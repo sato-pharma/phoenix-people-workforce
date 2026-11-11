@@ -107,6 +107,7 @@ import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from "@/lib/phoenix-crm/schedule-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { customerNameKey } from "@/lib/phoenix-crm/name-fold";
 import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SEATING_AWAY_CODE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
@@ -730,14 +731,18 @@ export function ValidateScreen({
     };
   }
 
-  /** Customers of the same kind whose name matches, the way the database compares them. */
+  /**
+   * Customers of the same kind whose name matches, the way the database compares them: its own key
+   * (`customerNameKey` = `phoenix_crm_fold_name`), never `toLowerCase`, which missed "د. أحمد" beside "احمد".
+   */
   function sameNameIn(list: TerritoryListView): ListCustomer[] {
-    const needle = cleanName.toLowerCase();
+    const needle = customerNameKey(cleanName);
+    if (!needle) return [];
     return list.customers.filter(
       (customer) =>
         (customer.status === "active" || customer.status === "outside" || customer.status === "pending") &&
         customer.listType === listType &&
-        customer.name.toLowerCase() === needle,
+        customerNameKey(customer.name) === needle,
     );
   }
 
@@ -1199,7 +1204,14 @@ export function ValidateScreen({
                                   : "Add this clinic to this customer"}
                             </CrmButton>
                           </span>
-                        ) : null}
+                        ) : (
+                          // A match waiting on the list to be validated is the same doctor far more often than not
+                          // (sweep of 11 Nov 2026: 5 same-seat pairs both active and visited). Say where he is.
+                          <span className="block break-words text-xs font-bold text-amber-800">
+                            Already on your list, waiting to be validated. If this is the same person, go back and validate this customer from your
+                            list instead of adding a new one.
+                          </span>
+                        )}
                       </li>
                     );
                   })}

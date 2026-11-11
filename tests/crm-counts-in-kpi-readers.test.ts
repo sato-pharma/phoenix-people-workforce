@@ -57,7 +57,17 @@ const KPI_READERS: Record<string, number> = {
   "src/lib/employee-360/service.ts": 2,
   // The coaching impact's productive visits, and the double visits a leader conducted.
   "src/lib/employee-360/deep-service.ts": 2,
+  // Four screens that counted every row until the sweep of 11 Nov 2026 (Marian Samir read 36 on the KPIs board
+  // and up to 250 on these): SFE Doctor Coverage (its regular read; its campaign read is a separate question),
+  // SFE Field Analytics, Early Birds, and the rep visits drill-down the call rate links to.
+  "src/lib/crm/sfe-doctor-coverage.ts": 1,
+  "src/lib/crm/sfe-field-analytics.ts": 1,
+  "src/lib/early-birds/collect.ts": 1,
+  "src/lib/crm/rep-visits-data.ts": 1,
 };
+
+/** The readers that keep visits to unvalidated customers under kpiOnly, because they mark them and say so. */
+const KEEPS_AWAITING_VALIDATION = new Set(["src/lib/crm/call-rate-service.ts", "src/lib/crm/rep-visits-data.ts"]);
 
 /**
  * Every reader that reads the door as proof of a WORKED day. A row it loses is a day it calls an absence,
@@ -92,6 +102,31 @@ export function runCrmCountsInKpiReadersTests(): void {
     [["eq", "counts_in_kpi", true]],
     "kpiOnly keeps only the rows the door marks as counting",
   );
+  // 🔴 "not counted in kpis till validated" (owner, 2026-10-01): kpiOnly also leaves out a Phoenix visit to a
+  // customer not validated yet, and keeps every vendor row and day activity (they carry null, never false).
+  assert.deepEqual(
+    kpiCalls.filter(([method]) => method === "not"),
+    [["not", "phoenix_customer_validated", "is", false]],
+    "kpiOnly leaves out a visit to a customer not validated yet — 531 November visits counted on the KPIs board on 11 Nov 2026",
+  );
+  const awaitingCalls: Call[] = [];
+  applyVisitFilter(
+    recordingQuery(awaitingCalls),
+    { dateFrom: "2026-10-01", dateTo: "2026-10-31", keepAwaitingValidation: true, kpiOnly: true },
+    "",
+  );
+  assert.ok(
+    !awaitingCalls.some((call) => call.includes("phoenix_customer_validated")),
+    "keepAwaitingValidation keeps them, for the one reader that drops them itself and says how many wait",
+  );
+  for (const [path] of Object.entries(KPI_READERS)) {
+    const uses = read(path).split("keepAwaitingValidation: true").length - 1;
+    assert.equal(
+      uses,
+      KEEPS_AWAITING_VALIDATION.has(path) ? 1 : 0,
+      `${path}: only the call rate and its drill-down keep visits to unvalidated customers (the rate leaves them out itself, callRateExclusionOf, and the drill-down marks them not scored)`,
+    );
+  }
   const plainCalls: Call[] = [];
   applyVisitFilter(recordingQuery(plainCalls), { dateFrom: "2026-10-01", dateTo: "2026-10-31" }, "");
   assert.ok(

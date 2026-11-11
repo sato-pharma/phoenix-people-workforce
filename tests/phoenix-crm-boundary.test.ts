@@ -1103,6 +1103,10 @@ const LATER_MIGRATIONS = [
   // The Super Admin's trusted point (owner, 10 Nov 2026): one NEW function, phoenix_crm_place_on_trusted_point; places
   // gain trusted_basis and a nullable photo_path for that place alone. It replaces nothing save_visit depends on.
   "supabase/migrations/20261110213959_phoenix_crm_trusted_point_places.sql",
+  // The sweep of 11 Nov 2026: phoenix_crm_validate_customer REPLACED with 20261107195700's body plus one line (an
+  // outside customer with a grade is filed for approval), and two NEW functions — phoenix_crm_customer_merged_away
+  // and the trigger function phoenix_crm_customers_no_merged_return. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261111030456_phoenix_crm_sweep_fixes.sql",
 ];
 
 /**

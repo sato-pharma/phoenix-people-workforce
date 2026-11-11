@@ -173,6 +173,8 @@ export async function collectEarlyBirdsInputs(input: {
       dateTo: throughIso,
       agentHrIds: reps.map((rep) => rep.hrId),
       columns: VISIT_COLUMNS,
+      // Counts visits: only the rows that count (counts_in_kpi, and a customer validated — sweep of 11 Nov 2026).
+      kpiOnly: true,
     }),
     // Company-wide for the window: the check-in door has no roster filter that matches on hr id,
     // and correlation is by agent+contact+day anyway, so a wider read cannot leak into a rep's score.

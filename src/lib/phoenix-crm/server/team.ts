@@ -49,6 +49,7 @@ import {
   requestPeople,
   requestRights,
   withPlaceCheckHolds,
+  withSameNameMatches,
   type ListRequest,
   type SeatReadiness,
 } from "@/lib/phoenix-crm/server/list";
@@ -484,7 +485,7 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
   // A request whose place is still on Place checks says so in place of its Approve (`withPlaceCheckHolds`).
-  const requests = await withPlaceCheckHolds(
+  const heldRequests = await withPlaceCheckHolds(
     viewer,
     isTest,
     requestRows
@@ -506,6 +507,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       })
       .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt)),
   );
+  // An add whose name is on the territory already says so to whoever decides it (`withSameNameMatches`).
+  const requests = await withSameNameMatches(viewer, isTest, (request) => request.seatId, heldRequests);
 
   const unplannedVisits = unplannedRows
     .map((row): TeamUnplannedVisit => {

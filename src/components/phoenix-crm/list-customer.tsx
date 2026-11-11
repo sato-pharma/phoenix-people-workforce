@@ -80,7 +80,7 @@ import {
   NOT_VALIDATED_YET_TITLE,
 } from "@/lib/phoenix-crm/google-place-rules";
 import { validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
-import { awaitsValidation, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
+import { awaitsValidation, needsAddRequest, neverAdmitted, onTheList, requestKindLabel, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
@@ -254,6 +254,7 @@ export function CustomerScreen({
           {pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
           {active ? <CrmPill tone={standing.tone}>{standing.label}</CrmPill> : null}
           {outside ? <CrmPill tone="orange">Outside the list</CrmPill> : null}
+          {view.canEdit && needsAddRequest(customer) ? <CrmPill tone="orange">Needs your grade · Ask to add</CrmPill> : null}
           {archived ? <CrmPill>In the Archive</CrmPill> : null}
           {active && customer.origin === "new" ? <CrmPill tone="orange">New customer</CrmPill> : null}
           {customer.pendingGradeRequestId ? (

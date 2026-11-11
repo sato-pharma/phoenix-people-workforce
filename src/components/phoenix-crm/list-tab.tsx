@@ -88,7 +88,7 @@ import {
 import type { RepsListContact } from "@/lib/crm/reps-list";
 import type { RepsListBoard } from "@/lib/crm/reps-list-board";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
-import type { ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
+import { needsAddRequest, needsGradeText, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import { addedPharmacyNote } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   formatTimingWindow,
@@ -704,6 +704,8 @@ function ListHome({
   const pending = view.customers.filter((customer) => customer.section === "to_validate");
   const active = view.customers.filter((customer) => customer.section === "your_list");
   const outside = view.customers.filter((customer) => customer.section === "outside");
+  // Outside the list with no add request: nobody's queue holds them until the rep proposes a grade.
+  const needGrade = view.canEdit ? outside.filter(needsAddRequest).length : 0;
   const archived = view.customers.filter((customer) => customer.section === "archive");
   const waiting = view.requests.filter((request) => request.status === "pending");
   const decidable = waiting.filter((request) => request.canDecide);
@@ -722,7 +724,11 @@ function ListHome({
       ? [{ value: "to_validate" as const, label: "To validate", note: pending.length > 0 ? `${countText(pending.length)} to go` : "All done" }]
       : []),
     { value: "your_list" as const, label: "Your list", note: pairText(countByType(active)) },
-    { value: "outside" as const, label: "Outside the list", note: outside.length > 0 ? `${countText(outside.length)} waiting` : "None waiting" },
+    {
+      value: "outside" as const,
+      label: "Outside the list",
+      note: needGrade > 0 ? `${countText(needGrade)} need your grade` : outside.length > 0 ? `${countText(outside.length)} waiting` : "None waiting",
+    },
     {
       value: "requests" as const,
       label: "Requests",
@@ -859,6 +865,14 @@ function ListHome({
           variant="active"
           view={view}
         />
+      ) : null}
+
+      {current === "outside" && needGrade > 0 ? (
+        <div className="px-4 pt-4 sm:px-5">
+          <CrmNote title="Waiting for your grade" tone="warn">
+            {needsGradeText(needGrade)}
+          </CrmNote>
+        </div>
       ) : null}
 
       {current === "outside" ? (

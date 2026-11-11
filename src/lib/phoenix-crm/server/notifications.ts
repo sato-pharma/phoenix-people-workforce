@@ -66,6 +66,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { bidiIsolate } from "@/emails/bidi";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { formatPhoenixDateTime, formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
@@ -81,10 +82,11 @@ import { managerPlannerTitle, type ManagerPlannerKind } from "@/lib/phoenix-crm/
 import { PHOENIX_CRM_ADMINISTRATOR_HR_ID, planEditStatusLabel, type PlanEditStatus } from "@/lib/phoenix-crm/plan-edit-rules";
 import { seatHasLiveTeamBelow, seatIsInLiveTeam } from "@/lib/phoenix-crm/live-team-rules";
 import { phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
+import { departedBy } from "@/lib/phoenix-crm/server/departures";
 import { loadLiveTeamSeatIds } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
-import { managerChain, personKey, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { managerChain, personKey, seatOccupants, territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 import { sharedPlaceRefusalRepText, validationRefusalRepText } from "@/lib/phoenix-crm/validation-feedback";
@@ -1383,7 +1385,10 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       (notice.via === "shared_place" ? sharedPlaceRefusalRepText(notice.reason) : validationRefusalRepText(notice.reason)) ??
       LOCATION_NOT_CONFIRMED_TEXT;
     return {
-      recipients: [notice.repHrId],
+      // 🔴 WHOEVER HOLDS THE SEAT NOW (sweep, 11 Nov 2026): the customer waits on the seat's list, and
+      // the one who captured him may have moved or left — the notice went to him, and the rep who can
+      // validate again was never told. Only a vacant seat falls back to the one who captured him.
+      recipients: validateAgainRecipients(notice.seat, notice.repHrId),
       eventType: "validation_not_confirmed",
       title: `${LOCATION_NOT_CONFIRMED_TITLE}: ${notice.customerName}`,
       // Every Phoenix CRM customer name is Arabic inside an English sentence, so it is isolated or the
@@ -2098,8 +2103,11 @@ async function sendPhoenixCrmNotice(notice: PhoenixCrmNotice, isTest: boolean): 
       // against the native recipients — so the tuned notices above are untouched and nobody is told twice.
       const mirror = await activityMirrorDelivery(notice, deliveries);
       if (mirror) deliveries.push(mirror);
+      // Nobody who has left is told anything (sweep, 11 Nov 2026): the organogram keeps a leaver in his
+      // seat until HR moves him, and notices went on reaching four people who were gone.
+      const told = isTest ? deliveries : await withoutLeavers(deliveries);
       // Each delivery has its own recipients and its own idempotency key, so none waits on another.
-      await Promise.all(deliveries.map((delivery) => deliver(notice, delivery, isTest)));
+      await Promise.all(told.map((delivery) => deliver(notice, delivery, isTest)));
     });
   } catch (error) {
     logError("Phoenix CRM notification failed", {
@@ -2107,6 +2115,31 @@ async function sendPhoenixCrmNotice(notice: PhoenixCrmNotice, isTest: boolean): 
       error,
     });
   }
+}
+
+/** Who is asked to validate a customer again: the seat's occupants today, else (vacant) the one who captured him. */
+export function validateAgainRecipients(seat: OrgSeat, capturedBy: string): string[] {
+  const holders = seatOccupants(seat).map((hrId) => personKey(hrId)).filter((key): key is string => Boolean(key));
+  return holders.length > 0 ? [...new Set(holders)] : [capturedBy];
+}
+
+/**
+ * Every delivery's recipients less anyone whose last working day is behind him (departure-rules.ts), and a
+ * delivery left with nobody is dropped. An unreadable employee record fails open — the notice goes as it
+ * would have — exactly as `withoutDepartedHrIds` does for role notices.
+ */
+async function withoutLeavers(deliveries: Delivery[]): Promise<Delivery[]> {
+  let left: Set<string>;
+  try {
+    left = await departedBy(deliveries.flatMap((delivery) => delivery.recipients), cairoTodayIso());
+  } catch (error) {
+    logError("Phoenix CRM could not read who has left", { labels: { event: "phoenix_crm_leavers_unread" }, error });
+    return deliveries;
+  }
+  if (left.size === 0) return deliveries;
+  return deliveries
+    .map((delivery) => ({ ...delivery, recipients: delivery.recipients.filter((hrId) => !left.has(personKey(hrId) ?? "")) }))
+    .filter((delivery) => delivery.recipients.length > 0);
 }
 
 /** Every notice ever raised about one visit — both kinds, every version, and the test-world copies. */

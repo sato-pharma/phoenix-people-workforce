@@ -114,6 +114,7 @@ import { type CaptureClient } from "@/lib/phoenix-crm/server/capture-client";
 import { recordCaptureProvenance } from "@/lib/phoenix-crm/server/capture-provenance";
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { departedBy } from "@/lib/phoenix-crm/server/departures";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import {
   emptyTerritoryCustomers,
@@ -1575,11 +1576,18 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // The old "My own visit" is closed for a district manager who plans in Phoenix CRM (owner, 2026-10-16):
   // his single visits go on his own plan and count in his own report, never under a rep's seat. One still
   // on the legacy form keeps it. Double and chain are unchanged.
+  // A seat whose rep left before today is as vacant as an empty one for a manager entering it (sweep,
+  // 11 Nov 2026): the organogram keeps a leaver in his seat until HR moves him, and 14 double visits
+  // credited a rep who was gone. Read only for a manager's entry, the only one that takes the seat's rep.
+  const occupantLeft =
+    enteredAs === "manager" && !isVacantTerritory(seat) && !isTest
+      ? (await departedBy([seat.occupantHrId], viewer.visitDay)).has(personKey(seat.occupantHrId) ?? "")
+      : false;
   if (enteredAs === "manager" && visit.kind === "single" && (await managerOwnVisitClosedNow(viewer))) {
     // 🔴 EXCEPT WHERE NOBODY HOLDS THE SEAT (owner, 2026-10-19). Double and Chain need a rep, so on a
     // vacant territory the closed option left the form a dead end — filled to the last step and refused
     // here. His own visit is filed under My single visits instead, never under the vacant seat.
-    if (isVacantTerritory(seat)) return await fileAsOwnSingleVisit(viewer, visitId, visit, isTest);
+    if (isVacantTerritory(seat) || occupantLeft) return await fileAsOwnSingleVisit(viewer, visitId, visit, isTest);
     throw validationError(MANAGER_OWN_VISIT_CLOSED);
   }
 
@@ -1598,6 +1606,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     productManagers:
       visit.productManagerHrId || visit.companions.some((entry) => entry.side === "product") ? await loadLineProductManagers(seat) : [],
     companions: visit.companions,
+    occupantLeft,
   });
   if (!participants.ok) throw validationError(participants.error);
 

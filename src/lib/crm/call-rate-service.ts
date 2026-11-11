@@ -124,6 +124,9 @@ export async function loadCallRateReport(
       reuseRecentWindow,
       // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
       kpiOnly: true,
+      // …but keeps a visit to a customer not validated yet: `callRateExclusionOf` leaves it out of the rate itself
+      // and the report says how many wait ("awaiting validation").
+      keepAwaitingValidation: true,
       ...narrowTo,
     }),
     queryCheckins<CheckinRow>({

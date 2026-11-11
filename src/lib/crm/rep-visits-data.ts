@@ -312,6 +312,11 @@ export async function loadRepVisits(
       // Push the rep down into the query when we have an hr id — the door sprays every casing
       // variant itself, which is the only safe way to match `agent_hr_id` in this mirror.
       ...(hrId ? { agentHrIdILike: hrId } : {}),
+      // The call rate's own rows, so a drill-down never lists more visits than the board that linked to it
+      // (sweep of 11 Nov 2026): only the rows that count, keeping a visit to a customer not validated yet,
+      // which the list marks "Not scored · customer not validated yet".
+      kpiOnly: true,
+      keepAwaitingValidation: true,
     }),
     // A rep with a CRM id is read by it here, the same narrowing the filter below applies, so the month
     // is one keyset scan of the rep's own check-ins instead of the whole company's read day by day (performance

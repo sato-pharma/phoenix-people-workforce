@@ -21,6 +21,20 @@ import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
+ * A manager's own visit wears `own:<uuid>` on the screens (a ride-along and a rep visit wear their own uuid), so the
+ * rows of one table never share an id. That id is a LABEL: a read of `phoenix_crm_manager_visits` asks by
+ * `managerOwnVisitUuid`, never by the label itself, which a uuid column refuses (Visits — Yesterday and Today,
+ * 9-11 Nov 2026).
+ */
+const MANAGER_OWN_VISIT_ID_PREFIX = "own:";
+export function managerOwnVisitScreenId(uuid: string): string {
+  return `${MANAGER_OWN_VISIT_ID_PREFIX}${uuid}`;
+}
+export function managerOwnVisitUuid(screenId: string): string {
+  return screenId.startsWith(MANAGER_OWN_VISIT_ID_PREFIX) ? screenId.slice(MANAGER_OWN_VISIT_ID_PREFIX.length) : screenId;
+}
+
+/**
  * Phoenix CRM — the visits a manager made, in full (owner, 2026-10-20: "name, address, brick, type, AM/PM,
  * when, single, double — every single detail").
  *
@@ -270,7 +284,7 @@ export async function loadManagerOwnVisitDetails(input: ManagerVisitDetailInput)
       enteredByAdmin: isManagerVisitEnteredForHim({ enteredBy: row.entered_by_hr_id, manager: row.manager_hr_id }),
       grade: customer?.grade ?? own?.grade ?? null,
       hasPin: row.lat !== null && row.lat !== undefined,
-      id: `own:${String(row.id)}`,
+      id: managerOwnVisitScreenId(String(row.id)),
       inVacantTerritory: row.in_vacant_territory === true,
       kind: senior ? "with_senior" : "single",
       kindLabel: senior ? managerOwnVisitWithSeniorLabel(senior.role) : MANAGER_VISIT_KIND_LABELS.single,

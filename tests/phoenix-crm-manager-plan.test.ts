@@ -1994,7 +1994,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const saveBody = functionBody(visits, "export async function saveVisit(");
   assert.match(
     saveBody,
-    /if \(isVacantTerritory\(seat\)\) return await fileAsOwnSingleVisit\(viewer, visitId, visit, isTest\);\s*throw validationError\(MANAGER_OWN_VISIT_CLOSED\);/,
+    /if \(isVacantTerritory\(seat\) \|\| occupantLeft\) return await fileAsOwnSingleVisit\(viewer, visitId, visit, isTest\);\s*throw validationError\(MANAGER_OWN_VISIT_CLOSED\);/,
     "a vacant territory routes the visit; every territory with a rep still refuses it",
   );
   assert.match(saveBody, /filedAsOwnSingleVisit: false,/, "an ordinary visit says it stayed on this territory");
