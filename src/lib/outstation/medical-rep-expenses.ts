@@ -8,13 +8,12 @@ export type MedicalRepSimpleExpenseAttachment = {
 export type MedicalRepSimpleExpenseInput = {
   amWorkload?: number;
   /**
-   * The ticket files, and an EMPTY array is a valid claim.
-   *
-   * OPTIONAL by the owner's instruction (2026-10-01): the upload in the employee portal's medical
-   * rep expense form is optional, not required. A rep who has no scan of his ticket on the phone
-   * still files the amount, and the row waits for a human exactly as every other submission on
-   * this path does — it is inserted `submitted` / `needs_review` and nothing here approves it. So
-   * refusing the claim bought no safety; it only sent the rep away with nothing filed.
+   * The trip's photos — AT LEAST TWO, every one a JPG or PNG (owner, 2026-11-11: "make the
+   * outstation expense for reps can upload photo or multiple and all required", answered "Minimum
+   * two photos"). This replaces the owner's 2026-10-01 instruction that the upload was optional.
+   * The rep may add them one at a time or several at once, up to MEDICAL_REP_MAX_PHOTOS; the form
+   * shrinks each to a JPEG first so the body fits the proxy's 10 MB. The row still waits for a
+   * human exactly as before — the photos are evidence for HR, they approve nothing.
    */
   attachments: MedicalRepSimpleExpenseAttachment[];
   goTicketAmount: number;
@@ -34,6 +33,36 @@ export type MedicalRepSimpleExpenseInput = {
   tripEndDate: string;
   tripStartDate: string;
 };
+
+/** The fewest photos a medical rep's traveling expense may carry (owner, 2026-11-11). */
+export const MEDICAL_REP_MIN_PHOTOS = 2;
+
+/** The most photos one claim may carry — six shrunk JPEGs stay well inside the proxy's 10 MB. */
+export const MEDICAL_REP_MAX_PHOTOS = 6;
+
+/** The photo types the server stores (car-evidence-storage.ts accepts these two images). */
+export const MEDICAL_REP_PHOTO_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
+
+/**
+ * Whether a set of photos is enough to submit, in words the rep can act on — ONE answer for the
+ * form's Submit button and the server's refusal, so the screen never lets through what the server
+ * then refuses.
+ */
+export function medicalRepPhotoProblem(photos: ReadonlyArray<{ contentType: string }>): string | null {
+  if (photos.length < MEDICAL_REP_MIN_PHOTOS) {
+    const missing = MEDICAL_REP_MIN_PHOTOS - photos.length;
+    return photos.length === 0
+      ? `At least ${MEDICAL_REP_MIN_PHOTOS} photos are required.`
+      : `At least ${MEDICAL_REP_MIN_PHOTOS} photos are required — add ${missing} more.`;
+  }
+  if (photos.length > MEDICAL_REP_MAX_PHOTOS) {
+    return `Photos must be ${MEDICAL_REP_MAX_PHOTOS} or fewer — remove ${photos.length - MEDICAL_REP_MAX_PHOTOS}.`;
+  }
+  if (photos.some((photo) => !MEDICAL_REP_PHOTO_CONTENT_TYPES.has(photo.contentType))) {
+    return "Every attachment must be a photo (JPG or PNG).";
+  }
+  return null;
+}
 
 export type NormalizedMedicalRepSimpleExpenseInput = {
   attachments: MedicalRepSimpleExpenseAttachment[];
@@ -105,10 +134,13 @@ export function validateMedicalRepSimpleExpenseInput(
     throw new Error("At least one ticket amount is required.");
   }
 
-  // No attachment check: the upload is OPTIONAL (owner, 2026-10-01 — see the field's own note on
-  // `MedicalRepSimpleExpenseInput.attachments`). A non-array is still normalised to [] so the
-  // insert writes `attachment_count: 0` and an empty metadata array rather than undefined.
+  // At least two photos, all of them images (owner, 2026-11-11). The words contain "required" or
+  // "must be", which the route answers as a 400 the form shows as it is.
   const attachments = Array.isArray(input.attachments) ? input.attachments : [];
+  const photoProblem = medicalRepPhotoProblem(attachments);
+  if (photoProblem) {
+    throw new Error(photoProblem);
+  }
 
   return {
     attachments,
