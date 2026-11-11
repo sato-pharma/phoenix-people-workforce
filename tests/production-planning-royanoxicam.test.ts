@@ -690,9 +690,9 @@ export async function runProductionPlanningRoyanoxicamTests() {
   assert.equal(linkedWire.materials.find((item) => item.code === "BLISTER_ALU_ROYANOXICAM")?.supplier, "sato");
   assert.equal(linkedWire.materials.find((item) => item.code === "LACTOSE_MONO_200")?.supplier, "factory");
 
-  // ── The Cost and Stock tabs list only what Sato buys ───────────────────────────────────────────
-  // He kept the formula complete, so Formula and Planner still show the factory's lines; only the
-  // money and the store leave them out.
+  // ── Every tab lists only what Sato buys ────────────────────────────────────────────────────────
+  // 2026-10-29 it was the Cost and Stock tabs; 2026-11-11 he chose "Every tab, every product", so the
+  // Run tab reads the same view and the Planner filters its plan rows. Settings keeps every line.
   assert.equal(isBoughtBySato("factory"), false, "the factory's materials leave the Cost and Stock tabs");
   assert.equal(isBoughtBySato("sato"), true);
   assert.equal(isBoughtBySato(null), true, "nobody has said is never hidden — it might be his");
@@ -702,7 +702,7 @@ export async function runProductionPlanningRoyanoxicamTests() {
     /workspace\.materials\.filter\(\(material\) => isBoughtBySato\(material\.supplier\)\)/,
     "the view keeps exactly the materials Sato buys",
   );
-  for (const tab of ["StockTab", "CostTab"]) {
+  for (const tab of ["StockTab", "CostTab", "RunTab"]) {
     const body = exportedBody(screen, tab);
     assert.match(
       body,
@@ -715,6 +715,14 @@ export async function runProductionPlanningRoyanoxicamTests() {
       `and ${tab} says how many it left out — a short list is never silent`,
     );
   }
+
+  assert.match(
+    screen,
+    /const satoRows = plan\.rows\.filter\(\(row\) => isBoughtBySato\(row\.supplier\)\)/,
+    "🔴 the Planner's material list keeps exactly the rows Sato buys",
+  );
+  assert.doesNotMatch(screen, /\{plan\.rows\.map\(/, "and no table or card on the Planner maps the whole plan");
+  assert.match(screen, /<FactoryHiddenNote count=\{planFactoryHidden\} \/>/, "and the Planner says how many it left out");
 
   // The rows the link answers for, off the migration itself.
   const supplierSql = stripSqlComments(readFileSync(SUPPLIER_LINK, "utf8").replace(/\r\n/g, "\n"));

@@ -51,6 +51,12 @@ export type WireProduct = {
   measureUnit: WireMeasureUnit;
   /** Which location is THIS product's factory. A second product means a second factory. */
   factoryLocationId: string | null;
+  /**
+   * The batch weight (large unit) and one unit's weight (small unit) as the factory and the paper
+   * state them, or null to show the geometry's own. LABELS ONLY — `display-weights.ts`.
+   */
+  batchWeightDisplay?: string | null;
+  unitWeightDisplay?: string | null;
   notes: string | null;
 };
 

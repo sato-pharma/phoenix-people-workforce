@@ -377,6 +377,9 @@ export const PP = {
   settingsUnitsPerBox: "الوحدات في العلبة",
   settingsStripsPerBox: "الشرائط في العلبة",
   settingsStripsPerBoxHint: "الفراغ يعني أن المنتج لا يُعبأ في شرائط",
+  settingsBatchWeightShown: "وزن التشغيلة كما يذكره المصنع",
+  settingsUnitWeightShown: "وزن الوحدة الواحدة كما في الورقة",
+  settingsShownWeightHint: "للعرض فقط، ولا يغيّر أي كمية. الفراغ يعرض الوزن المحسوب",
   listSeparator: "، ",
   gapsTitle: "بيانات ناقصة قبل التخطيط",
   gapsNoAmount: "الكمية غير مُدخلة",
@@ -748,6 +751,9 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   settingsUnitsPerBox: "Units per box",
   settingsStripsPerBox: "Strips per box",
   settingsStripsPerBoxHint: "Left blank when the product is not packed in strips",
+  settingsBatchWeightShown: "Batch weight as the factory states it",
+  settingsUnitWeightShown: "One unit's weight as the paper states it",
+  settingsShownWeightHint: "Shown only, changes no quantity. Left blank shows the computed weight",
   listSeparator: ", ",
   gapsTitle: "Missing before planning",
   gapsNoAmount: "No amount entered",
@@ -1699,7 +1705,8 @@ export type ProductionPlanningErrorKey =
   | "moveUnitKindMismatch"
   | "unitsPerBoxInvalid"
   | "stripsPerBoxInvalid"
-  | "stripsInUse";
+  | "stripsInUse"
+  | "shownWeightInvalid";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1732,6 +1739,7 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   unitsPerBoxInvalid: "عدد الوحدات في العلبة يجب أن يكون عددًا صحيحًا بين 1 و1000.",
   stripsPerBoxInvalid: "عدد الشرائط في العلبة يجب أن يكون عددًا صحيحًا بين 1 و1000، أو يُترك فارغًا.",
   stripsInUse: "لا يمكن حذف عدد الشرائط ما دامت هناك مادة محسوبة لكل شريط في هذا المنتج.",
+  shownWeightInvalid: "الوزن المعروض يجب أن يكون رقمًا أكبر من صفر، بأربعة أرقام عشرية على الأكثر، أو يُترك فارغًا.",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1765,6 +1773,7 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   unitsPerBoxInvalid: "Units per box must be a whole number from 1 to 1000.",
   stripsPerBoxInvalid: "Strips per box must be a whole number from 1 to 1000, or left blank.",
   stripsInUse: "Strips per box cannot be cleared while a material in this product is counted per strip.",
+  shownWeightInvalid: "A shown weight must be a number above zero with at most four decimals, or left blank.",
 };
 
 /**
