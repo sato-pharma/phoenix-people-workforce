@@ -16,6 +16,7 @@ import {
   writeTable,
 } from "@/lib/sales/sales-workbook-kit";
 
+import { shownUnitWeights } from "./display-weights";
 import { MEASURE_UNITS_PER_LARGE } from "./rules";
 import {
   coerceProductionPlanningLanguage,
@@ -228,11 +229,13 @@ export async function buildProductionPlanningWorkbook(
   // writes Royanoxicam's 31 kg batch into the sheet as 31,000 kg, inside a live FORMULA he can see.
   const perLarge = Number(MEASURE_UNITS_PER_LARGE[plan.measureUnit]);
   // Built once: the per-dose label states the product's own dose, so it cannot be a flat constant.
+  // The weights he READS (Royafloxacin's 847.6 mg tablet), never the core the cells below count at.
+  const shownUnits = product ? shownUnitWeights(product) : { dose: "0", goodUnit: "0", sampleUnit: "0" };
   const basisLabels = S.basisLabels({
-    dose: formatNumberLatin(product?.doseMl ?? "0"),
-    goodUnit: formatNumberLatin(product?.goodUnitMl ?? "0"),
+    dose: formatNumberLatin(shownUnits.dose),
+    goodUnit: formatNumberLatin(shownUnits.goodUnit),
     measureUnit: plan.measureUnit,
-    sampleUnit: formatNumberLatin(product?.sampleUnitMl ?? "0"),
+    sampleUnit: formatNumberLatin(shownUnits.sampleUnit),
   });
   const materialById = new Map(workspace.materials.map((material) => [material.id, material]));
 
@@ -286,6 +289,19 @@ export async function buildProductionPlanningWorkbook(
     VALUE_FMT,
   );
   row += 1;
+
+  // The STATED weights (owner, 2026-11-11, Royafloxacin "847.6 mg, 70 kg as stated") travel as TEXT
+  // in the label column, never as a number in column B: every non-yellow number on this sheet is a
+  // live formula, and these two are labels the engine never counts with. Absent for every product
+  // that does not carry them, so no other sheet's rows move.
+  if (product?.batchWeightDisplay) {
+    labelCell(sheet, row, `${PPL.settingsBatchWeightShown}: ${formatNumberLatin(product.batchWeightDisplay)} ${measure.large}`);
+    row += 1;
+  }
+  if (product?.unitWeightDisplay) {
+    labelCell(sheet, row, `${PPL.settingsUnitWeightShown}: ${formatNumberLatin(product.unitWeightDisplay)} ${measure.small}`);
+    row += 1;
+  }
 
   const goodMlRow = row;
   labelCell(sheet, goodMlRow, `${PPL.sheetGoodUnitSize} (${measure.small})`);

@@ -45,6 +45,7 @@ import {
   type ExpiryLot,
   type ExpiryVerdict,
 } from "./expiry";
+import { type DisplayWeightSource, shownBatchWeight, shownTotalWeight, shownUnitWeights } from "./display-weights";
 import { formatExactRuns, resolveRunGeometry, type RunGeometry } from "./geometry";
 import { formatOveragePct, learnFromRuns, resolveOverage, type MaterialLearning, type RunObservation } from "./learning";
 import type { WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
@@ -120,7 +121,7 @@ export { T as PRODPLAN_TABLES };
 // Explicit column lists, never `select("*")`: a `*` read is how a column added for one screen
 // quietly starts travelling to every other one.
 const PRODUCT_COLUMNS =
-  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, sample_in_own_box, strips_per_box, measure_unit, factory_location_id, default_sample_units, is_active, notes";
+  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, sample_in_own_box, strips_per_box, measure_unit, factory_location_id, default_sample_units, is_active, notes, batch_weight_display::text, unit_weight_display::text";
 /** Which materials belong to which product. Before Guamusin every material belonged to the only one. */
 const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active, supplier";
 const MATERIAL_COLUMNS =
@@ -184,6 +185,17 @@ function actor(access: AccessContext) {
 
 // ── Loading ────────────────────────────────────────────────────────────────────────────────────────
 
+/** The product's figures as the shown-weight helpers read them — the same shape the wire carries. */
+function wireWeightSource(product: LoadedProduct): DisplayWeightSource {
+  return {
+    doseMl: product.geometry.doseMl.toString(),
+    goodUnitMl: product.geometry.goodUnitMl.toString(),
+    sampleUnitMl: product.geometry.sampleUnitMl.toString(),
+    batchWeightDisplay: product.batchWeightDisplay ?? null,
+    unitWeightDisplay: product.unitWeightDisplay ?? null,
+  };
+}
+
 export type LoadedProduct = {
   readonly id: string;
   readonly code: string;
@@ -212,6 +224,13 @@ export type LoadedProduct = {
    * an absent figure means no samples.
    */
   readonly defaultSampleUnits?: bigint;
+  /**
+   * The batch weight (large unit) and the tablet weight (small unit) the screen SHOWS, as decimal
+   * strings, or null to show the geometry's own. Labels only — see `display-weights.ts`: nothing
+   * that counts reads them (owner, 2026-11-11, Royafloxacin "847.6 mg, 70 kg as stated").
+   */
+  readonly batchWeightDisplay?: string | null;
+  readonly unitWeightDisplay?: string | null;
   readonly notes: string | null;
 };
 
@@ -425,6 +444,9 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     // migration, so nothing actually takes this path.
     factoryLocationId: asText(row.factory_location_id),
     defaultSampleUnits: row.default_sample_units == null ? BigInt(0) : BigInt(row.default_sample_units),
+    // Trimmed through the micro units, so numeric(14,4)'s "70.0000" reads 70 and "847.6000" 847.6.
+    batchWeightDisplay: row.batch_weight_display == null ? null : formatQty(parseQty(String(row.batch_weight_display))),
+    unitWeightDisplay: row.unit_weight_display == null ? null : formatQty(parseQty(String(row.unit_weight_display))),
     notes: asText(row.notes),
     geometry: {
       runVolumeMl: BigInt(row.run_volume_ml),
@@ -1098,17 +1120,23 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   // `…Litres` for the one product that existed when it was named, like the `_ml` columns.
   const perLarge = MEASURE_UNITS_PER_LARGE[product.measureUnit];
   const litres = (ml: bigint) => formatQty((ml * QTY_SCALE) / perLarge);
+  // What he READS for the batch and the tablet — the stated figures where a product carries them
+  // (Royafloxacin's 70 kg and 847.6 mg), the geometry's own everywhere else. Never used to count.
+  const weightSource = wireWeightSource(product);
+  const shownRunVolume = shownBatchWeight(weightSource, litres(product.geometry.runVolumeMl));
+  const shownTotalVolume = shownTotalWeight(weightSource, run.runs, litres(run.totalVolumeMl));
+  const shownUnits = shownUnitWeights(weightSource);
 
   // Grouped Latin digits, built here rather than in the component, so the sentence under the tiles
   // and the workbook's own header line read identically.
   const sentence = productionPlanningStrings(coerceProductionPlanningLanguage(asScalar(body.lang))).plannerSentence({
     runs: formatNumberLatin(run.runs),
-    runVolumeLitres: formatNumberLatin(litres(product.geometry.runVolumeMl)),
-    totalVolumeLitres: formatNumberLatin(litres(run.totalVolumeMl)),
+    runVolumeLitres: formatNumberLatin(shownRunVolume),
+    totalVolumeLitres: formatNumberLatin(shownTotalVolume),
     goodUnits: formatNumberLatin(run.goodUnits),
-    goodUnitMl: formatNumberLatin(product.geometry.goodUnitMl),
+    goodUnitMl: formatNumberLatin(shownUnits.goodUnit),
     sampleUnits: formatNumberLatin(run.sampleUnits),
-    sampleUnitMl: formatNumberLatin(product.geometry.sampleUnitMl),
+    sampleUnitMl: formatNumberLatin(shownUnits.sampleUnit),
     surplusBoxes: formatNumberLatin(run.surplusBoxes),
     shortfallBoxes: null,
     // So the sentence says "6 runs of 100 kg each … 5 g sachets" for a powder, and keeps every word
@@ -1133,8 +1161,8 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
     requestedBoxes: run.requestedBoxes.toString(),
     surplusBoxes: run.surplusBoxes.toString(),
     totalVolumeMl: run.totalVolumeMl.toString(),
-    totalVolumeLitres: litres(run.totalVolumeMl),
-    runVolumeLitres: litres(product.geometry.runVolumeMl),
+    totalVolumeLitres: shownTotalVolume,
+    runVolumeLitres: shownRunVolume,
     totalDoses: run.totalDoses.toString(),
     leftoverMl: run.leftoverMl.toString(),
     oneRunFewer: run.oneRunFewer
@@ -1390,6 +1418,8 @@ export async function getProductionPlanningWorkspace(
       stripsPerBox: product.geometry.stripsPerBox == null ? null : product.geometry.stripsPerBox.toString(),
       measureUnit: product.measureUnit,
       factoryLocationId: factoryLocationIdFor(data, product),
+      batchWeightDisplay: product.batchWeightDisplay ?? null,
+      unitWeightDisplay: product.unitWeightDisplay ?? null,
       notes: product.notes,
     })),
     locations: data.locations,
@@ -1930,11 +1960,29 @@ export async function updateProductPackaging(access: AccessContext, body: Record
   }
   const unitsPerBox = Number(unitsText);
   const stripsPerBox = stripsText === null ? null : Number(stripsText);
+  // The two SHOWN weights (owner, 2026-11-11) — labels only, never counted. A key that is absent
+  // leaves the stored figure alone; present and blank clears it, so the geometry's own shows again.
+  const shownWeight = (key: "batchWeightDisplay" | "unitWeightDisplay"): string | null | undefined => {
+    if (!(key in body)) return undefined;
+    const raw = asScalar(body[key]);
+    const text = raw === null ? null : asText(String(raw));
+    if (text === null) return null;
+    if (!/^\d{1,7}(?:\.\d{1,4})?$/.test(text) || Number(text) <= 0 || Number(text) > 1_000_000) {
+      throw new ProductionPlanningInputError(errorsFor(body).shownWeightInvalid, key);
+    }
+    return text;
+  };
+  const batchWeightDisplay = shownWeight("batchWeightDisplay");
+  const unitWeightDisplay = shownWeight("unitWeightDisplay");
 
   const db = getSupabaseAdmin();
   const today = todayCairo();
   const [previous, stripLines] = await Promise.all([
-    db.from(T.products).select("units_per_box, strips_per_box").eq("id", productId).maybeSingle(),
+    db
+      .from(T.products)
+      .select("units_per_box, strips_per_box, batch_weight_display::text, unit_weight_display::text")
+      .eq("id", productId)
+      .maybeSingle(),
     db
       .from(T.compositions)
       .select("id")
@@ -1953,21 +2001,44 @@ export async function updateProductPackaging(access: AccessContext, body: Record
 
   const { error } = await db
     .from(T.products)
-    .update({ strips_per_box: stripsPerBox, units_per_box: unitsPerBox, updated_at: new Date().toISOString() })
+    .update({
+      strips_per_box: stripsPerBox,
+      units_per_box: unitsPerBox,
+      ...(batchWeightDisplay === undefined ? {} : { batch_weight_display: batchWeightDisplay }),
+      ...(unitWeightDisplay === undefined ? {} : { unit_weight_display: unitWeightDisplay }),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", productId);
   if (error) failure(error, "save the packaging");
 
-  const before = { stripsPerBox: previous.data.strips_per_box ?? null, unitsPerBox: previous.data.units_per_box };
+  const before = {
+    stripsPerBox: previous.data.strips_per_box ?? null,
+    unitsPerBox: previous.data.units_per_box,
+    batchWeightDisplay: asText(previous.data.batch_weight_display),
+    unitWeightDisplay: asText(previous.data.unit_weight_display),
+  };
+  const after = {
+    stripsPerBox,
+    unitsPerBox,
+    batchWeightDisplay: batchWeightDisplay === undefined ? before.batchWeightDisplay : batchWeightDisplay,
+    unitWeightDisplay: unitWeightDisplay === undefined ? before.unitWeightDisplay : unitWeightDisplay,
+  };
   await writeRequiredAuditLog({
     actorLoginId: who.login,
     entityType: "production_product",
     entityId: productId,
     oldValues: before,
-    newValues: { stripsPerBox, unitsPerBox },
-    summary: `Production planner: product ${productId} packaging — units per box ${before.unitsPerBox} → ${unitsPerBox}, strips per box ${before.stripsPerBox ?? "none"} → ${stripsPerBox ?? "none"}`,
+    newValues: after,
+    summary: `Production planner: product ${productId} packaging — units per box ${before.unitsPerBox} → ${unitsPerBox}, strips per box ${before.stripsPerBox ?? "none"} → ${stripsPerBox ?? "none"}, shown batch weight ${before.batchWeightDisplay ?? "none"} → ${after.batchWeightDisplay ?? "none"}, shown unit weight ${before.unitWeightDisplay ?? "none"} → ${after.unitWeightDisplay ?? "none"}`,
   });
 
-  return { productId, stripsPerBox: stripsPerBox === null ? null : String(stripsPerBox), unitsPerBox: String(unitsPerBox) };
+  return {
+    productId,
+    stripsPerBox: stripsPerBox === null ? null : String(stripsPerBox),
+    unitsPerBox: String(unitsPerBox),
+    batchWeightDisplay: after.batchWeightDisplay,
+    unitWeightDisplay: after.unitWeightDisplay,
+  };
 }
 
 /**

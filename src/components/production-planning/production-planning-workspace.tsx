@@ -96,6 +96,7 @@ import {
   perThousandBoxesToBase,
   toBaseUnits,
 } from "@/lib/production-planning/display-units";
+import { shownUnitWeights } from "@/lib/production-planning/display-weights";
 import { dataGapsFor, type DataGap } from "@/lib/production-planning/gaps";
 import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
 import { basisFitsProduct, COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
@@ -164,11 +165,13 @@ const LTR_HEADER_RAIL =
  * rule: `toLocaleString` under an Arabic locale emits ٠١٢٣.
  */
 function measureOf(product: WireProduct | null | undefined): ProductMeasure {
+  // The weights he READS — Royafloxacin's 847.6 mg tablet, not the 815 mg core the engine counts at.
+  const shown = product ? shownUnitWeights(product) : { dose: "0", goodUnit: "0", sampleUnit: "0" };
   return {
-    dose: formatNumberLatin(product?.doseMl ?? "0"),
-    goodUnit: formatNumberLatin(product?.goodUnitMl ?? "0"),
+    dose: formatNumberLatin(shown.dose),
+    goodUnit: formatNumberLatin(shown.goodUnit),
     measureUnit: product?.measureUnit ?? "ml",
-    sampleUnit: formatNumberLatin(product?.sampleUnitMl ?? "0"),
+    sampleUnit: formatNumberLatin(shown.sampleUnit),
     unitsInOwnSampleBox: product?.sampleInOwnBox
       ? formatNumberLatin(Number(product.sampleUnitMl) / Number(product.goodUnitMl))
       : undefined,
@@ -1065,9 +1068,9 @@ function PlannerResult({
         runVolumeLitres: formatNumberLatin(plan.runVolumeLitres),
         totalVolumeLitres: formatNumberLatin(plan.totalVolumeLitres),
         goodUnits: formatNumberLatin(plan.goodUnits),
-        goodUnitMl: formatNumberLatin(sentenceProduct.goodUnitMl),
+        goodUnitMl: formatNumberLatin(shownUnitWeights(sentenceProduct).goodUnit),
         sampleUnits: formatNumberLatin(plan.sampleUnits),
-        sampleUnitMl: formatNumberLatin(sentenceProduct.sampleUnitMl),
+        sampleUnitMl: formatNumberLatin(shownUnitWeights(sentenceProduct).sampleUnit),
         surplusBoxes: formatNumberLatin(plan.surplusBoxes),
         shortfallBoxes: null,
         // From the PLAN, not the product row: the plan is what these figures were computed under.
@@ -1092,6 +1095,11 @@ function PlannerResult({
     perBox === "1" ? saleableWord : `${saleableWord} (${formatNumberLatin(boxes)} ${t.unitBox})`;
   // How much of the cost total is actually covered by prices — see the note at the total itself.
   const coverage = costCoverage(plan.totals);
+  // 🔴 ONLY WHAT SATO SUPPLIES, on every product (owner, 2026-11-11, "Every tab, every product"):
+  // the factory's lines are still in the formula, still counted where they count, and still edited
+  // in Settings — they just leave this list, and the note says how many left.
+  const satoRows = plan.rows.filter((row) => isBoughtBySato(row.supplier));
+  const planFactoryHidden = plan.rows.length - satoRows.length;
 
   return (
     <>
@@ -1151,6 +1159,7 @@ function PlannerResult({
       </section>
 
       <section className="min-w-0">
+        <FactoryHiddenNote count={planFactoryHidden} />
         {/* 31/23/23/23. Four columns, because the fifth would take the delivery input below its
             natural width in the admin shell's 669px box — fit by MERGING, never by shrinking. */}
         <table className={TABLE}>
@@ -1170,7 +1179,7 @@ function PlannerResult({
             </tr>
           </thead>
           <tbody>
-            {plan.rows.map((row) => (
+            {satoRows.map((row) => (
               <tr className="border-b border-slate-200 last:border-b-0" key={row.materialId}>
                 <td className={TD}>
                   <p className="font-bold text-slate-900 break-words">{S.name(row)}</p>
@@ -1232,7 +1241,7 @@ function PlannerResult({
         </table>
 
         <div className="space-y-2 lg:hidden">
-          {plan.rows.map((row) => (
+          {satoRows.map((row) => (
             <article className={CARD} key={row.materialId}>
               <p className="font-bold text-slate-900 break-words">{S.name(row)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
@@ -1395,12 +1404,14 @@ type SaveFn = (path: string, body: Record<string, unknown>) => Promise<void>;
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
 /**
- * The workspace as the Stock and Cost tabs see it — only the materials SATO buys and holds.
+ * The workspace as the Stock, Cost and Run tabs see it — only the materials SATO buys and holds.
  *
  * Owner, 2026-10-29, on Royanoxicam: "we only supply the active material, Laura Noxicam boxes,
- * pamphlet, and aluminium foil only. We don't supply inactive materials." He chose to keep the
- * formula complete, so the Formula and Planner screens still list the factory's lines; only the
- * money and the store leave them out. The count comes back so each tab can say how many it hid.
+ * pamphlet, and aluminium foil only. We don't supply inactive materials." Then 2026-11-11, on Sato's
+ * request to "hide all other items from the system", he chose "Every tab, every product": the
+ * Planner's material list filters its plan rows the same way (`satoRows`). The formula stays
+ * complete in the database and in the Settings composition editor, which is where a factory line is
+ * still entered and changed. The count comes back so each tab can say how many it hid.
  */
 function satoBoughtView(workspace: WireWorkspace | null): { data: WireWorkspace | null; factoryHidden: number } {
   if (!workspace) return { data: null, factoryHidden: 0 };
@@ -2069,9 +2080,18 @@ function DataGapsBanner({ gaps }: { gaps: DataGap[] }) {
 function ProductPackagingEditor({ product, busy, onSave }: { product: WireProduct; busy: boolean; onSave: SaveFn }) {
   const S = useProductionPlanningStrings();
   const t = S.t;
+  const units = S.measureUnitLabels(product.measureUnit);
   const [unitsPerBox, setUnitsPerBox] = useState(product.unitsPerBox);
   const [stripsPerBox, setStripsPerBox] = useState(product.stripsPerBox ?? "");
-  const unchanged = unitsPerBox.trim() === product.unitsPerBox && stripsPerBox.trim() === (product.stripsPerBox ?? "");
+  // The two SHOWN weights — labels only, never counted (owner, 2026-11-11, Royafloxacin's 70 kg and
+  // 847.6 mg). Blank shows the geometry's own figure again.
+  const [batchWeight, setBatchWeight] = useState(product.batchWeightDisplay ?? "");
+  const [unitWeight, setUnitWeight] = useState(product.unitWeightDisplay ?? "");
+  const unchanged =
+    unitsPerBox.trim() === product.unitsPerBox &&
+    stripsPerBox.trim() === (product.stripsPerBox ?? "") &&
+    batchWeight.trim() === (product.batchWeightDisplay ?? "") &&
+    unitWeight.trim() === (product.unitWeightDisplay ?? "");
   return (
     <section className={PANEL}>
       <SectionTitle subtitle={t.settingsPackagingHint} title={`${t.settingsPackaging} · ${S.name(product)}`} />
@@ -2094,6 +2114,24 @@ function ProductPackagingEditor({ product, busy, onSave }: { product: WireProduc
             value={stripsPerBox}
           />
         </Field>
+        <Field hint={t.settingsShownWeightHint} label={`${t.settingsBatchWeightShown} (${units.large})`}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            inputMode="decimal"
+            onChange={(event) => setBatchWeight(event.target.value)}
+            value={batchWeight}
+          />
+        </Field>
+        <Field hint={t.settingsShownWeightHint} label={`${t.settingsUnitWeightShown} (${units.small})`}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            inputMode="decimal"
+            onChange={(event) => setUnitWeight(event.target.value)}
+            value={unitWeight}
+          />
+        </Field>
       </div>
       <div className="mt-3">
         <button
@@ -2104,6 +2142,8 @@ function ProductPackagingEditor({ product, busy, onSave }: { product: WireProduc
               productId: product.id,
               unitsPerBox: unitsPerBox.trim(),
               stripsPerBox: stripsPerBox.trim() === "" ? null : stripsPerBox.trim(),
+              batchWeightDisplay: batchWeight.trim() === "" ? null : batchWeight.trim(),
+              unitWeightDisplay: unitWeight.trim() === "" ? null : unitWeight.trim(),
             })
           }
           type="button"
@@ -2388,7 +2428,7 @@ export function CostTab({
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
 export function RunTab({
-  data,
+  data: workspace,
   canWrite,
   busy,
   onSave,
@@ -2418,6 +2458,8 @@ export function RunTab({
   const [goodUnits, setGoodUnits] = useState("");
   const [samples, setSamples] = useState("0");
   const [excluded, setExcluded] = useState(false);
+  // Only what Sato supplies, like every other tab (owner, 2026-11-11, "Every tab, every product").
+  const { data, factoryHidden } = satoBoughtView(workspace);
   const [exclusionReason, setExclusionReason] = useState("");
   const [lines, setLines] = useState<Record<string, { opening: string; delivered: string; closing: string }>>({});
 
@@ -2508,9 +2550,12 @@ export function RunTab({
             ) : null}
           </div>
 
+          <div className="mt-4">
+            <FactoryHiddenNote count={factoryHidden} />
+          </div>
           {/* 28/24/24/24. The three editable figures each need a real input, and a fifth column
               would take them under their natural width in the 669px box. */}
-          <table className={`mt-4 ${TABLE}`}>
+          <table className={TABLE}>
             <colgroup>
               <col className="w-[28%]" />
               <col className="w-[24%]" />
