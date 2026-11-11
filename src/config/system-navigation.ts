@@ -2319,7 +2319,6 @@ const hrNavigationSectionSeeds = [
       // her account") be honoured without handing her a write surface.
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employees/record-gaps", icon: FileWarning, label: "Record Gaps", permissions: [{ resource: "employees", action: "read" }] },
-      { href: "/hr/medical-insurance", icon: HeartPulse, label: "Medical Insurance", permissions: [{ resource: "medical_insurance", action: "read" }] },
       { href: "/hr/employee-360", icon: Contact, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       // Beside the Organogram since 2026-10-16: it is the same seat model read as a list of the empty
@@ -4145,13 +4144,6 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "employees", action: "read" }],
   },
   {
-    href: "/medical-insurance",
-    icon: HeartPulse,
-    label: "Medical Insurance",
-    description: "Who should be on the group medical policy, what it should cost, and each invoice against that.",
-    permissions: [{ resource: "medical_insurance", action: "read" }],
-  },
-  {
     href: "/employees",
     icon: UsersRound,
     label: "Employees",
@@ -5264,7 +5256,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/employees",
           "/employees/record-gaps",
-          "/medical-insurance",
           "/contracts",
           "/resignations",
           "/retention",

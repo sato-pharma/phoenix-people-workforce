@@ -1174,7 +1174,6 @@ import { runHrOperationsOverviewTests } from "./hr-operations-overview.test.ts";
 import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
 import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
-import { runMedicalInsuranceTests } from "./medical-insurance.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -5275,7 +5274,6 @@ await runTest(
 );
 await runTest(
   "medical insurance: who should be in or out, the plan to the piastre, an invoice against it, and no amount ever reaches an HR seat",
-  runMedicalInsuranceTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "

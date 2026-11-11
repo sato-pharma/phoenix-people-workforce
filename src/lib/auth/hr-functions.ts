@@ -59,8 +59,7 @@ export type HrFunctionKey =
   | "attendance_review"
   | "people_master"
   | "hiring_desk"
-  | "hr_calendars"
-  | "medical_insurance_members";
+  | "hr_calendars";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -642,20 +641,6 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       vacancies: READ_ONLY,
     },
   },
-  {
-    key: "medical_insurance_members",
-    label: "Medical Insurance Members",
-    summary:
-      "See and maintain who is on the group medical policy: who to add, who to remove, exceptions, and the insurer's communication tools. No cost and no invoice.",
-    // Owner, 2026-11-04: who sees the module, "You and HR Operations", on the option reading "The HR
-    // Operations seat can see and maintain members. Invoices stay with you." Two seats carry that name
-    // (HR Generalist, keyed "HR Operations", and HR Operations Specialist), both are held, and neither
-    // sees an amount here: every amount is medical_insurance_invoices, which stays Super Admin.
-    jdSections: ["owner 2026-11-04 — HR Operations: medical insurance members, no invoices"],
-    grants: {
-      medical_insurance: MAINTAIN,
-    },
-  },
 ] as const;
 
 /**
@@ -699,7 +684,6 @@ export const HR_ROLE_BUNDLES = {
     // per-person one. The office coordinator was expected to take THIS seat; on 2026-10-28 the
     // owner put her on the HR Operations Specialist seat (HR Administration) instead.
     "team_reminders",
-    "medical_insurance_members",
   ],
   // The Talent Acquisition seat, opened 2026-10-08 from the owner's own ticks on the access
   // blueprint. Shown as "Talent Acquisition" (HR_SEAT_JOB_TITLES below); keyed "HR Resourcing" so
@@ -729,7 +713,6 @@ export const HR_ROLE_BUNDLES = {
     "team_reminders",
     "hiring_desk",
     "hr_calendars",
-    "medical_insurance_members",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 

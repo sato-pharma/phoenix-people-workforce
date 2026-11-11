@@ -50,9 +50,6 @@ Phoenix Workforce/
 *.csv
 *.bas
 !Source of sales area database.xlsx
-# The insurer's blank EDI workbook, filled by the medical insurance export. It holds no person's data;
-# tests/medical-insurance.test.ts fails if an ID or email ever lands in it.
-!assets/medical-insurance/metlife-edi-template.xlsx
 !.env.*.example
 
 # xlsx/ is the working-data folder. Around 104 of its files are in no commit, branch or
