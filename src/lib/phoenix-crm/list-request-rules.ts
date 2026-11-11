@@ -228,6 +228,21 @@ export function listMovesFor(customer: ListCustomerFacts, waiting: ReadonlySet<P
   return [];
 }
 
+/**
+ * A customer waiting outside the list with no add request filed — so nobody's queue holds him, and his
+ * visits wait for good until the rep proposes a grade (the sweep of 11 Nov 2026: 159 such customers, the
+ * owner's ruling "the reps grade them"). The rep's list counts them and marks each one.
+ */
+export function needsAddRequest(customer: { status: string; waiting: ReadonlyArray<{ kind: string }> }): boolean {
+  return customer.status === "outside" && !customer.waiting.some((entry) => entry.kind === "add");
+}
+
+/** What the rep is told about the customers outside his list who still need his grade. */
+export function needsGradeText(count: number): string {
+  const who = count === 1 ? "1 customer outside your list waits" : `${count} customers outside your list wait`;
+  return `${who} for your grade. Open each one and press Ask to add: your district manager, then SFE, add the customer to your list, and the visits you saved count in the month they happened.`;
+}
+
 /** Why a customer is in the Archive, in the rep's words. */
 export function archiveReasonLabel(reason: string | null): string | null {
   if (reason === "not_added") return "Dropped instead of added to your list";

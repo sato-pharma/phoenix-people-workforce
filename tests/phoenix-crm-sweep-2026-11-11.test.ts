@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { hasLeftBy, SEAT_REP_LEFT } from "../src/lib/phoenix-crm/departure-rules.ts";
-import { sameNameOnSeatText } from "../src/lib/phoenix-crm/list-request-rules.ts";
+import { needsAddRequest, needsGradeText, sameNameOnSeatText } from "../src/lib/phoenix-crm/list-request-rules.ts";
 import { customerNameKey } from "../src/lib/phoenix-crm/name-fold.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { managerOwnVisitScreenId, managerOwnVisitUuid } from "../src/lib/phoenix-crm/server/manager-visit-details.ts";
@@ -98,6 +98,18 @@ export function runPhoenixCrmSweepTests(): void {
     assert.match(list, /proposed_grade/, "and the server passes it on");
     const migration = readFileSync("supabase/migrations/20261111030456_phoenix_crm_sweep_fixes.sql", "utf8");
     assert.match(migration, /if v_mode = 'new' or v_grade is not null then/, "🔴 the database files the add request for an outside customer with a grade");
+
+    // The 159 already waiting with no request (owner, 11 Nov: "the reps grade them"): the rep is told.
+    assert.equal(needsAddRequest({ status: "outside", waiting: [] }), true, "outside with nothing filed: nobody's queue holds him");
+    assert.equal(needsAddRequest({ status: "outside", waiting: [{ kind: "add" }] }), false, "an add request already waits");
+    assert.equal(needsAddRequest({ status: "outside", waiting: [{ kind: "grade" }] }), true, "another kind of request does not add him");
+    assert.equal(needsAddRequest({ status: "active", waiting: [] }), false, "on the list already");
+    assert.match(needsGradeText(1), /^1 customer outside your list waits for your grade\. Open each one and press Ask to add/);
+    assert.match(needsGradeText(48), /^48 customers outside your list wait for your grade/);
+    const tab = source("src/components/phoenix-crm/list-tab.tsx");
+    assert.match(tab, /outside\.filter\(needsAddRequest\)/, "the rep's Outside the list counts them");
+    assert.match(tab, /needsGradeText\(needGrade\)/, "and says what to do");
+    assert.match(source("src/components/phoenix-crm/list-customer.tsx"), /needsAddRequest\(customer\)/, "and each one is marked on its own page");
   }
 
   // ── 5. A merged duplicate never comes back by a request ───────────────────────────────────────────────────
