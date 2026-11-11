@@ -28,16 +28,42 @@ async function readJson(response: Response, fallback: string): Promise<Record<st
   return data;
 }
 
+/** A read the browser could not deliver at all — never the browser's own "Failed to fetch (host)". */
+export const CALENDAR_UNREACHABLE_READ = "Phoenix could not be reached from this browser. Check the connection and press it again.";
+/** A save that may or may not have arrived — the connection dropped, so the server's answer was never seen. */
+export const CALENDAR_UNREACHABLE_WRITE =
+  "Phoenix could not be reached from this browser, so it is not known whether that was saved. Check the connection, then reopen the interview to see.";
+
+// 11 Nov 2026: an interview drawer showed "Failed to fetch (phoenix-hr.satopharma.com)" under the
+// invitation and the polls while the server was up and answered every request it received — the
+// laptop's connection had dropped for a moment. A read is safe to repeat, so it is tried once more
+// after a short pause; a save is never repeated (it may already have arrived) and says so instead.
+async function reach(input: string, init: RequestInit, retry: boolean): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    if (retry) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      try {
+        return await fetch(input, init);
+      } catch {
+        // falls through to the plain sentence
+      }
+    }
+    throw new Error(retry ? CALENDAR_UNREACHABLE_READ : CALENDAR_UNREACHABLE_WRITE);
+  }
+}
+
 export function calendarApi(linkToken: string | null | undefined): CalendarApi {
   const token = linkToken?.trim() || null;
   const url = (path: string) => `${INTERVIEW_CALENDAR_API}${path}`;
   const headers = (extra: Record<string, string> = {}): Record<string, string> => (token ? { ...extra, [LINK_HEADER]: token } : extra);
   const json = (method: string, path: string, body: unknown) =>
-    fetch(url(path), { body: JSON.stringify(body), headers: headers({ "Content-Type": "application/json" }), method });
+    reach(url(path), { body: JSON.stringify(body), headers: headers({ "Content-Type": "application/json" }), method }, false);
   return {
-    del: async (path) => readJson(await fetch(url(path), { headers: headers(), method: "DELETE" }), "That could not be removed."),
-    fetch: (path) => fetch(url(path), { cache: "no-store", headers: headers() }),
-    get: async (path) => readJson(await fetch(url(path), { cache: "no-store", headers: headers() }), "That could not be read."),
+    del: async (path) => readJson(await reach(url(path), { headers: headers(), method: "DELETE" }, false), "That could not be removed."),
+    fetch: (path) => reach(url(path), { cache: "no-store", headers: headers() }, true),
+    get: async (path) => readJson(await reach(url(path), { cache: "no-store", headers: headers() }, true), "That could not be read."),
     href: (path) => {
       if (!token) return url(path);
       return `${url(path)}${path.includes("?") ? "&" : "?"}link=${encodeURIComponent(token)}`;
@@ -45,7 +71,7 @@ export function calendarApi(linkToken: string | null | undefined): CalendarApi {
     linkToken: token,
     patch: async (path, body) => readJson(await json("PATCH", path, body), "That could not be saved."),
     post: async (path, body) => readJson(await json("POST", path, body), "That could not be saved."),
-    postForm: async (path, form) => readJson(await fetch(url(path), { body: form, headers: headers(), method: "POST" }), "That could not be saved."),
+    postForm: async (path, form) => readJson(await reach(url(path), { body: form, headers: headers(), method: "POST" }, false), "That could not be saved."),
   };
 }
 
