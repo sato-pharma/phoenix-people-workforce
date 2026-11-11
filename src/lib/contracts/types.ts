@@ -9,8 +9,28 @@ export type ContractRow = {
   job_title: string;
   line: string;
   manager_hr_id: string | null;
+  /** What the employee's managers recommended for THIS renewal date, newest first. */
+  manager_recommendations: ContractManagerRecommendation[];
   renewal_day: number;
   workflow: ContractRenewalRecord | null;
+};
+
+export type ContractManagerRecommendationValue = "renew" | "do_not_renew";
+
+/**
+ * A manager's answer to the renewal reminder — "renew" or "do not renew", with an optional note.
+ * Keyed by the renewal date rather than a renewal request, because the reminder (75/60/30/15 days
+ * ahead) goes out before HR has opened any request (src/lib/contracts/manager-recommendation.ts).
+ */
+export type ContractManagerRecommendation = {
+  employeeHrId: string;
+  renewalDate: string;
+  recommenderHrId: string;
+  /** The recommender's display name; null only when the directory could not name them. */
+  recommenderName: string | null;
+  recommendation: ContractManagerRecommendationValue;
+  note: string | null;
+  updatedAt: string;
 };
 
 export type ContractRenewalStatus =
@@ -71,6 +91,8 @@ export type ContractRenewalDashboardData = {
     renewed: number;
     totalRequests: number;
   };
+  /** True when the managers' recommendations could not be read — the board says so, never "none". */
+  recommendationsUnavailable?: boolean;
 };
 
 export type CreateContractRenewalInput = {
