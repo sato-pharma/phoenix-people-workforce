@@ -105,6 +105,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   // ── People, HR papers, recruitment ──────────────────────────────────────────────────────────────
   "/api/employees": { admin: "/employees", hr: "/hr/employees" },
   "/api/imports": { admin: "/employees", hr: "/hr/employees" },
+  "/api/contract-recommendations": { admin: "/contracts" },
   "/api/contracts": { admin: "/contracts", hr: "/hr/contracts" },
   "/api/resignations": { admin: "/resignations", hr: "/hr/resignations" },
   "/api/retention": { admin: "/retention" },

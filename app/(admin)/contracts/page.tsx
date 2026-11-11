@@ -1,7 +1,7 @@
 import { ContractRenewal } from "@/components/contracts/contract-renewal";
 import { redirect } from "next/navigation";
 
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   contractRenewalErrorMessage,
@@ -40,6 +40,12 @@ function contractsPageError(error: unknown) {
 
 export default async function ContractsPage() {
   const access = await resolveAccessContextFromPage();
+  // A portal-shell viewer belongs on the portal's Contract Renewal page — which shows a manager
+  // without the board his own team's renewals to recommend on. Before 2026-11-11 the layout sent
+  // them to the portal home, which is where every renewal reminder's old /contracts button landed.
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/contracts");
+  }
   if (!await canAccess(access, "contracts", "read")) {
     redirect("/employee-portals");
   }

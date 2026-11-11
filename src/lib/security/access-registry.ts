@@ -671,6 +671,10 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/coaching/skills-survey/settings", permission: { resource: "coaching_skills_survey", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT"], pattern: "/api/coaching/skills-survey/settings", permission: { resource: "coaching_skills_survey", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),
+  // A manager's renew / do-not-renew answer to the renewal reminder. Outside /api/contracts/** on
+  // purpose: the managers hold no contracts grant; the handler admits only someone above the employee
+  // in the reporting line (src/lib/contracts/manager-recommendation.ts).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/contract-recommendations", permission: { resource: "employee_profile", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/coaching/reports/export", permission: { resource: "coaching", action: "export" }, guard: "domain-helper" }),
   // `recruitment`, not `vacancies` — moved 2026-09-01 with the route itself, so this declaration
   // keeps describing what the handler enforces. See app/(admin)/cv-database/page.tsx for why.

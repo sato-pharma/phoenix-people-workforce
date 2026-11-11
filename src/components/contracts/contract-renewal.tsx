@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import { daysUntilLifecycleDate, summarizeContractRenewalRows } from "@/lib/lifecycle-risk/metrics";
 import type { ContractRenewalDashboardData, ContractRow } from "@/lib/contracts/types";
+import { contractRecommendationLabels } from "@/lib/contracts/manager-recommendation-labels";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
@@ -84,6 +85,31 @@ function datePart(value: string, part: "month" | "year") {
   }
 
   return part === "month" ? date.getMonth() + 1 : date.getFullYear();
+}
+
+/**
+ * What the managers answered to the renewal reminder (manager-recommendation.ts), newest first —
+ * shown inside the Status cell and the phone card, never a column of its own (fits-the-screen rule).
+ */
+function ManagerRecommendations({ row }: { row: ContractRow }) {
+  const items = row.manager_recommendations ?? [];
+  if (items.length === 0) {
+    return <span className="mt-1 block text-phx-2xs text-text-secondary">No manager recommendation yet</span>;
+  }
+  return (
+    <span className="mt-1 block space-y-0.5">
+      {items.map((item) => (
+        <span className="block break-words text-phx-2xs text-text-secondary" key={`${item.recommenderHrId}-${item.updatedAt}`} title={item.note ?? undefined}>
+          <span className={cn("font-bold", item.recommendation === "renew" ? "text-phx-ok" : "text-phx-danger")}>
+            {contractRecommendationLabels[item.recommendation]}
+          </span>
+          {" — "}
+          {item.recommenderName ?? "A manager"}
+          {item.note ? `: ${item.note}` : ""}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function formatStoredDate(value: string | null) {
@@ -217,6 +243,14 @@ export function ContractRenewal({ initialData, initialError }: Props) {
           employeeName={whatsAppRow.full_name}
           onClose={() => setWhatsAppRow(null)}
         />
+      ) : null}
+      {initialData?.recommendationsUnavailable ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <p className="text-sm">
+            The managers&apos; recommendations could not be read just now, so this board shows none. Reload in a minute.
+          </p>
+        </AdminCallout>
       ) : null}
       <AdminPageHero
         actions={
@@ -454,6 +488,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                     { label: "Renewal Date", value: formatStoredDate(row.contract_renewal_date) },
                   ]}
                 />
+                <ManagerRecommendations row={row} />
                 {/* Mobile never renders the table, so the action has to exist here too. */}
                 <button
                   className="mt-2 inline-flex items-center gap-1.5 text-phx-xs font-semibold text-text-secondary transition hover:text-text"
@@ -529,6 +564,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                               ? <Badge variant="warning">{days}d left</Badge>
                               : <Badge variant="neutral">{days}d left</Badge>
                         }
+                        <ManagerRecommendations row={row} />
                       </td>
                     </tr>
                   );

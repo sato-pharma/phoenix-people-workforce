@@ -17,7 +17,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { isDateOnlyBefore, nextContractAnniversary } from "./date-rules";
 import { WP6_CONTRACT_NON_RENEWAL_TERMINAL_ENABLED } from "./feature-flags";
+import { loadManagerRecommendations, recommendationKey } from "./recommendation-store";
 import type {
+  ContractManagerRecommendation,
   ContractRenewalAction,
   ContractRenewalDashboardData,
   ContractRenewalRecord,
@@ -376,13 +378,28 @@ export async function getContractRenewalDashboardData(access?: AccessContext): P
       job_title: employee.jobTitle ?? employee.positionTitle ?? "Unassigned",
       line: employee.lineName ?? "Unassigned",
       manager_hr_id: employee.managerHrId,
+      manager_recommendations: [] as ContractManagerRecommendation[],
       renewal_day: renewalDay,
       workflow: requestsByHrId.get(employeeHrId ?? "") ?? null,
     };
   });
 
+  // What the managers answered to the renewal reminder, for each row's own renewal date
+  // (manager-recommendation.ts). A failed read is said on the board, never shown as "no answer".
+  let recommendationsUnavailable = false;
+  try {
+    const recommendations = await loadManagerRecommendations(rows.map((row) => row.contract_renewal_date));
+    for (const row of rows) {
+      row.manager_recommendations = recommendations.get(recommendationKey(row.hr_id, row.contract_renewal_date)) ?? [];
+    }
+  } catch (error) {
+    recommendationsUnavailable = true;
+    console.error(error, { tags: { module: "contracts", read: "manager-recommendations" } });
+  }
+
   const workflows = rows.map((row) => row.workflow).filter((row): row is ContractRenewalRecord => Boolean(row));
   return {
+    recommendationsUnavailable,
     rows,
     summary: {
       activeRequests: workflows.filter((row) => activeRequestStatuses.includes(row.status)).length,

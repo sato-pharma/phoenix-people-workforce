@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 
+import { contractRecommendHref } from "@/lib/contracts/manager-recommendation-labels";
 import { contractRenewalReminderDaysAhead, getContractRenewalReminderCandidates } from "@/lib/contracts/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
@@ -117,10 +118,13 @@ export async function runContractRenewalNotifications(request: Request) {
     const managerOfManager = managerOf(directManager, employeesByHrId);
     const workflowApproverHrIds = workflowApproverHrIdsForEmployee(employee, employeesByHrId, hrApproverHrIds);
     const dueText = row.daysUntil === 0 ? "due today" : `due in ${row.daysUntil} days`;
-    // "/contracts" is the real Contract Renewal page (app/(admin)/contracts/page.tsx); the
-    // page itself redirects any viewer lacking the "contracts" permission to /employee-portals
-    // instead of erroring. "/contracts/renewals" never existed as a route and 404'd for everyone.
-    const actionUrl = "/contracts";
+    // The reminder asks the manager chain for a recommendation, so its button opens the page where
+    // one is given: /contracts/recommend/<hrId> (owner, 2026-11-11). It used to open /contracts, the
+    // Contract Renewal board, which only HR and the Super Admin can open — every district manager,
+    // the National Sales Manager and the other managers were dropped on the portal home ("people are
+    // redirected to nothing"). HR and the Super Admin read every answer on the same page, with the
+    // way to the board. "/contracts/renewals" never existed as a route and 404'd for everyone.
+    const actionUrl = contractRecommendHref(employee.hrId);
     // Isolated per employee: one bad send (e.g. a transient email/network error) must not abort
     // the loop and skip every remaining employee's contract-renewal reminder for today.
     try {
@@ -128,6 +132,8 @@ export async function runContractRenewalNotifications(request: Request) {
         actionUrl,
         actorId: "system",
         email: {
+          ctaHref: actionUrl,
+          ctaLabel: "Give your recommendation",
           employeeHrId: row.hr_id,
           metrics: [
             { label: "Employee", value: `${employee.displayName} (${row.hr_id})` },

@@ -2536,6 +2536,7 @@ import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-titl
 import { runEmployeeImportKeepsStoredJobTitleTests } from "./employee-import-keeps-stored-job-title.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
 import { runContractRenewalReminderLadderTests } from "./contract-renewal-reminder-ladder.test.ts";
+import { runContractRenewalManagerRecommendationTests } from "./contract-renewal-manager-recommendation.test.ts";
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
@@ -5749,6 +5750,10 @@ await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest(
   "contract renewal reminder ladder (75/60/30/15 days, escalating on the last rung, reaching the HR Operations seat by role)",
   runContractRenewalReminderLadderTests,
+);
+await runTest(
+  "contract renewal manager recommendation (the reminder opens the recommend page, only the manager chain answers, portal managers never land on the portal home)",
+  runContractRenewalManagerRecommendationTests,
 );
 await runTest(
   "cron auth policy lives in exactly one module (no route restates the unset-secret rule)",

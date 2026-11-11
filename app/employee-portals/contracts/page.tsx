@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { ContractRenewal } from "@/components/contracts/contract-renewal";
+import { TeamRenewalsList } from "@/components/contracts/manager-recommendation-body";
+import { listTeamRenewals } from "@/lib/contracts/manager-recommendation";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -45,11 +47,30 @@ export default async function EmployeePortalContractsPage() {
     redirect("/contracts");
   }
   if (!(await canAccess(access, "contracts", "read"))) {
+    // A manager without the board sees his own team's coming renewals, each with the way to
+    // recommend (owner, 2026-11-11). This is also where the reminders already sent with the old
+    // /contracts button now land, instead of the portal home.
+    const renewals = await listTeamRenewals(access).catch((error: unknown) => {
+      console.error(error, { tags: { module: "contracts", read: "team-renewals" } });
+      return null;
+    });
+    if (renewals === null) {
+      return (
+        <EmployeePortalEmptyState
+          message="Your team's contract renewals could not be read just now. Try again in a minute."
+          title="Contract renewals unavailable"
+        />
+      );
+    }
     return (
-      <EmployeePortalEmptyState
-        message="Contract renewal is available to the HR Generalist and the Super Admin only."
-        title="Contract Renewal Unavailable"
-      />
+      <EmployeePortalPageShell
+        badge="Contract Renewal"
+        description="Everyone in your team whose contract renews in the next 90 days. Tell HR whether to renew."
+        errorBoundaryTitle="Contract Renewal unavailable"
+        title="My team's contract renewals"
+      >
+        <TeamRenewalsList renewals={renewals} />
+      </EmployeePortalPageShell>
     );
   }
 
