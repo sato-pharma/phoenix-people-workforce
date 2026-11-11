@@ -239,7 +239,6 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/direct-orders-in-my-area", key: "direct_orders", label: "Direct Orders" },
   { prefix: "/pm-products", key: "pm_products", label: "PM Products" },
   { prefix: "/visual-aids", key: "visual_aids", label: "Visual Aids" },
-  { prefix: "/medical-insurance", key: "medical_insurance", label: "Medical Insurance" },
   { prefix: "/market-awareness", key: "market_awareness", label: "Market Awareness" },
   { prefix: "/marketing-functions", key: "marketing_functions", label: "Marketing Functions" },
   { prefix: "/marketing-feedback", key: "marketing_field_feedback", label: "Marketing Field Feedback" },

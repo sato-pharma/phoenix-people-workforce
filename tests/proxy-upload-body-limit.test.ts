@@ -34,8 +34,6 @@ import { stripComments } from "./support/comment-strip.ts";
 const EXCLUDED = [
   { pattern: "api/devices/headwind/upload$", sample: "/api/devices/headwind/upload", file: "app/api/devices/headwind/upload/route.ts", auth: 'assertPermission(access, "company_devices", "approve")' },
   { pattern: "api/hiring-documents/files$", sample: "/api/hiring-documents/files", file: "app/api/hiring-documents/files/route.ts", auth: 'assertPermission(access, "employee_documents", "update")' },
-  { pattern: "api/medical-insurance/documents$", sample: "/api/medical-insurance/documents", file: "app/api/medical-insurance/documents/route.ts", auth: 'assertPermission(access, "medical_insurance", "update")' },
-  { pattern: "api/medical-insurance/invoices/documents$", sample: "/api/medical-insurance/invoices/documents", file: "app/api/medical-insurance/invoices/documents/route.ts", auth: 'assertPermission(access, "medical_insurance_invoices", "update")' },
   { pattern: "api/hiring-pack/custom-templates$", sample: "/api/hiring-pack/custom-templates", file: "app/api/hiring-pack/custom-templates/route.ts", auth: 'assertPermission(access, "employee_documents", "update")' },
   { pattern: "api/messages/mailbox/send$", sample: "/api/messages/mailbox/send", file: "app/api/messages/mailbox/send/route.ts", auth: "resolveMailboxOwner(access)" },
   { pattern: "api/whatsapp-inbox/conversations/[^/]+/messages$", sample: "/api/whatsapp-inbox/conversations/abc123/messages", file: "app/api/whatsapp-inbox/conversations/[id]/messages/route.ts", auth: 'requireRecruitmentAccess(request, "recruitment", "update")' },

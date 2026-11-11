@@ -225,20 +225,6 @@ export const MODULES = [
     tables: ["incentive"],
   },
   {
-    id: "medical-insurance",
-    title: "Medical Insurance (group policy, who is in and out, invoice against plan)",
-    scope: "The group medical policy: who should be on it, the additions and deletions form, what a period should cost at the rate card, each uploaded invoice against that plan, and the communication tools, forms, policy and emails behind it.",
-    globs: [
-      "src/lib/medical-insurance/**",
-      "src/components/medical-insurance/**",
-      "app/**/medical-insurance/**",
-      "tests/medical-insurance*",
-      "supabase/migrations/*medical_insurance*",
-    ],
-    keywords: ["medical insurance", "metlife", "insurance invoice", "additions and deletions", "certificate number"],
-    tables: ["medical_insurance_"],
-  },
-  {
     id: "production-planning",
     title: "Production Planner (toll manufacturing — Ivyronc and Guamusin)",
     scope: "Run geometry and the buy list for two toll-manufactured products — a syrup measured in millilitres and a powder in 5 g sachets, twelve to a box — with stock per lot across three locations, the cost layer and its dollar rate, the consumption learner, and the two alarms: reorder and expiry.",
