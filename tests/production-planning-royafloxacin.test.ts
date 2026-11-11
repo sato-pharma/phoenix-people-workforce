@@ -10,6 +10,7 @@ import {
   type LoadedProduct,
   type ProductionPlanningData,
 } from "../src/lib/production-planning/service.ts";
+import { shownBatchWeight, shownTotalWeight, shownUnitWeights } from "../src/lib/production-planning/display-weights.ts";
 import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
@@ -30,6 +31,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  */
 
 const MIGRATION = "supabase/migrations/20261103223424_production_planning_royafloxacin.sql";
+const EGPI_MIGRATION = "supabase/migrations/20261111133401_production_planning_royafloxacin_egpi.sql";
 
 const MEDIZEN = "loc-medizen";
 const EGYPHAR = "loc-egyphar";
@@ -350,4 +352,61 @@ export async function runProductionPlanningRoyafloxacinTests() {
     { mode: "runs", productId: PRODUCT.id, requestedQty: "1", sampleUnits: "0" },
   );
   assert.equal(rowOf(aerosilElsewhere, "AEROSIL_200").heldAtFactory, "0", "Aerosil at Egyphar is NOT held at Medizen");
+  // ══ 2026-11-11 — Medizen corrected, its sample in a box of its own, and Royafloxacin at EGPI ══════
+  // Owner's choices: "847.6 mg, 70 kg as stated", "Same tablet as Medizen", "Same 600 kg, move to EGPI".
+  const egpiSql = sqlOf(EGPI_MIGRATION);
+  const medizenUpdate = block(egpiSql, "update public.prodplan_products", "where code = 'ROYAFLOXACIN';");
+  assert.match(medizenUpdate, /batch_weight_display = 70,/, "Medizen shows the factory's 70 kg a batch");
+  assert.match(medizenUpdate, /unit_weight_display = 847\.6,/, "and the paper's 847.6 mg tablet, not the email's 845.6");
+  assert.match(medizenUpdate, /sample_in_own_box = true,/, "its free sample is a box of its own");
+  assert.match(medizenUpdate, /sample_unit_ml = 1630,/, "holding one strip of TWO tablets: 2 × 815");
+  assert.doesNotMatch(medizenUpdate, /run_volume_ml|dose_ml/, "🔴 the counting geometry is NOT touched: still 80,000 × 815 mg");
+
+  const egpiProduct = block(egpiSql, "'ROYAFLOXACIN_EGPI',", "on conflict (code) do nothing;");
+  assert.match(egpiProduct, /76919700, 815, 815, 1630, true, 10,\s*2, 0, true, 80, 847\.6,/, "EGPI's geometry and shown weights");
+  const egpiTablets = 76_919_700 / 815;
+  assert.equal(egpiTablets, 94_380, "an EGPI batch counts 94,380 tablets exactly");
+  assert.equal(egpiTablets / 10, 9_438, "which is 9,438 whole boxes of ten");
+  assert.ok(Math.abs(egpiTablets * 847.6 - 80_000_000) < 847.6 * 10, "and 80 kg of the 847.6 mg tablet to within one box");
+
+  // 🔴 Only what Sato supplies is on the EGPI product — "Please hide any items that are not supplied by SATO".
+  const egpiLines = block(egpiSql, "insert into public.prodplan_compositions", "on conflict (product_id, material_id, effective_from)");
+  assert.doesNotMatch(egpiLines, /'factory'/, "no factory line is seeded at EGPI");
+  for (const code of ["LEVOFLOXACIN_HEMIHYDRATE", "BOX_ROYAFLOXACIN_10", "LEAFLET_ROYAFLOXACIN", "BOX_ROYAFLOXACIN_SAMPLE"]) {
+    assert.match(egpiLines, new RegExp(`'ROYAFLOXACIN_EGPI', '${code}'`), `EGPI carries ${code}`);
+  }
+  assert.match(egpiLines, /'LEVOFLOXACIN_HEMIHYDRATE', 'per_dose',\s+0\.512500/, "levofloxacin 512.5 mg a tablet at EGPI too");
+  assert.match(egpiLines, /'ROYAFLOXACIN',\s+'BOX_ROYAFLOXACIN_SAMPLE',\s+'per_sample_unit', 1\.000000/, "and Medizen gains the sample box, one a sample");
+
+  // The 600 kg moves: Medizen's lot closes at zero and EGPI's opens at 600 kg, same expiry, append-only.
+  const move = block(egpiSql, "insert into public.prodplan_stock_entries", "commit;");
+  assert.match(move, /'MEDIZEN', 0\.000000::numeric/, "Medizen's levofloxacin lot closes at zero");
+  assert.match(move, /'EGPI', 600000\.000000::numeric/, "EGPI's opens at 600 kg (600,000 g)");
+  assert.match(move, /date '2031-05-30', 'adjustment'/, "the same lot, as an adjustment");
+
+  // ── A sample in its own box: 1 batch with 100 samples ─────────────────────────────────────────
+  const OWN_BOX: RunGeometry = { ...GEOMETRY, sampleInOwnBox: true, sampleUnitMl: BigInt(1630) };
+  const withSamples = yieldForRuns(OWN_BOX, BigInt(1), BigInt(100));
+  assert.equal(withSamples.goodUnits, BigInt(79_800), "100 sample boxes of 2 take 200 tablets out of the batch");
+  assert.equal(withSamples.perBoxCount, BigInt(7_980), "so the saleable boxes are 7,980");
+  assert.equal(withSamples.totalBoxes, BigInt(8_080), "and with the 100 sample boxes, 8,080 boxes in all");
+  assert.equal(withSamples.stripCount, BigInt(7_980 * 2 + 100), "a sample box is ONE strip");
+
+  // ── The shown weights are labels, run through the micro units ─────────────────────────────────
+  const medizenShown = { doseMl: "815", goodUnitMl: "815", sampleUnitMl: "1630", batchWeightDisplay: "70", unitWeightDisplay: "847.6" };
+  assert.deepEqual(shownUnitWeights(medizenShown), { dose: "847.6", goodUnit: "847.6", sampleUnit: "1695.2" });
+  assert.equal(shownBatchWeight(medizenShown, "65.2"), "70", "the batch tile reads 70 kg, not the core's 65.2");
+  assert.equal(shownTotalWeight(medizenShown, BigInt(3), "195.6"), "210", "three batches read 210 kg");
+  const plainShown = { doseMl: "815", goodUnitMl: "815", sampleUnitMl: "815", batchWeightDisplay: null, unitWeightDisplay: null };
+  assert.deepEqual(shownUnitWeights(plainShown), { dose: "815", goodUnit: "815", sampleUnit: "815" }, "no stated weight shows the geometry");
+  assert.equal(shownBatchWeight(plainShown, "65.2"), "65.2");
+  assert.equal(shownTotalWeight(plainShown, BigInt(3), "195.6"), "195.6");
+
+  // 🔴 And they move no quantity: levofloxacin for one batch is the same with or without them.
+  const shownPlan = computePlan(
+    { ...planningData(sql), products: [{ ...PRODUCT, batchWeightDisplay: "70", unitWeightDisplay: "847.6" }] },
+    { mode: "runs", productId: PRODUCT.id, requestedQty: "1", sampleUnits: "0" },
+  );
+  assert.equal(rowOf(shownPlan, "LEVOFLOXACIN_HEMIHYDRATE").needed, "42.23", "41 kg a batch plus the 3% default, stated weights or not");
+  assert.equal(shownPlan.runVolumeLitres, "70", "while the plan's batch figure reads the stated 70 kg");
 }
