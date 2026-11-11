@@ -98,7 +98,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/scratchpad-regen-run.mjs` | 11474 | `beeb32be59eb2e60` |
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
-| `scripts/spare-follow-production.ps1` | 6328 | `5a3863d65daebd4b` |
+| `scripts/spare-follow-production.ps1` | 9561 | `e9fadbc5d11eabfc` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
 | `scripts/spare-test.ps1` | 11985 | `070929c40483b2a1` |
 | `scripts/spare-tunnel.ps1` | 1338 | `6f374b9ffa0866dc` |

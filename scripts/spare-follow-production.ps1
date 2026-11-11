@@ -13,6 +13,18 @@
   in D:\Phoenix\phoenix-workforce. If the package lockfile changed, it reinstalls and restarts the dev
   server. Runs every 10 minutes from the "Phoenix Spare Dev Server Follows" scheduled task; a run with
   nothing to do touches nothing. Log: ~/.claude/logs/spare-follow-production.log
+
+  THE REINSTALL CHECKS ITSELF (owner, 2026-11-11: "make the spare reinstall check itself"). On 2026-11-10
+  23:06 the Next 16.4.4 reinstall ran while the spare sat in Modern Standby with Defender and Windows Update
+  busy; pnpm downloaded the packages, stopped partway through linking them, and because it ran with
+  --reporter=silent and its exit code was never read, this script logged "packages reinstalled" and the dev
+  server died at once on "'next' is not recognized". It stayed dead all night: the revision matched, so
+  nothing ever retried. Now:
+    - every run reads the spare's packages: COMPLETE means node_modules\.bin\next.cmd exists AND pnpm's own
+      end-of-install copy, node_modules\.pnpm\lock.yaml, is byte-identical to pnpm-lock.yaml. A broken
+      install is repaired on the next run even when the revision has not moved.
+    - the install's full output goes to D:\Phoenix\last-install.log; its exit code AND the completeness
+      check decide success; one retry after 60 s; a final failure is logged as INSTALL FAILED.
 #>
 param([ValidateSet('main', 'production')][string]$Target = 'production')
 $ErrorActionPreference = 'Continue'
@@ -35,13 +47,16 @@ if ($Target -eq 'production') {
 
 # The golden rule's other half, read on every run: the dev server's .env.local names the PRODUCTION Supabase
 # project (ozucdzovmcqvepbozvqf) and never the staging one (cifwmndunmlxjhyjugxa). Only the verdict crosses the wire.
-$answer = @(& "$PSScriptRoot\spare.ps1" -Command '$e = Get-Content D:\Phoenix\phoenix-workforce\.env.local -Raw -ErrorAction SilentlyContinue; if (-not $e) { "ENV missing" } elseif ($e -match "cifwmndunmlxjhyjugxa") { "ENV STAGING" } elseif ($e -match "ozucdzovmcqvepbozvqf") { "ENV production" } else { "ENV unknown" }; git -C D:\Phoenix\phoenix-workforce rev-parse HEAD' -ConnectTimeout 20)
+$answer = @(& "$PSScriptRoot\spare.ps1" -Command '$e = Get-Content D:\Phoenix\phoenix-workforce\.env.local -Raw -ErrorAction SilentlyContinue; if (-not $e) { "ENV missing" } elseif ($e -match "cifwmndunmlxjhyjugxa") { "ENV STAGING" } elseif ($e -match "ozucdzovmcqvepbozvqf") { "ENV production" } else { "ENV unknown" }; Set-Location D:\Phoenix\phoenix-workforce; if ((Test-Path node_modules\.bin\next.cmd) -and (Test-Path node_modules\.pnpm\lock.yaml) -and ((Get-FileHash pnpm-lock.yaml).Hash -eq (Get-FileHash node_modules\.pnpm\lock.yaml).Hash)) { "PKG complete" } else { "PKG broken" }; git rev-parse HEAD' -ConnectTimeout 20)
 $envVerdict = "$($answer | Where-Object { "$_" -like 'ENV *' } | Select-Object -First 1)"
 if ($envVerdict -and $envVerdict -ne 'ENV production') { Log "GOLDEN RULE BROKEN: the spare's dev server .env.local reads '$($envVerdict.Substring(4))', not production - fix it now" }
+$pkgVerdict = "$($answer | Where-Object { "$_" -like 'PKG *' } | Select-Object -First 1)"
 $now = ($answer | Select-Object -Last 1)
 if (-not $now) { Log 'spare laptop did not answer'; exit 1 }
 $now = "$now".Trim()
-if ($now -eq $rev) { exit 0 }
+# Same version AND complete packages: nothing to do. Same version with BROKEN packages falls through, and the
+# remote step below reinstalls (the checkout of the same commit is a no-op).
+if ($now -eq $rev -and $pkgVerdict -ne 'PKG broken') { exit 0 }
 
 git -C $repo cat-file -e "$rev^{commit}" 2>$null
 if ($LASTEXITCODE) { git -C $repo fetch -q origin main 2>$null; git -C $repo cat-file -e "$rev^{commit}" 2>$null }
@@ -68,14 +83,32 @@ Set-Location D:\Phoenix\phoenix-workforce
 `$lockChanged = [bool](git diff --name-only HEAD $rev -- pnpm-lock.yaml)
 git -c core.fsmonitor=false checkout -q -f --detach $rev 2>&1 | Out-Null
 if (`$LASTEXITCODE) { 'checkout failed'; exit 1 }
-if (`$lockChanged) {
+function Test-Packages { (Test-Path node_modules\.bin\next.cmd) -and (Test-Path node_modules\.pnpm\lock.yaml) -and ((Get-FileHash pnpm-lock.yaml).Hash -eq (Get-FileHash node_modules\.pnpm\lock.yaml).Hash) }
+`$broken = -not (Test-Packages)
+if (`$lockChanged -or `$broken) {
+  if (`$broken -and -not `$lockChanged) { 'packages were INCOMPLETE - repairing' }
   Stop-ScheduledTask -TaskName 'Phoenix Dev Server'
   Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { `$_.CommandLine -match 'dev-server|next' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue }
-  `$env:CI = 'true'; pnpm.cmd install --frozen-lockfile --reporter=silent 2>&1 | Select-Object -Last 3
+  `$env:CI = 'true'
+  `$ok = `$false
+  foreach (`$try in 1, 2) {
+    # pnpm trusts its own state files: over a half-linked tree it answers "Already up to date" (measured
+    # 2026-11-11, pnpm 11.13.1 - the shortcut is .pnpm-workspace-state-v1.json; removing .modules.yaml alone
+    # did not stop it). A repair, and every second try, removes all three so pnpm relinks everything from the
+    # store already on the spare.
+    if (`$try -eq 2 -or (`$broken -and -not `$lockChanged)) { Remove-Item node_modules\.pnpm-workspace-state*.json, node_modules\.modules.yaml, node_modules\.pnpm\lock.yaml -Force -ErrorAction SilentlyContinue; "try `$try relinks from scratch" }
+    cmd /c "pnpm.cmd install --frozen-lockfile --reporter=append-only > D:\Phoenix\last-install.log 2>&1"
+    `$code = `$LASTEXITCODE
+    if (`$code -eq 0 -and (Test-Packages)) { `$ok = `$true; break }
+    "install try `$try failed (exit `$code, packages " + `$(if (Test-Packages) { 'complete' } else { 'incomplete' }) + '): ' + ((Get-Content D:\Phoenix\last-install.log -Tail 3 | Where-Object { `$_.Trim() }) -join ' / ')
+    if (`$try -eq 1) { Start-Sleep 60 }
+  }
   Start-ScheduledTask -TaskName 'Phoenix Dev Server'
-  'packages reinstalled, dev server restarted'
+  if (`$ok) { 'packages reinstalled and verified complete, dev server restarted' }
+  else { 'INSTALL FAILED - packages are incomplete and the dev server will not start; output in D:\Phoenix\last-install.log; the next run retries' }
 }
 'now at ' + (git log -1 --format='%h %s')
 "@
 $out = & "$PSScriptRoot\spare.ps1" -Command $remote -ConnectTimeout 20
-Log ("dev server moved {0} -> {1}: {2}" -f $now.Substring(0, 9), $rev.Substring(0, 9), (($out | Where-Object { $_ }) -join ' | '))
+$verb = if ($now -eq $rev) { 'dev server repaired at {1}' } else { 'dev server moved {0} -> {1}' }
+Log (("$verb" + ': {2}') -f $now.Substring(0, 9), $rev.Substring(0, 9), (($out | Where-Object { $_ }) -join ' | '))
