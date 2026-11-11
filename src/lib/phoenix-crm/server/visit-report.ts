@@ -56,6 +56,8 @@ import { managerOwnVisitReportRow } from "@/lib/phoenix-crm/visit-report-own-vis
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadDepartureRecords } from "@/lib/phoenix-crm/server/departures";
+import { leftLabel, type DepartureRecord } from "@/lib/phoenix-crm/departure-rules";
 import { loadVisitReportEvidence, type VisitReportEvidence } from "@/lib/phoenix-crm/server/integrity-board";
 import { buildVisitReportValues, visitLocationFlagLabel, type Row, type VisitReportContext } from "@/lib/phoenix-crm/server/visit-report-values";
 import { personOnTheVisit } from "@/lib/phoenix-crm/location-integrity";
@@ -918,6 +920,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     ...doublePlans.map((row) => row.manager_hr_id),
     target.personHrId,
   ].map((value) => (typeof value === "string" ? value : null)));
+  // Who had left by the visit day, to mark them "Resigned on <date>" (owner, 11 Nov 2026). An unread answer
+  // marks nobody rather than failing the report — the visits are listed either way.
+  const departures = await loadDepartureRecords(visits.map((visit) => whoseVisit(visit))).catch(() => new Map<string, DepartureRecord>());
 
   // The districts under the same regional manager, as "Alex-BHR + Delta (1) + Delta (2)".
   const regionBySeat = new Map<string, string | null>();
@@ -996,6 +1001,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       placeLon: typeof place?.lon === "number" ? place.lon : null,
       planned: visit.is_unplanned !== true,
       repName: nameOf(people, personHrId, "Unknown person"),
+      repLeft: leftLabel(departures.get(personKey(personHrId) ?? "") ?? null, visitDate),
       participants: visitParticipantNames(visit, personHrId, people),
       savedAtIso: String(visit.captured_at ?? ""),
       values,

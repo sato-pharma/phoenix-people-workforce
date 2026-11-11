@@ -1576,11 +1576,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
   // The old "My own visit" is closed for a district manager who plans in Phoenix CRM (owner, 2026-10-16):
   // his single visits go on his own plan and count in his own report, never under a rep's seat. One still
   // on the legacy form keeps it. Double and chain are unchanged.
-  // A seat whose rep left before today is as vacant as an empty one for a manager entering it (sweep,
-  // 11 Nov 2026): the organogram keeps a leaver in his seat until HR moves him, and 14 double visits
-  // credited a rep who was gone. Read only for a manager's entry, the only one that takes the seat's rep.
+  // A seat whose rep left before today files a manager's SINGLE visit as his own, exactly as a vacant seat
+  // does. 🔴 His double or chain visit still credits that rep (owner, 11 Nov 2026: "make it show the visits
+  // with Omayma and highlight that she resigned") — the Visit Report marks her "Resigned on <date>".
   const occupantLeft =
-    enteredAs === "manager" && !isVacantTerritory(seat) && !isTest
+    enteredAs === "manager" && visit.kind === "single" && !isVacantTerritory(seat) && !isTest
       ? (await departedBy([seat.occupantHrId], viewer.visitDay)).has(personKey(seat.occupantHrId) ?? "")
       : false;
   if (enteredAs === "manager" && visit.kind === "single" && (await managerOwnVisitClosedNow(viewer))) {
@@ -1606,7 +1606,6 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     productManagers:
       visit.productManagerHrId || visit.companions.some((entry) => entry.side === "product") ? await loadLineProductManagers(seat) : [],
     companions: visit.companions,
-    occupantLeft,
   });
   if (!participants.ok) throw validationError(participants.error);
 

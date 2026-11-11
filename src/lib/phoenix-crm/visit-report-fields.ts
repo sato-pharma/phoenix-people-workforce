@@ -459,6 +459,12 @@ export type VisitReportRow = {
   /** Whose visit it is: the rep, or the manager on his own visit — never the seat's occupant. */
   repName: string;
   /**
+   * "Resigned on 31 Oct 2026" when that person had already left on the visit day (departure-rules.ts
+   * `leftLabel`) — a manager's double visit with a rep who had gone is shown and credited as entered, and marked
+   * (owner, 11 Nov 2026). Shown beside the name, never in it: `repName` still groups the map's paths.
+   */
+  repLeft?: string | null;
+  /**
    * EVERYONE on the visit, by name: the person it is credited to first, then the manager, the senior manager and
    * the product manager who came along (owner, 2026-10-20). "Who visited" matches any of them, so the manager on
    * a double visit can be chosen as well as the rep; `repName` still says whose visit it is.
