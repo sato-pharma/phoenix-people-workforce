@@ -54,7 +54,6 @@ import {
   type OrgIndex,
   type OrgSeat,
 } from "../src/lib/phoenix-crm/scope.ts";
-import { SEAT_REP_LEFT } from "../src/lib/phoenix-crm/departure-rules.ts";
 import {
   productManagerRolesFor,
   readsLineProductManagers,
@@ -1131,23 +1130,13 @@ function runScopeTests() {
     "a manager who enters the visit is the manager on it, whatever the phone sent",
   );
   assert.deepEqual(people3(resolveVisitParticipants({ ...onR1, actorHrId: "T-3", enteredAs: "manager", kind: "chain", seniorHrId: "T-2" })), ["T-101", "T-3", "T-2"]);
-  // A seat whose rep left before the visit day is vacant for a manager entering it (sweep, 11 Nov 2026): 14 double
-  // visits credited a rep who was gone, because the organogram keeps a leaver in his seat until HR moves him.
+  // 🔴 A seat's rep who has since left is STILL the rep on a manager's double or chain visit (owner, 11 Nov 2026:
+  // "make it show the visits with Omayma and highlight that she resigned"). The participant check has no
+  // departure flag at all: the Visit Report marks the leaver instead (departure-rules.ts `leftLabel`).
   assert.equal(
-    refusalOf(resolveVisitParticipants({ ...onR1, actorHrId: "T-3", enteredAs: "manager", kind: "double", occupantLeft: true })),
-    SEAT_REP_LEFT,
-    "a manager's double visit never credits a rep who has left",
-  );
-  assert.equal(refusalOf(resolveVisitParticipants({ ...onR1, actorHrId: "T-3", enteredAs: "manager", kind: "chain", seniorHrId: "T-2", occupantLeft: true })), SEAT_REP_LEFT);
-  assert.deepEqual(
-    people3(resolveVisitParticipants({ ...onR1, actorHrId: "T-3", enteredAs: "manager", kind: "single", occupantLeft: true })),
-    [null, "T-3", null],
-    "his own single visit is still entered on a seat whose rep left",
-  );
-  assert.deepEqual(
-    people3(resolveVisitParticipants({ ...onR1, actorHrId: "T-101", enteredAs: "rep", kind: "single", occupantLeft: true })),
-    ["T-101", null, null],
-    "the flag is a manager's question only: the rep entering his own visit is never refused by it",
+    resolveVisitParticipants.toString().includes("occupantLeft"),
+    false,
+    "nothing in the participant check refuses a double visit because the seat's rep has left",
   );
   assert.equal(refusalOf(resolveVisitParticipants({ ...onR1, actorHrId: "T-2", enteredAs: "manager", kind: "chain", seniorHrId: "T-3" })), CHOOSE_SENIOR);
   assert.equal(refusalOf(resolveVisitParticipants({ ...onR1, actorHrId: "T-104", enteredAs: "manager", kind: "single" })), "You are not a manager of this territory.", "a manager of another district cannot enter a visit here");

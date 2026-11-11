@@ -87,6 +87,12 @@ function FlagPill({ row }: { row: VisitReportRow }) {
   return <CrmPill tone={tone}>{row.locationFlag}</CrmPill>;
 }
 
+/** "Resigned on 31 Oct 2026" — the rep had left by the visit day; the visit is shown as entered (owner, 11 Nov 2026). */
+function LeftPill({ row }: { row: VisitReportRow }) {
+  if (!row.repLeft) return null;
+  return <CrmPill tone="warn">{row.repLeft}</CrmPill>;
+}
+
 export function VisitReportTable({
   fields,
   highlightId,
@@ -156,6 +162,7 @@ export function VisitReportTable({
                   <>
                     <CrmPill tone={row.planned ? "good" : "warn"}>{row.planned ? "Planned" : "Unplanned"}</CrmPill>
                     <FlagPill row={row} />
+                    <LeftPill row={row} />
                   </>
                 }
                 title={row.customerName}
@@ -198,7 +205,14 @@ export function VisitReportTable({
                       {dayLabel(row.visitDate)}
                       <span className="block text-xs font-medium text-slate-500">{cairoClock(row.savedAtIso)}</span>
                     </td>
-                    <td className={crmTdClassName}>{row.repName}</td>
+                    <td className={crmTdClassName}>
+                      {row.repName}
+                      {row.repLeft ? (
+                        <span className="mt-1 block">
+                          <LeftPill row={row} />
+                        </span>
+                      ) : null}
+                    </td>
                     <td className={crmTdClassName}>
                       {row.customerName}
                       {row.listType ? <span className="block text-xs font-medium text-slate-500">{row.listType}</span> : null}

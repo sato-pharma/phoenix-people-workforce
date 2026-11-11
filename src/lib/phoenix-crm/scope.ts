@@ -17,7 +17,6 @@
 
 import { hrIdForStorage } from "@/lib/hr-id";
 import type { PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
-import { SEAT_REP_LEFT } from "@/lib/phoenix-crm/departure-rules";
 
 export type OrgSeat = {
   seatId: string;
@@ -329,12 +328,6 @@ export function resolveVisitParticipants(input: {
    * above may be in it or not; every person is checked here exactly as the fixed places are.
    */
   companions?: ReadonlyArray<{ hrId: string; side: string }>;
-  /**
-   * The seat's occupant had left before the visit day (departure-rules.ts `hasLeftBy`, read by the caller
-   * from the employee record). The organogram keeps a leaver in his seat until HR moves him, so without
-   * this a manager's double visit credited a rep who was gone (sweep, 11 Nov 2026: 14 visits).
-   */
-  occupantLeft?: boolean;
 }): ParticipantResult {
   const territory = input.index.seats.get(input.territorySeatId);
   if (!territory) return { ok: false, error: "This territory is no longer in the organogram. Reload the page." };
@@ -384,8 +377,10 @@ export function resolveVisitParticipants(input: {
     if (input.kind === "product_manager") {
       return { ok: false, error: "A visit with a product manager is entered by the territory's rep." };
     }
+    // 🔴 A rep who has since left is still the seat's rep for a double or chain visit (owner, 11 Nov 2026:
+    // "make it show the visits with Omayma and highlight that she resigned"). The visit happened with her;
+    // the Visit Report marks the leaver with the date instead (departure-rules.ts `leftLabel`).
     rep = territory.occupantHrId;
-    if (rep && input.occupantLeft) return { ok: false, error: SEAT_REP_LEFT };
     if (!rep || rep === actor) {
       return { ok: false, error: "This territory has no rep, so the visit can only be entered as your own single visit." };
     }
