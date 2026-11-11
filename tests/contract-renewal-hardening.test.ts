@@ -72,7 +72,9 @@ export function runContractRenewalHardeningTests() {
   assert.doesNotMatch(reminderRoute, /"HR Manager"/, "\"HR Manager\" is a job title, not an app_auth_users.role value — it must never appear in a role-array literal");
   assert.doesNotMatch(reminderRoute, /phase6HrApproverHrIds/, "hardcoded approver IDs must be removed from contract renewals");
   assert.match(reminderRoute, /managerOfManager/);
-  assert.match(reminderRoute, /actionUrl = "\/contracts"/);
+  // Since 2026-11-11 the button opens the manager's recommend page, not the HR-only board
+  // (tests/contract-renewal-manager-recommendation.test.ts).
+  assert.match(reminderRoute, /actionUrl = contractRecommendHref\(employee\.hrId\)/);
   assert.doesNotMatch(reminderRoute, /actionUrl = "\/contracts\/renewals"/, "\"/contracts/renewals\" is not a real route and 404s for every recipient");
   assert.doesNotMatch(reminderRoute, /recipientHrId:/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);
