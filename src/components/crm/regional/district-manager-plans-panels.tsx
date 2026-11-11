@@ -33,6 +33,7 @@ import {
   districtPlansGrid,
   districtPlanShortDay,
   districtPlanShowCounts,
+  DISTRICT_PLANS_PATH,
   districtPlansHref,
   districtPlansRepsAlone,
   districtPlanStateBar,
@@ -85,7 +86,16 @@ function ManagerName({ anchor, listed, name }: { anchor: string; listed: boolean
  * The week and the filter. The three week links keep the filter; each filter carries the count of seats it lists,
  * so a click never lands on an empty screen by surprise. The Excel file always holds every seat.
  */
-export function DistrictPlansToolbar({ report, show }: { report: DistrictManagersPlans; show: DistrictPlanShow }) {
+export function DistrictPlansToolbar({
+  basePath = DISTRICT_PLANS_PATH,
+  report,
+  show,
+}: {
+  /** The page the week and filter links stay on: the portal's, or the Super Admin's admin twin (2026-11-11). */
+  basePath?: string;
+  report: DistrictManagersPlans;
+  show: DistrictPlanShow;
+}) {
   const counts = districtPlanShowCounts(report.weeks);
   const previous = addDaysIso(report.weekStart, -7);
   const next = addDaysIso(report.weekStart, 7);
@@ -115,20 +125,20 @@ export function DistrictPlansToolbar({ report, show }: { report: DistrictManager
       <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Week</span>
-          <Link className={LINK} href={districtPlansHref(previous, show)}>
+          <Link className={LINK} href={districtPlansHref(previous, show, basePath)}>
             Previous week
           </Link>
-          <Link className={LINK} href={districtPlansHref(null, show)}>
+          <Link className={LINK} href={districtPlansHref(null, show, basePath)}>
             This week
           </Link>
-          <Link className={LINK} href={districtPlansHref(next, show)}>
+          <Link className={LINK} href={districtPlansHref(next, show, basePath)}>
             Next week
           </Link>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Show</span>
           {DISTRICT_PLAN_SHOW.map((key) => (
-            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={districtPlansHref(report.weekStart, key)} key={key}>
+            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={districtPlansHref(report.weekStart, key, basePath)} key={key}>
               {DISTRICT_PLAN_SHOW_LABEL[key]} · {counts[key]}
             </Link>
           ))}

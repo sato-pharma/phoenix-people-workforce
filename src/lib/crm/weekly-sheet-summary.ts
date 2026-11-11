@@ -506,12 +506,15 @@ export const WEEKLY_SHEET_PATH = "/employee-portals/weekly-sheet";
 export const WEEKLY_SHEET_EXPORT_PATH = "/api/crm/weekly-sheet/export";
 
 /** The page for a week (null: the last full week) and a filter (every seat is left out of the address). */
-export function weeklySheetHref(week: string | null, show: WeeklySheetShow = "all"): string {
+/** The Super Admin's twin in the admin shell, over the whole company (owner, 2026-11-11). */
+export const WEEKLY_SHEET_ADMIN_PATH = "/admin/field-crm/weekly-sheet";
+
+export function weeklySheetHref(week: string | null, show: WeeklySheetShow = "all", base: string = WEEKLY_SHEET_PATH): string {
   const params = new URLSearchParams();
   if (week) params.set("week", week);
   if (show !== "all") params.set("show", show);
   const query = params.toString();
-  return query ? `${WEEKLY_SHEET_PATH}?${query}` : WEEKLY_SHEET_PATH;
+  return query ? `${base}?${query}` : base;
 }
 
 /** The Excel file for the week on the screen. It always holds every seat, whatever the filter. */

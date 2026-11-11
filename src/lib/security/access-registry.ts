@@ -875,13 +875,13 @@ export const accessRegistry = [
   // crm_visits:read — and getKpisBoard's scope decides whose rows the file holds.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/kpis-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
   // The Weekly Sheet as XLSX (owner, 2026-11-08) — the Regional Sales Manager's alone: phoenix_crm:read, then
-  // readsRegionOrDistrictReports (an RSM, DM or acting DM seat; owner, 2026-11-09) before any read. Rate-limited and audited.
+  // readsAnyTeamReport (an RSM, DM or acting DM seat, or the Super Admin over the company; owner, 2026-11-09 and 2026-11-11) before any read. Rate-limited and audited.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/weekly-sheet/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // Visits — Yesterday and Today as XLSX (owner, 2026-11-09, the premium pass) — the Regional Sales Manager's alone,
-  // like the screen: phoenix_crm:read, then readsRegionOrDistrictReports (an RSM, DM or acting DM seat; owner, 2026-11-09) before any read. Rate-limited and audited.
+  // like the screen: phoenix_crm:read, then readsAnyTeamReport (an RSM, DM or acting DM seat, or the Super Admin over the company; owner, 2026-11-09 and 2026-11-11) before any read. Rate-limited and audited.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/team-visits/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // District Managers' Plans as XLSX (owner, 2026-11-09, the premium pass) — the Regional Sales Manager's alone, like
-  // the screen: phoenix_crm:read, then readsRegionOrDistrictReports (an RSM, DM or acting DM seat; owner, 2026-11-09) before any read. Rate-limited and audited.
+  // the screen: phoenix_crm:read, then readsAnyTeamReport (an RSM, DM or acting DM seat, or the Super Admin over the company; owner, 2026-11-09 and 2026-11-11) before any read. Rate-limited and audited.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/district-manager-plans/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "domain-helper" }),
   // Doctor Coverage visit norms (visits per month, per contact kind and grade). `crm_visits:update`
   // is held ONLY by Super Admin and SFE Manager — it exists for this policy singleton alone; the

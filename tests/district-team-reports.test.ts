@@ -161,14 +161,14 @@ function pagesAndExports() {
     const page = readFileSync(`app/employee-portals/${name}/page.tsx`, "utf8");
     assert.ok(page.includes('if (!viewer || !readsRegionOrDistrictReports(viewer)) redirect("/employee-portals");'), `${name}: the page asks the team-report gate`);
     const route = readFileSync(`app/api/crm/${name}/export/route.ts`, "utf8");
-    const gateAt = route.indexOf("if (!viewer || !readsRegionOrDistrictReports(viewer))");
+    const gateAt = route.indexOf("if (!viewer || !readsAnyTeamReport(viewer))");
     assert.ok(gateAt > 0, `${name}: the export asks the team-report gate`);
     assert.ok(!route.includes("readsRegionalTeamReports"), `${name}: the export is not left on the RSM-only gate`);
-    assert.ok(route.includes("is for a Regional Sales Manager or a District Manager."), `${name}: the 403 names who opens it`);
+    assert.ok(route.includes("is for a Regional Sales Manager, a District Manager or the Super Admin."), `${name}: the 403 names who opens it`);
   }
   for (const loader of ["src/lib/phoenix-crm/server/team-visits.ts", "src/lib/crm/weekly-sheet.ts", "src/lib/phoenix-crm/server/manager-plan-bookings.ts"]) {
     const source = readFileSync(loader, "utf8");
-    assert.ok(source.includes("if (!readsRegionOrDistrictReports(viewer)) throw forbiddenError("), `${loader}: the loader asks the gate again`);
+    assert.ok(source.includes("if (!readsAnyTeamReport(viewer)) throw forbiddenError("), `${loader}: the loader asks the gate again`);
     assert.ok(source.includes("teamReportRepSeats(viewer)"), `${loader}: the reps are the viewer's own scope`);
     assert.ok(!source.includes("regionalTeamRepSeats("), `${loader}: never the RSM-only reach`);
   }

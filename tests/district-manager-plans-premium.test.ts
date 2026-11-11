@@ -525,7 +525,7 @@ function theExportGateAndRegistry() {
   const route = stripComments(readFileSync("app/api/crm/district-manager-plans/export/route.ts", "utf8"));
   const load = route.indexOf("loadDistrictManagersPlans(viewer");
   const read = route.indexOf('canAccess(access, "phoenix_crm", "read")');
-  const gate = route.indexOf("readsRegionOrDistrictReports(viewer)");
+  const gate = route.indexOf("readsAnyTeamReport(viewer)");
   const limit = route.indexOf('scope: "export:crm:district-manager-plans"');
   assert.ok(read > 0 && read < load, "phoenix_crm:read before any read");
   assert.ok(gate > 0 && gate < load, "the Regional Sales Manager's gate before any read");
@@ -592,7 +592,7 @@ function theLoaderCarriesWhatThePanelsRead() {
   const body = stripComments(loader.slice(loader.indexOf("export async function loadDistrictManagersPlans"), loader.indexOf("export async function loadWeekHalfNotes")));
   assert.ok(body.includes("loadSeatLeaveDays(districts, { from: weekStart, to: weekEnd })"), "the district managers' own leave is read (owner, 2026-11-09: \"if vacation put it\")");
   assert.ok(body.includes("const leaveUnread = repLeave.unread || managerLeave.unread;"), "either read failing is said once, for everyone");
-  assert.ok(body.includes("planHref: sent && plan ? managerPlanHref(plan.planId) : null,"), "only a sent week opens; a draft is never linked");
+  assert.ok(body.includes("planHref: sent && plan ? managerPlanHref(plan.planId, viewer.isSuperAdmin ? \"admin\" : \"portal\") : null,"), "only a sent week opens; a draft is never linked");
   assert.ok(body.includes("goneCustomers: goneBySlot.get(slot.slotId) ?? 0,"));
   assert.ok(body.includes("repOnLeave = !leave.unread && leave.days.has(leaveDayKey(slot.repSeatId, date));"));
   assert.ok(body.includes("if (key && !managers.has(key)) managers.set(key, nameOf(names, booking.managerHrId));"), "each manager once per rep, every planner kind");
