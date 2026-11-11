@@ -10457,7 +10457,7 @@ await runTest(
 );
 
 await runTest(
-  "the interview calendar retries a dropped read once, never repeats a dropped save, and never shows the browser's raw Failed to fetch",
+  "the interview calendar keeps retrying a dropped read for about two minutes and at once when back online, never repeats a dropped save, and never shows the browser's raw Failed to fetch",
   runInterviewCalendarUnreachableTests,
 );
 

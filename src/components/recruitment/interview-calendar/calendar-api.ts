@@ -40,7 +40,8 @@ export const CALENDAR_READ_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4
 /** A pause that ends early the moment the browser says the connection is back. */
 function pauseUntilOnline(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    const online = typeof window !== "undefined" ? window : null;
+    // Only a real event target is listened to — a test or a non-browser runtime may stand in a bare window.
+    const online = typeof window !== "undefined" && typeof window.addEventListener === "function" ? window : null;
     const done = () => {
       clearTimeout(timer);
       online?.removeEventListener("online", done);

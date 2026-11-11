@@ -83,6 +83,29 @@ export async function runInterviewCalendarUnreachableTests(): Promise<void> {
     assert.equal(calls, 2);
   }
 
+  // A bare stand-in window with no event methods (another suite left one behind on CI) is never
+  // listened to — the read still retries on its timer instead of throwing.
+  {
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = {};
+    let calls = 0;
+    try {
+      await withFetch(
+        (async () => {
+          calls += 1;
+          if (calls === 1) dropped();
+          return new Response(JSON.stringify({ polls: [] }), { status: 200 });
+        }) as FetchLike,
+        async () => {
+          assert.deepEqual(await calendarApi(null, { readRetryDelaysMs: QUICK }).get("/bookings/abc/polls"), { polls: [] });
+        },
+      );
+    } finally {
+      (globalThis as { window?: unknown }).window = originalWindow;
+    }
+    assert.equal(calls, 2);
+  }
+
   // A read that never gets through says Phoenix could not be reached, in words — never "Failed to fetch".
   {
     let calls = 0;
