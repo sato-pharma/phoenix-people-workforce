@@ -86,6 +86,21 @@ export function governorateEnglishForCode(code: string): string | null {
   return GOVERNORATE_BY_CODE[code]?.en ?? null;
 }
 
+/**
+ * A place written any way the data writes it — `القاهره`, `cairo`, `El-Minia`, a full street
+ * address — as the governorate a legal paper prints (`القاهرة`, `المنيا`), or null when no
+ * governorate is confidently recognised.
+ *
+ * Recognition is `resolveGovernorate`'s, the system's one vocabulary; the Arabic spelling is this
+ * table's, the same one محل الميلاد prints from a national ID, so the two never spell one
+ * governorate two ways on the same form.
+ */
+export function governorateArForPlace(raw: string | null | undefined): string | null {
+  const english = resolveGovernorate(raw);
+  if (!english) return null;
+  return Object.values(GOVERNORATE_BY_CODE).find((entry) => entry.en === english)?.ar ?? null;
+}
+
 /** What the ID encodes about sex. Not a gender identity — the Authority's own binary field. */
 export type EgyptianSex = "male" | "female";
 

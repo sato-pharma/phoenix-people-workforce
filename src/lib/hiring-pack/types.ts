@@ -15,6 +15,7 @@
  */
 
 import type { CustodyDeviceFacts } from "@/lib/devices/types";
+import type { AutoFilledValue } from "@/lib/hiring-pack/auto-fill";
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { isUuid } from "@/lib/http/uuid";
 
@@ -654,6 +655,15 @@ export type HiringPackEmployeeFacts = {
    * they agreed in 54 of 54, so this is a wider source, not a competing one.
    */
   lastWorkingDate: string | null;
+  /**
+   * The Employee Master's OWN copies of three values the papers print from the hiring profile —
+   * `employees.birth_place`, `employees.qualification` and `employees.education`. Never printed
+   * directly: `auto-fill.ts` reads them to fill a blank on the profile. Optional so a fixture or a
+   * manual pack need not invent them; the loader always selects them.
+   */
+  recordBirthPlace?: string | null;
+  recordQualification?: string | null;
+  education?: string | null;
 };
 
 /**
@@ -806,6 +816,12 @@ export type HiringPackData = {
    * saved first. A suggestion only — never persisted here, never overwrites `profile.jobTitleAr`.
    */
   suggestedJobTitleAr: string | null;
+  /**
+   * The values `employee` and `profile` carry that nobody stored — worked out by `auto-fill.ts`
+   * from the national ID, the Employee Master and the owner's confirmed Arabic wordings. The screen
+   * names them; a Save stores them like any other value. Optional: a manual pack fills nothing.
+   */
+  autoFilled?: AutoFilledValue[];
   gaps: HiringPackGap[];
   /** Resolved terms — the profile override where present, the company default otherwise. */
   terms: {

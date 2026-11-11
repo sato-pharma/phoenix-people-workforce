@@ -825,7 +825,7 @@ function selectStyle(lang: JoiningLang): React.CSSProperties {
 
 /** The fields Submit needs, in page order — what the progress rail counts and Submit focuses. */
 function requiredFields(answers: JoiningFormAnswers, hasAreaList: boolean): FieldKey[] {
-  const fields: FieldKey[] = ["fullName", "nationalId", "gender", "birthDate", ...JOINING_FORM_PHOTO_FIELDS, "mobileNumber", "personalEmail", "education"];
+  const fields: FieldKey[] = ["fullName", "fullNameAr", "nationalId", "gender", "birthDate", ...JOINING_FORM_PHOTO_FIELDS, "mobileNumber", "personalEmail", "education"];
   if (answers.education === "Other") fields.push("educationOther");
   fields.push("residenceArea");
   if (hasAreaList && answers.residenceArea === JOINING_FORM_OTHER_AREA) fields.push("residenceAreaOther");
@@ -995,6 +995,7 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
     education: "",
     educationOther: "",
     fullName: offer.candidateName,
+    fullNameAr: "",
     gender: "",
     mobileNumber: "",
     nationalId: "",
@@ -1309,6 +1310,9 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
                       <GroupLabel>{t.details.groups.identity}</GroupLabel>
                       <Field error={errorFor("fullName")} hint={t.details.fullNameHint} htmlFor={ref("fullName")} label={t.details.fullName}>
                         <input autoComplete="name" className={controlClass(Boolean(errorFor("fullName")), LTR_INPUT)} dir="ltr" onChange={(e) => set("fullName", e.target.value)} value={answers.fullName} {...aria("fullName", true)} />
+                      </Field>
+                      <Field error={errorFor("fullNameAr")} hint={t.details.fullNameArHint} htmlFor={ref("fullNameAr")} label={t.details.fullNameAr}>
+                        <input autoComplete="off" className={controlClass(Boolean(errorFor("fullNameAr")))} dir="rtl" lang="ar" onChange={(e) => set("fullNameAr", e.target.value)} value={answers.fullNameAr} {...aria("fullNameAr", true)} />
                       </Field>
                       <Field
                         error={errorFor("nationalId")}

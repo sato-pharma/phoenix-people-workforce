@@ -164,6 +164,7 @@ async function run() {
     education: "Pharmacy",
     educationOther: "",
     fullName: "Mona Adel Hassan",
+    fullNameAr: "منى عادل حسن",
     gender: "male",
     mobileNumber: "01001234567",
     nationalId: "29501150101234",
@@ -189,6 +190,15 @@ async function run() {
   assert.equal(noBricks.value?.residenceArea, "Nasr City", "a seat with no bricks (a district manager's) takes a typed area");
   assert.ok(form.validateJoiningForm({ ...good, residenceCity: "Atlantis" }, context).errors.residenceCity, "the city must be a governorate");
   assert.ok(form.validateJoiningForm({ ...good, education: "Other" }, context).errors.educationOther, "Other needs the faculty written");
+  // The Arabic name — the one every hiring paper prints — comes from his own card, so HR never types it.
+  assert.equal(ok.value?.fullNameAr, "منى عادل حسن", "the Arabic name travels to the employee record");
+  assert.ok(form.validateJoiningForm({ ...good, fullNameAr: "" }, context).errors.fullNameAr, "the Arabic name is required");
+  assert.ok(form.validateJoiningForm({ ...good, fullNameAr: "Mona Adel Hassan" }, context).errors.fullNameAr, "the English name pasted again is refused");
+  assert.ok(form.validateJoiningForm({ ...good, fullNameAr: "منى عادل" }, context).errors.fullNameAr, "two names are not the name on an Egyptian card");
+  assert.ok(
+    code("src/lib/offers/joining-form-service.ts").includes("nameAr: value.fullNameAr"),
+    "the joining form writes the Arabic name onto the record it creates",
+  );
 
   // 5. 🔴 THE EMAIL: ONE ACCEPT BUTTON, A REPLY TO DECLINE — and the frozen design keeps its rules.
   const SAMPLE = {
