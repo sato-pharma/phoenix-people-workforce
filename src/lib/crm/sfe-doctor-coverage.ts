@@ -1622,6 +1622,8 @@ export async function getSfeDoctorCoverage(input: {
     dateFrom,
     dateTo,
     visitTypes: [0],
+    // Counts visits: only the rows that count (counts_in_kpi, and a customer validated — sweep of 11 Nov 2026).
+    kpiOnly: true,
     ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
   });
   const campaignRows = await queryVisits<DoctorCoverageVisitInput>({

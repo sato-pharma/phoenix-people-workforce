@@ -13,6 +13,7 @@ import { loadSeatDayActivities, type DayActivityRow } from "@/lib/phoenix-crm/se
 import { loadSeatsLeaveLabels } from "@/lib/phoenix-crm/server/leave-days";
 import { districtManagerDayOn, loadDistrictManagerWeeks, mergeDistrictManagerWeeks, type DistrictManagerDay } from "@/lib/phoenix-crm/server/manager-dm-day";
 import { loadManagerOwnVisitRows, loadManagerVisitFixes } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { managerOwnVisitUuid } from "@/lib/phoenix-crm/server/manager-visit-details";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readSeatGroups } from "@/lib/phoenix-crm/server/reports";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -399,7 +400,12 @@ async function readPlacePhotos(placeIds: string[]): Promise<Map<string, PhotoPoi
  */
 async function readManagerVisitFixes(visitIds: string[]): Promise<Map<string, { lat: number | null; lon: number | null; photo: PhotoPoint | null }>> {
   const out = new Map<string, { lat: number | null; lon: number | null; photo: PhotoPoint | null }>();
-  const ids = [...new Set(visitIds)];
+  // 🔴 The screen's id for his own visit is `own:<uuid>` (`readOwnVisitDetails`), a LABEL and never a key: sent to the
+  // uuid column as it is, the read failed and took the whole page and its Excel down (9-11 Nov 2026). The read asks by
+  // the bare uuid; the map answers by the screen's id, which is what the caller looks up.
+  const screenIdOf = new Map<string, string>();
+  for (const id of visitIds) screenIdOf.set(managerOwnVisitUuid(id), id);
+  const ids = [...screenIdOf.keys()];
   if (ids.length === 0) return out;
   const visits = await loadManagerVisitFixes(ids);
   const customerIds = [...new Set(visits.flatMap((visit) => (visit.customerId ? [visit.customerId] : [])))];
@@ -417,7 +423,7 @@ async function readManagerVisitFixes(visitIds: string[]): Promise<Map<string, { 
     if (photo && !photoOfCustomer.has(String(place.customer_id))) photoOfCustomer.set(String(place.customer_id), photo);
   }
   for (const visit of visits) {
-    out.set(String(visit.id), { lat: visit.lat, lon: visit.lon, photo: visit.customerId ? (photoOfCustomer.get(visit.customerId) ?? null) : null });
+    out.set(screenIdOf.get(String(visit.id)) ?? String(visit.id), { lat: visit.lat, lon: visit.lon, photo: visit.customerId ? (photoOfCustomer.get(visit.customerId) ?? null) : null });
   }
   return out;
 }

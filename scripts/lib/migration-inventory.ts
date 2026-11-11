@@ -2325,6 +2325,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // cleared; with a place, and for a pharmacy, on active as before; an undone add that had admitted to pending
   // landed on dropped, not_admitted. Re-applying is a no-op (`create or replace`).
   "20261111013233_phoenix_crm_bring_back_never_validates_without_place.sql",
+  // Applied 11 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route, which writes NO ledger row. Three `create or replace function` statements with their revokes and one
+  // trigger, no table, no row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf and equal on both, and
+  // equal to this file's own bodies as LF text: md5(prosrc) of phoenix_crm_validate_customer
+  // 9afe35c9423006f25758c15b2132b850 (before: fccb330da6e66940b950cc1c553bad14 on both, 20261107195700's body), of
+  // phoenix_crm_customer_merged_away 17496bb2008754ea7ee9da4c38710043, of phoenix_crm_customers_no_merged_return
+  // 31fba21360ba5905c4ac4333724d4bc8; all SECURITY DEFINER with ACL {postgres=X, service_role=X} and nothing else; the
+  // trigger phoenix_crm_customers_no_merged_return enabled. Rehearsed on staging inside one rolled-back block, 4 of 4:
+  // a plain restore went through, a merged-away row's restore raised phoenix_crm:merged_duplicate, the owner's
+  // reversal with phoenix_crm.allow_merge_reversal = on went through, and after a recorded merge_reversed event a
+  // restore went through. Re-applying is a no-op (`create or replace` function and trigger).
+  "20261111030456_phoenix_crm_sweep_fixes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -31,6 +31,8 @@
  * matter — the same-door rule and the plain-image rule — are in the code rather than in a comment.
  */
 
+import { PHOENIX_CRM_ADMINISTRATOR_HR_ID } from "@/lib/phoenix-crm/plan-edit-rules";
+
 /** What a photo can be marked with. Only the exact match stands on its own. */
 export type PhoenixCrmPhotoFlag =
   /** Byte-for-byte the same file as a photo already on record. */
@@ -231,9 +233,17 @@ export function judgePhotoDuplicate(
   subject: PhotoFingerprint,
   priors: ReadonlyArray<PhotoFingerprint>,
 ): PhotoDuplicateVerdict {
+  // 🔴 THE ADMINISTRATOR FILES EVIDENCE, HE DOES NOT CAPTURE IT (sweep, 11 Nov 2026). When the owner validates
+  // a customer for a rep he attaches a picture already on file — the rep's own earlier photo of that door, or
+  // another line's photo of the same doctor — so its bytes match by construction. Six such validations on
+  // Nada Saied's list (10 Nov) reached the SFE Manager's board as exact duplicates. His captures are neither
+  // judged nor matched against; a rep's re-used photo still matches the ORIGINAL it was copied from.
+  if (isAdministratorCapture(subject)) return { ...EMPTY, signals: { administratorCapture: true } };
   // A retried upload of the SAME capture, and the photo comparing with itself. Both are the same
   // visit, and a visit cannot be a duplicate of itself however many times the phone sent it.
-  const others = priors.filter((prior) => prior.subjectId !== subject.subjectId && prior.photoPath !== subject.photoPath);
+  const others = priors.filter(
+    (prior) => prior.subjectId !== subject.subjectId && prior.photoPath !== subject.photoPath && !isAdministratorCapture(prior),
+  );
   if (others.length === 0) return { ...EMPTY, signals: { comparedWith: 0 } };
 
   const flags: PhoenixCrmPhotoFlag[] = [];
@@ -280,6 +290,11 @@ export function judgePhotoDuplicate(
     strong: flags.some((flag) => PHOENIX_CRM_STRONG_PHOTO_FLAGS.includes(flag)),
     signals,
   };
+}
+
+/** A capture filed by the Phoenix CRM administrator (the owner) rather than taken at a door by a rep. */
+export function isAdministratorCapture(photo: Pick<PhotoFingerprint, "repHrId">): boolean {
+  return String(photo.repHrId ?? "").trim().toUpperCase() === PHOENIX_CRM_ADMINISTRATOR_HR_ID;
 }
 
 /**

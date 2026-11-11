@@ -236,3 +236,14 @@ export function archiveReasonLabel(reason: string | null): string | null {
   if (reason === "imported_history") return "Visited in the old system, not on your Phoenix list";
   return null;
 }
+
+/**
+ * What the district manager and SFE read on an add whose name is already on the territory (sweep of 11 Nov 2026:
+ * 47 same-seat pairs shared one name key, 5 of them both active and visited). The rep's "a different person" was
+ * never saved and never reached them, so the card now says it from the list itself, by the database's own key.
+ * Names only, never a code.
+ */
+export function sameNameOnSeatText(names: ReadonlyArray<string>): string {
+  const listed = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${listed} ${names.length === 1 ? "is" : "are"} on this territory already, under the same name. Approve only if this is a different person; if it is the same one, refuse and say so.`;
+}

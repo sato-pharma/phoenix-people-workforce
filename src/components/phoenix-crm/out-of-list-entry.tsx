@@ -10,8 +10,13 @@
  *      morning; let him choose it"), the full name and the speciality — and he MUST validate on the
  *      spot, exactly as the List's Validate does: a live photo of the sign or door (with the photo's
  *      own reading), the location, and the days and hours.
- *   3. The customer then waits outside his list, where he chooses Request to add or Drop. The visit
- *      counts only once the customer is admitted, in the month it happened.
+ *   3. The customer then waits outside his list while the district manager and then SFE decide on him.
+ *      The visit counts only once the customer is admitted, in the month it happened.
+ *
+ * 🔴 THE ADD REQUEST IS FILED BY THIS SAVE (sweep of 11 Nov 2026). He proposes the A/B/C grade here and the
+ * request goes to his district manager in the same transaction. Until then it waited on a separate "Request
+ * to add" press nothing prompted, and 159 of 205 customers met outside a list had no request at all, their
+ * visits counting nowhere for good.
  *
  * The save is POST /api/phoenix-crm/list/validate with mode "outside"; on success the visit form opens
  * straight on the new customer.
@@ -31,7 +36,7 @@ import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
-import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 
@@ -39,6 +44,9 @@ import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 const SPECIALITY_TEXT_MAX = 80;
 
 const PHOTO_NEEDED = PLACE_PHOTO_NEEDED;
+const GRADES = ["A", "B", "C"] as const;
+/** The server's own words for a missing grade (entry-rules.ts parseNewCustomer). */
+const GRADE_NEEDED = "Propose a grade (A, B or C). Your district manager and SFE approve it.";
 const UNCHECKED = "The save may have gone through, but Phoenix could not check. Check the connection, then press Save again.";
 
 /**
@@ -103,6 +111,8 @@ export function OutOfListEntry({
   const [speciality, setSpeciality] = useState("");
   // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
+  // The grade he proposes: the add request is filed with it, in the same save.
+  const [grade, setGrade] = useState<PhoenixCrmGrade | null>(null);
   const [draft, setDraft] = useState<PlaceDraftState>(emptyPlaceDraft);
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -139,6 +149,7 @@ export function OutOfListEntry({
       const nameProblem = doctorFullNameProblem(nameParts);
       if (nameProblem) return nameProblem;
     } else if (cleanName.length < 3) return "Write the customer's full name.";
+    if (!grade) return GRADE_NEEDED;
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
@@ -162,7 +173,7 @@ export function OutOfListEntry({
           seatId,
           test,
           mode: "outside",
-          customer: { listType, name: cleanName, ...(doctorName ? { nameParts } : {}), speciality: normalizedName(speciality) || null },
+          customer: { listType, name: cleanName, ...(doctorName ? { nameParts } : {}), speciality: normalizedName(speciality) || null, proposedGrade: grade },
           allowSameName,
           phone: phone.trim() || null,
           // The List's own place body (place-editor.tsx): the pin, and the photo's own reading under
@@ -234,8 +245,8 @@ export function OutOfListEntry({
         </CrmBlock>
         <CrmBlock className="border-t border-slate-100" title="Someone new">
           <p className="text-sm font-medium leading-6 text-slate-600">
-            Not on your list and not met before: enter the customer and validate the place now — a live photo of the customer&apos;s own nameplate, and the days and hours.
-            The visit counts once the customer is added to your list.
+            Not on your list and not met before: enter the customer, propose a grade and validate the place now — a live photo of the customer&apos;s own nameplate, and the days and hours.
+            The request to add goes to your district manager with it, and the visit counts once the customer is added to your list.
           </p>
           {canAddNew ? (
             <CrmButton className="mt-3" onClick={() => setAdding(true)} variant="primary">
@@ -316,6 +327,18 @@ export function OutOfListEntry({
                 <option key={option} value={option} />
               ))}
             </datalist>
+          </CrmField>
+          <CrmField className="sm:col-span-2" hint="Your district manager confirms it or changes it, then SFE approves the customer." label="The grade you propose">
+            <CrmChoice
+              columns={3}
+              label="The grade you propose"
+              onChange={(next) => {
+                setGrade(next);
+                setProblem(null);
+              }}
+              options={GRADES.map((option) => ({ value: option, label: `Grade ${option}`, disabled: saving }))}
+              value={grade}
+            />
           </CrmField>
           <CustomerPhoneField
             className="sm:col-span-2"

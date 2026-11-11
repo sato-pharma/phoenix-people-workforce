@@ -683,8 +683,19 @@ export type CrmVisitFilter = {
    * passes it — KPIs, call rate, the reps list, Employee 360, double-visit analytics. A reader that asks "did
    * he work that day" (deductions, attendance, outstation, compliance, resignation) NEVER passes it: it keeps
    * every row the door served before (tests/crm-counts-in-kpi-readers.test.ts pins both sides).
+   *
+   * 🔴 It also leaves out a Phoenix visit to a customer NOT VALIDATED YET (`phoenix_customer_validated = false`):
+   * "not counted in kpis till validated" (owner, 2026-10-01). The door keeps carrying such a visit so the "did he
+   * work" readers see it, which left every counting reader to drop it by hand, and only the call rate did: on
+   * 11 Nov 2026 the KPIs board counted 531 November visits to unvalidated customers. The day the customer is
+   * validated the flag turns and the visit counts in its own day. Pharmacies always read as validated.
    */
   kpiOnly?: boolean;
+  /**
+   * With `kpiOnly`, keep the visits to customers not validated yet, for a reader that drops them itself and SAYS
+   * how many wait (the call rate's "awaiting validation", `callRateExclusionOf`). Never for a reader that counts.
+   */
+  keepAwaitingValidation?: boolean;
   /** Require a resolved `agent_hr_id` (NOT NULL). */
   requireAgentHrId?: boolean;
   /** Require a resolved `double_hr_id` (NOT NULL). */
@@ -893,7 +904,11 @@ export function applyVisitFilter(
     );
   }
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
-  if (filter.kpiOnly) result = result.eq("counts_in_kpi", true);
+  if (filter.kpiOnly) {
+    result = result.eq("counts_in_kpi", true);
+    // `not.is.false` keeps true AND null: every vendor row and day activity carries null, never false.
+    if (!filter.keepAwaitingValidation) result = result.not("phoenix_customer_validated", "is", false);
+  }
   // See REAL_DOUBLE_PARTNER_OR_FILTER for why a stray `double_hr_id` on a vendor row is not a partner.
   //
   // Slot 2 needs NO arm of its own here, and must not be given one: the view fills slot 1 from

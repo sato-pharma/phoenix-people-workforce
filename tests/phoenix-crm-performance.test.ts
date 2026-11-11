@@ -50,7 +50,7 @@ export function runPhoenixCrmPerformanceTests(): void {
     const send = bodyOf(notifier, "async function sendPhoenixCrmNotice(");
     assert.match(
       send,
-      /await Promise\.all\(deliveries\.map\(\(delivery\) => deliver\(notice, delivery, isTest\)\)\);/,
+      /await Promise\.all\(told\.map\(\(delivery\) => deliver\(notice, delivery, isTest\)\)\);/,
       "the deliveries of one notice run side by side — each has its own recipients and idempotency key",
     );
     assert.doesNotMatch(send, /for \(const delivery of deliveries\)/, "and never one after another again");
