@@ -515,13 +515,18 @@ export function teamVisitListedSeatIds(report: Pick<TeamVisitsReport, "districts
 }
 
 /** The screen's own address with the filter applied — a fixed path, only the three known keys. */
-export function teamVisitFilterHref(show: TeamVisitShow, day: TeamVisitDayKey, sort: TeamVisitSort = "territory"): string {
+export const TEAM_VISITS_PATH = "/employee-portals/team-visits";
+
+/** The Super Admin's twin in the admin shell, over the whole company (owner, 2026-11-11). */
+export const TEAM_VISITS_ADMIN_PATH = "/admin/field-crm/team-visits";
+
+export function teamVisitFilterHref(show: TeamVisitShow, day: TeamVisitDayKey, sort: TeamVisitSort = "territory", base: string = TEAM_VISITS_PATH): string {
   const params = new URLSearchParams();
   if (show !== "all") params.set("show", show);
   if (day !== "yesterday") params.set("day", day);
   if (sort !== "territory") params.set("sort", sort);
   const query = params.toString();
-  return `/employee-portals/team-visits${query ? `?${query}` : ""}`;
+  return `${base}${query ? `?${query}` : ""}`;
 }
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;

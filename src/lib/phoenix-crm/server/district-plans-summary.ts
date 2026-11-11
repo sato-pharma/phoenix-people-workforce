@@ -677,12 +677,17 @@ export function districtPlanShowCounts(weeks: readonly DistrictManagerWeek[]): R
 }
 
 /** The screen's own address — a fixed path, only the two known keys. `week` is left out for the current week. */
-export function districtPlansHref(week: string | null, show: DistrictPlanShow = "all"): string {
+export const DISTRICT_PLANS_PATH = "/employee-portals/district-manager-plans";
+
+/** The Super Admin's twin in the admin shell, over the whole company (owner, 2026-11-11). */
+export const DISTRICT_PLANS_ADMIN_PATH = "/admin/field-crm/district-manager-plans";
+
+export function districtPlansHref(week: string | null, show: DistrictPlanShow = "all", base: string = DISTRICT_PLANS_PATH): string {
   const params = new URLSearchParams();
   if (week) params.set("week", week);
   if (show !== "all") params.set("show", show);
   const query = params.toString();
-  return `/employee-portals/district-manager-plans${query ? `?${query}` : ""}`;
+  return `${base}${query ? `?${query}` : ""}`;
 }
 
 /** The anchor a manager's section carries, so a name on a panel jumps to it. */
