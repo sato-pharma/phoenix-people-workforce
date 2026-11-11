@@ -11,6 +11,7 @@ import {
   TeamVisitsToolbar,
 } from "@/components/crm/regional/team-visits-panels";
 import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
+import { phoenixCrmDayPath } from "@/lib/phoenix-crm/modules";
 import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region-manager-groups";
 import type { TeamVisitDay, TeamVisitDistrict, TeamVisitManagerDay, TeamVisitRep, TeamVisitsReport } from "@/lib/phoenix-crm/server/team-visits";
 import {
@@ -25,7 +26,9 @@ import {
   teamVisitNonWorkingNotice,
   teamVisitRepAnchor,
   TEAM_VISIT_SHOW_LABEL,
+  TEAM_VISITS_ADMIN_PATH,
   TEAM_VISITS_NO_TIME,
+  TEAM_VISITS_PATH,
   teamVisitDayHeading,
   teamVisitDayStrip,
   teamVisitDistrictAnchor,
@@ -390,6 +393,7 @@ export function TeamVisitsView({
   report,
   show = "all",
   sort = "territory",
+  surface = "portal",
 }: {
   day?: TeamVisitDayKey;
   /** The time the page was read; the pace panel and each rep's "by this time" read against it. */
@@ -398,11 +402,15 @@ export function TeamVisitsView({
   show?: TeamVisitShow;
   /** The order of the reps inside each team, judged on `day`. */
   sort?: TeamVisitSort;
+  /** The shell the page is read in: the portal, or the Super Admin's admin twin over the company (2026-11-11). */
+  surface?: "admin" | "portal";
 }) {
   const yesterday = dayLabel(report.yesterday);
   const today = dayLabel(report.today);
   // `from=team-visits` gives the day page its "Back to all reps" bar, back to this screen.
-  const dayHref = (seatId: string, on: string) => `/employee-portals/field-crm/day/${encodeURIComponent(seatId)}/${on}?from=team-visits`;
+  // The admin twin opens the admin day, the shell it was read in (phoenixCrmDayPath).
+  const dayHref = (seatId: string, on: string) =>
+    surface === "admin" ? phoenixCrmDayPath("admin", "rep", seatId, on, false) : `/employee-portals/field-crm/day/${encodeURIComponent(seatId)}/${on}?from=team-visits`;
   const team = { today: teamVisitTeamRollup(report, "today"), yesterday: teamVisitTeamRollup(report, "yesterday") };
   const filtered = show !== "all";
   const notWorking = teamVisitNonWorkingNotice(report);
@@ -411,7 +419,7 @@ export function TeamVisitsView({
   const paceOf = (rep: TeamVisitsReport["districts"][number]["reps"][number]) => (running ? teamVisitRepPace(rep, report, running) : null);
   return (
     <div className="grid gap-4">
-      <TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />
+      <TeamVisitsToolbar basePath={surface === "admin" ? TEAM_VISITS_ADMIN_PATH : TEAM_VISITS_PATH} day={day} report={report} show={show} sort={sort} />
       {notWorking ? <p className="border border-sky-200 bg-sky-50 px-4 py-2 text-phx-sm font-semibold text-sky-900">{notWorking}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile

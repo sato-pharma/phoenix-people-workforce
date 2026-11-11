@@ -24,6 +24,33 @@ Regional Sales Manager reads the region and a District Manager reads the distric
 - The District Manager's overview (`dsm-command-center.tsx`) shows every shortcut as My Team's Reports
   (`districtTeamReportLinks`), and Source of Sales and Sales Drilldown in its dashboard row.
 
+## The Super Admin's copy (2026-11-11)
+
+Owner: "add for the admin the reports u added to hany saad in his overview dashboard". The Super Admin's overview
+(`/admin`, `system-admin-overview.tsx`) carries a **Team Reports** band, one tile per report in Dr. Hany's order and
+words (`adminTeamReportLinks`), every one over the whole company and in the admin shell:
+
+| Tile | Opens |
+| --- | --- |
+| Reps weekly plans | `/admin/reps-list?tab=plans` |
+| Visits — Yesterday and Today | `/admin/field-crm/team-visits` (new admin twin) |
+| Coverage · Coverage · Last month · Frequency · Last month | `/admin/kpis?tab=coverage` / `&month=` / `?tab=frequency&month=` |
+| District Managers' Plans | `/admin/field-crm/district-manager-plans` (new admin twin) |
+| Weekly Sheet | `/admin/field-crm/weekly-sheet` (new admin twin) |
+| ROI Tracking | `/admin/marketing-requests/roi-tracking` |
+
+- "Plan your week in Phoenix CRM" is left out: it is the Regional Sales Manager's own planning board, and the Super
+  Admin plans no week.
+- The three admin twins mount the same views with `surface="admin"`, so every week, filter and order link stays on
+  the admin page, a rep's day opens the admin day (`phoenixCrmDayPath`), and a district manager's sent week opens the
+  admin approval page (`managerPlanHref(..., "admin")`).
+- Gate: `readsCompanyTeamReports` (the Super Admin alone — never the CEO or the SFE Manager) on the admin pages;
+  `readsAnyTeamReport` (an RSM, a DM or the Super Admin) inside the loaders and the three Excel exports. The portal
+  pages keep `readsRegionOrDistrictReports` and still send the Super Admin home.
+- Reach: his `scopeTerritories` is every seat in the company, so `teamReportRepSeats` gives every rep, and
+  `regionalDistrictSeats` gives every district manager seat (never a line's Others seat).
+- Pinned by `tests/admin-team-reports.test.ts`.
+
 ## The eight needs and where each lives
 
 | # | His need | Page | Code |

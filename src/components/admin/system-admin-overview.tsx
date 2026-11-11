@@ -1,5 +1,5 @@
-import { Database, Network, ShieldCheck, Users, Wrench } from "lucide-react";
-import { Suspense } from "react";
+import { BookUser, ChartColumnBig, Clock, Database, FileSpreadsheet, Network, Radar, Repeat2, ShieldCheck, Users, Wrench } from "lucide-react";
+import { Suspense, type ReactNode } from "react";
 
 import { CeoCommandCenter, QuickLinkCard, SectionShell } from "@/components/admin/ceo-command-center";
 import { RetentionRiskColumnSection, RetentionRiskColumnSkeleton } from "@/components/admin/retention-risk-band";
@@ -7,6 +7,8 @@ import { FinanceAdminBands } from "@/components/admin/finance-command-center";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import type { SystemAdminOverviewData } from "@/lib/admin/system-overview";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { adminTeamReportLinks, type RegionalTeamReportKey } from "@/lib/employee-portal/regional-team-reports";
 
 /**
  * What the identity strip needs. A narrowed shape rather than `ViewerIdentity` itself, matching
@@ -119,12 +121,43 @@ export function SystemAdminOverview({
             {/* Omitted rather than zeroed when the finance aggregates did not answer — see
                 getSystemAdminOverviewData. */}
             {data.finance ? <FinanceAdminBands view={data.finance} /> : null}
+            {/* Dr. Hany Saad's team reports, over the whole company (owner, 2026-11-11). */}
+            <TeamReportsBand />
             <SystemToolsBand />
           </>
         }
         variant="admin"
       />
     </>
+  );
+}
+
+const TEAM_REPORT_ICONS: Record<RegionalTeamReportKey, ReactNode> = {
+  "reps-plans": <BookUser className="h-3.5 w-3.5" />,
+  "team-visits": <Clock className="h-3.5 w-3.5" />,
+  coverage: <Radar className="h-3.5 w-3.5" />,
+  "coverage-last-month": <Radar className="h-3.5 w-3.5" />,
+  "frequency-last-month": <Repeat2 className="h-3.5 w-3.5" />,
+  "district-manager-plans": <Users className="h-3.5 w-3.5" />,
+  "region-plans": <Users className="h-3.5 w-3.5" />,
+  "weekly-sheet": <FileSpreadsheet className="h-3.5 w-3.5" />,
+  "roi-tracking": <ChartColumnBig className="h-3.5 w-3.5" />,
+};
+
+/**
+ * The team reports built for Dr. Hany Saad, the Regional Sales Manager, one shortcut each, over the whole company
+ * (owner, 2026-11-11: "add for the admin the reports u added to hany saad in his overview dashboard"). The list and
+ * its addresses are `adminTeamReportLinks`; each page's own gate decides what it shows.
+ */
+function TeamReportsBand() {
+  return (
+    <SectionShell description="The reports built for the Regional Sales Manager, across the whole company." title="Team Reports">
+      <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+        {adminTeamReportLinks(cairoTodayIso()).map((link) => (
+          <QuickLinkCard headline={link.headline} href={link.href} icon={TEAM_REPORT_ICONS[link.key]} key={link.key} sub={`Open ${link.label}`} title={link.label} />
+        ))}
+      </div>
+    </SectionShell>
   );
 }
 

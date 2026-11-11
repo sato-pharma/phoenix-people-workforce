@@ -12,6 +12,8 @@ import { DOCTOR_FAMILY_LABEL } from "@/lib/crm/account-doctor-notes";
 import type { WeeklySheet, WeeklySheetAccount, WeeklySheetRep } from "@/lib/crm/weekly-sheet";
 import {
   WEEKLY_SHEET_ACCOUNT_STATE_LABEL,
+  WEEKLY_SHEET_ADMIN_PATH,
+  WEEKLY_SHEET_PATH,
   WEEKLY_SHEET_FAMILIES,
   WEEKLY_SHEET_NO_DOCTORS,
   WEEKLY_SHEET_VERDICT_TONE,
@@ -243,14 +245,23 @@ function RepBlock({ position, rep }: { position: WeeklySheetPosition; rep: Weekl
   );
 }
 
-export function WeeklySheetView({ sheet, show = "all" }: { sheet: WeeklySheet; show?: WeeklySheetShow }) {
+export function WeeklySheetView({
+  sheet,
+  show = "all",
+  surface = "portal",
+}: {
+  sheet: WeeklySheet;
+  show?: WeeklySheetShow;
+  /** The shell the page is read in: the portal, or the Super Admin's admin twin over the company (2026-11-11). */
+  surface?: "admin" | "portal";
+}) {
   const position = weeklySheetPosition(sheet);
   const districts = filterWeeklySheetDistricts(sheet, show);
   // A heading's caption and figures are the whole district's, whatever the filter lists under it.
   const wholeDistrict = new Map(sheet.districts.map((district) => [weeklySheetDistrictKey(district), district]));
   return (
     <div className="grid gap-4">
-      <WeeklySheetToolbar sheet={sheet} show={show} />
+      <WeeklySheetToolbar basePath={surface === "admin" ? WEEKLY_SHEET_ADMIN_PATH : WEEKLY_SHEET_PATH} sheet={sheet} show={show} />
       {sheet.targetsUncertain ? (
         <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
           The holiday calendar or approved leave could not be read just now, so a target may be one day too high.

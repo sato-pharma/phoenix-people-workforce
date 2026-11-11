@@ -26,6 +26,8 @@ import {
   districtPlanAnchor,
   districtPlanKindsLine,
   districtPlanSentLine,
+  DISTRICT_PLANS_ADMIN_PATH,
+  DISTRICT_PLANS_PATH,
   districtPlansHref,
   districtPlanWeekFigures,
   districtRepLeaveLine,
@@ -222,11 +224,21 @@ function ManagerSection({ week, weekStart }: { week: DistrictManagerWeek; weekSt
   );
 }
 
-export function DistrictManagerPlansView({ report, show = "all" }: { report: DistrictManagersPlans; show?: DistrictPlanShow }) {
+export function DistrictManagerPlansView({
+  report,
+  show = "all",
+  surface = "portal",
+}: {
+  report: DistrictManagersPlans;
+  show?: DistrictPlanShow;
+  /** The shell the page is read in: the portal, or the Super Admin's admin twin over the company (2026-11-11). */
+  surface?: "admin" | "portal";
+}) {
+  const basePath = surface === "admin" ? DISTRICT_PLANS_ADMIN_PATH : DISTRICT_PLANS_PATH;
   const listed = filterDistrictPlanWeeks(report.weeks, show);
   return (
     <div className="grid gap-4">
-      <DistrictPlansToolbar report={report} show={show} />
+      <DistrictPlansToolbar basePath={basePath} report={report} show={show} />
       {report.leaveUnread ? (
         <p className="border border-amber-300 bg-amber-50 px-4 py-2 text-phx-sm font-semibold text-amber-900">
           Approved leave could not be read just now, so &quot;On leave&quot; is not shown this time.
@@ -250,7 +262,7 @@ export function DistrictManagerPlansView({ report, show = "all" }: { report: Dis
           <span>
             Listing {listed.length} of {report.weeks.length} district manager seats. The figures above are the whole team&apos;s.
           </span>
-          <Link className={LINK} href={districtPlansHref(report.weekStart, "all")}>
+          <Link className={LINK} href={districtPlansHref(report.weekStart, "all", basePath)}>
             Every seat
           </Link>
         </p>

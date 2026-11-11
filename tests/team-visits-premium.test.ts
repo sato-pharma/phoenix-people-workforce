@@ -405,7 +405,7 @@ async function theWorkbook() {
 
 function theExportGateAndRegistry() {
   const route = stripComments(readFileSync("app/api/crm/team-visits/export/route.ts", "utf8"));
-  const gate = route.indexOf("readsRegionOrDistrictReports(viewer)");
+  const gate = route.indexOf("readsAnyTeamReport(viewer)");
   const load = route.indexOf("loadTeamVisitsReport(viewer)");
   assert.ok(route.indexOf('canAccess(access, "phoenix_crm", "read")') > 0 && route.indexOf('canAccess(access, "phoenix_crm", "read")') < load, "phoenix_crm:read before any read");
   assert.ok(gate > 0 && gate < load, "the Regional Sales Manager's gate before any read");
@@ -430,7 +430,7 @@ function theScreen() {
   assert.ok(view.includes("const reps = sortTeamVisitReps(filterTeamVisitReps(district.reps, show, day), sort, day);"), "the filter narrows, and the order sorts, only the rows listed");
   assert.ok(view.includes("<RepsTotal day={district.repsTotal.yesterday} />"), "a district manager's total is the whole team's, filter or not");
   assert.ok(view.includes("<TeamVisitsRollupPanel report={report} />") && view.includes("<TeamVisitsHoursPanel report={report} />") && view.includes("<TeamVisitsAttentionPanel day={day} report={report} show={show} />"));
-  assert.ok(view.includes("<TeamVisitsToolbar day={day} report={report} show={show} sort={sort} />"));
+  assert.ok(view.includes("<TeamVisitsToolbar basePath={surface === \"admin\" ? TEAM_VISITS_ADMIN_PATH : TEAM_VISITS_PATH} day={day} report={report} show={show} sort={sort} />"));
   assert.ok(view.includes(">Waiting for validation</span>"), "a waiting visit is tagged in the square");
   // "the font is fucken small", then "not only in this page audit dr hany new reports" (owner, 2026-11-09): nothing
   // on the Regional Sales Manager's reports, the KPI chrome they are framed in, or the hub card on the home is set
@@ -639,8 +639,8 @@ function orderNoticeAndFold() {
   assert.equal(view.split("<DayCell day={rep.today} fold ").length - 1, 1, "the phone card folds today");
   assert.ok(view.includes("{notWorking ? <p "), "the notice prints only on a day that is not a field day");
   const panels = stripComments(readFileSync("src/components/crm/regional/team-visits-panels.tsx", "utf8"));
-  assert.ok(panels.includes("href={teamVisitFilterHref(show, day, key)}"), "the order links keep the filter");
-  assert.ok(panels.includes("href={teamVisitFilterHref(key, day, sort)}") && panels.includes("href={teamVisitFilterHref(show, key, sort)}"), "the filter links keep the order");
+  assert.ok(panels.includes("href={teamVisitFilterHref(show, day, key, basePath)}"), "the order links keep the filter");
+  assert.ok(panels.includes("href={teamVisitFilterHref(key, day, sort, basePath)}") && panels.includes("href={teamVisitFilterHref(show, key, sort, basePath)}"), "the filter links keep the order");
   const page = stripComments(readFileSync("app/employee-portals/team-visits/page.tsx", "utf8"));
   assert.ok(page.includes("sort={parseTeamVisitSort(params.sort)}"), "the page reads the order strictly");
 }

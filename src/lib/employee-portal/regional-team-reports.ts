@@ -71,3 +71,30 @@ export function districtTeamReportLinks(cairoTodayIso: string): RegionalTeamRepo
     link.key === "district-manager-plans" ? { ...link, label: "My Plans" } : link,
   );
 }
+
+/** What each shortcut answers, as the Team Reports band on /admin prints it under the title. */
+export type AdminTeamReportLink = RegionalTeamReportLink & { headline: string };
+
+/**
+ * The same shortcuts on the Super Admin's overview (/admin), each over the WHOLE COMPANY and in the admin shell (owner,
+ * 2026-11-11: "add for the admin the reports u added to hany saad in his overview dashboard"). Same order, same words.
+ *
+ * - Visits — Yesterday and Today, District Managers' Plans and the Weekly Sheet open their admin twins under
+ *   /admin/field-crm, gated by `readsCompanyTeamReports`.
+ * - Reps weekly plans, Coverage, Frequency and ROI Tracking open the admin pages the Super Admin already reads.
+ * - "Plan your week in Phoenix CRM" is left out: it is the Regional Sales Manager's OWN planning board, and the Super
+ *   Admin plans no week. Every district manager's week is on District Managers' Plans.
+ */
+export function adminTeamReportLinks(cairoTodayIso: string): AdminTeamReportLink[] {
+  const lastMonth = previousMonthKey(cairoTodayIso);
+  return [
+    { headline: "Every rep's weekly plan", href: "/admin/reps-list?tab=plans", key: "reps-plans", label: "Reps weekly plans" },
+    { headline: "Visits and the time each was saved", href: "/admin/field-crm/team-visits", key: "team-visits", label: "Visits — Yesterday and Today" },
+    { headline: "Plan coverage, this month", href: "/admin/kpis?tab=coverage", key: "coverage", label: "Coverage" },
+    { headline: "Who was not covered last month", href: `/admin/kpis?tab=coverage&month=${lastMonth}`, key: "coverage-last-month", label: "Coverage · Last month" },
+    { headline: "Visit frequency, last month", href: `/admin/kpis?tab=frequency&month=${lastMonth}`, key: "frequency-last-month", label: "Frequency · Last month" },
+    { headline: "Who is with each rep, each day", href: "/admin/field-crm/district-manager-plans", key: "district-manager-plans", label: "District Managers' Plans" },
+    { headline: "PM and AM against the week's targets", href: "/admin/field-crm/weekly-sheet", key: "weekly-sheet", label: "Weekly Sheet" },
+    { headline: "The return on every request", href: "/admin/marketing-requests/roi-tracking", key: "roi-tracking", label: "ROI Tracking" },
+  ];
+}

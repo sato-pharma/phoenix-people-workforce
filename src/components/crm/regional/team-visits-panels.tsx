@@ -21,6 +21,7 @@ import {
   teamVisitDistrictAnchor,
   teamVisitDistrictRollups,
   teamVisitFiguresLine,
+  TEAM_VISITS_PATH,
   teamVisitFilterHref,
   teamVisitHourSpread,
   teamVisitManagersInField,
@@ -70,7 +71,20 @@ function dayIso(report: Pick<TeamVisitsReport, "today" | "yesterday">, day: Team
  * count of reps it lists, so a click never lands on an empty screen by surprise. The Excel file always holds every
  * rep, whatever is chosen here.
  */
-export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { day: TeamVisitDayKey; report: TeamVisitsReport; show: TeamVisitShow; sort?: TeamVisitSort }) {
+export function TeamVisitsToolbar({
+  basePath = TEAM_VISITS_PATH,
+  day,
+  report,
+  show,
+  sort = "territory",
+}: {
+  /** The page the filter links stay on: the portal's, or the Super Admin's admin twin (2026-11-11). */
+  basePath?: string;
+  day: TeamVisitDayKey;
+  report: TeamVisitsReport;
+  show: TeamVisitShow;
+  sort?: TeamVisitSort;
+}) {
   const counts = teamVisitShowCounts(report, day);
   return (
     <div className="grid gap-3 border border-slate-200 bg-white px-4 py-3">
@@ -100,7 +114,7 @@ export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { d
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Judge by</span>
           {TEAM_VISIT_DAYS.map((key) => (
-            <Link aria-current={key === day ? "true" : undefined} className={key === day ? LINK_ON : LINK} href={teamVisitFilterHref(show, key, sort)} key={key}>
+            <Link aria-current={key === day ? "true" : undefined} className={key === day ? LINK_ON : LINK} href={teamVisitFilterHref(show, key, sort, basePath)} key={key}>
               {teamVisitDayHeading(key)}
             </Link>
           ))}
@@ -108,7 +122,7 @@ export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { d
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Show</span>
           {TEAM_VISIT_SHOW.map((key) => (
-            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={teamVisitFilterHref(key, day, sort)} key={key}>
+            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={teamVisitFilterHref(key, day, sort, basePath)} key={key}>
               {TEAM_VISIT_SHOW_LABEL[key]} · {counts[key]}
             </Link>
           ))}
@@ -116,7 +130,7 @@ export function TeamVisitsToolbar({ day, report, show, sort = "territory" }: { d
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Order</span>
           {TEAM_VISIT_SORT.map((key) => (
-            <Link aria-current={key === sort ? "true" : undefined} className={key === sort ? LINK_ON : LINK} href={teamVisitFilterHref(show, day, key)} key={key}>
+            <Link aria-current={key === sort ? "true" : undefined} className={key === sort ? LINK_ON : LINK} href={teamVisitFilterHref(show, day, key, basePath)} key={key}>
               {TEAM_VISIT_SORT_LABEL[key]}
             </Link>
           ))}

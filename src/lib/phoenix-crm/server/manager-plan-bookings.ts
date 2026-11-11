@@ -15,7 +15,7 @@ import {
 } from "@/lib/phoenix-crm/manager-plan-rules";
 import { NO_REGION, seatRegionName } from "@/lib/phoenix-crm/region-manager-groups";
 import { personKey, seatOccupants, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readsRegionOrDistrictReports, regionalReportWorlds, teamReportRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsAnyTeamReport, regionalReportWorlds, teamReportRepSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadSeatLeaveDays } from "@/lib/phoenix-crm/server/leave-days";
 import { loadManagerPlanHalfDays, loadManagerPlansInRange, managerHalfDayText, managerPlanHref } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadManagerSlotCustomers, loadManagerSlotRows, type ManagerSlotRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
@@ -228,15 +228,17 @@ export type DistrictManagersPlans = {
 /**
  * The district manager seats the report lists — never the line's "Others". A Regional Sales Manager: every one under
  * the regional seat. A District Manager (owner, 2026-11-09, "every one based on his scope"): the viewer's own
- * district seat or seats, so the page is that manager's own sent week beside the reps' days.
+ * district seat or seats, so the page is that manager's own sent week beside the reps' days. The Super Admin (owner,
+ * 2026-11-11, `readsCompanyTeamReports`): every district manager seat in the company.
  */
-export function regionalDistrictSeats(viewer: Pick<PhoenixCrmViewer, "org" | "managerSeats">): OrgSeat[] {
+export function regionalDistrictSeats(viewer: Pick<PhoenixCrmViewer, "org" | "managerSeats"> & { isSuperAdmin?: boolean }): OrgSeat[] {
+  const company = viewer.isSuperAdmin === true;
   const regional = new Set(viewer.managerSeats.filter((seat) => seat.tier === "RSM").map((seat) => seat.seatId));
   const own = new Set(viewer.managerSeats.filter((seat) => DISTRICT_TIERS.has(seat.tier)).map((seat) => seat.seatId));
   const out: OrgSeat[] = [];
   for (const seat of viewer.org.seats.values()) {
     if (!DISTRICT_TIERS.has(seat.tier) || seat.isOtherPseudoDm) continue;
-    if (own.has(seat.seatId) || seat.path.some((ancestorId) => ancestorId !== seat.seatId && regional.has(ancestorId))) out.push(seat);
+    if (company || own.has(seat.seatId) || seat.path.some((ancestorId) => ancestorId !== seat.seatId && regional.has(ancestorId))) out.push(seat);
   }
   return out.sort((left, right) => territoryName(left).localeCompare(territoryName(right)));
 }
@@ -305,7 +307,7 @@ function dayText(iso: string): string {
 }
 
 export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDayOfWeek: string): Promise<DistrictManagersPlans> {
-  if (!readsRegionOrDistrictReports(viewer)) throw forbiddenError("This report is for a Regional Sales Manager or a District Manager.");
+  if (!readsAnyTeamReport(viewer)) throw forbiddenError("This report is for a Regional Sales Manager, a District Manager or the Super Admin.");
   const weekStart = fieldWeekStart(anyDayOfWeek);
   const weekEnd = addDaysIso(weekStart, 6);
   const cairoToday = cairoTodayIso();
@@ -420,7 +422,8 @@ export async function loadDistrictManagersPlans(viewer: PhoenixCrmViewer, anyDay
       districtSeatId: district.seatId,
       dueOn: plan?.dueOn ?? null,
       endedUndecided,
-      planHref: sent && plan ? managerPlanHref(plan.planId) : null,
+      // The Super Admin reads this page in the admin shell, so the week opens on the admin approval page (2026-11-11).
+      planHref: sent && plan ? managerPlanHref(plan.planId, viewer.isSuperAdmin ? "admin" : "portal") : null,
       planId: plan?.planId ?? null,
       managerLeaveDays: days.filter((date) => managerOnLeave(district.seatId, date)),
       reps,

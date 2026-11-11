@@ -17,6 +17,7 @@ import {
   weeklySheetDepthLine,
   weeklySheetDistrictKey,
   weeklySheetExportHref,
+  WEEKLY_SHEET_PATH,
   weeklySheetHref,
   weeklySheetListedSeats,
   weeklySheetMetCaption,
@@ -57,7 +58,16 @@ export const LABEL = "text-phx-xs font-black uppercase tracking-[0.12em] text-sl
  * begun, so the screen never opens on a week of zeros still to come. Each filter carries its count of seats, and the
  * Excel file always holds every seat.
  */
-export function WeeklySheetToolbar({ sheet, show }: { sheet: WeeklySheet; show: WeeklySheetShow }) {
+export function WeeklySheetToolbar({
+  basePath = WEEKLY_SHEET_PATH,
+  sheet,
+  show,
+}: {
+  /** The page the week and filter links stay on: the portal's, or the Super Admin's admin twin (2026-11-11). */
+  basePath?: string;
+  sheet: WeeklySheet;
+  show: WeeklySheetShow;
+}) {
   const counts = weeklySheetShowCounts(sheet);
   const nav = weeklySheetNav(sheet);
   return (
@@ -76,14 +86,14 @@ export function WeeklySheetToolbar({ sheet, show }: { sheet: WeeklySheet; show: 
       <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Week</span>
-          <Link className={LINK} href={weeklySheetHref(nav.previous, show)}>
+          <Link className={LINK} href={weeklySheetHref(nav.previous, show, basePath)}>
             Previous week
           </Link>
-          <Link className={LINK} href={weeklySheetHref(null, show)}>
+          <Link className={LINK} href={weeklySheetHref(null, show, basePath)}>
             Last full week
           </Link>
           {nav.next ? (
-            <Link className={LINK} href={weeklySheetHref(nav.next, show)}>
+            <Link className={LINK} href={weeklySheetHref(nav.next, show, basePath)}>
               Next week
             </Link>
           ) : null}
@@ -91,7 +101,7 @@ export function WeeklySheetToolbar({ sheet, show }: { sheet: WeeklySheet; show: 
         <div className="flex flex-wrap items-center gap-2">
           <span className={LABEL}>Show</span>
           {WEEKLY_SHEET_SHOW.map((key) => (
-            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={weeklySheetHref(sheet.weekStart, key)} key={key}>
+            <Link aria-current={key === show ? "true" : undefined} className={key === show ? LINK_ON : LINK} href={weeklySheetHref(sheet.weekStart, key, basePath)} key={key}>
               {WEEKLY_SHEET_SHOW_LABEL[key]} · {counts[key]}
             </Link>
           ))}
