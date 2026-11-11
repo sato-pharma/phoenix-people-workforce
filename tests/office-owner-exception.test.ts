@@ -103,8 +103,8 @@ export function runOfficeOwnerExceptionTests() {
     const respread = buildOfficeRespread(monthRows("CNS"), PERIOD, "CNS");
     const byArea = valueByArea(respread.net);
     for (const areaCode of AREAS) {
-      const approved = OCTOBER!.moves[areaCode] ?? 0;
-      const moved = byArea.get(areaCode) ?? 0;
+      const approved: number = OCTOBER!.moves[areaCode] ?? 0;
+      const moved: number = byArea.get(areaCode) ?? 0;
       assert.ok(
         Math.abs(moved - approved) < 0.05,
         `${areaCode}: Office value moved ${moved.toFixed(2)} EGP, approved ${approved.toFixed(2)}`,
