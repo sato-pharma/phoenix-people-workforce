@@ -139,9 +139,6 @@ export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   /^\/api\/payroll\/[^/]+\/bank-file(\/|$)/,
   // The bank account-opening letter: national IDs, mobiles and base salaries, and an audit row naming who took it.
   /^\/api\/hiring-pack\/bank-account-letter(\/|$)/,
-  // Medical insurance: an insurer document, an invoice's paper or the movement file opened — each writes an
-  // audit row naming who took it (the two exports are already refused as export paths).
-  /^\/api\/medical-insurance\/(documents\/[^/]+|invoices\/documents\/[^/]+|movement-file)(\/|$)/,
 ];
 
 /** Whether a request with this method and path may run during a seat view. */

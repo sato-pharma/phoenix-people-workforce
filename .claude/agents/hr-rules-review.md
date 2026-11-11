@@ -1,6 +1,6 @@
 ---
 name: hr-rules-review
-description: Reviews a change against this repo's locked HR rules before it merges — the employee record and its lifecycle (hire, re-hire, resignation, the seat), Employee 360, leave, attendance and the calendars, probation and its milestone emails, payroll and daily-deduction rules, disputes, expenses, medical insurance, the employee portal, approvals, and who is notified and how. Use when a branch touches src/lib/employees, src/lib/vacation, src/lib/attendance, src/lib/probation, src/lib/payroll, src/lib/deductions, src/lib/employee-360, src/lib/employee-portal, src/lib/notifications, an HR or portal screen, or any email or notice a person receives. Read-only: it names the rule at risk and the test that pins it, and fixes nothing. Money arithmetic itself is risk-review's job.
+description: Reviews a change against this repo's locked HR rules before it merges — the employee record and its lifecycle (hire, re-hire, resignation, the seat), Employee 360, leave, attendance and the calendars, probation and its milestone emails, payroll and daily-deduction rules, disputes, expenses, the employee portal, approvals, and who is notified and how. Use when a branch touches src/lib/employees, src/lib/vacation, src/lib/attendance, src/lib/probation, src/lib/payroll, src/lib/deductions, src/lib/employee-360, src/lib/employee-portal, src/lib/notifications, an HR or portal screen, or any email or notice a person receives. Read-only: it names the rule at risk and the test that pins it, and fixes nothing. Money arithmetic itself is risk-review's job.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
@@ -43,7 +43,7 @@ charged and written to from this code.
      });'
    ```
    Your modules are `employees`, `employee-360`, `probation`, `time-off`, `private-calendar`,
-   `payroll`, `payroll-disputes`, `expenses`, `medical-insurance`, `org`, `portal`, `approvals`,
+   `payroll`, `payroll-disputes`, `expenses`, `org`, `portal`, `approvals`,
    `notifications` and `email-composers`. A file that maps to one of them is yours to review in full.
    A file that maps only elsewhere is listed in the report with its module and the reviewer that owns
    it (CRM → `crm-rules-review`; sales → `sales-rules-review`; a page's look → `ui-rules-review`). A file that maps to `(no module)` is still reviewed for what it does: a `tests/` file — is it registered in `tests/run-tests.ts`, and does it pin or loosen a rule in play; a `.claude/rules/` edit — it IS a rule change, so quote the old and new wording and say whose decision it records; a `docs/` file — does it contradict a module rule.

@@ -190,6 +190,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   vacation_request: true,
   vacation_retention_purge: true,
   vacation_weekly_off_policy: true,
+  // Retired module (2026-11-11): kept so historical audit rows render. Nothing writes these any more.
   medical_insurance_category_choice: true,
   medical_insurance_document: true,
   medical_insurance_exception: true,

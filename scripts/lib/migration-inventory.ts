@@ -2337,6 +2337,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // reversal with phoenix_crm.allow_merge_reversal = on went through, and after a recorded merge_reversed event a
   // restore went through. Re-applying is a no-op (`create or replace` function and trigger).
   "20261111030456_phoenix_crm_sweep_fixes.sql",
+  // Applied 11 Nov 2026 about 06:20 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1
+  // pooler), the standing route, after supabase-staging's apply_migration answered {"status":"declined"}. It writes
+  // NO ledger row. The file drops the storage policy medical_insurance_service_role and the seven medical_insurance_*
+  // tables, and creates nothing, so there is no prosrc to digest: the evidence is absence, read on BOTH
+  // cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf straight after — 0 pg_class rows named %medical_insurance%, 0
+  // pg_policies rows named %medical_insurance%, 0 storage.buckets named %medical% (the empty bucket was deleted through
+  // the Storage API just before, 0 objects on either), and the payroll columns employees.medical_insurance,
+  // employee_compensation.medical_insurance and salary_records.medical_insurance still present. Production held 1
+  // policy row and 114 member rows, exported first (docs/medical-insurance-retired.md). Re-applying is a no-op
+  // (`drop ... if exists`).
+  "20261111061213_retire_medical_insurance.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
