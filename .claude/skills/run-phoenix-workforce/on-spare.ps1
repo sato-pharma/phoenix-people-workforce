@@ -19,7 +19,11 @@ $ErrorActionPreference = 'Continue'   # PS 5.1 turns remote stderr into a fatal 
 if ($args.Count -eq 0) { Write-Error 'no steps. e.g.: --role "Super Admin" go /admin shot admin'; exit 2 }
 $spareScripts = Join-Path $env:USERPROFILE '.claude\scripts'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-$spare = 'TransferUser@192.168.1.60'
+# The spare's address is read from spare.ps1, never written here: the spare moved from .60 to .53 on
+# 2026-11-08, the machine's own scripts were updated, and a copy hard-coded in this file kept sending
+# scp to the old address ("Connection timed out") while spare.ps1 itself answered.
+$spare = (Select-String -LiteralPath "$spareScripts\spare.ps1" -Pattern 'TransferUser@[0-9.]+' -ErrorAction SilentlyContinue | Select-Object -First 1).Matches.Value
+if (-not $spare) { $spare = 'phoenix-spare' }   # the ~/.ssh/config alias, when spare.ps1 names no address
 $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=ERROR', '-i', $key)
 $scpExe = "$env:SystemRoot\System32\OpenSSH\scp.exe"
 
