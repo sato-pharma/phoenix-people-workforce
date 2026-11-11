@@ -32,6 +32,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION = "supabase/migrations/20261103223424_production_planning_royafloxacin.sql";
 const EGPI_MIGRATION = "supabase/migrations/20261111133401_production_planning_royafloxacin_egpi.sql";
+const EGPI_BATCH_MIGRATION = "supabase/migrations/20261111143317_production_planning_royafloxacin_egpi_batch.sql";
 
 const MEDIZEN = "loc-medizen";
 const EGYPHAR = "loc-egyphar";
@@ -362,8 +363,10 @@ export async function runProductionPlanningRoyafloxacinTests() {
   assert.match(medizenUpdate, /sample_unit_ml = 1630,/, "holding one strip of TWO tablets: 2 × 815");
   assert.doesNotMatch(medizenUpdate, /run_volume_ml|dose_ml/, "🔴 the counting geometry is NOT touched: still 80,000 × 815 mg");
 
+  // The FIRST seeding of EGPI, from "Same tablet as Medizen". EGPI's own figure (16,000 boxes a batch)
+  // replaced its geometry the same day, in EGPI_BATCH_MIGRATION — pinned at the end of this file.
   const egpiProduct = block(egpiSql, "'ROYAFLOXACIN_EGPI',", "on conflict (code) do nothing;");
-  assert.match(egpiProduct, /76919700, 815, 815, 1630, true, 10,\s*2, 0, true, 80, 847\.6,/, "EGPI's geometry and shown weights");
+  assert.match(egpiProduct, /76919700, 815, 815, 1630, true, 10,\s*2, 0, true, 80, 847\.6,/, "EGPI's first geometry and shown weights");
   const egpiTablets = 76_919_700 / 815;
   assert.equal(egpiTablets, 94_380, "an EGPI batch counts 94,380 tablets exactly");
   assert.equal(egpiTablets / 10, 9_438, "which is 9,438 whole boxes of ten");
@@ -409,4 +412,66 @@ export async function runProductionPlanningRoyafloxacinTests() {
   );
   assert.equal(rowOf(shownPlan, "LEVOFLOXACIN_HEMIHYDRATE").needed, "42.23", "41 kg a batch plus the 3% default, stated weights or not");
   assert.equal(shownPlan.runVolumeLitres, "70", "while the plan's batch figure reads the stated 70 kg");
+
+  // ══ 2026-11-11 ~14:30 — EGPI's own batch and its foil ═════════════════════════════════════════
+  // Owner: "For Royafloxacin 500 EGPI batch size is 80 kg (16000 Box of 2 blisters 10 tab.) 25 kg Aluminium".
+  const batchSql = sqlOf(EGPI_BATCH_MIGRATION);
+  const egpiUpdate = block(batchSql, "update public.prodplan_products", "where code = 'ROYAFLOXACIN_EGPI';");
+  assert.match(egpiUpdate, /run_volume_ml = 80000000,/, "80 kg = 80,000,000 mg");
+  assert.match(egpiUpdate, /dose_ml = 500,/, "counted at the 500 mg of levofloxacin a tablet holds");
+  assert.match(egpiUpdate, /good_unit_ml = 500,/, "one tablet is one dose");
+  assert.match(egpiUpdate, /sample_unit_ml = 1000,/, "the sample box still holds TWO tablets");
+  assert.match(egpiUpdate, /batch_weight_display = 80,/, "the batch still reads 80 kg");
+  assert.match(egpiUpdate, /unit_weight_display = 847\.6,/, "and the tablet still reads 847.6 mg");
+  assert.ok(80_000_000 <= 100_000_000, "under the run_volume_ml cap, which the 815 mg core (130,400,000) is not");
+  const foilLine = block(batchSql, "insert into public.prodplan_compositions", "on conflict (product_id, material_id, effective_from)");
+  assert.match(foilLine, /'per_strip', 0\.781250, 'sato'/, "25 kg over 32,000 strips is 0.78125 g a strip, Sato's");
+  assert.match(foilLine, /m\.code = 'BLISTER_ALU_ROYAFLOXACIN'/, "on the Royafloxacin foil");
+  assert.match(foilLine, /p\.code = 'ROYAFLOXACIN_EGPI'/, "for EGPI only");
+
+  const EGPI_GEOMETRY: RunGeometry = {
+    ...GEOMETRY,
+    doseMl: BigInt(500),
+    goodUnitMl: BigInt(500),
+    runVolumeMl: BigInt(80_000_000),
+    sampleUnitMl: BigInt(1_000),
+    sampleInOwnBox: true,
+  };
+  const egpiBatch = yieldForRuns(EGPI_GEOMETRY, BigInt(1), BigInt(0));
+  assert.equal(dosesPerRun(EGPI_GEOMETRY), BigInt(160_000), "160,000 tablets a batch");
+  assert.equal(egpiBatch.totalBoxes, BigInt(16_000), "= 16,000 boxes of 10, his figure");
+  assert.equal(egpiBatch.stripCount, BigInt(32_000), "= 32,000 strips of 5");
+  assert.equal(egpiBatch.leftoverMl, BigInt(0), "nothing left over");
+
+  // One batch, no samples, the 3% default overage: the foil is his 25 kg, levofloxacin 82 kg.
+  const egpiLineOf = (code: string, basis: LoadedComposition["basis"], qty: string): LoadedComposition => ({
+    basis,
+    effectiveFrom: "2026-11-11",
+    materialId: `mat-${code}`,
+    notes: null,
+    overagePct: null,
+    qtyPerBasis: parseQty(qty),
+    supplier: "sato",
+  });
+  const egpiPlan = computePlan(
+    {
+      ...planningData(sql),
+      compositionsByProductId: new Map([
+        [
+          PRODUCT.id,
+          [
+            egpiLineOf("LEVOFLOXACIN_HEMIHYDRATE", "per_dose", "0.5125"),
+            egpiLineOf("BLISTER_ALU_ROYAFLOXACIN", "per_strip", "0.78125"),
+            egpiLineOf("BOX_ROYAFLOXACIN_10", "per_box", "1"),
+          ],
+        ],
+      ]),
+      products: [{ ...PRODUCT, geometry: EGPI_GEOMETRY, batchWeightDisplay: "80", unitWeightDisplay: "847.6" }],
+    },
+    { mode: "runs", productId: PRODUCT.id, requestedQty: "1", sampleUnits: "0" },
+  );
+  assert.equal(rowOf(egpiPlan, "BLISTER_ALU_ROYAFLOXACIN").needed, "25.75", "25 kg of foil a batch plus 3%");
+  assert.equal(rowOf(egpiPlan, "LEVOFLOXACIN_HEMIHYDRATE").needed, "84.46", "82 kg of levofloxacin a batch plus 3%");
+  assert.equal(rowOf(egpiPlan, "BOX_ROYAFLOXACIN_10").needed, "16480", "16,000 boxes plus 3%");
+  assert.equal(egpiPlan.runVolumeLitres, "80", "the batch reads 80 kg");
 }
