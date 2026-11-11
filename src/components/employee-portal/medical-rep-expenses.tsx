@@ -41,6 +41,30 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
+import {
+  MEDICAL_REP_MAX_PHOTOS,
+  MEDICAL_REP_MIN_PHOTOS,
+  medicalRepPhotoProblem,
+} from "@/lib/outstation/medical-rep-expenses";
+
+/** One photo on the form: the shrunk JPEG that is sent, and a local preview of it. */
+type PickedPhoto = { file: File; key: string; previewUrl: string };
+
+/**
+ * One picked photo, shrunk to a JPEG in the browser (the submit wizard's own helper), so two to
+ * six camera shots fit the proxy's 10 MB body and a HEIC or WebP arrives as a type the server
+ * stores.
+ */
+async function shrinkPhoto(file: File): Promise<File> {
+  const prepared = await prepareTicketAttachment(file);
+  const blob = await (await fetch(prepared.dataUrl)).blob();
+  return new File([blob], prepared.name, { type: blob.type || "image/jpeg" });
+}
+
+function looksLikePhoto(file: File) {
+  return file.type.startsWith("image/") || (!file.type && /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name));
+}
 
 
 type ActiveTab = "submit" | "history";
@@ -234,8 +258,9 @@ export function MedicalRepExpensesWorkspace({
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
   const amWorkload = "";
   const pmWorkload = "";
-  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachments, setAttachments] = useState<PickedPhoto[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -283,19 +308,71 @@ export function MedicalRepExpensesWorkspace({
     [filteredRequests],
   );
 
+  // AT LEAST TWO PHOTOS, EVERY ONE AN IMAGE (owner, 2026-11-11: "upload photo or multiple and all
+  // required", answered "Minimum two photos"). The same function the server refuses with, so the
+  // button never lets through what the server would then send back.
+  const photoProblem = medicalRepPhotoProblem(attachments.map((photo) => ({ contentType: photo.file.type })));
+
   const canSend =
     canSubmit &&
     !isSubmitting &&
-    // The attachment is deliberately absent from this list: the upload is OPTIONAL (owner,
-    // 2026-10-01), so a claim with no ticket file sends exactly like one that carries files.
+    !isPreparingPhotos &&
+    !photoProblem &&
     Boolean(tripStartDate && tripEndDate && toLocation.trim() && notes.trim() && ticketTotal > 0);
+
+  /** Adds the picked photos to the ones already on the form — one at a time or several at once. */
+  async function addPhotos(files: FileList | null) {
+    const picked = files ? Array.from(files) : [];
+    if (picked.length === 0) return;
+    setIsPreparingPhotos(true);
+    setMessage(null);
+    let refusal: string | null = null;
+    const added: PickedPhoto[] = [];
+    try {
+      const room = Math.max(0, MEDICAL_REP_MAX_PHOTOS - attachments.length);
+      for (const file of picked) {
+        if (!looksLikePhoto(file)) {
+          refusal ??= `"${file.name}" is not a photo. Choose a photo (JPG or PNG).`;
+          continue;
+        }
+        if (added.length >= room) {
+          refusal ??= `At most ${MEDICAL_REP_MAX_PHOTOS} photos can be attached. The first ${MEDICAL_REP_MAX_PHOTOS} were kept.`;
+          continue;
+        }
+        try {
+          const shrunk = await shrinkPhoto(file);
+          added.push({
+            file: shrunk,
+            key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            previewUrl: URL.createObjectURL(shrunk),
+          });
+        } catch (error) {
+          refusal ??= error instanceof Error ? error.message : `"${file.name}" could not be added.`;
+        }
+      }
+      setAttachments((current) => [...current, ...added].slice(0, MEDICAL_REP_MAX_PHOTOS));
+      setMessage(refusal);
+    } finally {
+      setIsPreparingPhotos(false);
+      // A new key clears the picker, so choosing the SAME photo again still fires change.
+      setFileInputKey((value) => value + 1);
+    }
+  }
+
+  function removePhoto(key: string) {
+    setAttachments((current) => {
+      const gone = current.find((photo) => photo.key === key);
+      if (gone) URL.revokeObjectURL(gone.previewUrl);
+      return current.filter((photo) => photo.key !== key);
+    });
+  }
 
   async function submitExpense(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
 
     if (!canSend) {
-      setMessage("Complete the required fields before submitting.");
+      setMessage(photoProblem ?? "Complete the required fields before submitting.");
       return;
     }
 
@@ -309,7 +386,7 @@ export function MedicalRepExpensesWorkspace({
     formData.set("returnTicketAmount", returnTicketAmount);
     formData.set("amWorkload", amWorkload || "0");
     formData.set("pmWorkload", pmWorkload || "0");
-    attachments.forEach((file) => formData.append("attachments", file));
+    attachments.forEach((photo) => formData.append("attachments", photo.file));
 
     setIsSubmitting(true);
     try {
@@ -331,6 +408,7 @@ export function MedicalRepExpensesWorkspace({
       setNotes("");
       setGoTicketAmount("");
       setReturnTicketAmount("");
+      attachments.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
       setAttachments([]);
       setFileInputKey((value) => value + 1);
       setMessage("Expense submitted.");
@@ -404,25 +482,65 @@ export function MedicalRepExpensesWorkspace({
               </div>
 
               <div className="md:col-span-4">
-                <FormField label="Attachment (optional)">
-                  <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
-                    <Upload className="h-4 w-4" />
+                <FormField label={`Photos (at least ${MEDICAL_REP_MIN_PHOTOS})`}>
+                  <label
+                    className={cn(
+                      "flex min-h-12 items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition",
+                      isPreparingPhotos || attachments.length >= MEDICAL_REP_MAX_PHOTOS
+                        ? "cursor-not-allowed opacity-70"
+                        : "cursor-pointer hover:bg-orange-100",
+                    )}
+                  >
+                    {isPreparingPhotos ? <LoadingSpinner /> : <Upload className="h-4 w-4" />}
                     <span className="break-words">
-                      {attachments.length > 0
-                        ? `${countLabel(attachments.length, "file", "files")} selected`
-                        : "Upload ticket"}
+                      {isPreparingPhotos
+                        ? "Adding photos…"
+                        : attachments.length === 0
+                          ? "Take or upload photos"
+                          : attachments.length >= MEDICAL_REP_MAX_PHOTOS
+                            ? `${countLabel(attachments.length, "photo", "photos")} added`
+                            : `${countLabel(attachments.length, "photo", "photos")} added — add more`}
                     </span>
                     <input
                       key={fileInputKey}
-                      accept="application/pdf,image/jpeg,image/png"
+                      accept="image/*"
                       className="hidden"
+                      disabled={isPreparingPhotos || attachments.length >= MEDICAL_REP_MAX_PHOTOS}
                       multiple
-                      onChange={(event) =>
-                        setAttachments(event.target.files ? Array.from(event.target.files) : [])
-                      }
+                      onChange={(event) => void addPhotos(event.target.files)}
                       type="file"
                     />
                   </label>
+                  {attachments.length > 0 ? (
+                    <ul className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                      {attachments.map((photo, index) => (
+                        <li className={`grid gap-1 border border-slate-200 bg-white p-1 ${adminSoftDepthClassName}`} key={photo.key}>
+                          {/* eslint-disable-next-line @next/next/no-img-element -- a local blob preview, never a remote image */}
+                          <img
+                            alt={`Photo ${index + 1}`}
+                            className="aspect-square w-full object-cover"
+                            src={photo.previewUrl}
+                          />
+                          <button
+                            className="min-h-8 text-xs font-bold text-orange-700 hover:underline"
+                            onClick={() => removePhoto(photo.key)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p
+                    className={cn(
+                      "mt-2 text-sm font-semibold",
+                      photoProblem ? "text-amber-800" : "text-emerald-700",
+                    )}
+                  >
+                    {photoProblem ??
+                      `${countLabel(attachments.length, "photo", "photos")} ready. You can add up to ${MEDICAL_REP_MAX_PHOTOS}.`}
+                  </p>
                 </FormField>
               </div>
 
