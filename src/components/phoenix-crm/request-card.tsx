@@ -31,6 +31,7 @@ import {
   RETURN_NOTE_REQUIRED,
   RETURN_REPLY_REQUIRED,
   requestStageLabel,
+  sameNameOnSeatText,
   setsAdmissionGrades,
 } from "@/lib/phoenix-crm/list-request-rules";
 import type { PhoenixCrmGrade, PhoenixCrmRequestStatus } from "@/lib/phoenix-crm/types";
@@ -405,6 +406,11 @@ export function RequestCard({
             />
           </CrmField>
           {heldOnPlaceChecks ? <CrmNote tone="warn">{heldOnPlaceChecks}</CrmNote> : null}
+          {request.sameNameOnSeat && request.sameNameOnSeat.length > 0 ? (
+            <CrmNote title="The same name is on this territory already" tone="warn">
+              {sameNameOnSeatText(request.sameNameOnSeat)}
+            </CrmNote>
+          ) : null}
           {request.stage === "manager" ? (
             <p className="break-words text-xs font-semibold leading-5 text-slate-500">Approving hands it to SFE, who decides the last step. Refusing ends it.</p>
           ) : null}

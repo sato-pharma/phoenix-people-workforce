@@ -82,6 +82,9 @@ export function runPhoenixCrmAmPmWordTests() {
     // The question put to the model about a visit comment (comment-reading.ts). Reps write about doctors in those
     // comments and no rep or manager ever reads the question, and the wording is what the sample was checked on.
     /^\s*"(stock|price|follow_up): /,
+    // The honorific `phoenix_crm_fold_name` drops from a typed name ("Doctor Ahmed Ali" folds to "ahmed ali"),
+    // in name-fold.ts's own list — matched as a whole entry so the word never reaches a screen through it.
+    /^\s*"doctor",$/,
   ];
 
   const files: string[] = [];

@@ -27,7 +27,7 @@ import { parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { isMissedRecordDay, parseMissedActivity, parseMissedVisit, parseRemoveMissedVisit } from "@/lib/phoenix-crm/missed-records";
 import { isPharmacyListType, parseListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
-import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
+import { managerChain, personKey, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
 import {
   readTestFlag,
   territoryForMissedRecord,
@@ -46,6 +46,7 @@ import { plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
 import { companyToStorage } from "@/lib/phoenix-crm/visit-company";
 import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { reviewerWasOnTheVisit, unplannedFirstStatus } from "@/lib/phoenix-crm/unplanned-rules";
+import { departedBy } from "@/lib/phoenix-crm/server/departures";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -175,6 +176,18 @@ export async function loadMissedRecordForm(
   };
 }
 
+/**
+ * A missed record is entered as the seat's rep, and the organogram keeps a leaver in his seat until HR moves
+ * him (sweep, 11 Nov 2026): a day after his last working day is nobody's, so it is refused rather than
+ * credited to someone who was gone. A day he still worked is entered as before.
+ */
+async function refuseADayAfterTheRepLeft(repHrId: string, day: string, isTest: boolean): Promise<void> {
+  if (isTest) return;
+  if ((await departedBy([repHrId], day)).has(personKey(repHrId) ?? "")) {
+    throw validationError("This territory's rep had left by that day, so nothing can be entered on it.");
+  }
+}
+
 // ── Entering a missed visit ─────────────────────────────────────────────────────────────────────
 
 export type EnteredMissedVisit = {
@@ -194,6 +207,7 @@ export async function enterMissedVisit(viewer: PhoenixCrmViewer, raw: unknown): 
   const parsed = parseMissedVisit(body, viewer.visitDay);
   if (!parsed.ok) throw validationError(parsed.error);
   const entry = parsed.value;
+  await refuseADayAfterTheRepLeft(repHrId, entry.visitDate, isTest);
 
   // The products discussed, when he chose any, come from the line's own list, exactly as on a rep's visit.
   if (entry.products.length > 0) {
@@ -300,6 +314,8 @@ export async function enterMissedActivity(
   const parsed = parseMissedActivity(body, viewer.visitDay);
   if (!parsed.ok) throw validationError(parsed.error);
   const entry = parsed.value;
+  // Clearing a day he entered himself stays open: only filling one dated after the rep left is refused.
+  if (!entry.clear) await refuseADayAfterTheRepLeft(repHrId, entry.activityDate, isTest);
 
   // 🔴 The rep's own record stays his. The Super Admin fills a day the rep left empty, and changes or
   // clears only what he entered himself.

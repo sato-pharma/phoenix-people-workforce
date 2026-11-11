@@ -6,6 +6,7 @@ import {
   hammingDistance,
   hashHalves,
   isComparableHash,
+  isAdministratorCapture,
   judgePhotoDuplicate,
   PHOENIX_CRM_STRONG_PHOTO_FLAGS,
   PHOTO_DHASH_MAX_DISTANCE,
@@ -155,6 +156,33 @@ export function runPhoenixCrmDuplicatePhotosTests(): void {
       photo({ subjectId: "VISIT-OLD", photoPath: "old.jpg", customerId: null, dhash: near, sha256: "c".repeat(64) }),
     ]);
     assert.deepEqual(unlinked.flags, ["photo_near_identical"], "two unknown customers are not one known customer");
+  }
+
+  // ── 3b. 🔴 The administrator files evidence, he does not capture it (sweep, 11 Nov 2026) ─────────
+  //
+  // Six validations the owner made for Nada Saied on 10 Nov attached pictures already on file, and reached the
+  // SFE Manager's board as exact duplicates. His captures are neither judged nor matched against — and a rep who
+  // re-uses the original photograph is still caught by the original.
+  {
+    const bytes = "e".repeat(64);
+    const original = photo({ subjectId: "PLACE-REP", photoPath: "rep.jpg", repHrId: "B-129", customerId: "CUST-1", sha256: bytes });
+    const adminCopy = photo({ subjectKind: "place", subjectId: "PLACE-ADMIN", photoPath: "admin.jpg", repHrId: "B-10", customerId: "CUST-2", sha256: bytes });
+    assert.equal(isAdministratorCapture(adminCopy), true);
+    assert.equal(isAdministratorCapture({ repHrId: " b-10 " }), true, "compared as a person key, whatever the column's case and padding");
+    assert.equal(isAdministratorCapture(original), false);
+
+    const judgedAdmin = judgePhotoDuplicate(adminCopy, [original]);
+    assert.deepEqual(judgedAdmin.flags, [], "🔴 the owner's validation with a photo already on file is not a duplicate");
+    assert.equal(judgedAdmin.signals.administratorCapture, true, "and the record says why it was not compared");
+
+    const repReuse = photo({ subjectId: "VISIT-REUSE", photoPath: "reuse.jpg", repHrId: "B-300", customerId: "CUST-3", sha256: bytes });
+    assert.deepEqual(
+      judgePhotoDuplicate(repReuse, [adminCopy, original]).flags,
+      ["photo_exact_duplicate"],
+      "a rep re-using the picture still matches the ORIGINAL",
+    );
+    const matched = judgePhotoDuplicate(repReuse, [adminCopy, original]).signals.exactMatches as Array<{ subjectId: string }>;
+    assert.deepEqual(matched.map((entry) => entry.subjectId), ["PLACE-REP"], "and never the owner's copy of it");
   }
 
   // ── 4. The distance, and where it stops ────────────────────────────────────────────────────────

@@ -2080,6 +2080,7 @@ import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-inte
 import { runPhoenixCrmCustomerNameFoldTests } from "./phoenix-crm-customer-name-fold.test.ts";
 import { runPhoenixCrmDoctorOnceTests } from "./phoenix-crm-doctor-once.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
+import { runPhoenixCrmSweepTests } from "./phoenix-crm-sweep-2026-11-11.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
@@ -12172,6 +12173,7 @@ await runTest("Sales Drilldown premium pass (counts spelled out with their noun,
 await runTest("District Managers' Plans premium pass (a sent week its Thursday passed undecided reads Ended before it was approved, never Waiting; a vacant seat is never a manager who did not send; the tiles and bars add up to the seats and half-days, every bar to 100%; a chain visit is never a warning; a draft is never shown; a rep the Regional Sales Manager goes with, or on leave all week, is never alone; the filter narrows sections, never a figure; the Excel file holds every seat and half once; the export is the Regional Sales Manager's alone, rate-limited and audited)", runDistrictManagerPlansPremiumTests);
 await runTest("the code-scanning alerts that were real (9 Nov 2026): a sign-in returns only to a path on this site, a share-link passcode is a slow hash and old links still open, the email image check never reaches an internal host, seven slow text reads finish at once, and HTML is stripped whole and decoded once", runCodeqlRealAlertsTests);
 await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups its cards by region and district manager through the one shared rule, the meters and share bars add up, and the shared chrome stays flat, square and free of sideways scroll", runRepsListPremiumTests);
+await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page asks the database by uuid, never by the screen's own: id; the same-name check folds as the database does and the approver is told; an outside customer with a grade is filed for approval; a merged duplicate never comes back by a request; a seat's rep who left by the visit day is never credited and a missed day after it is refused; nobody who has left is told anything; and Validate again goes to whoever holds the seat now", runPhoenixCrmSweepTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
