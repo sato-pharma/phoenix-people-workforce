@@ -5274,9 +5274,6 @@ await runTest(
   runEmployeeRecordGapsTests,
 );
 await runTest(
-  "medical insurance: who should be in or out, the plan to the piastre, an invoice against it, and no amount ever reaches an HR seat",
-);
-await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
   + "no employee documents or payroll, every unticked page fenced in the sidebar, AppShell and the page APIs, "
   + "probation read without export, no recruitment alert audience, and the role open in all three CHECK constraints)",
