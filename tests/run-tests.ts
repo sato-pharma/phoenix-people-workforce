@@ -2683,6 +2683,7 @@ import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
+import { runInterviewCalendarUnreachableTests } from "./interview-calendar-unreachable.test.ts";
 import { runRecruitmentMrHiringAccessTests } from "./recruitment-mr-hiring-access.test.ts";
 import { runRecruitmentMrHiringAreaNoticeTests } from "./recruitment-mr-hiring-area-notice.test.ts";
 import { runRecruitmentMrHiringBookingTests } from "./recruitment-mr-hiring-booking.test.ts";
@@ -10453,6 +10454,11 @@ await runTest(
 await runTest(
   "the interview calendar's per-person .ics feed emits a valid VCALENDAR (empty for a stale token, one VEVENT per interview with UTC DTSTART/DTEND, escaped text, and the office or Zoom link as the location)",
   runInterviewCalendarIcsTests,
+);
+
+await runTest(
+  "the interview calendar keeps retrying a dropped read for about two minutes and at once when back online, never repeats a dropped save, and never shows the browser's raw Failed to fetch",
+  runInterviewCalendarUnreachableTests,
 );
 
 await runTest(
