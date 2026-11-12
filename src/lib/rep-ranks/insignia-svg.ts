@@ -74,17 +74,11 @@ const GOLD = `url(#${GOLD_ID})`;
 const GOLD_DARK = "#5c430b";
 const DEVICE_SHADOW_ID = "phx-rank-device-shadow";
 
-const DEFS = `<defs>
-  <linearGradient id="${GOLD_ID}" x1="0" x2="0.15" y1="0" y2="1">
-    <stop offset="0" stop-color="#fff6de"/>
-    <stop offset="0.22" stop-color="#fbe7a6"/>
-    <stop offset="0.55" stop-color="#e2b23f"/>
-    <stop offset="1" stop-color="#a97a14"/>
-  </linearGradient>
-  <filter id="${DEVICE_SHADOW_ID}" x="-30%" y="-30%" width="160%" height="160%">
-    <feDropShadow dx="0" dy="0.45" stdDeviation="0.5" flood-color="#000000" flood-opacity="0.55"/>
-  </filter>
-</defs>`;
+const DEFS_BODY = `<linearGradient id="${GOLD_ID}" x1="0" x2="0.15" y1="0" y2="1"><stop offset="0" stop-color="#fff6de"/><stop offset="0.22" stop-color="#fbe7a6"/><stop offset="0.55" stop-color="#e2b23f"/><stop offset="1" stop-color="#a97a14"/></linearGradient><filter id="${DEVICE_SHADOW_ID}" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="0.45" stdDeviation="0.5" flood-color="#000000" flood-opacity="0.55"/></filter>`;
+const DEFS = `<defs>${DEFS_BODY}</defs>`;
+
+/** The board's one copy of the eagle's artwork, which every eagle rank's symbol points at (see `insigniaSpriteDefs`). */
+export const EAGLE_ART_ID = "phx-rank-eagle-art";
 
 const STAR_RADIUS = 5.6;
 const f = (value: number): string => value.toFixed(2);
@@ -142,20 +136,31 @@ const COA_EAGLE_MARKUP = "<g fill=\"${GOLD}\" stroke=\"${GOLD_DARK}\"><g transfo
 
 let coaIdCounter = 0;
 
-/** The real eagle, its native 600×815.143 canvas centred on `(cx, cy)` and scaled to `h` tall. */
-function egyptEagle(cx: number, cy: number, h: number): string {
-  const idA = `phx-coa-a-${coaIdCounter}`;
-  const idB = `phx-coa-b-${coaIdCounter}`;
-  coaIdCounter += 1;
+/** The eagle's artwork on its native canvas, with its own pair of ids for the mirrored wing feathers. */
+function eagleArt(idA: string, idB: string): string {
+  return COA_EAGLE_MARKUP.replaceAll("${GOLD}", GOLD)
+    .replaceAll("${GOLD_DARK}", GOLD_DARK)
+    .replaceAll("${idA}", idA)
+    .replaceAll("${idB}", idB);
+}
+
+/**
+ * The real eagle, its native 600×815.143 canvas centred on `(cx, cy)` and scaled to `h` tall.
+ * `shared`: point at the board's one copy of the artwork (`EAGLE_ART_ID`) instead of drawing it here.
+ */
+function egyptEagle(cx: number, cy: number, h: number, shared: boolean): string {
   const nativeWidth = 600;
   const nativeHeight = 815.143;
   const s = h / nativeHeight;
   const tx = cx - (nativeWidth * s) / 2;
   const ty = cy - (nativeHeight * s) / 2;
-  const inner = COA_EAGLE_MARKUP.replaceAll("${GOLD}", GOLD)
-    .replaceAll("${GOLD_DARK}", GOLD_DARK)
-    .replaceAll("${idA}", idA)
-    .replaceAll("${idB}", idB);
+  let inner: string;
+  if (shared) {
+    inner = `<use href="#${EAGLE_ART_ID}"/>`;
+  } else {
+    inner = eagleArt(`phx-coa-a-${coaIdCounter}`, `phx-coa-b-${coaIdCounter}`);
+    coaIdCounter += 1;
+  }
   return `<g transform="translate(${f(tx)},${f(ty)}) scale(${f(s)})">${inner}</g>`;
 }
 
@@ -212,7 +217,7 @@ function chevrons(count: number): string {
   }).join("")}</g>`;
 }
 
-function shape(insignia: RankInsignia): string {
+function shape(insignia: RankInsignia, shared = false): string {
   // NINTH pass — "remove the what's behind them, I need them to be icons with transparent
   // background" (owner, 2026-10-06). The third pass's `plate()` (a dark radial-vignette board with a
   // metallic bevel) was built to match a reference photo of a real shoulder board, but it fought every
@@ -229,20 +234,37 @@ function shape(insignia: RankInsignia): string {
     case "stars":
       return device(starRow(insignia.count, 32, 16, 16, insignia.count === 3 ? 5.8 : 6.6));
     case "eagle":
-      if (insignia.stars === 0) return device(egyptEagle(32, 16, 22));
+      if (insignia.stars === 0) return device(egyptEagle(32, 16, 22, shared));
       // One or two stars get room for a bigger eagle; three are set tighter so neither crowds the box.
       return device(
-        egyptEagle(insignia.stars === 3 ? 21 : 23, 16, insignia.stars === 3 ? 17 : 19) +
+        egyptEagle(insignia.stars === 3 ? 21 : 23, 16, insignia.stars === 3 ? 17 : 19, shared) +
           starRow(insignia.stars, insignia.stars === 3 ? 47.5 : 48, 16, insignia.stars === 3 ? 8.2 : 11, insignia.stars === 3 ? 4.3 : 5.2),
       );
     case "eagle-swords":
-      return device(egyptEagle(24, 15.5, 17) + crossedSwords(49, 17, 13));
+      return device(egyptEagle(24, 15.5, 17, shared) + crossedSwords(49, 17, 13));
   }
 }
 
-/** Everything inside the badge's `<svg>`: the gold and the shape, on a 64×32 box. */
+/** Everything inside the badge's `<svg>`: the gold and the shape, on a 64×32 box. Standalone — the certificate prints it. */
 export function insigniaSvgInner(insignia: RankInsignia): string {
   return DEFS + shape(insignia);
+}
+
+/**
+ * The board's sprite draws the shared parts ONCE (12 Nov 2026, owner: "make the Ranks page lighter
+ * too"): the gold, the shadow and the eagle's 21 KB of artwork. Five ranks wear the eagle, and every
+ * rank's symbol used to carry its own copy of all three — 135 KB of sprite, sent twice (the page and
+ * its data). `insigniaSpriteDefs` goes in the sprite's `<defs>`; `insigniaSymbolInner` is one rank's
+ * symbol, which points at them. Same geometry, same look — tests/rep-ranks.test.ts pins that each
+ * symbol, with the artwork put back, is the certificate's drawing.
+ */
+export function insigniaSpriteDefs(): string {
+  return `${DEFS_BODY}<g id="${EAGLE_ART_ID}">${eagleArt("phx-coa-a-sprite", "phx-coa-b-sprite")}</g>`;
+}
+
+/** One rank's sprite symbol: the shape alone, pointing at `insigniaSpriteDefs` for the gold and the eagle. */
+export function insigniaSymbolInner(insignia: RankInsignia): string {
+  return shape(insignia, true);
 }
 
 /** A whole standalone badge, `width` wide (any CSS length) and half as tall. */

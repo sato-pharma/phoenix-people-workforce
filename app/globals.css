@@ -1022,6 +1022,38 @@ html:has(.admin-shell) {
   }
 }
 
+/* Phoenix Ranks: one score bar of a rep's card (PillarBars, rep-ranks-board.tsx). Short shared names
+   instead of the same six Tailwind strings on every bar: a board of 74 reps paints about 960 bars, and
+   each string travelled twice (the page and its data). Same look, the same utilities, applied here once
+   (owner, 12 Nov 2026: "make the Ranks page lighter too"). Square edges, no ellipsis: nothing here rounds
+   or truncates. tests/rep-ranks.test.ts pins the classes and the look. */
+@layer components {
+  .rkp {
+    @apply min-w-0;
+  }
+  .rkp-h {
+    @apply flex flex-wrap items-baseline justify-between gap-x-2;
+  }
+  .rkp-l {
+    @apply break-words text-phx-md font-bold text-slate-700;
+  }
+  .rkp-lb {
+    @apply break-words text-phx-md font-bold text-sky-700;
+  }
+  .rkp-v {
+    @apply text-phx-base font-black tabular-nums text-slate-900;
+  }
+  .rkp-vn {
+    @apply text-phx-base font-black tabular-nums text-slate-400;
+  }
+  .rkp-t {
+    @apply mt-1 h-2 w-full bg-slate-100;
+  }
+  .rkp-f {
+    @apply h-full;
+  }
+}
+
 /* The badge's fill again, over the glow, so the glow only ever shows OUTSIDE the badge. */
 .nav-badge-alarm::before,
 .nav-badge-alarm-overdue::before,

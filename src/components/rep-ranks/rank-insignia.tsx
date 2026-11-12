@@ -3,7 +3,7 @@
 // page. Why each rank looks as it does (the owner's "real Egyptian insignia", every rank distinct,
 // on a transparent ground, square-edged): the head of that file.
 
-import { insigniaSvgInner } from "@/lib/rep-ranks/insignia-svg";
+import { insigniaSpriteDefs, insigniaSymbolInner } from "@/lib/rep-ranks/insignia-svg";
 import { RANK_LADDER, type MilitaryRank } from "@/lib/rep-ranks/ladder";
 
 /** The sprite symbol every badge of one rank points at — one per ladder level, so no two ranks share a drawing. */
@@ -18,14 +18,20 @@ export function insigniaSymbolId(rank: Pick<MilitaryRank, "level">): string {
  * payload, for twelve distinct pictures. Rendered once per page, at the top of the board, ahead of the
  * first badge. Hidden by size, never `display: none`: a hidden-by-display sprite leaves its gradients
  * unrendered in some browsers.
+ *
+ * The gold, the shadow and the eagle's artwork are drawn once more, in the sprite's own `<defs>`, and
+ * every rank's symbol points at them (12 Nov 2026, "make the Ranks page lighter too" — five ranks
+ * each carried their own 21 KB eagle).
  */
 export function RankInsigniaSprite() {
   return (
     <svg aria-hidden="true" className="absolute h-0 w-0 overflow-hidden" focusable="false" height={0} width={0}>
+      {/* Built from the ladder's own constants, never from user input. */}
+      <defs dangerouslySetInnerHTML={{ __html: insigniaSpriteDefs() }} />
       {RANK_LADDER.map((rank) => (
         <symbol
           // The markup is built from the ladder's own constants, never from user input.
-          dangerouslySetInnerHTML={{ __html: insigniaSvgInner(rank.insignia) }}
+          dangerouslySetInnerHTML={{ __html: insigniaSymbolInner(rank.insignia) }}
           id={insigniaSymbolId(rank)}
           key={rank.level}
           viewBox="0 0 64 32"
