@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 import bcrypt from "bcryptjs";
 
-import { systemAuthEmailText } from "@/config/system-settings";
+import { systemAuthEmailText, systemDeployment } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveStoredLoginId } from "@/lib/auth/credentials";
 import {
@@ -18,12 +18,24 @@ import {
 } from "@/lib/auth/password-reset-code";
 import {
   composePasswordSetupWhatsAppMessage,
+  composeTemporaryPasswordMessage,
+  composeTemporaryPasswordWhatsAppMessage,
   passwordSetupWhatsAppUrl,
+  temporaryPasswordExpiryLabel,
 } from "@/lib/auth/password-setup-whatsapp";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
+import {
+  createReadableTemporaryPassword,
+  TEMPORARY_PASSWORD_METRIC_LABEL,
+  TEMPORARY_PASSWORD_SIGN_IN_LABEL,
+  TEMPORARY_PASSWORD_USERNAME_LABEL,
+  temporaryPasswordExpiryMs,
+  temporaryPasswordSetupTokenExpiryMs,
+} from "@/lib/auth/temporary-password";
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { toDialableLocalMobile, toWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -269,14 +281,28 @@ export async function sendPasswordSetupLink(input: {
     );
   }
 
-  // Resolved BEFORE the token is minted, like the email address above: every path below invalidates the
-  // person's outstanding tokens, bumps session_version and sets force_password_reset, so failing after
-  // that point would sign someone out to produce an error message.
+  // Resolved BEFORE anything is written, like the email address above: every path below signs the
+  // person out and changes what their password is, so failing after that point would sign someone out
+  // to produce an error message.
   const whatsAppNumber = deliveryMode === "whatsapp" ? await resolveWhatsAppNumber(user) : null;
   if (deliveryMode === "whatsapp" && !whatsAppNumber) {
     throw new Error(
       `User ${loginId} has no readable mobile number on the employee register, so no WhatsApp chat can be opened. Use the copy-link delivery mode instead.`,
     );
+  }
+
+  // EMAIL AND WHATSAPP SEND A USERNAME, A TEMPORARY PASSWORD AND THE SIGN-IN LINK, NOT A SETUP LINK
+  // (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts), and the same three go to the person's
+  // Telegram when it is connected. Copy mode alone still hands back a one-time setup link.
+  if ((deliveryMode === "email" && deliverableEmail) || (deliveryMode === "whatsapp" && whatsAppNumber)) {
+    return sendTemporaryPassword({
+      actorLoginId: input.actorLoginId ?? null,
+      channel: deliveryMode === "email" ? { deliverableEmail: deliverableEmail!, kind: "email" } : { kind: "whatsapp", whatsAppNumber: whatsAppNumber! },
+      emailTo: input.emailTo ?? null,
+      governanceReason: input.governanceReason ?? null,
+      purpose: input.purpose ?? (user.force_password_reset ? "setup" : "reset"),
+      user,
+    });
   }
 
   const purpose = input.purpose ?? (user.force_password_reset ? "setup" : "reset");
@@ -322,6 +348,8 @@ export async function sendPasswordSetupLink(input: {
     .update({
       force_password_reset: true,
       session_version: currentVersion + 1,
+      // A link replaces any emailed temporary password: from here that password opens nothing.
+      temporary_password_expires_at: null,
       updated_at: now,
     })
     .eq("login_id", loginId);
@@ -463,6 +491,267 @@ export async function sendPasswordSetupLink(input: {
   } satisfies PasswordSetupLinkResult;
 }
 
+/**
+ * The username, temporary password and sign-in link (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts),
+ * by email or as a WhatsApp message written into the person's own chat, and to their Telegram when it
+ * is connected.
+ *
+ * The temporary password REPLACES the stored one at once (so any old password dies here, as a reset
+ * should) and is kept only as a bcrypt hash; its plain text lives in memory and in the messages. The
+ * email is stamped `credentialEmail: "temporary_password"`, so the outbox seals it while it waits and
+ * deletes it once finished, the stored copy of the rendered email has it removed, and it is never
+ * mirrored to the admin Telegram. The Telegram copy is sent straight to the person's chat and is not
+ * stored as a notice. The audit row says what was sent and where, never what the password was.
+ */
+async function sendTemporaryPassword(input: {
+  actorLoginId: string | null;
+  channel: { deliverableEmail: string; kind: "email" } | { kind: "whatsapp"; whatsAppNumber: string };
+  emailTo: "private" | "work" | null;
+  governanceReason: string | null;
+  purpose: "reset" | "setup";
+  user: Awaited<ReturnType<typeof getAuthUser>>;
+}): Promise<PasswordSetupLinkResult> {
+  const { channel, purpose, user } = input;
+  const loginId = user.login_id;
+  const temporaryPassword = createReadableTemporaryPassword();
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  const expiresAt = new Date(Date.now() + temporaryPasswordExpiryMs).toISOString();
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+  const currentVersion = (() => {
+    const version = Number((user as { session_version?: unknown }).session_version);
+    return Number.isFinite(version) && version > 0 ? version : 1;
+  })();
+
+  // An outstanding setup link would otherwise still set a password beside the temporary one.
+  await invalidateOutstandingTokens(loginId);
+
+  const { error: updateError } = await supabase
+    .from("app_auth_users")
+    .update({
+      force_password_reset: true,
+      password_hash: passwordHash,
+      session_version: currentVersion + 1,
+      temporary_password_expires_at: expiresAt,
+      updated_at: now,
+    })
+    .eq("login_id", loginId);
+  if (updateError) throw updateError;
+
+  // The Supabase side gets the same temporary password, so no OLD password stays live there (the anon
+  // key signs in with it). Non-fatal like every bridge sync — the sign-in route repairs the bridge.
+  // A test account has no Supabase identity (src/lib/auth/test-persona.ts).
+  let bridgeWarning: string | null = null;
+  if (user.is_test_persona !== true) try {
+    const role = String(user.role ?? "Employee") as Parameters<typeof provisionSupabaseAuthIdentity>[0]["role"];
+    const identity = await provisionSupabaseAuthIdentity({
+      authUserId: user.auth_user_id ?? null,
+      email: user.email ?? null,
+      hrId: user.hr_id ?? loginId,
+      isActive: Boolean(user.is_active),
+      line: user.line ?? null,
+      loginId,
+      managerHrId: user.manager_hr_id ?? null,
+      name: user.name ?? loginId,
+      password: temporaryPassword,
+      role,
+    });
+    await persistSupabaseAuthIdentityLink({
+      authEmail: identity.authEmail,
+      authUserId: identity.authUserId,
+      coarseRole: identity.coarseRole,
+      email: user.email ?? null,
+      hrId: user.hr_id ?? loginId,
+      isActive: Boolean(user.is_active),
+      line: user.line ?? null,
+      loginId,
+      managerHrId: user.manager_hr_id ?? null,
+      name: user.name ?? loginId,
+      role,
+    });
+  } catch (error) {
+    bridgeWarning = error instanceof Error ? error.message : "Supabase auth bridge sync failed.";
+  }
+
+  // Always the production address (owner: "the production link"), wherever the button was pressed.
+  const signInUrl = `${systemDeployment.productionUrl}/login`;
+  const credentials = {
+    expiresAt,
+    loginId,
+    name: user.name ?? "",
+    purpose,
+    signInUrl,
+    temporaryPassword,
+  } as const;
+
+  let emailSent = false;
+  let emailQueuedForRetry = false;
+  let emailFailure: string | null = null;
+  let whatsAppUrl: string | null = null;
+
+  if (channel.kind === "email") {
+    const title = purpose === "setup" ? systemAuthEmailText.credentialsSetupTitle : systemAuthEmailText.credentialsResetTitle;
+    const emailResult = await createSystemNotification({
+      actorId: input.actorLoginId ?? "system",
+      channels: ["email"],
+      email: {
+        candidateEmail: channel.deliverableEmail,
+        chosenMailbox: input.emailTo ? channel.deliverableEmail : null,
+        credentialEmail: "temporary_password",
+        ctaHref: "/login",
+        ctaLabel: "Sign in",
+        // The order the owner asked for: username, password, then the production link.
+        metrics: [
+          { label: TEMPORARY_PASSWORD_USERNAME_LABEL, value: loginId },
+          { label: TEMPORARY_PASSWORD_METRIC_LABEL, value: temporaryPassword },
+          { label: TEMPORARY_PASSWORD_SIGN_IN_LABEL, value: signInUrl },
+          { label: "Valid until", value: temporaryPasswordExpiryLabel(expiresAt) },
+        ],
+        notificationType: purpose === "setup" ? "user_created" : "password_reset",
+        recipientMode: "candidate",
+        recipientName: user.name?.trim() || undefined,
+        recipients: [channel.deliverableEmail],
+        subject: purpose === "setup" ? systemAuthEmailText.credentialsSetupSubject : systemAuthEmailText.credentialsResetSubject,
+        summary: systemAuthEmailText.credentialsSummary,
+        title,
+        tone: "warning",
+      },
+      eventType: purpose === "setup" ? "account_credentials_sent" : "temporary_password_sent",
+      message: systemAuthEmailText.credentialsSummary,
+      metadata: {
+        // Keyed on a digest of the HASH, never the password: the key is stored.
+        idempotencyKey: `temporary-password:${loginId}:${crypto.createHash("sha256").update(passwordHash).digest("hex").slice(0, 32)}`,
+        loginId,
+        purpose,
+      },
+      module: purpose === "setup" ? "password_setup" : "password_reset",
+      priority: "high",
+      recipientHrId: user.hr_id,
+      recipientUserId: loginId,
+      title,
+    });
+
+    // A first try that did not leave is recorded `sent` with `queuedForRetry`: it is not a send.
+    const emailDelivery = emailResult.deliveries.find((delivery) => delivery.channel === "email");
+    emailSent = emailResult.deliveries.some(
+      (delivery) => delivery.channel === "email" && delivery.status === "sent" && !delivery.queuedForRetry,
+    );
+    emailQueuedForRetry = emailDelivery?.queuedForRetry === true;
+    emailFailure = emailSent || emailQueuedForRetry ? null : emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete.";
+  } else {
+    // Composed HERE and handed back once, for the admin to press send in his own WhatsApp — never
+    // stored or logged. An automatic send is not possible: see src/lib/auth/password-setup-whatsapp.ts.
+    whatsAppUrl = passwordSetupWhatsAppUrl(channel.whatsAppNumber, composeTemporaryPasswordWhatsAppMessage(credentials));
+  }
+
+  const telegram = await sendTemporaryPasswordTelegram(user, composeTemporaryPasswordMessage(credentials));
+  const whatsAppLocalNumber = channel.kind === "whatsapp" ? toDialableLocalMobile(channel.whatsAppNumber) : null;
+
+  await writeRequiredAuditLog({
+    actorLoginId: input.actorLoginId,
+    entityId: loginId,
+    entityType: "user",
+    newValues: {
+      action: "temporary_password_sent",
+      bridgeWarning,
+      delivery:
+        channel.kind === "whatsapp"
+          ? "whatsapp_message_prepared"
+          : emailSent
+            ? "email_sent"
+            : emailQueuedForRetry
+              ? "email_queued_for_retry"
+              : "email_not_delivered",
+      deliveryMode: channel.kind,
+      emailTo: input.emailTo,
+      expiresAt,
+      password: "[redacted]",
+      purpose,
+      reason: input.governanceReason,
+      sentTo: channel.kind === "email" ? channel.deliverableEmail : null,
+      sentToWhatsApp: whatsAppLocalNumber,
+      telegram: telegram.outcome,
+      url: "[redacted]",
+    },
+    oldValues: null,
+    summary: `${channel.kind === "email" ? "Sent" : "Prepared WhatsApp with"} username and temporary password for ${loginId}`,
+  });
+
+  const telegramNote = telegram.outcome === "sent" ? " Also sent to their Telegram." : "";
+  const deliveryMessage =
+    channel.kind === "whatsapp"
+      ? `WhatsApp message ready for ${user.name?.trim() || loginId} on ${whatsAppLocalNumber}, with the username, temporary password and sign-in link. Open the chat and press send.${telegramNote}`
+      : emailQueuedForRetry
+        ? `Temporary password set, but the email has not left yet. Phoenix will try again. If it does not arrive, send it again.${telegramNote}`
+        : emailFailure
+          ? `Temporary password set but the email was not delivered: ${emailFailure}${telegramNote}`
+          : `Username and temporary password sent to ${channel.deliverableEmail}.${telegramNote}`;
+
+  return {
+    deliveryMessage,
+    deliveryMode: channel.kind,
+    ...(channel.kind === "email" ? { emailDelivered: emailSent, emailQueuedForRetry } : {}),
+    expiresAt,
+    loginId,
+    ...(whatsAppUrl ? { whatsAppUrl } : {}),
+  };
+}
+
+/**
+ * The same three things on the person's Telegram, when they have connected it. Sent straight to their
+ * chat — not through createSystemNotification, which would store the text as a notice on the bell.
+ * A person with no connected Telegram is simply skipped: a bot cannot start a chat with a phone number.
+ * Never throws: Telegram is an extra copy, and its failure must not undo the email or the WhatsApp.
+ */
+async function sendTemporaryPasswordTelegram(
+  user: { hr_id?: string | null; login_id: string },
+  message: string,
+): Promise<{ outcome: "sent" | "not_connected" | "failed" }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const byLogin = await supabase
+      .from("telegram_connections")
+      .select("telegram_chat_id,status")
+      .ilike("user_id", user.login_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byLogin.error) throw byLogin.error;
+    let connection = byLogin.data as { status?: string | null; telegram_chat_id?: string | number | null } | null;
+    const hrId = String(user.hr_id ?? "").trim();
+    if (!connection && hrId) {
+      const byHrId = await supabase
+        .from("telegram_connections")
+        .select("telegram_chat_id,status")
+        .eq("hr_id", hrId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (byHrId.error) throw byHrId.error;
+      connection = byHrId.data as typeof connection;
+    }
+    if (connection?.status !== "connected" || !connection.telegram_chat_id) return { outcome: "not_connected" };
+
+    const result = await sendTelegramNotification({
+      chatId: String(connection.telegram_chat_id),
+      keepParagraphs: true,
+      message,
+      title: "Your Phoenix Workforce sign-in",
+    });
+    return { outcome: result.skipped ? "failed" : "sent" };
+  } catch {
+    return { outcome: "failed" };
+  }
+}
+
+/**
+ * The setup token a correct TEMPORARY password earns at sign-in (app/api/auth/login): 15 minutes, on the
+ * existing /password-setup screen, which signs the person in once they have chosen their own password.
+ */
+export async function mintTemporaryPasswordSetupToken(loginId: string): Promise<string> {
+  return mintPasswordSetupTokenForLogin(loginId, "setup", temporaryPasswordSetupTokenExpiryMs);
+}
+
 async function getPasswordSetupToken(token: string) {
   if (!token) {
     throw new Error("Password setup token is required.");
@@ -591,6 +880,7 @@ export async function completePasswordSetup(input: { password: string; token: st
     .update({
       force_password_reset: false,
       password_hash: passwordHash,
+      temporary_password_expires_at: null,
       session_version: 1 + Number(
         Number.isFinite((currentUser as { session_version?: unknown }).session_version)
           ? (currentUser as { session_version?: number }).session_version

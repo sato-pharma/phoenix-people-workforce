@@ -4,6 +4,8 @@ import { Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 import { systemIdentity } from "@/config/system-settings";
+import { markSessionActivity } from "@/lib/auth/client-session";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type Props = {
@@ -33,16 +35,40 @@ type Props = {
   loginId: string;
   name: string;
   purpose: "reset" | "setup";
+  /**
+   * True when the person arrived by signing in with the emailed TEMPORARY password (owner, 12 Nov 2026):
+   * once their own password is saved they are signed in with it and taken inside their account. If that
+   * sign-in does not go through, the ordinary "Password saved — go to sign in" screen is shown instead.
+   */
+  signInAfter?: boolean;
   token: string;
 };
 
-export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, token }: Props) {
+export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, signInAfter = false, token }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const displayLoginId = formatHrIdForDisplay(hrId) ?? loginId;
+
+  // The full sign-in route, with the password the person just chose: every gate it applies still runs.
+  async function signInWithNewPassword(newPassword: string): Promise<boolean> {
+    try {
+      const response = await fetch("/api/auth/login", {
+        body: JSON.stringify({ loginId, password: newPassword }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) return false;
+      const payload = (await response.json().catch(() => null)) as { user?: { role?: string | null } } | null;
+      markSessionActivity();
+      window.location.assign(resolveLandingPathForRole(payload?.user?.role));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async function submitForm(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,6 +86,8 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, t
       if (!response.ok) {
         throw new Error(payload?.message ?? "Password setup failed.");
       }
+
+      if (signInAfter && (await signInWithNewPassword(password))) return;
 
       setIsComplete(true);
       setPassword("");
@@ -96,10 +124,18 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, t
       <section className="mx-auto max-w-xl border border-white/10 bg-[linear-gradient(145deg,rgba(19,22,27,0.92),rgba(5,6,8,0.98))] p-8 shadow-[0_30px_70px_rgba(0,0,0,0.55)]">
         <p className="text-sm font-black uppercase tracking-[0.24em] text-[#ff7900]">{systemIdentity.appName}</p>
         <h1 className="mt-5 text-3xl font-black text-white">
-          {purpose === "setup" ? "Create your password" : "Reset your password"}
+          {signInAfter ? "Choose your own password" : purpose === "setup" ? "Create your password" : "Reset your password"}
         </h1>
         <p className="mt-3 text-base leading-7 text-white/72">
-          {name} will sign in with <span className="font-semibold text-white">{displayLoginId}</span> after this step.
+          {signInAfter ? (
+            <>
+              Welcome, {name}. You signed in with a temporary password. Choose your own password to open your account — the temporary one stops working once you save.
+            </>
+          ) : (
+            <>
+              {name} will sign in with <span className="font-semibold text-white">{displayLoginId}</span> after this step.
+            </>
+          )}
         </p>
 
         <div className="mt-6 border border-[#ff7900]/20 bg-[#ff7900]/8 p-4 text-sm text-white/80">
@@ -107,7 +143,7 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, t
             <ShieldCheck className="h-4 w-4" />
             One-time secure setup
           </div>
-          {expiryLabel ? <p className="mt-2">This link expires on {expiryLabel} Cairo time.</p> : null}
+          {expiryLabel && !signInAfter ? <p className="mt-2">This link expires on {expiryLabel} Cairo time.</p> : null}
         </div>
 
         <form className="mt-8 space-y-5" onSubmit={submitForm}>
@@ -144,7 +180,7 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, t
             type="submit"
           >
             {isSaving ? <span className="h-5 w-5 animate-spin border-2 border-white/35 border-t-white" /> : <Lock className="h-5 w-5" />}
-            {isSaving ? "Saving..." : purpose === "setup" ? "Create password" : "Reset password"}
+            {isSaving ? "Saving..." : signInAfter ? "Save and open my account" : purpose === "setup" ? "Create password" : "Reset password"}
           </button>
         </form>
       </section>

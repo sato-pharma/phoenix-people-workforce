@@ -18,6 +18,9 @@ export const CREDENTIAL_REMOVED = "[removed]";
 
 const SETUP_LINK_TOKEN = /(password-setup\/)[A-Za-z0-9_-]{16,}/g;
 const RESET_CODE = /(?<![#\w])\d{6}(?!\w)/g;
+// The emailed temporary password's one shape, `Phx-Ab3d-K7mq-9TxR` (src/lib/auth/temporary-password.ts,
+// TEMPORARY_PASSWORD_PATTERN — kept as a copy here so this module pulls in no node:crypto).
+const TEMPORARY_PASSWORD = /Phx-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}(?![A-Za-z0-9])/g;
 
 /** Any set-your-password link in the text, with its token removed. */
 export function redactCredentialLinks(text: string): string {
@@ -31,7 +34,9 @@ export function redactCredentialLinks(text: string): string {
 export function redactCredentialEmailBody(text: string, credentialEmail: unknown): string {
   if (!isCredentialEmailKind(credentialEmail)) return text;
   const withoutLinks = redactCredentialLinks(text);
-  return credentialEmail === "password_reset_code" ? withoutLinks.replace(RESET_CODE, CREDENTIAL_REMOVED) : withoutLinks;
+  if (credentialEmail === "password_reset_code") return withoutLinks.replace(RESET_CODE, CREDENTIAL_REMOVED);
+  if (credentialEmail === "temporary_password") return withoutLinks.replace(TEMPORARY_PASSWORD, CREDENTIAL_REMOVED);
+  return withoutLinks;
 }
 
 /** A JSON value (a provider's webhook payload) with every set-your-password link's token removed. */

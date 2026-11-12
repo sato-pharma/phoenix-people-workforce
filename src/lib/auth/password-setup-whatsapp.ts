@@ -79,8 +79,10 @@ export function passwordSetupExpiryLabel(expiresAt: string): string {
  * only sets the password, and the very next thing the person does is sign in with that id. The
  * activation email carries it for the same reason.
  *
- * 🔴 NO PASSWORD, NO CODE, EVER — only the one-time link. The message is composed for a chat that lives
- * on two handsets forever, so the only secret it may carry is one that expires.
+ * 🔴 NO PASSWORD, NO CODE IN THIS ONE — only the one-time link. The message is composed for a chat that
+ * lives on two handsets forever, so the only secret it may carry is one that expires. The account
+ * message below (composeTemporaryPasswordMessage, owner 12 Nov 2026) is the one exception, because its
+ * password expires too and dies at first sign-in.
  */
 export function composePasswordSetupWhatsAppMessage(input: PasswordSetupWhatsAppInput): string {
   const name = input.name.trim() || input.loginId.trim();
@@ -98,6 +100,54 @@ export function composePasswordSetupWhatsAppMessage(input: PasswordSetupWhatsApp
     `Your login ID is ${input.loginId.trim()}.`,
     `The link can be used once, and it works until ${passwordSetupExpiryLabel(input.expiresAt)}.`,
   ].join("\n");
+}
+
+export type TemporaryPasswordMessageInput = {
+  /** When the temporary password stops working (ISO, UTC). */
+  readonly expiresAt: string;
+  readonly loginId: string;
+  readonly name: string;
+  readonly purpose: "reset" | "setup";
+  /** The production sign-in page. */
+  readonly signInUrl: string;
+  readonly temporaryPassword: string;
+};
+
+/** The validity line in Cairo, the same wording the email's "Valid until" row carries. */
+export function temporaryPasswordExpiryLabel(expiresAt: string): string {
+  return passwordSetupExpiryLabel(expiresAt);
+}
+
+/**
+ * THE ACCOUNT MESSAGE (owner, 12 Nov 2026): username, temporary password, then the production link —
+ * in that order, each on its own line so it copies cleanly from a phone. Used for WhatsApp and
+ * Telegram alike. This is the one message allowed to carry a password, because the password is
+ * temporary: it only opens the choose-your-own-password screen, it dies the moment the person picks
+ * theirs, and it expires on its own (src/lib/auth/temporary-password.ts).
+ */
+export function composeTemporaryPasswordMessage(input: TemporaryPasswordMessageInput): string {
+  const name = input.name.trim() || input.loginId.trim();
+  const opening =
+    input.purpose === "setup"
+      ? "Your Phoenix Workforce account is ready. Sign in with:"
+      : "Here is a new temporary password for Phoenix Workforce. Sign in with:";
+
+  return [
+    `Dear ${name},`,
+    "",
+    opening,
+    "",
+    `Username: ${input.loginId.trim()}`,
+    `Temporary password: ${input.temporaryPassword.trim()}`,
+    `Sign in at: ${input.signInUrl.trim()}`,
+    "",
+    "After you sign in, Phoenix asks you to choose your own password, and the temporary one stops working.",
+    `The temporary password works until ${passwordSetupExpiryLabel(input.expiresAt)}.`,
+  ].join("\n");
+}
+
+export function composeTemporaryPasswordWhatsAppMessage(input: TemporaryPasswordMessageInput): string {
+  return composeTemporaryPasswordMessage(input);
 }
 
 /**
