@@ -1454,3 +1454,39 @@ fires on exactly that substitution:
 ```
 FIRED:: the minted value must NOT be read from describePage, which redacts the very thing being read
 ```
+
+## 2026-11-12: the sign-in that ran out of time, not out of luck
+
+**What happened.** The daily mailbox sweep at 08:15 Cairo stopped the new-hire robot at its first step:
+`Signed in as the administrator but the expected page never appeared`. It was the first failed sign-in
+since the robot went live. From 3 to 7 October it signed in and failed later, per mailbox, and from 8 October
+to 11 November it signed in every morning and found the first three hires' mailboxes already in the console
+(an INFO line, never an error row). The ten active hires with an address and a login pass every gate,
+so a sign-in happens on every sweep.
+
+**What the page said.** `login.turbify.com/login`, both fields filled (23 and 11 characters, the right
+lengths), "Keep me logged in" ticked, the form reporting itself valid, no message in any error or alert
+region, the cookie banner still showing, and no captcha widget among the page's controls. The click itself
+was delivered: the hit-tested path throws when anything covers the button. Nothing in the robot's sign-in
+had changed since 3 November.
+
+**What it means.** The only wait after the press was a fixed `settle(6_000)`, and a fixed wait cannot tell a
+slow answer from a refusal. Turbify's login-page code (read the same day) also has a server-switched reCAPTCHA:
+a submit with the captcha shown and unticked pops an error toast and stays on the form. The laptop reads it
+switched off, and the stored page had no widget, so it is not the cause on the evidence. The robot just
+could not have seen a toast that came and went inside the six seconds.
+
+**What changed.**
+
+- `waitForSignInLanding`: the six seconds stay as the floor, then the proof is re-read every second up to 30.
+  Two-step is still checked first on every look.
+- `recordSignInNotices` is installed before the press and keeps every message the page shows afterwards.
+- `readSignInBlockersInPage` reports a captcha widget.
+- `describeSignInStall` puts both in the refusal. A captcha is named and never answered: the fix is a person
+  signing in to Turbify by hand once.
+- Pinned by `runSignInLandingCases` in `tests/new-hire-mailbox-robot.test.ts`, proved by breaking it twice
+  (a 6 s ceiling, and the fixed settle put back). Both breaks failed on the new assertions.
+
+**If it fails again,** the refusal now says which of the three it was: still on the form after 30 seconds
+with what Turbify flashed, a captcha, or two-step.
+

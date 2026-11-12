@@ -24,10 +24,16 @@ import {
   describeField,
   describePage,
   describeShape,
+  describeSignInStall,
   LOGIN_SUBMIT_WORDINGS,
   MAILBOX_EMAIL_FIELD,
   MAILBOX_LOGIN_URL,
+  readSignInBlockersInPage,
+  recordSignInNotices,
+  SIGN_IN_LANDING_TIMEOUT_MS,
+  SIGN_IN_MINIMUM_WAIT_MS,
   TurbifyJoinerStepError,
+  waitForSignInLanding,
   withoutSecrets,
 } from "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
 import {
@@ -1145,6 +1151,127 @@ async function runAlreadyExistsLogLevelCases(): Promise<void> {
   assert.equal(new TurbifyJoinerStepError("x", { alreadyExists: true }).alreadyExists, true);
 }
 
+/**
+ * The sign-in wait (2026-11-12). At 08:15 that morning the administrator's sign-in was still on the
+ * login form six seconds after a delivered click, with nothing on the page to say why — the first
+ * failed sign-in after daily successes since 3 October. The fixed six seconds became a floor with a
+ * thirty-second ceiling, and a stall now names a captcha and the messages the page flashed.
+ */
+async function runSignInLandingCases(): Promise<void> {
+  // A fake clock: sleep advances it, so the cases run instantly and the arithmetic is exact.
+  const clock = () => {
+    let t = 0;
+    const slept: number[] = [];
+    return { now: () => t, sleep: async (ms: number) => { slept.push(ms); t += ms; }, slept };
+  };
+
+  // The floor and the ceiling themselves — the 08:15 failure was a ceiling of six.
+  assert.equal(SIGN_IN_MINIMUM_WAIT_MS, 6_000, "the old six seconds stay as the floor");
+  assert.ok(SIGN_IN_LANDING_TIMEOUT_MS >= 30_000, "a slow Turbify answer must get at least thirty seconds");
+
+  // 1. Slow, not refused: the console appears at second 14. Six seconds alone would have refused.
+  {
+    const c = clock();
+    const landing = await waitForSignInLanding(() => "https://login.turbify.com/login", async () => c.now() >= 14_000, c);
+    assert.equal(landing, "landed", "a sign-in that lands after the old six seconds must be waited for");
+    assert.equal(c.slept[0], SIGN_IN_MINIMUM_WAIT_MS, "the first look comes only after the full floor");
+  }
+
+  // 2. The floor is never skipped, even when the proof already holds — a page caught
+  //    mid-navigation (password box gone, next page not drawn) must not read as "past the form".
+  {
+    const c = clock();
+    let looked = false;
+    await waitForSignInLanding(() => "x", async () => { looked = true; assert.ok(c.now() >= 6_000, "proof read before the floor"); return true; }, c);
+    assert.ok(looked);
+  }
+
+  // 3. Never lands: refused at the ceiling, not before and not long after.
+  {
+    const c = clock();
+    const landing = await waitForSignInLanding(() => "https://login.turbify.com/login", async () => false, c);
+    assert.equal(landing, "still_on_form");
+    assert.ok(c.now() >= SIGN_IN_LANDING_TIMEOUT_MS && c.now() <= SIGN_IN_LANDING_TIMEOUT_MS + 1_000, `refused at ${c.now()} ms`);
+  }
+
+  // 4. Two-step is answered on the first look, never waited out, even while the proof would pass.
+  {
+    const c = clock();
+    const landing = await waitForSignInLanding(() => "https://login.turbify.com/tfavalidate?x=1", async () => true, c);
+    assert.equal(landing, "two_step");
+    assert.equal(c.now(), SIGN_IN_MINIMUM_WAIT_MS);
+  }
+
+  // 5. A proof that throws is "not yet", never a crash.
+  {
+    const c = clock();
+    const landing = await waitForSignInLanding(() => "x", async () => { throw new Error("detached frame"); }, c);
+    assert.equal(landing, "still_on_form");
+  }
+
+  // 6. The refusal: a captcha is named and never answered, and the secret never prints.
+  const secret = "S3cretPass!";
+  const captcha = describeSignInStall("the administrator", 30_000, { captcha: true, notices: [`Error: please verify ${secret}`] }, "url https://login.turbify.com/login", [secret]);
+  assert.match(captcha, /captcha/i);
+  assert.match(captcha, /never answers one/);
+  assert.match(captcha, /signing in to Turbify by hand once/);
+  assert.ok(!captcha.includes(secret), "a notice must pass through the secret redaction");
+  assert.match(captcha, /Error: please verify/);
+
+  // 7. No captcha, a flashed message: it is quoted, with the wait it ran for.
+  const plain = describeSignInStall("the administrator", 30_000, { captcha: false, notices: ["Too many attempts"] }, "url https://login.turbify.com/login", []);
+  assert.match(plain, /within 30 seconds/);
+  assert.ok(plain.includes("Turbify showed [Too many attempts]"), "a flashed message must be quoted");
+  assert.ok(!/captcha/i.test(plain), "no captcha must not be blamed on one");
+
+  // 8. Nothing seen: no invented message.
+  const quiet = describeSignInStall("the administrator", 30_000, { captcha: false, notices: [] }, "url x", []);
+  assert.ok(!quiet.includes("Turbify showed"), "an empty notice list must not print an empty quote");
+
+  // 9. Wiring: signInAs waits through the helper, records notices BEFORE the press, and the fixed
+  //    six-second settle after the sign-in submit is gone.
+  const source = stripComments(readFileSync(new URL("../src/lib/new-hire-mailbox/robot/turbify-joiner.ts", import.meta.url), "utf8"));
+  const signIn = source.slice(source.indexOf("async function signInAs("), source.indexOf("return {", source.indexOf("async function signInAs(")));
+  assert.ok(signIn.length > 0, "signInAs must exist");
+  assert.ok(signIn.includes("waitForSignInLanding("), "signInAs must wait through waitForSignInLanding");
+  assert.ok(!signIn.includes("settle(6_000)"), "the fixed six-second wait must not come back");
+  const recorder = signIn.indexOf("recordSignInNotices");
+  const press = signIn.indexOf("submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `sign-in button");
+  assert.ok(recorder > -1 && press > -1 && recorder < press, "the notice recorder must be installed before the sign-in press");
+  assert.ok(signIn.includes("describeSignInStall("), "a stall must be described through describeSignInStall");
+
+  // 10. The two in-page functions, run against a fake page (module rule: real functions, tested).
+  const g = globalThis as unknown as Record<string, unknown>;
+  const saved = { document: g.document, MutationObserver: g.MutationObserver, window: g.window };
+  try {
+    const seen: { observe: ((changes: unknown[]) => void) | null } = { observe: null };
+    g.window = {};
+    g.document = { documentElement: {}, querySelector: () => null };
+    g.MutationObserver = class { constructor(cb: (changes: unknown[]) => void) { seen.observe = cb; } observe() {} };
+    assert.equal(recordSignInNotices(), true);
+    const el = (attrs: Record<string, string>, text: string, className = "") => ({
+      className, getAttribute: (name: string) => attrs[name] ?? null, innerText: text, nodeType: 1,
+      querySelectorAll: () => [],
+    });
+    const observe = seen.observe;
+    assert.ok(observe, "the recorder must start an observer");
+    observe([
+      { addedNodes: [el({ role: "alert" }, "  Error:   Please complete the captcha ")], target: { nodeType: 3, parentElement: null } },
+      { addedNodes: [el({}, "Get Started for $0.99/mo")], target: { nodeType: 3, parentElement: null } },
+      { addedNodes: [el({}, "Too many attempts", "Toastify__toast")], target: { nodeType: 3, parentElement: null } },
+    ]);
+    const quietPage = readSignInBlockersInPage();
+    assert.deepEqual(quietPage.notices, ["Error: Please complete the captcha", "Too many attempts"], "only notice-shaped nodes are kept, whitespace folded");
+    assert.equal(quietPage.captcha, false);
+    g.document = { querySelector: (selector: string) => (selector.includes("recaptcha") ? {} : null) };
+    assert.equal(readSignInBlockersInPage().captcha, true, "a reCAPTCHA frame on the page must be seen");
+  } finally {
+    g.document = saved.document;
+    g.window = saved.window;
+    g.MutationObserver = saved.MutationObserver;
+  }
+}
+
 export async function runNewHireMailboxRobotTests(): Promise<void> {
   runExistenceReadingCases();
   runExistenceWiringCases();
@@ -1153,6 +1280,7 @@ export async function runNewHireMailboxRobotTests(): Promise<void> {
   runCorrectedRefusalCases();
   await runPageDescriptionCases();
   await runAlreadyExistsLogLevelCases();
+  await runSignInLandingCases();
   // ── the happy path, so every refusal below is attributable to the one thing it changed ───────
   const ok = verdict();
   assert.equal(ok.allowed, true);

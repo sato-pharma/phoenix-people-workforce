@@ -501,6 +501,152 @@ async function describeCreateWithoutPassword(
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * How long a sign-in is given to land, in two parts.
+ *
+ * 🔴 A FIXED SIX SECONDS WAS THE WHOLE WAIT UNTIL 2026-11-12, and at 08:15 that morning it was not
+ * enough. Every daily sweep from 3 October to 11 November signed the administrator in on it, and on
+ * 12 November the page was still on `login.turbify.com/login` six seconds after a delivered click:
+ * both fields filled (23 and 11 characters), the form valid, no message on the page, no captcha
+ * widget in it. Nothing in the robot had changed since 3 November. A slow answer from Turbify is the
+ * reading that fits all of that, and a fixed wait cannot tell slow from refused.
+ *
+ * The six seconds stay as the FLOOR — every sign-in that passed before still waits exactly as long
+ * before the first proof is read, so a page caught mid-navigation (the password box gone, the next
+ * page not drawn yet) cannot be mistaken for "past the form". After it the proof is re-read every
+ * second until the CEILING, and only then is the run refused. Pinned by
+ * `tests/new-hire-mailbox-robot.test.ts`.
+ */
+export const SIGN_IN_MINIMUM_WAIT_MS = 6_000;
+export const SIGN_IN_LANDING_TIMEOUT_MS = 30_000;
+const SIGN_IN_POLL_MS = 1_000;
+
+export type SignInLanding = "landed" | "two_step" | "still_on_form";
+
+/**
+ * Wait for a submitted sign-in to land: the proof holds, Turbify asks for two-step, or the ceiling
+ * passes. Two-step is read FIRST on every look, so a verification page is never waited out.
+ */
+export async function waitForSignInLanding(
+  url: () => string,
+  proof: () => Promise<boolean>,
+  options: {
+    minimumMs?: number;
+    timeoutMs?: number;
+    pollMs?: number;
+    sleep?: (ms: number) => Promise<unknown>;
+    now?: () => number;
+  } = {},
+): Promise<SignInLanding> {
+  const sleep = options.sleep ?? settle;
+  const now = options.now ?? Date.now;
+  const minimum = options.minimumMs ?? SIGN_IN_MINIMUM_WAIT_MS;
+  const ceiling = Math.max(minimum, options.timeoutMs ?? SIGN_IN_LANDING_TIMEOUT_MS);
+  const poll = Math.max(1, options.pollMs ?? SIGN_IN_POLL_MS);
+  const started = now();
+  await sleep(minimum);
+  for (;;) {
+    if (url().includes("/tfavalidate")) return "two_step";
+    if (await proof().catch(() => false)) return "landed";
+    if (now() - started >= ceiling) return "still_on_form";
+    await sleep(poll);
+  }
+}
+
+/**
+ * Installed on the login page BEFORE the submit — a real function, never a string (module rule).
+ * It keeps the text of every message the page shows afterwards, because a toast can come and go
+ * inside the wait. Read 2026-11-12 in Turbify's own login-page code: a submit with its captcha
+ * shown and unticked answers with a pop-up error and nothing else, and a description
+ * read at the end of the wait sees an empty page. Text only, capped, and run through
+ * `withoutSecrets` before it is printed — the page never writes a credential as text, and if it ever
+ * did, the redaction is the second wall.
+ */
+export function recordSignInNotices(): boolean {
+  const kept: string[] = [];
+  (window as unknown as { __phoenixSignInNotices?: string[] }).__phoenixSignInNotices = kept;
+  const looksLikeNotice = (element: Element) => {
+    const role = (element.getAttribute("role") || "").toLowerCase();
+    const live = (element.getAttribute("aria-live") || "").toLowerCase();
+    const cls = String((element as HTMLElement).className || "").toLowerCase();
+    return role === "alert" || role === "status" || live === "assertive" || live === "polite"
+      || /toast|notif|snack|alert|error|message/.test(cls);
+  };
+  const take = (element: Element) => {
+    const text = ((element as HTMLElement).innerText || element.textContent || "").replace(/\s+/g, " ").trim();
+    if (text.length > 0 && text.length <= 300 && kept.indexOf(text) === -1 && kept.length < 6) kept.push(text);
+  };
+  try {
+    new MutationObserver((changes) => {
+      for (const change of changes) {
+        const node = change.target;
+        const target = node && node.nodeType === 1 ? (node as Element) : node ? node.parentElement : null;
+        if (target && looksLikeNotice(target)) take(target);
+        for (const added of Array.from(change.addedNodes || [])) {
+          if (added.nodeType !== 1) continue;
+          const element = added as Element;
+          if (looksLikeNotice(element)) take(element);
+          for (const inner of Array.from(element.querySelectorAll("[role=alert],[role=status],[aria-live]"))) take(inner);
+        }
+      }
+    }).observe(document.documentElement, { characterData: true, childList: true, subtree: true });
+  } catch {
+    // An observer that cannot start costs only the notices; the sign-in itself is unaffected.
+  }
+  return true;
+}
+
+/** What the login page showed that explains a sign-in that did not land. */
+export type SignInBlockers = {
+  /** A reCAPTCHA (or other "I'm not a robot") widget is on the page. */
+  captcha: boolean;
+  /** Messages the page showed after the submit, in order — including ones already gone. */
+  notices: string[];
+};
+
+export function readSignInBlockersInPage(): SignInBlockers {
+  const captcha = Boolean(document.querySelector(
+    'iframe[src*="recaptcha"],iframe[src*="hcaptcha"],iframe[title*="captcha" i],textarea[name="g-recaptcha-response"],.g-recaptcha,[data-sitekey]',
+  ));
+  const kept = (window as unknown as { __phoenixSignInNotices?: unknown }).__phoenixSignInNotices;
+  const notices = Array.isArray(kept) ? kept.slice(0, 6).map(String) : [];
+  return { captcha, notices };
+}
+
+async function readSignInBlockers(page: ConsolePage): Promise<SignInBlockers> {
+  const read = await page.evaluate<SignInBlockers>(readSignInBlockersInPage).catch(() => null);
+  return {
+    captcha: Boolean(read?.captcha),
+    notices: Array.isArray(read?.notices) ? read.notices.map(String) : [],
+  };
+}
+
+/**
+ * The refusal for a sign-in that never landed, in the words someone has to act on.
+ *
+ * 🔴 A CAPTCHA IS NAMED AND NEVER ANSWERED. The robot does not solve, skip or route around one; it
+ * stops and says so, because the only honest fix is a person signing in to Turbify by hand once so
+ * Turbify trusts the login again.
+ */
+export function describeSignInStall(
+  who: string,
+  waitedMs: number,
+  blockers: SignInBlockers,
+  page: string,
+  secrets: readonly string[],
+): string {
+  const seconds = Math.round(waitedMs / 1000);
+  const notices = blockers.notices.map((notice) => withoutSecrets(notice, secrets)).filter((notice) => notice.length > 0);
+  const said = notices.length > 0 ? ` Turbify showed [${notices.join(" | ")}] after the sign-in was pressed.` : "";
+  if (blockers.captcha) {
+    return `Turbify showed ${who}'s sign-in a captcha ("I'm not a robot"), and the robot never answers one, `
+      + `so it stopped.${said} A person signing in to Turbify by hand once with the same login usually makes `
+      + `Turbify trust it again; the next daily sweep then tries by itself. The page it was on — ${page}`;
+  }
+  return `Signed in as ${who} but the expected page never appeared within ${seconds} seconds, so the robot `
+    + `stopped rather than act on an unknown page.${said} The page it was on — ${page}`;
+}
+
+/**
  * Read the one-time password out of the dialog.
  *
  * 🔴 It is read ONLY after the heading is confirmed. A value scraped from a page that is not this
@@ -1049,24 +1195,30 @@ export async function createTurbifyJoinerDriver(
     // file still delivered blind — and a blind click is exactly what Turbify's fixed cookie banner ate
     // on 2026-10-02 (`click-delivery.ts`, incident one). The failure it produces is the cruel one: the
     // form is simply still there afterwards, which every downstream check reads as "refused".
+    // Before the press, so a message that comes and goes during the wait is still on record.
+    await target.evaluate(recordSignInNotices).catch(() => {});
     await submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `sign-in button for ${who}`);
-    await settle(6_000);
+    // A floor of six seconds, then the proof re-read every second up to thirty — see
+    // `SIGN_IN_MINIMUM_WAIT_MS` for the 2026-11-12 morning a fixed six was not enough.
+    const landing = await waitForSignInLanding(() => target.url(), proof);
     // 🔴 Two-step verification must stay OFF on the accounts the robot uses: Turbify only sends the
     // code to a phone or an email, so there is nothing a server can answer. Fail loudly, never stall.
-    if (target.url().includes("/tfavalidate")) {
+    if (landing === "two_step") {
       throw new TurbifyJoinerStepError(
         `Turbify asked ${who} for two-step verification, which the robot cannot answer. Two-step must be `
         + "turned off on this login (My Profile → Security and Privacy → Turn off two-step verification).",
       );
     }
-    if (!(await proof())) {
+    if (landing === "still_on_form") {
       // 🔴 THE REFUSAL CARRIES THE PAGE IT WAS LOOKING AT. This one proof has now been wrong three
       // times — twice reading the address bar, once reading the absence of a field — and each wrong
       // answer cost the owner a click that told nobody anything. Whatever page this turns out to be,
-      // it is described here, so the next click produces a measurement instead of another guess.
+      // it is described here, so the next click produces a measurement instead of another guess —
+      // and since 2026-11-12 it also says whether a captcha stood in the way and what the page
+      // flashed after the press, which a description read at the end of the wait cannot see.
+      const blockers = await readSignInBlockers(target);
       throw new TurbifyJoinerStepError(
-        `Signed in as ${who} but the expected page never appeared, so the robot stopped rather than act `
-        + `on an unknown page. The page it was on — ${await describePage(target, secrets)}`,
+        describeSignInStall(who, SIGN_IN_LANDING_TIMEOUT_MS, blockers, await describePage(target, secrets), secrets),
       );
     }
   }
