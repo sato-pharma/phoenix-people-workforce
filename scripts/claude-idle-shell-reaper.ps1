@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Ends the Claude desktop app's IDLE terminal-panel shells (owner-approved 2026-10-23).
 
@@ -43,7 +43,7 @@ $hostIds = @($procs | Where-Object {
 } | ForEach-Object { [int]$_.ProcessId })
 $shells = @($procs | Where-Object {
   $hostIds -contains [int]$_.ParentProcessId -and $_.Name -match '^(powershell|pwsh)\.exe$' -and
-  $_.CommandLine -match '^\s*"?[^"]*\\(powershell|pwsh)\.exe"?\s*$'
+  ($_.CommandLine -match '^\s*"?[^"]*\\(powershell|pwsh)\.exe"?\s*$' -or $_.CommandLine -match '^\s*"?[^"]*\\(powershell|pwsh)\.exe"?\s+-NoProfile -NoExit -Command "try \{ if \(\$ExecutionContext\.SessionState\.LanguageMode')
 })
 if ($shells.Count -eq 0) { Write-Output 'No app terminal shells are running.'; exit 0 }
 
@@ -106,3 +106,4 @@ foreach ($s in $shells) {
   catch { Write-Log "could not end $label - $($_.Exception.Message)" }
 }
 Write-Output ("{0} app shells: {1} ended, {2} would end, {3} kept (idle limit {4} min{5})" -f $shells.Count, $ended, $would, $kept, $IdleMinutes, $(if ($Apply) { '' } else { ', DRY RUN' }))
+

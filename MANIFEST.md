@@ -46,7 +46,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/claude-boost.ps1` | 7921 | `75a5ab42a91d1c16` |
 | `scripts/claude-config-review.mjs` | 86368 | `92cfb3a54e026106` |
 | `scripts/claude-hygiene.mjs` | 13788 | `cfc044922652ab37` |
-| `scripts/claude-idle-shell-reaper.ps1` | 6241 | `07ddce2e1204fee6` |
+| `scripts/claude-idle-shell-reaper.ps1` | 6404 | `bbc79ef6e03bc360` |
 | `scripts/claude-leftover-reaper.ps1` | 3261 | `8991f3078e0a5b54` |
 | `scripts/claude-scripts-backup-watch.ps1` | 2823 | `442646c56d7c04e9` |
 | `scripts/claude-scripts-backup.mjs` | 27633 | `2ff22a52047d1cfe` |
