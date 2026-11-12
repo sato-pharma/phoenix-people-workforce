@@ -44,7 +44,7 @@ export const LINE_TWIN_POINT_SOURCE = "line_twin";
 
 /** The written reason every merge move carries (the database wants 10–500 characters). */
 export const LINE_TWIN_MOVE_REASON =
-  "The same doctor is validated on another line within 150 m — moved onto that line's point so every line measures its visits from one door.";
+  "The same customer is validated on another line within 150 m — moved onto that line's point so every line measures its visits from one door.";
 
 /** One row of one seat's list, as the comparison reads it. */
 export type TwinCustomer = {
@@ -132,9 +132,9 @@ export const LINE_TWIN_SKIP_TEXT: Record<LineTwinSkipReason, string> = {
   in_review: "This row's own validation waits for the Super Admin",
   drop_requested: "A request to drop this customer waits",
   full_name_held: "The full name waits for the Super Admin",
-  needs_full_name: "A clinic doctor still needs all three names",
-  two_on_one_line: "Two validated doctors of this name on one line",
-  two_doctors: "Two different validated doctors match this name",
+  needs_full_name: "A PM customer still needs all three names",
+  two_on_one_line: "Two validated customers of this name on one line",
+  two_doctors: "Two different validated customers match this name",
   twice_on_this_list: "On this list twice",
 };
 

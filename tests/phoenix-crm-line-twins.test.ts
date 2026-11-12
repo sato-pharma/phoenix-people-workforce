@@ -257,7 +257,7 @@ function runSourceTests(): void {
   }
   assert.match(sql, /revoke execute on function public\.phoenix_crm_share_line_validation\(jsonb\) from public, anon, authenticated;/);
   assert.match(sql, /grant execute on function public\.phoenix_crm_share_line_validation\(jsonb\) to service_role;/);
-  assert.match(sql, /create trigger phoenix_crm_places_line_twin_follow/, "a copy follows its source");
+  assert.match(sql, /create or replace trigger phoenix_crm_places_line_twin_follow/, "a copy follows its source");
   assert.match(read("src/lib/phoenix-crm/server/db.ts"), /"phoenix_crm_share_line_validation"/, "the RPC is a known Customer 360 writer");
 
   // A copy is never evidence.
@@ -266,6 +266,14 @@ function runSourceTests(): void {
   assert.match(read("src/lib/phoenix-crm/server/customer-match-groups.ts"), /\.neq\("point_source", "line_twin"\)/, "Same customer, several reps never reads a copy");
 
   assert.match(read("src/lib/phoenix-crm/server/places-to-recheck.ts"), /\.neq\("point_source", "line_twin"\)/, "Places to recheck never offers a copy to move");
+
+  // The silent integrity filers never judge a copy: it has no capture of its own and repeats its source's point.
+  assert.equal(
+    (read("src/lib/phoenix-crm/server/silent-detectors.ts").match(/\.neq\("point_source", "line_twin"\)/g) ?? []).length,
+    2,
+    "the coverage pass and the visit-against-photograph pass both skip a copy",
+  );
+  assert.match(read("src/lib/phoenix-crm/server/location-integrity.ts"), /\.neq\("point_source", "line_twin"\)/, "a copy is never a replayed point");
 
   // A copy follows its source: a move, a removal, a rejection and a refusal carry it.
   const placeMove = read("src/lib/phoenix-crm/server/place-move.ts");

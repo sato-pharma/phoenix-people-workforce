@@ -238,6 +238,7 @@ grant execute on function public.phoenix_crm_share_line_validation(jsonb) to ser
 create or replace function public.phoenix_crm_places_line_twin_follow()
 returns trigger
 language plpgsql
+security definer
 set search_path to 'public'
 as $$
 declare
@@ -298,8 +299,12 @@ begin
 end;
 $$;
 
-drop trigger if exists phoenix_crm_places_line_twin_follow on public.phoenix_crm_places;
-create trigger phoenix_crm_places_line_twin_follow
+-- The table fires it; nobody calls it. Like every function in the module, no browser role may (Postgres
+-- checks EXECUTE when the trigger is created, never when it fires).
+revoke execute on function public.phoenix_crm_places_line_twin_follow() from public, anon, authenticated;
+grant execute on function public.phoenix_crm_places_line_twin_follow() to service_role;
+
+create or replace trigger phoenix_crm_places_line_twin_follow
   after update of status, lat, lon on public.phoenix_crm_places
   for each row
   when (old.point_source <> 'line_twin' and (old.status is distinct from new.status or old.lat is distinct from new.lat or old.lon is distinct from new.lon))

@@ -80,7 +80,10 @@ own validation (`list.ts`), an approved review, a restored validation and a conf
 
 A copy has no evidence of its own: Place checks (`loadValidatedPlaces`), the Place matches and Customer
 matches boards and Places to recheck all read `.neq("point_source", "line_twin")`. Its source is on them.
-The night signboard sweep never sees one (it reads only places with a photo).
+The night signboard sweep never sees one (it reads only places with a photo), and the silent integrity
+filers skip them too — the coverage pass and the visit-against-photograph pass (`silent-detectors.ts`) and the
+replayed-point read (`location-integrity.ts`): a copy repeats its source's exact point under the system's name,
+so it would file a second flag on the same evidence, or read as a replay.
 
 ## The country pass
 

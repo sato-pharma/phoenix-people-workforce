@@ -2355,7 +2355,9 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // ozucdzovmcqvepbozvqf and equal on both, and equal to this file's own bodies as LF text: md5(prosrc) of
   // phoenix_crm_share_line_validation 16f1fee6bd46b948ce6f20b9ea315a84 (new; SECURITY DEFINER, ACL {postgres=X,
   // service_role=X} and nothing else), of phoenix_crm_places_line_twin_follow 53eea0e35a51e45281f29bf9f7eb7bd8 (new,
-  // a plain trigger function); phoenix_crm_places_point_source now admits 'line_twin'. Rehearsed on staging inside one
+  // the trigger function; its revoke and grant and its SECURITY DEFINER joined the file about 23:55, for the module's
+  // boundary rules, and were run on both by hand the same way: prosecdef true, ACL {postgres=X, service_role=X},
+  // body unchanged); phoenix_crm_places_point_source now admits 'line_twin'. The trigger is `create or replace`. Rehearsed on staging inside one
   // rolled-back block, 5 of 5: a waiting row was validated from another line's place under that line's validator, a
   // second call answered skipped not_waiting, the copy had no photo and kind line_twin, the copy followed its source's
   // move, and retiring the source retired the copy and sent the row back to waiting. Re-applying is a no-op (`create or
