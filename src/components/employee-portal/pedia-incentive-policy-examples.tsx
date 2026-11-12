@@ -13,8 +13,8 @@ import { PEDIA_SATO_HALF_MIN_TOTAL_PERCENT } from "@/lib/incentives/pedia-split"
  * The Pedia incentive policy, written out in full with worked examples (owner, 2026-11-12).
  *
  * Every figure comes from buildPediaPolicyExamples, which calls the live rule — never typed here.
- * Fits the screen at every width: a fixed-layout table once the card itself is wide enough, ruled
- * cards below that (the card measures its own width, because it can sit beside the sidebar).
+ * Fits the screen at every width: the portal's desktop table from 768px up, ruled
+ * cards below that (tests/employee-portal-mobile-table-cards.test.ts holds every portal table to it).
  * Nothing is truncated; long words wrap.
  */
 
@@ -98,15 +98,18 @@ export function PediaIncentivePolicyExamplesCard() {
           EGP. Your own amounts follow the same rule on your own basic salary.
         </p>
 
-        {/* Narrow card: ruled cards, one per example. */}
-        <div className="mt-3 space-y-2 @3xl:hidden">
+        {/* Phone: ruled cards, one per example. */}
+        <div className="mt-3 space-y-2 md:hidden">
           {examples.map((row, index) => (
             <ExampleMobileCard index={index} key={row.key} row={row} />
           ))}
         </div>
 
-        {/* Wide card: one fixed-layout table that fits its width — no sideways scroll. */}
-        <table className="mt-3 hidden w-full table-fixed border-collapse text-phx-sm @3xl:table">
+        {/* 768px and up: one fixed-layout table that fits its width — no sideways scroll. */}
+        <table
+          className="mt-3 hidden w-full table-fixed border-collapse text-phx-sm md:table"
+          data-portal-desktop-table
+        >
           <colgroup>
             <col className="w-[40%]" />
             <col className="w-[10%]" />
