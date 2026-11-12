@@ -1732,6 +1732,7 @@ import { runTemporaryPasswordSignInTests } from "./temporary-password-sign-in.te
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
 import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
 import { runDeductionsBulkDecideTests } from "./deductions-bulk-decide.test.ts";
+import { runApprovalsBulkDecisionTests } from "./approvals-bulk-decision.test.ts";
 import { runDeductionsDecisionCommentOptionalTests } from "./deductions-decision-comment-optional.test.ts";
 import { runDeductionsCandidatesTableFitsTheScreenTests } from "./deductions-candidates-table-fits-the-screen.test.ts";
 import { runDeductionsSameDayGuardTests } from "./deductions-same-day-guard.test.ts";
@@ -6466,6 +6467,10 @@ await runTest(
 await runTest(
   "the Deductions workspace decides many candidates at once (tick several or all; one confirmed decision per row through the single-decision route, no amount or days sent, a pushed line can never be ticked)",
   runDeductionsBulkDecideTests,
+);
+await runTest(
+  "the Leave and Excuse approval inboxes decide many requests at once (tick several or all; each one through its own decision service, one after another, never the override, a reason on every rejection, only the decided ones un-ticked)",
+  runApprovalsBulkDecisionTests,
 );
 await runTest(
   "the comment on a Deductions decision is optional (owner, 2026-11-09): recordDecision accepts a blank comment and stores it as '', the database CHECK that refused it is dropped and never re-added, and neither the Decide box nor the bulk bar blocks or invents one",

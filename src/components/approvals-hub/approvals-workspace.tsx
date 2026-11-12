@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks, Eye, Target } from "lucide-react";
 
 import type {
@@ -17,6 +18,9 @@ import { SlaAgeChip, type ApprovalsSlaModule } from "@/components/approvals-hub/
 import { HistoryList } from "@/components/approvals-hub/history-list";
 import { ApprovalScopeList } from "@/components/approvals-hub/approval-scope-list";
 import { CompanyRequestsList } from "@/components/approvals-hub/company-requests-list";
+import { BulkDecisionBar } from "@/components/approvals-hub/bulk-decision-bar";
+import type { BulkDecisionModule } from "@/lib/approvals-hub/bulk-decide";
+import { phxCheckInputClassName } from "@/components/ui/form-tokens";
 import { PlanAdherenceHistoryPanel } from "@/components/weekly-planning/plan-adherence-report";
 import type { PlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence";
 
@@ -82,6 +86,9 @@ type Props = {
   // A base path, not a `(planId) => href` builder: this is a client component, so a function prop
   // handed in from the server page cannot be serialised and the page 500s at render.
   scoreHistoryPlanBaseHref?: string | null;
+  // Leave and Excuse only — tick boxes on the requests awaiting this viewer, with Approve all /
+  // Reject all (owner, 2026-11-12). Absent leaves the inbox one-at-a-time, as Plans is.
+  bulkDecisionModule?: BulkDecisionModule | null;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -133,7 +140,33 @@ export function ApprovalsWorkspace({
   secondaryCompanyRequestsEmptyLabel,
   scoreHistory,
   scoreHistoryPlanBaseHref,
+  bulkDecisionModule,
 }: Props) {
+  const router = useRouter();
+  const [ticked, setTicked] = useState<Set<string>>(() => new Set());
+  // Only a request awaiting THIS viewer can be ticked — "Coming to you" and own requests are read-only.
+  const tickableCards = bulkDecisionModule ? sections.filter((s) => !s.readOnly).flatMap((s) => s.cards) : [];
+  // Derived, never stored: a request decided elsewhere (or by this bar) drops out of the selection the
+  // moment the refreshed list no longer carries it.
+  const tickedCards = tickableCards.filter((card) => ticked.has(card.id));
+  function toggle(id: string) {
+    setTicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function setMany(ids: string[], on: boolean) {
+    setTicked((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
   type TabKey =
     | "pending"
     | "history"
@@ -199,6 +232,17 @@ export function ApprovalsWorkspace({
               {pendingNotice}
             </p>
           ) : null}
+          {bulkDecisionModule && tickableCards.length > 0 ? (
+            <BulkDecisionBar
+              module={bulkDecisionModule}
+              selected={tickedCards}
+              onClear={() => setTicked(new Set())}
+              onFinished={(decidedIds) => {
+                setMany(decidedIds, false);
+                router.refresh();
+              }}
+            />
+          ) : null}
           {sections.every((s) => s.cards.length === 0) ? (
             pendingNotice ? null : (
               <p className={`${adminSoftPanelClassName} px-4 py-8 text-center text-sm text-slate-500`}>
@@ -208,20 +252,59 @@ export function ApprovalsWorkspace({
           ) : (
             sections
               .filter((s) => s.cards.length > 0)
-              .map((section) => (
-                <section key={section.key} className="space-y-2">
-                  <div className="flex items-baseline gap-2">
-                    <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{section.title}</h3>
-                    <span className="text-phx-xs font-bold text-slate-400">{section.cards.length}</span>
-                  </div>
-                  {section.subtitle ? <p className="text-xs text-slate-500">{section.subtitle}</p> : null}
-                  <div className="space-y-2">
-                    {section.cards.map((card) => (
-                      <Card key={card.id} card={card} readOnly={section.readOnly} slaModule={slaModule} />
-                    ))}
-                  </div>
-                </section>
-              ))
+              .map((section) => {
+                const tickable = Boolean(bulkDecisionModule) && !section.readOnly;
+                const sectionIds = section.cards.map((card) => card.id);
+                const tickedHere = sectionIds.filter((id) => ticked.has(id)).length;
+                const allTicked = tickedHere === sectionIds.length;
+                return (
+                  <section key={section.key} className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <div className="flex items-baseline gap-2">
+                        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{section.title}</h3>
+                        <span className="text-phx-xs font-bold text-slate-400">{section.cards.length}</span>
+                      </div>
+                      {tickable ? (
+                        <label className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.08em] text-slate-700">
+                          <input
+                            type="checkbox"
+                            className={phxCheckInputClassName}
+                            checked={allTicked}
+                            ref={(element) => {
+                              if (element) element.indeterminate = tickedHere > 0 && !allTicked;
+                            }}
+                            onChange={() => setMany(sectionIds, !allTicked)}
+                          />
+                          Select all ({section.cards.length})
+                        </label>
+                      ) : null}
+                    </div>
+                    {section.subtitle ? <p className="text-xs text-slate-500">{section.subtitle}</p> : null}
+                    <div className="space-y-2">
+                      {section.cards.map((card) =>
+                        tickable ? (
+                          <div key={card.id} className="flex items-stretch gap-2">
+                            <label className={`flex w-11 shrink-0 cursor-pointer items-center justify-center ${adminSoftPanelClassName}`}>
+                              <input
+                                type="checkbox"
+                                className={phxCheckInputClassName}
+                                checked={ticked.has(card.id)}
+                                onChange={() => toggle(card.id)}
+                                aria-label={`Tick ${card.employeeName} — ${card.title}`}
+                              />
+                            </label>
+                            <div className="min-w-0 flex-1">
+                              <Card card={card} readOnly={section.readOnly} slaModule={slaModule} />
+                            </div>
+                          </div>
+                        ) : (
+                          <Card key={card.id} card={card} readOnly={section.readOnly} slaModule={slaModule} />
+                        ),
+                      )}
+                    </div>
+                  </section>
+                );
+              })
           )}
         </div>
       ) : tab === "history" ? (
