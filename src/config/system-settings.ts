@@ -485,6 +485,12 @@ export const systemAuthEmailText = {
   passwordResetSubject: `${systemIdentity.appName} password reset`,
   passwordResetSummary: `Use this one-time link to reset your ${systemIdentity.appName} password. After that, sign in with your HR_ID and the new password you choose.`,
   passwordResetTitle: `Reset your ${systemIdentity.appName} password`,
+  // The username-and-temporary-password email (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts).
+  credentialsSetupSubject: `Your ${systemIdentity.appName} account`,
+  credentialsSetupTitle: `Your ${systemIdentity.appName} account is ready`,
+  credentialsResetSubject: `Your new ${systemIdentity.appName} password`,
+  credentialsResetTitle: `Your new ${systemIdentity.appName} password`,
+  credentialsSummary: `Copy your username and temporary password below into the sign-in page. Once you sign in, ${systemIdentity.appName} asks you to choose your own password, and the temporary one stops working.`,
 } as const;
 
 export const systemHrReplyEmailText = {

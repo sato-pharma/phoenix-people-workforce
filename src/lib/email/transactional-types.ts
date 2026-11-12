@@ -47,8 +47,10 @@ export function isTransactionalEmailType(type: string | null | undefined): boole
  * (`credentialEmail`), and only that stamp withholds the mirror. Nothing reads the subject, the body or
  * the template to decide it, and no other email loses its mirror: every other automated email keeps
  * its Telegram copy exactly as before. There is no standing BCC any more (owner, 2026-11-06).
+ *  - `temporary_password` — the account email: username, a temporary password and the sign-in link
+ *    (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts).
  */
-export const CREDENTIAL_EMAIL_KINDS = ["password_reset_code", "password_setup_link"] as const;
+export const CREDENTIAL_EMAIL_KINDS = ["password_reset_code", "password_setup_link", "temporary_password"] as const;
 export type CredentialEmailKind = (typeof CREDENTIAL_EMAIL_KINDS)[number];
 
 export function isCredentialEmailKind(value: unknown): value is CredentialEmailKind {

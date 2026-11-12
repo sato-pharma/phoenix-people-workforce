@@ -34,6 +34,7 @@ const loginErrorMessages: Record<string, string> = {
   invalid_credentials: "Invalid login or password.",
   password_setup_required: "Set your password first using “Set or reset my password” below, then sign in.",
   rate_limited: "Too many failed login attempts. Please try again later.",
+  temporary_password_expired: "Your temporary password has expired. Ask HR to send you a new one.",
   sign_in_unavailable: "Sign-in is temporarily unavailable. Please try again in a few minutes.",
 };
 
@@ -249,8 +250,15 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as
-          | { error?: string; message?: string }
+          | { error?: string; message?: string; redirectTo?: string }
           | null;
+
+        // The emailed TEMPORARY password was right (owner, 12 Nov 2026): no session yet — the person
+        // chooses their own password first. Only ever the server's own /password-setup path.
+        if (payload?.error === "choose_new_password" && payload.redirectTo?.startsWith("/password-setup/")) {
+          window.location.assign(payload.redirectTo);
+          return;
+        }
 
         showLoginError(
           payload?.message ??

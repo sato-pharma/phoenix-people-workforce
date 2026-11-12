@@ -22,7 +22,8 @@ import { classifyOutboxSkip } from "../src/lib/notifications/email.ts";
  */
 export async function runCredentialEmailMirrorTests() {
   // ── 1. the mirror decision ──────────────────────────────────────────────────────────────────────
-  assert.deepEqual([...CREDENTIAL_EMAIL_KINDS], ["password_reset_code", "password_setup_link"], "exactly the two credential kinds he named");
+  // The third is the account email with a temporary password (owner, 12 Nov 2026): it carries a live password too.
+  assert.deepEqual([...CREDENTIAL_EMAIL_KINDS], ["password_reset_code", "password_setup_link", "temporary_password"], "exactly the credential kinds he named");
   for (const kind of CREDENTIAL_EMAIL_KINDS) {
     assert.equal(shouldMirrorEmailToAdminTelegram({ credentialEmail: kind, testingRedirectActive: false }), false, `${kind} is not mirrored`);
   }

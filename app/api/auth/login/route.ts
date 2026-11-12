@@ -21,12 +21,14 @@ import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
 import { readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
+import { mintTemporaryPasswordSetupToken } from "@/lib/auth/password-setup";
 import {
   createSessionToken,
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
 } from "@/lib/auth/session";
 import { shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
+import { temporaryPasswordSetupPath, temporaryPasswordSignInGate } from "@/lib/auth/temporary-password";
 import {
   createSupabaseAuthSession,
   createSupabaseAuthSessionWithoutPassword,
@@ -188,6 +190,7 @@ function resolveCiSmokeUser(loginId: string, password: string) {
       name: "CI Test Account",
       role: "National Sales Manager" as const,
       sessionVersion: 1,
+      temporaryPasswordExpiresAt: null as string | null,
     };
   }
   return null;
@@ -358,7 +361,58 @@ export async function POST(request: Request) {
       );
     }
 
-    if (user.forcePasswordReset) {
+    // THE EMAILED TEMPORARY PASSWORD (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts). The
+    // password above was verified; a correct temporary one inside its window opens NO session. It is
+    // handed a 15-minute setup token and sent to /password-setup, which signs the person in once they
+    // have chosen their own password. Every other pending password is refused exactly as before.
+    const pendingPassword = temporaryPasswordSignInGate(user);
+    if (pendingPassword === "choose_password") {
+      const setupToken = await mintTemporaryPasswordSetupToken(user.loginId);
+      const redirectTo = temporaryPasswordSetupPath(setupToken);
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, reason: "temporary_password_choose_new" },
+        summary: "Signed in with the temporary password: sent to choose a new password",
+      }).catch(() => undefined);
+      // Awaited here, not deferred: the success path's lockout reset is the ONE task after the reply
+      // (tests/login-success-audit-before-reply.test.ts), and this branch opens no session anyway.
+      await clearFailedLoginState({ ip, loginId: user.loginId }).catch(() => undefined);
+
+      if (payload.responseMode === "redirect") {
+        const response = NextResponse.redirect(getRedirectUrl(request, redirectTo), 303);
+        response.headers.set("Cache-Control", "private, no-store, max-age=0");
+        return response;
+      }
+      // 403, never 200: every client that does not know this answer must treat it as "not signed in".
+      return NextResponse.json(
+        {
+          error: "choose_new_password",
+          message: "Choose your own password to open your account.",
+          redirectTo,
+        },
+        { headers: { "Cache-Control": "private, no-store, max-age=0" }, status: 403 },
+      );
+    }
+
+    if (pendingPassword === "temporary_password_expired") {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, reason: "temporary_password_expired" },
+        summary: "Login blocked: temporary password expired",
+      }).catch(() => undefined);
+
+      return loginFailureResponse(
+        request,
+        payload,
+        "temporary_password_expired",
+        "Your temporary password has expired. Ask HR to send you a new one.",
+        403,
+      );
+    }
+
+    if (pendingPassword === "setup_required") {
       await writeAuthAudit({
         actorLoginId: user.loginId,
         entityId: user.loginId,

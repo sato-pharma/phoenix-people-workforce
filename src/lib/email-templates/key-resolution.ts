@@ -37,6 +37,8 @@ export const emailTemplateKeys = [
   // email with no code in it (production, 2026-10-07: three codes delivered, none usable, none
   // ever entered). A separate key stops the two emails competing for one admin-editable body.
   "password_reset_code",
+  // The account email: username, temporary password, sign-in link (owner, 12 Nov 2026).
+  "account_temporary_password",
   "user_created",
   "weekly_plans",
   "outstation",

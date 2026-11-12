@@ -587,15 +587,20 @@ export function AccessControlManager({
       setError("You do not have permission to generate password links.");
       return;
     }
-    const verb = deliveryMode === "email" ? "Email" : deliveryMode === "whatsapp" ? "Prepare a WhatsApp message carrying" : "Generate and copy";
+    // Email and WhatsApp carry the username, a new temporary password and the sign-in link (owner,
+    // 12 Nov 2026); copy alone still makes a one-time setup link.
+    const body =
+      deliveryMode === "copy"
+        ? `Generate and copy a one-time ${user.forcePasswordReset ? "setup" : "reset"} link for ${user.name} (${user.loginId}). The link is token-safe in audit records, but it can set account credentials before expiry.`
+        : `${deliveryMode === "email" ? "Email" : "Prepare a WhatsApp message with"} ${user.name} (${user.loginId}) their username, a new temporary password and the sign-in link. Their current password stops working now; signing in with the temporary one takes them straight to choose their own. It also goes to their Telegram if they have connected it.${deliveryMode === "whatsapp" ? " Phoenix opens the chat with the message written; you press send." : ""}`;
     requestGovernanceConfirmation({
-      body: `${verb} a one-time ${user.forcePasswordReset ? "setup" : "reset"} link for ${user.name} (${user.loginId}). The link is token-safe in audit records, but it can set account credentials before expiry.${deliveryMode === "whatsapp" ? " Phoenix opens the chat with the message written; you press send." : ""}`,
-      confirmLabel: deliveryMode === "email" ? "Send link" : deliveryMode === "whatsapp" ? "Prepare message" : "Generate link",
+      body,
+      confirmLabel: deliveryMode === "email" ? "Send password" : deliveryMode === "whatsapp" ? "Prepare message" : "Generate link",
       onConfirm: async (reason) => {
         await performSendSetupLink(user, deliveryMode, reason);
       },
-      reasonPlaceholder: "Reason for password setup/reset link",
-      title: "Confirm password link",
+      reasonPlaceholder: "Reason for sending sign-in details",
+      title: deliveryMode === "copy" ? "Confirm password link" : "Confirm sign-in details",
     });
   }
 
@@ -703,8 +708,11 @@ export function AccessControlManager({
     const alreadyPasswordReady = targets.filter((user) => !user.forcePasswordReset).length;
     requestGovernanceConfirmation({
       body:
-        `${deliveryMode === "email" ? "Email" : "Generate copy-ready"} one-time password setup/reset links for ${targets.length} selected ${noun}. ` +
-        "This signs each of them out immediately and forces a new password on next sign-in; every link expires in 48h and every send is written to the governance audit log." +
+        (deliveryMode === "email"
+          ? `Email each of the ${targets.length} selected ${noun} their username, a new temporary password and the sign-in link. ` +
+            "This signs each of them out immediately; signing in with the temporary password takes them straight to choose their own. Every temporary password works for 7 days, and every send is written to the governance audit log."
+          : `Generate copy-ready one-time password setup/reset links for ${targets.length} selected ${noun}. ` +
+            "This signs each of them out immediately and forces a new password on next sign-in; every link expires in 48h and every send is written to the governance audit log.") +
         (alreadyPasswordReady > 0
           ? ` ${alreadyPasswordReady} of them already have a working password and will be reset too.`
           : "") +
@@ -713,7 +721,7 @@ export function AccessControlManager({
           : ""),
       confirmLabel:
         deliveryMode === "email"
-          ? `Email ${targets.length} link${targets.length === 1 ? "" : "s"}`
+          ? `Email ${targets.length} password${targets.length === 1 ? "" : "s"}`
           : `Generate ${targets.length} link${targets.length === 1 ? "" : "s"}`,
       onConfirm: async (reason) => {
         await performBulkSetupLink(deliveryMode, reason);
@@ -900,7 +908,7 @@ export function AccessControlManager({
           Edit
         </button>
         <button
-          aria-label={`${user.forcePasswordReset ? "Email setup link" : "Email reset link"} for ${user.name}`}
+          aria-label={`Email username and temporary password to ${user.name}`}
           className={`${buttonBase} border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100`}
           disabled={setupLinkSending !== null || !user.isActive}
           onClick={() => sendSetupLink(user, "email")}
@@ -908,7 +916,7 @@ export function AccessControlManager({
           type="button"
         >
           {setupLinkSending === `${user.loginId}:email` ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
-          Email link
+          Email password
         </button>
         {/*
           Rendered only when the register holds a number this person can be reached on: no button is
@@ -923,7 +931,7 @@ export function AccessControlManager({
         */}
         {user.hasWhatsApp && (
           <button
-            aria-label={`${user.forcePasswordReset ? "Send setup link on WhatsApp" : "Send reset link on WhatsApp"} to ${user.name}`}
+            aria-label={`Send username and temporary password on WhatsApp to ${user.name}`}
             className={cn(
               phxWhatsAppShareButtonClassName,
               layout === "stacked" ? "h-9 px-3" : "h-8 px-2.5",
@@ -1608,14 +1616,14 @@ export function AccessControlManager({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="hidden text-phx-xs text-slate-400 sm:inline">One-time login links to selected</span>
                     <button
-                      aria-label="Email one-time setup links to selected users"
+                      aria-label="Email username and temporary password to selected users"
                       className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition-all duration-160 ease-out hover:bg-sky-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={selectedCount === 0 || bulkSending !== null}
                       onClick={() => requestBulkSetupLink("email")}
                       type="button"
                     >
                       {bulkSending === "email" ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
-                      Email links{selectedCount > 0 ? ` (${selectedCount})` : ""}
+                      Email passwords{selectedCount > 0 ? ` (${selectedCount})` : ""}
                     </button>
                     <button
                       aria-label="Generate copy-ready setup links for selected users"
