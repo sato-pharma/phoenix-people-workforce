@@ -10,6 +10,12 @@ import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 type Props = {
   /**
+   * Where the form posts when the page's scripts never ran (src/lib/auth/password-setup-no-script.ts) —
+   * Safari before 16.4 cannot parse Next.js's runtime, so on an iOS 15 iPhone this is the only submit
+   * there is. Built on the server, because the helper sits beside code the browser bundle must not load.
+   */
+  action: string;
+  /**
    * ALREADY FORMATTED, by the server component that renders this form.
    *
    * It used to be the raw `expiresAt` instant, formatted here with
@@ -32,6 +38,8 @@ type Props = {
    */
   expiryLabel: string | null;
   hrId: string | null;
+  /** A refusal carried back from a native form post, already turned into Phoenix's own words. */
+  initialError?: string | null;
   loginId: string;
   name: string;
   purpose: "reset" | "setup";
@@ -44,10 +52,20 @@ type Props = {
   token: string;
 };
 
-export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, signInAfter = false, token }: Props) {
+export function PasswordSetupForm({
+  action,
+  expiryLabel,
+  hrId,
+  initialError = null,
+  loginId,
+  name,
+  purpose,
+  signInAfter = false,
+  token,
+}: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const displayLoginId = formatHrIdForDisplay(hrId) ?? loginId;
@@ -146,11 +164,15 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, s
           {expiryLabel && !signInAfter ? <p className="mt-2">This link expires on {expiryLabel} Cairo time.</p> : null}
         </div>
 
-        <form className="mt-8 space-y-5" onSubmit={submitForm}>
+        {/* A real method, action and field names: without them a press on a phone whose scripts never
+            ran reloads this screen with nothing saved (src/lib/auth/password-setup-no-script.ts). */}
+        <form action={action} className="mt-8 space-y-5" method="post" onSubmit={submitForm}>
           <label className="block">
             <span className="mb-3 block text-sm font-semibold text-white">New password</span>
             <input
               className="h-14 w-full border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
+              autoComplete="new-password"
+              name="password"
               onChange={(event) => setPassword(event.target.value)}
               placeholder="At least 8 characters"
               type="password"
@@ -161,6 +183,8 @@ export function PasswordSetupForm({ expiryLabel, hrId, loginId, name, purpose, s
             <span className="mb-3 block text-sm font-semibold text-white">Confirm password</span>
             <input
               className="h-14 w-full border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none transition placeholder:text-white/34 focus:border-[#ff7900] focus:ring-4 focus:ring-[#ff6a00]/16"
+              autoComplete="new-password"
+              name="confirmPassword"
               onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="Repeat the same password"
               type="password"
