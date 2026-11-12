@@ -758,7 +758,9 @@ export type PrivateCalendarAcceptedCorrection = {
  * of one person on one date becomes ONE "correction" entry listing each verified claim; an item-scoped request keeps
  * annotating its own item (applyAcceptedDisputeOverlays) and adds nothing here.
  *
- * Display only: the deductions read (getCompanyNoActivityDays) does not read review requests and is untouched.
+ * And the day is not deducted (owner, 2026-11-13): the deduction readers drop the same accepted whole-day requests
+ * through loadProvenWorkedDays (src/lib/private-calendar/accepted-review-days.ts) — getCompanyNoActivityDays itself
+ * still does not read review requests.
  *
  * Owner, 2026-10-29: the BOLD line is what the person did ("Physical Training – Pediatrics Line Outside the Company"),
  * and "verified" is a small ✓ mark under it — never a "Verified correction" heading above the activity. That it came
