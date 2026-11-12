@@ -82,6 +82,8 @@ import {
 } from "../src/lib/new-hire-mailbox/robot/initial-password.ts";
 import {
   COMPANY_MAIL_DOMAIN,
+  ROBOT_DEFAULT_MAX_CREATES_PER_RUN,
+  ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN,
   ROBOT_MAX_DAYS_BEFORE_HIRE,
   capForRun,
   evaluateProvisionSafety,
@@ -1152,6 +1154,133 @@ async function runAlreadyExistsLogLevelCases(): Promise<void> {
 }
 
 /**
+ * 🔴 AN EXISTING MAILBOX TAKES NO CREATE SLOT — a queue headed by three existing mailboxes still
+ * reaches the fourth hire on the same run.
+ *
+ * In production on 10 and 11 Nov 2026 the sweep looked up Esraa Ibrahim Saad, Ahmed Abd-Elnaim and
+ * Norhan Samir Selim Ramla, found each already in Turbify, and stopped: the cap was a `slice(0, 3)`
+ * over a stable order, so those three used the whole run every morning and the seven hires behind
+ * them were never tried. This drives the real runner with a fake console in which the first three
+ * addresses exist, and reads which hires the console was asked about.
+ *
+ * Break-the-fix: put the `slice(0, 3)` back (or count an already-exists hire as a slot) and the
+ * fourth hire is never reached, so the `reached` assertion fails. The cap half — exactly three REAL
+ * create attempts, the fourth-and-later never pressed — is what keeps the fix from becoming a runaway.
+ */
+async function runExistingMailboxTakesNoSlotCases(): Promise<void> {
+  const hires = Array.from({ length: 8 }, (_, index) => {
+    const n = index + 1;
+    return {
+      addressHeldBy: null,
+      employee: employee({ displayName: `Hire ${n}`, hrId: `B-90${n}` }),
+      task: task({ emailAddress: `hire.${n}@satopharma.com` }),
+    } satisfies JoinerCandidate;
+  });
+
+  /** A console in which `existing` addresses are already there; every create is recorded. */
+  const consoleWith = (existing: ReadonlySet<string>, lookedUp: string[]): JoinerConsoleDriver => ({
+    close: async () => {},
+    createMailbox: async ({ local }: { local: string }) => {
+      const address = `${local}@satopharma.com`;
+      lookedUp.push(local);
+      if (existing.has(local)) {
+        throw new TurbifyJoinerStepError(`${address} already exists in Turbify`, { alreadyExists: true });
+      }
+      return { address, oneTimePassword: "Otp-1234!" };
+    },
+    generateAppPassword: async () => ({ appPassword: "abcdabcdabcdabcd" }),
+    setMailboxPassword: async () => {},
+    signIn: async () => {},
+  }) as unknown as JoinerConsoleDriver;
+
+  const runWith = async (
+    existing: ReadonlySet<string>,
+    extra: Partial<JoinerRunnerDeps> = {},
+  ): Promise<{ lookedUp: string[]; recorded: string[]; result: Awaited<ReturnType<typeof runTurbifyJoinerRobot>> }> => {
+    const lookedUp: string[] = [];
+    const recorded: string[] = [];
+    const realLog = console.log;
+    console.log = () => {};
+    try {
+      const result = await runTurbifyJoinerRobot({
+        deps: {
+          companyPassword: () => "Sato@2027",
+          loadCandidates: async () => hires,
+          record: async ({ hrId }) => void recorded.push(hrId),
+          today: () => TODAY,
+          ...extra,
+        },
+        driver: consoleWith(existing, lookedUp),
+        dryRun: false,
+        enabled: true,
+      });
+      return { lookedUp, recorded, result };
+    } finally {
+      console.log = realLog;
+    }
+  };
+
+  // ── the production shape: the first three exist ──────────────────────────────────────────────
+  const headed = await runWith(new Set(["hire.1", "hire.2", "hire.3"]));
+  assert.ok(
+    headed.lookedUp.includes("hire.4"),
+    "a queue headed by three existing mailboxes must still reach the fourth hire on the same run — "
+    + `the console was asked only about ${headed.lookedUp.join(", ")}`,
+  );
+  assert.deepEqual(
+    headed.lookedUp, ["hire.1", "hire.2", "hire.3", "hire.4", "hire.5", "hire.6"],
+    "three existing hires take no slot, and the three slots go to the next three allowed hires",
+  );
+  assert.deepEqual(headed.recorded, ["B-904", "B-905", "B-906"], "the three created mailboxes are recorded");
+  assert.equal(headed.result.provisioned, 3);
+
+  // ── the cap still holds: never more than three REAL create attempts ──────────────────────────
+  const none = await runWith(new Set());
+  assert.deepEqual(none.lookedUp, ["hire.1", "hire.2", "hire.3"], "with nothing existing, exactly three are attempted");
+  assert.equal(none.result.provisioned, 3);
+
+  // A real console failure is a create attempt and DOES take a slot — only the proven
+  // already-exists refusal hands its slot on.
+  const failingLookedUp: string[] = [];
+  const failing = {
+    close: async () => {},
+    createMailbox: async ({ local }: { local: string }) => {
+      failingLookedUp.push(local);
+      throw new Error("Turbify returned an unexpected page");
+    },
+    signIn: async () => {},
+  } as unknown as JoinerConsoleDriver;
+  const realError = console.error;
+  console.error = () => {};
+  try {
+    await runTurbifyJoinerRobot({
+      deps: {
+        companyPassword: () => "Sato@2027",
+        loadCandidates: async () => hires,
+        record: async () => {},
+        today: () => TODAY,
+      },
+      driver: failing,
+      dryRun: false,
+      enabled: true,
+    });
+  } finally {
+    console.error = realError;
+  }
+  assert.deepEqual(failingLookedUp, ["hire.1", "hire.2", "hire.3"], "a real failure takes its slot");
+
+  // Every hire existing: each one is looked up once, nothing is created, nothing is recorded.
+  const all = await runWith(new Set(hires.map((_, index) => `hire.${index + 1}`)));
+  assert.equal(all.lookedUp.length, hires.length);
+  assert.deepEqual(all.recorded, []);
+
+  // And the read-only lookups have their own ceiling, so a queue of existing mailboxes is bounded.
+  const bounded = await runWith(new Set(hires.map((_, index) => `hire.${index + 1}`)), { maxLookupsPerRun: 5 });
+  assert.equal(bounded.lookedUp.length, 5, "the lookup ceiling bounds a run of existing mailboxes");
+  assert.ok(ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN > ROBOT_DEFAULT_MAX_CREATES_PER_RUN);
+}
+
+/**
  * The sign-in wait (2026-11-12). At 08:15 that morning the administrator's sign-in was still on the
  * login form six seconds after a delivered click, with nothing on the page to say why — the first
  * failed sign-in after daily successes since 3 October. The fixed six seconds became a floor with a
@@ -1273,6 +1402,7 @@ async function runSignInLandingCases(): Promise<void> {
 }
 
 export async function runNewHireMailboxRobotTests(): Promise<void> {
+  await runExistingMailboxTakesNoSlotCases();
   runExistenceReadingCases();
   runExistenceWiringCases();
   runMailboxLoginCases();
