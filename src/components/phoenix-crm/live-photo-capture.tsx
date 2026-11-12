@@ -51,7 +51,13 @@ import { Camera, ImagePlus, LoaderCircle, LocateFixed, RotateCcw, SwitchCamera, 
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { noteReading } from "@/components/phoenix-crm/location-reader";
-import { receiverRunningSince, receiverStarted, receiverStopped, useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
+import {
+  latestWarmReading,
+  receiverRunningSince,
+  receiverStarted,
+  receiverStopped,
+  useLocationWarmUp,
+} from "@/components/phoenix-crm/location-receiver";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -360,8 +366,17 @@ export function LivePhotoCapture({
       return false;
     }
     stopLocation();
-    setFix(null);
-    setLocationNote("Finding your location");
+    // Start from the warm-up's own recent reading when it has one, so "Take the photo" is ready the
+    // moment the camera is (location-receiver.ts, 12 Nov 2026). It is a first reading like any other: the
+    // watch below replaces it on the same rules, the shutter still reads afresh, and the cold rule
+    // judges it by when the receiver was switched on — the warm-up's start, still running.
+    const warm = latestWarmReading(FIX_STALE_MS);
+    setFix(
+      warm
+        ? { lat: warm.lat, lon: warm.lon, accuracyMeters: warm.accuracyMeters, at: new Date(warm.takenAt).toISOString(), arrivedAt: warm.arrivedAt }
+        : null,
+    );
+    setLocationNote(warm ? null : "Finding your location");
     receiverRef.current = receiverStarted();
     watchRef.current = navigator.geolocation.watchPosition(
       (position) => {

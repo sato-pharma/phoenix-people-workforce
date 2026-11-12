@@ -18,6 +18,7 @@ import {
   oddReadingSentence,
   type CaseStoryInput,
 } from "../src/lib/crm-integrity/integrity-case-story.ts";
+import { latestWarmReading, noteWarmReading } from "../src/components/phoenix-crm/location-receiver.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +115,29 @@ export function runPhoenixCrmPhotoReadingTests() {
   ] as const) {
     assert.ok(code(path).includes(call), `${path} holds the receiver warm`);
   }
+  // 🔴 THE WARM-UP'S READING IS KEPT AND THE CAMERA STARTS FROM IT (owner, 12 Nov 2026, validating in
+  // training: "the location took hilarious time"). The camera used to throw it away and hold "Take the
+  // photo" until its own fresh watch answered — indoors, a long wait for a reading the page already had.
+  assert.match(receiver, /noteReading\(position\);\s*noteWarmReading\(position\);/, "🔴 the warm-up keeps every reading it is handed, not only the probe's copy");
+  assert.match(receiver, /function stopWarmWatch\(\) \{[\s\S]{0,300}latestWarm = null;/, "a stopped receiver's reading is forgotten");
+  const startLocation = camera.slice(camera.indexOf("function startLocation()"), camera.indexOf("async function openLens"));
+  const seedAt = startLocation.indexOf("const warm = latestWarmReading(FIX_STALE_MS);");
+  assert.ok(seedAt > 0, "🔴 the camera starts from the warm-up's recent reading instead of waiting for its own first one");
+  assert.ok(seedAt < startLocation.indexOf("receiverRef.current = receiverStarted();"), "seeded before its own watch starts, so a reading from the watch still replaces it on the same rules");
+  assert.doesNotMatch(startLocation, /setFix\(null\);/, "🔴 and never clears back to nothing while a recent reading is in hand");
+  assert.doesNotMatch(code("src/components/phoenix-crm/capture-location.tsx"), /latestWarmReading/, "🔴 the Capture-location pin never reads it — the pin stays its own fresh reading");
+  assert.doesNotMatch(code("src/lib/evidence/read-shutter-fix.ts"), /latestWarmReading/, "🔴 nor does the shutter, which must stay a second reading");
+  const handed = { coords: { latitude: DISHNA.lat, longitude: DISHNA.lon, accuracy: 18 }, timestamp: ON + 40_000 } as unknown as GeolocationPosition;
+  noteWarmReading(handed, ON + 41_000);
+  assert.deepEqual(
+    latestWarmReading(15_000, ON + 50_000),
+    { lat: DISHNA.lat, lon: DISHNA.lon, accuracyMeters: 18, takenAt: ON + 40_000, arrivedAt: ON + 41_000 },
+    "a reading nine seconds old is handed to the camera whole, with its own time and arrival",
+  );
+  noteWarmReading({ coords: { latitude: Number.NaN, longitude: 1, accuracy: 5 }, timestamp: ON + 49_000 } as unknown as GeolocationPosition, ON + 49_000);
+  assert.equal(latestWarmReading(15_000, ON + 50_000)?.arrivedAt, ON + 41_000, "a reading with no usable place never replaces the kept one");
+  assert.equal(latestWarmReading(15_000, ON + 57_000), null, "one older than the camera's staleness window is not handed over");
+
   const screens = code("src/components/phoenix-crm/list-screens.tsx");
   for (const screen of ["export function ValidateScreen(", "export function AddPlaceScreen("]) {
     const start = screens.indexOf(screen);

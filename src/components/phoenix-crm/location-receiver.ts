@@ -50,6 +50,52 @@ export function receiverRunningSince(): number | null {
   return since;
 }
 
+// ── The warm-up's own latest reading ────────────────────────────────────────────────────────────
+//
+// 🔴 KEPT, NOT THROWN AWAY (12 Nov 2026, the owner validating in training: "the location took hilarious
+// time"). The warm-up used to hand its readings to `noteReading` and nothing else, so the camera — opened
+// after the receiver had already been reading for a minute — started a watch of its own with
+// `maximumAge: 0` and held "Take the photo" until THAT watch answered. Indoors the phone sends a new
+// reading only every so often, so the rep stood waiting for a reading the page had already been handed.
+// The camera now starts from this one when it is recent; its own watch and the fresh shutter reading
+// still replace it exactly as they replace any first reading (photo-reading-rules.ts), and the cold
+// rule still judges it by when the receiver was switched on. The Capture-location pin never reads it:
+// the pin stays its own fresh reading, because the photo-versus-pin check needs two readings, not one
+// read twice (read-shutter-fix.ts, 2026-10-12).
+
+/** One reading the warm-up was handed: its place, its accuracy, the phone's time for it, and when it arrived. */
+export type WarmReading = {
+  lat: number;
+  lon: number;
+  accuracyMeters: number | null;
+  /** The phone's own time for the reading (`position.timestamp`). */
+  takenAt: number;
+  /** When this page received it, on the same clock as `receiverStarted`. */
+  arrivedAt: number;
+};
+
+let latestWarm: WarmReading | null = null;
+
+/** Keep the warm-up's newest reading. A position with no usable coordinates is ignored. */
+export function noteWarmReading(position: GeolocationPosition, arrivedAt: number = Date.now()): void {
+  const { latitude, longitude, accuracy } = position.coords;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+  latestWarm = {
+    lat: latitude,
+    lon: longitude,
+    accuracyMeters: Number.isFinite(accuracy) ? accuracy : null,
+    takenAt: Number.isFinite(position.timestamp) && position.timestamp > 0 ? position.timestamp : arrivedAt,
+    arrivedAt,
+  };
+}
+
+/** The warm-up's newest reading if it arrived within `maxAgeMs`, else null. Never waits. */
+export function latestWarmReading(maxAgeMs: number, now: number = Date.now()): WarmReading | null {
+  if (!latestWarm) return null;
+  const age = now - latestWarm.arrivedAt;
+  return age >= 0 && age <= maxAgeMs ? latestWarm : null;
+}
+
 // ── The shared warm-up: one watch for the page, however many screens hold it ─────────────────────
 
 let holders = 0;
@@ -72,6 +118,8 @@ function stopWarmWatch() {
   warmWatch = null;
   receiverStopped(warmToken);
   warmToken = null;
+  // A reading from a receiver that is no longer running vouches for nothing the next screen does.
+  latestWarm = null;
 }
 
 async function startWarmWatch() {
@@ -81,7 +129,10 @@ async function startWarmWatch() {
   if (holders === 0 || warmWatch !== null) return;
   warmToken = receiverStarted();
   warmWatch = navigator.geolocation.watchPosition(
-    (position) => noteReading(position),
+    (position) => {
+      noteReading(position);
+      noteWarmReading(position);
+    },
     (error) => {
       // Switched off since the question was asked: stop quietly, and the camera will ask.
       if (error.code === error.PERMISSION_DENIED) stopWarmWatch();
