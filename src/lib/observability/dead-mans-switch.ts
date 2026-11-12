@@ -1,6 +1,7 @@
 import { isProductionRuntime } from "@/config/system-settings";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { recordJobHeartbeat } from "@/lib/observability/job-heartbeat";
+import { HEALTHCHECKS_CHECKED_SLUGS } from "@/lib/observability/job-schedule";
 import { logWarning } from "@/lib/observability/log";
 import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
@@ -46,8 +47,13 @@ export type DeadMansSwitchOutcome = "success" | "fail";
  */
 type HealthchecksSignal = DeadMansSwitchOutcome | "start";
 
-/** The external half: Healthchecks.io. Inert when HEALTHCHECKS_PING_KEY is unset. */
+/**
+ * The external half: Healthchecks.io. Inert when HEALTHCHECKS_PING_KEY is unset, and for every job that
+ * holds no check there (`HEALTHCHECKS_CHECKED_SLUGS`): such a ping could only be refused, and a stream of
+ * expected refusals is what hid a dead account for three days in November 2026.
+ */
 async function pingHealthchecks(jobSlug: string, outcome: HealthchecksSignal, detail?: string): Promise<void> {
+  if (!HEALTHCHECKS_CHECKED_SLUGS.has(jobSlug)) return;
   const key = pingKey();
   if (!key) return;
 
