@@ -35,6 +35,7 @@ import { callPhoenixCrm, numberOrNull, throwIfError } from "@/lib/phoenix-crm/se
 import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { canDecideSharedPlaces } from "@/lib/phoenix-crm/server/shared-places";
+import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import {
   findTrustedPoint,
@@ -267,6 +268,8 @@ export async function applyTrustedPointFor(customerId: string, actorHrId: string
     settings: config.settings,
     scope: "unplaced",
   });
+  // Validated on a trusted point, so validated on the other two lines of his area too (line-twins.ts).
+  await shareAcrossLinesQuietly(preview.customerId);
   return { placeId: String(result.place_id), customerId: String(result.customer_id), event: String(result.event ?? ""), preview };
 }
 

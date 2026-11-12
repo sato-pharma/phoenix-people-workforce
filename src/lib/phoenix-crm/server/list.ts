@@ -178,6 +178,7 @@ import {
   recordTimetableRefusal,
 } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import {
   SEATING_AWAY_CODE,
@@ -295,7 +296,7 @@ export type ListPlace = {
    * Where the fixed point came from (owner, 2026-09-29): the photo's own shutter reading, the
    * Capture-location pin when the photo had none, or a move by the Super Admin or the SFE Manager.
    */
-  pointSource?: "photo" | "pin" | "moved" | "shared_place" | "trusted";
+  pointSource?: "photo" | "pin" | "moved" | "shared_place" | "trusted" | "line_twin";
   /**
    * The polyclinic, medical centre, medical tower or hospital outpatient suite this customer is SEATED
    * in — set only on a seated place, whose point is the venue's own (owner, 2026-10-09).
@@ -764,7 +765,8 @@ export function mapPlaceRow(row: Row): ListPlace {
     capturedAt: String(row.captured_at),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     pointSource:
-      row.point_source === "photo" || row.point_source === "moved" || row.point_source === "shared_place" || row.point_source === "trusted"
+      row.point_source === "photo" || row.point_source === "moved" || row.point_source === "shared_place" || row.point_source === "trusted" ||
+      row.point_source === "line_twin"
         ? row.point_source
         : "pin",
     sharedPlaceId: text(row.shared_place_id),
@@ -2774,6 +2776,10 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
       settings: viewer.config.settings,
       scope: "unplaced",
     });
+    // 🔴 ONE DOCTOR, THREE LINES (owner, 2026-11-12; line-twins.ts): validated here, so his rows on the other
+    // two lines of this area follow — a waiting one takes this place, a validated one whose point agrees
+    // moves onto one point. A held validation is not his yet: it is shared when it is approved.
+    if (!validated.held) await shareAcrossLinesQuietly(validated.customerId);
     // The held signboard's first re-read, straight after the door's own (owner, 2026-10-17: "Hold;
     // re-read; else you decide"). LAST, because it can take most of a minute, and AFTER the door's
     // verdict is recorded above, so the count it writes is 2.

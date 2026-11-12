@@ -35,7 +35,7 @@ import {
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
 import { distanceMeters, formatDistance } from "@/lib/phoenix-crm/geo";
-import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
+import { noPhotoTextFor } from "@/lib/phoenix-crm/trusted-point-rules";
 import type { ListCustomer, ListPlace, PlaceMoveResult, PlaceMoveTarget, PlaceReading } from "@/lib/phoenix-crm/view-types";
 
 /** The written reason a move needs — the bounds place-move.ts and phoenix_crm_move_place hold. */
@@ -70,6 +70,7 @@ export function pointSourceText(place: Pick<ListPlace, "pointSource" | "moved">)
   }
   if (place.pointSource === "photo") return "Fixed on the photo's own reading";
   if (place.pointSource === "trusted") return "Fixed by the Super Admin on the trusted point the reps' readings agree on (no photo)";
+  if (place.pointSource === "line_twin") return "Validated on another line — it stands on that line's validated place and follows it (no photo of its own)";
   return "Fixed on the Capture-location pin (the photo had no reading)";
 }
 
@@ -188,7 +189,7 @@ function PlaceMoveForm({
           <CrmPhotoThumb
             alt={`Signboard photo: ${customer.name}, ${name}`}
             caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`}
-            missingText={place.pointSource === "trusted" ? TRUSTED_POINT_NO_PHOTO : undefined}
+            missingText={noPhotoTextFor(place.pointSource)}
             path={place.photoPath}
           />
           <div className="min-w-0 flex-1 basis-56">

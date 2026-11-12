@@ -40,6 +40,19 @@ export const TRUSTED_MIN_DAYS = 3;
 /** What every screen draws where a trusted point's photo would be — plain words, no image. */
 export const TRUSTED_POINT_NO_PHOTO = "Trusted point — no photo";
 
+/**
+ * What a screen draws where the photo of a place validated FROM ANOTHER LINE would be (owner,
+ * 2026-11-12; docs/phoenix-crm-line-twins.md). The copy carries its source's point, never its photo.
+ */
+export const LINE_TWIN_NO_PHOTO = "Validated on another line — no photo of its own";
+
+/** The words for a place that has no photo by design, or undefined when a missing photo is a lost file. */
+export function noPhotoTextFor(pointSource: unknown): string | undefined {
+  if (pointSource === "trusted") return TRUSTED_POINT_NO_PHOTO;
+  if (pointSource === "line_twin") return LINE_TWIN_NO_PHOTO;
+  return undefined;
+}
+
 export type TrustedPointSource = "phoenix" | "old_crm";
 
 /** One reading of where a rep stood with this customer. */

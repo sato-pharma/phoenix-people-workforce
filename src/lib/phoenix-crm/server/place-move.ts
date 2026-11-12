@@ -25,6 +25,7 @@ import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/
 import { canDecideSharedPlaces, sharedPlaceForSeating } from "@/lib/phoenix-crm/server/shared-places";
 import { settleVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetable";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
+import { followLineTwinCopiesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -120,6 +121,8 @@ export async function movePlace(viewer: PhoenixCrmViewer, raw: unknown): Promise
     settings: viewer.config.settings,
     scope: "all",
   });
+  // Its copies on the other lines moved with it in the database (owner, 2026-11-12; line-twins.ts).
+  await followLineTwinCopiesQuietly([moved.placeId], viewer.config.settings);
   return moved;
 }
 
@@ -165,6 +168,9 @@ export async function retirePlace(viewer: PhoenixCrmViewer, raw: unknown): Promi
     settings: viewer.config.settings,
     scope: "all",
   });
+  // Its copies on the other lines were removed with it in the database; their doctors are measured
+  // again and offered to any twin still validated (owner, 2026-11-12; line-twins.ts).
+  await followLineTwinCopiesQuietly([retired.placeId], viewer.config.settings, { retired: true });
   return retired;
 }
 
