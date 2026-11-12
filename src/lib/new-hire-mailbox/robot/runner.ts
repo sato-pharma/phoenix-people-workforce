@@ -11,7 +11,10 @@
  *                                 account on a one-time password nobody holds.
  *   3. the gates, per candidate → `evaluateProvisionSafety`, against the register and the employee
  *                                 record. An address anybody else holds never reaches the console.
- *   4. the per-run cap          → a runaway creates accounts, which cost money and seats.
+ *   4. the per-run cap          → a runaway creates accounts, which cost money and seats. A hire
+ *                                 whose mailbox the console shows ALREADY EXISTS takes no slot:
+ *                                 nothing was created, so the run moves on to the next allowed hire
+ *                                 (see "AN EXISTING MAILBOX TAKES NO SLOT" below).
  *
  * Only then does a driver appear, and on a dry run it is the one that touches nothing.
  *
@@ -34,9 +37,10 @@ import { TurbifyJoinerStepError } from "./turbify-joiner";
 import {
   ROBOT_ACTOR,
   ROBOT_DEFAULT_MAX_CREATES_PER_RUN,
-  capForRun,
+  ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN,
   evaluateProvisionSafety,
   isQuietRefusal,
+  normalizeRunLimit,
   type ProvisionEmployeeFacts,
   type ProvisionRefusal,
   type ProvisionTaskFacts,
@@ -98,7 +102,10 @@ export type JoinerRunnerDeps = {
     actor: string;
   }) => Promise<void>;
   today: () => string;
+  /** Mailboxes the run may try to create. Defaults to ROBOT_DEFAULT_MAX_CREATES_PER_RUN (3). */
   maxPerRun?: number;
+  /** Hires the run may look up in the console at all. Defaults to ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN. */
+  maxLookupsPerRun?: number;
 };
 
 function emptyResult(enabled: boolean, dryRun: boolean, blocked: string | null = null): JoinerRunResult {
@@ -168,8 +175,18 @@ export async function runTurbifyJoinerRobot(options: {
   }
 
   // Gate 4 — the cap.
-  const queue = capForRun(allowed, deps.maxPerRun ?? ROBOT_DEFAULT_MAX_CREATES_PER_RUN);
-  if (queue.length === 0) return result;
+  //
+  // 🔴 AN EXISTING MAILBOX TAKES NO SLOT. The cap used to be a `slice(0, 3)` over a stable order, and
+  // `createMailbox` refuses a mailbox the console already holds (the `alreadyExists` throw, before
+  // any create control is pressed). So the same three hires — Esraa Ibrahim Saad, Ahmed Abd-Elnaim
+  // and Norhan Samir Selim Ramla, read in the production logs on 10 and 11 Nov 2026 — came first
+  // every morning, were declined, and used up the whole run: the seven hires behind them were never
+  // looked at. Now the slot is counted per hire the run actually tried to CREATE (provisioned,
+  // partial or a real failure), and an already-exists hire hands its slot to the next allowed hire.
+  // The cap of real create attempts is unchanged; `lookupLimit` bounds the read-only lookups.
+  const createLimit = normalizeRunLimit(deps.maxPerRun ?? ROBOT_DEFAULT_MAX_CREATES_PER_RUN);
+  const lookupLimit = normalizeRunLimit(deps.maxLookupsPerRun ?? ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN);
+  if (allowed.length === 0 || createLimit === 0 || lookupLimit === 0) return result;
 
   const driver = dryRun ? createDryRunJoinerDriver() : options.driver;
   if (!driver) {
@@ -180,7 +197,13 @@ export async function runTurbifyJoinerRobot(options: {
   try {
     await driver.signIn();
 
-    for (const { address, candidate } of queue) {
+    let createSlotsTaken = 0;
+    let lookups = 0;
+    for (const { address, candidate } of allowed) {
+      if (createSlotsTaken >= createLimit || lookups >= lookupLimit) break;
+      lookups += 1;
+      // Every attempt takes a slot unless the console proves the mailbox already existed.
+      let tookCreateSlot = true;
       const { displayName, hrId } = candidate.employee;
       const local = address.slice(0, address.indexOf("@"));
       let created: { address: string; oneTimePassword: string } | null = null;
@@ -235,6 +258,8 @@ export async function runTurbifyJoinerRobot(options: {
         const expectedExists =
           !partial && error instanceof TurbifyJoinerStepError && error.alreadyExists;
         if (expectedExists) {
+          // Nothing was created, so the slot goes to the next allowed hire.
+          tookCreateSlot = false;
           logInfo("New hire mailbox robot skipped a mailbox that already exists in Turbify", {
             labels: { event: "new_hire_robot_exists", hrId },
           });
@@ -245,6 +270,7 @@ export async function runTurbifyJoinerRobot(options: {
           });
         }
       }
+      if (tookCreateSlot) createSlotsTaken += 1;
     }
   } finally {
     await driver.close().catch(() => {});
