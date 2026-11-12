@@ -390,7 +390,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "autoCompactWindow": 333000,
   "promptSuggestionEnabled": true,
   "skipDangerousModePermissionPrompt": false,

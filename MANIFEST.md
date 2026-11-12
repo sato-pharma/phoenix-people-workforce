@@ -125,4 +125,4 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |
 | `scripts/xlsx-snapshot.cmd` | 3542 | `e5634c4dda32d8a9` |
 | `scripts/xlsx-tripwire.ps1` | 25606 | `2e060f5e3887bc24` |
-| `settings.json` | 19686 | `af0739bf7aedb85b` |
+| `settings.json` | 19688 | `4f7746e9e6689271` |
