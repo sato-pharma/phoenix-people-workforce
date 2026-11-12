@@ -75,6 +75,8 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/admin/workflow-registry": { admin: "/admin/workflow-control" },
 
   // ── Approvals ───────────────────────────────────────────────────────────────────────────────────
+  // Approve all / Reject all — called from both the Vacation and the Excuse inbox; mapped to Vacation, the busier one.
+  "/api/approvals/bulk-decision": { admin: "/admin/approvals/vacation", portal: "/employee-portals/approvals/vacation" },
   "/api/approvals/direct-orders": { admin: "/admin/direct-orders", portal: "/employee-portals/direct-orders" },
   "/api/approvals/early-bird": { admin: "/admin/early-birds", portal: "/employee-portals/early-birds" },
   "/api/approvals/excuse": { admin: "/admin/approvals/excuse", portal: "/employee-portals/approvals/excuse" },
