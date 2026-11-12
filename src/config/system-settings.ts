@@ -486,11 +486,14 @@ export const systemAuthEmailText = {
   passwordResetSummary: `Use this one-time link to reset your ${systemIdentity.appName} password. After that, sign in with your HR_ID and the new password you choose.`,
   passwordResetTitle: `Reset your ${systemIdentity.appName} password`,
   // The username-and-temporary-password email (owner, 12 Nov 2026 — src/lib/auth/temporary-password.ts).
-  credentialsSetupSubject: `Your ${systemIdentity.appName} account`,
-  credentialsSetupTitle: `Your ${systemIdentity.appName} account is ready`,
-  credentialsResetSubject: `Your new ${systemIdentity.appName} password`,
-  credentialsResetTitle: `Your new ${systemIdentity.appName} password`,
-  credentialsSummary: `Copy your username and temporary password below into the sign-in page. Once you sign in, ${systemIdentity.appName} asks you to choose your own password, and the temporary one stops working.`,
+  // The subjects and opening lines are the Phoenix account emails the owner was already sending
+  // (production's "Welcome to Phoenix Workforce — Account Setup" and "Password Reset" templates).
+  credentialsSetupSubject: `Welcome to ${systemIdentity.appName} — Account Setup`,
+  credentialsSetupTitle: `Welcome to ${systemIdentity.appName} — Account Setup`,
+  credentialsResetSubject: `${systemIdentity.appName} — Password Reset`,
+  credentialsResetTitle: `${systemIdentity.appName} — Password Reset`,
+  credentialsSetupSummary: `Your ${systemIdentity.appName} account has been successfully created. Please use the username and temporary password below to sign in.`,
+  credentialsResetSummary: `Your ${systemIdentity.appName} password has been reset. Please use the username and temporary password below to sign in.`,
 } as const;
 
 export const systemHrReplyEmailText = {

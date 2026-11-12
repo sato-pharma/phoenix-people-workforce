@@ -612,12 +612,12 @@ async function sendTemporaryPassword(input: {
         recipientName: user.name?.trim() || undefined,
         recipients: [channel.deliverableEmail],
         subject: purpose === "setup" ? systemAuthEmailText.credentialsSetupSubject : systemAuthEmailText.credentialsResetSubject,
-        summary: systemAuthEmailText.credentialsSummary,
+        summary: purpose === "setup" ? systemAuthEmailText.credentialsSetupSummary : systemAuthEmailText.credentialsResetSummary,
         title,
         tone: "warning",
       },
       eventType: purpose === "setup" ? "account_credentials_sent" : "temporary_password_sent",
-      message: systemAuthEmailText.credentialsSummary,
+      message: purpose === "setup" ? systemAuthEmailText.credentialsSetupSummary : systemAuthEmailText.credentialsResetSummary,
       metadata: {
         // Keyed on a digest of the HASH, never the password: the key is stored.
         idempotencyKey: `temporary-password:${loginId}:${crypto.createHash("sha256").update(passwordHash).digest("hex").slice(0, 32)}`,
