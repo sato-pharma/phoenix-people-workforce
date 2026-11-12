@@ -160,7 +160,7 @@ export function NewHireAccountsAdmin({ view }: { view: NewHireAccountsView }) {
     if (asking) {
       return (
         <div className="grid min-w-0 gap-2">
-          <p className="break-words text-xs font-bold text-rose-800">{`A new link cancels the one sent before. Send it by ${newHireChannelName(asking.channel)}?`}</p>
+          <p className="break-words text-xs font-bold text-rose-800">{`A new send replaces the password sent before. Send it by ${newHireChannelName(asking.channel)}?`}</p>
           <div className="flex min-w-0 flex-wrap gap-2">
             <CrmButton disabled={locked} onClick={() => void send(row, asking.channel)} size="sm" variant="primary">
               Send it

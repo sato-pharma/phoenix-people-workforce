@@ -20,6 +20,11 @@ export type AppAuthUser = {
   name?: string | null;
   role: PhoenixRole;
   sessionVersion: number;
+  /**
+   * Set while the stored password is a TEMPORARY one an admin emailed (owner, 12 Nov 2026). Signing in
+   * with it opens the choose-your-password screen instead of a session — src/lib/auth/temporary-password.ts.
+   */
+  temporaryPasswordExpiresAt: string | null;
 };
 
 type AppAuthUserDbRow = {
@@ -37,6 +42,7 @@ type AppAuthUserDbRow = {
   password_hash: string;
   role: string;
   session_version?: number | null;
+  temporary_password_expires_at?: string | null;
   test_persona_of_hr_id?: string | null;
 };
 
@@ -63,7 +69,7 @@ export function looksLikeEmail(value: string | null | undefined): boolean {
 }
 
 const authUserBaseQuery =
-  "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset, is_test_persona, test_persona_of_hr_id";
+  "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset, temporary_password_expires_at, is_test_persona, test_persona_of_hr_id";
 
 // Resolve the Sato email an employee typed to their active auth row. The work mailbox lives on
 // employees.work_email (unique), NOT on app_auth_users, so this first tries the optional
@@ -210,6 +216,7 @@ function mapAuthUserRow(row: AppAuthUserDbRow): AppAuthUser {
     name: row.name ?? row.login_id,
     role: normalizeRole(row.role),
     sessionVersion: Number.isFinite(row.session_version) ? Number(row.session_version) : 1,
+    temporaryPasswordExpiresAt: row.temporary_password_expires_at ?? null,
   };
 }
 

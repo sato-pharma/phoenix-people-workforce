@@ -103,7 +103,14 @@ function runSenderRules(): void {
 
   const update = sender.slice(sender.indexOf('.from("app_auth_users")\n    .update({\n      force_password_reset: true'));
   const written = update.slice(update.indexOf("{") + 1, update.indexOf("}")).trim().split(/,\s*/).filter(Boolean).map((line) => line.split(":")[0].trim());
-  assert.deepEqual(written, ["force_password_reset", "session_version", "updated_at"], "🔴 the send writes these and no role, line, manager or scope (owner: \"without changing in access or authorities\")");
+  // temporary_password_expires_at: a link cancels any emailed temporary password (12 Nov 2026) — a credential, not an authority.
+  assert.deepEqual(written, ["force_password_reset", "session_version", "temporary_password_expires_at", "updated_at"], "🔴 the send writes these and no role, line, manager or scope (owner: \"without changing in access or authorities\")");
+  // The emailed username-and-temporary-password send (owner, 12 Nov 2026) writes the password and its expiry, and nothing else.
+  const temporaryAt = sender.indexOf(".update({\n      force_password_reset: true,\n      password_hash: passwordHash,");
+  assert.ok(temporaryAt > 0, "the temporary-password send's write is where this test reads it");
+  const temporary = sender.slice(temporaryAt);
+  const temporaryWritten = temporary.slice(temporary.indexOf("{") + 1, temporary.indexOf("}")).trim().split(/,\s*/).filter(Boolean).map((line) => line.split(":")[0].trim());
+  assert.deepEqual(temporaryWritten, ["force_password_reset", "password_hash", "session_version", "temporary_password_expires_at", "updated_at"], "🔴 the temporary-password send writes the password and no role, line, manager or scope");
 
   const code = sender.slice(sender.indexOf("export async function requestPasswordResetCode("));
   assert.ok(!code.includes("personal_email") && !code.includes("resolveChosenEmail"), "🔴 the self-service reset code still goes to the Sato mailbox alone (2026-10-07)");

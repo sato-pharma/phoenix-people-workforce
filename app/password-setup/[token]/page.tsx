@@ -1,14 +1,18 @@
 import { PasswordSetupForm } from "@/components/auth/password-setup-form";
 import { systemIdentity } from "@/config/system-settings";
 import { getPasswordSetupPreview } from "@/lib/auth/password-setup";
+import { SIGN_IN_AFTER_SETUP_PARAM, SIGN_IN_AFTER_SETUP_VALUE } from "@/lib/auth/temporary-password";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 export const dynamic = "force-dynamic";
 
 export default async function PasswordSetupPage(
-  { params }: { params: Promise<{ token: string }> },
+  { params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> },
 ) {
   const { token } = await params;
+  // Reached from a sign-in with the emailed TEMPORARY password (app/api/auth/login): once the person
+  // has chosen their own password they are signed in and taken inside, not sent back to /login.
+  const signInAfter = (await searchParams)[SIGN_IN_AFTER_SETUP_PARAM] === SIGN_IN_AFTER_SETUP_VALUE;
   let preview: Awaited<ReturnType<typeof getPasswordSetupPreview>>;
 
   try {
@@ -52,6 +56,7 @@ export default async function PasswordSetupPage(
       loginId={preview.loginId}
       name={preview.name}
       purpose={preview.purpose}
+      signInAfter={signInAfter}
       token={token}
     />
   );

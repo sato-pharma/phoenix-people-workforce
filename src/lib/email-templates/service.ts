@@ -60,6 +60,7 @@ export const EMAIL_TEMPLATE_KEYS = {
   PASSWORD_SETUP: "password_setup",
   PASSWORD_RESET: "password_reset",
   PASSWORD_RESET_CODE: "password_reset_code",
+  ACCOUNT_TEMPORARY_PASSWORD: "account_temporary_password",
   PROBATION_REMINDER: "probation_reminder",
   PROBATION_WORKFLOW: "probation_workflow",
   PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
@@ -534,6 +535,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   password_setup: emptyRules(["candidate"]),
   password_reset: emptyRules(["candidate"]),
   password_reset_code: emptyRules(["candidate"]),
+  account_temporary_password: emptyRules(["candidate"]),
   probation_reminder: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
   probation_workflow: emptyRules(["direct_manager"], ["hr"]),
   // Owner-confirmed recipients. The role vocabulary covers CEO/HR/DM/NSM here; SFE Manager,
@@ -1033,6 +1035,23 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "password_reset_code",
     templateName: "Password Reset Code",
   },
+  // {{detailsTable}} IS THE USERNAME, THE TEMPORARY PASSWORD AND THE SIGN-IN LINK (owner, 12 Nov 2026 —
+  // src/lib/auth/temporary-password.ts). The three ride in the metrics and detailsTable is the only token
+  // that renders a metric, so a body edited to drop it sends an account email with nothing to sign in
+  // with. Keep the token in any edit of this body.
+  account_temporary_password: {
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}",
+    bodyText: "{{summary}}\n\n{{detailsTable}}",
+    closingText: "If you were not expecting this, contact HR.",
+    description:
+      "The account email: the username, a temporary password and the sign-in link. Signing in with the temporary password opens the screen where the person chooses their own. The three arrive through {{detailsTable}}.",
+    greeting: "Dear {{honorific}}{{recipientName}},",
+    isActive: true,
+    previewText: "Your Phoenix Workforce username and temporary password.",
+    subject: "{{subject}}",
+    templateKey: "account_temporary_password",
+    templateName: "Account Username and Temporary Password",
+  },
   password_setup: {
     bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to continue.</p>",
     bodyText: "{{summary}}\n\nThis secure link expires: {{expiryText}}.\nUse the action link to continue.",
@@ -1233,6 +1252,7 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   outstation: "Outstation & Expenses",
   password_reset: "Account Access",
   password_reset_code: "Account Access",
+  account_temporary_password: "Account Access",
   password_setup: "Account Access",
   payroll_update: "Payroll",
   probation_day30: "Probation",
@@ -2719,6 +2739,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP,
     EMAIL_TEMPLATE_KEYS.PASSWORD_RESET,
     EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE,
+    EMAIL_TEMPLATE_KEYS.ACCOUNT_TEMPORARY_PASSWORD,
     EMAIL_TEMPLATE_KEYS.USER_CREATED,
   ]);
   const unsubscribeHeaders = ((): Record<string, string> | undefined => {

@@ -18,6 +18,7 @@ import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
 import { openCredentialFields, outboxDedupeDigest, redactedCredentialPayload, sealCredentialFields } from "@/lib/notifications/credential-seal";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
+import { TEMPORARY_PASSWORD_METRIC_LABEL } from "@/lib/auth/temporary-password";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
@@ -1406,6 +1407,19 @@ function isPasswordResetCodeNotification(input: NotificationEmailInput) {
   );
 }
 
+/**
+ * Is this the account email carrying a username and a TEMPORARY PASSWORD (owner, 12 Nov 2026)?
+ *
+ * A shape test on the notification's own content, for the reason isPasswordResetCodeNotification
+ * gives: an auth template key pinned by the sender is vetoed, and the shared user_created and
+ * password_reset bodies render {{ctaUrl}} and no {{detailsTable}} — on either of them the password
+ * would render into nothing. It comes first for both notification types.
+ */
+function isTemporaryPasswordNotification(input: NotificationEmailInput) {
+  return (input.notificationType === "user_created" || input.notificationType === "password_reset") &&
+    Boolean(metricValue(input, TEMPORARY_PASSWORD_METRIC_LABEL));
+}
+
 function isPasswordSetupNotification(input: NotificationEmailInput) {
   return input.notificationType === "user_created" && (
     input.ctaHref?.includes("/password-setup/") ||
@@ -1472,6 +1486,7 @@ export function migratedTemplateKeyForNotification(input: NotificationEmailInput
     }
     return EMAIL_TEMPLATE_KEYS.GENERAL;
   }
+  if (isTemporaryPasswordNotification(input)) return EMAIL_TEMPLATE_KEYS.ACCOUNT_TEMPORARY_PASSWORD;
   if (input.notificationType === "password_reset") {
     return isPasswordResetCodeNotification(input)
       ? EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE
@@ -1530,6 +1545,7 @@ function isAuthTemplateKey(templateKey: string) {
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_SETUP ||
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET ||
     templateKey === EMAIL_TEMPLATE_KEYS.PASSWORD_RESET_CODE ||
+    templateKey === EMAIL_TEMPLATE_KEYS.ACCOUNT_TEMPORARY_PASSWORD ||
     templateKey === EMAIL_TEMPLATE_KEYS.USER_CREATED
   );
 }
