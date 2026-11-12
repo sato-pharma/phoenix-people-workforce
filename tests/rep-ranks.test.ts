@@ -6,7 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import { certificateReasons, certificateSentence, rankCertificateHtml, type RankCertificateInput } from "../src/lib/rep-ranks/certificate.ts";
 import { RANK_ADMIN_ROLES } from "../src/lib/rep-ranks/admin-audience.ts";
 import { explainStanding, leverSentence } from "../src/lib/rep-ranks/explain.ts";
-import { insigniaSvgInner } from "../src/lib/rep-ranks/insignia-svg.ts";
+import { EAGLE_ART_ID, insigniaSpriteDefs, insigniaSvgInner, insigniaSymbolInner } from "../src/lib/rep-ranks/insignia-svg.ts";
 import { promotionSentence, rankForScore, RANK_LADDER, rollingScore, starCount } from "../src/lib/rep-ranks/ladder.ts";
 import {
   countedIntegrityFlags,
@@ -438,7 +438,53 @@ export function runRepRanksTests() {
   const drawings = RANK_LADDER.map((rank) => insigniaSvgInner(rank.insignia));
   assert.equal(new Set(drawings).size, RANK_LADDER.length, "every rank draws its own insignia (owner: \"distinguish one rank from another\")");
   const insigniaComponent = readFileSync(new URL("../src/components/rep-ranks/rank-insignia.tsx", import.meta.url), "utf8");
-  assert.ok(insigniaComponent.includes("insigniaSvgInner(rank.insignia)"), "the board draws the same insignia the certificate prints");
+  assert.ok(insigniaComponent.includes("insigniaSymbolInner(rank.insignia)"), "the board draws each rank from the same geometry the certificate prints");
+  assert.ok(insigniaComponent.includes("insigniaSpriteDefs()"), "the board's sprite carries the shared gold and eagle once");
+
+  // The board's sprite draws the eagle ONCE and every eagle rank points at it (owner, 12 Nov 2026,
+  // "make the Ranks page lighter too"). With the artwork put back, each symbol must be exactly the
+  // certificate's drawing — the same look, only lighter.
+  const spriteDefs = insigniaSpriteDefs();
+  const eagleArtMatch = spriteDefs.match(new RegExp(`<g id="${EAGLE_ART_ID}">([\\s\\S]*)</g>$`));
+  assert.ok(eagleArtMatch, "the sprite's defs carry the eagle's artwork under its own id");
+  const eagleArtMarkup = eagleArtMatch[1];
+  const sameIds = (markup: string) => markup.replace(/phx-coa-([ab])-\w+/g, "phx-coa-$1-N").replace(/sword-\d+/g, "sword-N");
+  const symbols = RANK_LADDER.map((rank) => insigniaSymbolInner(rank.insignia));
+  assert.equal(new Set(symbols).size, RANK_LADDER.length, "every rank's sprite symbol is its own drawing");
+  RANK_LADDER.forEach((rank, index) => {
+    const restored = symbols[index].replaceAll(`<use href="#${EAGLE_ART_ID}"/>`, eagleArtMarkup);
+    const printed = insigniaSvgInner(rank.insignia).replace(/^<defs>[\s\S]*?<\/defs>/, "");
+    assert.equal(sameIds(restored), sameIds(printed), `${rank.english}: the board's symbol, with the eagle put back, is the certificate's drawing`);
+  });
+  const wholeSprite = spriteDefs + symbols.join("");
+  const eagleCopies = wholeSprite.split("translate(35.212553,641.57853)").length - 1;
+  assert.equal(eagleCopies, 1, `🔴 the board's sprite draws the eagle ${eagleCopies} times — once is enough; every eagle rank points at that one copy (21 KB each)`);
+  assert.equal(wholeSprite.split(`id="phx-rank-gold"`).length - 1, 1, "🔴 the gold is declared once in the sprite, not once per rank");
+
+  // Each score bar wears short shared classes (app/globals.css `.rkp-*`), not six Tailwind strings: a
+  // board of 74 reps paints about 960 bars, and every string went out twice — the page and its data.
+  const boardSource = readFileSync(new URL("../src/components/rep-ranks/rep-ranks-board.tsx", import.meta.url), "utf8");
+  const pillarBarsSource = boardSource.slice(boardSource.indexOf("function PillarBars"), boardSource.indexOf("function PositionChip"));
+  const perBarSource = stripComments(pillarBarsSource.slice(pillarBarsSource.indexOf("RANK_PILLARS.map(")));
+  const perBarLiterals = [...perBarSource.matchAll(/"([^"]*)"/g)].map((match) => match[1]);
+  assert.ok(perBarLiterals.includes("rkp-t"), "the bars still draw from the shared rkp classes");
+  for (const literal of perBarLiterals) {
+    assert.ok(
+      literal.length <= 12,
+      `🔴 a Ranks score bar carries "${literal}" — about 960 bars paint on a full board, so each one wears a short shared class from app/globals.css (.rkp-*), never a long utility string`,
+    );
+  }
+  const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  for (const [name, utilities] of [
+    ["rkp-h", "flex flex-wrap items-baseline justify-between gap-x-2"],
+    ["rkp-l", "break-words text-phx-md font-bold text-slate-700"],
+    ["rkp-lb", "break-words text-phx-md font-bold text-sky-700"],
+    ["rkp-v", "text-phx-base font-black tabular-nums text-slate-900"],
+    ["rkp-vn", "text-phx-base font-black tabular-nums text-slate-400"],
+    ["rkp-t", "mt-1 h-2 w-full bg-slate-100"],
+  ]) {
+    assert.ok(globalsCss.includes(`.${name} {\n    @apply ${utilities};`), `.${name} keeps the bar's look: ${utilities}`);
+  }
 
   // ── the certificate (owner, 2026-10-05: "export a premium polished PDF") ──────────────────────
   const certificate: RankCertificateInput = {
