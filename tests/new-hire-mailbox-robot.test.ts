@@ -1244,17 +1244,18 @@ async function runSignInLandingCases(): Promise<void> {
   const g = globalThis as unknown as Record<string, unknown>;
   const saved = { document: g.document, MutationObserver: g.MutationObserver, window: g.window };
   try {
-    let observe: ((changes: unknown[]) => void) | null = null;
+    const seen: { observe: ((changes: unknown[]) => void) | null } = { observe: null };
     g.window = {};
     g.document = { documentElement: {}, querySelector: () => null };
-    g.MutationObserver = class { constructor(cb: (changes: unknown[]) => void) { observe = cb; } observe() {} };
+    g.MutationObserver = class { constructor(cb: (changes: unknown[]) => void) { seen.observe = cb; } observe() {} };
     assert.equal(recordSignInNotices(), true);
     const el = (attrs: Record<string, string>, text: string, className = "") => ({
       className, getAttribute: (name: string) => attrs[name] ?? null, innerText: text, nodeType: 1,
       querySelectorAll: () => [],
     });
+    const observe = seen.observe;
     assert.ok(observe, "the recorder must start an observer");
-    observe!([
+    observe([
       { addedNodes: [el({ role: "alert" }, "  Error:   Please complete the captcha ")], target: { nodeType: 3, parentElement: null } },
       { addedNodes: [el({}, "Get Started for $0.99/mo")], target: { nodeType: 3, parentElement: null } },
       { addedNodes: [el({}, "Too many attempts", "Toastify__toast")], target: { nodeType: 3, parentElement: null } },
