@@ -28,6 +28,21 @@ export const ROBOT_ACTOR = "system:turbify-joiner-robot" as const;
 /** Never more than this many mailboxes in one run. A runaway creates accounts, which cost seats. */
 export const ROBOT_DEFAULT_MAX_CREATES_PER_RUN = 3;
 
+/**
+ * Never more than this many hires looked up in the console in one run, whatever they turn out to be.
+ *
+ * A hire whose mailbox ALREADY EXISTS in Turbify no longer takes a create slot (see the runner), so
+ * the create cap alone no longer bounds how long a run spends in the console. Each lookup is a page
+ * load of ~6 seconds, read-only; this ceiling keeps a queue full of existing mailboxes from turning
+ * one sweep into minutes of browsing. It is far above the real queue (10 hires on 2026-11-12).
+ */
+export const ROBOT_MAX_CONSOLE_LOOKUPS_PER_RUN = 15;
+
+/** A per-run limit as a whole, non-negative number — anything unusable is zero, never unlimited. */
+export function normalizeRunLimit(max: number): number {
+  return Number.isFinite(max) && max > 0 ? Math.floor(max) : 0;
+}
+
 /** How early, in days, a mailbox may be created before the hire date. */
 export const ROBOT_MAX_DAYS_BEFORE_HIRE = 14;
 
@@ -195,6 +210,5 @@ export function evaluateProvisionSafety(input: ProvisionSafetyInput): ProvisionV
 
 /** Trim a queue to the per-run cap, newest work last so a stable order is provisioned first. */
 export function capForRun<T>(queue: readonly T[], max: number = ROBOT_DEFAULT_MAX_CREATES_PER_RUN): T[] {
-  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 0;
-  return queue.slice(0, limit);
+  return queue.slice(0, normalizeRunLimit(max));
 }
