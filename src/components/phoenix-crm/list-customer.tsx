@@ -69,7 +69,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { directionsUrl } from "@/lib/phoenix-crm/directions";
 import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/pm-name-rules";
-import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
+import { noPhotoTextFor } from "@/lib/phoenix-crm/trusted-point-rules";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
@@ -1013,7 +1013,7 @@ function PlaceCard({
           alt={`Signboard photo: ${customer.name}, ${name}`}
           caption={`${customer.name} · ${name} · ${cairoStamp(place.capturedAt)}`}
           // `pointSource` reaches the movers alone; everyone else reads the plain "No photo" tile.
-          missingText={place.pointSource === "trusted" ? TRUSTED_POINT_NO_PHOTO : undefined}
+          missingText={noPhotoTextFor(place.pointSource)}
           path={place.photoPath}
         />
         <div className="min-w-0 flex-1 basis-56">

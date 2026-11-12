@@ -16,6 +16,7 @@
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
@@ -41,6 +42,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
+import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
 import {
@@ -774,10 +776,24 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
       scope: "all",
     });
   }
+  // An approved doctor is validated on the other two lines of his area too (owner, 2026-11-12;
+  // line-twins.ts), after the reply.
+  if (decision === "approve") {
+    await afterResponse("phoenix-crm: share an approved validation across the lines", () => shareAcrossLinesQuietly(text(result.customer_id)));
+  }
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
   if (decision === "reject") await tellRepValidateAgain(viewer, result);
+  // A rejected place takes its copies on the other lines with it (the database trigger); their doctors
+  // are measured again and offered to any twin still validated, after the reply (owner, 2026-11-12).
+  if (decision === "reject") {
+    await afterResponse("phoenix-crm: follow a rejected place's line copies", async () => {
+      const { data: rejected } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("id", reviewId).maybeSingle();
+      const rejectedPlace = text((rejected as Row | null)?.place_id);
+      if (rejectedPlace) await followLineTwinCopiesQuietly([rejectedPlace], viewer.config.settings, { retired: true });
+    });
+  }
   // The comment written with it, which the RPC's answer does not name the place of.
   if (cleanText(body.note, 500)) {
     const { data: reviewed, error: reviewedError } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("id", reviewId).maybeSingle();
@@ -841,6 +857,8 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
     settings: viewer.config.settings,
     scope: "all",
   });
+  // Validated again, so validated on the other two lines of his area too (line-twins.ts).
+  await afterResponse("phoenix-crm: share a restored validation across the lines", () => shareAcrossLinesQuietly(text(result.customer_id)));
   // The refusal is taken back, so the bell that asked him to capture it again goes with it.
   await withdrawValidationNotConfirmed(String(result.customer_id));
   await tellDecisionComment(viewer, "place", String(result.place_id), note);
@@ -984,7 +1002,9 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // production before this file ships.
           "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check, point_source",
         )
-        .eq("status", "active");
+        .eq("status", "active")
+        // A copy validated from another line has no evidence of its own to check; its source is on the board.
+        .neq("point_source", "line_twin");
       return seatScoped(query, seats).order("id", { ascending: false });
     },
     // Four pages at once (2026-11-08): ~5,400 active places are six pages, and one after another they
@@ -1202,6 +1222,10 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // notice, one wording, and nothing in it says a person looked.
   await tellRepValidateAgain(viewer, result);
   await tellDecisionComment(viewer, "place", placeId, note);
+  // Its copies on the other lines were removed with it (the database trigger), after the reply.
+  await afterResponse("phoenix-crm: follow a refused place's line copies", () =>
+    followLineTwinCopiesQuietly([placeId], viewer.config.settings, { retired: true }),
+  );
   return { placeId, reopened: result.reopened === true };
 }
 
@@ -1276,6 +1300,7 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
   // A held place's "waiting for you" notice is answered.
   await withdrawValidationReviewWaiting(reviewId);
   await tellDecisionComment(viewer, "place", placeId, note);
+  await afterResponse("phoenix-crm: share a confirmed validation across the lines", () => shareAcrossLinesQuietly(text(place.customer_id)));
   return { placeId, approved: true };
 }
 

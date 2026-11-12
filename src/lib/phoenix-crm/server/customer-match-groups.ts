@@ -46,7 +46,7 @@ export async function loadCustomerMatchBoard(viewer: PhoenixCrmViewer): Promise<
 
   const placeRead = await readEveryPage<Row>(
     () =>
-      seatScoped(getSupabaseAdmin().from("phoenix_crm_places").select(PLACE_COLUMNS).eq("status", "active").eq("is_test", false), placeChecksSeatScope(viewer))
+      seatScoped(getSupabaseAdmin().from("phoenix_crm_places").select(PLACE_COLUMNS).eq("status", "active").eq("is_test", false).neq("point_source", "line_twin"), placeChecksSeatScope(viewer))
         .order("created_at", { ascending: false })
         .order("id", { ascending: false }),
     { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id) },

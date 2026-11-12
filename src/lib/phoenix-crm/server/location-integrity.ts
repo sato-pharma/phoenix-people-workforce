@@ -126,6 +126,8 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
       .from("phoenix_crm_places")
       .select(placeColumns)
       .eq("is_test", isTest)
+      // A copy from another line repeats its source's exact point by design — never a replay.
+      .neq("point_source", "line_twin")
       .gte("captured_at", replaySince)
       .gte("lat", latLow)
       .lte("lat", latHigh)

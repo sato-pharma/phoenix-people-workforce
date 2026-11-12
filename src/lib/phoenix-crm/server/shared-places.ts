@@ -30,6 +30,7 @@
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
@@ -48,6 +49,7 @@ import {
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { refuseReadingsApart } from "@/lib/phoenix-crm/server/far-visit-safeguards";
+import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -784,6 +786,14 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   await tellSeatedRepsValidateAgain(viewer, result, reopened);
   // The comment written with it, on either answer (owner, 2026-11-01).
   await tellDecisionComment(viewer, "shared_place", String(result.shared_place_id), body.note);
+  // Each customer an approval validated is validated on the other two lines of his area too (owner,
+  // 2026-11-12; line-twins.ts), after the reply.
+  const validatedNow = Array.isArray(result.validated) ? (result.validated as Row[]).map((row) => text(row.customer_id)) : [];
+  if (validatedNow.length > 0) {
+    await afterResponse("phoenix-crm: share venue validations across the lines", async () => {
+      for (const customerId of validatedNow) await shareAcrossLinesQuietly(customerId);
+    });
+  }
   return {
     sharedPlaceId: String(result.shared_place_id),
     name: String(result.name),

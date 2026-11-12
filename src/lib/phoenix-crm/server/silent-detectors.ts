@@ -408,6 +408,8 @@ async function runCoverage(result: SilentSweepResult): Promise<WholeRead> {
         )
         .eq("is_test", false)
         .eq("status", "active")
+        // A copy validated from another line has no capture of its own (line-twins.ts): its source is read.
+        .neq("point_source", "line_twin")
         .order("id", { ascending: true }),
     { maxRows: SILENT_READ_MAX, whenFull: "stop", what: "Phoenix CRM places for the coverage check", uniqueBy: (row) => String(row.id) },
   );
@@ -580,6 +582,8 @@ async function runVisitPhotographGap(
               .select("id, seat_id, customer_id, captured_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, photo_path")
               .eq("is_test", false)
               .eq("status", "active")
+              // A copy from another line carries its source's reading but no photograph: the source anchors.
+              .neq("point_source", "line_twin")
               // Only a place whose photograph carries its own fix can be an anchor. One captured before
               // the shutter reading shipped has no photograph reading at all, and an absent anchor is
               // never a finding.

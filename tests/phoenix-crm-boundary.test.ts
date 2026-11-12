@@ -1107,6 +1107,10 @@ const LATER_MIGRATIONS = [
   // outside customer with a grade is filed for approval), and two NEW functions — phoenix_crm_customer_merged_away
   // and the trigger function phoenix_crm_customers_no_merged_return. It replaces nothing save_visit depends on.
   "supabase/migrations/20261111030456_phoenix_crm_sweep_fixes.sql",
+  // Validated on one line is validated on all three (owner, 12 Nov 2026): two NEW functions —
+  // phoenix_crm_share_line_validation and the trigger function phoenix_crm_places_line_twin_follow — a 'line_twin'
+  // point source and an index. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261112221819_phoenix_crm_line_twin_validation.sql",
 ];
 
 /**

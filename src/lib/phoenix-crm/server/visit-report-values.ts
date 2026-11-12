@@ -157,6 +157,8 @@ const POINT_SOURCE_LABELS: Record<string, string> = {
   pin: "Pin dropped on the map",
   shared_place: "Shared place",
   moved: "Moved by the Super Admin",
+  trusted: "Trusted point",
+  line_twin: "Validated on another line",
 };
 
 const CHECK_VERDICT_LABELS: Record<string, string> = {
