@@ -67,14 +67,16 @@ function PillarBars({ pillars }: { pillars: RankPillarScores }) {
           const score = pillars[pillar.key];
           // The AM start bonus only adds, so it is read in the points it adds and never painted as a failing measure.
           const shown = score === null ? "Not scored" : pillar.bonus ? `+${startBonusPoints(score).toFixed(1)} of ${RANK_START_BONUS_MAX}` : score;
+          // The `rkp-*` classes are the same utilities, declared once in app/globals.css — about 960 bars
+          // on a full board, each of which used to carry its six strings in full, twice (12 Nov 2026).
           return (
-            <div className="min-w-0" key={pillar.key}>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                <span className={`break-words text-phx-md font-bold ${pillar.bonus ? "text-sky-700" : "text-slate-700"}`}>{pillar.label}</span>
-                <span className={`text-phx-base font-black tabular-nums ${score === null ? "text-slate-400" : "text-slate-900"}`}>{shown}</span>
+            <div className="rkp" key={pillar.key}>
+              <div className="rkp-h">
+                <span className={pillar.bonus ? "rkp-lb" : "rkp-l"}>{pillar.label}</span>
+                <span className={score === null ? "rkp-vn" : "rkp-v"}>{shown}</span>
               </div>
-              <div className="mt-1 h-2 w-full bg-slate-100">
-                <div className={`h-full ${pillar.bonus ? "bg-sky-500" : barTone(score)}`} style={{ width: `${score ?? 0}%` }} />
+              <div className="rkp-t">
+                <div className={`rkp-f ${pillar.bonus ? "bg-sky-500" : barTone(score)}`} style={{ width: `${score ?? 0}%` }} />
               </div>
             </div>
           );
