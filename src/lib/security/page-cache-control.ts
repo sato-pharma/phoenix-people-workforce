@@ -1,6 +1,8 @@
 /**
- * The Cache-Control every page answers with — Next.js's own value for a dynamic page, plus
- * `no-transform`. Set by `proxy.ts` on each page response that does not already carry one.
+ * The Cache-Control a page answers with BEHIND CLOUDFLARE — Next.js's own value for a dynamic page, plus
+ * `no-transform`. Set by `proxy.ts` on each page response that does not already carry one, when the request
+ * came through the Cloudflare proxy (`pageCacheControlFor` below; a page served directly gets
+ * `PAGE_CACHE_CONTROL_DIRECT`, because `no-transform` also turns off Next's compression).
  *
  * WHY `no-transform`. Since 26 Oct 2026 production sits behind the Cloudflare proxy, and Cloudflare's
  * Email Address Obfuscation rewrites every address it finds in an HTML page into an
@@ -20,3 +22,33 @@
  * tests/page-cache-control-no-transform.test.ts.
  */
 export const PAGE_CACHE_CONTROL = "private, no-cache, no-store, max-age=0, must-revalidate, no-transform";
+
+/**
+ * The same value WITHOUT `no-transform`, for a page served straight from Railway (12 Nov 2026, "make the
+ * Ranks and Visits pages fast").
+ *
+ * 🔴 `no-transform` ALSO SWITCHES OFF NEXT.JS'S OWN COMPRESSION. The standalone server compresses through
+ * `next/dist/compiled/compression`, whose `shouldTransform` refuses any response whose Cache-Control
+ * carries `no-transform` — so from #6718 (31 Oct) every page went out as raw HTML while the scripts beside
+ * it were still gzipped. Measured on production, 12 Nov: Phoenix Ranks 1.7 MB and My Visits 0.9 MB of
+ * uncompressed HTML; the Ranks board alone is 609 KB raw and 35 KB gzipped. And production was no longer
+ * behind the Cloudflare proxy at all: `phoenix-hr.satopharma.com` resolved straight to Railway, and the
+ * responses carried `x-railway-edge` and no `cf-ray`. The header protected nothing and cost every phone
+ * the whole page.
+ *
+ * So the email-obfuscation guard is kept exactly where it applies: a request Cloudflare forwarded carries
+ * `cf-ray` (Cloudflare adds it to every request it proxies to an origin), and that page still answers
+ * `no-transform`. A page served directly answers Next's own dynamic-page value and is compressed. Should
+ * the proxy ever be switched back on, the guard returns by itself, with no code change.
+ */
+export const PAGE_CACHE_CONTROL_DIRECT = "private, no-cache, no-store, max-age=0, must-revalidate";
+
+/** Whether Cloudflare forwarded this request — it stamps `cf-ray` on every request it proxies. */
+export function cameThroughCloudflare(requestHeaders: Headers): boolean {
+  return requestHeaders.has("cf-ray");
+}
+
+/** The Cache-Control a page answers: `no-transform` behind Cloudflare, compressible when served directly. */
+export function pageCacheControlFor(requestHeaders: Headers): string {
+  return cameThroughCloudflare(requestHeaders) ? PAGE_CACHE_CONTROL : PAGE_CACHE_CONTROL_DIRECT;
+}

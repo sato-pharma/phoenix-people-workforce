@@ -68,7 +68,7 @@ export type DomRewriterProbe = {
   appleDataDetectorCount?: number;
   /**
    * Addresses Cloudflare's Email Address Obfuscation rewrote (`data-cfemail` / `a.__cf_email__`).
-   * `no-transform` on every page (#6718) ended it; a count here means a page escaped that header.
+   * `no-transform` on every page Cloudflare forwards (#6718; since 12 Nov 2026 only on a request carrying `cf-ray`, because it also switches off Next's compression) ended it; a count here means a page escaped that header.
    */
   cloudflareEmailCount?: number;
 };
