@@ -375,7 +375,9 @@ export async function POST(request: Request) {
         newValues: { ip, reason: "temporary_password_choose_new" },
         summary: "Signed in with the temporary password: sent to choose a new password",
       }).catch(() => undefined);
-      await afterResponse("auth.login.clear_failed_state", () => clearFailedLoginState({ ip, loginId: user.loginId }));
+      // Awaited here, not deferred: the success path's lockout reset is the ONE task after the reply
+      // (tests/login-success-audit-before-reply.test.ts), and this branch opens no session anyway.
+      await clearFailedLoginState({ ip, loginId: user.loginId }).catch(() => undefined);
 
       if (payload.responseMode === "redirect") {
         const response = NextResponse.redirect(getRedirectUrl(request, redirectTo), 303);
