@@ -32,6 +32,21 @@ export function runContinuousServiceTests() {
   assert.equal(continuousServiceStartDate("B-7", null), null);
   assert.equal(continuousServiceStartDate("PD-0039", "2026-01-01"), "2026-01-01", "never moves a start LATER");
 
+  // Ahmed Helal (owner, 2026-11-12): B-3 from 4 Mar 2023, resigned 9 Aug 2026, re-hired as CN-0013 on 1 Nov.
+  assert.deepEqual(ownAndEarlierRecordHrIds("CN-0013"), ["CN-0013", "B-3"], "CN-0013's earlier record is B-3");
+  assert.deepEqual(earlierRecordHrIds("B-3"), [], "B-3 does not see CN-0013");
+  assert.equal(continuousServiceStartDate("CN-0013", "2026-11-01"), "2023-03-04", "HEADLINE: his leave counts from 4 Mar 2023");
+  assert.deepEqual(
+    getVacationBalancePeriod({ employeeHrId: "CN-0013", hireDate: "2026-11-01", referenceDate: "2026-11-12" }),
+    { entitlementDays: 21, periodEnd: "2027-03-04", periodStart: "2026-03-04" },
+    "HEADLINE: his leave year runs from his first record's anniversary with the full 21 days, not from 1 Nov with nothing",
+  );
+  assert.equal(
+    isWithinFirstSixMonths({ employeeHrId: "CN-0013", hireDate: "2026-11-01", referenceDate: "2026-11-12" }),
+    false,
+    "he is not a first-six-months joiner",
+  );
+
   // ---- Her balance, as the vacation module computes it (hire date read off the record: 7 Nov) ------
   const period = getVacationBalancePeriod({ employeeHrId: "PD-0039", hireDate: "2026-11-07", referenceDate: "2026-11-05" });
   assert.deepEqual(

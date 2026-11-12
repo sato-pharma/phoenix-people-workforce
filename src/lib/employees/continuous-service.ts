@@ -39,6 +39,10 @@ type ContinuousServiceLink = {
 
 const CONTINUOUS_SERVICE_LINKS: readonly ContinuousServiceLink[] = [
   { hrId: "PD-0039", earlierHrIds: ["AI-0009"], serviceStartDate: "2026-08-17", decidedOn: "2026-11-05" },
+  // Ahmed Helal (owner, 2026-11-12: "pull ahmed helal number and data from his resigned account to his
+  // new, put leave under the new code"): B-3 on Delta (2) from 4 Mar 2023, resigned 9 Aug 2026, re-hired
+  // onto CNS as CN-0013 from 1 Nov 2026. His leave and history count from his first record's hire date.
+  { hrId: "CN-0013", earlierHrIds: ["B-3"], serviceStartDate: "2023-03-04", decidedOn: "2026-11-12" },
 ];
 
 /** The canonical key with its punctuation dropped: the portal's access ids carry no hyphen ("pd0039"). */
