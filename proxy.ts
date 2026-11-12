@@ -25,7 +25,7 @@ import {
   shouldSendPageCsp,
 } from "@/lib/security/content-security-policy";
 import { logStructured } from "@/lib/observability/log";
-import { PAGE_CACHE_CONTROL } from "@/lib/security/page-cache-control";
+import { pageCacheControlFor } from "@/lib/security/page-cache-control";
 import {
   isAllowedPhoenixOrigin,
   normalizeOrigin,
@@ -460,7 +460,7 @@ export function proxy(request: NextRequest) {
   // RESPONSE, where its policy replaces the next.config.ts one for this page. API routes and files
   // keep the next.config.ts policy.
   const pageCsp = pageCspFor(pathname);
-  return withPageCsp(forwardRequest(request, pathname, search, pageCsp), pageCsp);
+  return withPageCsp(forwardRequest(request, pathname, search, pageCsp), pageCsp, request.headers);
 }
 
 type PageCsp = { nonce: string; policy: string };
@@ -471,13 +471,14 @@ function pageCspFor(pathname: string): PageCsp | null {
   return { nonce, policy: pageContentSecurityPolicy(pathname, nonce) };
 }
 
-function withPageCsp(response: NextResponse, pageCsp: PageCsp | null): NextResponse {
+function withPageCsp(response: NextResponse, pageCsp: PageCsp | null, requestHeaders: Headers): NextResponse {
   if (pageCsp) {
     response.headers.set("Content-Security-Policy", pageCsp.policy);
-    // `no-transform` keeps Cloudflare from rewriting the email addresses a page renders into
-    // "[email protected]", which broke hydration (React #418) — src/lib/security/page-cache-control.ts.
+    // Behind Cloudflare, `no-transform` keeps it from rewriting the email addresses a page renders into
+    // "[email protected]", which broke hydration (React #418). Served directly, the page is left without
+    // it, because `no-transform` also stops Next.js compressing the page — src/lib/security/page-cache-control.ts.
     // A redirect already names its own and has no body to rewrite, so it keeps it.
-    if (!response.headers.has("Cache-Control")) response.headers.set("Cache-Control", PAGE_CACHE_CONTROL);
+    if (!response.headers.has("Cache-Control")) response.headers.set("Cache-Control", pageCacheControlFor(requestHeaders));
   }
   return response;
 }
