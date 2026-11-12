@@ -337,10 +337,19 @@ export function AccessControlManager({
   const [uploadResults, setUploadResults] = React.useState<RowResult[] | null>(null);
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
   const [setupLinkMessage, setSetupLinkMessage] = React.useState<string | null>(null);
-  // The prepared WhatsApp chat, held in state so the callout can render a REAL ANCHOR for it.
+  // The prepared WhatsApp chat, held in state so the callout can render a REAL ANCHOR for it — the
+  // fallback when the tab opened on the confirm click was blocked (performSendSetupLink).
   // 🔴 NEVER a window.open after the await: a popup blocker swallows a navigation that is not a direct
   // click, which is exactly what both existing link buttons learned the hard way.
   const [setupLinkWhatsApp, setSetupLinkWhatsApp] = React.useState<{ loginId: string; name: string; url: string } | null>(null);
+  // The result of a row's send lands in callouts at the TOP of the page. Pressed on a row further down,
+  // the answer — and the WhatsApp button — sat off-screen and the press looked dead (owner, 12 Nov 2026:
+  // "it is not working"). Every new answer is scrolled into view.
+  const sendResultRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!setupLinkMessage && !error) return;
+    sendResultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [setupLinkMessage, setupLinkWhatsApp, error]);
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(() => new Set());
   const [bulkSending, setBulkSending] = React.useState<"copy" | "email" | null>(null);
@@ -610,6 +619,13 @@ export function AccessControlManager({
     setSetupLinkWhatsApp(null);
     setSetupLinkSending(`${user.loginId}:${deliveryMode}`);
 
+    // PRESS WHATSAPP AND THE CHAT OPENS (owner, 12 Nov 2026). The tab is opened HERE, before the first
+    // await, so it is still part of the confirm click and no popup blocker refuses it; it is pointed at
+    // the prepared chat once the server answers, and closed if the server refuses. Blocked anyway, the
+    // anchor in the callout below is the fallback.
+    const chatWindow = deliveryMode === "whatsapp" && typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
+    if (chatWindow) chatWindow.opener = null;
+
     try {
       const response = await fetch("/api/admin/users/setup-link", {
         body: JSON.stringify({
@@ -628,10 +644,17 @@ export function AccessControlManager({
       if (!response.ok) {
         throw new Error(payload?.message ?? "Password link could not be sent.");
       }
+      if (deliveryMode === "whatsapp" && !payload?.whatsAppUrl) chatWindow?.close();
 
       if (deliveryMode === "whatsapp" && payload?.whatsAppUrl) {
+        const opened = Boolean(chatWindow && !chatWindow.closed);
+        if (opened) chatWindow!.location.href = payload.whatsAppUrl;
         setSetupLinkWhatsApp({ loginId: user.loginId, name: user.name, url: payload.whatsAppUrl });
-        setSetupLinkMessage(payload.deliveryMessage ?? `WhatsApp message ready for ${user.name}.`);
+        setSetupLinkMessage(
+          opened
+            ? `WhatsApp opened with the message for ${user.name} written in. Press send in WhatsApp. If it did not open, use the button below.`
+            : payload.deliveryMessage ?? `WhatsApp message ready for ${user.name}. Open the chat below and press send.`,
+        );
       } else if (deliveryMode === "copy" && payload?.setupUrl) {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(payload.setupUrl);
@@ -648,6 +671,8 @@ export function AccessControlManager({
       }
       await loadUsers();
     } catch (sendError) {
+      // A refused send leaves no empty tab behind.
+      chatWindow?.close();
       setError(sendError instanceof Error ? sendError.message : "Password link could not be sent.");
     } finally {
       setSetupLinkSending(null);
@@ -1064,39 +1089,43 @@ export function AccessControlManager({
         </div>
       </div>
 
-      {error && (
-        <AdminCallout tone="danger">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </AdminCallout>
-      )}
+      {(error || setupLinkMessage) && (
+        <div className="scroll-mt-24 space-y-3" ref={sendResultRef}>
+          {error && (
+            <AdminCallout tone="danger">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </AdminCallout>
+          )}
 
-      {setupLinkMessage && (
-        <AdminCallout tone="success">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-            <span className="break-all">{setupLinkMessage}</span>
-            {/*
-              🔴 A REAL ANCHOR, NOT A SCRIPTED window.open. The chat opens on the admin's own click,
-              so no popup blocker stands between the prepared message and WhatsApp — and on a phone it
-              hands straight to the WhatsApp app.
-            */}
-            {setupLinkWhatsApp && (
-              <a
-                className={cn(
-                  phxWhatsAppSendButtonClassName,
-                  "min-h-11 justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DA851]",
+          {setupLinkMessage && (
+            <AdminCallout tone="success">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+                <span className="break-all">{setupLinkMessage}</span>
+                {/*
+                  🔴 A REAL ANCHOR — the fallback when the tab opened on the confirm click was blocked. It
+                  opens on the admin's own click, so no popup blocker stands between the prepared message
+                  and WhatsApp — and on a phone it hands straight to the WhatsApp app.
+                */}
+                {setupLinkWhatsApp && (
+                  <a
+                    className={cn(
+                      phxWhatsAppSendButtonClassName,
+                      "min-h-11 justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DA851]",
+                    )}
+                    href={setupLinkWhatsApp.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <WhatsAppGlyph className="h-4 w-4 shrink-0" />
+                    Open WhatsApp chat with {setupLinkWhatsApp.name}
+                  </a>
                 )}
-                href={setupLinkWhatsApp.url}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <WhatsAppGlyph className="h-4 w-4 shrink-0" />
-                Open WhatsApp chat with {setupLinkWhatsApp.name}
-              </a>
-            )}
-          </div>
-        </AdminCallout>
+              </div>
+            </AdminCallout>
+          )}
+        </div>
       )}
 
       {bulkResults &&
