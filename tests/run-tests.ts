@@ -1725,6 +1725,7 @@ import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.te
 import { runCiBuildRiskTests } from "./ci-build-risk.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runPasswordSetupWhatsAppTests } from "./password-setup-whatsapp.test.ts";
+import { runPasswordSetupNoScriptTests } from "./password-setup-no-script.test.ts";
 import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-code-email-carries-the-code.test.ts";
 import { runTemporaryPasswordSignInTests } from "./temporary-password-sign-in.test.ts";
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
@@ -6447,6 +6448,7 @@ await runTest("password setup email resolution (work_email fallback, never the s
 await runTest("password setup link over WhatsApp (the chat opens on THAT person number, never the group picker; "
   + "the number is resolved before the token is minted; the expiry reads in Cairo through DST; bulk stays "
   + "copy/email because wa.me opens one chat; a real anchor, never a blocked window.open)", runPasswordSetupWhatsAppTests);
+await runTest("the choose-your-password screen saves without JavaScript (an iOS 15 iPhone never hydrates: the form posts natively with named fields, the route answers with a 303 to the screen, only a fixed error code travels in the address, saved is believed only on a spent link)", runPasswordSetupNoScriptTests);
 await runTest("self-service reset-by-code (6-digit format, login-bound HMAC, attempt cap, expiry, enumeration-safe mismatch)", runAuthPasswordResetCodeTests);
 await runTest("the reset-code email actually contains the 6 digits (its own template, metrics table rendered)", runPasswordResetCodeEmailCarriesTheCodeTests);
 await runTest("the account message carries username, temporary password and sign-in link; the temporary password opens only the choose-your-password screen", runTemporaryPasswordSignInTests);
