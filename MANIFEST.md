@@ -65,7 +65,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/import-account-sessions.mjs` | 18732 | `35af339a45b20e95` |
 | `scripts/mem-watchdog.ps1` | 170018 | `55293b4b160afecd` |
 | `scripts/memory-fold-run.mjs` | 7031 | `66984146a7f0247f` |
-| `scripts/mesh-failover/mesh-dns-reconciler.mjs` | 5059 | `79d06719ab7a706c` |
+| `scripts/mesh-failover/mesh-dns-reconciler.mjs` | 10966 | `aa80b2720aa450d4` |
 | `scripts/phoenix-dev-speed.ps1` | 6500 | `65f4b74bb9051427` |
 | `scripts/phoenix-heavy-work-tuneup.ps1` | 9609 | `85e6646d2c665b38` |
 | `scripts/phx-job-cap.ps1` | 9390 | `268658bee927ed3e` |
@@ -101,7 +101,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/spare-follow-production.ps1` | 9561 | `e9fadbc5d11eabfc` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
 | `scripts/spare-test.ps1` | 11985 | `070929c40483b2a1` |
-| `scripts/spare-tunnel.ps1` | 1338 | `6f374b9ffa0866dc` |
+| `scripts/spare-tunnel.ps1` | 2017 | `35cb1855ecffb3f6` |
 | `scripts/spare.ps1` | 1333 | `94620bf054d1aa9f` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
