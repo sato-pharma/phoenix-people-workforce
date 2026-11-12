@@ -102,6 +102,11 @@ export async function runApprovalsBulkDecisionTests() {
   assert.ok(/decision === "reject" && !reason\.trim\(\)/.test(bar), "Reject must refuse an empty reason before posting");
   assert.ok(/filter\(\(row\) => row\.ok\)/.test(bar) && /onFinished\(decidedIds\)/.test(bar),
     "only the requests that were decided may be un-ticked");
+  // The bar holds its place with nothing ticked: when it appeared on the first tick it pushed the list
+  // down, and the owner's next click landed on the wrong request (2026-11-13).
+  assert.ok(!/return null/.test(bar), "the bar must never vanish with nothing ticked — its arrival makes the list jump under the next click");
+  assert.ok(bar.includes("No request ticked") && /disabled=\{busy \|\| count === 0\}/.test(bar),
+    "with nothing ticked the bar shows its row with Approve and Reject disabled");
 
   // ── Only Leave and Excuse turn it on, and only on the requests awaiting the viewer ──
   const workspace = read("src/components/approvals-hub/approvals-workspace.tsx");
