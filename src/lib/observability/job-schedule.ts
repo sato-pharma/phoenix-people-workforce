@@ -278,6 +278,46 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
 
 export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
 
+/**
+ * The jobs that hold a Healthchecks.io check, and the ONLY jobs that ping it. Every other declared job
+ * is watched in-house alone (the register above, swept every 15 minutes, plus Sentry's check-in).
+ *
+ * 🔴 WHY A LIST, AND NOT "EVERY JOB PINGS WITH ?create=1 AND HEALTHCHECKS SORTS IT OUT". Until 12 Nov
+ * 2026 all 42 wired jobs pinged, and the 15 with no check were refused with a 404 on every run - about
+ * 1,000 refusals a day that were expected, so nobody read them. On 9 Nov 2026 at about 18:00 Cairo the
+ * Healthchecks account itself stopped answering (both its keys refused) and every job's pings turned
+ * into the same 404: three days, 1,822 refusals on the 12th alone, indistinguishable from the normal
+ * noise. With only these slugs pinging, a refusal is never expected, so one is worth reading.
+ *
+ * A new account holds 20 checks on the free plan, and the owner has ruled out raising it (2026-09-08),
+ * so this list is capped at 20 and chosen, not first-come: the fast "is Phoenix alive" signals
+ * (`phoenix-inbound-intake`, `phoenix-process-notifications`), the sweep that watches every other job,
+ * and the jobs whose silence costs money or data. It must equal the rows of docs/observability.md that
+ * are NOT marked `in-house only` - `tests/job-heartbeat-register.test.ts` holds the two together.
+ */
+export const HEALTHCHECKS_CHECKED_SLUGS: ReadonlySet<string> = new Set([
+  "phoenix-notify-daily",
+  "phoenix-marketing-field-capture-nudge",
+  "phoenix-marketing-list-check",
+  "phoenix-marketing-invoice-overdue-nudge",
+  "phoenix-distributor-upload-overdue-nudge",
+  "phoenix-mapping-guard-notify",
+  "phoenix-mailbox-offboarding-sweep",
+  "phoenix-process-notifications",
+  "phoenix-inbound-intake",
+  "phoenix-recruitment-email-intake",
+  "phoenix-run-synthetic-journeys",
+  "phoenix-direct-orders-expire-held",
+  "phoenix-direct-orders-probation",
+  "phoenix-db-health-snapshot",
+  "phoenix-territory-restamp",
+  "phoenix-brick-move-drain",
+  "phoenix-reconciliation-check",
+  "phoenix-expense-claims-refresh",
+  "phoenix-recruitment-cv-digest",
+  JOB_HEARTBEAT_SWEEP_SLUG,
+]);
+
 /** Declared slugs, for the sweeper's bootstrap and for the doc-parity test. */
 export function declaredJobSlugs(): string[] {
   return JOB_SCHEDULES.map((declaration) => declaration.slug);

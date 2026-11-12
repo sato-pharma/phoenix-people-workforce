@@ -21,7 +21,7 @@ project is therefore gone, including the pieces that used to page the owner:
 | "Phoenix HR production ERROR log alert" (the Sentry replacement) | **Dead** — nothing emails the owner on a production ERROR any more |
 | Cloud Logging retention, log-based metrics, and the log query language | **Dead** — use `railway logs` |
 | The old `/admin/system-issues` "live infra logs" half | **Removed** (2026-09-30); the page itself retired into `/admin/system-audit` on 2026-10-23 |
-| Healthchecks.io dead-man's-switch | **Alive** — third-party, outside GCP, `HEALTHCHECKS_PING_KEY` is set on the Railway service |
+| Healthchecks.io dead-man's-switch | **Alive, on a new account since 12 Nov 2026** — the old account stopped answering on 9 Nov 2026 (see "The account went dead"); 20 checks, and only the jobs in `HEALTHCHECKS_CHECKED_SLUGS` ping it |
 | `app_error_events` table + the `/admin/system-audit` Incidents tab | **Alive** — it is in Supabase, not GCP |
 
 **Net effect: errors are still recorded, but nothing pages anyone.** Discovering a production
@@ -713,7 +713,8 @@ policy):
    Several rows are marked **in-house only**. They are declared here and in `JOB_SCHEDULES` like every
    other job — the heartbeat register watches them and alerts in-app, Telegram and push when one
    stops reporting — and the marker tells `scripts/healthchecks-sync.mjs` not to **create** a check
-   for them. The project has a ceiling, asking past it answers HTTP 403 with an empty body, and the
+   for them. Since 12 Nov 2026 such a job also sends Healthchecks nothing at runtime: only the slugs in
+   `HEALTHCHECKS_CHECKED_SLUGS` ping (see "The account went dead" below). The project has a ceiling, asking past it answers HTTP 403 with an empty body, and the
    owner has ruled out raising the plan (2026-09-08). Without the marker the sync reports a permanent
    `CREATE … FAILED` line for each of them although they are working perfectly, which is
    the "always red, so ignored" failure this whole page exists to prevent.
@@ -757,7 +758,7 @@ policy):
    | `phoenix-recruitment-requisition-autopilot` | `27 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-manager-cv-reminders` | `41 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-archive-rejections` | `29 3 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
-   | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` |
+   | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-approval-whatsapp-reminders` | `9,11,17,29,47 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-marketing-pharmacy-code-sync` | `47 2 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-code-backup-verify` | `57 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
@@ -776,14 +777,14 @@ policy):
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
-   | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
+   | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` · **in-house only** |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 20m | cron-job.org job `8200919` |
    | `phoenix-run-synthetic-journeys` | `17 5,8,11,14,17,20 * * *` | 2h | cron-job.org job `8220577` |
-   | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` |
-   | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` |
-   | `phoenix-cv-lifecycle-rotate-sheet-token` | `3 4 * * 5` | 2h | cron-job.org job `8387636` |
-   | `phoenix-brevo-keepalive` | `9 4 1 * *` | 12h | cron-job.org job `8313297` |
+   | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` · **in-house only** |
+   | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` · **in-house only** |
+   | `phoenix-cv-lifecycle-rotate-sheet-token` | `3 4 * * 5` | 2h | cron-job.org job `8387636` · **in-house only** |
+   | `phoenix-brevo-keepalive` | `9 4 1 * *` | 12h | cron-job.org job `8313297` · **in-house only** |
    | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
@@ -861,7 +862,7 @@ policy):
    | `phoenix-recruitment-requisition-autopilot` | `recruitment in-house-only silent-when-clean` | The hourly requisition autopilot: an open requisition for every empty seat, and every requisition whose seat is filled closed as Filled. It sends nothing by design, so a red means seats stopped opening or closing on their own and Talent Acquisition is working from a stale list. |
    | `phoenix-recruitment-manager-cv-reminders` | `recruitment in-house-only silent-when-clean` | The hourly reminder to each manager holding CV folders about CVs sent to them and not yet opened, 08:00-21:59 Cairo, in-app, Telegram and push, never email. A manager with nothing unopened is told nothing, so a red means an unopened CV stopped being chased. |
    | `phoenix-recruitment-archive-rejections` | `recruitment in-house-only silent-when-clean` | Moves every rejection older than 30 days out of the Recruitment workspace's tabs into its archive — never deleted, still searchable. It tells nobody, so a red means old rejections are piling back into the tabs Talent Acquisition works from. |
-   | `phoenix-recruitment-whatsapp-reask` | `recruitment silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
+   | `phoenix-recruitment-whatsapp-reask` | `recruitment in-house-only silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
    | `phoenix-marketing-pharmacy-code-sync` | `marketing in-house-only silent-when-clean` | The nightly Sales to Marketing pharmacy-code sync. Additive; a new vendor starts hidden and is named; it refuses to run if it would retire over 500 codes. A healthy night tells nobody, so this check and its detail are the only record. A red means Customer Validation is reading stale codes, or the Sales map lost rows. |
    | `phoenix-code-backup-verify` | `platform in-house-only silent-when-clean` | The nightly code backup checked from production: fails when the newest file on Drive is over 36 hours old, under 100 MB, under half the one before it, or Drive cannot be read. The job itself is `infra/code-backup/`. |
    | `phoenix-whatsapp-handset-reminder` | `recruitment in-house-only silent-when-clean` | The reminder to open WhatsApp Business on the HR handset before the 14-day limit, to the Super Admin only, in-app, Telegram and push. Under seven days with no send from the phone it says nothing, so a quiet run is correct; a red means the clock could not be read and nobody will be warned before the link drops. |
@@ -881,14 +882,14 @@ policy):
    | `phoenix-retention-risk-pre-payroll` | `hr in-house-only` | The "take care, HR" notice on the 25th, listing every employee currently flagged, several working days before Part 1 pays. It fires once a month, so a red is a whole month with nobody warned. |
    | `phoenix-mailbox-offboarding-sweep` | `hr` | The daily 08:15 mailbox-offboarding sweep: it opens a revocation task for any leaver still holding a mailbox the exit workflow missed, and alerts on overdue, lapsed forwarding and the rest. A red means a leaver can still read company mail. |
    | `phoenix-process-notifications` | `platform` | Drains and retries the email and notification outbox every five minutes. A red means queued mail and notifications are sitting undelivered. |
-   | `phoenix-background-jobs` | `platform` | Drains the durable background-job outbox — imports, exports and other async work — and recaps to the Super Admin. A red means queued imports and exports are not running. |
+   | `phoenix-background-jobs` | `platform in-house-only` | Drains the durable background-job outbox — imports, exports and other async work — and recaps to the Super Admin. A red means queued imports and exports are not running. |
    | `phoenix-inbound-intake` | `recruitment` | Drains the inbound-CV intake queue every two minutes: WhatsApp media, re-fetched emails, AI extraction and candidate creation. A red means CVs are arriving and not becoming candidates. |
    | `phoenix-recruitment-email-intake` | `recruitment` | Polls the careers and HR mailboxes over IMAP every ten minutes, enqueues each new message for the intake worker, and health-checks the WhatsApp channel on the same tick. A red means applications are sitting unread in the mailbox. |
    | `phoenix-run-synthetic-journeys` | `platform` | Dispatches the synthetic end-to-end journeys six times a day. A red means nothing is exercising the critical paths from outside, so a broken page stays unnoticed until a person finds it. |
-   | `phoenix-direct-orders-rotate-sheet-token` | `direct-orders` | Rotates the Direct Orders live-sheet share token every Friday 03:23. A red means the bearer token of an unauthenticated feed is still the one it was last week. |
-   | `phoenix-marketing-requests-rotate-sheet-token` | `marketing` | Rotates the Marketing Requests live-sheet share token every Friday 03:43, twenty minutes behind its direct-orders counterpart so the two never overlap. A red means that feed's bearer token was not rotated. |
-   | `phoenix-cv-lifecycle-rotate-sheet-token` | `recruitment` | Rotates the CV-lifecycle live-sheet share token every Friday 04:03. It also refuses rather than rotates when a second feed link is live, and that token sat unrotated for 3 days 22 hours in October 2026. |
-   | `phoenix-brevo-keepalive` | `platform` | Resets Brevo's 90-day inactivity expiry on the email failover key, on the 1st of each month, and doubles as a liveness check on that failover. A red means the backup sender may be dying quietly. |
+   | `phoenix-direct-orders-rotate-sheet-token` | `direct-orders in-house-only` | Rotates the Direct Orders live-sheet share token every Friday 03:23. A red means the bearer token of an unauthenticated feed is still the one it was last week. |
+   | `phoenix-marketing-requests-rotate-sheet-token` | `marketing in-house-only` | Rotates the Marketing Requests live-sheet share token every Friday 03:43, twenty minutes behind its direct-orders counterpart so the two never overlap. A red means that feed's bearer token was not rotated. |
+   | `phoenix-cv-lifecycle-rotate-sheet-token` | `recruitment in-house-only` | Rotates the CV-lifecycle live-sheet share token every Friday 04:03. It also refuses rather than rotates when a second feed link is live, and that token sat unrotated for 3 days 22 hours in October 2026. |
+   | `phoenix-brevo-keepalive` | `platform in-house-only` | Resets Brevo's 90-day inactivity expiry on the email failover key, on the 1st of each month, and doubles as a liveness check on that failover. A red means the backup sender may be dying quietly. |
    | `phoenix-direct-orders-expire-held` | `direct-orders` | The held-order 14-day clock: it expires any direct order still held 14 days after it was parked and tells the requester. A red means the held lane is filling with orders nothing will drain. |
    | `phoenix-direct-orders-probation` | `direct-orders` | The 90-day probation sweep: it promotes every provisional pharmacy that has earned a footprint and reports the ones whose window closed in silence, to the owner and the CEO. A red means neither happened. |
    | `phoenix-db-health-snapshot` | `platform` | Takes the query-statistics snapshot every six hours. A red means there is no recent baseline to compare a slow page against. |
@@ -1066,7 +1067,7 @@ being refused because the project is at its ceiling — so the drain is watched 
 monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
 paragraph exists instead of a green dashboard.
 
-🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-brick-move-drain`, `phoenix-system-audit-sweep` and, since the handover below, `phoenix-crm-fraud-scan`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 means a missing check, not a wrong address. The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
+🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-brick-move-drain`, `phoenix-system-audit-sweep` and, since the handover below, `phoenix-crm-fraud-scan`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 meant a missing check, not a wrong address. 🔴 **No longer true since 12 Nov 2026:** that assumption hid a dead account for three days, and an unchecked job no longer pings (see "The account went dead" below). The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
 
 **The same day, on his word, the fraud scan's check went to `phoenix-recruitment-whatsapp-reask`.** The count stays at 40 checks and 14 jobs without one. The re-ask's switch is still off, so for now its check proves only that the job fires, not that anyone was asked. The fraud scan pings once a week, so it adds one 404 refusal each Thursday, and the in-house sweep still watches it.
 
@@ -1075,6 +1076,16 @@ paragraph exists instead of a green dashboard.
 **On 4 Nov 2026, on his word, the Private Calendar gap notice's check went to `phoenix-brick-move-drain`.** The count stays at 40 checks, and the number of jobs without one does not change. The notice was already marked in-house only, and the in-house sweep and Sentry still watch it. It now adds one 404 refusal each Saturday, in place of the drain's three an hour.
 
 🔴 **A check cannot be moved through the API.** With one slot free, 39 checks held, `POST /api/v3/checks/` still answered 403 at 07:43 Cairo that day, for the new check and for restoring the deleted one. Only a ping with `?create=1` provisions past that limit. So a move is: delete the old check, ping the new slug at once, then tune it with `POST /api/v3/checks/<uuid>`, which is allowed. Any refused job that pings first takes the slot, so do it in one script. The ping key is on Railway only, so that script runs under `railway run`.
+
+### The account went dead, and the refusals that should have said so were already normal
+
+🔴 **On Sunday 9 Nov 2026, between 17:45 and 18:00 Cairo, the Healthchecks account stopped answering.** The heartbeat sweep's ping at 17:45 was accepted and every ping from every job after it was refused with a 404, inside one running deployment whose key had not changed. The project API key in `.env.local` answered `401 wrong api key` too, so the account itself was gone or both keys had been replaced. No Claude session touched Healthchecks that day. Read from `railway logs` on 12 Nov: 1,822 refusals from 42 jobs that day alone.
+
+🔴 **Nobody noticed for three days because a 404 was the NORMAL answer.** Every wired job pinged with `?create=1`, and the 15 with no check were refused on every run, about 1,000 times a day, so the paragraph above taught every reader that a 404 "means a missing check, not a wrong address". The dead account looked exactly like the usual noise.
+
+**The fix (12 Nov 2026, owner: "I will create a new account").** The owner opened a new Healthchecks account, which holds 20 checks on the free plan. 26 rows were not marked in-house only, so six more joined that list: the WhatsApp re-ask (its switch is still off), the weekly background-jobs drain, the three Friday sheet-token rotations and the monthly Brevo keep-alive. 🔴 **Since then only the 20 jobs in `HEALTHCHECKS_CHECKED_SLUGS` (`src/lib/observability/job-schedule.ts`) ping Healthchecks at all**, and `tests/job-heartbeat-register.test.ts` holds that list equal to this table's unmarked rows. An in-house-only job sends Healthchecks nothing (no ping, no `/fail`, no `/start`), so it can no longer auto-provision into a free slot either. The in-house register and Sentry still watch all 57.
+
+🔴 **So a `deadmans_switch_ping_refused` line now means something is wrong.** It is the account, the key or a deleted check, never "a job with no check". Read it the day it appears. To move a slot from one job to another, edit both this table and `HEALTHCHECKS_CHECKED_SLUGS` in the same PR, then run the sync.
 
 **One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
 is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,
