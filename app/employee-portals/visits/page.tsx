@@ -15,6 +15,7 @@ import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/sidebar-entri
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { buildMyVisitsView } from "@/lib/employee-portal/my-visits-view";
 import type {
   MyCrmCheckinRow,
   MyCrmDoubleVisitRow,
@@ -75,7 +76,9 @@ async function resolveVisitsTeamHrIds(access: AccessContext): Promise<string[]> 
     .map((row) => row.hrId);
 }
 
-export default async function MyVisitsPage() {
+type PageProps = { searchParams?: Promise<{ tab?: string | string[]; page?: string | string[] }> };
+
+export default async function MyVisitsPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
   if (!(await canAccess(access, "crm_visits", "read"))) {
     redirect("/employee-portals");
@@ -132,6 +135,11 @@ export default async function MyVisitsPage() {
   ]);
   const loadFailed = own === null;
   if (own) [visits, doubleVisits, checkins] = own;
+  // SLIM (owner, 12 Nov 2026, "slim My Visits"): every tab's count, and only the 25 rows on screen.
+  // The whole window used to travel to the phone — 956 KB for one rep — to show 25 of them.
+  // See src/lib/employee-portal/my-visits-view.ts.
+  const params = (await searchParams) ?? {};
+  const view = buildMyVisitsView({ visits, doubleVisits, checkins, teamVisits, tab: params.tab, page: params.page });
   const showNativeLinks = phoenixCrm || vacationDays.show || doctorList.show;
 
   return (
@@ -139,7 +147,7 @@ export default async function MyVisitsPage() {
     <EmployeePortalPageShell
       badge="Field Activity"
       description={
-        teamVisits.length > 0
+        view.hasTeam
           ? "Your own field visits, double visits, GPS check-ins — and your team's visits — from the last 90 days."
           : "Your own field visits, double visits, and GPS check-ins from the last 90 days."
       }
@@ -176,14 +184,7 @@ export default async function MyVisitsPage() {
           minute.
         </p>
       ) : null}
-      <MyVisitsWorkspace
-        checkins={checkins}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        doubleVisits={doubleVisits}
-        teamVisits={teamVisits}
-        visits={visits}
-      />
+      <MyVisitsWorkspace dateFrom={dateFrom} dateTo={dateTo} view={view} />
     </EmployeePortalPageShell>
   );
 }

@@ -48,7 +48,18 @@ export function runCrmVisitsSelfScopeTests() {
 
   const page = readFileSync("app/employee-portals/visits/page.tsx", "utf8");
   assert.match(page, /const hrId = access\.hrId;/, "the page must source hrId only from the resolved access context");
-  assert.doesNotMatch(page, /searchParams/, "the page must never read hrId (or anything else) from searchParams");
+  // The address may choose WHICH tab and page is open (12 Nov 2026, "slim My Visits": only the 25 rows on
+  // screen travel), and nothing else. Whose visits they are never comes from it.
+  assert.match(
+    page,
+    /type PageProps = \{ searchParams\?: Promise<\{ tab\?: string \| string\[\]; page\?: string \| string\[\] \}> \};/,
+    "🔴 the page's searchParams may name a tab and a page, and nothing else",
+  );
+  const paramReads = [...page.matchAll(/\bparams\.(\w+)/g)].map((match) => match[1]);
+  assert.deepEqual([...new Set(paramReads)].sort(), ["page", "tab"], "🔴 the page reads only the tab and the page from the address");
+  for (const line of page.split("\n")) {
+    assert.ok(!(/hrId/i.test(line) && /params/i.test(line)), `🔴 the page must never read hrId (or whose visits) from searchParams: ${line.trim()}`);
+  }
   assert.match(page, /if \(!hrId\) \{\s*redirect\(/, "the page must redirect when the caller has no hrId");
   assert.match(page, /canAccess\(access, "crm_visits", "read"\)/, "the page must gate on the crm_visits:read permission");
   assert.match(page, /fetchMyVisits\(hrId, window\)/, "the page must call fetchMyVisits with the resolved hrId");
@@ -167,12 +178,14 @@ export function runCrmVisitsSelfScopeTests() {
   );
 
   // 5. A truncated list must never read as a complete one.
+  // Since 12 Nov 2026 ("slim My Visits") the server counts the whole team feed and sends the flag.
   const workspace = readFileSync("src/components/employee-portal/my-visits-workspace.tsx", "utf8");
   assert.match(
-    workspace,
-    /teamVisits\.length >= TEAM_VISIT_ROW_CAP/,
+    readFileSync("src/lib/employee-portal/my-visits-view.ts", "utf8"),
+    /teamCapped: input\.teamVisits\.length >= TEAM_VISIT_ROW_CAP/,
     "the Team Visits tab must tell the viewer when the cap was hit",
   );
+  assert.match(workspace, /\{teamCapped \? \(/, "the Team Visits tab must tell the viewer when the cap was hit");
   assert.match(
     workspace,
     /TABS\.filter\(\(item\) => item\.id !== "team" \|\| hasTeam\)/,

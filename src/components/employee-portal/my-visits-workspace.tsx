@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
 
 import {
   PortalEmptyState,
@@ -15,7 +16,8 @@ import {
 // (it reaches node:crypto through the employee directory) and importing a value from it here
 // breaks the webpack dev build for this route and every route compiled after it.
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
-import { myOffDutyReason, partitionMyVisitRows } from "@/lib/employee-portal/my-visits-partition";
+import { myOffDutyReason } from "@/lib/employee-portal/my-visits-partition";
+import { MY_VISITS_PAGE_SIZE, myVisitsHref, type MyVisitsTab, type MyVisitsTabView, type MyVisitsView } from "@/lib/employee-portal/my-visits-view";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import type {
   MyCrmCheckinRow,
@@ -26,9 +28,7 @@ import type {
 import type { VisitTimeSource } from "@/lib/crm/reads";
 import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
-const PAGE_SIZE = 25;
-
-type TabId = "visits" | "double" | "checkins" | "team";
+type TabId = MyVisitsTab;
 
 // "team" is appended last and only rendered for a viewer who actually has a team (see the filter on
 // TABS below), so a Medical Rep's tab strip is unchanged.
@@ -303,19 +303,6 @@ function DaysNotInFieldGroup({ rows, showRep }: { rows: Array<MyCrmVisitRow & { 
   );
 }
 
-function usePagedRows<T>(rows: T[], page: number) {
-  return useMemo(() => {
-    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-    const safePage = Math.min(page, totalPages);
-    const paged = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-    const label =
-      rows.length === 0
-        ? "0 rows"
-        : `${(safePage - 1) * PAGE_SIZE + 1}-${Math.min(safePage * PAGE_SIZE, rows.length)} of ${rows.length} rows`;
-    return { label, paged, safePage, totalPages };
-  }, [page, rows]);
-}
-
 function TabPager({
   label,
   onNext,
@@ -351,42 +338,52 @@ function TabPager({
   );
 }
 
+/** "26-50 of 1,049 rows" — the page's place in the whole tab, which the server counted. */
+function pageLabel(view: MyVisitsTabView): string {
+  if (view.totalRows === 0) return "0 rows";
+  const first = (view.page - 1) * MY_VISITS_PAGE_SIZE + 1;
+  return `${first}-${first + view.rows.length - 1} of ${view.totalRows} rows`;
+}
+
+/**
+ * SLIM (owner, 12 Nov 2026, "slim My Visits"): the server sends every tab's count and the rows of the
+ * one page on screen (src/lib/employee-portal/my-visits-view.ts). A tab or Next/Previous asks the
+ * server for that page (`?tab=&page=`), and the list dims until it lands. The browser never holds
+ * the whole window again — that was 956 KB for one rep, to show 25 rows.
+ */
 export function MyVisitsWorkspace({
-  checkins,
   dateFrom,
   dateTo,
-  doubleVisits,
-  teamVisits = [],
-  visits,
+  view: model,
 }: {
-  checkins: MyCrmCheckinRow[];
   dateFrom: string;
   dateTo: string;
-  doubleVisits: MyCrmDoubleVisitRow[];
-  /** A manager's subordinates' visits. Empty (the default) for a viewer with no team — the tab is
-   *  then not rendered at all, so non-managers see exactly the three tabs they saw before. */
-  teamVisits?: TeamCrmVisitRow[];
-  visits: MyCrmVisitRow[];
+  /** Counts for every tab, rows for one page of one tab — built on the server. */
+  view: MyVisitsView;
 }) {
-  const hasTeam = teamVisits.length > 0;
+  const { counts, hasTeam, teamCapped, view } = model;
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pending, startTransition] = useTransition();
+  const [requested, setRequested] = useState<TabId | null>(null);
+  // The team tab renders only for a viewer who has a team, so a Medical Rep's strip is unchanged.
   const tabs = useMemo(() => TABS.filter((item) => item.id !== "team" || hasTeam), [hasTeam]);
-  const [tab, setTab] = useState<TabId>("visits");
-  const [page, setPage] = useState(1);
+  const shownTab = pending && requested ? requested : view.tab;
 
-  function selectTab(next: TabId) {
-    setTab(next);
-    setPage(1);
+  function go(tab: TabId, page: number) {
+    setRequested(tab);
+    startTransition(() => router.push(myVisitsHref(pathname, tab, page), { scroll: false }));
   }
 
-  // Calls apart from days not in the field — the tab count and the paged list are the calls only,
-  // matching the KPI drill-down (owner, 2026-09-25). See my-visits-partition.ts.
-  const visitSplit = useMemo(() => partitionMyVisitRows(visits), [visits]);
-  const teamSplit = useMemo(() => partitionMyVisitRows(teamVisits), [teamVisits]);
-
-  const visitsPage = usePagedRows(visitSplit.fieldRows, page);
-  const doublePage = usePagedRows(doubleVisits, page);
-  const checkinsPage = usePagedRows(checkins, page);
-  const teamPage = usePagedRows(teamSplit.fieldRows, page);
+  const pager = (
+    <TabPager
+      label={pageLabel(view)}
+      onNext={() => go(view.tab, Math.min(view.totalPages, view.page + 1))}
+      onPrevious={() => go(view.tab, Math.max(1, view.page - 1))}
+      safePage={view.page}
+      totalPages={view.totalPages}
+    />
+  );
   const rangeLabel = `${formatDateOnly(dateFrom)} – ${formatDateOnly(dateTo)}`;
   // The shell above already says "My Visits", so the section names the WINDOW instead of repeating
   // the page title. Derived from the two date-only bounds (both UTC midnight, so the difference is a
@@ -402,15 +399,9 @@ export function MyVisitsWorkspace({
             phone. Nothing here is whitespace-nowrap, so no tab can run off the edge. */}
         <PortalSegmentedTabs className={tabs.length === 4 ? "grid grid-cols-2 sm:grid-cols-4" : "grid grid-cols-3"}>
           {tabs.map((item) => {
-            const count =
-              item.id === "visits"
-                ? visitSplit.fieldRows.length
-                : item.id === "double"
-                  ? doubleVisits.length
-                  : item.id === "team"
-                    ? teamSplit.fieldRows.length
-                    : checkins.length;
-            const active = tab === item.id;
+            // Counted on the server from the whole window — the field visits only on My visits and Team visits.
+            const count = counts[item.id];
+            const active = shownTab === item.id;
             return (
               <button
                 aria-pressed={active}
@@ -418,7 +409,7 @@ export function MyVisitsWorkspace({
                   active ? "bg-orange-600 text-white shadow-sm" : "text-slate-600 hover:bg-white"
                 }`}
                 key={item.id}
-                onClick={() => selectTab(item.id)}
+                onClick={() => (item.id === view.tab ? undefined : go(item.id, 1))}
                 type="button"
               >
                 <span className="block break-words text-xs font-black leading-tight">{item.label}</span>
@@ -430,243 +421,221 @@ export function MyVisitsWorkspace({
           })}
         </PortalSegmentedTabs>
 
-        {tab === "team" ? (
-          <>
-            {teamVisits.length >= TEAM_VISIT_ROW_CAP ? (
-              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                Showing the {TEAM_VISIT_ROW_CAP} most recent team visits in this window. Older ones are not listed —
-                a silent cut here would read as &quot;my team stopped visiting&quot;.
-              </p>
-            ) : null}
-            <PortalResponsiveDataList
-              empty={<PortalEmptyState message="No field visits recorded by your team in this window." title="No team visits yet" />}
-              getKey={(row) => row.id}
-              items={teamPage.paged}
-              renderCard={(row) => <TeamVisitCard row={row} />}
-              renderTable={() => (
-                <table className={TABLE} data-portal-desktop-table>
-                  <colgroup>
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "17%" }} />
-                    <col style={{ width: "25%" }} />
-                    <col style={{ width: "15%" }} />
-                    <col style={{ width: "25%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="px-3 py-3" scope="col">Rep</th>
-                      <th className="px-3 py-3" scope="col">Day</th>
-                      {/* No Customer column - customerName is empty on every visit (see master.ts). */}
-                      <th className="px-3 py-3" scope="col">Contact</th>
-                      <th className="px-3 py-3" scope="col">With</th>
-                      <th className="px-3 py-3" scope="col">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {teamPage.paged.map((row) => (
-                      <tr className="align-top" key={row.id}>
-                        <td className={`${TD} font-black text-slate-950`}>{row.agentName || "—"}</td>
-                        <td className={TD}>
-                          <span className="block font-bold text-slate-800">
-                            {formatDateOnly(row.visitDate)}
-                            {row.ampm ? ` · ${row.ampm}` : ""}
-                          </span>
-                          <span className="mt-1 block text-xs">
-                            <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
-                          </span>
-                        </td>
-                        <td className={TD}>
-                          <span className="block text-slate-800">{row.contactName || "—"}</span>
-                          {row.visitTypeDescription ? (
-                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
-                          ) : null}
-                        </td>
-                        <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
-                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+        <div aria-busy={pending} className={`space-y-4 transition-opacity ${pending ? "opacity-50" : ""}`}>
+          {view.tab === "team" ? (
+            <>
+              {teamCapped ? (
+                <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  Showing the {TEAM_VISIT_ROW_CAP} most recent team visits in this window. Older ones are not listed —
+                  a silent cut here would read as &quot;my team stopped visiting&quot;.
+                </p>
+              ) : null}
+              <PortalResponsiveDataList
+                empty={<PortalEmptyState message="No field visits recorded by your team in this window." title="No team visits yet" />}
+                getKey={(row) => row.id}
+                items={view.rows}
+                renderCard={(row) => <TeamVisitCard row={row} />}
+                renderTable={() => (
+                  <table className={TABLE} data-portal-desktop-table>
+                    <colgroup>
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "17%" }} />
+                      <col style={{ width: "25%" }} />
+                      <col style={{ width: "15%" }} />
+                      <col style={{ width: "25%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-3" scope="col">Rep</th>
+                        <th className="px-3 py-3" scope="col">Day</th>
+                        {/* No Customer column - customerName is empty on every visit (see master.ts). */}
+                        <th className="px-3 py-3" scope="col">Contact</th>
+                        <th className="px-3 py-3" scope="col">With</th>
+                        <th className="px-3 py-3" scope="col">Comment</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            />
-            <TabPager
-              label={teamPage.label}
-              onNext={() => setPage((current) => Math.min(teamPage.totalPages, current + 1))}
-              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              safePage={teamPage.safePage}
-              totalPages={teamPage.totalPages}
-            />
-            <DaysNotInFieldGroup rows={teamSplit.offDutyRows} showRep />
-          </>
-        ) : null}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {view.rows.map((row) => (
+                        <tr className="align-top" key={row.id}>
+                          <td className={`${TD} font-black text-slate-950`}>{row.agentName || "—"}</td>
+                          <td className={TD}>
+                            <span className="block font-bold text-slate-800">
+                              {formatDateOnly(row.visitDate)}
+                              {row.ampm ? ` · ${row.ampm}` : ""}
+                            </span>
+                            <span className="mt-1 block text-xs">
+                              <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
+                            </span>
+                          </td>
+                          <td className={TD}>
+                            <span className="block text-slate-800">{row.contactName || "—"}</span>
+                            {row.visitTypeDescription ? (
+                              <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                            ) : null}
+                          </td>
+                          <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
+                          <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              />
+              {pager}
+              <DaysNotInFieldGroup rows={view.offDutyRows} showRep />
+            </>
+          ) : null}
 
-        {tab === "visits" ? (
-          <>
-            <PortalResponsiveDataList
-              empty={<PortalEmptyState message="No field visits recorded by you in this window." title="No visits yet" />}
-              getKey={(row) => row.id}
-              items={visitsPage.paged}
-              renderCard={(row) => <VisitCard row={row} />}
-              renderTable={() => (
-                <table className={TABLE} data-portal-desktop-table>
-                  <colgroup>
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "30%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "32%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="px-3 py-3" scope="col">Day</th>
-                      {/* No Customer column - customerName is empty on every visit (see master.ts). */}
-                      <th className="px-3 py-3" scope="col">Contact</th>
-                      <th className="px-3 py-3" scope="col">Double visit with</th>
-                      <th className="px-3 py-3" scope="col">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {visitsPage.paged.map((row) => (
-                      <tr className="align-top" key={row.id}>
-                        <td className={TD}>
-                          <span className="block font-bold text-slate-800">
-                            {formatDateOnly(row.visitDate)}
-                            {row.ampm ? ` · ${row.ampm}` : ""}
-                          </span>
-                          <span className="mt-1 block text-xs">
-                            <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
-                          </span>
-                        </td>
-                        <td className={TD}>
-                          <span className="block font-black text-slate-950">{row.contactName || "—"}</span>
-                          {row.visitTypeDescription ? (
-                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
-                          ) : null}
-                        </td>
-                        <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
-                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+          {view.tab === "visits" ? (
+            <>
+              <PortalResponsiveDataList
+                empty={<PortalEmptyState message="No field visits recorded by you in this window." title="No visits yet" />}
+                getKey={(row) => row.id}
+                items={view.rows}
+                renderCard={(row) => <VisitCard row={row} />}
+                renderTable={() => (
+                  <table className={TABLE} data-portal-desktop-table>
+                    <colgroup>
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "30%" }} />
+                      <col style={{ width: "20%" }} />
+                      <col style={{ width: "32%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-3" scope="col">Day</th>
+                        {/* No Customer column - customerName is empty on every visit (see master.ts). */}
+                        <th className="px-3 py-3" scope="col">Contact</th>
+                        <th className="px-3 py-3" scope="col">Double visit with</th>
+                        <th className="px-3 py-3" scope="col">Comment</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            />
-            <TabPager
-              label={visitsPage.label}
-              onNext={() => setPage((current) => Math.min(visitsPage.totalPages, current + 1))}
-              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              safePage={visitsPage.safePage}
-              totalPages={visitsPage.totalPages}
-            />
-            <DaysNotInFieldGroup rows={visitSplit.offDutyRows} showRep={false} />
-          </>
-        ) : null}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {view.rows.map((row) => (
+                        <tr className="align-top" key={row.id}>
+                          <td className={TD}>
+                            <span className="block font-bold text-slate-800">
+                              {formatDateOnly(row.visitDate)}
+                              {row.ampm ? ` · ${row.ampm}` : ""}
+                            </span>
+                            <span className="mt-1 block text-xs">
+                              <VisitTimeBadge phoenix={row.phoenixVisit} source={row.visitTimeSource} value={row.visitTime} />
+                            </span>
+                          </td>
+                          <td className={TD}>
+                            <span className="block font-black text-slate-950">{row.contactName || "—"}</span>
+                            {row.visitTypeDescription ? (
+                              <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                            ) : null}
+                          </td>
+                          <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
+                          <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              />
+              {pager}
+              <DaysNotInFieldGroup rows={view.offDutyRows} showRep={false} />
+            </>
+          ) : null}
 
-        {tab === "double" ? (
-          <>
-            <PortalResponsiveDataList
-              empty={
-                <PortalEmptyState
-                  message="No visits where you accompanied a colleague were recorded in this window."
-                  title="No double visits yet"
-                />
-              }
-              getKey={(row) => row.id}
-              items={doublePage.paged}
-              renderCard={(row) => <DoubleVisitCard row={row} />}
-              renderTable={() => (
-                <table className={TABLE} data-portal-desktop-table>
-                  <colgroup>
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "30%" }} />
-                    <col style={{ width: "20%" }} />
-                    <col style={{ width: "32%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="px-3 py-3" scope="col">Day</th>
-                      <th className="px-3 py-3" scope="col">Contact</th>
-                      <th className="px-3 py-3" scope="col">Primary rep</th>
-                      <th className="px-3 py-3" scope="col">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {doublePage.paged.map((row) => (
-                      <tr className="align-top" key={row.id}>
-                        <td className={TD}>
-                          <span className="block font-bold text-slate-800">
-                            {formatDateOnly(row.visitDate)}
-                            {row.ampm ? ` · ${row.ampm}` : ""}
-                          </span>
-                          <span className="mt-1 block text-xs">
-                            <VisitTimeBadge phoenix={row.phoenixVisit} source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />
-                          </span>
-                        </td>
-                        <td className={TD}>
-                          <span className="block font-black text-slate-950">{row.contactName || row.customerName || "—"}</span>
-                          {row.visitTypeDescription ? (
-                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
-                          ) : null}
-                        </td>
-                        <td className={`${TD} text-slate-700`}>{row.primaryAgentName || "—"}</td>
-                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+          {view.tab === "double" ? (
+            <>
+              <PortalResponsiveDataList
+                empty={
+                  <PortalEmptyState
+                    message="No visits where you accompanied a colleague were recorded in this window."
+                    title="No double visits yet"
+                  />
+                }
+                getKey={(row) => row.id}
+                items={view.rows}
+                renderCard={(row) => <DoubleVisitCard row={row} />}
+                renderTable={() => (
+                  <table className={TABLE} data-portal-desktop-table>
+                    <colgroup>
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "30%" }} />
+                      <col style={{ width: "20%" }} />
+                      <col style={{ width: "32%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-3" scope="col">Day</th>
+                        <th className="px-3 py-3" scope="col">Contact</th>
+                        <th className="px-3 py-3" scope="col">Primary rep</th>
+                        <th className="px-3 py-3" scope="col">Comment</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            />
-            <TabPager
-              label={doublePage.label}
-              onNext={() => setPage((current) => Math.min(doublePage.totalPages, current + 1))}
-              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              safePage={doublePage.safePage}
-              totalPages={doublePage.totalPages}
-            />
-          </>
-        ) : null}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {view.rows.map((row) => (
+                        <tr className="align-top" key={row.id}>
+                          <td className={TD}>
+                            <span className="block font-bold text-slate-800">
+                              {formatDateOnly(row.visitDate)}
+                              {row.ampm ? ` · ${row.ampm}` : ""}
+                            </span>
+                            <span className="mt-1 block text-xs">
+                              <VisitTimeBadge phoenix={row.phoenixVisit} source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />
+                            </span>
+                          </td>
+                          <td className={TD}>
+                            <span className="block font-black text-slate-950">{row.contactName || row.customerName || "—"}</span>
+                            {row.visitTypeDescription ? (
+                              <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                            ) : null}
+                          </td>
+                          <td className={`${TD} text-slate-700`}>{row.primaryAgentName || "—"}</td>
+                          <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              />
+              {pager}
+            </>
+          ) : null}
 
-        {tab === "checkins" ? (
-          <>
-            <PortalResponsiveDataList
-              empty={<PortalEmptyState message="No GPS check-ins recorded by you in this window." title="No check-ins yet" />}
-              getKey={(row) => row.id}
-              items={checkinsPage.paged}
-              renderCard={(row) => <CheckinCard row={row} />}
-              renderTable={() => (
-                <table className={TABLE} data-portal-desktop-table>
-                  <colgroup>
-                    <col style={{ width: "24%" }} />
-                    <col style={{ width: "30%" }} />
-                    <col style={{ width: "46%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="px-3 py-3" scope="col">Date &amp; time</th>
-                      <th className="px-3 py-3" scope="col">Contact</th>
-                      <th className="px-3 py-3" scope="col">Address</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {checkinsPage.paged.map((row) => (
-                      <tr className="align-top" key={row.id}>
-                        <td className={`${TD} font-bold text-slate-800`}>{formatVendorLocal(row.checkDate)}</td>
-                        <td className={`${TD} font-black text-slate-950`}>{row.contactName || "—"}</td>
-                        <td className={`${TD} leading-5 text-slate-600`}>{row.address || "—"}</td>
+          {view.tab === "checkins" ? (
+            <>
+              <PortalResponsiveDataList
+                empty={<PortalEmptyState message="No GPS check-ins recorded by you in this window." title="No check-ins yet" />}
+                getKey={(row) => row.id}
+                items={view.rows}
+                renderCard={(row) => <CheckinCard row={row} />}
+                renderTable={() => (
+                  <table className={TABLE} data-portal-desktop-table>
+                    <colgroup>
+                      <col style={{ width: "24%" }} />
+                      <col style={{ width: "30%" }} />
+                      <col style={{ width: "46%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-3" scope="col">Date &amp; time</th>
+                        <th className="px-3 py-3" scope="col">Contact</th>
+                        <th className="px-3 py-3" scope="col">Address</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            />
-            <TabPager
-              label={checkinsPage.label}
-              onNext={() => setPage((current) => Math.min(checkinsPage.totalPages, current + 1))}
-              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              safePage={checkinsPage.safePage}
-              totalPages={checkinsPage.totalPages}
-            />
-          </>
-        ) : null}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {view.rows.map((row) => (
+                        <tr className="align-top" key={row.id}>
+                          <td className={`${TD} font-bold text-slate-800`}>{formatVendorLocal(row.checkDate)}</td>
+                          <td className={`${TD} font-black text-slate-950`}>{row.contactName || "—"}</td>
+                          <td className={`${TD} leading-5 text-slate-600`}>{row.address || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              />
+              {pager}
+            </>
+          ) : null}
+        </div>
       </div>
     </PortalSection>
   );

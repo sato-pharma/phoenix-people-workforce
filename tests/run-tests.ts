@@ -632,6 +632,7 @@ import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
 import { runMyVisitsFieldSplitTests } from "./my-visits-field-split.test.ts";
+import { runMyVisitsViewTests } from "./my-visits-view.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
 import { runCrmMasterExportKeysetTests } from "./crm-master-export-keyset.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
@@ -4506,6 +4507,7 @@ await runTest("crm visit time (GPS check-in → save time → none; never visit_
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
 await runTest("my visits field split (My Visits and Team Visits count calls only, like the KPI drill-down)", runMyVisitsFieldSplitTests);
+await runTest("my visits sends every tab's count and only the 25 rows on screen, never the whole 90-day window (956 KB for one rep, 12 Nov 2026)", runMyVisitsViewTests);
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
 await runTest(
   "crm master export paging (keyset not OFFSET, calendar days newest first, every row exactly once across a tie)",
