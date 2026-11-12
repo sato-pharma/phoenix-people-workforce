@@ -1,6 +1,7 @@
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { compactDeductionsHrId, normalizeMonthKey } from "@/lib/deductions/candidate-key.ts";
 import { attachCommentAttachments } from "@/lib/deductions/comment-attachments.ts";
+import { isUndecidedDeductionStatus } from "@/lib/deductions/dispute-open.ts";
 import { isDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { pushDeduction, withdrawDeduction } from "@/lib/deductions/push.ts";
 import { recordDecision } from "@/lib/deductions/service.ts";
@@ -557,6 +558,8 @@ export async function decideDeductionDispute(
   const monthKey = normalizeMonthKey(String(candidate.month_key ?? ""));
   const employeeHrId = candidate.employee_hr_id ?? candidate.employee_hr_id_compact ?? "";
   const inUnit = (value: number) => (unit === "days" ? daysLabel(value) : moneyLabel(value));
+  // Nobody has decided the deduction yet — the employee disputed it before HR did.
+  const undecided = isUndecidedDeductionStatus(decisionBefore?.decision_status);
 
   let reduced: number | null = null;
   if (input.outcome === "reduce") {
@@ -568,8 +571,10 @@ export async function decideDeductionDispute(
           : "Validation: type the amount to charge. To cancel it completely, accept the dispute instead.",
       );
     }
-    // THE CEILING IS WHAT THE DEDUCTION CHARGES NOW, so the word "reduce" can only ever lower it.
-    const ceiling = before.value;
+    // THE CEILING IS WHAT THE DEDUCTION CHARGES NOW, so the word "reduce" can only ever lower it —
+    // except a deduction nobody has decided yet (owner, 2026-11-13: an employee may dispute before the
+    // money is taken), whose one figure is what was detected: reducing it charges part of that.
+    const ceiling = undecided ? num(candidate.raw_value) : before.value;
     if (!(ceiling > 0)) {
       throw conflictError(
         `This deduction charges nothing at the moment — the decision on record is "${
@@ -641,6 +646,31 @@ export async function decideDeductionDispute(
       // Back on the payslip at the smaller figure.
       const pushed = await pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey });
       chargedAmount = roundCurrency(num(pushed.appliedAmount));
+    }
+  } else if (undecided) {
+    // REJECT ON A DEDUCTION NOBODY HAS DECIDED — owner, 2026-11-13: "if reject then deduct". Leaving it
+    // Pending would charge nothing, so "the deduction stands" would be a sentence and not a figure: the
+    // rejection approves it for payroll at what was detected, and puts it on the employee's payslip view.
+    const approved = await recordDecision({
+      actor,
+      candidateId: input.candidateId,
+      decisionReason: `Dispute rejected — the deduction is taken${noteSuffix}`,
+      decisionStatus: "Approved for Payroll",
+      hrNote: note,
+    });
+    payrollNotices.push(...approved.payrollNotices);
+    chargedValue = num(approved.appliedValue);
+    chargedAmount = roundCurrency(num(approved.appliedAmount));
+    const pushed = await pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }).catch(
+      () => null,
+    );
+    if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
+    else {
+      payrollNotices.push(
+        `The ${monthKeyLabel(monthKey)} deduction is approved for payroll at ${moneyLabel(
+          chargedAmount,
+        )}, but its line could not be put on the employee's payslip view — push it from that month's Deductions workspace.`,
+      );
     }
   } else {
     // REJECT — "the deduction stands". Where an earlier decision on THIS dispute lowered it, that
@@ -761,7 +791,11 @@ export async function decideDeductionDispute(
         ? `Your dispute was accepted in part — the ${monthKeyLabel(monthKey)} deduction is now ${
             unit === "days" ? daysLabel(chargedValue) : moneyLabel(chargedValue)
           } (${moneyLabel(chargedAmount)}).`
-        : `Your dispute was reviewed and the ${monthKeyLabel(monthKey)} deduction stands.`;
+        : undecided
+          ? `Your dispute was rejected — the ${monthKeyLabel(monthKey)} deduction is taken from your salary (${moneyLabel(
+              chargedAmount,
+            )}).`
+          : `Your dispute was reviewed and the ${monthKeyLabel(monthKey)} deduction stands.`;
   await notifyDisputeCase({
     actorHrId: participant.viewerHrId,
     audience: "employee",

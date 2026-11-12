@@ -32,6 +32,12 @@ import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
 import { resolveDisputeAudience, toDisputeAudience } from "./dispute-audience.ts";
 import { meaningfulHrText } from "./portal-ledger-filters.ts";
 import {
+  deductionOpenForDispute,
+  unpublishedDisputeLine,
+  type UnpublishedDisputeCandidate,
+  type UnpublishedDisputeDecision,
+} from "./dispute-open.ts";
+import {
   buildDisputeBasis,
   type DisputeCandidateRow,
   type DisputeDecisionRow,
@@ -342,10 +348,14 @@ export function mapPortalLedgerRow(input: {
     hrNote: meaningfulHrText(decision?.hr_note),
     decidedByName: input.decidedByName,
     decidedAt: decision?.decided_at ?? null,
-    // His ruling, 2026-10-09: a dispute is for money actually taken, so the comment box stays on
-    // the released line exactly as addDeductionsComment's own gate requires. A cleared or
-    // still-undecided row shows HR's answer and offers no reply.
-    canComment: Boolean(input.releasedLine),
+    // Owner, 2026-11-13: "make the employee able to dispute in the deduction module" — every row he
+    // can see may be disputed except a cleared one, exactly as addDeductionsComment's own gate
+    // (`deductionOpenForDispute`) requires. Replaces the 2026-10-09 released-line-only box, which left
+    // an approved-but-unpushed deduction (charged all the same) and an undecided one beyond reach.
+    canComment: deductionOpenForDispute({
+      decisionStatus: decision?.decision_status ?? null,
+      hasPublishedLine: Boolean(input.releasedLine),
+    }),
     createdAt: candidate.created_at,
   };
 }
@@ -425,10 +435,9 @@ export async function getPortalDeductionLedger(input: {
     }),
   );
 
-  // Only a released row can carry a conversation, so only those ids are asked for.
-  const comments = await listDeductionsComments({
-    candidateIds: rows.filter((row) => row.canComment).map((row) => row.candidateId),
-  });
+  // Every row's conversation, so a cleared row whose dispute was ACCEPTED still shows what was said
+  // (read-only) instead of losing it the moment the deduction is cancelled.
+  const comments = await listDeductionsComments({ candidateIds: rows.map((row) => row.candidateId) });
   return { rows, comments, firstMonthKey: PORTAL_DEDUCTIONS_FIRST_MONTH };
 }
 
@@ -469,13 +478,17 @@ async function loadPublishedLinesByCandidate(
 export function groupDeductionCommentThreads(
   comments: DeductionsComment[],
   linesByCandidate: Map<string, DeductionsPortalLine>,
+  unpublishedByCandidate: Map<string, { line: DeductionsPortalLine; pending: boolean }> = new Map(),
 ): AdminDeductionCommentThread[] {
   const threads = new Map<string, AdminDeductionCommentThread>();
   for (const comment of comments) {
-    // Only a deduction still ACTIVE on the payslip is a dispute to work (owner, 2026-10-08: a
-    // "Do Not Take Action" deduction must not show in the Disputes tab). A withdrawn or never-pushed
-    // line deducts nothing, so a comment on it has nothing left to contest.
-    if (!linesByCandidate.has(comment.candidateId)) continue;
+    // A deduction still ACTIVE on the payslip is a dispute to work, and so — since the owner's
+    // 2026-11-13 "make the employee able to dispute" — is one approved but not yet pushed (payroll
+    // charges it all the same) and one still waiting for a decision (`unpublishedDisputeLine`). A
+    // "Do Not Take Action" deduction still never shows here (owner, 2026-10-08): it charges nothing.
+    const pushed = linesByCandidate.get(comment.candidateId);
+    const unpublished = pushed ? null : unpublishedByCandidate.get(comment.candidateId);
+    if (!pushed && !unpublished) continue;
     const existing = threads.get(comment.candidateId);
     if (existing) {
       existing.comments.push(comment);
@@ -483,7 +496,8 @@ export function groupDeductionCommentThreads(
     }
     threads.set(comment.candidateId, {
       candidateId: comment.candidateId,
-      line: linesByCandidate.get(comment.candidateId) ?? null,
+      line: pushed ?? unpublished?.line ?? null,
+      ...(unpublished?.pending ? { pending: true } : {}),
       comments: [comment],
       latestCommentAt: comment.createdAt,
     });
@@ -508,8 +522,53 @@ export async function listPublishedDeductionCommentThreads(input?: {
 
   const candidateIds = Array.from(new Set(comments.map((comment) => comment.candidateId)));
   const linesByCandidate = await loadPublishedLinesByCandidate(candidateIds);
-  const threads = groupDeductionCommentThreads(comments, linesByCandidate);
+  const unpublished = await loadUnpublishedDisputeLines(candidateIds.filter((id) => !linesByCandidate.has(id)));
+  const threads = groupDeductionCommentThreads(comments, linesByCandidate, unpublished);
   return attachDisputeDetail(threads);
+}
+
+/**
+ * The inbox line for each disputed deduction with no pushed line: built from the live candidate and its
+ * decision (`unpublishedDisputeLine`). A superseded candidate or a cleared one is left out.
+ */
+async function loadUnpublishedDisputeLines(
+  candidateIds: string[],
+): Promise<Map<string, { line: DeductionsPortalLine; pending: boolean }>> {
+  const out = new Map<string, { line: DeductionsPortalLine; pending: boolean }>();
+  if (candidateIds.length === 0) return out;
+  const supabase = getSupabaseAdmin();
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const batch = candidateIds.slice(i, i + 100);
+    const [candidateResult, decisionResult] = await Promise.all([
+      supabase
+        .from("deductions_candidates")
+        .select(
+          "id, employee_hr_id, employee_hr_id_compact, employee_name, month_key, category, unit, raw_value, estimated_amount, dates, reason, created_at",
+        )
+        .in("id", batch)
+        .is("superseded_at", null),
+      supabase
+        .from("deductions_decisions")
+        .select("candidate_id, decision_status, applied_value, applied_amount, hr_note")
+        .in("candidate_id", batch),
+    ]);
+    if (candidateResult.error) throw candidateResult.error;
+    if (decisionResult.error) throw decisionResult.error;
+    const decisions = new Map<string, UnpublishedDisputeDecision & { candidate_id: string }>();
+    for (const row of (decisionResult.data ?? []) as Array<UnpublishedDisputeDecision & { candidate_id: string }>) {
+      decisions.set(row.candidate_id, row);
+    }
+    for (const candidate of (candidateResult.data ?? []) as UnpublishedDisputeCandidate[]) {
+      const built = unpublishedDisputeLine({
+        candidate,
+        decision: decisions.get(candidate.id) ?? null,
+        payrollColumn:
+          salaryRecordsColumnForCategory(candidate.category as DeductionsCategory) ?? "other_deductions",
+      });
+      if (built) out.set(candidate.id, built);
+    }
+  }
+  return out;
 }
 
 /** Display names (owner, 2026-11-03) for a set of HR ids, keyed by canonical id. */

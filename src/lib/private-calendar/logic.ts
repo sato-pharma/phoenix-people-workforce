@@ -748,6 +748,12 @@ export type PrivateCalendarAcceptedCorrection = {
   employeeName: string | null;
   id: string;
   itemSource: PrivateCalendarSource | null;
+  /**
+   * Where the verification came from. A review request filed on the calendar (the default), or an ACCEPTED
+   * DEDUCTION DISPUTE (owner, 2026-11-13: "if approved the dispute fix his deduction and calendar") — see
+   * src/lib/dispute-center/accepted-deduction-days.ts. It changes only the words of the day's detail line.
+   */
+  origin?: "review_request" | "deduction_dispute";
   status: string;
 };
 
@@ -779,10 +785,15 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
     const first = accepted[0]!;
     // The same claim filed twice for one day (Shahd's "Training" twice, 2026-10-29) is ONE claim with two proofs:
     // listed once, its sources joined, never "Training · Training".
-    const byClaim = new Map<string, { claim: string; sources: string[]; notes: string[] }>();
+    const byClaim = new Map<string, { claim: string; origin: string; sources: string[]; notes: string[] }>();
     for (const dispute of accepted) {
       const claimKey = dispute.claimText.trim().replace(/\s+/g, " ").toLowerCase();
-      const entry = byClaim.get(claimKey) ?? { claim: dispute.claimText.trim(), notes: [], sources: [] };
+      const entry = byClaim.get(claimKey) ?? {
+        claim: dispute.claimText.trim(),
+        notes: [],
+        origin: dispute.origin === "deduction_dispute" ? "an accepted deduction dispute" : "an approved review request",
+        sources: [],
+      };
       if (!entry.sources.includes(dispute.claimSourceText)) entry.sources.push(dispute.claimSourceText);
       if (dispute.adminDecisionNote && !entry.notes.includes(dispute.adminDecisionNote)) entry.notes.push(dispute.adminDecisionNote);
       byClaim.set(claimKey, entry);
@@ -790,8 +801,8 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
     const claims = Array.from(byClaim.values()).map((entry) => entry.claim);
     const claimText = claims.join(" · ");
     // One claim is already the title, so its detail line does not repeat it; several each name their own.
-    const proofLine = (entry: { claim: string; sources: string[]; notes: string[] }) =>
-      `${claims.length > 1 ? `${entry.claim} — from` : "From"} an approved review request · proof: ${entry.sources.join(" and ")}${entry.notes.length > 0 ? ` · Admin note: ${entry.notes.join(" · ")}` : ""}`;
+    const proofLine = (entry: { claim: string; origin: string; sources: string[]; notes: string[] }) =>
+      `${claims.length > 1 ? `${entry.claim} — from` : "From"} ${entry.origin} · proof: ${entry.sources.join(" and ")}${entry.notes.length > 0 ? ` · Admin note: ${entry.notes.join(" · ")}` : ""}`;
     return {
       activityKind: "correction",
       approvalImpact: null,
