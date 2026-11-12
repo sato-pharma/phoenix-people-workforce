@@ -39,6 +39,7 @@ import {
   type TripTab,
   TRIP_TABS,
   bulkCandidate,
+  bulkRejectionComment,
   computeReviewStats,
   countReviewTabs,
   countUnsaved,
@@ -469,6 +470,47 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
     );
   }, [bulkPlan, records]);
 
+  // Bulk reject (owner, 2026-11-12) — the twin of bulk approve: the same local decision the single
+  // Reject writes, and it does NOT save either. Every ticked trip still waiting is rejected with the one
+  // reason; one already decided is skipped and named. A trip with a changed amount or idle days is
+  // rejectable here, unlike approve, because a rejection pays nothing.
+  const rejectSelected = useCallback(
+    (reason: string) => {
+      const text = reason.trim();
+      if (!text) {
+        setBulkMessage("Nothing rejected — write the reason first; the employees read it.");
+        return;
+      }
+      const notPending = new Set(bulkPlan.notPendingTripIds);
+      const rejectable = new Set(selectedVisible.map((record) => record.tripId).filter((tripId) => !notPending.has(tripId)));
+      if (rejectable.size === 0) {
+        setBulkMessage(notPending.size > 0 ? `Nothing rejected — ${formatNumberValue(notPending.size)} were already decided.` : "Nothing selected to reject.");
+        return;
+      }
+      setSaveMessage(null);
+      setDecisions((current) => {
+        const next = { ...current };
+        for (const record of records) {
+          if (!rejectable.has(record.tripId)) continue;
+          const base = next[record.tripId] ?? savedDecision(record);
+          next[record.tripId] = { ...base, hrApproved: false, hrComment: bulkRejectionComment(base.hrComment, text), status: REJECTED_STATUS };
+        }
+        return next;
+      });
+      setSelectedTripIds((current) => {
+        const next = new Set(current);
+        for (const tripId of rejectable) next.delete(tripId);
+        return next;
+      });
+      setBulkMessage(
+        `${formatNumberValue(rejectable.size)} trip${rejectable.size === 1 ? "" : "s"} rejected — press Save to commit.${
+          notPending.size > 0 ? ` Skipped: ${formatNumberValue(notPending.size)} were already decided.` : ""
+        }`,
+      );
+    },
+    [bulkPlan, records, selectedVisible],
+  );
+
   // ── One trip's decision ──────────────────────────────────────────────────────────────────────
 
   const recordById = useMemo(() => new Map(records.map((record) => [record.tripId, record])), [records]);
@@ -733,6 +775,7 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
     bulkMessage,
     bulkPlan,
     clearSelection,
+    rejectSelected,
     selectable,
     selectedTripIds,
     selectedValue,

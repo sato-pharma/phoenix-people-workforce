@@ -11,6 +11,7 @@ export function ExcuseApprovalsBody({ data }: { data: ExcuseWorkspaceData }) {
       history={data.history}
       pendingCount={data.pendingCount}
       slaModule="excuse"
+      bulkDecisionModule="excuse"
       historyExportTitle="Excuse Approval History"
       historyEmptyLabel="You have not responded to any excuse requests yet."
       myRequests={data.myRequests}

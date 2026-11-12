@@ -18,6 +18,7 @@ export function VacationApprovalsBody({ data }: { data: VacationWorkspaceData })
       history={data.history}
       pendingCount={data.pendingCount}
       slaModule="leave"
+      bulkDecisionModule="leave"
       historyExportTitle="Vacation Approval History"
       historyEmptyLabel="You have not responded to any leave requests yet."
       myRequests={data.myRequests}

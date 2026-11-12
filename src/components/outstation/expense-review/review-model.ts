@@ -14,6 +14,7 @@ import {
   expenseTripTriage,
 } from "@/lib/outstation/expense-approval-triage";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
+import { JOURNEY_CHECK_MARKER } from "@/lib/outstation/decision-note";
 import {
   OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
   TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
@@ -50,6 +51,21 @@ export type LoadedRecord = ExpenseTripRecord & {
   reportId?: string | null;
   sourceFileName?: string;
 };
+
+/**
+ * The comment a batch rejection leaves on one trip (owner, 2026-11-12: "Reject all" beside "Approve N").
+ * The reviewer's own words are never written over: a trip whose comment already carries free text he
+ * wrote keeps it. Otherwise the one batch reason becomes the free text, and the system's trailing
+ * "Journey check:" group stays at the end, where decision-note.ts keeps it.
+ */
+export function bulkRejectionComment(existing: string, reason: string): string {
+  const text = String(existing ?? "");
+  const cut = text.indexOf(JOURNEY_CHECK_MARKER);
+  const freeText = (cut >= 0 ? text.slice(0, cut) : text).trim();
+  if (freeText) return text;
+  const journey = cut >= 0 ? text.slice(cut).trim() : "";
+  return journey ? `${reason.trim()} ${journey}` : reason.trim();
+}
 
 /** A trip's days with no field activity, as its field-work read found them. */
 export type TripIdleDays = { idleDays: number; tripDays: number };
