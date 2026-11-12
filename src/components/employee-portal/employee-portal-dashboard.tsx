@@ -54,6 +54,7 @@ import {
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
+import { PediaIncentivePolicyExamplesCard } from "@/components/employee-portal/pedia-incentive-policy-examples";
 import { formatDateOnly } from "@/lib/date-only";
 import { PEDIA_SATO_HALF_MIN_TOTAL_PERCENT, calculatePediaSplitIncentive } from "@/lib/incentives/pedia-split";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
@@ -1907,6 +1908,9 @@ function PediaIncentiveTab({ data }: { data: MedicalRepPortalData }) {
           onToggleSalaryVisibility={() => setIsSalaryVisible((current) => !current)}
         />
       </div>
+
+      {/* The policy written out in full, with worked examples (owner, 2026-11-12). */}
+      <PediaIncentivePolicyExamplesCard />
 
       <IncentivePayoutCurveChart
         data={data}
