@@ -378,5 +378,31 @@ export function runPortalRepNavigationSpeedTests(): void {
     );
   }
 
+  // ── The Incentive page (2026-11-12, the training-day measurement) ─────────────────────────────
+  {
+    // Its documents, notifications and salary structure each need only his HR id, yet each waited for
+    // the directory, the whole sales wave and the step before it, and the salary structure was read
+    // twice. They start the moment his HR id is known, and the second read is the first one awaited.
+    const service = source("src/lib/employee-portal/service.ts");
+    const rep = functionBody(service, "export async function getMedicalRepPortalData(");
+    assertBefore(
+      rep,
+      "salaryStructure: startedEarly(fetchEmployeeSalaryStructure(currentHrId))",
+      "await getEmployeeDirectory()",
+      "the salary structure starts before the directory is awaited",
+    );
+    assertBefore(rep, "documents: startedEarly(listEmployeeDocuments(currentHrId))", "await devSafePromiseAll(", "the documents start before the sales wave");
+    assertBefore(rep, "notifications: startedEarly(fetchPortalNotifications(currentHrId))", "await devSafePromiseAll(", "the notifications start before the sales wave");
+    assert.match(rep, /\.\.\.profileReads,/, "the started reads are handed to getEmployeePortalData, not read again there");
+    assert.equal(rep.match(/fetchEmployeeSalaryStructure\(/g)?.length, 1, "the salary structure is read once on the Incentive path");
+
+    const base = functionBody(service, "export async function getEmployeePortalData(");
+    assertBefore(base, "const salaryTrendRead = startedEarly(", "await devSafePromiseAll(", "the salary trend starts with the wave, not after it");
+    assert.doesNotMatch(base, /await fetchSalaryTrend\(/, "and is never read after the wave again");
+    assert.doesNotMatch(base, /await fetchEmployeeSalaryStructure\(/, "nor is the salary structure");
+    assert.match(base, /prefetched\?\.documents \?\? listEmployeeDocuments\(currentHrId\)/, "a handed-in documents read is used");
+    assert.match(base, /prefetched\?\.notifications \?\? fetchPortalNotifications\(currentHrId\)/, "a handed-in notifications read is used");
+  }
+
   console.log("portal rep navigation speed: OK");
 }
