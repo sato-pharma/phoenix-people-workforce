@@ -2348,6 +2348,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // policy row and 114 member rows, exported first (docs/medical-insurance-retired.md). Re-applying is a no-op
   // (`drop ... if exists`).
   "20261111061213_retire_medical_insurance.sql",
+  // Applied 12 Nov 2026 about 22:40 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1
+  // pooler), the standing route, after apply_migration answered {"status":"declined"} on BOTH supabase-staging and
+  // supabase-production. It writes NO ledger row (0 rows for this version or name on production). Two functions, one
+  // trigger, one partial index and two widened CHECKs; no row written. Read back on BOTH cifwmndunmlxjhyjugxa and
+  // ozucdzovmcqvepbozvqf and equal on both, and equal to this file's own bodies as LF text: md5(prosrc) of
+  // phoenix_crm_share_line_validation 16f1fee6bd46b948ce6f20b9ea315a84 (new; SECURITY DEFINER, ACL {postgres=X,
+  // service_role=X} and nothing else), of phoenix_crm_places_line_twin_follow 53eea0e35a51e45281f29bf9f7eb7bd8 (new,
+  // a plain trigger function); phoenix_crm_places_point_source now admits 'line_twin'. Rehearsed on staging inside one
+  // rolled-back block, 5 of 5: a waiting row was validated from another line's place under that line's validator, a
+  // second call answered skipped not_waiting, the copy had no photo and kind line_twin, the copy followed its source's
+  // move, and retiring the source retired the copy and sent the row back to waiting. Re-applying is a no-op (`create or
+  // replace`, `if not exists`, drop-and-add of the same CHECKs and trigger).
+  "20261112221819_phoenix_crm_line_twin_validation.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

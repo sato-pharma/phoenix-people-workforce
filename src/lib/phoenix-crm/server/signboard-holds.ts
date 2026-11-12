@@ -27,9 +27,11 @@
  */
 
 import { hasAiApiKey } from "@/lib/ai/openai-client";
+import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { recordPlaceSignboard, rereadHeldPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { notifyValidationReviewWaiting, withdrawValidationReviewWaiting } from "@/lib/phoenix-crm/server/validation-reviews";
@@ -90,8 +92,9 @@ export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "
  * approve for the hourly re-read, the one-off read of the old places and the rep's new photo alike.
  */
 export async function approveHeldSignboardBySystem(reviewId: string): Promise<boolean> {
+  let approved: Row;
   try {
-    await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
+    approved = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
       p: {
         review_id: reviewId,
         actor_hr_id: SIGNBOARD_SYSTEM_ACTOR,
@@ -109,6 +112,9 @@ export async function approveHeldSignboardBySystem(reviewId: string): Promise<bo
   }
   // A notice may already be in his bell from an older hold; it is answered now.
   await withdrawValidationReviewWaiting(reviewId);
+  // Validated, so validated on the other two lines of his area too (owner, 2026-11-12; line-twins.ts).
+  const customerId = typeof approved?.customer_id === "string" ? approved.customer_id : null;
+  await afterResponse("phoenix-crm: share a system-approved validation across the lines", () => shareAcrossLinesQuietly(customerId));
   return true;
 }
 

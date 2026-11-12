@@ -2160,6 +2160,7 @@ import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-co
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
+import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
 import { runPhoenixCrmPlanCapOnSendTests } from "./phoenix-crm-plan-cap-on-send.test.ts";
@@ -8311,6 +8312,11 @@ await runTest(
 await runTest(
   "Phoenix CRM validates a customer on a trusted point (owner, 2026-11-10: \"we will search all locations for this customer in phx crm, then we will compare with the locations of checkins of this customer from the old crm until we find a trusted point\"): a tight cluster over months is trusted with the 600 m and 6 km strays left out, scattered readings or agreement on fewer than three days are not and say why, a Phoenix reading rougher than the visit line is dropped and the point is a median; a visit copied from iReports360 is never counted beside its own check-in, a retired place still counts and a pin equal to the photo reading counts once; the old check-ins are iReports360 rows only (never the view's Phoenix mirror) and never paged; the signboard reader skips a place with no photo; the route, the service, the button and the screen are the Super Admin's alone; and the migration keeps a photo required on every other place",
   runPhoenixCrmTrustedPointTests,
+);
+
+await runTest(
+  "Phoenix CRM shares one doctor's validation across the three lines (owner, 2026-11-12: \"if it is one place in the three or one customer, then and it is validated, make in the three lines validation\", only from a Phoenix validation, and \"Both\"): one doctor is the same list, the same area, another line and the same name of three words or more with no speciality against it — never two words, another area, the same line or a pharmacy; a waiting row takes the validated line's places (best point first, never two within 150 m, at most five) unless his own validation or a drop waits, a clinic doctor lacks his three names, two validated doctors of the name sit on one line, two different doctors match or he is on his list twice, and a copy never breeds a copy; validated twins whose photo or pin points agree move onto the best one, a chosen point is never moved and 400 m apart is two clinics; the migration copies under the seat's lock with no photo and the system as actor, a copy follows its source, and no copy ever reaches Place checks or the two match boards",
+  runPhoenixCrmLineTwinsTests,
 );
 
 await runTest(

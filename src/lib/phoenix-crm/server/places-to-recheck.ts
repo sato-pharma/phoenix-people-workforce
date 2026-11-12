@@ -62,7 +62,7 @@ export async function readPlacesToRecheck(now: Date = new Date()): Promise<{ lis
   const supabase = getSupabaseAdmin();
   const since = new Date(now.getTime() - RECHECK_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
   const [placeRows, refusalRows, visitRows] = await Promise.all([
-    fetchAllRowsKeyset<Row>(() => supabase.from("phoenix_crm_places").select(PLACE_COLUMNS).eq("status", "active").eq("is_test", false), {
+    fetchAllRowsKeyset<Row>(() => supabase.from("phoenix_crm_places").select(PLACE_COLUMNS).eq("status", "active").eq("is_test", false).neq("point_source", "line_twin"), {
       cursorColumn: "id",
       cursorOf: (row) => String(row.id),
     }),
