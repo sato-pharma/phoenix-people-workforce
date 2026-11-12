@@ -6,6 +6,7 @@ import {
   signalDeadMansSwitchStart,
   withDeadMansSwitch,
 } from "../src/lib/observability/dead-mans-switch.ts";
+import { HEALTHCHECKS_CHECKED_SLUGS } from "../src/lib/observability/job-schedule.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 type FetchCall = { url: string; init: RequestInit | undefined };
@@ -190,14 +191,50 @@ export async function runDeadMansSwitchTests() {
       );
     }
 
+    // 🔴 ONLY A JOB THAT HOLDS A CHECK PINGS HEALTHCHECKS. Until 12 Nov 2026 every wired job pinged
+    // with ?create=1 and the ones with no check were refused on every run - about 1,000 expected 404s
+    // a day - so when the whole account stopped answering on 9 Nov 2026 the real refusals looked like
+    // the normal ones for three days. An in-house-only job, and a slug nothing declares, must send
+    // NOTHING to Healthchecks: not the ending ping, not /fail, not the start signal.
+    {
+      assert.ok(HEALTHCHECKS_CHECKED_SLUGS.size > 0 && HEALTHCHECKS_CHECKED_SLUGS.size <= 20, "the new account holds 20 checks");
+      assert.ok(!HEALTHCHECKS_CHECKED_SLUGS.has("phoenix-crm-integrity-sweep"), "the fixture below must be an in-house-only job");
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        await pingDeadMansSwitch("phoenix-crm-integrity-sweep", "success");
+        await pingDeadMansSwitch("phoenix-crm-integrity-sweep", "fail", "boom");
+        await signalDeadMansSwitchStart("phoenix-crm-integrity-sweep");
+        await withDeadMansSwitch("phoenix-crm-integrity-sweep", async () => "ok", { signalStart: true });
+        await pingDeadMansSwitch("phoenix-not-declared-anywhere", "success");
+      } finally {
+        restore();
+      }
+      assert.deepEqual(
+        calls.map((c) => c.url).filter((u) => u.includes("hc-ping.com")),
+        [],
+        "a job with no Healthchecks check must never ping it - that ping can only be refused",
+      );
+    }
+
+    // And every slug in the list really does ping - a list that pinged nothing would pass the block above.
+    {
+      const { calls, restore } = stubFetch("resolve");
+      try {
+        for (const slug of HEALTHCHECKS_CHECKED_SLUGS) await pingDeadMansSwitch(slug, "success");
+      } finally {
+        restore();
+      }
+      assert.equal(calls.length, HEALTHCHECKS_CHECKED_SLUGS.size, "each checked job sends exactly one ping");
+    }
+
     // withDeadMansSwitch: happy path — returns run()'s value unchanged and pings success.
     {
       const { calls, restore } = stubFetch("resolve");
       try {
-        const result = await withDeadMansSwitch("phoenix-background-jobs", async () => ({ processed: 4 }));
+        const result = await withDeadMansSwitch("phoenix-process-notifications", async () => ({ processed: 4 }));
         assert.deepEqual(result, { processed: 4 }, "withDeadMansSwitch must return run()'s value unchanged");
         assert.equal(calls.length, 1);
-        assert.ok(calls[0].url.endsWith("/phoenix-background-jobs?create=1"), "happy path must ping the plain (success) URL");
+        assert.ok(calls[0].url.endsWith("/phoenix-process-notifications?create=1"), "happy path must ping the plain (success) URL");
       } finally {
         restore();
       }
@@ -210,7 +247,7 @@ export async function runDeadMansSwitchTests() {
       try {
         const boom = new Error("upstream provider unreachable");
         await assert.rejects(
-          () => withDeadMansSwitch("phoenix-ireports360-sync", async () => { throw boom; }),
+          () => withDeadMansSwitch("phoenix-reconciliation-check", async () => { throw boom; }),
           (err: unknown) => err === boom,
           "withDeadMansSwitch must re-throw the exact original error, not swallow or wrap it",
         );
@@ -293,7 +330,7 @@ export async function runDeadMansSwitchTests() {
     {
       const { calls, restore } = stubFetch("resolve");
       try {
-        await withDeadMansSwitch("phoenix-background-jobs", async () => "ok");
+        await withDeadMansSwitch("phoenix-process-notifications", async () => "ok");
         assert.equal(calls.length, 1, "no signalStart ⇒ no start signal");
         assert.ok(!calls[0].url.includes("/start"));
       } finally {
@@ -309,7 +346,7 @@ export async function runDeadMansSwitchTests() {
       try {
         let seenWhenRunBegan = -1;
         const result = await withDeadMansSwitch(
-          "phoenix-crm-integrity-sweep",
+          "phoenix-db-health-snapshot",
           async () => {
             seenWhenRunBegan = calls.length;
             return { photos: 3 };
@@ -319,8 +356,8 @@ export async function runDeadMansSwitchTests() {
         assert.deepEqual(result, { photos: 3 }, "run()'s value passes through unchanged");
         assert.equal(seenWhenRunBegan, 1, "the start signal must already be sent when the run begins");
         assert.equal(calls.length, 2, "one start, one ending ping");
-        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-crm-integrity-sweep/start?create=1");
-        assert.equal(calls[1].url, "https://hc-ping.com/test-ping-key/phoenix-crm-integrity-sweep?create=1");
+        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-db-health-snapshot/start?create=1");
+        assert.equal(calls[1].url, "https://hc-ping.com/test-ping-key/phoenix-db-health-snapshot?create=1");
       } finally {
         restore();
       }
@@ -332,7 +369,7 @@ export async function runDeadMansSwitchTests() {
       try {
         const boom = new Error("cut off by upstream");
         await assert.rejects(
-          () => withDeadMansSwitch("phoenix-ireports360-sync", async () => { throw boom; }, { signalStart: true }),
+          () => withDeadMansSwitch("phoenix-reconciliation-check", async () => { throw boom; }, { signalStart: true }),
           (err: unknown) => err === boom,
         );
         assert.equal(calls.length, 2);

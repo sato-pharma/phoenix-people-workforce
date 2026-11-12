@@ -87,10 +87,21 @@ export async function runHealthchecksScheduleSyncTests() {
 
   // One slot moved on 2 Nov 2026, on the owner's word: the fraud scan handed its check to the re-ask.
   // Marking the fraud scan's row external again would ask for a slot the project does not have.
-  assert.equal(
-    bySlug.get("phoenix-recruitment-whatsapp-reask")?.externalSync,
-    true,
-    "the WhatsApp re-ask holds a Healthchecks check, so its row must not be marked in-house only",
+  // On 12 Nov 2026 the new account held only 20, and the re-ask (its switch still off) went in-house
+  // with the weekly drain, the three Friday token rotations and the monthly Brevo keep-alive.
+  for (const slug of [
+    "phoenix-recruitment-whatsapp-reask",
+    "phoenix-background-jobs",
+    "phoenix-direct-orders-rotate-sheet-token",
+    "phoenix-marketing-requests-rotate-sheet-token",
+    "phoenix-cv-lifecycle-rotate-sheet-token",
+    "phoenix-brevo-keepalive",
+  ]) {
+    assert.equal(bySlug.get(slug)?.externalSync, false, `${slug} gave up its check on 12 Nov 2026, so its row must be in-house only`);
+  }
+  assert.ok(
+    checks.filter((c) => c.externalSync).length <= 20,
+    "the Healthchecks account holds 20 checks - a 21st unmarked row would be refused on every sync",
   );
   assert.equal(
     bySlug.get("phoenix-crm-fraud-scan")?.externalSync,

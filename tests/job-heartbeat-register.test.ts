@@ -9,7 +9,7 @@ import {
   previousScheduledFire,
   type JobHeartbeatRow,
 } from "@/lib/observability/job-heartbeat-assess";
-import { JOB_SCHEDULES, type JobScheduleDeclaration } from "@/lib/observability/job-schedule";
+import { HEALTHCHECKS_CHECKED_SLUGS, JOB_SCHEDULES, type JobScheduleDeclaration } from "@/lib/observability/job-schedule";
 import { decideJobRefires, JOB_REFIRE_POLICIES, refireStrandedJobs } from "@/lib/observability/job-refire";
 
 /**
@@ -37,6 +37,7 @@ type ParsedCheck = {
   tz?: string;
   timeout?: number;
   grace: number;
+  externalSync: boolean;
 };
 
 /** A row that has just reported success, for tests that only care about one field. */
@@ -96,6 +97,19 @@ export async function runJobHeartbeatRegisterTests() {
       assert.equal(declaration.periodSeconds, doc.timeout, `${slug}: period disagrees with ${DOC}`);
     }
   }
+
+  // The jobs that ping Healthchecks at runtime are exactly the rows the sync gives a check: a row the
+  // sync creates but nothing pings goes red for ever, and a job that pings with no row behind it is
+  // refused on every run - the expected noise that hid a dead account for three days in Nov 2026.
+  assert.deepEqual(
+    [...HEALTHCHECKS_CHECKED_SLUGS].sort(),
+    parsed.filter((check) => check.externalSync).map((check) => check.slug).sort(),
+    `HEALTHCHECKS_CHECKED_SLUGS must equal the ${DOC} rows that are not marked in-house only`,
+  );
+  for (const slug of HEALTHCHECKS_CHECKED_SLUGS) {
+    assert.ok(codeBySlug.has(slug), `${slug} pings Healthchecks but is not declared in JOB_SCHEDULES`);
+  }
+  assert.ok(HEALTHCHECKS_CHECKED_SLUGS.size <= 20, "the Healthchecks account holds 20 checks - a 21st would be refused");
 
   // ---------------------------------------------------------------------------
   // 2. Cron evaluation is Africa/Cairo, not UTC.
