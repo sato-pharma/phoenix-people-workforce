@@ -450,6 +450,22 @@ async function fetchEmployeeSalaryStructure(hrId: string) {
   };
 }
 
+type EmployeeSalaryStructureRead = Awaited<ReturnType<typeof fetchEmployeeSalaryStructure>>;
+
+/**
+ * A read started now and awaited later. The guard only stops a rejection that lands before anyone awaits from
+ * being reported as unhandled; whoever awaits the returned promise still receives the original error.
+ */
+function startedEarly<T>(read: Promise<T>): Promise<T> {
+  read.catch(() => undefined);
+  return read;
+}
+
+/** Each payroll batch's month, for the salary trend — a batch with no month or year reads as January 2024, as before. */
+function payrollBatchMonths(payroll: EmployeePortalPayrollDashboard): Map<string, { month: number; year: number }> {
+  return new Map(payroll.batches.map((batch) => [batch.id, { month: batch.month ?? 1, year: batch.year ?? 2024 }]));
+}
+
 type FixedSalaryReference = {
   baseSalary: number;
   basicSalary: number;
@@ -1747,6 +1763,13 @@ export async function getEmployeePortalData(
     directory?: EmployeeDirectoryData | null;
     expenses?: PayrollExpenseApproval[] | null;
     expenseReports?: PayrollExpenseReport[] | null;
+    /**
+     * Reads the caller already started, because each needs nothing but the viewer's HR id (2026-11-12, the
+     * Incentive page's waterfall). Awaited here instead of read again, so the answer is the one it was.
+     */
+    documents?: Promise<EmployeePortalDocument[]>;
+    notifications?: Promise<PortalNotification[]>;
+    salaryStructure?: Promise<EmployeeSalaryStructureRead>;
   }
 ): Promise<EmployeePortalData> {
   const currentUser = await resolvePortalCurrentUser(access);
@@ -1841,8 +1864,19 @@ export async function getEmployeePortalData(
     targetSalesHrIds.push(...teamHrIds);
   }
 
+  // STARTED TOGETHER (2026-11-12, the Incentive page's waterfall). The salary trend needs only the payroll
+  // batches and the salary structure only the HR id, yet each used to wait for the whole wave below and
+  // then for the other. Both now start with the wave; they are awaited where they always were.
+  const payrollRead = prefetched?.payroll != null
+    ? Promise.resolve(prefetched.payroll)
+    : getEmployeePortalPayrollDashboard(currentHrId);
+  const salaryTrendRead = startedEarly(
+    payrollRead.then((dashboard) => fetchSalaryTrend(currentHrId, payrollBatchMonths(dashboard))),
+  );
+  const salaryStructureRead = prefetched?.salaryStructure ?? startedEarly(fetchEmployeeSalaryStructure(currentHrId));
+
   const [payroll, sales, expenses, expenseReports, documents, notifications] = await devSafePromiseAll([
-    () => prefetched?.payroll != null ? Promise.resolve(prefetched.payroll) : getEmployeePortalPayrollDashboard(currentHrId),
+    () => payrollRead,
     // This caller wants the dashboard alone — the per-product rows the scoped loader now also
     // returns are only needed by the Pedia split, which is computed by the caller that prefetches.
     async () => {
@@ -1864,8 +1898,8 @@ export async function getEmployeePortalData(
       );
     },
     () => prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
-    () => listEmployeeDocuments(currentHrId),
-    () => fetchPortalNotifications(currentHrId),
+    () => prefetched?.documents ?? listEmployeeDocuments(currentHrId),
+    () => prefetched?.notifications ?? fetchPortalNotifications(currentHrId),
   ]);
 
   const latestExpense = expenses[0] ?? null;
@@ -1874,12 +1908,7 @@ export async function getEmployeePortalData(
   const latestBatch = payroll.batch ?? payroll.batches[0] ?? null;
   const salesSummary = sales.summary ?? {};
 
-  // Build batch map for trend lookup
-  const batchMap = new Map(payroll.batches.map((b) => [b.id, { 
-    month: b.month ?? 1, 
-    year: b.year ?? 2024 
-  }]));
-  let salaryTrend = await fetchSalaryTrend(currentHrId, batchMap);
+  let salaryTrend = await salaryTrendRead;
   if (salaryTrend.length === 0 && payroll.records.length > 0) {
     salaryTrend = buildSalaryTrendFromRecords(payroll.records);
   }
@@ -1928,7 +1957,7 @@ export async function getEmployeePortalData(
     positionTitle: employee.positionTitle,
     year: latestBatch?.year,
   });
-  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
+  const salaryStructure = await salaryStructureRead;
   const fixedSalary = resolveFixedSalaryReference({
     employee,
     fallbackAllowances,
@@ -3580,6 +3609,17 @@ export async function getMedicalRepPortalData(
     const currentUser = await resolvePortalCurrentUser(access);
     const currentHrId = normalizeHrId(currentUser.hrId);
 
+    // STARTED NOW (2026-11-12, the Incentive page's waterfall). Each needs nothing but his HR id, yet each
+    // waited for the directory, then the sales wave, then the step before it — and the salary structure was
+    // read twice. They run beside the sales wave now and are awaited where they always were.
+    const profileReads = currentHrId
+      ? {
+          documents: startedEarly(listEmployeeDocuments(currentHrId)),
+          notifications: startedEarly(fetchPortalNotifications(currentHrId)),
+          salaryStructure: startedEarly(fetchEmployeeSalaryStructure(currentHrId)),
+        }
+      : null;
+
     const salesScope = getSalesScope({
       role: currentUser.role as PhoenixRole,
       salesScopeOverride: currentUser.salesScopeOverride as BusinessScope,
@@ -3664,6 +3704,7 @@ export async function getMedicalRepPortalData(
       directory: directory,
       expenses,
       expenseReports: expenseReports,
+      ...profileReads,
     });
 
   const employee = base.employee;
@@ -4082,7 +4123,8 @@ export async function getMedicalRepPortalData(
     positionTitle: employee.positionTitle,
     year: latestBatch?.year,
   });
-  const salaryStructure = currentHrId ? await fetchEmployeeSalaryStructure(currentHrId) : null;
+  // The same read getEmployeePortalData already awaited — one row, read once.
+  const salaryStructure = profileReads ? await profileReads.salaryStructure : null;
   const fixedSalary = resolveFixedSalaryReference({
     employee,
     fallbackAllowances,
