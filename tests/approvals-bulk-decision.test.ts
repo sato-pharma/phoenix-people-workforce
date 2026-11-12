@@ -8,6 +8,10 @@
 // turn check and the "only the assigned manager" rule apply to each. It never asks for the
 // stalled-approver override, a rejection carries a written reason, one failure never stops the rest,
 // and only the requests that WERE decided are un-ticked, so a failed one stays selected for a retry.
+//
+// Expense Approvals already had Approve N; the same day it got its twin, Reject N: one written reason
+// for every ticked trip still waiting, marked on screen and committed only by Save, never written over
+// the reviewer's own words or the system's "Journey check:" sentence.
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -20,6 +24,7 @@ import {
   parseBulkDecisionInput,
   type BulkDecisionDeps,
 } from "@/lib/approvals-hub/bulk-decide";
+import { bulkRejectionComment } from "@/components/outstation/expense-review/review-model";
 import { stripComments } from "./support/comment-strip.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -106,4 +111,34 @@ export async function runApprovalsBulkDecisionTests() {
   assert.ok(read("src/components/approvals-hub/excuse-approvals-body.tsx").includes('bulkDecisionModule="excuse"'), "Excuse turns it on");
   assert.ok(!read("src/components/approvals-hub/plan-approvals-body.tsx").includes("bulkDecisionModule"),
     "Plans stay one at a time — their stages need decisions the bulk route does not make");
+
+  // ── Expense Approvals: Reject N beside Approve N ─────────────────────────
+  assert.equal(bulkRejectionComment("", "  Not an outstation trip "), "Not an outstation trip", "an empty comment takes the batch reason");
+  assert.equal(
+    bulkRejectionComment("Journey check: priced as 2 drives.", "Duplicate of an earlier claim"),
+    "Duplicate of an earlier claim Journey check: priced as 2 drives.",
+    "the system's Journey check sentence stays at the end, after the batch reason",
+  );
+  assert.equal(
+    bulkRejectionComment("Called him, he agreed. Journey check: priced as 2 drives.", "Duplicate"),
+    "Called him, he agreed. Journey check: priced as 2 drives.",
+    "the reviewer's own words are never written over by the batch reason",
+  );
+  const hook = read("src/components/outstation/expense-review/use-expense-review.ts");
+  const rejectStart = hook.indexOf("const rejectSelected = useCallback(");
+  assert.ok(rejectStart > 0, "use-expense-review.ts: rejectSelected is gone — Expense Approvals has no Reject N");
+  const rejectEnd = hook.indexOf("[bulkPlan, records, selectedVisible]", rejectStart);
+  assert.ok(rejectEnd > rejectStart, "use-expense-review.ts: could not find where rejectSelected ends");
+  const rejectBody = hook.slice(rejectStart, rejectEnd);
+  assert.ok(rejectBody.includes("if (!text)"), "a batch rejection with no reason must mark nothing");
+  assert.ok(rejectBody.includes("notPendingTripIds"), "a trip already decided must be skipped, never re-rejected");
+  assert.ok(rejectBody.includes("status: REJECTED_STATUS") && rejectBody.includes("bulkRejectionComment(base.hrComment, text)"),
+    "a batch rejection writes the single Reject's status, with the reason through bulkRejectionComment");
+  assert.ok(!rejectBody.includes("fetch(") && !rejectBody.includes("save()"),
+    "Reject N saves nothing — Save still commits, so a mis-click stays reversible");
+  const expenseBar = read("src/components/outstation/expense-review/review-bulk-bar.tsx");
+  assert.ok(expenseBar.includes("data-bulk-reject-confirm disabled={!reason.trim()}"),
+    "the expense Reject N must not confirm without a written reason");
+  assert.ok(read("src/components/outstation/expense-review/expense-review-workspace.tsx").includes("onReject={review.rejectSelected}"),
+    "the expense workspace must wire Reject N to rejectSelected");
 }
