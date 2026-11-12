@@ -93,14 +93,19 @@ export function runMyVisitsFieldSplitTests() {
   const flags = loader.match(/fieldWork: isFieldWorkVisit\(row\.visit_type, row\.comment, row\.visit_type_description\)/g) ?? [];
   assert.equal(flags.length, 2, "fetchMyVisits AND fetchTeamVisits must both set fieldWork from isFieldWorkVisit");
 
+  // Since 12 Nov 2026 ("slim My Visits") the split runs on the SERVER, in the view the page sends
+  // (my-visits-view.ts): the counts and the one page of rows come from it, never from the browser.
+  const view = readFileSync("src/lib/employee-portal/my-visits-view.ts", "utf8");
+  assert.match(view, /partitionMyVisitRows\(input\.visits\)/, "My Visits must be split by the shared partition");
+  assert.match(view, /partitionMyVisitRows\(input\.teamVisits\)/, "Team Visits must be split by the shared partition");
+  assert.match(view, /visits: visitSplit\.fieldRows\.length/, "the My Visits tab counts field visits only");
+  assert.match(view, /team: teamSplit\.fieldRows\.length/, "the Team Visits tab counts field visits only");
+  assert.match(view, /pageOf\(visitSplit\.fieldRows, page\), offDutyRows: visitSplit\.offDutyRows/, "the My Visits list shows field visits only, and carries its days not in the field");
+  assert.match(view, /pageOf\(teamSplit\.fieldRows, page\), offDutyRows: teamSplit\.offDutyRows/, "the Team Visits list shows field visits only, and carries its days not in the field");
+
   const workspace = readFileSync("src/components/employee-portal/my-visits-workspace.tsx", "utf8");
-  assert.match(workspace, /partitionMyVisitRows\(visits\)/, "My Visits must be split by the shared partition");
-  assert.match(workspace, /partitionMyVisitRows\(teamVisits\)/, "Team Visits must be split by the shared partition");
-  assert.match(workspace, /item\.id === "visits"\s*\?\s*visitSplit\.fieldRows\.length/, "the My Visits tab counts field visits only");
-  assert.match(workspace, /item\.id === "team"\s*\?\s*teamSplit\.fieldRows\.length/, "the Team Visits tab counts field visits only");
-  assert.match(workspace, /usePagedRows\(visitSplit\.fieldRows, page\)/, "the My Visits list shows field visits only");
-  assert.match(workspace, /usePagedRows\(teamSplit\.fieldRows, page\)/, "the Team Visits list shows field visits only");
-  assert.match(workspace, /<DaysNotInFieldGroup rows=\{visitSplit\.offDutyRows\}/, "My Visits lists the days not in the field");
-  assert.match(workspace, /<DaysNotInFieldGroup rows=\{teamSplit\.offDutyRows\}/, "Team Visits lists the days not in the field");
+  assert.match(workspace, /const count = counts\[item\.id\];/, "each tab shows the count the server made");
+  assert.match(workspace, /<DaysNotInFieldGroup rows=\{view\.offDutyRows\} showRep=\{false\}/, "My Visits lists the days not in the field");
+  assert.match(workspace, /<DaysNotInFieldGroup rows=\{view\.offDutyRows\} showRep \/>/, "Team Visits lists the days not in the field");
   assert.match(workspace, />Days not in the field</, "same heading as the KPI drill-down");
 }
