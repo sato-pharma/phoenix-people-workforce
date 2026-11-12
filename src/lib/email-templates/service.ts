@@ -1040,9 +1040,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
   // that renders a metric, so a body edited to drop it sends an account email with nothing to sign in
   // with. Keep the token in any edit of this body.
   account_temporary_password: {
-    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}",
-    bodyText: "{{summary}}\n\n{{detailsTable}}",
-    closingText: "If you were not expecting this, contact HR.",
+    // The Phoenix account email the owner was already sending (production user_created / password_setup),
+    // with the username, temporary password and sign-in link in the middle (owner, 12 Nov 2026).
+    bodyHtml:
+      "<p>{{summary}}</p>{{detailsTable}}<p>After you sign in, you will be asked to create your own password. The temporary password stops working as soon as you do, and it expires on its own after 7 days.</p>",
+    bodyText:
+      "{{summary}}\n\n{{detailsTable}}\n\nAfter you sign in, you will be asked to create your own password. The temporary password stops working as soon as you do, and it expires on its own after 7 days.",
+    closingText: "If you did not expect this email, please contact your HR administrator.",
     description:
       "The account email: the username, a temporary password and the sign-in link. Signing in with the temporary password opens the screen where the person chooses their own. The three arrive through {{detailsTable}}.",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -1050,7 +1054,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     previewText: "Your Phoenix Workforce username and temporary password.",
     subject: "{{subject}}",
     templateKey: "account_temporary_password",
-    templateName: "Account Username and Temporary Password",
+    templateName: "Account Setup — Username and Temporary Password",
   },
   password_setup: {
     bodyHtml: "<p>{{summary}}</p><p>This secure link expires: {{expiryText}}.</p><p>Use the action button below to continue.</p>",
