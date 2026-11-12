@@ -44,16 +44,22 @@ export function phoenixWorkEvidenceActivityKind(day: PhoenixWorkEvidenceDay): Pr
 /**
  * Drops an evidence entry for a day the door ALREADY carries Phoenix CRM visits on — a started team's day — so the
  * same work never shows twice, once as the door's field or double visit and once as "logged before the team was
- * started" (audit, 2026-10-23: a started rep's day carried both). A day the door carries only iReports360 rows on,
+ * started" (audit, 2026-10-23: a started rep's day carried both). The same holds for a day whose only Phoenix row is a
+ * day activity: a started trainee's Training day read "Other CRM activity: Training" AND "Phoenix CRM: Training" (owner,
+ * 2026-11-13: "remove the duplicate training entry on each day"), so a door entry marked `phoenixCrm` covers the day too.
+ * A day the door carries only iReports360 rows on,
  * or nothing, keeps its entry: there the evidence is the only voice Phoenix CRM has. Pure, keyed (employee, date).
  */
 export function withoutDoorCoveredPhoenixWork(
   evidence: readonly PrivateCalendarItem[],
-  doorItems: ReadonlyArray<Pick<PrivateCalendarItem, "employeeHrId" | "startDate" | "visitCounts" | "visitRecords">>,
+  doorItems: ReadonlyArray<Pick<PrivateCalendarItem, "employeeHrId" | "startDate" | "visitCounts" | "visitRecords" | "phoenixCrm">>,
 ): PrivateCalendarItem[] {
   const covered = new Set<string>();
   for (const item of doorItems) {
-    const carriesPhoenix = (item.visitCounts?.phoenix ?? 0) > 0 || (item.visitRecords ?? []).some((record) => record.phoenix === true);
+    const carriesPhoenix =
+      item.phoenixCrm === true ||
+      (item.visitCounts?.phoenix ?? 0) > 0 ||
+      (item.visitRecords ?? []).some((record) => record.phoenix === true);
     const key = canonicalHrIdKey(item.employeeHrId);
     if (carriesPhoenix && key) covered.add(`${key}|${item.startDate}`);
   }

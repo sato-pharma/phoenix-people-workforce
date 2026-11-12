@@ -328,6 +328,26 @@ function theCalendarShowsTheDayAsFieldWork(): void {
     "the door's Phoenix day drops the evidence entry; an iReports360-only day and another day keep theirs",
   );
   assert.equal(withoutDoorCoveredPhoenixWork(evidenceItems, []).length, 3, "nothing from the door, nothing dropped");
+
+  // 🔴 A TRAINING DAY IS ONE ENTRY TOO (owner, 2026-11-13: "remove the duplicate training entry on each day"). A started
+  //    trainee's Training day reached the door as "Other CRM activity: Training 1" with NO visit counts, so the evidence
+  //    entry "Phoenix CRM: Training" stayed beside it. The door now marks an entry built from a Phoenix row
+  //    (`phoenixCrm`), and that alone drops the evidence; an iReports360-only activity day keeps it.
+  const training = [entry("CN-0009", "2026-11-10"), entry("CN-0010", "2026-11-10")];
+  const keptTraining = withoutDoorCoveredPhoenixWork(training, [
+    { employeeHrId: "cn-0009", phoenixCrm: true, startDate: "2026-11-10", visitCounts: null, visitRecords: undefined },
+    { employeeHrId: "CN-0010", startDate: "2026-11-10", visitCounts: null, visitRecords: undefined },
+  ]);
+  assert.deepEqual(
+    keptTraining.map((item) => `${item.employeeHrId}|${item.startDate}`),
+    ["CN-0010|2026-11-10"],
+    "a door entry built from a Phoenix day activity drops the evidence copy; an iReports360-only activity day keeps it",
+  );
+  const doorLoader = stripComments(readFileSync(new URL("../src/lib/private-calendar/field-visits.ts", import.meta.url), "utf8"));
+  assert.ok(
+    doorLoader.includes('if (row.source === "phoenix") existing.phoenix = true;') && doorLoader.includes("...(group.phoenix ? { phoenixCrm: true } : {})"),
+    "the door loader marks every entry that holds a Phoenix row, visit or day activity alike",
+  );
 }
 
 /**
