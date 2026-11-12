@@ -5,7 +5,7 @@
  * source throughout everywhere to confirm u give acurate data bec this is people money its a
  * deduction"*, then, the same session, *"check outstation trips as a deduction source too"*.
  *
- * Three sources answer here, for the same reason: each describes work the counting doors cannot see.
+ * Four sources answer here, for the same reason: each describes work the counting doors cannot see.
  *
  *   1. **Phoenix CRM** — `phoenix-worked-days.ts`. `crm_visits_unified` inner-joins its Phoenix
  *      branch to a STARTED team, so an unstarted team's real visits reach no reader.
@@ -21,10 +21,16 @@
  *      2026-10-19 — two district managers, no CRM row, no punch, no vacation, no trip. Owner the same
  *      day, asked in so many words whether it should count on the calendar and in the deduction:
  *      **count it on both.**
+ *   4. **A review request the Super Admin ACCEPTED** — `@/lib/private-calendar/accepted-review-days`.
+ *      Owner, 2026-11-13: an employee who sees an empty day on his Private Calendar files a review
+ *      request, and *"what I accept is appeared in the [calendar] and the day is not considered
+ *      deducted."* The calendar already drew the accepted day; no deduction reader read it, so 7
+ *      accepted October days (5 people) still arrived as CRM lines he had to clear by hand.
+ *      Whole-day requests only, accepted only.
  *
  * Accounts: `docs/deductions-phoenix-work-evidence.md`, `docs/deductions-outstation-trip-days.md`.
  *
- * 🔴 **THE ONE RULE BOTH SOURCES SHARE: THIS ONLY EVER REMOVES A DAY.** It is read where a connector
+ * 🔴 **THE ONE RULE EVERY SOURCE SHARES: THIS ONLY EVER REMOVES A DAY.** It is read where a connector
  * has already decided to charge, never where one decides whether a person has any signal at all.
  * Feeding `anySignal`, `hasAnySignalThisMonth` or `firstSignalByPerson` would drag somebody whose
  * only evidence all month is a trip or a Phoenix visit INTO the charge, by his own proof of work.
@@ -48,6 +54,11 @@ import {
   loadManagerOwnVisitDays,
   type ManagerOwnVisitDay,
 } from "@/lib/phoenix-crm/server/manager-plan-readers.ts";
+import {
+  describeAcceptedReviewDay,
+  loadAcceptedReviewDays,
+  type AcceptedReviewDay,
+} from "@/lib/private-calendar/accepted-review-days.ts";
 
 /**
  * The suppression map every connector reads.
@@ -60,11 +71,12 @@ export type ProvenWorkedDays = PhoenixWorkedDays & {
   reasons: ReadonlyMap<string, string>;
 };
 
-/** Fold trip days and a manager's own single visits onto a Phoenix suppression map. Pure, so the merge order is pinned by a test. */
+/** Fold trip days, a manager's own single visits and accepted review requests onto a Phoenix suppression map. Pure, so the merge order is pinned by a test. */
 export function selectProvenWorkedDays(input: {
   phoenix: PhoenixWorkedDays;
   trips: readonly OutstationTripDay[];
   managerOwnVisits?: readonly ManagerOwnVisitDay[];
+  acceptedReviews?: readonly AcceptedReviewDay[];
 }): ProvenWorkedDays {
   const keys = new Set<string>(input.phoenix.keys);
   const reasons = new Map<string, string>();
@@ -83,20 +95,29 @@ export function selectProvenWorkedDays(input: {
     keys.add(key);
     if (!reasons.has(key)) reasons.set(key, describeManagerOwnVisitDay(day));
   }
+  // Last: a day a record already proves keeps that record's reason; an accepted review request only
+  // names itself on a day nothing else explains — which is exactly the day it was filed for.
+  for (const day of input.acceptedReviews ?? []) {
+    const key = phoenixWorkedDayKey(day.hrId, day.date);
+    if (!key) continue;
+    keys.add(key);
+    if (!reasons.has(key)) reasons.set(key, describeAcceptedReviewDay(day));
+  }
   return { evidence: input.phoenix.evidence, keys, reasons };
 }
 
 /** Every provably worked day in the window, from every source, keyed for the connectors. */
 export async function loadProvenWorkedDays(input: { end: string; start: string }): Promise<ProvenWorkedDays> {
-  const [phoenix, trips, managerOwnVisits] = await Promise.all([
+  const [phoenix, trips, managerOwnVisits, acceptedReviews] = await Promise.all([
     loadPhoenixWorkedDays(input),
     loadOutstationTripDays(input),
     loadManagerOwnVisitDays({ end: input.end, start: input.start }),
+    loadAcceptedReviewDays(input),
   ]);
-  return selectProvenWorkedDays({ managerOwnVisits, phoenix, trips });
+  return selectProvenWorkedDays({ acceptedReviews, managerOwnVisits, phoenix, trips });
 }
 
-/** The reason line a suppressed day carries into a connector's evidence — Phoenix first, then trips. */
+/** The reason line a suppressed day carries into a connector's evidence — Phoenix first, then trips, own visits, accepted reviews. */
 export function provenWorkedDayReason(worked: ProvenWorkedDays, key: string): string | null {
   return phoenixWorkedDayReason(worked, key) ?? worked.reasons.get(key) ?? null;
 }
