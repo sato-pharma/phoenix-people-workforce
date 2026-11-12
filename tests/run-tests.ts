@@ -1830,6 +1830,7 @@ import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
 import { runNsmIncentiveClosingTests } from "./nsm-incentive-closing.test.ts";
 
 import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
+import { runPediaPolicyExamplesTests } from "./pedia-policy-examples.test.ts";
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
 import { runOverdueAcceptedOffersTests } from "./overdue-accepted-offers.test.ts";
@@ -6642,6 +6643,8 @@ await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it re
 await runTest("NSM incentive closing (a manager scored on a line or region reads the PUBLISHED closing, direct orders and vacant seats included, so the tab equals Monthly Closing; the notice and the gap copy read as sentences)", runNsmIncentiveClosingTests);
 
 await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
+
+await runTest("Pedia incentive policy with examples (every worked example is computed by the live split rule — 95/91 pays 13,000 on a 10,000 basic, 80% total exactly counts, under 80% withholds the Sato half, 150% caps at 220% — and the Pedia tab renders it)", runPediaPolicyExamplesTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 await runTest("overdue accepted-offer detector (an accepted offer past its start date with a still-open seat is flagged; a filled seat, a seatless letter, a same-day start and an unreadable date are not)", runOverdueAcceptedOffersTests);
