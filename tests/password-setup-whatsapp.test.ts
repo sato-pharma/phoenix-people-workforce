@@ -28,7 +28,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *      whole string moves with the engine's ICU build, which is the standing trap here. The Cairo OFFSET
  *      still comes from Intl, never a hand-written +2, because Egypt observes DST again.
  *   4. 🔴 BULK STAYS copy/email. `wa.me` opens exactly one chat, so a batch would be a queue of tabs.
- *   5. 🔴 A REAL ANCHOR, never a scripted `window.open` after an await — a popup blocker swallows that,
+ *   5. 🔴 THE CHAT TAB OPENS INSIDE THE CONFIRM CLICK, BEFORE ANY AWAIT, and a REAL ANCHOR is the fallback —
+ *      a scripted `window.open` after an await is swallowed by a popup blocker,
  *      and the admin would be told the message was prepared with nothing on screen.
  */
 export function runPasswordSetupWhatsAppTests() {
@@ -200,9 +201,16 @@ export function runPasswordSetupWhatsAppTests() {
     "the press goes through the same governed send path as the email and copy buttons",
   );
   assert.match(manager, /href=\{setupLinkWhatsApp\.url\}/, "🔴 a real anchor carries the prepared chat");
-  assert.doesNotMatch(
-    manager,
-    /window\.open/,
-    "🔴 never a scripted window.open after an await — a popup blocker swallows it and the admin is told it was prepared",
-  );
+  // PRESS WHATSAPP AND THE CHAT OPENS (owner, 12 Nov 2026: "it is not working" — the anchor sat in a callout
+  // at the top of the page, off-screen from the row pressed). The tab is opened inside the confirm click,
+  // BEFORE the first await, and pointed at the chat once the server answers. After an await it is a popup
+  // the browser blocks, so the rule is the ORDER, pinned here.
+  assert.equal(manager.split("window.open(").length - 1, 1, "🔴 one scripted window.open, in the send path and nowhere else");
+  const send = manager.slice(manager.indexOf("async function performSendSetupLink("));
+  const openAt = send.indexOf("window.open(");
+  const firstAwait = send.indexOf("await ");
+  assert.ok(openAt > 0 && firstAwait > 0 && openAt < firstAwait, "🔴 never a scripted window.open after an await — a popup blocker swallows it and the admin is told it was prepared");
+  assert.match(send, /chatWindow\.opener = null/, "the opened tab gets no handle back on Phoenix");
+  assert.match(send, /chatWindow\?\.close\(\)/, "a refused send closes the empty tab");
+  assert.match(manager, /scrollIntoView\(/, "🔴 the send's answer is scrolled into view, never left above the fold");
 }
