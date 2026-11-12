@@ -89,7 +89,9 @@ export function BulkDecisionBar({ module, selected, onClear, onFinished }: Props
     }
   }
 
-  if (count === 0 && !outcome) return null;
+  // The bar is ALWAYS on screen while there is something to tick, never only once a box is ticked:
+  // appearing above the list pushed every row down, so a quick second click (or tap) landed on the
+  // wrong request. With nothing ticked it keeps the same row, height and buttons, disabled.
 
   return (
     <div className={`sticky top-0 z-10 space-y-3 ${adminSoftPanelClassName} px-4 py-3`} role="region" aria-label="Decide the ticked requests">
@@ -118,16 +120,18 @@ export function BulkDecisionBar({ module, selected, onClear, onFinished }: Props
         </div>
       ) : null}
 
-      {count > 0 && mode === null ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="mr-auto text-sm font-bold text-slate-900">{plural(count)} ticked</p>
-          <button type="button" className={phxButtonApproveClassName} disabled={busy} onClick={() => { setError(null); setMode("approve"); }}>
-            Approve {count}
+      {mode === null || count === 0 ? (
+        <div className="flex flex-wrap items-center gap-2" data-bulk-bar-idle={count === 0 ? "" : undefined}>
+          <p className={cn("mr-auto text-sm font-bold", count === 0 ? "text-slate-500" : "text-slate-900")}>
+            {count === 0 ? "No request ticked" : `${plural(count)} ticked`}
+          </p>
+          <button type="button" className={phxButtonApproveClassName} disabled={busy || count === 0} onClick={() => { setError(null); setMode("approve"); }}>
+            Approve{count > 0 ? ` ${count}` : ""}
           </button>
-          <button type="button" className={phxButtonDangerClassName} disabled={busy} onClick={() => { setError(null); setMode("reject"); }}>
-            Reject {count}
+          <button type="button" className={phxButtonDangerClassName} disabled={busy || count === 0} onClick={() => { setError(null); setMode("reject"); }}>
+            Reject{count > 0 ? ` ${count}` : ""}
           </button>
-          <button type="button" className={phxButtonGhostClassName} disabled={busy} onClick={onClear}>
+          <button type="button" className={phxButtonGhostClassName} disabled={busy || count === 0} onClick={onClear}>
             Clear
           </button>
         </div>
