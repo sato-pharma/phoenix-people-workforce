@@ -115,6 +115,10 @@ export type PrivateCalendarItem = {
   // A CRM visit item's visits, AM · PM · Pharmacies apart (never a pharmacy inside PM). Null on
   // every other item.
   visitCounts?: VisitCountSplit | null;
+  // True on a CRM read-door entry built from at least one Phoenix CRM row (a visit OR a day activity such as Training).
+  // The evidence loader's entry for that person and day is then a second copy of the same work and is dropped
+  // (withoutDoorCoveredPhoenixWork). Absent everywhere else.
+  phoenixCrm?: boolean;
   // The physical visits behind a double or chain item. The same visit sits on the calendar of
   // everyone on it, so a team view counts it once by these ids (summarizePrivateCalendarVisits).
   visitRecords?: PrivateCalendarVisitRecord[];

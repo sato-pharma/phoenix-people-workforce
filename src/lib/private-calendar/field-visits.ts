@@ -104,6 +104,8 @@ type FieldVisitGroup = {
   name: string | null;
   partners: Set<string>;
   split: VisitCountSplit;
+  /** At least one of the day's rows came from Phoenix CRM (source = 'phoenix'), not the iReports360 archive. */
+  phoenix: boolean;
 };
 
 function countedList(counts: Map<string, number>): string {
@@ -234,6 +236,7 @@ export async function loadFieldVisitPrivateCalendarItems(
         name: row.agent_name ?? null,
         partners: new Set<string>(),
         split: emptyVisitCountSplit(),
+        phoenix: false,
       };
       const customer = String(row.contact_name ?? "").trim();
       if (customer) {
@@ -251,6 +254,7 @@ export async function loadFieldVisitPrivateCalendarItems(
       const activity = resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment);
       existing.activities.set(activity, (existing.activities.get(activity) ?? 0) + 1);
       addVisitToSplit(existing.split, row);
+      if (row.source === "phoenix") existing.phoenix = true;
       byKey.set(key, existing);
     }
 
@@ -305,6 +309,7 @@ export async function loadFieldVisitPrivateCalendarItems(
         time: group.kind === "vacation" ? "Full day" : counts,
         title: group.kind === "vacation" ? headline : `${headline}: ${counts}`,
         visitCounts: isVisit ? group.split : null,
+        ...(group.phoenix ? { phoenixCrm: true } : {}),
       });
     }
     return { items, ready: true };
