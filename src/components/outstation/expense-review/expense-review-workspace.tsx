@@ -136,6 +136,8 @@ export function ExpenseReviewWorkspace({ canDecide, viewerHrId }: { canDecide: b
                 onApprove={review.approveSelected}
                 onClear={review.clearSelection}
                 onPickAll={review.toggleAllSelectable}
+                onReject={review.rejectSelected}
+                rejectableCount={review.selectedVisible.length - review.bulkPlan.notPendingTripIds.length}
                 selectableCount={review.selectable.length}
                 selectedCount={review.selectedVisible.length}
                 selectedValue={review.selectedValue}
