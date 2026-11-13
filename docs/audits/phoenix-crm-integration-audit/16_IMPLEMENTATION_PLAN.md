@@ -80,14 +80,14 @@ Each finding was read against the live database and the code before anything was
 | ISS-055 | Already exists: the System Audit board groups application errors by cause on the existing table |
 | ISS-014 · INT-062 | No change. Every send step claims its row in one atomic statement, so two overlapping drains cannot send the same notice twice; a second lock would add a way to stall and nothing else. Naming one owner per route is a decision, so it moved to the owner's own list |
 
-### 4 — Recovery — IN PROGRESS
+### 4 — Recovery — IN PROGRESS (pull request 338)
 
 | Finding | Change |
 |---|---|
 | ISS-009 · INT-096 | The nightly Railway service makes a second file after the code backup: the whole production database, encrypted to the same public key, in its own Drive folder (`phoenix-db-backup`, 7 daily and 4 weekly). It connects as a new role that reads every table and can write nothing. The daily Drive check reports it under its own name, `phoenix-db-backup-verify` |
 | INT-097 | A restore drill script: it restores a night's file into a new database on a throwaway server and passes only when every table holds exactly the rows counted when the backup was made. Not into staging, as first planned: the restored copy is as large as production and staging's disk would have to grow to hold it |
 | ISS-025 | In the two image workflows only the job that pushes an image may write packages; every other job reads |
-| ISS-038 | One rehearsal of the standby host, recorded below |
+| ISS-038 | One rehearsal of the standby host and one of the fallback route, both recorded below |
 
 What the rehearsals found, 13 Nov 2026:
 
@@ -97,8 +97,12 @@ What the rehearsals found, 13 Nov 2026:
 | The backup read from production as the new role (laptop, 18:07 Cairo) | The role counted 1,420 tables and 5,693,881 rows and the dump ran for seven minutes without a refusal. **It was stopped by hand at 18:14**, because at 18:13 another change to production was waiting behind it for a table. That change went through seconds later. No full production file was made, so no full-size restore has been timed yet |
 | What that changed | The backup now steps aside. It looks every 3 seconds for anyone waiting behind it; seen twice, it ends its own sessions, uploads nothing and tries again 10 minutes later, three times. Proven on made-up data at 18:30 Cairo: a waiting change got its table after 5.4 seconds and the backup ended with nothing uploaded |
 | Every later change to the backup | `backup-image.yml` builds the real image on each pull request and runs the backup, the drill, its failures and the step-aside against a throwaway PostgreSQL 17 |
+| The real image, built for the first time (GitHub, 18:36 Cairo) | Passed in 1 minute 5 seconds: the role refused an insert, a delete and a new table; the backup and the drill passed; the drill refused the wrong key, a short table, a missing table and production as its target; the backup stepped aside and the waiting change got its table after 1 second; a night retried only after a step-aside |
+| The backup login (production, 18:40 Cairo, on the owner's answer "Switch it on now") | Set by `scripts/set-backup-reader-login.mjs`. Signed in through the pooler it read 566 public tables and could write to none; making a table was refused. The connection is stored on the Railway service `phoenix-code-backup` and nowhere else |
+| The fallback route, rehearsed on staging from this branch (GitHub, 18:38 to 18:46 Cairo, 8 minutes 12 seconds) | Passed. GitHub built the image of main commit `426e43b0e` in 7 minutes 9 seconds and pushed it; a throwaway staging service pulled the private image with the real credentials and its container started (50 seconds); the service was deleted and none was left over. The rehearsal job held read-only package access, which is ISS-025 working. Nothing broke |
+| The standby host, rehearsed from this branch (ISS-038; GitHub, 18:47 to 18:49 Cairo, 2 minutes 9 seconds) | Passed. It reused the image the fallback rehearsal had just built, started one machine in Frankfurt, and the standby's own address reported commit `426e43b0e`; the machine was then removed. The domain never moved and users never left Railway. Nothing broke. A cold run that also has to build the image would take about 7 minutes longer |
 
-Still to do after the merge, each on the owner's word: give the role its login (`scripts/set-backup-reader-login.mjs`), start one run by hand, read the file on Drive, run the drill on that real file with the owner's key and write its time here, then raise the size floor (64 MB today) to half of that file.
+Still to do after the merge, each on the owner's word: start one run by hand, read the file on Drive, run the drill on that real file with the owner's key and write its time here, then raise the size floor (64 MB today) to half of that file.
 
 ### 5 — The Integrations page — PLANNED
 
