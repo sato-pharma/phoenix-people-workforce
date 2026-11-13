@@ -5,6 +5,11 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { lateExpenseChanges, loadLateExpenseRowsById } from "./late-expenses.ts";
+
+/** A late-approved trip of an earlier payout month this run carried and paid, at the amount Part 2 recorded. */
+export type CarriedExpenseToStamp = { id: string; compact: string; payoutMonth: number; payoutYear: number; amount: number };
+
 /**
  * Publishing a month MARKS the outstation trips it paid.
  *
@@ -100,6 +105,8 @@ export type ExpenseStampResult = ExpenseStampPlan & {
   stamped: number;
   /** Late-approved trips of earlier payout months this run carried and paid, marked by row id (late-expenses.ts). */
   carriedStamped: number;
+  /** Carried trips NOT marked because they no longer stood as recorded (approval or amount changed). */
+  carriedSkipped: string[];
 };
 
 const PAGE_SIZE = 1000;
@@ -114,10 +121,11 @@ export async function stampPaidExpenseTrips(input: {
   actorHrId: string;
   batchId: string;
   /**
-   * Row ids of late-approved trips from EARLIER payout months that this run carried and paid (the
-   * `lateExpensesCarried` list of its `published` record). Marked with the same guards as the month's own.
+   * Late-approved trips from EARLIER payout months that this run carried and paid (the
+   * `lateExpensesCarried` list of its `published` record). Each is marked only while it is still approved
+   * and unpaid at the amount recorded, besides the month's own never-twice guards.
    */
-  carriedRowIds?: ReadonlyArray<string>;
+  carried?: ReadonlyArray<CarriedExpenseToStamp>;
   month: number;
   paid: ReadonlyArray<PaidExpenseEmployee>;
   year: number;
@@ -160,14 +168,37 @@ export async function stampPaidExpenseTrips(input: {
   for (let index = 0; index < plan.rowIds.length; index += UPDATE_CHUNK) {
     stamped += await stampChunk(plan.rowIds.slice(index, index + UPDATE_CHUNK));
   }
-  // The carried trips are named by id, not found by payout month: their month is an earlier one.
-  const carriedIds = [...new Set((input.carriedRowIds ?? []).map(String).filter(Boolean))];
+  // The carried trips are named by id, not found by payout month: their month is an earlier one. Each is
+  // re-read, and marked only if it still stands exactly as recorded; the update repeats those values as
+  // guards, so a decision landing between the read and the write marks nothing.
+  const carried = [...new Map((input.carried ?? []).filter((entry) => entry.id).map((entry) => [entry.id, entry])).values()];
+  const current = carried.length > 0 ? await loadLateExpenseRowsById(carried.map((entry) => entry.id)) : [];
+  const changed = new Set(lateExpenseChanges(carried, current).map((change) => change.entry.id));
+  const byId = new Map(current.map((row) => [String(row.id), row]));
   let carriedStamped = 0;
-  for (let index = 0; index < carriedIds.length; index += UPDATE_CHUNK) {
-    carriedStamped += await stampChunk(carriedIds.slice(index, index + UPDATE_CHUNK));
+  const carriedSkipped: string[] = [];
+  for (const entry of carried) {
+    const row = byId.get(entry.id);
+    if (!row || changed.has(entry.id)) {
+      carriedSkipped.push(entry.id);
+      continue;
+    }
+    let update = supabase
+      .from("outstation_expenses")
+      .update({ imported_payroll_batch_id: input.batchId, imported_to_payroll_at: now, imported_to_payroll_by: input.actorHrId })
+      .eq("id", entry.id)
+      .eq("hr_approved", true)
+      .is("imported_payroll_batch_id", null)
+      .is("imported_to_payroll_at", null);
+    update = row.total === null ? update.is("total", null) : update.eq("total", row.total);
+    update = row.approved_amount === null ? update.is("approved_amount", null) : update.eq("approved_amount", row.approved_amount);
+    const { data, error } = await update.select("id");
+    if (error) throw new Error(`Marking the paid outstation trips failed: ${error.message}`);
+    if ((data ?? []).length > 0) carriedStamped += 1;
+    else carriedSkipped.push(entry.id);
   }
 
-  return { ...plan, stamped, carriedStamped };
+  return { ...plan, stamped, carriedStamped, carriedSkipped };
 }
 
 /**
@@ -190,6 +221,7 @@ export type ExpenseStampAudit =
       stamped: number;
       total: number;
       carriedStamped: number;
+      carriedSkipped: string[];
     }
   | { error: string };
 
@@ -203,8 +235,8 @@ export type ExpenseStampAudit =
 export async function recordPaidExpenseStamp(input: {
   actorHrId: string;
   batchId: string;
-  /** Late-approved trips of earlier months this run paid (late-expenses.ts); marked by id. */
-  carriedRowIds?: ReadonlyArray<string>;
+  /** Late-approved trips of earlier months this run paid (late-expenses.ts); marked by id at the recorded amount. */
+  carried?: ReadonlyArray<CarriedExpenseToStamp>;
   entries: ReadonlyArray<{ compact: string; onHold: boolean; row: { expenses: number } }>;
   month: number;
   runId: string;
@@ -214,7 +246,7 @@ export async function recordPaidExpenseStamp(input: {
     const result = await stampPaidExpenseTrips({
       actorHrId: input.actorHrId,
       batchId: input.batchId,
-      carriedRowIds: input.carriedRowIds,
+      carried: input.carried,
       month: input.month,
       paid: paidExpenseEmployees(input.entries),
       year: input.year,
@@ -225,6 +257,7 @@ export async function recordPaidExpenseStamp(input: {
       stamped: result.stamped,
       total: result.total,
       carriedStamped: result.carriedStamped,
+      carriedSkipped: result.carriedSkipped,
     };
   } catch (error) {
     logError("Automated payroll: marking the paid outstation trips failed", {

@@ -70,8 +70,12 @@ import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./stan
 import { notYetDue, type HeldBalance } from "./held-settlements.ts";
 import {
   getCarryLateExpensesSetting,
+  lateExpensesShownFrom,
   loadLateApprovedExpenses,
   type LateApprovedExpense,
+  type LateExpenseRow,
+  type LateExpenseShownTrip,
+  type LateExpensesShown,
 } from "./late-expenses.ts";
 import type {
   DraftRow,
@@ -973,19 +977,51 @@ export async function loadExpenseStepTrips(
 }
 
 /**
+ * What a confirmed Expenses step showed of the carried trips (late-expenses.ts), kept in its summary so
+ * Part 2 confirm can prove the trips still stand as shown and the switch has not moved.
+ */
+export async function lateExpensesShownAtStepConfirm(
+  period: PayrollPeriod,
+  members: ReadonlyArray<PopulationMember>,
+): Promise<LateExpensesShown> {
+  const { carryOn, tripsByCompact } = await loadExpenseStepTrips(period, new Set(members.map((member) => member.compact)));
+  return lateExpensesShownFrom(carryOn, tripsByCompact);
+}
+
+/**
+ * Part 2 confirm's trips: the month's own, plus the carried trips the confirmed Expenses step SHOWED,
+ * built from their rows as they stand now (the caller has checked they did not change). A trip the
+ * list gained after the step was confirmed is not in its figure, so it is not here either.
+ */
+export async function loadShownExpenseTrips(
+  period: PayrollPeriod,
+  shown: ReadonlyArray<LateExpenseShownTrip>,
+  rows: ReadonlyArray<LateExpenseRow>,
+  memberCompacts: ReadonlySet<string>,
+): Promise<Map<string, PayoutExpenseTrip[]>> {
+  const byId = new Map(rows.map((row) => [String(row.id), row]));
+  const late = shown.flatMap((trip) => {
+    const row = byId.get(trip.rowId);
+    return row ? [{ id: trip.rowId, compact: trip.compact, payoutMonth: trip.payoutMonth, payoutYear: trip.payoutYear, duplicateOf: null, row }] : [];
+  });
+  return mergeCarriedLateTrips(await loadPayoutExpenseTrips(period), late, memberCompacts);
+}
+
+/**
  * Adds the late-approved trips of people IN this run to the month's own trips, each marked with the
  * payout month it is carried from. A late trip of someone outside the run is not proposed here: it
- * stays on the "Approved, not yet in a run" list. Pure; returns a new map and leaves `own` untouched.
+ * stays on the "Approved, not yet in a run" list, and so does one flagged as a likely duplicate of a trip
+ * already paid. Pure; returns a new map and leaves `own` untouched.
  */
 export function mergeCarriedLateTrips(
   own: ReadonlyMap<string, PayoutExpenseTrip[]>,
-  late: ReadonlyArray<LateApprovedExpense>,
+  late: ReadonlyArray<Pick<LateApprovedExpense, "id" | "compact" | "payoutMonth" | "payoutYear" | "duplicateOf" | "row">>,
   memberCompacts: ReadonlySet<string>,
 ): Map<string, PayoutExpenseTrip[]> {
   const merged = new Map<string, PayoutExpenseTrip[]>();
   for (const [compact, trips] of own) merged.set(compact, [...trips]);
   for (const trip of late) {
-    if (!memberCompacts.has(trip.compact)) continue;
+    if (!memberCompacts.has(trip.compact) || trip.duplicateOf) continue;
     const list = merged.get(trip.compact) ?? [];
     list.push({
       ...payoutExpenseTripFromRow(trip.row),
