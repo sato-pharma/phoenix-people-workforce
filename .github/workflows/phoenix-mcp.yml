@@ -26,6 +26,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# One run per pull request: a newer push replaces the run still going for the same pull request, and
+# nothing else (integration audit, 13 Nov 2026, ISS-047). A dispatch is never cancelled.
+concurrency:
+  group: phoenix-mcp-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   mcp-security:
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
