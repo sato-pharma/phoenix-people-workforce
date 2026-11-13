@@ -2665,6 +2665,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/report-it/access", permission: { resource: "report_it", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),
+  // A safety report's status (REC-033): every role holds report_it:read; changeReportStatus refuses anyone who cannot read every report, before any read or write.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/:id/status", permission: { resource: "report_it", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/:id", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/support/**", permission: { resource: "support_requests", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/business-card-requests", permission: { resource: "business_card_requests", action: "create" }, guard: "domain-helper", csrfRequired: true }),
