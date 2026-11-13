@@ -388,7 +388,7 @@ export async function runMarketingRequestServiceTests() {
   // The workflow map once claimed this module had "no notification trigger code"; it is
   // fully wired. These assertions pin every transition + the daily SLA reminders so a
   // future refactor cannot quietly drop a notification.
-  const dailyRouteSource = source("app/api/notifications/daily/route.ts");
+  const dailyRouteSource = source("app/api/cron/daily/_lib/daily-job-runners.ts");
   for (const eventType of ["request_submitted", "request_approved", "request_rejected", "request_returned"] as const) {
     assert.match(serviceSource, new RegExp(`"${eventType}"`), `marketing workflow must emit ${eventType}`);
   }

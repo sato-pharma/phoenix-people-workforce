@@ -19,7 +19,8 @@ export const maxDuration = 120;
  * blocks `invoice_overdue` as a hard post-filter so no call-site or fallback can restore it.
  *
  * A CLOCK OF ITS OWN rather than a seat on `phoenix-notify-daily`, following the field-capture nudge
- * split of 2026-08-29. That daily bundle already carries 22 sub-jobs and had been logging a red
+ * split of 2026-08-29. That daily bundle then carried 22 sub-jobs (split into one job per schedule
+ * on 13 Nov 2026, /api/cron/daily/<job>) and had been logging a red
  * `Failed (timeout)` against cron-job.org's unraisable 30-second cut; adding a 23rd is the move that
  * created that problem in the first place. This job is small today — four finance rows in
  * production — but "small" was true of the field-capture nudge too, on the day it joined.

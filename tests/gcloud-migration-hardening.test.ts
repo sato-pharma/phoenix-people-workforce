@@ -133,7 +133,7 @@ export function runGcloudMigrationHardeningTests() {
   assert.doesNotMatch(proxySource, /VERCEL_ENV/, "preview gate must not depend on VERCEL_ENV");
 
   // Cron auth must not depend on the Vercel presence flag anymore.
-  const cronSource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const cronSource = readFileSync("app/api/cron/daily/[job]/route.ts", "utf8");
   assert.doesNotMatch(cronSource, /process\.env\.VERCEL\b/, "cron auth must not read process.env.VERCEL");
 
   // Attendance agent PowerShell spawn must be guarded (never runs on Linux/Cloud Run).

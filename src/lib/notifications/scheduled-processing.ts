@@ -193,7 +193,8 @@ async function runNotificationProcessingSteps(limit: number) {
     // The inactive-colleague list used to be computed HERE, on the five-minute tick — ~288 times a
     // day, re-reading up to 60,000 session rows each time — and then written to the log as five
     // names and an ellipsis that nobody received. It is a once-a-day digest now, delivered in-app
-    // and on Telegram from app/api/notifications/daily (notifyInactiveUsers).
+    // and on Telegram by the morning job `inactive-user-digest` (notifyInactiveUsers,
+    // /api/cron/daily/inactive-user-digest).
 
     const totalMs = Date.now() - enteredAt;
     const timings: StepTiming[] = budget.timings;

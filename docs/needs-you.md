@@ -273,26 +273,33 @@ for. A test refuses the "simplification".
 
 ## Delivery
 
-**No cron job of its own.** Both digests ride `/api/notifications/daily`, which already fires 06:36
-Cairo. A dedicated schedule would cost a `JOB_SCHEDULES` declaration, a `cronjob-sync` row, a request
-against cron-job.org's **100-per-DAY** cap, and the heartbeat-parity contract — a declared job that
-stops reporting pages every Super Admin every 15 minutes, for ever.
+**Each digest is its own morning job — once the split switch is on.** Both ride
+`/api/notifications/daily`, at 06:36 Cairo, beside about thirty unrelated jobs, and the daily digest is
+awaited alone before the rest start. On 13 Nov 2026 the owner gave every one of those jobs its own
+schedule (enterprise audit F-HR-012 / REC-049), shipped behind `PHOENIX_DAILY_JOBS_SPLIT` and switched
+on after the thirty cron-job.org entries are armed (docs/deployment.md, "Switching the morning jobs
+over"). Then the daily digest is the job
+`needs-you-daily-digest` at **06:36**, first of the morning, on `/api/cron/daily/needs-you-daily-digest`
+with its own heartbeat `phoenix-daily-needs-you-daily-digest`; the Sunday email is `needs-you-weekly-email`
+at 07:25, which does nothing on the other six days and still reports. The list, the order and the times
+are `src/lib/scheduled-jobs/daily-jobs.ts`; what each job calls is
+`app/api/cron/daily/_lib/daily-job-runners.ts`. A schedule carries the heartbeat-parity contract — a
+declared job that stops reporting pages every Super Admin every 15 minutes — so each job's cron-job.org
+entry (`scripts/cronjob-sync.mjs`) has to exist.
 
-🔴 **That route destructures its `Promise.all` positionally, and its own comments record the day a job
-was added without its name**: every later result was captured one position off, and only the
-diagnostic JSON showed it. `totalJobs` is hand-maintained beside it and feeds the run summary and the
-dead man's switch. Those three lists are now pinned against each other by
-`tests/needs-you-daily-digest.test.ts`. **Append, never insert.**
+The fan-out's positional `Promise.all` destructure and its hand-kept `totalJobs` are gone either way: the
+fan-out runs the same per-job runners in the list's order and counts the list, and each per-job request
+runs one job and reports that job's result under that job's name.
 
-### The digest runs outside the fan-out
+### The digest runs on a request of its own
 
-🔴 **The board is awaited on its OWN, before that route's 31-way `Promise.all`, and it has to stay
-there.** The lanes under "The sources" stop the 22 sources starving each other. They cannot stop the
-other 30 sub-jobs of `/api/notifications/daily` starving them — every one of those starts in the same
-instant — so as a passenger the board's sources spent their 8-second budgets queueing rather than
-querying. That is the *same* defect the lanes were built to remove, one level up, and the lanes made
-it likelier rather than less: serialising the heavy sources stretched the board's own wall-clock from
-about 8 s to 12–20 s, which is 12–20 s of overlap with the other 30 instead of 8.
+🔴 **The board is gathered on a request that runs nothing else, and it has to stay that way.** The lanes
+under "The sources" stop the 22 sources starving each other. They could not stop the other 30 sub-jobs of
+the old `/api/notifications/daily` starving them — every one of those started in the same instant — so as a
+passenger the board's sources spent their 8-second budgets queueing rather than querying. That is the
+*same* defect the lanes were built to remove, one level up, and the lanes made it likelier rather than
+less: serialising the heavy sources stretched the board's own wall-clock from about 8 s to 12–20 s, which
+was 12–20 s of overlap with the other 30 instead of 8.
 
 **Measured on production from the digests actually delivered** (`notification_events`,
 `event_key like 'needs-you-daily-digest:%'`, `metadata->>'message'`), 06:36 Cairo:
@@ -305,19 +312,17 @@ about 8 s to 12–20 s, which is 12–20 s of overlap with the other 30 instead 
 | Lost on all 15 | `action-inbox`, `closing-publication-drift` — the two `heavy` ones |
 | Worst run | 23 Oct: 5 lost, `payroll-publish` among them, so that morning carried **no payroll line at all** |
 
-Reading `/admin/needs-you` by hand ambers **0 of 22** throughout. Only the 06:36 run ever failed,
-which is exactly the one context with 30 siblings in it — and it is why the page's own measurements
-said the board was healthy while his morning message was losing a fifth of it.
+Reading `/admin/needs-you` by hand ambers **0 of 22** throughout. Only the 06:36 run ever failed, which is
+exactly the one context with 30 siblings in it — and it is why the page's own measurements said the board
+was healthy while his morning message was losing a fifth of it.
 
-🔴 **`route.ts` hands the settled result to the fan-out at its own position (26)**, so every position
-below keeps its meaning and the positional destructure above is not disturbed a third time.
-`onJobFailure` has already run, so `failures`, the run summary, the dead man's switch and `totalJobs`
-still count the job exactly once — `tests/dead-telegram-link-alert.test.ts` counts passes from
-`onJobFailure`'s definition rather than from the fan-out for that reason. **Never move the call back
-inside, never add a second call beside it, and never answer a returning amber row by widening a lane
-or raising the 8-second budget** — that buys a green digest with the board's honesty, which is the one
-thing this module refuses to sell. Make a heavy source cheaper instead; that changes what it measures
-and is the owner's call. Pinned by `tests/needs-you-digest-runs-outside-the-fanout.test.ts`.
+The first fix (24 Oct 2026) awaited the board on its own inside that route, before the fan-out. Since
+13 Nov 2026 it is simply alone: the digest is the only job at 06:36, the next one starts at 06:38, and
+`/api/cron/daily/[job]` runs exactly one job per request. **Never put another job on its request or its
+minute, and never answer a returning amber row by widening a lane or raising the 8-second budget** — that
+buys a green digest with the board's honesty, which is the one thing this module refuses to sell. Make a
+heavy source cheaper instead; that changes what it measures and is the owner's call. Pinned by
+`tests/needs-you-digest-runs-outside-the-fanout.test.ts` and `tests/daily-jobs-split.test.ts`.
 
 **Daily is Telegram and in-app; weekly is email.** One email to him is already *two* deliveries —
 `send-phoenix-email.ts` mirrors a preview of every email to his Telegram, with no opt-out (it also

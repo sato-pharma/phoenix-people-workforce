@@ -51,8 +51,8 @@ export async function GET(request: Request) {
   // — something outside Phoenix has stopped working and nothing says so — and this is the one route
   // that already runs often enough to notice it quickly. It needs no new cron, which matters: a new
   // declared job has to be created at cron-job.org in the same sitting or the heartbeat assessment
-  // alarms about a job nobody created (`job-schedule.ts`), and `phoenix-notify-daily` is already at
-  // the scheduler's unraisable 30-second cut. Three indexed selects cost this sweep nothing.
+  // alarms about a job nobody created (`job-schedule.ts`), and the cron-job.org REST API allows only
+  // 100 requests a day to create one. Three indexed selects cost this sweep nothing.
   //
   // Why first: it swallows its own errors and returns a verdict, so running it before the sweep
   // means a throwing sweep cannot silently skip the check — the same ordering, for the same reason,
