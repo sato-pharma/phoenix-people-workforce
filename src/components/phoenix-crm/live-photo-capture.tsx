@@ -53,10 +53,12 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { noteReading } from "@/components/phoenix-crm/location-reader";
 import {
   latestWarmReading,
+  locationAllowedOnThisPage,
   receiverRunningSince,
   receiverStarted,
   receiverStopped,
   useLocationWarmUp,
+  WARM_SEED_MAX_AGE_MS,
 } from "@/components/phoenix-crm/location-receiver";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
@@ -370,7 +372,9 @@ export function LivePhotoCapture({
     // moment the camera is (location-receiver.ts, 12 Nov 2026). It is a first reading like any other: the
     // watch below replaces it on the same rules, the shutter still reads afresh, and the cold rule
     // judges it by when the receiver was switched on — the warm-up's start, still running.
-    const warm = latestWarmReading(FIX_STALE_MS);
+    // Up to a minute old, not FIX_STALE_MS: the warm-up's reading is kept only while its watch is still
+    // running, and a running watch that has said nothing new means the phone has not moved (13 Nov 2026).
+    const warm = latestWarmReading(WARM_SEED_MAX_AGE_MS);
     setFix(
       warm
         ? { lat: warm.lat, lon: warm.lon, accuracyMeters: warm.accuracyMeters, at: new Date(warm.takenAt).toISOString(), arrivedAt: warm.arrivedAt }
@@ -381,6 +385,10 @@ export function LivePhotoCapture({
     watchRef.current = navigator.geolocation.watchPosition(
       (position) => {
         noteReading(position);
+        // The rep has allowed location on this page, so the screen's warm-up starts now if the browser's
+        // own permission answer kept it off (Safari's "Ask", a first-time rep) — and every retake after a
+        // refused signboard then starts from its reading instead of waiting again (13 Nov 2026).
+        locationAllowedOnThisPage();
         const reading: Fix = {
           lat: position.coords.latitude,
           lon: position.coords.longitude,

@@ -18,7 +18,13 @@ import {
   oddReadingSentence,
   type CaseStoryInput,
 } from "../src/lib/crm-integrity/integrity-case-story.ts";
-import { latestWarmReading, noteWarmReading } from "../src/components/phoenix-crm/location-receiver.ts";
+import {
+  holdLocationWarm,
+  latestWarmReading,
+  locationAllowedOnThisPage,
+  noteWarmReading,
+  WARM_SEED_MAX_AGE_MS,
+} from "../src/components/phoenix-crm/location-receiver.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,7 +66,7 @@ function north(metres: number, accuracyMeters: number | null, arrivedAt: number)
   return { lat: DISHNA.lat + metres / 111_195, lon: DISHNA.lon, accuracyMeters, arrivedAt };
 }
 
-export function runPhoenixCrmPhotoReadingTests() {
+export async function runPhoenixCrmPhotoReadingTests() {
   // ── 1 · The rule ────────────────────────────────────────────────────────────────────────────────
   assert.ok(Math.abs(distanceMeters(FAW_BAHARI, DISHNA) - 10_070) <= 5, "the two stored readings are the 10,070 m the board measured");
   assert.equal(CONTRADICTION_FLOOR_METERS, PLACE_MAX_ACCURACY_METERS, "the floor is the place's own accuracy line, never a second number");
@@ -121,7 +127,7 @@ export function runPhoenixCrmPhotoReadingTests() {
   assert.match(receiver, /noteReading\(position\);\s*noteWarmReading\(position\);/, "🔴 the warm-up keeps every reading it is handed, not only the probe's copy");
   assert.match(receiver, /function stopWarmWatch\(\) \{[\s\S]{0,300}latestWarm = null;/, "a stopped receiver's reading is forgotten");
   const startLocation = camera.slice(camera.indexOf("function startLocation()"), camera.indexOf("async function openLens"));
-  const seedAt = startLocation.indexOf("const warm = latestWarmReading(FIX_STALE_MS);");
+  const seedAt = startLocation.indexOf("const warm = latestWarmReading(WARM_SEED_MAX_AGE_MS);");
   assert.ok(seedAt > 0, "🔴 the camera starts from the warm-up's recent reading instead of waiting for its own first one");
   assert.ok(seedAt < startLocation.indexOf("receiverRef.current = receiverStarted();"), "seeded before its own watch starts, so a reading from the watch still replaces it on the same rules");
   assert.doesNotMatch(startLocation, /setFix\(null\);/, "🔴 and never clears back to nothing while a recent reading is in hand");
@@ -137,6 +143,67 @@ export function runPhoenixCrmPhotoReadingTests() {
   noteWarmReading({ coords: { latitude: Number.NaN, longitude: 1, accuracy: 5 }, timestamp: ON + 49_000 } as unknown as GeolocationPosition, ON + 49_000);
   assert.equal(latestWarmReading(15_000, ON + 50_000)?.arrivedAt, ON + 41_000, "a reading with no usable place never replaces the kept one");
   assert.equal(latestWarmReading(15_000, ON + 57_000), null, "one older than the camera's staleness window is not handed over");
+
+  // 🔴 THE TRAINING ROOM (owner, 13 Nov 2026: "the finding location … is taking very long time", the whole
+  // training doing the same step). Three ways the camera still started from nothing:
+  //   · a phone standing still indoors reports nothing new for longer than 15 s, so the seed was dropped;
+  //   · an iPhone on Safari's "Ask" and a first-time rep answer the permission query "prompt", so the
+  //     warm-up never started at all — and every retake after a refused signboard waited again.
+  assert.equal(WARM_SEED_MAX_AGE_MS, 60_000, "the camera takes a warm reading up to a minute old");
+  assert.match(startLocation, /const warm = latestWarmReading\(WARM_SEED_MAX_AGE_MS\);/, "🔴 the camera seeds on the minute, not on its own 15 s staleness window");
+  assert.equal(
+    latestWarmReading(WARM_SEED_MAX_AGE_MS, ON + 41_000 + 45_000)?.arrivedAt,
+    ON + 41_000,
+    "🔴 a still phone's reading 45 s old, from a watch still running, is handed to the camera",
+  );
+  assert.equal(latestWarmReading(WARM_SEED_MAX_AGE_MS, ON + 41_000 + 61_000), null, "past the minute it is not");
+  assert.match(receiver, /if \(!allowedOnThisPage && !\(await locationAlreadyAllowed\(\)\)\) return;/, "🔴 a reading on this page counts as allowed, whatever the browser's own answer");
+  assert.match(receiver, /export function locationAllowedOnThisPage\(\): void \{\s*allowedOnThisPage = true;\s*if \(holders > 0\) void startWarmWatch\(\);/, "and starts the warm-up only for a screen still holding it");
+  const cameraWatch = startLocation.slice(startLocation.indexOf("watchRef.current = navigator.geolocation.watchPosition("));
+  assert.match(cameraWatch, /\(position\) => \{\s*noteReading\(position\);\s*locationAllowedOnThisPage\(\);/, "🔴 the camera's own reading switches the warm-up on, so a retake starts from it");
+  assert.match(
+    code("src/components/phoenix-crm/capture-location.tsx"),
+    /\(position\) => \{\s*noteReading\(position\);\s*locationAllowedOnThisPage\(\);/,
+    "so does the pin's — which still never reads the warm-up's reading itself",
+  );
+
+  // The same, run: a browser whose permission query says "prompt" (Safari's "Ask", a first-time rep).
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const started: number[] = [];
+  const cleared: number[] = [];
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      geolocation: {
+        watchPosition: () => {
+          started.push(started.length + 1);
+          return started.length;
+        },
+        clearWatch: (id: number) => cleared.push(id),
+      },
+      permissions: { query: async () => ({ state: "prompt" }) },
+    },
+    writable: true,
+  });
+  try {
+    const release = holdLocationWarm();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(started.length, 0, "🔴 it never starts on its own where the browser says the permission is not yet given — nothing is asked");
+    locationAllowedOnThisPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(started.length, 1, "🔴 once the rep's own press produced a reading, the warm-up starts and stays on for the screen");
+    locationAllowedOnThisPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(started.length, 1, "and only once");
+    release();
+    assert.deepEqual(cleared, [1], "it stops with the screen");
+    locationAllowedOnThisPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(started.length, 1, "with no screen holding it, a reading starts nothing");
+  } finally {
+    if (realNavigator) Object.defineProperty(globalThis, "navigator", realNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
 
   const screens = code("src/components/phoenix-crm/list-screens.tsx");
   for (const screen of ["export function ValidateScreen(", "export function AddPlaceScreen("]) {
