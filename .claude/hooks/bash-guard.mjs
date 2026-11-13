@@ -81,7 +81,7 @@
 //       than no guard: it costs every session a wasted round trip and teaches a false fact.
 //       If jq ever disappears from PATH again, restore the check rather than reasoning around it.
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
-import { execFileSync } from 'node:child_process';
+import { exec, execFile, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -2103,6 +2103,48 @@ try {
 
   const mergeText = withoutHeredocBodies(cmd);
 
+  // 🔴 EACH GITHUB QUESTION A MERGE RAISES IS ASKED ONCE, AND THEY ARE ASKED TOGETHER (2026-11-13, the
+  // owner's "make the Phoenix merge check read GitHub in parallel, one PR"). C21, C13 and C10 asked
+  // about nine questions one after another, 1.3–2 s each on this laptop: one merge profiled at 17.0 s
+  // in this hook, and merges were 49 of the ~60 Bash hook runs over 3 s in the 50 newest sessions. Twice
+  // that day one read in the chain stalled past its 20 s timeout and C21 refused a green merge.
+  //
+  // Every question still goes out with EXACTLY the arguments it always had — the `gh` stubs in
+  // tests/merge-checks-guard.test.ts and tests/merge-cooldown-guard.test.ts answer by argument — but
+  // through `ghRead`, which starts it at once and gives every clause asking the same thing the same
+  // answer. The reads a clause will certainly make are started before C21 (the prefetch below), so
+  // C13's and C10's are back by the time C21 has its verdict. A read nobody ends up using is never
+  // looked at, and this hook ends in process.exit, so one still in flight holds nothing up. C10's one
+  // retry after UNKNOWN goes through `ghFresh` on purpose: a remembered answer would defeat it.
+  const ghCwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
+  const ghFresh = (args) =>
+    new Promise((resolve, reject) => {
+      const options = { cwd: ghCwd, encoding: 'utf8', timeout: 20000, windowsHide: true };
+      const done = (err, out) => (err ? reject(err) : resolve(String(out)));
+      // On Windows a PATH lookup without a shell resolves .exe but NOT .cmd, and gh ships both, so it
+      // goes through cmd.exe. `exec` of the joined line is what `execFile(…, { shell: true })` ran —
+      // the same unescaped concatenation — without node's DEP0190 warning on the hook's stderr. Every
+      // argument is fixed text, PR digits, a sha or a repository name checked against SAFE_REPO.
+      const child =
+        process.platform === 'win32' ? exec(['gh', ...args].join(' '), options, done) : execFile('gh', args, options, done);
+      child.stdin?.end();
+    });
+  const ghReads = new Map();
+  const ghRead = (args) => {
+    const key = JSON.stringify(args);
+    if (!ghReads.has(key)) {
+      const read = ghFresh(args);
+      read.catch(() => {}); // a prefetched read nobody awaits must not end the hook as an unhandled rejection
+      ghReads.set(key, read);
+    }
+    return ghReads.get(key);
+  };
+  const SAFE_REPO = /^[\w.-]+\/[\w.-]+$/;
+  // Speculative: every PR here targets `main`. C21 asks for its PR's real base and gets this same read
+  // when the base is `main`; C10 always asks for `main`.
+  const protectionRead = (repo, base = 'main') =>
+    ghRead(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts']);
+
   // C21 — a merge of a PR whose checks are RED, STILL RUNNING or NOT REPORTED on its head commit is
   // refused (2026-11-04, the owner's "make all the CI safe and fast in all repos, all sessions").
   //
@@ -2126,6 +2168,40 @@ try {
   // is a merge it cannot vouch for — and `gh pr merge` needs the same network the reads do.
   const RED_MERGE_STAND_DOWN =
     /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_RED_MERGE_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+
+  // The prefetch: the same conditions and the same parse each clause below applies to itself, so it
+  // starts exactly the reads those clauses are about to make, and nothing for a merge they stand aside on.
+  if (GH_PR_MERGE.test(mergeText) && !MERGE_HELP.test(mergeText)) {
+    const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
+    const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1] ?? null;
+    const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
+    const phoenixNamed = namedRepo === PHOENIX_REPO.toLowerCase();
+    if (!RED_MERGE_STAND_DOWN.test(cmd) && process.env.PHX_RED_MERGE_OK !== '1') {
+      if (namedRepo === null) ghRead(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+      else {
+        const repoArg = phoenixNamed ? PHOENIX_REPO : namedRepo;
+        if (SAFE_REPO.test(repoArg)) {
+          ghRead(['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', '--repo', repoArg]);
+          protectionRead(repoArg);
+        }
+      }
+    }
+    const minFiles = Number(process.env.PHX_MERGE_MIN_FILES ?? 4);
+    if (
+      !MERGE_STAND_DOWN.test(cmd) &&
+      process.env.PHX_MERGE_OK !== '1' &&
+      Number.isFinite(minFiles) &&
+      minFiles > 0 &&
+      prNumber &&
+      (namedRepo === null || phoenixNamed)
+    ) {
+      const repoArgs = namedRepo === null ? [] : ['--repo', PHOENIX_REPO];
+      ghRead(['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,headRefOid,body', ...repoArgs]);
+      ghRead(['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles', ...repoArgs]);
+      ghRead(['pr', 'view', prNumber, '--json', 'state,mergeStateStatus', ...repoArgs]);
+    }
+  }
+
   if (
     GH_PR_MERGE.test(mergeText) &&
     !MERGE_HELP.test(mergeText) &&
@@ -2135,20 +2211,9 @@ try {
     const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
     const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1] ?? null;
     const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
-    const cwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
     // No `--jq` carrying spaces or quotes: on Windows `shell: true` hands gh its arguments unescaped
     // (see C10's `readMergeState`). Every argument is fixed text or a value checked below.
-    const gh = (args) =>
-      String(
-        execFileSync('gh', args, {
-          cwd,
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-          timeout: 20000,
-          shell: process.platform === 'win32',
-        }),
-      ).trim();
-    const SAFE_REPO = /^[\w.-]+\/[\w.-]+$/;
+    const gh = async (args) => (await ghRead(args)).trim();
     const standDown = String(input?.tool_name ?? '').toLowerCase().includes('powershell')
       ? '$env:PHX_RED_MERGE_OK=1; <the same command>'
       : 'PHX_RED_MERGE_OK=1 <the same command>';
@@ -2158,23 +2223,29 @@ try {
     let verdict = null;
     let unreadable = '';
     try {
-      repo = namedRepo ?? gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).toLowerCase();
+      repo = namedRepo ?? (await gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])).toLowerCase();
       const isPhoenix = repo === PHOENIX_REPO.toLowerCase();
       const repoArg = isPhoenix ? PHOENIX_REPO : repo;
       if (!SAFE_REPO.test(repoArg)) throw new Error(`a repository name this guard will not pass to gh: ${repoArg}`);
-      const pr = JSON.parse(
-        gh(['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', '--repo', repoArg]) || '{}',
-      );
+      const prRead = gh(['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', '--repo', repoArg]);
+      protectionRead(repoArg); // with the PR read, not after it — the prefetch already did when --repo was named
+      const pr = JSON.parse((await prRead) || '{}');
       const sha = String(pr.headRefOid ?? '');
       const base = String(pr.baseRefName ?? '');
       if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('no head commit came back for the PR');
 
+      // The two head-commit reads and the protection read together. Either head-commit read failing
+      // rejects the whole wait, and the catch below refuses the merge exactly as one failing did alone.
+      const [contextsOut, runsOut, statusesOut] = await Promise.all([
+        /^[\w./-]+$/.test(base) ? protectionRead(repoArg, base).catch(() => null) : null,
+        gh(['api', `repos/${repoArg}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']),
+        gh(['api', `repos/${repoArg}/commits/${sha}/status`, '--jq', '.statuses']),
+      ]);
+
       let required = null;
-      if (/^[\w./-]+$/.test(base)) {
+      if (contextsOut !== null) {
         try {
-          const contexts = JSON.parse(
-            gh(['api', `repos/${repoArg}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
-          );
+          const contexts = JSON.parse(contextsOut.trim() || '[]');
           if (Array.isArray(contexts) && contexts.length > 0) required = contexts.map(String);
         } catch {
           // 403 on the free plan, 404 when unprotected — the declaration below answers instead.
@@ -2185,8 +2256,8 @@ try {
         if (Array.isArray(declared.names) && declared.names.length > 0) required = declared.names;
       }
 
-      const runs = JSON.parse(gh(['api', `repos/${repoArg}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]');
-      const statuses = JSON.parse(gh(['api', `repos/${repoArg}/commits/${sha}/status`, '--jq', '.statuses']) || '[]');
+      const runs = JSON.parse(runsOut || '[]');
+      const statuses = JSON.parse(statusesOut || '[]');
       const { mergeChecksVerdict } = await import(
         new URL('../../scripts/merge-checks-verdict.mjs', import.meta.url).href
       );
@@ -2277,16 +2348,8 @@ try {
         // BUILD over an unreadable body delays one roll-up, while refusing to MERGE on one would
         // block every merge in the repository until that PR is closed.
         try {
-          const ghJson = execFileSync(
-            'gh',
+          const ghJson = await ghRead(
             ['pr', 'list', '--state', 'open', '--limit', '50', '--json', 'number,headRefName,headRefOid,body', ...repoArgs],
-            {
-              cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
-              encoding: 'utf8',
-              stdio: ['ignore', 'pipe', 'ignore'],
-              timeout: 20000,
-              shell: process.platform === 'win32',
-            },
           );
           // Dynamic, and inside this try, so a missing or broken module allows the merge instead of
           // taking the hook down at load. The outer top-level try would catch it either way; this
@@ -2341,20 +2404,9 @@ try {
 
         let changedFiles = null;
         try {
-          const out = execFileSync(
-            'gh',
-            ['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles', ...repoArgs],
-            {
-              cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
-              encoding: 'utf8',
-              stdio: ['ignore', 'pipe', 'ignore'],
-              timeout: 20000,
-              // On Windows a PATH lookup without a shell resolves .exe but NOT .cmd, and gh ships
-              // both. Every argument here is fixed text or the digits the regex above extracted,
-              // so there is nothing for a shell to re-interpret.
-              shell: process.platform === 'win32',
-            },
-          );
+          // Every argument here is fixed text or the digits the regex above extracted, so there is
+          // nothing for the Windows shell `ghRead` goes through to re-interpret.
+          const out = await ghRead(['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles', ...repoArgs]);
           const n = Number(String(out).trim());
           if (Number.isFinite(n) && n > 0) changedFiles = n;
         } catch {
@@ -2368,14 +2420,10 @@ try {
         // reaches gh as three stray positional arguments and the call exits 1 — every time, on this
         // machine. That failure is indistinguishable from "cannot read", so the exemption would have
         // refused every green PR while looking like it worked. The raw JSON needs no quoting.
-        const readMergeState = () => {
-          const out = execFileSync('gh', ['pr', 'view', prNumber, '--json', 'state,mergeStateStatus', ...repoArgs], {
-            cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            timeout: 20000,
-            shell: process.platform === 'win32',
-          });
+        // `fresh` is the retry after UNKNOWN: it must ask GitHub again, never the remembered answer.
+        const readMergeState = async (fresh = false) => {
+          const args = ['pr', 'view', prNumber, '--json', 'state,mergeStateStatus', ...repoArgs];
+          const out = await (fresh ? ghFresh(args) : ghRead(args));
           const parsed = JSON.parse(String(out).trim() || '{}');
           return (
             String(parsed.state ?? '').toUpperCase() + '/' + String(parsed.mergeStateStatus ?? '').toUpperCase()
@@ -2390,27 +2438,18 @@ try {
         // `gh pr checks` showed both contexts `pass`. So this asks branch protection for the
         // required context names and reads those check-runs on the head sha, exactly as a session
         // does by hand. Unreadable in any part → `null`, and the caller keeps the refusal.
-        const requiredChecksGreen = () => {
-          const cwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
-          const gh = (args) =>
-            String(
-              execFileSync('gh', args, {
-                cwd,
-                encoding: 'utf8',
-                stdio: ['ignore', 'pipe', 'ignore'],
-                timeout: 20000,
-                shell: process.platform === 'win32',
-              }),
-            ).trim();
+        const requiredChecksGreen = async () => {
+          const gh = async (args) => String(await ghRead(args)).trim();
           try {
             const repo =
-              repoArgs.length > 0 ? PHOENIX_REPO : gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+              repoArgs.length > 0 ? PHOENIX_REPO : await gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
             if (!repo) return null;
+            // The head sha is asked alongside protection rather than after it; neither needs the other.
+            const shaRead = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid', ...repoArgs]);
+            shaRead.catch(() => {}); // awaited below only when the contexts are known
             let contexts = [];
             try {
-              contexts = JSON.parse(
-                gh(['api', `repos/${repo}/branches/main/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
-              );
+              contexts = JSON.parse(String(await protectionRead(repo)).trim() || '[]');
             } catch {
               contexts = [];
             }
@@ -2421,10 +2460,10 @@ try {
               contexts = declaredRequiredChecks(readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8')).names ?? [];
             }
             if (!Array.isArray(contexts) || contexts.length === 0) return null;
-            const sha = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid', ...repoArgs]);
+            const sha = await shaRead;
             if (!sha) return null;
             const runs = JSON.parse(
-              gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]',
+              (await gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs'])) || '[]',
             );
             if (!Array.isArray(runs)) return null;
             for (const name of contexts) {
@@ -2441,16 +2480,16 @@ try {
           }
         };
 
-        const alreadyGreen = () => {
+        const alreadyGreen = async () => {
           try {
-            let state = readMergeState();
+            let state = await readMergeState();
             // GitHub computes mergeability lazily and answers UNKNOWN until it has — which is the
             // normal reading for a minute or two after `main` moves, i.e. exactly when a session is
             // merging. Without this retry a green PR is refused for a reason that is about GitHub's
             // bookkeeping and nothing else. One retry, once, so the hook stays fast.
             if (state === 'OPEN/UNKNOWN') {
-              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
-              state = readMergeState();
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              state = await readMergeState(true);
             }
             // 🔴 `BLOCKED` IS THE SAME STALE READING AS `UNKNOWN`, AND IT IS THE ONE THAT BIT.
             // This asked the checks only when GitHub said UNKNOWN, on the theory that BLOCKED means
@@ -2481,7 +2520,7 @@ try {
             // else, so such a PR would reach `gh pr merge` instead of being refused here. That is
             // safe: GitHub itself refuses that merge. This clause exists to save CI minutes, not to
             // re-implement branch protection.
-            if ((state === 'OPEN/UNKNOWN' || state === 'OPEN/BLOCKED') && requiredChecksGreen() === true) {
+            if ((state === 'OPEN/UNKNOWN' || state === 'OPEN/BLOCKED') && (await requiredChecksGreen()) === true) {
               return true;
             }
             return state === 'OPEN/CLEAN';
@@ -2492,7 +2531,7 @@ try {
           }
         };
 
-        if (changedFiles !== null && changedFiles < minFiles && !alreadyGreen()) {
+        if (changedFiles !== null && changedFiles < minFiles && !(await alreadyGreen())) {
           deny(
             'C10 — PR #' +
               prNumber +

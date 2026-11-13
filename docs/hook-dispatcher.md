@@ -350,6 +350,40 @@ of a name wins. The verdict is `scripts/merge-checks-verdict.mjs`.
 Pinned by `tests/merge-checks-guard.test.ts` — the verdict, the real hook driven through a `gh` shim,
 and the declaration.
 
+### The merge check reads GitHub in parallel (13 Nov 2026)
+
+On the owner's "make the Phoenix merge check read GitHub in parallel, one PR", after `/doctor` flagged
+the Bash hook at a p95 of about 6.8 s and a maximum of about 9 s.
+
+**Measured first.** In the 50 newest sessions, 49 of the ~60 Bash hook runs over 3 s were a
+`gh pr merge` (or a chain ending in one), and the rest were pushes, where the time is C12's secret scan.
+On a quiet laptop every other command passed both dispatchers in 70–350 ms. One merge, profiled with
+`node --cpu-prof`, spent **17.0 s** in this hook, all of it waiting on `gh`: 7.2 s in C21 and 9.7 s in
+C13 and C10. The three clauses asked about nine questions one after another, at 1.3–2 s each, and asked
+the PR itself three times and protection twice. Twice that day a single read stalled past its 20 s
+timeout, and C21, which fails closed, refused a green merge with "could not read the checks".
+
+**What changed.** Every question still goes out with exactly the arguments it always had, because the
+`gh` stubs in the tests answer by argument. They now go through one reader, `ghRead`, in `bash-guard.mjs`:
+
+- **Asked together.** Before C21, a prefetch applies each clause's own conditions and parse, and starts
+  every read the clause is about to make: the PR's head and base, `main`'s protection, the open-PR list,
+  the size, and the merge state. C21 then waits for the head commit and reads its check-runs, its
+  statuses and its base's protection together. By the time it has a verdict, C13's and C10's answers
+  are already back.
+- **Asked once.** A question two clauses share (protection, the head commit's check-runs, the repository
+  name) goes to GitHub once and both get the same answer.
+- **The one fresh read.** C10's retry after GitHub answers `UNKNOWN` deliberately bypasses the memory and
+  asks again, and the 1.5 s wait before it no longer blocks the reads still in flight.
+- **Unchanged.** Every refusal, every stand-down and each clause's open or closed failure behave exactly
+  as before. A prefetched read nobody uses is never looked at, and the hook ends in `process.exit`, so
+  one still in flight holds nothing up.
+
+A merge now takes about two rounds of GitHub reads instead of nine one after another. The user-level
+`merge-checks-guard.mjs` already read this way. Pinned by `parallelReadCases` in
+`tests/merge-checks-guard.test.ts`: every call in its `gh` stub holds for 700 ms and records when it
+ran; at least three must overlap, and no question may be asked twice.
+
 ## bash-guard C20 — a `.claude` push carries the cloud-mirror refresh
 
 The owner asked for it mechanically on 2026-10-23 ("make it mechanical"), the same morning he said
