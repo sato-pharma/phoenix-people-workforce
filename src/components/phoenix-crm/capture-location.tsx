@@ -20,7 +20,7 @@ import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { LocateFixed, RotateCcw } from "lucide-react";
 
 import { noteReading } from "@/components/phoenix-crm/location-reader";
-import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
+import { locationAllowedOnThisPage, useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { reportBlockedPermission } from "@/components/phoenix-crm/report-blocked-permission";
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
@@ -73,6 +73,9 @@ export function CaptureLocation({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         noteReading(position);
+        // Allowed on this page now: the screen's warm-up may start if the browser's own answer kept it off.
+        // The pin itself never reads the warm-up's reading — it stays its own fresh one.
+        locationAllowedOnThisPage();
         setBusy(false);
         onChange({
           lat: position.coords.latitude,

@@ -89,6 +89,19 @@ export function noteWarmReading(position: GeolocationPosition, arrivedAt: number
   };
 }
 
+/**
+ * How old the warm-up's reading may be when the camera starts from it: one minute (13 Nov 2026).
+ *
+ * 🔴 NOT THE CAMERA'S 15-SECOND `FIX_STALE_MS`. The reading is only ever kept while the warm-up's watch is
+ * still running (`stopWarmWatch` forgets it), and a running watch reports again as soon as the phone moves.
+ * A phone standing still indoors — a training room, a waiting room — can go well past 15 seconds without a
+ * new report, because there is nothing new to say, and the 15-second window then threw away the one
+ * reading the page had and made the rep wait for a brand-new one. Silence from a running watch means
+ * "still here", not "unknown". The camera's own watch, the fresh shutter reading and the cold rule still
+ * replace it exactly as they replace any first reading.
+ */
+export const WARM_SEED_MAX_AGE_MS = 60_000;
+
 /** The warm-up's newest reading if it arrived within `maxAgeMs`, else null. Never waits. */
 export function latestWarmReading(maxAgeMs: number, now: number = Date.now()): WarmReading | null {
   if (!latestWarm) return null;
@@ -101,6 +114,29 @@ export function latestWarmReading(maxAgeMs: number, now: number = Date.now()): W
 let holders = 0;
 let warmWatch: number | null = null;
 let warmToken: number | null = null;
+
+/**
+ * True once the phone has handed THIS page a reading — the rep has allowed location here, whatever the
+ * browser's permission query says (13 Nov 2026).
+ *
+ * 🔴 WHY THE QUERY ALONE IS NOT ENOUGH. `locationAlreadyAllowed` asks the browser, and two of the commonest
+ * cases answer "not yet" even after the rep has pressed Allow: an iPhone on Safari's default "Ask" setting
+ * answers `prompt` every time, and a rep validating for the first time (every rep in a training room) had
+ * not allowed it when the screen opened. In both the warm-up never started, so every Open the camera — and
+ * every retake after a refused signboard — began from nothing and waited for a brand-new reading. Once a
+ * reading has arrived the permission is no longer a question, so the warm-up starts then and stays on for
+ * the rest of the screen. It still never ASKS: only a reading the rep's own press produced switches it on.
+ */
+let allowedOnThisPage = false;
+
+/**
+ * Called by every capture's own success callback: the rep has allowed location on this page, so a screen
+ * still holding the warm-up may start it now. Never asks, never throws, never waits.
+ */
+export function locationAllowedOnThisPage(): void {
+  allowedOnThisPage = true;
+  if (holders > 0) void startWarmWatch();
+}
 
 async function locationAlreadyAllowed(): Promise<boolean> {
   try {
@@ -124,7 +160,7 @@ function stopWarmWatch() {
 
 async function startWarmWatch() {
   if (warmWatch !== null || typeof navigator === "undefined" || !navigator.geolocation) return;
-  if (!(await locationAlreadyAllowed())) return;
+  if (!allowedOnThisPage && !(await locationAlreadyAllowed())) return;
   // Released, or started by another holder, while the permission was being asked.
   if (holders === 0 || warmWatch !== null) return;
   warmToken = receiverStarted();
@@ -135,7 +171,10 @@ async function startWarmWatch() {
     },
     (error) => {
       // Switched off since the question was asked: stop quietly, and the camera will ask.
-      if (error.code === error.PERMISSION_DENIED) stopWarmWatch();
+      if (error.code === error.PERMISSION_DENIED) {
+        allowedOnThisPage = false;
+        stopWarmWatch();
+      }
     },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 30_000 },
   );
