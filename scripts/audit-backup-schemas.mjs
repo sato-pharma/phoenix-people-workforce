@@ -21,7 +21,8 @@
 // did. They accumulate at roughly three a day and the population only grows. The problem this
 // solves is unbounded accumulation, not disk — 81 MB of a 2,499 MB database is 3.2%.
 import { existsSync, readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import postgres from "postgres";
 
@@ -81,8 +82,44 @@ export const VERDICT = {
   PROTECTED: "PROTECTED",  // the owner's decision, or a migration owns it
   UNDATED: "UNDATED",      // no date anywhere — it can never expire, so a human must look
   YOUNG: "YOUNG",          // inside the retention window
-  EXPIRED: "EXPIRED",      // past retention, nothing depends on it
+  UNDECIDED: "UNDECIDED",  // past retention, nothing depends on it, and the owner has not decided
+  EXPIRED: "EXPIRED",      // past retention, nothing depends on it, and the owner decided it goes
 };
+
+/**
+ * THE OWNER'S DECISION PER SNAPSHOT (enterprise audit 2026-11-13, F-DB-002, REC-040: "every
+ * snapshot schema past 90 days has a recorded decision before anything is dropped").
+ *
+ * Age alone never makes a schema droppable any more. Past retention, a schema with no entry in
+ * `scripts/backup-schema-decisions.json` is UNDECIDED and gets no drop statement; one the owner
+ * decided to drop (or to export, then drop) is EXPIRED; one he decided to keep is PROTECTED until
+ * its `until` date, or for good when it has none. Each entry is one schema, decided by record and
+ * never by sweep — the review sheet that put each one to him is named in `sheet`.
+ *
+ * @typedef {{ decision: "drop" | "export-then-drop" | "keep", until?: string, decidedOn: string,
+ *   decidedBy: string, why: string, sheet?: string }} SnapshotDecision
+ */
+export const DECISIONS_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "backup-schema-decisions.json");
+
+/** @returns {Record<string, SnapshotDecision>} */
+export function readDecisions(file = DECISIONS_FILE) {
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  const out = {};
+  for (const [schema, entry] of Object.entries(raw.decisions ?? {})) {
+    if (!["drop", "export-then-drop", "keep"].includes(entry?.decision)) {
+      throw new Error(`${file}: ${schema} has decision ${JSON.stringify(entry?.decision)}; use drop, export-then-drop or keep`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.decidedOn ?? "") || !entry.decidedBy || !entry.why) {
+      throw new Error(`${file}: ${schema} needs decidedOn (YYYY-MM-DD), decidedBy and why`);
+    }
+    out[schema] = entry;
+  }
+  return out;
+}
+
+/** Where `scripts/export-backup-schema.mjs` writes, and where the drop step looks for its manifest. */
+export const EXPORT_ROOT = process.env.PHOENIX_SNAPSHOT_EXPORT_DIR
+  ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "snapshot-exports");
 
 /**
  * Every valid YYYYMMDD / YYYY_MM_DD / YYYY-MM-DD in a string, as ISO dates.
@@ -157,12 +194,12 @@ export function daysBetween(fromIso, toIso) {
  * stays, because the next such dependency will not announce itself.
  *
  * @param {{ schema: string, tables?: string[], blockers?: string[] }} entry
- * @param {{ today: string, retentionDays?: number }} options
- * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null }}
+ * @param {{ today: string, retentionDays?: number, decisions?: Record<string, SnapshotDecision> }} options
+ * @returns {{ verdict: string, reason: string, date: string | null, ageDays: number | null, decision?: SnapshotDecision | null }}
  */
 export function classify(entry, options) {
   const { schema, tables = [], blockers = [] } = entry;
-  const { today, retentionDays = RETENTION_DAYS } = options;
+  const { today, retentionDays = RETENTION_DAYS, decisions = {} } = options;
 
   const exempt = EXEMPT_SCHEMAS[schema];
   if (exempt?.kind === "live") {
@@ -188,10 +225,47 @@ export function classify(entry, options) {
   }
 
   const ageDays = daysBetween(date, today);
+  const decided = decisions[schema];
+  const decidedNote = decided
+    ? ` · owner decided ${decided.decision} on ${decided.decidedOn}${decided.until ? ` (until ${decided.until})` : ""}`
+    : "";
   if (ageDays < retentionDays) {
-    return { verdict: VERDICT.YOUNG, reason: `${retentionDays - ageDays} days left`, date, ageDays };
+    return { verdict: VERDICT.YOUNG, reason: `${retentionDays - ageDays} days left${decidedNote}`, date, ageDays, decision: decided ?? null };
   }
-  return { verdict: VERDICT.EXPIRED, reason: `${ageDays} days old, retention is ${retentionDays}`, date, ageDays };
+  if (!decided) {
+    return {
+      verdict: VERDICT.UNDECIDED,
+      reason: `${ageDays} days old, retention is ${retentionDays} — NO DECISION recorded; nothing is dropped until the owner decides (scripts/backup-schema-decisions.json)`,
+      date,
+      ageDays,
+      decision: null,
+    };
+  }
+  if (decided.decision === "keep" && (!decided.until || today < decided.until)) {
+    return {
+      verdict: VERDICT.PROTECTED,
+      reason: `owner decided keep on ${decided.decidedOn}${decided.until ? ` until ${decided.until}` : " for good"}: ${decided.why}`,
+      date,
+      ageDays,
+      decision: decided,
+    };
+  }
+  if (decided.decision === "keep") {
+    return {
+      verdict: VERDICT.UNDECIDED,
+      reason: `the owner's keep ran out on ${decided.until} — decide it again`,
+      date,
+      ageDays,
+      decision: decided,
+    };
+  }
+  return {
+    verdict: VERDICT.EXPIRED,
+    reason: `${ageDays} days old, retention is ${retentionDays}; owner decided ${decided.decision} on ${decided.decidedOn}`,
+    date,
+    ageDays,
+    decision: decided,
+  };
 }
 
 /**
@@ -296,7 +370,7 @@ export function classifyTable(entry, options) {
 
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
-function envVar(name) {
+export function envVar(name) {
   // The nightly check runs on GitHub, where the secrets arrive in the environment and no env file exists.
   if (process.env[name]) return process.env[name];
   for (const file of ENV_FILES) {
@@ -314,7 +388,7 @@ function envVar(name) {
 }
 
 /** The pooler REGION cannot be derived from the ref: production is aws-1, staging aws-0. */
-function toPooler(raw, host) {
+export function toPooler(raw, host) {
   const m = /^(\w+):\/\/([^:]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co:(\d+)\/(.+)$/.exec(raw);
   if (!m) return raw;
   const [, scheme, user, pass, ref, , db] = m;
@@ -493,7 +567,8 @@ const GROUPS = [
   [VERDICT.PROTECTED, "KEEP — the owner's decision, or a migration owns it"],
   [VERDICT.UNDATED, "LOOK — undated, so it can never expire on its own"],
   [VERDICT.YOUNG, "KEEP — inside the retention window"],
-  [VERDICT.EXPIRED, "EXPIRED — past retention, nothing depends on it"],
+  [VERDICT.UNDECIDED, "DECIDE — past retention and nothing depends on it, but the owner has not decided: put it to him"],
+  [VERDICT.EXPIRED, "EXPIRED — past retention, nothing depends on it, and the owner decided it goes"],
 ];
 
 async function main() {
@@ -528,9 +603,10 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10);
 
   try {
+    const decisions = readDecisions();
     const catalogue = await readCatalogue(sql);
     const rows = catalogue
-      .map((entry) => ({ ...entry, ...classify(entry, { today, retentionDays }) }))
+      .map((entry) => ({ ...entry, ...classify(entry, { today, retentionDays, decisions }) }))
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const tableRows = (await readSnapshotTables(sql))
@@ -538,6 +614,7 @@ async function main() {
       .sort((a, b) => b.sizeBytes - a.sizeBytes);
 
     const expired = rows.filter((r) => r.verdict === VERDICT.EXPIRED);
+    const undecided = rows.filter((r) => r.verdict === VERDICT.UNDECIDED);
     const expiredTables = tableRows.filter((r) => r.verdict === VERDICT.EXPIRED);
 
     if (asJson) {
@@ -546,7 +623,7 @@ async function main() {
         null,
         2,
       ));
-      return expired.length + expiredTables.length > 0 ? 2 : 0;
+      return expired.length + undecided.length + expiredTables.length > 0 ? 2 : 0;
     }
 
     const totalBytes = rows.reduce((n, r) => n + r.sizeBytes, 0);
@@ -585,7 +662,14 @@ async function main() {
       console.log("");
     }
 
+    if (undecided.length > 0) {
+      console.log(`NEEDS THE OWNER — ${undecided.length} schema(s) past ${retentionDays} days with no recorded decision.`);
+      console.log("  Nothing is printed to drop for these. Put each one to him (keep, export then drop, or drop)");
+      console.log("  and record the answer in scripts/backup-schema-decisions.json.\n");
+    }
+
     if (expired.length + expiredTables.length === 0) {
+      if (undecided.length > 0) return 2;
       console.log(
         `NOTHING HAS EXPIRED. ${rows.length} schemas and ${tableRows.length} snapshot tables, ` +
         `none past ${retentionDays} days with no dependency on it.`,
@@ -598,6 +682,12 @@ async function main() {
     for (const r of expired) {
       console.log(`-- ${r.schema}: ${r.tables.length} table(s), ${formatBytes(r.sizeBytes)}, ${r.reason}`);
       console.log(`--   ${r.tables.join(", ") || "(no tables)"}`);
+      // The owner chose a file copy first: no drop statement until that copy's manifest is on disk.
+      const manifest = path.join(EXPORT_ROOT, r.schema, "manifest.json");
+      if (r.decision?.decision === "export-then-drop" && !existsSync(manifest)) {
+        console.log(`--   NOT YET: export it first — node scripts/export-backup-schema.mjs ${r.schema}`);
+        continue;
+      }
       console.log(`drop schema if exists ${r.schema} cascade;`);
     }
     // 🔴 No `cascade` on a table. The schema form has it because a snapshot schema is dropped whole;
