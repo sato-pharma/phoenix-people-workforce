@@ -79,6 +79,7 @@ export async function releaseDailyLines(input: {
     actorHrId: input.actor.hrId ?? null,
     pairs: lines.map((line) => ({
       category: line.category,
+      deductionDate: line.deductionDate ?? null,
       employeeHrId: line.employeeHrId,
       employeeHrIdCompact: line.employeeHrIdCompact,
     })),
@@ -96,6 +97,7 @@ export async function releaseDailyLines(input: {
         released: lines.map((line) => ({
           employeeHrId: line.employeeHrId,
           category: line.category,
+          deductionDate: line.deductionDate ?? null,
           daysCount: line.daysCount,
           amount: line.amount,
         })),

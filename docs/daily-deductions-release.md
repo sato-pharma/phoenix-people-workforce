@@ -93,9 +93,50 @@ it charges. `crm_half_day`'s 0.5 reads as *half a day*; `templateKey: "general"`
 module's own template cannot frame the mail and bury the amount it exists to state.
 
 Idempotency rides on the line id, which `phx_release_daily_deduction_lines` keeps stable per
-(publication, employee, category) through its `on conflict … do update` — so re-releasing a line
+(publication, employee, category, day) through its `on conflict … do update` — so re-releasing a line
 already in the snapshot re-sends nothing, and an **Update release** after the tally changes does not
 re-notify.
+
+## Every deduction is single — added 2026-11-13
+
+Owner, 2026-11-13, first: *"I want to select day 9 and day 11 in November and release only their
+deductions."* Then, the same afternoon: *"never group a group of deductions ... Ahmad Sharaf Din have a 3
+days unpaid vacation, 9, 10, 11 ... I can select day 9 alone and release, or day 10 alone and release ...
+Never group them. I want each deduction to be single."* Asked how to keep it, he chose **"Each day its own
+record"** — so the database changed with it.
+
+**One deduction = one employee × one type × one day.** The running tally lists one row (one card on a
+phone) per deduction, each with its own tick, its own price and its own **Release** button. There is no
+button that releases a group: no per-day panel, no "release this employee", no "release all". A **Day**
+filter narrows the list; **Tick all**, **Clear** and **Release ticked** act only on what the filter shows,
+and each ticked deduction still goes out as its own row.
+
+How it is kept right:
+
+- **Each day is its own stored row.** Migration `20261113181600_daily_deductions_one_row_per_day.sql` adds
+  `daily_deductions_lines.deduction_date` and keys the active snapshot on (publication, employee, category,
+  day) with `NULLS NOT DISTINCT`, so releasing the 11th after the 9th inserts a second row and can never
+  replace, resend or drop the 9th. The rows released before it carry no day (whole-range rows) and are
+  unchanged.
+- **The database refuses** a dated row that lists any day but its own, a single day already carried by an
+  older whole-range row of the same person and type, a whole-range row over a day already released alone,
+  and a second whole-range row. The page holds the same cases back and names them (`heldReasonOf`):
+  `no_salary`, `released_outside_range`, `days_released_alone`.
+- **Each day is priced by the server, and only where the split is exact.** `clipDraftToRange` prices each
+  kept day alone with the line's own `scaleDeductionAmountToKeptDates` (a CRM Thursday is half a day), but
+  only when the finding charges one day per date it lists. A vacation request that lists calendar days but
+  charges a total spread across them has no price per day, so it stays ONE deduction for its days — never
+  split on a guess.
+- **Each day is its own notice.** The notice key is employee × type × day (`releasedLineNoticeKey`), so the
+  9th and the 11th are two emails, each naming its own day, and a day already told is never told again.
+- The release is filed under the day it carries (the 10th alone reads 10 — 10 November), never the whole
+  window counted.
+
+Applied by `scripts/apply-sql-file.mjs` on staging and production (it writes no ledger row — the
+`ACKNOWLEDGED_EXCEPTIONS` entry in `scripts/lib/migration-inventory.ts`). Pinned by
+`tests/daily-deductions-release-by-day.test.ts`. Break checks: put the three days back into one row and "one
+deduction per day" fires; drop the day from the notice key and "the 9th and the 11th are two notices" fires;
+split a spread vacation request and "never split on a guess" fires.
 
 ## What was kept
 

@@ -496,6 +496,7 @@ import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-
 import { runDeductionsCycleTests } from "./deductions-cycle.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
 import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.ts";
+import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-by-day.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
@@ -4289,6 +4290,10 @@ await runTest(
 await runTest(
   "daily deductions release (one deduction at a time: line state, what a click sends, validation, merge-not-replace migration)",
   runDailyDeductionsReleaseTests,
+);
+await runTest(
+  "daily deductions are single (owner, 13 Nov 2026): one deduction per employee x type x day, each released and told on its own, priced only where the split is exact, never charged twice against an older whole-range row",
+  runDailyDeductionsReleaseByDayTests,
 );
 await runTest(
   "daily deductions no-records connector (skips reps, district managers and the SFE Manager; never charges an outage day or a person with no base salary)",

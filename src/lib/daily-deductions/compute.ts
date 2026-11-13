@@ -12,7 +12,7 @@ import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { clipDatesToRange } from "./range.ts";
-import type { DailyDeductionCategory, DailyDeductionTallyLine } from "./types.ts";
+import type { DailyDeductionCategory, DailyDeductionDayFigure, DailyDeductionTallyLine } from "./types.ts";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -30,6 +30,8 @@ export type ClippedDraftLine = {
   daysCount: number;
   amount: number;
   dates: string[];
+  /** Each kept day priced alone; empty when the money is unknown or a day could not be priced. */
+  days?: DailyDeductionDayFigure[];
   sourceSystem: string;
   reason: string | null;
   /** True when the connector could not compute an amount (usually a missing base salary). */
@@ -56,27 +58,29 @@ export function clipDraftToRange(
   const keptDates = clipDatesToRange(draft.dates, from, effectiveTo);
   if (keptDates.length === 0) return null;
 
-  const originalCount = Array.isArray(draft.dates) ? draft.dates.length : 0;
-  const rawValue = Number(draft.rawValue);
-  if (!Number.isFinite(rawValue) || rawValue <= 0 || originalCount <= 0) return null;
-
-  const fraction = keptDates.length / originalCount;
-  // A count-based CRM row is priced on WEIGHTED days (a Thursday is half, owner rule 2026-08-02), so
-  // its kept day count and its money both follow what the kept dates weigh — the table's own comment
-  // says `days_count` is "the clipped, weighted day count". Every other draft keeps the fraction.
-  const weighted = draft.category === "crm" && rawValue === originalCount;
-  const daysCount = weighted ? sumDetectedDeductionDayWeights(keptDates) : round2(rawValue * fraction);
-
-  const estimatedAmount = draft.estimatedAmount ?? null;
-  const scaled = scaleDeductionAmountToKeptDates({
-    appliedDays: rawValue * fraction,
-    category: draft.category,
-    detectedDates: Array.isArray(draft.dates) ? draft.dates : [],
-    estimatedAmount,
-    keptDates,
-    rawValue,
-  });
+  const priced = priceKeptDates(draft, keptDates);
+  if (!priced) return null;
+  const { daysCount, scaled } = priced;
   const amountUnknown = scaled == null;
+
+  // Each kept day priced ALONE, by the same rule — so one day can be released without the others
+  // (owner, 2026-11-13: "select day 9 and day 11 in November and release only their deductions").
+  // Only where the split is EXACT: one date, or a draft that charges one day per date it lists (a CRM
+  // Thursday still weighs half). A vacation request lists calendar days but charges a TOTAL of unpaid
+  // days spread across them, so a day of it has no price of its own — it stays one deduction.
+  const originalCount = Array.isArray(draft.dates) ? draft.dates.length : 0;
+  const exactPerDay = originalCount === 1 || Number(draft.rawValue) === originalCount;
+  const days: DailyDeductionDayFigure[] = [];
+  if (!amountUnknown && exactPerDay) {
+    for (const date of keptDates) {
+      const day = priceKeptDates(draft, [date]);
+      if (!day || day.scaled == null) {
+        days.length = 0;
+        break;
+      }
+      days.push({ amount: round2(day.scaled), date, daysCount: day.daysCount });
+    }
+  }
 
   const compact = compactDeductionsHrId(draft.employeeHrId) ?? "";
 
@@ -85,14 +89,44 @@ export function clipDraftToRange(
     employeeHrId: draft.employeeHrId,
     employeeHrIdCompact: compact,
     employeeName: draft.employeeName?.trim() || null,
-    rawDaysCount: rawValue,
+    rawDaysCount: Number(draft.rawValue),
     daysCount,
     amount: amountUnknown ? 0 : round2(scaled as number),
     dates: keptDates,
+    days,
     sourceSystem: draft.sourceSystem,
     reason: draft.reason ?? null,
     amountUnknown,
   };
+}
+
+/**
+ * The day count and money a draft charges for the given kept days. A count-based CRM row is priced on
+ * WEIGHTED days (a Thursday is half, owner rule 2026-08-02), so its kept day count and its money both
+ * follow what the kept dates weigh — the table's own comment says `days_count` is "the clipped,
+ * weighted day count". Every other draft keeps the surviving fraction.
+ */
+function priceKeptDates(
+  draft: DeductionsCandidateDraft,
+  keptDates: readonly string[],
+): { daysCount: number; scaled: number | null } | null {
+  const originalCount = Array.isArray(draft.dates) ? draft.dates.length : 0;
+  const rawValue = Number(draft.rawValue);
+  if (!Number.isFinite(rawValue) || rawValue <= 0 || originalCount <= 0) return null;
+
+  const fraction = keptDates.length / originalCount;
+  const weighted = draft.category === "crm" && rawValue === originalCount;
+  const daysCount = weighted ? sumDetectedDeductionDayWeights([...keptDates]) : round2(rawValue * fraction);
+
+  const scaled = scaleDeductionAmountToKeptDates({
+    appliedDays: rawValue * fraction,
+    category: draft.category,
+    detectedDates: Array.isArray(draft.dates) ? draft.dates : [],
+    estimatedAmount: draft.estimatedAmount ?? null,
+    keptDates,
+    rawValue,
+  });
+  return { daysCount, scaled };
 }
 
 /**
@@ -111,7 +145,7 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
 } {
   const byKey = new Map<
     string,
-    DailyDeductionTallyLine & { _dateSet: Set<string> }
+    DailyDeductionTallyLine & { _dateSet: Set<string>; _days: Map<string, DailyDeductionDayFigure> | null }
   >();
   const amountUnknown = new Set<string>();
   let droppedUnidentified = 0;
@@ -128,6 +162,7 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
       existing.daysCount = round2(existing.daysCount + line.daysCount);
       existing.amount = round2(existing.amount + line.amount);
       for (const date of line.dates) existing._dateSet.add(date);
+      existing._days = mergeDayFigures(existing._days, line);
       if (!existing.employeeName && line.employeeName) existing.employeeName = line.employeeName;
       if (line.amountUnknown) existing.amountUnknown = true;
     } else {
@@ -145,6 +180,7 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
         reason: line.reason,
         amountUnknown: line.amountUnknown,
         _dateSet: new Set<string>(line.dates),
+        _days: mergeDayFigures(new Map(), line),
       });
     }
     if (line.amountUnknown) amountUnknown.add(line.employeeName || line.employeeHrId);
@@ -152,8 +188,12 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
 
   const out: DailyDeductionTallyLine[] = [];
   for (const row of byKey.values()) {
-    const { _dateSet, ...rest } = row;
-    out.push({ ...rest, dates: [..._dateSet].sort() });
+    const { _dateSet, _days, ...rest } = row;
+    const dates = [..._dateSet].sort();
+    // A per-day breakdown ships only when it covers every day of the line; otherwise the line can
+    // still be released whole, never split on a guess.
+    const days = _days && dates.every((date) => _days.has(date)) ? dates.map((date) => _days.get(date)!) : undefined;
+    out.push({ ...rest, dates, ...(days ? { days } : {}) });
   }
   // Stable, name-first ordering (a person is shown by name, never a code).
   out.sort((a, b) => {
@@ -163,4 +203,23 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
   });
 
   return { lines: out, amountUnknownEmployees: [...amountUnknown].sort(), droppedUnidentified };
+}
+
+/** Fold one clipped line's per-day figures into the running map; null once any day is unpriceable. */
+function mergeDayFigures(
+  into: Map<string, DailyDeductionDayFigure> | null,
+  line: ClippedDraftLine,
+): Map<string, DailyDeductionDayFigure> | null {
+  if (!into) return null;
+  if (line.amountUnknown || !Array.isArray(line.days) || line.days.length !== line.dates.length) return null;
+  for (const day of line.days) {
+    const existing = into.get(day.date);
+    into.set(
+      day.date,
+      existing
+        ? { amount: round2(existing.amount + day.amount), date: day.date, daysCount: round2(existing.daysCount + day.daysCount) }
+        : { ...day },
+    );
+  }
+  return into;
 }
