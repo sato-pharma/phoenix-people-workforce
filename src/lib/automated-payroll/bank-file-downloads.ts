@@ -18,6 +18,15 @@ import { writeRequiredAutomatedPayrollAudit } from "./audit.ts";
  * REOPENING IS THE SAME UNDO (REC-035). Reopening Part 2 unlocks every figure finance was handed, and
  * reopening Part 1 clears the first instalment its bank files paid. Both read the same rows and refuse
  * the same way, with the same override, kept on their own audit rows.
+ *
+ * Reopening Part 2 counts only what Part 2 paid (REC-035): a Part 1 file pays the frozen first
+ * instalment, which a Part 2 reopen does not touch, so the routine Part 1 download does not make it ask.
+ * A file whose scope is not recorded as Part 1 counts, so an unknown scope asks. Cancel and Reopen
+ * Part 1 count every file.
+ *
+ * An override that is USED is recorded first (REC-035): a REQUIRED audit row with who, why, the files
+ * and the move, written under the move's claim before anything changes. A reason that cannot be
+ * recorded refuses the move; it is never kept only on the best-effort row written afterwards.
  */
 
 export const BANK_FILE_DOWNLOADED_ACTION = "bank_file_downloaded";
@@ -34,15 +43,23 @@ export type RunUndoAfterDownload = "cancel" | "reopen_part1" | "reopen_part2";
  */
 export const DOWNLOAD_REFUSAL_OPENING = "finance has already downloaded";
 
-const UNDO_WORDING: Record<RunUndoAfterDownload, { risk: string; verb: string }> = {
-  cancel: { risk: "cancelling would let the month be paid again", verb: "cancel" },
+/** The audit row that keeps an override USED to undo a run after a download (REC-035). */
+export const UNDO_OVERRIDE_RECORDED_ACTION = "undo_after_download_overridden";
+
+/** The one recorded scope that pays the first instalment only: what every Part 1 file is recorded with. */
+const PART1_ONLY_SCOPE = "part1";
+
+const UNDO_WORDING: Record<RunUndoAfterDownload, { risk: string; verb: string; done: string }> = {
+  cancel: { risk: "cancelling would let the month be paid again", verb: "cancel", done: "cancelled" },
   reopen_part1: {
     risk: "reopening Part 1 would clear the first instalment those files paid, and recompute it",
     verb: "reopen Part 1",
+    done: "reopened",
   },
   reopen_part2: {
     risk: "reopening Part 2 would let the figures those files paid be changed",
     verb: "reopen Part 2",
+    done: "reopened",
   },
 };
 
@@ -143,24 +160,89 @@ function describeDownloads(downloads: readonly BankFileDownload[]): string {
 }
 
 /**
+ * The downloads that make this move ask for a reason. Pure.
+ *
+ * Reopen Part 2: every file NOT recorded as Part 1, so Part 2, the full month, and any scope that is
+ * missing or unknown (fail toward asking). Cancel and Reopen Part 1: every file.
+ */
+export function downloadsThatBlock(
+  downloads: readonly BankFileDownload[],
+  action: RunUndoAfterDownload,
+): BankFileDownload[] {
+  if (action !== "reopen_part2") return [...downloads];
+  return downloads.filter((download) => download.scope !== PART1_ONLY_SCOPE);
+}
+
+/**
  * May this run be cancelled or reopened, given what has been downloaded? Pure.
  *
- * No downloads: yes. Downloads and no override: refused, naming the files. Downloads and an
- * override with a real reason: yes, and the reason is returned to be kept on the move's own row.
+ * No download that counts for this move (downloadsThatBlock): yes. Downloads and no override: refused,
+ * naming the files. Downloads and an override with a real reason: yes, and the reason is returned.
  */
 export function assertUndoAllowedAfterDownloads(
   downloads: readonly BankFileDownload[],
   override?: { reason?: string | null } | null,
   action: RunUndoAfterDownload = "cancel",
 ): { overridden: boolean; reason: string | null } {
-  if (downloads.length === 0) return { overridden: false, reason: null };
+  const counted = downloadsThatBlock(downloads, action);
+  if (counted.length === 0) return { overridden: false, reason: null };
   const reason = (override?.reason ?? "").trim();
   if (override && reason.length >= UNDO_AFTER_DOWNLOAD_MIN_REASON) return { overridden: true, reason };
   const { risk, verb } = UNDO_WORDING[action];
   throw new Error(
-    `Conflict: ${describeDownloads(downloads)} That money may already be at the bank, and ${risk}. ` +
+    `Conflict: ${describeDownloads(counted)} That money may already be at the bank, and ${risk}. ` +
       `To ${verb} anyway, send an override with a reason of at least ${UNDO_AFTER_DOWNLOAD_MIN_REASON} characters ` +
       "saying why.",
   );
 }
 
+/**
+ * The download check every undo runs under its claim, before any write (REC-035, F-PAY-016).
+ *
+ * Reads the downloads (a failed read refuses), refuses without an override (assertUndoAllowedAfterDownloads),
+ * and when an override is USED writes it on a REQUIRED audit row (who, why, the files and when they were
+ * downloaded, and the move) before returning. If that row cannot be written the move is refused with a
+ * Conflict and nothing has changed, because the caller has written nothing yet.
+ */
+export async function guardUndoAfterDownloads(
+  input: {
+    runId: string;
+    actorHrId: string;
+    action: RunUndoAfterDownload;
+    override?: { reason?: string | null } | null;
+  },
+  client?: AuditClient,
+): Promise<{ overridden: boolean; reason: string | null }> {
+  const downloads = await listBankFileDownloads(input.runId, client);
+  const result = assertUndoAllowedAfterDownloads(downloads, input.override, input.action);
+  if (!result.overridden) return result;
+  try {
+    await writeRequiredAutomatedPayrollAudit(
+      {
+        runId: input.runId,
+        actorHrId: input.actorHrId,
+        action: UNDO_OVERRIDE_RECORDED_ACTION,
+        detail: {
+          move: input.action,
+          reason: result.reason,
+          files: downloadsThatBlock(downloads, input.action).map((download) => ({
+            file: download.file,
+            scope: download.scope,
+            fileName: download.fileName,
+            downloadedBy: download.actorHrId,
+            downloadedAt: download.downloadedAt,
+          })),
+        },
+      },
+      client,
+    );
+  } catch (error) {
+    const { verb, done } = UNDO_WORDING[input.action];
+    const why = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Conflict: the reason to ${verb} after finance downloaded its files could not be recorded, so the run was ` +
+        `not ${done}. Nothing was changed. Try again. (${why})`,
+    );
+  }
+  return result;
+}
