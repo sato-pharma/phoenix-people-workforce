@@ -43,7 +43,7 @@ function namesOf(entry: IntegrationEntry): string[] {
 function registryIsWellFormed() {
   const ids = INTEGRATIONS.map((entry) => entry.id);
   assert.deepEqual(ids.filter((id, index) => ids.indexOf(id) !== index), [], "every integration has its own id");
-  assert.ok(INTEGRATIONS.length >= 38, `the registry lists every outside service (38 since Google Fonts left on 13 Nov 2026), found ${INTEGRATIONS.length}`);
+  assert.ok(INTEGRATIONS.length >= 37, `the registry lists every outside service (37 since Google Fonts and the OpenStreetMap tiles left on 13 Nov 2026), found ${INTEGRATIONS.length}`);
 
   const declared = new Set(declaredJobSlugs());
   for (const entry of INTEGRATIONS) {
@@ -256,6 +256,7 @@ function noPageLoadsATypefaceFromAFontService() {
   }
   assert.match(form, /font-family:"Cairo";[^}]*font-weight:400 700/, "the bundled Cairo answers the regular, semibold and bold the form asks for");
   assert.match(read("public/fonts/cairo-OFL.txt"), /SIL OPEN FONT LICENSE/, "the typeface's licence ships beside it");
+  assert.equal(findIntegration("openstreetmap-tiles") ?? null, null, "the OpenStreetMap tiles are no longer an outside service: the integrity maps' streets are a Google picture (ISS-012)");
   assert.equal(findIntegration("google-fonts") ?? null, null, "Google Fonts is no longer an outside service Phoenix depends on");
 }
 

@@ -29,7 +29,7 @@ import { FIELD_ACTIVITY_ROLES, isFieldActivityRole } from "../src/lib/field-acti
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { isPortalShellRole } from "../src/lib/auth/portal-shell-roles.ts";
 import { resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
-import { fetchBasemap, fitZoom, renderRouteSvg } from "../src/lib/field-activity/map.ts";
+import { fetchBasemap, fetchBasemapPng, fitZoom, renderRouteSvg } from "../src/lib/field-activity/map.ts";
 
 const SUBJECT: FieldActivitySubject = {
   areaName: null,
@@ -435,6 +435,26 @@ export async function runFieldActivityReportTests() {
         warnings.some((line) => line.includes("fetch failed")),
         "a timeout that leaves no trace is how this stayed unexplained — the throw is recorded on its way to null",
       );
+
+      // The same request as bytes, for the route that serves the Location Integrity maps' streets (13 Nov 2026):
+      // the picture comes back untouched, the sheet's wrapper is those bytes as a data address, and a refusal
+      // is logged under the caller's own name with the key stripped.
+      const picture = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+      const asked: string[] = [];
+      const answering = (async (url: string) => {
+        asked.push(String(url));
+        return new Response(new Uint8Array(picture), { status: 200 });
+      }) as unknown as typeof fetch;
+      const frame = { apiKey: "test-key-not-a-real-credential", centre: { lat: 30.0444, lon: 31.2357 }, fetchImpl: answering, height: 240, width: 320, zoom: 15 };
+      const bytes = await fetchBasemapPng(frame);
+      assert.ok(bytes !== null && bytes.equals(picture), "the picture's own bytes come back");
+      assert.ok(asked[0]!.includes("center=30.0444,31.2357") && asked[0]!.includes("zoom=15") && asked[0]!.includes("size=320x240"), "Google is asked for the frame it was given");
+      assert.equal(await fetchBasemap(frame), `data:image/png;base64,${picture.toString("base64")}`, "the sheet's wrapper is the same bytes as a data address");
+      warnings.length = 0;
+      const refusedBytes = await fetchBasemapPng({ ...frame, caller: "case-map basemap", fetchImpl: (async () => new Response(refusal, { status: 403 })) as unknown as typeof fetch });
+      assert.equal(refusedBytes, null, "a refused picture is null for the route too");
+      assert.ok(warnings.some((line) => line.startsWith("case-map basemap:") && line.includes("403")), "and the log names who asked");
+      assert.ok(!warnings.some((line) => line.includes("test-key-not-a-real-credential")), "with the key stripped");
 
       warnings.length = 0;
       const noKey = await fetchBasemap({

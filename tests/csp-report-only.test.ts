@@ -63,9 +63,10 @@ export async function runCspReportOnlyTests(): Promise<void> {
   assert.deepEqual(policy.get("style-src-attr"), ["'unsafe-inline'"], "style attributes are left out of the reports");
   const imgSrc = policy.get("img-src") ?? [];
   assert.ok(!imgSrc.includes("https:"), "🔴 img-src must name its hosts, not every https address");
-  for (const host of ["'self'", "data:", "blob:", "https://*.supabase.co", "https://tile.openstreetmap.org", "https://*.googleapis.com", "https://*.gstatic.com"]) {
+  for (const host of ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.googleapis.com", "https://*.gstatic.com"]) {
     assert.ok(imgSrc.includes(host), `img-src must keep ${host}, which a page loads today`);
   }
+  assert.ok(!imgSrc.includes("https://tile.openstreetmap.org"), "the integrity maps' streets come through the app since 13 Nov 2026: no page loads a map tile");
   assert.deepEqual(policy.get("report-uri"), [CSP_REPORT_PATH]);
   assert.deepEqual(policy.get("report-to"), ["csp-report"]);
   for (const ignored of ["frame-ancestors", "upgrade-insecure-requests", "script-src", "default-src"]) {

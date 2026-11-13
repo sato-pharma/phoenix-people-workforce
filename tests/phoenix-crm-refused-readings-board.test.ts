@@ -607,8 +607,9 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     assert.doesNotMatch(code, /colSpan/, "on desktop it sits in the try's own cell, never a second row under every row");
     assert.match(code, /import \{ TryLocationsMap \} from "@\/components\/admin\/refused-try-map"/,"the map is an ADMIN component — never under components/phoenix-crm, the rep-facing surface the blind half sweeps");
     const view = stripComments(read("src/components/admin/refused-try-map.tsx"));
-    assert.match(view, /loading="lazy"/, "lazy tiles — a hundred tries, twice over, must not load every tile on open");
-    assert.ok(view.includes("map.attribution"), "the tile host's attribution travels with the tiles");
+    assert.match(view, /loading="lazy"/, "a lazy picture — a hundred tries, twice over, must not ask Google for every map on open");
+    assert.ok(view.includes("src={map.basemapUrl}"), "the streets are the one picture the map names, asked of the app's own route (13 Nov 2026)");
+    assert.ok(view.includes("map.attribution"), "the attribution travels with the picture");
     assert.ok(view.includes("mapsLinkOf("), "each point opens in Google Maps");
     assert.doesNotMatch(view, /overflow-x|min-w-\[|rounded|<(?:button|form|input)\b|onClick|fetch\(|"use client"/, "square, no horizontal scroll, and nothing on it acts");
     assert.doesNotMatch(view, /\b(?:violation|fraud|cheat|caught|suspicio|fake|spoof)/i, "a refused try is a fact about a phone, not a finding about a person");

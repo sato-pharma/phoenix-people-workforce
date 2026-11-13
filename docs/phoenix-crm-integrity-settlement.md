@@ -697,7 +697,7 @@ Put to him as multiple choice before anything was built:
 | --- | --- |
 | `src/lib/crm-integrity/integrity-board-filters.ts` | The sixteen groups, the distance bands, the dropdown values derived from the rows, and the URL round trip |
 | `src/lib/crm-integrity/integrity-case-story.ts` | One headline sentence and a paragraph per detector — the measured fact, then the ordinary innocent explanation. Also the one copy of the detector and subject-kind names |
-| `src/lib/crm-integrity/integrity-case-map.ts` | Web-Mercator tiles on free OpenStreetMap, the markers, the leader lines and the metres between every pair of readings |
+| `src/lib/crm-integrity/integrity-case-map.ts` | The frame in Web Mercator, the address of its streets (one Google picture through `/api/admin/phoenix-crm/case-map-basemap` since 13 Nov 2026; free OpenStreetMap tiles before), the markers, the leader lines and the metres between every pair of readings |
 | `src/lib/crm-integrity/integrity-settle-presets.ts` | The seven ready-made reasons, as starting text |
 | `src/lib/crm-integrity/integrity-board-rows.ts` | One case prepared once — its standing, its story, its map and everything the filters read |
 

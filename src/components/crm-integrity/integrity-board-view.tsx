@@ -204,14 +204,14 @@ export function Reasons({ entry }: { entry: IntegrityCase }) {
 /**
  * The difference between a case's readings, drawn — the fourth thing he asked for.
  *
- * 🔴 THE MARKERS AND EVERY METRE FIGURE ARE OURS, SO THE PANEL IS STILL TRUE WITH NO TILES BEHIND
- * IT. If a tile never loads — a blocked host, a dead connection, a tile server refusing — the
+ * 🔴 THE MARKERS AND EVERY METRE FIGURE ARE OURS, SO THE PANEL IS STILL TRUE WITH NO STREETS BEHIND
+ * IT. If the map picture never loads — a dead connection, Google refusing the key — the
  * readings, the leader lines and the numbers below are unchanged, and the caption says the streets
  * are missing rather than leaving a reader to wonder what failed. That is the rule the field-activity
  * route map has carried since it lost its basemap for weeks.
  *
- * The tiles are only requested once a case is OPENED, so a tile host learns about an area only for a
- * case somebody actually read.
+ * The picture is only requested once a case is OPENED, so Google is asked about an area only for a
+ * case somebody actually read — and each picture asked for is counted against the company's account.
  */
 export function CaseMapPanel({ map }: { map: CaseMap | null }) {
   if (map === null) {
@@ -220,23 +220,14 @@ export function CaseMapPanel({ map }: { map: CaseMap | null }) {
   return (
     <div className="min-w-0 space-y-2">
       <div className="relative max-w-full overflow-hidden border border-slate-200 bg-slate-100" style={{ height: map.height, width: map.width }}>
-        {map.tiles.map((tile) => (
-          // A map tile is one fixed-size PNG from a third-party host, positioned by hand; the image
-          // optimiser would proxy every tile of every opened case through this app for nothing. The
-          // directive has to be the LAST comment line: `eslint-disable-next-line` means the next
-          // LINE, so with the prose under it the rule fired on the `<img>` and the directive itself
-          // reported as unused.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            alt=""
-            aria-hidden
-            className="absolute select-none"
-            key={tile.key}
-            src={tile.url}
-            style={{ height: tile.size, left: tile.left, top: tile.top, width: tile.size }}
-          />
-        ))}
-        {/* The leader lines, over the tiles and under the markers. */}
+        {/* The streets: one picture from this app's own route, which asks Google with the server key (13 Nov 2026).
+            It is asked for only once a case is opened; the image optimiser would fetch it a second time for nothing.
+            🔴 Its size is pinned in pixels and `max-w-none` stays: the markers and lines are placed in the frame's own
+            pixels, so a picture that shrank to fit a phone-width box would put every marker on the wrong street.
+            A narrower box clips the frame, as it clips the markers. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt="" aria-hidden className="absolute left-0 top-0 max-w-none select-none" height={map.height} src={map.basemapUrl} style={{ height: map.height, maxWidth: "none", width: map.width }} width={map.width} />
+        {/* The leader lines, over the streets and under the markers. */}
         <svg aria-hidden className="pointer-events-none absolute inset-0" height={map.height} width={map.width}>
           {map.pairs.map((pair) => {
             const from = map.markers[pair.fromIndex - 1];
@@ -268,7 +259,7 @@ export function CaseMapPanel({ map }: { map: CaseMap | null }) {
         ))}
       </div>
       <p className="text-phx-sm font-bold uppercase tracking-[0.08em] text-slate-400">
-        {map.attribution} — if the streets are missing the tiles did not load, and every number below is unaffected
+        {map.attribution} — if the streets are missing the map picture did not load, and every number below is unaffected
       </p>
       <ul className="space-y-1">
         {map.markers.map((marker) => (

@@ -70,6 +70,14 @@ const PROD = "https://phoenix-hr.satopharma.com";
  * job declared without it reads as MISSING and `--apply` would create a duplicate on the website.
  */
 const WORKER = "https://phoenix-workforce-worker-production.up.railway.app";
+/**
+ * The robot service (audit REC-075): same code again, with PHOENIX_PROCESS_ROLE=robot, running ONLY the
+ * Turbify mailbox robots so a Chromium never opens beside the page server. 🔴 This address is the one
+ * Railway generates for a service named `phoenix-workforce-robot` in the `production` environment, the
+ * way it generated WORKER's — it does not exist until the owner creates the service, and it must be
+ * read off the service's Networking tab then and corrected here if it differs, BEFORE its job is armed.
+ */
+const ROBOT = "https://phoenix-workforce-robot-production.up.railway.app";
 
 const APPLY = process.argv.includes("--apply");
 /**
@@ -515,6 +523,24 @@ const JOBS = {
     // EMAIL_NOTIFICATIONS_ENABLED are four independent switches and none of them is a default.
     requestTimeout: 300,
   },
+  // ── THE ROBOT SERVICE (audit REC-075) ─────────────────────────────────────────────────────────────
+  "mailbox-robots": {
+    base: ROBOT,
+    // 🔴 DECLARED OFF, and it stays off until the robot service exists, is healthy, and the website's
+    // PHOENIX_ROBOT_SERVICE_URL is about to be set (docs/deployment.md, "The robot service"). The
+    // auto-arm on merge therefore creates it DISABLED. Arming it is its own change: flip this to
+    // enabled, declare `phoenix-mailbox-robots` in JOB_SCHEDULES and the docs/observability.md table,
+    // and run `--job mailbox-robots --apply`. Until then the route's heartbeat is undeclared, so it
+    // never pages as stranded.
+    enabled: false,
+    title: "Phoenix — Turbify mailbox robots (robot service)",
+    path: "/api/cron/mailbox-robots",
+    // 08:20 Cairo: five minutes after the mailbox-offboarding sweep (08:15) has brought the leavers'
+    // register up to date, which is what the revocation robot reads.
+    schedule: { hours: [8], minutes: [20], mdays: [-1], months: [-1], wdays: [-1] },
+    // The route answers 202 at once and finishes after the response; the scheduler hangs up at 30s.
+    requestTimeout: 300,
+  },
   // ── ADOPTED: live jobs made by hand, declared so the repository shows them. Report-only. ──────────
   // Ids, paths and schedules from docs/deployment.md ("Which cron-job.org jobs call the worker") and
   // docs/observability.md (the job table). `minutes` are written out the way the web UI stores a step.
@@ -561,7 +587,7 @@ const JOBS = {
   },
 };
 
-export { JOBS, PROD, WORKER };
+export { JOBS, PROD, ROBOT, WORKER };
 
 /**
  * What the script will do about one declaration, given the live job on its URL (or none). Pure, so
@@ -717,7 +743,9 @@ async function main() {
       const created = await api(key, "/jobs", {
         body: JSON.stringify({
           job: {
-            enabled: !HOLD,
+            // A row declared `enabled: false` is created switched off whatever the flags say, so the
+            // auto-arm on merge can create a job for a service that does not exist yet without it firing.
+            enabled: !HOLD && spec.enabled !== false,
             // The bearer the route's assertCronAuthorized will check on every fire. Without it the
             // job runs perfectly and Phoenix answers 401 every night.
             extendedData: { headers: { Authorization: authHeader } },
@@ -761,7 +789,7 @@ async function main() {
     if (plan.write !== "patch") continue;
     await api(key, `/jobs/${existing.jobId}`, {
       body: JSON.stringify({
-        job: { enabled: true, schedule: { ...spec.schedule, expiresAt: 0, timezone: TZ } },
+        job: { enabled: spec.enabled ?? true, schedule: { ...spec.schedule, expiresAt: 0, timezone: TZ } },
       }),
       method: "PATCH",
     });
