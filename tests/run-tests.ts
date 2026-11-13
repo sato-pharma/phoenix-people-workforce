@@ -3075,6 +3075,7 @@ import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-
 import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
+import { runDbBackupTests } from "./db-backup.test.ts";
 import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
 import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building.test.ts";
 import { runEmployeeNicknameReachesLoginTests } from "./employee-nickname-reaches-login.test.ts";
@@ -12238,6 +12239,7 @@ await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts 
 await runTest("approved expenses against the payslips (3 Nov 2026): four findings, held is not unpaid, carried is an inference, and the check reads three salary columns and writes nothing", runExpensePayslipReconciliationTests);
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
+await runTest("the database backup: one snapshot, a login that cannot write, a drill judged by row counts", runDbBackupTests);
 await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);
 await runTest("a rep seats a customer in a polyclinic only while standing in that building (3 Nov 2026): 3.9 km is refused at both doors before the timetable scan, no reading seats as before, a manager and the Super Admin's move are not asked, the building is filed for the SFE and the row keeps no reading", runPhoenixCrmSeatAtBuildingTests);
 await runTest("a saved nickname reaches the login's name, every HR id spelling, never a test account, and a failed login write never fails the save", runEmployeeNicknameReachesLoginTests);

@@ -70,23 +70,35 @@ Checked and left alone, each for a stated reason:
 
 Moved out of this pull request: ISS-043 to pull request 6, ISS-025 to pull request 4, INT-006 to the sign-in pull request, and ISS-018 and ISS-019 to the owner's own list below.
 
-### 3 — Database posture — PLANNED
+### 3 — Database posture — NO PULL REQUEST NEEDED (checked 13 Nov 2026)
+
+Each finding was read against the live database and the code before anything was written. None needed a change from this plan.
+
+| Finding | Verdict |
+|---|---|
+| ISS-005 · ISS-006 | Already closed the same day by another change: the migration `service_role_only_tables_and_functions` is on production (ledger row `20261113151446`). Not repeated here |
+| ISS-055 | Already exists: the System Audit board groups application errors by cause on the existing table |
+| ISS-014 · INT-062 | No change. Every send step claims its row in one atomic statement, so two overlapping drains cannot send the same notice twice; a second lock would add a way to stall and nothing else. Naming one owner per route is a decision, so it moved to the owner's own list |
+
+### 4 — Recovery — IN PROGRESS
 
 | Finding | Change |
 |---|---|
-| ISS-005 | Row security switched on for the three tables that have it off |
-| ISS-006 | `EXECUTE` revoked from the anonymous role on the 40 functions, with default privileges set so new functions are not granted |
-| ISS-014 · INT-062 | The notification drain's overlap lock taken in the database; one owner named per route |
-| ISS-055 | Application errors grouped by cause on the existing table |
+| ISS-009 · INT-096 | The nightly Railway service makes a second file after the code backup: the whole production database, encrypted to the same public key, in its own Drive folder (`phoenix-db-backup`, 7 daily and 4 weekly). It connects as a new role that reads every table and can write nothing. The daily Drive check reports it under its own name, `phoenix-db-backup-verify` |
+| INT-097 | A restore drill script: it restores a night's file into a new database on a throwaway server and passes only when every table holds exactly the rows counted when the backup was made. Not into staging, as first planned: the restored copy is as large as production and staging's disk would have to grow to hold it |
+| ISS-025 | In the two image workflows only the job that pushes an image may write packages; every other job reads |
+| ISS-038 | One rehearsal of the standby host, recorded below |
 
-### 4 — Recovery — PLANNED
+What the rehearsals found, 13 Nov 2026:
 
-| Finding | Change |
+| Rehearsal | Result |
 |---|---|
-| ISS-009 · INT-096 | A nightly encrypted database dump beside the code backup |
-| INT-097 | A restore drill into staging, with the time it took written down |
-| ISS-038 | One rehearsal of the standby host, recorded |
-| ISS-025 | The image workflows' write scopes moved down to the one job that needs them, rehearsed on the emergency route in the same sitting as the standby rehearsal |
+| The backup and the drill on made-up data (laptop, 18:05 Cairo) | Passed: 6 of 6 tables, 5,349 rows. The drill was then broken four ways and refused each: a changed count, a table not in the dump, production named as the target, the wrong key |
+| The backup read from production as the new role (laptop, 18:07 Cairo) | The role counted 1,420 tables and 5,693,881 rows and the dump ran for seven minutes without a refusal. **It was stopped by hand at 18:14**, because at 18:13 another change to production was waiting behind it for a table. That change went through seconds later. No full production file was made, so no full-size restore has been timed yet |
+| What that changed | The backup now steps aside. It looks every 3 seconds for anyone waiting behind it; seen twice, it ends its own sessions, uploads nothing and tries again 10 minutes later, three times. Proven on made-up data at 18:30 Cairo: a waiting change got its table after 5.4 seconds and the backup ended with nothing uploaded |
+| Every later change to the backup | `backup-image.yml` builds the real image on each pull request and runs the backup, the drill, its failures and the step-aside against a throwaway PostgreSQL 17 |
+
+Still to do after the merge, each on the owner's word: give the role its login (`scripts/set-backup-reader-login.mjs`), start one run by hand, read the file on Drive, run the drill on that real file with the owner's key and write its time here, then raise the size floor (64 MB today) to half of that file.
 
 ### 5 — The Integrations page — PLANNED
 
@@ -125,6 +137,7 @@ These are not code. Each is a decision, a payment or a click on the provider's o
 | ISS-049 | The workflow that lives only on a side branch | GitHub › Actions |
 | ISS-018 | The Actions budget the cost alarm reads. "Cannot read the budget" stays a warning on purpose; the budget value is money, and a public repository is not metered | GitHub › Billing › Budgets |
 | ISS-019 | A token that may read branch protection, so the required-checks alarm stops warning that it could not read it | GitHub › Settings › Developer settings › Tokens |
+| ISS-014 | One named person per scheduled route, to be told when that route fails. The routes cannot send a notice twice today, so this is only about who is told | A list of names; nothing to click |
 
 ## Not changed, on the audit's own verdict
 
