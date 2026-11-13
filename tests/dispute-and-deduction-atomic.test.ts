@@ -13,7 +13,7 @@ import {
 } from "../src/lib/dispute-center/decision-claim.ts";
 import { conflictError } from "../src/lib/http/api-errors.ts";
 import { decideDeductionDispute, type DecideDeductionDisputeDeps } from "../src/lib/dispute-center/deduction.ts";
-import type { CaseEventInput } from "../src/lib/dispute-center/events.ts";
+import { eventsForViewer, type CaseEventInput } from "../src/lib/dispute-center/events.ts";
 import { deriveDisputeCaseState } from "../src/lib/dispute-center/state.ts";
 import type { DisputeCaseEvent } from "../src/lib/dispute-center/types.ts";
 import { STALE_DECISION_CONFLICT, recordDecision } from "../src/lib/deductions/service.ts";
@@ -190,13 +190,31 @@ function chargeOf(candidate: Row, value: number): number {
  */
 function fakeDeps(
   w: World,
-  options: { failAt?: keyof DecideDeductionDisputeDeps; restoreFails?: boolean } = {},
+  options: {
+    /** This step throws before it writes anything. */
+    failAt?: keyof DecideDeductionDisputeDeps;
+    /** This step COMMITS, then throws — a reply lost after the write landed. */
+    writeThenFail?: keyof DecideDeductionDisputeDeps;
+    /** This step commits, then the re-read of what it left fails. */
+    rereadFailsAfter?: keyof DecideDeductionDisputeDeps;
+    /** The refund recommendation cancels the live refund, then its insert fails — both inside one call. */
+    recommendInsertFails?: boolean;
+    restoreFails?: boolean;
+  } = {},
 ): DecideDeductionDisputeDeps {
+  let rereadFails = false;
   const failing = <F extends (...args: never[]) => Promise<unknown>>(name: keyof DecideDeductionDisputeDeps, fn: F): F =>
     (async (...args: never[]) => {
       await roundTrip();
       if (options.failAt === name) throw new Error(`injected failure in ${String(name)}`);
-      return fn(...args);
+      if (name === "capture" && rereadFails) {
+        rereadFails = false;
+        throw new Error("injected failure re-reading the deduction");
+      }
+      const result = await fn(...args);
+      if (options.writeThenFail === name) throw new Error(`injected lost reply from ${String(name)}, which had committed`);
+      if (options.rereadFailsAfter === name) rereadFails = true;
+      return result;
     }) as unknown as F;
   const write = (name: string) => w.writes.push(name);
 
@@ -294,6 +312,7 @@ function fakeDeps(
           refund.cancelled_at = nowIso(w);
         }
       }
+      if (options.recommendInsertFails) throw new Error("injected failure inserting the new refund");
       const refund = { amount: input.amount, cancel_reason: null, cancelled_at: null, case_kind: "deduction", case_ref: input.ref, id: `refund-${w.refunds.length + 1}`, reason: input.reason, status: "recommended", target_month_key: "2026-11" };
       w.refunds.push(refund);
       const event: CaseEventInput = { actorHrId: input.actorHrId, actorRole: input.actorRole, eventType: "refund_recommended", kind: "deduction", ref: input.ref };
@@ -423,39 +442,75 @@ function statusOf(error: unknown): number | undefined {
 
 async function runBehaviour() {
   // ── (a) A FAILURE AFTER THE FIRST WRITE PUTS EVERYTHING BACK ──────────────────────────────────
-  // Accept on a pushed, approved deduction in a PAID month: line off, decision, refund recommended,
-  // then the events. Each step in turn fails; every table must end byte-equal to where it began.
-  for (const failAt of ["recordDecision", "recommendDisputeRefund", "recordEvents"] as const) {
+  // Accept on a pushed, approved deduction in a PAID month: line off, decision, earlier refund off,
+  // refund recommended, then the events.
+  //
+  // The last insert refused outright (and no "decided" event landed — checked): the outcome is
+  // certain, every table ends byte-equal to where it began, and the reviewer is told so.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const before = tables(w);
+    const error = await refusal(
+      decideDeductionDispute(SUPER_ADMIN, { candidateId: CANDIDATE_ID, note: "", outcome: "accept" }, fakeDeps(w, { failAt: "recordEvents" })),
+    );
+    assert.ok(w.writes.length > 0, "the run must have written something before it failed, or it tests nothing");
+    assert.match(error.message, /Everything it had started to change was put back/, "a certain failure says everything was put back");
+    assert.equal(statusOf(error), 409, "…and is a Conflict, not a server error");
+    assert.deepEqual(
+      tables(w),
+      before,
+      "F-PAY-005: a failure at the last insert leaves the line, the decision, the lock, the refunds and the timeline exactly as they were",
+    );
+    assert.equal(w.claims.size, 0, "the claim is released once the undo is done, so the reviewer can decide again");
+    assert.equal(w.notified, 0, "nobody is told about a decision that did not happen");
+  }
+
+  // A STEP that throws may have committed before it threw; nothing can tell. What is known is still
+  // put back, but the reviewer is never told "put back" — the case is marked, naming the step.
+  for (const [failAt, stepName] of [
+    ["withdrawDeduction", "taking the line off the payslip"],
+    ["recordDecision", "recording the decision"],
+    ["cancelLiveRefund", "cancelling the earlier refund"],
+    ["recommendDisputeRefund", "recommending the refund"],
+  ] as const) {
     const w = world({ monthState: "paid", pushed: true });
     const before = tables(w);
     const error = await refusal(
       decideDeductionDispute(SUPER_ADMIN, { candidateId: CANDIDATE_ID, note: "", outcome: "accept" }, fakeDeps(w, { failAt })),
     );
-    assert.ok(w.writes.length > 0, `the ${failAt} run must have written something before it failed, or it tests nothing`);
-    assert.match(error.message, /put back/, `a failure at ${failAt} after the first write says everything was put back`);
-    assert.equal(statusOf(error), 409, "…and is a Conflict, not a server error");
+    assert.equal(statusOf(error), 409, `a failure at ${failAt} is a Conflict`);
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, `a failed ${failAt} is never reported as put back`);
+    assert.match(error.message, /could NOT be put back/, `a failed ${failAt} goes to the needs-attention path`);
+    assert.ok(error.message.includes(stepName), `…naming the step: ${stepName}`);
     assert.deepEqual(
-      tables(w),
-      before,
-      `F-PAY-005: a failure at ${failAt} leaves the line, the decision, the lock, the refunds and the timeline exactly as they were`,
+      { ...tables(w), events: [] },
+      { ...before, events: [] },
+      `what the attempt is KNOWN to have changed before ${failAt} is still put back`,
     );
+    const marker = w.events.find((event) => event.event_type === "decision_interrupted");
+    assert.equal((marker?.details as Row | undefined)?.uncertainStep, stepName, "the marker names the uncertain step");
     assert.ok(!w.events.some((event) => event.event_type === "decided"), "and no 'decided' event exists");
-    assert.equal(w.claims.size, 0, "the claim is released once the undo is done, so the reviewer can decide again");
+    assert.equal(w.claims.size, 0, "the claim is released");
     assert.equal(w.notified, 0, "nobody is told about a decision that did not happen");
   }
 
-  // Reduce on an undecided-by-HR deduction would push; a failed push of the smaller figure is undone too.
+  // Reduce on an approved deduction pushes the smaller figure; a failed push is uncertain the same way.
   {
     const w = world({ monthState: "open", pushed: true });
     const before = tables(w);
-    await refusal(
+    const error = await refusal(
       decideDeductionDispute(
         SUPER_ADMIN,
         { candidateId: CANDIDATE_ID, note: "one day only", outcome: "reduce", reducedValue: 1 },
         fakeDeps(w, { failAt: "pushDeduction" }),
       ),
     );
-    assert.deepEqual(tables(w), before, "a reduce whose re-push fails is undone: the old line is live again at the old figure");
+    assert.ok(error.message.includes("putting the line on the payslip"), "a failed re-push is named");
+    assert.deepEqual(
+      { ...tables(w), events: [] },
+      { ...before, events: [] },
+      "a reduce whose re-push fails has its known steps undone: the old line is live again at the old figure",
+    );
   }
 
   // The same accept with nothing failing does land — so the runs above failed for the injected reason.
@@ -891,10 +946,23 @@ function runSourcePins() {
   );
   assert.ok(!/recordCaseEvent\(\{[^}]*eventType: "decided"/.test(decide), "the decided event is no longer a write of its own");
   const renewAt = decide.indexOf("await deps.renewClaim(");
-  const lastEventsAt = decide.indexOf("await deps.recordEvents([\n      ...deferredEvents,");
+  const lastEventsAt = decide.indexOf("const lastWrite = deps.recordEvents([\n      ...deferredEvents,");
   assert.ok(
     renewAt > decide.lastIndexOf("await write(") && renewAt < lastEventsAt,
     "the claim is proved still held immediately before the last write, after every other write",
+  );
+  assert.ok(
+    decide.includes('event.eventType === "decided" && !timelineBefore.has(event.id)'),
+    "a failed last insert is checked against the timeline before anything is undone",
+  );
+  const cancelStepAt = decide.indexOf('await write("cancelling the earlier refund", () =>');
+  assert.ok(
+    cancelStepAt > 0 && cancelStepAt < decide.indexOf('await write("recommending the refund", () =>'),
+    "the earlier refund is cancelled as its own step before the new one is recommended",
+  );
+  assert.ok(
+    decide.includes("if (restoreFailure == null && input.uncertainStep == null) {"),
+    "only a certain failure is ever answered with 'put back'",
   );
   assert.ok(
     decide.includes("left = await deps.capture(input.candidateId);") && decide.includes("undoHalfDecision({ access, deps, error, input, left,"),
@@ -1085,8 +1153,156 @@ async function runForeignChangesAndLostClaims() {
   );
 }
 
+// ─────────────── a step whose outcome is unknown is never "put back", and a recorded decision stands
+
+async function runUncertainStepsAndLostReplies() {
+  const accept = { candidateId: CANDIDATE_ID, note: "", outcome: "accept" as const };
+  const stateOf = (w: World) =>
+    deriveDisputeCaseState({ decided: false, events: w.events.map(toEvent), messages: [], openedAt: "2026-11-01T00:00:00.000Z" });
+  const markerOf = (w: World) => w.events.find((event) => event.event_type === "decision_interrupted")?.details as Row | undefined;
+
+  // The decision COMMITS, then its reply is lost. The undo cannot see it — so it must never say "put
+  // back": payroll charges from the new decision while the line would show the old figure.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, fakeDeps(w, { writeThenFail: "recordDecision" })));
+    assert.equal(w.decisions.get(CANDIDATE_ID)?.decision_status, "Do Not Take Action", "the fake really did commit the decision");
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, "2a: a committed-then-failed decision is NOT reported as put back");
+    assert.match(error.message, /could NOT be put back/, "…it goes to the needs-attention path");
+    assert.ok(error.message.includes("recording the decision"), "…naming the step");
+    assert.equal(markerOf(w)?.uncertainStep, "recording the decision", "the marker names it too");
+    assert.equal(stateOf(w), "needs_attention", "and the case reads Needs attention");
+  }
+
+  // The decision commits, then the re-read of what it left fails.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, fakeDeps(w, { rereadFailsAfter: "recordDecision" })));
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, "2a: a failed re-read is NOT reported as put back");
+    assert.ok(
+      String(markerOf(w)?.uncertainStep ?? "").startsWith("recording the decision (it ran, but what it left could not be read back)"),
+      "the marker says the step ran and its result could not be read back",
+    );
+    assert.equal(stateOf(w), "needs_attention", "and the case reads Needs attention");
+  }
+
+  // 2b: an earlier 400 EGP refund is live. The new decision cancels it and recommends a new one; the
+  // INSERT fails after the cancel. The cancel is its own step, so the undo knows it and puts it back.
+  const withLiveRefund = (w: World) => {
+    w.refunds.push({
+      amount: 400,
+      cancel_reason: null,
+      cancelled_at: null,
+      case_kind: "deduction",
+      case_ref: CANDIDATE_ID,
+      id: "refund-earlier",
+      reason: "An earlier decision on this dispute",
+      status: "recommended",
+      target_month_key: "2026-11",
+    });
+    return w;
+  };
+  {
+    const w = withLiveRefund(world({ monthState: "paid", pushed: true }));
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, fakeDeps(w, { recommendInsertFails: true })));
+    assert.equal(
+      w.refunds.find((refund) => refund.id === "refund-earlier")?.status,
+      "recommended",
+      "2b: the 400 EGP refund the attempt cancelled is live again — never left cancelled behind a failed insert",
+    );
+    assert.equal(w.refunds.length, 1, "no new refund exists");
+    assert.ok(error.message.includes("recommending the refund"), "the failed step is named");
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, "and it is not reported as put back");
+  }
+  // The cancel itself commits and then throws: its effect is unknown to the undo, so it is not "put back".
+  {
+    const w = withLiveRefund(world({ monthState: "paid", pushed: true }));
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, fakeDeps(w, { writeThenFail: "cancelLiveRefund" })));
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, "a committed-then-failed cancel is not reported as put back");
+    assert.equal(markerOf(w)?.uncertainStep, "cancelling the earlier refund", "the marker names the cancel");
+    assert.equal(stateOf(w), "needs_attention", "and the case reads Needs attention");
+  }
+
+  // 3: the LAST insert lands, then its reply is lost. The "decided" event is there, so the decision IS
+  // made: it is answered as made, and nothing is undone.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const result = await decideDeductionDispute(SUPER_ADMIN, accept, fakeDeps(w, { writeThenFail: "recordEvents" }));
+    assert.equal(result.chargedAmount, 0, "3: a recorded decision is answered as made");
+    assert.equal(w.decisions.get(CANDIDATE_ID)?.decision_status, "Do Not Take Action", "its decision is NOT undone");
+    assert.ok(w.lines.every((line) => line.line_status === "withdrawn"), "its line stays off");
+    assert.equal(w.refunds.filter((refund) => refund.status === "recommended").length, 1, "its refund stays");
+    assert.equal(w.events.filter((event) => event.event_type === "decided").length, 1, "one decided event");
+    assert.ok(!w.events.some((event) => event.event_type === "decision_interrupted"), "no needs-attention marker");
+    assert.equal(w.notified, 1, "the employee is told once");
+  }
+  // …and when the timeline cannot be read to check, the outcome is unknown: never "put back".
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const deps = fakeDeps(w, { failAt: "recordEvents" });
+    const list = deps.listEvents;
+    let reads = 0;
+    deps.listEvents = async (kind, refs) => {
+      reads += 1;
+      if (reads === 3) throw new Error("injected failure reading the timeline");
+      return list(kind, refs);
+    };
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, deps));
+    assert.doesNotMatch(error.message, /Everything it had started to change was put back/, "an unchecked last insert is not reported as put back");
+    assert.ok(error.message.includes("recording the decision on the case timeline"), "the step is named");
+  }
+
+  // 5: the needs-attention marker's details (HR ids, notes, refund rows, raw error text) are HR's alone.
+  {
+    const interrupted: DisputeCaseEvent = {
+      actorHrId: "B-10",
+      actorName: null,
+      actorRole: "Super Admin",
+      createdAt: "2026-11-13T10:00:00.000Z",
+      details: { error: "raw database text", left: { refunds: [{ amount: 400 }] }, restoreError: "x", snapshot: { decision: { hr_note: "private" } } },
+      eventType: "decision_interrupted",
+      id: "ev-i",
+      note: null,
+    };
+    const decided: DisputeCaseEvent = { ...interrupted, details: { chargedAfter: 0 }, eventType: "decided", id: "ev-d" };
+    const forEmployee = eventsForViewer([decided, interrupted], { isReviewer: false });
+    assert.deepEqual(forEmployee[1].details, {}, "5: the employee's payload carries no details for a needs-attention marker");
+    assert.equal(forEmployee[1].eventType, "decision_interrupted", "…though it still says the case needs attention");
+    assert.deepEqual(forEmployee[0].details, decided.details, "other events are untouched");
+    assert.deepEqual(eventsForViewer([interrupted], { isReviewer: true })[0].details, interrupted.details, "HR sees everything");
+    const buildCase = stripComments(readFileSync("src/lib/dispute-center/deduction.ts", "utf8"));
+    assert.ok(
+      buildCase.includes("events: eventsForViewer(input.events, input.viewer),"),
+      "the deduction case payload goes through the viewer filter",
+    );
+  }
+
+  // 1: every dollar-quoted body in these migrations opens and closes with the same tag; no lone $.
+  for (const file of [CLAIM_MIGRATION, LOCK_MIGRATION]) {
+    const sql = stripSqlComments(readFileSync(file, "utf8"));
+    assertDollarQuotesBalanced(sql, file);
+  }
+  assert.throws(() => assertDollarQuotesBalanced("create function f() returns int as $\nbegin return 1; end;\n$;", "lone"), /lone \$/);
+  assert.throws(() => assertDollarQuotesBalanced("create function f() as $$ select 1 $function$;", "mixed"), /does not close/);
+  assert.throws(() => assertDollarQuotesBalanced("create function f() as $$ select 1;", "open"), /never closed/);
+}
+
+/** Each `$tag$` opener is closed by the same tag; a body delimited by a lone `$` is refused. */
+function assertDollarQuotesBalanced(sql: string, file: string): void {
+  assert.ok(!/\bas\s+\$\s*$/im.test(sql) && !/^\s*\$\s*;/m.test(sql), `${file}: a lone $ used as a body delimiter (PostgreSQL: syntax error at or near "$")`);
+  const tokens = [...sql.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)?\$/g)].map((match) => match[0]);
+  let open: string | null = null;
+  for (const token of tokens) {
+    if (open === null) open = token;
+    else if (token === open) open = null;
+    else assert.fail(`${file}: ${open} does not close with ${token}`);
+  }
+  assert.equal(open, null, `${file}: ${open} is never closed`);
+}
+
 export async function runDisputeAndDeductionAtomicTests() {
   await runBehaviour();
+  await runUncertainStepsAndLostReplies();
   await runForeignChangesAndLostClaims();
   await runCompareAndSet();
   runSourcePins();

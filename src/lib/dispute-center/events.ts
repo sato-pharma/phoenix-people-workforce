@@ -107,6 +107,19 @@ function mapEvent(row: EventRow, names: Map<string, string>): DisputeCaseEvent {
   };
 }
 
+/**
+ * Events whose `details` are for HR alone. A "decision_interrupted" marker carries the decider's HR id
+ * and role, the HR note, the before-state and left-state rows (refunds included) and raw database error
+ * text — the case's own employee sees that the case needs attention, never what is inside it.
+ */
+const REVIEWER_ONLY_DETAILS: ReadonlySet<DisputeCaseEvent["eventType"]> = new Set(["decision_interrupted"]);
+
+/** The events as this viewer may see them: a reviewer gets everything; anyone else gets no HR-only details. */
+export function eventsForViewer(events: DisputeCaseEvent[], viewer: { isReviewer: boolean }): DisputeCaseEvent[] {
+  if (viewer.isReviewer) return events;
+  return events.map((event) => (REVIEWER_ONLY_DETAILS.has(event.eventType) ? { ...event, details: {} } : event));
+}
+
 function compareEventsOldestFirst(left: DisputeCaseEvent, right: DisputeCaseEvent): number {
   const byTime = (Date.parse(left.createdAt) || 0) - (Date.parse(right.createdAt) || 0);
   if (byTime !== 0) return byTime;

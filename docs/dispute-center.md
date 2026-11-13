@@ -264,6 +264,24 @@ same way.
 deletes a decision row that did not exist before, it writes that history row itself, in the trigger's
 own detail shape: action `decision_removed`. The trigger is never changed or disabled.
 
+**A step whose outcome is unknown.** A step can throw after it has already committed, because the
+reply was lost. Its re-read can also fail. Either way nothing can tell whether the step changed
+anything. The undo still puts back what is known, but the reviewer is never told "put back": the case
+is marked "needs attention" and the event names the step.
+
+The earlier refund is cancelled as its own step, before the new one is recommended. So a failed insert
+can no longer leave the earlier refund cancelled behind a "nothing changed".
+
+When the last insert (the `decided` event) fails, the timeline is read first. If a `decided` event new
+since the claim is there, the decision was recorded and is answered as made, with nothing undone. If the
+timeline cannot be read, the outcome is unknown.
+
+The marker's details (HR ids, notes, refund rows, error text) are stripped from the employee's case
+payload (`eventsForViewer`).
+
+**A payroll step re-opened by the failed attempt is not undone.** HR re-confirms that step in the
+month's Automated Payroll run, and its figures recompute from the restored decision and lines.
+
 **What cannot be put back:**
 
 - `updated_at` is stamped again on any restoring write.

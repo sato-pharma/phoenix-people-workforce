@@ -25,7 +25,15 @@ import {
   stampDisputeDecisionSnapshot,
   type DeductionDisputeSnapshot,
 } from "./decision-claim.ts";
-import { listCaseEvents, nameFor, recordCaseEvent, recordCaseEvents, resolvePeopleNames, type CaseEventInput } from "./events.ts";
+import {
+  eventsForViewer,
+  listCaseEvents,
+  nameFor,
+  recordCaseEvent,
+  recordCaseEvents,
+  resolvePeopleNames,
+  type CaseEventInput,
+} from "./events.ts";
 import { notifyDisputeCase, reviewerHrIdsFor } from "./notify.ts";
 import { resolveCaseParticipant, viewerHrIdOf } from "./participants.ts";
 import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
@@ -333,7 +341,8 @@ async function buildCase(input: {
       input.line?.employee_name ??
       input.candidate.employee_hr_id ??
       "",
-    events: input.events,
+    // HR-only details (a needs-attention marker) never reach the employee's browser.
+    events: eventsForViewer(input.events, input.viewer),
     facts,
     factsIncomplete,
     kind: "deduction",
@@ -750,11 +759,32 @@ async function decideUnderClaim(
   // The revision of the decision as THIS attempt last wrote it, held for every later re-read too, so a
   // write by somebody else after it is never taken as this attempt's own, however many writes follow.
   let decisionWeWrote: string | null = null;
-  const write = async <T>(step: () => Promise<T>, revisionOf?: (result: T) => string | null | undefined): Promise<T> => {
+  // A step that THREW, or whose re-read failed, may have committed anyway — a write whose reply was lost
+  // is indistinguishable from one that never ran. Its outcome is UNKNOWN: the undo still puts back what
+  // is known, but the reviewer is never told "put back", and the case is marked "needs attention" with
+  // this step named. Never re-read after the failure and adopt what is there as this attempt's own —
+  // that would revert a push or a workspace save somebody else made meanwhile.
+  let uncertainStep: string | null = null;
+  const write = async <T>(
+    stepName: string,
+    step: () => Promise<T>,
+    revisionOf?: (result: T) => string | null | undefined,
+  ): Promise<T> => {
     wrote = true;
-    const result = await step();
+    let result: T;
+    try {
+      result = await step();
+    } catch (error) {
+      uncertainStep ??= stepName;
+      throw error;
+    }
     decisionWeWrote = revisionOf?.(result) ?? decisionWeWrote;
-    left = await deps.capture(input.candidateId);
+    try {
+      left = await deps.capture(input.candidateId);
+    } catch (error) {
+      uncertainStep ??= `${stepName} (it ran, but what it left could not be read back)`;
+      throw error;
+    }
     if (decisionWeWrote && left.decision && String(left.decision.updated_at ?? "") !== decisionWeWrote) {
       left = { ...left, decision: { ...left.decision, updated_at: decisionWeWrote } };
     }
@@ -770,10 +800,10 @@ async function decideUnderClaim(
       // The line comes off first: it is what makes the candidate re-decidable, and for Accept it is
       // the change itself.
       if (activeLine) {
-        const withdrawn = await write(() => deps.withdrawDeduction({ actor, lineId: activeLine.id }));
+        const withdrawn = await write("taking the line off the payslip", () => deps.withdrawDeduction({ actor, lineId: activeLine.id }));
         if (!withdrawn.ok) throw conflictError(`This deduction could not be taken off the payslip: ${withdrawn.reason}`);
       }
-      const decision = await write(() =>
+      const decision = await write("recording the decision", () =>
         deps.recordDecision({
           actor,
           candidateId: input.candidateId,
@@ -793,7 +823,7 @@ async function decideUnderClaim(
 
       if (input.outcome === "reduce") {
         // Back on the payslip at the smaller figure.
-        const pushed = await write(() =>
+        const pushed = await write("putting the line on the payslip", () =>
           deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
         );
         chargedAmount = roundCurrency(num(pushed.appliedAmount));
@@ -802,7 +832,7 @@ async function decideUnderClaim(
       // REJECT ON A DEDUCTION NOBODY HAS DECIDED — owner, 2026-11-13: "if reject then deduct". Leaving it
       // Pending would charge nothing, so "the deduction stands" would be a sentence and not a figure: the
       // rejection approves it for payroll at what was detected, and puts it on the employee's payslip view.
-      const approved = await write(() =>
+      const approved = await write("recording the decision", () =>
         deps.recordDecision({
           actor,
           candidateId: input.candidateId,
@@ -815,7 +845,7 @@ async function decideUnderClaim(
       payrollNotices.push(...approved.payrollNotices);
       chargedValue = num(approved.appliedValue);
       chargedAmount = roundCurrency(num(approved.appliedAmount));
-      const pushed = await write(() =>
+      const pushed = await write("putting the line on the payslip", () =>
         deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
       ).catch(() => null);
       if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
@@ -837,7 +867,7 @@ async function decideUnderClaim(
       const valueBefore = Number(details.chargedValueBefore ?? Number.NaN);
       if (Number.isFinite(amountBefore) && amountBefore > chargedBefore) {
         if (Number.isFinite(valueBefore) && valueBefore > 0) {
-          const restored = await write(() =>
+          const restored = await write("recording the decision", () =>
             deps.recordDecision({
               actor,
               appliedValue: valueBefore,
@@ -854,7 +884,7 @@ async function decideUnderClaim(
           if (!activeLine) {
             // The earlier decision took the line off; the money is charged again either way, but the
             // employee's portal has to show it again too.
-            const pushed = await write(() =>
+            const pushed = await write("putting the line on the payslip", () =>
               deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
             ).catch(() => null);
             if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
@@ -883,7 +913,21 @@ async function decideUnderClaim(
     // What the employee is owed, if the month's money is already final.
     const owed = roundCurrency(chargedBefore - chargedAmount);
     if (monthState === "paid" && owed > 0) {
-      const recommended = await write(() =>
+      // The earlier live refund comes off as its OWN step, re-read like every other, before the new one
+      // goes in. recommendDisputeRefund would cancel it itself, but inside the same step as the insert:
+      // an insert that failed after that cancel left the earlier refund cancelled while the reviewer was
+      // told nothing had changed. Its own cancel then finds nothing live (or the same paid refund).
+      await write("cancelling the earlier refund", () =>
+        deps.cancelLiveRefund({
+          actorHrId: participant.viewerHrId,
+          actorRole: access.role,
+          deferEvents: deferredEvents,
+          kind: "deduction",
+          reason: "Replaced by a newer decision on the same dispute.",
+          ref: input.candidateId,
+        }),
+      );
+      const recommended = await write("recommending the refund", () =>
         deps.recommendDisputeRefund({
           actorHrId: participant.viewerHrId,
           actorRole: access.role,
@@ -904,7 +948,7 @@ async function decideUnderClaim(
       else payrollNotices.push(recommended.sentence);
     } else if (owed <= 0) {
       // A live refund from an earlier, more generous decision is cancelled rather than left to pay out.
-      const cancelled = await write(() =>
+      const cancelled = await write("cancelling the earlier refund", () =>
         deps.cancelLiveRefund({
           actorHrId: participant.viewerHrId,
           actorRole: access.role,
@@ -929,7 +973,8 @@ async function decideUnderClaim(
     // THE LAST WRITE: the refund events and the decision's own event, in one insert. Not re-read after:
     // once the "decided" event is in, the decision is whole and there is nothing to undo.
     wrote = true;
-    await deps.recordEvents([
+    const timelineBefore = new Set(events.map((event) => event.id));
+    const lastWrite = deps.recordEvents([
       ...deferredEvents,
       {
         actorHrId: participant.viewerHrId,
@@ -953,10 +998,28 @@ async function decideUnderClaim(
         ref: input.candidateId,
       },
     ]);
+    try {
+      await lastWrite;
+    } catch (insertError) {
+      // A lost reply: the insert may have landed. Under the claim the case was not decided, so a
+      // "decided" event that is new since then is this decision's own — and then the decision IS made,
+      // and undoing it would take back money a recorded decision moved.
+      let landed: boolean | null;
+      try {
+        const now = (await deps.listEvents("deduction", [input.candidateId])).get(input.candidateId) ?? [];
+        landed = now.some((event) => event.eventType === "decided" && !timelineBefore.has(event.id));
+      } catch {
+        landed = null;
+      }
+      if (landed !== true) {
+        if (landed === null) uncertainStep ??= "recording the decision on the case timeline";
+        throw insertError;
+      }
+    }
   } catch (error) {
     // Nothing written yet: a plain refusal, exactly as it was raised.
     if (!wrote) throw error;
-    throw await undoHalfDecision({ access, deps, error, input, left, monthKey, participant, snapshot });
+    throw await undoHalfDecision({ access, deps, error, input, left, monthKey, participant, snapshot, uncertainStep });
   }
 
   const headline =
@@ -1003,6 +1066,8 @@ async function undoHalfDecision(input: {
   snapshot: DeductionDisputeSnapshot;
   /** What this attempt left after its last successful write — the undo touches only rows still like this. */
   left: DeductionDisputeSnapshot;
+  /** A step whose outcome is unknown (it threw, or its re-read failed): "put back" can never be said. */
+  uncertainStep: string | null;
 }): Promise<Error> {
   const reason = messageOf(input.error);
   let restoreFailure: unknown = null;
@@ -1015,9 +1080,16 @@ async function undoHalfDecision(input: {
   } catch (restoreError) {
     restoreFailure = restoreError;
   }
-  if (restoreFailure == null) {
+  if (restoreFailure == null && input.uncertainStep == null) {
     return conflictError(
       `The decision did not save (${reason}). Everything it had started to change was put back — the deduction, its payslip line and any money back are exactly as they were, and the dispute is still open. Decide again.`,
+    );
+  }
+  if (restoreFailure == null) {
+    // What is known was put back, but the failed step may have committed before it failed, and what it
+    // did is exactly what the undo cannot see. Never "put back"; the case is marked.
+    restoreFailure = new Error(
+      `the step "${input.uncertainStep}" failed and may already have changed the deduction before it did; everything before it was put back`,
     );
   }
   await input.deps
@@ -1031,6 +1103,7 @@ async function undoHalfDecision(input: {
           outcome: input.input.outcome,
           // The rows somebody else changed after this attempt wrote them, which the undo left alone.
           ...(restoreFailure instanceof DisputeUndoConflictError ? { conflicts: restoreFailure.conflicts } : {}),
+          ...(input.uncertainStep ? { uncertainStep: input.uncertainStep } : {}),
           left: input.left,
           restoreError: messageOf(restoreFailure),
           snapshot: input.snapshot,
@@ -1043,7 +1116,7 @@ async function undoHalfDecision(input: {
     ])
     .catch(() => undefined);
   return conflictError(
-    `The decision stopped half-way (${reason}) and what it had already changed could NOT be put back (${messageOf(
+    `The decision stopped half-way${input.uncertainStep ? ` while ${input.uncertainStep}` : ""} (${reason}) and what it had already changed could NOT be put back (${messageOf(
       restoreFailure,
     )}). The dispute is marked "needs attention": check this deduction's decision, payslip line and any money back in the ${monthKeyLabel(
       input.monthKey,

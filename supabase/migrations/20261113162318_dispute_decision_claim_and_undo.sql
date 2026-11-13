@@ -170,14 +170,14 @@ returns boolean
 language plpgsql
 security invoker
 set search_path = public, pg_temp
-as $
+as $function$
 begin
   update public.dispute_case_decision_claims
      set lapse_at = now() + interval '5 minutes'
    where case_kind = p_case_kind and case_ref = p_case_ref and claim_token = p_claim_token;
   return found;
 end;
-$;
+$function$;
 
 comment on function public.phx_renew_dispute_case_decision(text, text, uuid) is
   'True and renewed when the claim is still held by this token (F-PAY-005); false when it was lost.';
