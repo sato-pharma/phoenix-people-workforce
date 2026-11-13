@@ -27,7 +27,7 @@ import {
 //
 // The dispatch returns 204 immediately, so this route answers well inside cron-job.org's 30s
 // request-timeout cap. It does NOT wait for the run to finish — a synthetic run takes ~60s, and
-// waiting would risk the false `Failed (timeout)` that phoenix-notify-daily logs every morning.
+// waiting would risk the false `Failed (timeout)` the old daily notification run logged every morning.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OWNER = "sato-pharma";

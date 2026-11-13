@@ -3,14 +3,24 @@ import { WAIT_FOR_THE_RUN_PARAM } from "@/lib/http/answer-now";
 import type { JobHeartbeatProblem } from "@/lib/observability/job-heartbeat-assess";
 import { JOB_SCHEDULE_TIMEZONE } from "@/lib/observability/job-schedule";
 import { logError, logInfo } from "@/lib/observability/log";
+import {
+  DAILY_FAN_OUT_PATH,
+  DAILY_FAN_OUT_SLUG,
+  DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES,
+  DAILY_JOBS,
+  dailyJobHeartbeatSlug,
+  dailyJobPath,
+  dailyJobsSplitIsOn,
+} from "@/lib/scheduled-jobs/daily-jobs";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 /**
  * Re-fires a morning job that never reported, ONCE, when it is safe to.
  *
  * WHY IT EXISTS. On 2026-10-16 a deploy replaced the container at 06:37 in the middle of
- * `phoenix-notify-daily`. The job never reported, the sweep noticed at 07:36, and nothing acted: the
- * day's notifications stayed half-sent until a person looked. This is the act.
+ * `phoenix-notify-daily`, the morning fan-out (split into one job per schedule on 13 Nov 2026). The
+ * job never reported, the sweep noticed at 07:36, and nothing acted: the day's notifications stayed
+ * half-sent until a person looked. This is the act.
  *
  * WHAT IT WILL NOT DO, each a deliberate limit:
  *   - It only touches a job named in {@link JOB_REFIRE_POLICIES}. A job is added there only after
@@ -18,7 +28,7 @@ import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate
  *     "Re-firing a stranded job"). Being stranded is never enough on its own.
  *   - It acts on STRANDED only (silence). A job that ran and REPORTED failure is left alone: it
  *     got further than a killed run, and looping on a job that fails every time would be the
- *     duplicate-message incident the daily route's own header warns about.
+ *     duplicate-message incident the old daily fan-out's header warned about.
  *   - Once per Cairo day per job, claimed ATOMICALLY (the rate-limit bucket RPC) before anything is
  *     started, so two sweeps a few seconds apart cannot both fire it. A claim that cannot be made
  *     means nothing is fired.
@@ -35,10 +45,38 @@ export type JobRefirePolicy = {
   latestCairoMinutes: number;
 };
 
-export const JOB_REFIRE_POLICIES: Readonly<Record<string, JobRefirePolicy>> = {
-  "phoenix-notify-daily": { latestCairoMinutes: 12 * 60, path: "/api/notifications/daily" },
-  "phoenix-reconciliation-check": { latestCairoMinutes: 12 * 60, path: "/api/cron/reconciliation-check" },
-};
+/**
+ * The morning jobs' re-fire policies, for one position of the `PHOENIX_DAILY_JOBS_SPLIT` switch.
+ * `phoenix-notify-daily` held its policy after its sub-jobs were read for a same-day repeat on
+ * 2026-10-16 (docs/observability.md, "Re-firing a stranded morning job"): every send is keyed per
+ * recipient and day, so a repeat completes what a killed run left and tells nobody twice.
+ *   - Switch OFF (what ships): the fan-out runs the jobs, so the fan-out is what is re-fired.
+ *   - Switch ON: splitting the bundle changed none of the jobs, so the policy moves with them, job by
+ *     job, with the same 12:00 cut-off, to each job's own route.
+ * Never both: a re-fire of the fan-out while the switch is on would run nothing (the route is the
+ * authorised no-op), and a re-fire of a job's own route while it is off would answer without running.
+ */
+export function dailyJobRefirePoliciesFor(splitOn: boolean): Record<string, JobRefirePolicy> {
+  if (!splitOn) {
+    return { [DAILY_FAN_OUT_SLUG]: { latestCairoMinutes: DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES, path: DAILY_FAN_OUT_PATH } };
+  }
+  return Object.fromEntries(
+    DAILY_JOBS.map((job): [string, JobRefirePolicy] => [
+      dailyJobHeartbeatSlug(job.key),
+      { latestCairoMinutes: DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES, path: dailyJobPath(job.key) },
+    ]),
+  );
+}
+
+/** Every re-fire policy for one position of the switch. Pure, so tests can read both. */
+export function jobRefirePoliciesFor(splitOn: boolean): Readonly<Record<string, JobRefirePolicy>> {
+  return {
+    ...dailyJobRefirePoliciesFor(splitOn),
+    "phoenix-reconciliation-check": { latestCairoMinutes: 12 * 60, path: "/api/cron/reconciliation-check" },
+  };
+}
+
+export const JOB_REFIRE_POLICIES: Readonly<Record<string, JobRefirePolicy>> = jobRefirePoliciesFor(dailyJobsSplitIsOn());
 
 /** How long a day's claim lives. Longer than a day on purpose: the key already carries the date. */
 const CLAIM_WINDOW_MS = 26 * 60 * 60 * 1000;
@@ -162,7 +200,7 @@ export async function refireStrandedJobs(
  * binds 0.0.0.0 on PORT (Dockerfile), so 127.0.0.1 always reaches it and no proxy timeout applies.
  * Production only; without the secret the route would refuse it anyway, so it says so instead.
  *
- * It asks the route to WAIT (`?wait=1`). Both re-fired routes answer 202 at once for the scheduler,
+ * It asks the route to WAIT (`?wait=1`). Every re-fired route answers 202 at once for the scheduler,
  * which hangs up at 30 seconds (answer-now.ts); a 202 here would read as a re-fire that worked
  * whatever the run then did, and the status below is the only thing this function reports.
  */

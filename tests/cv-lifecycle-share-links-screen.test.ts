@@ -323,7 +323,7 @@ export function runCvLifecycleShareLinksScreenTests() {
     daily.indexOf("runCvLifecycleLinkExpiryCheck()") < daily.indexOf("await sendInterviewReminders()"),
     "it must run BEFORE the throwing reminder loop, or a bad reminder suppresses the day's warning",
   );
-  const route = read("../app/api/notifications/daily/route.ts");
+  const route = read("../app/api/cron/daily/_lib/daily-job-runners.ts");
   assert.ok(
     route.includes("runRecruitmentDailyNotifications()"),
     "…and that run must still be wired into the daily cron",

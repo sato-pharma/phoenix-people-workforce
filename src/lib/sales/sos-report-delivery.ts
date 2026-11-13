@@ -213,7 +213,7 @@ export function computeFullyPublishedPeriods(
 }
 
 /**
- * Daily check (called from the /api/notifications/daily orchestrator): for every period
+ * Daily check (the morning job `sos-monthly-report-check`, /api/cron/daily/sos-monthly-report-check): for every period
  * with at least one published monthly closing, if EVERY active line is now published for
  * that period, send the CEO/Super-Admin BI report exactly once.
  *

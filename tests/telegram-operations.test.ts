@@ -7,7 +7,7 @@ function source(path: string) {
 
 export function runTelegramOperationsTests() {
   const operations = source("src/lib/notifications/telegram-operations.ts");
-  const dailyRoute = source("app/api/notifications/daily/route.ts");
+  const dailyRoute = source("app/api/cron/daily/_lib/daily-job-runners.ts");
   const policy = source("src/lib/notifications/policy.ts");
   const telegram = source("src/lib/notifications/telegram.ts");
   const adminService = source("src/lib/notifications/telegram-admin.ts");

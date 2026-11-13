@@ -81,8 +81,8 @@ export async function POST(request: Request) {
     // The CEO/Super-Admin Source-of-Sales BI report auto-fires once every line's monthly
     // closing for this period is published — not inline here (this route is per-line; firing
     // per-line would risk this request's own timeout budget). See
-    // runSosMonthlyClosingReportCheck in src/lib/sales/sos-report-delivery.ts, run daily from
-    // /api/notifications/daily.
+    // runSosMonthlyClosingReportCheck in src/lib/sales/sos-report-delivery.ts, run daily as the
+    // morning job `sos-monthly-report-check` (/api/cron/daily/sos-monthly-report-check).
     return NextResponse.json({ success: true, published: true });
   } catch (error) {
     return mapError(error);

@@ -18,9 +18,10 @@ export const maxDuration = 60;
  * 🔴 A CLEAN MANAGER IS TOLD NOTHING. Most mornings most managers hear nothing at all, and that is
  * the feature working, not the cron failing — the dead-man's switch is what proves it ran.
  *
- * It has its own clock rather than riding inside /api/notifications/daily, which cron-job.org cuts
+ * It has its own clock rather than riding inside /api/notifications/daily, which cron-job.org cut
  * at 30 seconds: this reads the whole company's board, and one slow morning there must not take the
- * daily notifications down with it.
+ * daily notifications down with it. (Since 13 Nov 2026 every morning job has its own clock too,
+ * /api/cron/daily/<job>.)
  *
  * Safe to fire twice: the idempotency key is per manager per DAY, so a retry, a replay or a double
  * fire reaches nobody a second time.
