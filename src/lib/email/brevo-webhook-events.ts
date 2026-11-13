@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 import { redactCredentialLinksInJson } from "@/lib/email/credential-redaction";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Brevo transactional webhooks are NOT HMAC-signed (unlike Resend/svix). We authenticate them
@@ -227,17 +227,129 @@ function suppressionReasonForBrevoEvent(
   return null;
 }
 
-export async function recordBrevoWebhookEvent(row: BrevoDeliveryEventRow): Promise<{ duplicate: boolean }> {
+// ── Confirming a bounce-list event with Brevo (S01, F-COM-017) ───────────────────────────────
+// A webhook event that would put an address on the bounce list is acted on only once Brevo's own
+// event log (GET /v3/smtp/statistics/events, read with the account's API key) shows that event for
+// that address and message. The delivery row is always recorded; only the bounce-list write waits
+// for the confirmation. Not confirmed (not found, or Brevo cannot be asked) → the list is unchanged
+// and the reason is logged. A real bounce that misses here is still caught by the next send's own
+// provider.
+
+const BREVO_EVENTS_ENDPOINT = "https://api.brevo.com/v3/smtp/statistics/events";
+const BREVO_CONFIRM_TIMEOUT_MS = 8_000;
+const BREVO_CONFIRM_RETRY_DELAY_MS = 3_000;
+/** Both Brevo accounts in the failover chain post to this one webhook, so either may hold the event. */
+const BREVO_CONFIRM_KEY_ENVS = ["BREVO_API_KEY", "BREVO_API_KEY_2"] as const;
+
+/** Webhook event name → the `event` filter of Brevo's event log. Only bounce-list events are here. */
+const BREVO_EVENT_LOG_FILTER: Record<string, string> = {
+  blocked: "blocked",
+  hard_bounce: "hardBounces",
+  invalid_email: "invalid",
+  soft_bounce: "softBounces",
+  spam: "spam",
+  unsubscribed: "unsubscribed",
+};
+
+export type BrevoEventConfirmation = "confirmed" | "not_found" | "unavailable";
+
+type BrevoEventLogEntry = { email?: unknown; messageId?: unknown };
+
+/** The webhook sends `message-id` with or without angle brackets; the event log uses them. Compare bare. */
+function bareMessageId(value: string): string {
+  return value.trim().replace(/^<+/, "").replace(/>+$/, "");
+}
+
+async function askBrevoEventLog(
+  apiKey: string,
+  input: { email: string; eventFilter: string; messageId: string },
+): Promise<"confirmed" | "not_found" | "unavailable"> {
+  const url = new URL(BREVO_EVENTS_ENDPOINT);
+  url.searchParams.set("email", input.email);
+  url.searchParams.set("messageId", `<${bareMessageId(input.messageId)}>`);
+  url.searchParams.set("event", input.eventFilter);
+  url.searchParams.set("days", "30");
+  url.searchParams.set("limit", "50");
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { accept: "application/json", "api-key": apiKey },
+      method: "GET",
+      signal: AbortSignal.timeout(BREVO_CONFIRM_TIMEOUT_MS),
+    });
+  } catch {
+    return "unavailable";
+  }
+  if (!response.ok) return "unavailable";
+  const body = (await response.json().catch(() => null)) as { events?: BrevoEventLogEntry[] } | null;
+  if (!body || typeof body !== "object") return "unavailable";
+  const events = Array.isArray(body.events) ? body.events : [];
+  const email = input.email.toLowerCase();
+  const messageId = bareMessageId(input.messageId);
+  const match = events.some(
+    (entry) => text(entry?.email).toLowerCase() === email && bareMessageId(text(entry?.messageId)) === messageId,
+  );
+  return match ? "confirmed" : "not_found";
+}
+
+/**
+ * Whether Brevo's own event log holds this bounce-list event. Never throws. Asks each configured
+ * Brevo account; a miss is asked once more after a short wait, because the log can trail the webhook.
+ */
+export async function confirmBrevoEventWithBrevo(
+  input: { email: string | null; event: string; messageId: string | null },
+  options: { retryDelayMs?: number } = {},
+): Promise<BrevoEventConfirmation> {
+  const eventFilter = BREVO_EVENT_LOG_FILTER[input.event.toLowerCase()];
+  const email = input.email?.trim();
+  const messageId = input.messageId ? bareMessageId(input.messageId) : "";
+  if (!eventFilter || !email || !messageId) return "not_found";
+  const keys = BREVO_CONFIRM_KEY_ENVS.map((name) => process.env[name]?.trim()).filter((key): key is string => Boolean(key));
+  if (keys.length === 0) return "unavailable";
+
+  const retryDelayMs = options.retryDelayMs ?? BREVO_CONFIRM_RETRY_DELAY_MS;
+  let outcome: BrevoEventConfirmation = "not_found";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    let anyUnavailable = false;
+    for (const apiKey of keys) {
+      const answer = await askBrevoEventLog(apiKey, { email, eventFilter, messageId });
+      if (answer === "confirmed") return "confirmed";
+      if (answer === "unavailable") anyUnavailable = true;
+    }
+    outcome = anyUnavailable ? "unavailable" : "not_found";
+  }
+  return outcome;
+}
+
+export async function recordBrevoWebhookEvent(
+  row: BrevoDeliveryEventRow,
+  options: { confirmRetryDelayMs?: number } = {},
+): Promise<{ duplicate: boolean; suppression: "applied" | "unconfirmed" | "none" }> {
   const supabase = getSupabaseAdmin();
   const result = await supabase.from("email_delivery_events").upsert(row, { onConflict: "provider_event_id" });
   if (result.error) {
-    if (isDuplicateKeyError(result.error)) return { duplicate: true };
+    if (isDuplicateKeyError(result.error)) return { duplicate: true, suppression: "none" };
     throw result.error;
   }
 
   const event = String((row.raw_event as { event?: unknown }).event ?? "");
   const decision = suppressionReasonForBrevoEvent(row.status, event);
-  if (decision && row.recipients.length > 0) {
+  if (!decision || row.recipients.length === 0) return { duplicate: false, suppression: "none" };
+
+  const confirmation = await confirmBrevoEventWithBrevo(
+    { email: row.recipients[0] ?? null, event, messageId: row.provider_message_id },
+    { retryDelayMs: options.confirmRetryDelayMs },
+  );
+  if (confirmation !== "confirmed") {
+    // Kind and outcome only — never the address or the message id.
+    logWarning("Brevo webhook event not confirmed by Brevo; the bounce list is unchanged", {
+      labels: { brevo_event: event.toLowerCase(), event: "brevo_webhook_suppression_unconfirmed", outcome: confirmation },
+    });
+    return { duplicate: false, suppression: "unconfirmed" };
+  }
+
+  {
     const now = new Date().toISOString();
     const suppressions = Array.from(new Set(row.recipients.map((address) => address.trim().toLowerCase())))
       .filter(Boolean)
@@ -257,5 +369,5 @@ export async function recordBrevoWebhookEvent(row: BrevoDeliveryEventRow): Promi
     }
   }
 
-  return { duplicate: false };
+  return { duplicate: false, suppression: "applied" };
 }
