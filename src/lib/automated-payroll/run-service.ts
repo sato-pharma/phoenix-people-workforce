@@ -18,6 +18,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
 import {
   assertCancelAllowedAfterDownloads,
   listBankFileDownloads,
@@ -3269,6 +3270,7 @@ export async function buildRunSheet(
   variant: "part1" | "full",
 ): Promise<{ buffer: Buffer; fileName: string }> {
   assertAutomatedPayrollHrActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await requireRun(runId);
   const { rows } = await assembleForRun(run);
   const period: PayrollPeriod = { month: run.month, year: run.year };
@@ -3304,7 +3306,9 @@ export async function buildRunSheet(
           priorHeldBalances,
         });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };
+  const fileName = `Automated-Payroll-${label}-${variant}.xlsx`;
+  await recordPayrollFileDownload(access, { runId: run.id, file: "run_sheet", scope: variant, fileName, rows: rows.length });
+  return { buffer, fileName };
 }
 
 /** Pre-populated per-step template (xlsx buffer). */
@@ -3416,6 +3420,7 @@ export async function buildFinanceSheet(
   // may not make one: it looks as another role and decides nothing.
   assertRealSessionForDecision(access, "download the finance sheet");
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3449,8 +3454,9 @@ export async function buildFinanceSheet(
         ];
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   const fileName = `Automated-Payroll-${label}-${scope}-finance.xlsx`;
-  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
-  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "finance", scope, fileName });
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts). This one
+  // required row is also the download history's entry (download-log.ts reads both actions), so no second row.
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "finance", scope, fileName, rows: rows.length, role: access.role });
   return { buffer, coverage, fileName };
 }
 
@@ -3503,6 +3509,7 @@ export async function buildFabSheet(
   // may not make one: it looks as another role and decides nothing.
   assertRealSessionForDecision(access, "download a FAB bank file");
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3540,7 +3547,7 @@ export async function buildFabSheet(
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   const fileName = `FAB-Salary-Transfer-${label}-${scope}.xlsx`;
   // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
-  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "fab", scope, fileName });
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "fab", scope, fileName, rows: fabRows.length, role: access.role });
   return { buffer, coverage, fileName };
 }
 
@@ -3560,6 +3567,7 @@ export async function buildCibSheet(
   // may not make one: it looks as another role and decides nothing.
   assertRealSessionForDecision(access, "download a CIB bank file");
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3585,6 +3593,6 @@ export async function buildCibSheet(
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   const fileName = `CIB-Salary-Transfer-${label}-${scope}.xlsx`;
   // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
-  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "cib", scope, fileName });
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "cib", scope, fileName, rows: cibRows.length, role: access.role });
   return { buffer, coverage, fileName };
 }

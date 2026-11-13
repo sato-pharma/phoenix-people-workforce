@@ -37,7 +37,7 @@ const FILE_LABEL: Record<BankFileKind, string> = { fab: "FAB bank file", cib: "C
 
 /** Record a download. Throws when the row cannot be written, so the caller hands out no file. */
 export async function recordBankFileDownloaded(
-  input: { runId: string; actorHrId: string; file: BankFileKind; scope: string; fileName: string },
+  input: { runId: string; actorHrId: string; file: BankFileKind; scope: string; fileName: string; rows?: number; role?: string },
   client?: AuditClient,
 ): Promise<void> {
   try {
@@ -46,7 +46,14 @@ export async function recordBankFileDownloaded(
         runId: input.runId,
         actorHrId: input.actorHrId,
         action: BANK_FILE_DOWNLOADED_ACTION,
-        detail: { file: input.file, scope: input.scope, fileName: input.fileName },
+        // rows and role feed the run's download history (download-log.ts), which reads this row too.
+        detail: {
+          file: input.file,
+          scope: input.scope,
+          fileName: input.fileName,
+          ...(input.rows === undefined ? {} : { rows: input.rows }),
+          ...(input.role === undefined ? {} : { role: input.role }),
+        },
       },
       client,
     );
