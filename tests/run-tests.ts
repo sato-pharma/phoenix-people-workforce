@@ -1335,6 +1335,7 @@ import { runExpenseAccessScopeTests } from "./expense-access-scope.test.ts";
 import { runRlsFallbackDoorTests } from "./rls-fallback-door.test.ts";
 import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-scope.test.ts";
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
+import { runPermissionChecksS01Tests } from "./permission-checks-s01.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
@@ -5879,6 +5880,7 @@ await runTest("expense access scope (PM/GPM/TM self+reports)", runExpenseAccessS
 await runTest("payroll and outstation reads go through one logged row-security door and re-narrow their rows (audit L10)", runRlsFallbackDoorTests);
 await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver adoption)", runSalesPayrollHierarchyScopeTests);
 await runTest("internal messages", runInternalMessagesTests);
+await runTest("four routes assert their permission key on the server and refuse with no write (fingerprint decisions, ROI refresh, employee edits)", runPermissionChecksS01Tests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("gcloud migration hardening", runGcloudMigrationHardeningTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);

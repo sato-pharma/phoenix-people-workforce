@@ -316,7 +316,12 @@ export type PermissionResource =
   // and a recorded run are append-only facts about a date. 🔴 `Manager` and `Employee` hold NOTHING
   // here even though the module's main user is a Manager: see productionPlanningLevel in
   // src/lib/production-planning/access.ts for why the gate is named people, not a role.
-  | "production_planning";
+  | "production_planning"
+  // Marketing ROI refresh: rebuilding the Marketing ROI fact tables on demand and reading the last
+  // run's status. The Super Admin and the CEO only — the same two the route always admitted by role
+  // name; the route keeps that check and asserts this key beside it. Capped in
+  // `hardBoundaryAllowedActions`, so an override can never hand it to anyone else.
+  | "marketing_roi_refresh";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -439,6 +444,7 @@ export const permissionResources: PermissionResource[] = [
   // Production Planner. Omitting this would offer the whole raw-material plan — and the prices and
   // costs on it — to every role in the company. Mechanism at the head of this array.
   "production_planning",
+  "marketing_roi_refresh",
   // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
   // view of every one of them — to every role in the company. Mechanism at the head of this array.
   "hr_reminders",
@@ -806,6 +812,8 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
         return ["read"];
       }
       return [];
+    case "marketing_roi_refresh":
+      return role === "Super Admin" || role === "CEO" ? ["read", "update"] : [];
     case "field_absence":
       // The owner's four, 2026-10-18 ("admin and national sales managers and SFE and CEO"), and READ
       // alone: the calendar is a view over records other modules own, so there is nothing to write.
@@ -1081,6 +1089,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
     production_planning: ["read", "create", "update", "export"],
+    marketing_roi_refresh: ["read", "update"],
     admin: allActions,
     attendance: allActions,
     // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen
@@ -1188,6 +1197,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // may ever write a decision row on his behalf.
     market_awareness: ["read", "approve", "export"],
     marketing_functions: ["read", "export"],
+    // Marketing ROI refresh: he and the Super Admin are the only two who may rebuild the ROI facts.
+    marketing_roi_refresh: ["read", "update"],
     marketing_field_feedback: ["read", "export"],
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.

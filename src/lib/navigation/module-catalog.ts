@@ -100,6 +100,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   phoenix_crm: "Phoenix CRM",
   probation: "Probation",
   production_planning: "Production Planner",
+  marketing_roi_refresh: "Marketing ROI Refresh",
   recruitment: "Recruitment",
   report_it: "Report It",
   resignations: "Resignations",

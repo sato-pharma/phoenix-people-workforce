@@ -225,10 +225,12 @@ const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies re
 // Confirmed Vacation/Excuse approver roles that land in the ADMIN shell. Portal-shell
 // approvers (District/Regional/National Sales Manager, PM/GPM, Marketing Manager, Manager)
 // see the same two links via the portal sidebar (employee-portal-layout.tsx flags).
+// No Finance Manager here: both rows that use this list exclude her (she reads leave through her own
+// Leave Management page instead), and a role named in `roles` and `excludedRoles` at once is a grant
+// that reads as live while it does nothing. The rows keep their excludedRoles regardless.
 const leaveExcuseApproverAdminNavigationRoles = [
   "Super Admin",
   "CEO",
-  "Finance Manager",
   "Financial Advisor",
 ] as const satisfies readonly PhoenixRole[];
 const vacationApproverPortalNavigationRoles = [
