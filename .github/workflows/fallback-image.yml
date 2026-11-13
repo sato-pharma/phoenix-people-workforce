@@ -68,10 +68,12 @@ on:
       - Dockerfile
       - infra/runtime-extras/**
 
+# Read-only for every job. Until 13 Nov 2026 the whole workflow held `packages: write`, so the gate, the Railway
+# jobs and every pull-request run could publish an image (integration audit, ISS-025). Each job that touches the
+# registry now asks for its own scope, below. A job that declares permissions gets ONLY what it lists.
 permissions:
   contents: read
   actions: read
-  packages: write
 
 # Never cancel: a switch interrupted half way leaves a service on a source nobody chose. Two runs of the same kind queue.
 concurrency:
@@ -136,6 +138,12 @@ jobs:
   image:
     needs: gate
     if: ${{ github.event_name == 'pull_request' || inputs.deploy != 'restore' }}
+    # The ONE job that pushes the image. A pull request's run of it builds and boots and pushes nothing (PUSH below),
+    # but still holds this scope: GitHub cannot make a job's permissions depend on the event.
+    permissions:
+      contents: read
+      actions: read
+      packages: write
     runs-on: ubuntu-latest # hosted-only: builds the amd64 production image with Docker
     # A cold build of this app is ~8-12 minutes (install, `next build`, the runtime layers); the cap is generous because
     # nothing here may be cancelled half-pushed.
@@ -332,6 +340,11 @@ jobs:
   rehearsal:
     needs: [gate, image]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'rehearsal' }}
+    # Reads the image only: without GHCR_PULL_TOKEN this run's own token is what Railway pulls it with.
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 35
     env:
@@ -366,6 +379,11 @@ jobs:
   production:
     needs: [gate, image]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'production' }}
+    # Reads the image only, as the rehearsal does.
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:

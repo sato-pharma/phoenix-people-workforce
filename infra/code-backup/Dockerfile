@@ -1,9 +1,14 @@
-# The nightly code backup: a one-shot job. Railway starts it on its schedule and it exits when done.
-FROM alpine:3.20
+# The nightly backups, code then database: a one-shot job. Railway starts it on its schedule and it exits when done.
+# Alpine 3.21 because it is the first to carry the PostgreSQL 17 client: pg_dump refuses a server newer than
+# itself, and production is 17. .github/workflows/backup-image.yml builds this image and runs it on a pull request.
+# restore-drill.sh is deliberately NOT copied in: the service that makes the backups holds nothing that reads them.
+FROM alpine:3.21
 
-RUN apk add --no-cache age bash ca-certificates coreutils curl git jq rclone tar
+RUN apk add --no-cache age bash ca-certificates coreutils curl git jq postgresql17-client rclone tar
 
 COPY backup.sh /usr/local/bin/code-backup
-RUN chmod +x /usr/local/bin/code-backup
+COPY db-backup.sh /usr/local/bin/db-backup
+COPY run.sh /usr/local/bin/nightly-backup
+RUN chmod +x /usr/local/bin/code-backup /usr/local/bin/db-backup /usr/local/bin/nightly-backup
 
-CMD ["/usr/local/bin/code-backup"]
+CMD ["/usr/local/bin/nightly-backup"]
