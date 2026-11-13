@@ -47,10 +47,7 @@ export function robotServiceConfigured(value: string | undefined = process.env.P
  * Refused only when the robot service is switched on AND this is not the robot service. With the
  * switch off every process builds as before; on the robot service it always builds.
  */
-export function robotDriverRefusal(env: {
-  PHOENIX_PROCESS_ROLE?: string | undefined;
-  PHOENIX_ROBOT_SERVICE_URL?: string | undefined;
-} = process.env): string | null {
+export function robotDriverRefusal(env: Readonly<Record<string, string | undefined>> = process.env): string | null {
   if (!robotServiceConfigured(env.PHOENIX_ROBOT_SERVICE_URL)) return null;
   const role = resolveProcessRole(env.PHOENIX_PROCESS_ROLE);
   if (role === "robot") return null;
