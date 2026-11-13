@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildPrivateCalendarPdf, buildPrivateCalendarWorkbook } from "@/lib/private-calendar/export";
+import { renderPrivateCalendarPremiumPdf } from "@/lib/private-calendar/premium-pdf";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
@@ -39,7 +41,12 @@ export async function GET(request: Request) {
     const periodLabel = `${year}-${String(month).padStart(2, "0")}`;
 
     if (format === "pdf") {
-      const buffer = await buildPrivateCalendarPdf(workspace, generatedAt);
+      // The calendar as a calendar, in the HR premium identity (owner, 2026-11-13). Chromium renders it;
+      // when no browser can run, the plain table still downloads, so the export never fails for want of one.
+      const buffer = await renderPrivateCalendarPremiumPdf(workspace, generatedAt).catch((error: unknown) => {
+        if (error instanceof ChromiumUnavailableError) return buildPrivateCalendarPdf(workspace, generatedAt);
+        throw error;
+      });
       return new Response(buffer as unknown as BodyInit, {
         headers: {
           ...DOWNLOAD_NO_STORE_HEADERS,

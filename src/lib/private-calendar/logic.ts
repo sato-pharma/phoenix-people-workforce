@@ -874,6 +874,40 @@ export function withoutCorrectedDayFindings(exceptions: PrivateCalendarException
       && corrected.has(`${privateCalendarHrIdKey(exception.employeeHrId)}|${exception.date}`)));
 }
 
+/**
+ * An accepted request's entry is HIDDEN from the calendar when the CRM already records what it claims on that day
+ * (owner, 2026-11-13: "Hide the accepted-request Training entry when a CRM Training record already covers the
+ * day"). Aya's accepted "Training" requests printed a second Training entry beside her CRM's "Other CRM activity:
+ * Training" on each of 7 to 12 November.
+ *
+ * Only the DISPLAY loses it: the caller still hands every correction to `withoutCorrectedDayFindings`, the request
+ * itself stays in the review list as accepted, and the deduction side reads the request, not this entry. Every claim
+ * of the entry must appear, as a whole phrase, in a same-day CRM field-work entry of the same person — an entry
+ * claiming anything the CRM does not show stays.
+ */
+export function withoutCrmCoveredCorrections(
+  corrections: readonly PrivateCalendarItem[],
+  items: ReadonlyArray<Pick<PrivateCalendarItem, "chipLines" | "employeeHrId" | "source" | "startDate" | "title">>,
+): PrivateCalendarItem[] {
+  const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, " ").trim();
+  const crmTextByDay = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.source !== "field_visit" || !item.employeeHrId) continue;
+    const key = `${privateCalendarHrIdKey(item.employeeHrId)}|${item.startDate}`;
+    const text = ` ${normalise([item.title, ...(item.chipLines ?? [])].join(" "))} `;
+    crmTextByDay.set(key, [...(crmTextByDay.get(key) ?? []), text]);
+  }
+  return corrections.filter((correction) => {
+    if (correction.source !== "correction" || !correction.employeeHrId) return true;
+    const crmTexts = crmTextByDay.get(`${privateCalendarHrIdKey(correction.employeeHrId)}|${correction.startDate}`);
+    if (!crmTexts) return true;
+    const claims = correction.title.split(" · ").map(normalise).filter(Boolean);
+    if (claims.length === 0) return true;
+    const covered = claims.every((claim) => crmTexts.some((text) => text.includes(` ${claim} `)));
+    return !covered;
+  });
+}
+
 export function buildPrivateCalendarTeamSummary(input: {
   employees: PrivateCalendarEmployeeOption[];
   exceptions: PrivateCalendarException[];

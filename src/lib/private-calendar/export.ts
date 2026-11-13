@@ -385,6 +385,44 @@ export async function buildPrivateCalendarWorkbook(
 // PDF export
 // ---------------------------------------------------------------------------
 
+const PDF_CELL_FONT_SIZE = 7;
+const PDF_CELL_LINE_HEIGHT = 9;
+const PDF_ROW_MIN_LINES_BEFORE_BREAK = 4;
+
+/**
+ * Splits a cell's text into lines that each fit `maxWidth` (measured by `measure`), breaking at
+ * spaces and, for a single word wider than the cell, inside the word. Nothing is dropped: joined
+ * back together the lines hold every character of the text.
+ */
+export function wrapPdfCellText(text: string, maxWidth: number, measure: (text: string) => number): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return [];
+  const lines: string[] = [];
+  let current = "";
+  const pushWord = (word: string) => {
+    let rest = word;
+    while (measure(rest) > maxWidth && rest.length > 1) {
+      let cut = rest.length - 1;
+      while (cut > 1 && measure(rest.slice(0, cut)) > maxWidth) cut -= 1;
+      lines.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    current = rest;
+  };
+  for (const word of clean.split(" ")) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measure(candidate) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = "";
+    pushWord(word);
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 export async function buildPrivateCalendarPdf(
   workspace: PrivateCalendarWorkspace,
   generatedAt: Date = new Date(),
@@ -445,13 +483,9 @@ export async function buildPrivateCalendarPdf(
   }
 
   let { page, y } = addPage();
+  const pageTop = y; // where the first row of every page starts
 
   for (const dayRow of rows) {
-    if (y < margin + rowH * 2) {
-      const next = addPage();
-      page = next.page;
-      y = next.y;
-    }
     const cols = multiEmployee
       ? [
           formatDayDate(dayRow.date),
@@ -469,16 +503,46 @@ export async function buildPrivateCalendarPdf(
       : dayRow.severity === "success" ? rgb(0.929, 0.992, 0.965)
       : dayRow.severity === "neutral" ? rgb(0.973, 0.980, 0.988)
       : rgb(0.941, 0.973, 1);
-    page.drawRectangle({ x: margin, y: y - rowH + 2, width: pageW - margin * 2, height: rowH, color: bgColor });
-    let x = margin;
-    cols.forEach((val, i) => {
-      const maxW = colWidths[i] - 6;
-      const text = asciiSafe(val);
-      const truncated = text.length > 0 ? text.slice(0, Math.floor(maxW / 4.5)) : "";
-      page.drawText(truncated, { x: x + 3, y: y - rowH + 5, size: 7, font, color: rgb(0.2, 0.25, 0.33) });
-      x += colWidths[i];
-    });
-    y -= rowH;
+    // Every cell WRAPS onto as many lines as it needs and the row grows to the tallest cell — a
+    // cell is never cut off. It used to keep the first maxW/4.5 characters, which printed
+    // "Admin-verified cor" and "Verified | perfo" on every accepted training day.
+    const cellLines = cols.map((val, i) => wrapPdfCellText(asciiSafe(val), colWidths[i] - 6, (t) => font.widthOfTextAtSize(t, PDF_CELL_FONT_SIZE)));
+    const lineCount = Math.max(1, ...cellLines.map((lines) => lines.length));
+    const linesThatFit = (top: number) => Math.floor((top - margin - rowH) / PDF_CELL_LINE_HEIGHT) + 1;
+    // A short row that does not fit what is left of this page starts on a new one. A tall row (a
+    // day of many visits) starts here and carries on over the next page, so it never leaves most
+    // of a page empty and never runs off the bottom.
+    if (linesThatFit(y) < Math.min(lineCount, PDF_ROW_MIN_LINES_BEFORE_BREAK) && y < pageTop) {
+      const next = addPage();
+      page = next.page;
+      y = next.y;
+    }
+    let firstLine = 0;
+    while (firstLine < lineCount) {
+      if (firstLine > 0) {
+        const next = addPage();
+        page = next.page;
+        y = next.y;
+      }
+      const take = Math.max(1, Math.min(lineCount - firstLine, linesThatFit(y)));
+      const segmentH = rowH + (take - 1) * PDF_CELL_LINE_HEIGHT;
+      page.drawRectangle({ x: margin, y: y - segmentH + 2, width: pageW - margin * 2, height: segmentH, color: bgColor });
+      let x = margin;
+      cellLines.forEach((lines, i) => {
+        lines.slice(firstLine, firstLine + take).forEach((line, lineIndex) => {
+          page.drawText(line, {
+            x: x + 3,
+            y: y - rowH + 5 - lineIndex * PDF_CELL_LINE_HEIGHT,
+            size: PDF_CELL_FONT_SIZE,
+            font,
+            color: rgb(0.2, 0.25, 0.33),
+          });
+        });
+        x += colWidths[i];
+      });
+      y -= segmentH;
+      firstLine += take;
+    }
   }
 
   return doc.save();
