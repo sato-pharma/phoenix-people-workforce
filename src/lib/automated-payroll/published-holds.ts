@@ -76,14 +76,13 @@ export function parsePublishedHoldDetail(detail: unknown): PublishedHoldRecord {
   return { heldExcluded: heldExcluded ?? held.length, held };
 }
 
-function isMissingTableError(error: unknown): boolean {
-  const code = (error as { code?: string } | null)?.code;
-  return code === "42P01" || code === "PGRST205";
-}
-
 /**
  * The newest `published` audit row's hold record for a run. A retried publish writes a second row, and
  * the newest one stands (the same rule `loadHeldBalances` applies).
+ *
+ * A failed read throws, a missing table included, and so does a PUBLISHED run with no record (enterprise
+ * audit 2026-11-13, F-PAY-002): answering "nobody was held" for it would print a filing note and a
+ * reconciliation that leave the held people out. A run not yet published has no record by design.
  */
 export async function readPublishedHoldRecord(runId: string): Promise<PublishedHoldRecord> {
   const { data, error } = await getSupabaseAdmin()
@@ -93,12 +92,23 @@ export async function readPublishedHoldRecord(runId: string): Promise<PublishedH
     .eq("action", "published")
     .order("created_at", { ascending: false })
     .limit(1);
-  if (error) {
-    if (isMissingTableError(error)) return NO_RECORD;
-    throw error;
-  }
+  if (error) throw error;
   const row = ((data ?? []) as Array<{ detail?: unknown }>)[0];
-  return row ? parsePublishedHoldDetail(row.detail) : NO_RECORD;
+  if (row) return parsePublishedHoldDetail(row.detail);
+
+  const { data: run, error: runError } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("phase")
+    .eq("id", runId)
+    .maybeSingle();
+  if (runError) throw runError;
+  if ((run as { phase?: string } | null)?.phase === "published") {
+    throw new Error(
+      "This payroll run is published but its record of who was held is missing, so the held people cannot be " +
+        "shown. Nothing is listed rather than a list that leaves them out. Report this to the payroll owner.",
+    );
+  }
+  return NO_RECORD;
 }
 
 /**

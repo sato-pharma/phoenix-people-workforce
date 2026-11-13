@@ -438,7 +438,7 @@ export async function loadHeldBalances(options?: {
   entered?: EnteredHeld[];
 }): Promise<HeldBalance[]> {
   const published = await newestPublishedDetailByRun();
-  if (!published || published.size === 0) return [];
+  if (published.size === 0) return [];
   const runIds = [...published.keys()];
   const runsById = await runPeriodsById(runIds);
 
@@ -470,27 +470,65 @@ export async function loadHeldBalances(options?: {
 }
 
 /**
- * Each published run's NEWEST `published` audit detail, keyed by run id. Null when the audit table is
- * missing in this environment. A run can legitimately have more than one `published` audit row (an
- * interrupted publish that was retried); read newest first, so the first one seen is the one that stands.
+ * Each published run's NEWEST `published` audit detail, keyed by run id. A run can legitimately have more
+ * than one `published` audit row (an interrupted publish that was retried); read newest first, so the
+ * first one seen is the one that stands.
+ *
+ * THIS IS THE HELD-SALARY LEDGER, SO IT NEVER READS AS EMPTY BY ACCIDENT (enterprise audit 2026-11-13,
+ * F-PAY-002). A missing table throws instead of answering "nobody is held", and a published run with no
+ * `published` row throws, naming the month: leaving that run out would drop its held people from every
+ * release offer with nothing on screen saying so. Publish now writes the row in the same database call
+ * as its phase (markRunPublished), so this can only fire on a record lost some other way.
  */
-async function newestPublishedDetailByRun(): Promise<Map<string, PublishedHoldDetail> | null> {
+async function newestPublishedDetailByRun(): Promise<Map<string, PublishedHoldDetail>> {
   const { data, error } = await getSupabaseAdmin()
     .from("automated_payroll_audit")
     .select("run_id,detail,created_at")
     .eq("action", "published")
     .order("created_at", { ascending: false });
-  if (error) {
-    if (isMissingTableError(error)) return null;
-    throw error;
-  }
+  if (error) throw error;
   const byRun = new Map<string, PublishedHoldDetail>();
   for (const row of (data ?? []) as Row[]) {
     const runId = String(row.run_id ?? "");
     if (!runId || byRun.has(runId)) continue;
     byRun.set(runId, (row.detail ?? {}) as PublishedHoldDetail);
   }
+  assertEveryPublishedRunRecorded(await publishedRunPeriods(), byRun);
   return byRun;
+}
+
+/** Every published run, with its month. A failed read throws. */
+async function publishedRunPeriods(): Promise<Array<{ id: string; month: number; year: number }>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("id,month,year")
+    .eq("phase", "published");
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map((row) => ({
+    id: String(row.id ?? ""),
+    month: Number(row.month ?? 0),
+    year: Number(row.year ?? 0),
+  }));
+}
+
+/**
+ * Refuses when a published run has no `published` record. Pure, so a test can hand it the two lists.
+ * The words say what is missing and that nothing is shown on purpose — an error, never an empty list.
+ */
+export function assertEveryPublishedRunRecorded(
+  publishedRuns: ReadonlyArray<{ id: string; month: number; year: number }>,
+  recordedRunIds: { has(runId: string): boolean },
+): void {
+  const missing = publishedRuns.filter((run) => run.id && !recordedRunIds.has(run.id));
+  if (missing.length === 0) return;
+  const months = missing
+    .map((run) => monthNameAndYear(run.month, run.year))
+    .join(", ");
+  throw new Error(
+    `Held salary cannot be shown: the payroll for ${months} is published but its record of who was held is ` +
+      "missing. Nothing is listed rather than a list that silently leaves those people out. Report this to " +
+      "the payroll owner; no amount has been changed.",
+  );
 }
 
 /**
@@ -985,7 +1023,6 @@ export async function heldMonthsWithoutRoster(currentRunId: string): Promise<Hel
   const current = (await runPeriodsById([currentRunId])).get(currentRunId);
   if (!current) throw new Error("Not found: that payroll run.");
   const published = await newestPublishedDetailByRun();
-  if (!published) return [];
   const countOnly = [...published.entries()]
     .filter(([runId, detail]) => runId !== currentRunId && !Array.isArray(detail.held))
     .map(([runId]) => runId);

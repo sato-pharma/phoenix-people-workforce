@@ -415,7 +415,7 @@ export function runAutomatedPayrollHeldReleaseTests() {
   assert.ok(/recordHeldReleases\(/.test(publish), `${path}: publish must record the release`);
   assert.match(record.slice(0, 300), /releases: heldReleasesOf\(rows\)/, `${path}: from the rows actually published`);
   assert.ok(
-    publish.indexOf("recordHeldReleases(") < publish.indexOf('phase: "published"'),
+    publish.indexOf("recordHeldReleases(") < publish.indexOf("await markRunPublished("),
     `${path}: the release is recorded before the run is marked published, inside the claim`,
   );
   assert.match(

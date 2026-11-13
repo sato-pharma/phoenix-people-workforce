@@ -140,6 +140,7 @@ import {
   listDraftRows,
   listLatestCellWrites,
   listStepStates,
+  markRunPublished,
   updateRun,
   upsertDraftRows,
   upsertStepState,
@@ -2896,9 +2897,49 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       releases: heldReleasesOf(rows),
     });
 
-    const updated = await updateRun(
+    // THE PHASE WRITE AND THE HELD RECORD ARE ONE DATABASE CALL (F-PAY-002): the `published` audit row
+    // is the only ledger of who was held and what they are owed, so the run is marked published only
+    // together with it. A failure here leaves the run in `ready`; the retry finds its own batch and
+    // finishes. See markRunPublished.
+    const updated = await markRunPublished(
       runId,
-      { phase: "published", publishedBatchId: batchId, publishedAt: nowIso(), publishedBy: actorId(access) },
+      {
+        batchId,
+        publishedBy: actorId(access),
+        action: "published",
+        detail: {
+          batchId,
+          publishedCount: publishRows.length,
+          heldExcluded,
+          carryForwardRecovered,
+          // Earlier months' held salary this month paid, by person and held month.
+          heldReleased,
+          // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
+          totalsComparedToConfirm: !predatesStamp,
+          // A leftover batch replaced, or a create or rewrite that wrote the batch and then threw (S-PAY-09, F-18).
+          ...batchNotes,
+          // The permanent answer to "who was held this month, for how much, and why".
+          held: heldRecord,
+          heldFirstPartTotal,
+          heldSecondPartTotal,
+          heldWithoutMeaningfulReason,
+          // The other money this month withheld and still owes (held-settlements.ts reads all three lists).
+          part1Unpaid,
+          deferred,
+          // The permanent answer to "did the bank files carry everybody".
+          bankCoverage: bankCoverage.map((entry) => ({
+            scope: entry.scope,
+            covered: entry.covered,
+            fabRows: entry.fab.rows,
+            fabTotal: entry.fab.total,
+            cibRows: entry.cib.rows,
+            cibTotal: entry.cib.total,
+            unroutable: entry.unroutable,
+            unroutableTotal: entry.unroutableTotal,
+            summary: describeBankCoverage(entry),
+          })),
+        },
+      },
       { transitionToken: transition },
     );
     return { batchId, carryForwardRecovered, heldReleased, updated };
@@ -2940,48 +2981,21 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // It cannot throw, and it reports what happened so a month that told nobody reads as one.
   const payslipNotice = await notifyPayslipAvailable({ batchId });
 
+  // What happened AFTER the month became final — who was told, which trips were marked paid. Nothing is
+  // rebuilt from this row, so it stays best-effort: the money record was written with the phase above.
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
-    action: "published",
+    action: "published_follow_up",
     detail: {
       batchId,
-      publishedCount: publishRows.length,
-      heldExcluded,
       // Who was actually told. `payslipNoticeFailed` above zero, or an error, means people hold a
       // payslip nobody announced — recoverable, but only if it is visible.
       payslipNoticeSent: payslipNotice.notified,
       payslipNoticeFailed: payslipNotice.failed,
       payslipNoticeError: payslipNotice.error,
-      carryForwardRecovered,
-      // Earlier months' held salary this month paid, by person and held month.
-      heldReleased,
       // Which outstation trips this month paid, or why marking them failed.
       expenseStamp,
-      // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
-      totalsComparedToConfirm: !predatesStamp,
-      // A leftover batch replaced, or a create or rewrite that wrote the batch and then threw (S-PAY-09, F-18).
-      ...batchNotes,
-      // The permanent answer to "who was held this month, for how much, and why".
-      held: heldRecord,
-      heldFirstPartTotal,
-      heldSecondPartTotal,
-      heldWithoutMeaningfulReason,
-      // The other money this month withheld and still owes (held-settlements.ts reads all three lists).
-      part1Unpaid,
-      deferred,
-      // The permanent answer to "did the bank files carry everybody".
-      bankCoverage: bankCoverage.map((entry) => ({
-        scope: entry.scope,
-        covered: entry.covered,
-        fabRows: entry.fab.rows,
-        fabTotal: entry.fab.total,
-        cibRows: entry.cib.rows,
-        cibTotal: entry.cib.total,
-        unroutable: entry.unroutable,
-        unroutableTotal: entry.unroutableTotal,
-        summary: describeBankCoverage(entry),
-      })),
     },
   });
   await notifyPublished(updated);

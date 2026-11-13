@@ -52,7 +52,7 @@ function bounded(source: string, start: string): string {
   assert.ok(at >= 0, `could not find ${start}`);
   const end = source.indexOf("\nexport ", at + start.length);
   const body = source.slice(at, end > 0 ? end : undefined);
-  assert.ok(body.length > 200 && body.length < 20000, `${start} slice must stay bounded (${body.length})`);
+  assert.ok(body.length > 200 && body.length < 23000, `${start} slice must stay bounded (${body.length})`);
   return body;
 }
 
