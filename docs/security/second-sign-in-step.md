@@ -33,6 +33,9 @@ System Administrator account (no passkey, no person behind it).
 5. **The profile's Devices tab** has a "Second sign-in step" card: set it up without signing out (it asks
    the password first), make ten new recovery codes, forget the remembered browsers, reset it, or reset the
    other Super Admin account.
+6. **Adding a passkey asks the password.** On the "Biometric sign-in" card beside it, "Set up on this
+   device" asks the account's current password before the device is asked for its fingerprint, face or PIN.
+   The same card lists every passkey on the account, with when it was added and last used, and removes one.
 
 Nobody else sees anything: every other role signs in exactly as before.
 
@@ -105,7 +108,14 @@ temporary password, when the account resets its second step, and from the card's
 In order, whichever is to hand:
 
 1. **A recovery code**, typed where the 6-digit code is asked.
-2. **A passkey.** It signs in without the step; then Profile, Devices, "Reset" on the card.
+2. **A passkey.** It signs in without the step; then Profile, Devices, "Move to a new phone" on the card.
+
+**A reset never removes a passkey**, by decision (14 Nov 2026): this path is "sign in with a passkey, then
+reset", and a reset that took the passkeys would take the way back in with them. Instead the reset says to
+check the "Biometric sign-in" card directly beside it, which already lists every passkey on the account
+with when it was added and last used, and removes any that is not recognised. No second list was added. A
+reset of the other Super Admin account leaves that account's passkeys too: only that account sees them,
+on its own profile. Switching an account off removes all its passkeys, as before.
 3. **The other Super Admin** resets the account from their own card. It asks their password and writes an
    audit row naming both accounts.
 4. **Break-glass, if both Super Admin accounts are locked out:** delete the account's row from
@@ -169,8 +179,15 @@ What is left, and known:
   password chooses the phone.** The step protects an account from the moment it is set up, not from the
   moment this shipped. Set both Super Admin accounts up as soon as it is live. The Phoenix System
   Administrator account has no person and no passkey: somebody must set it up, or it should be switched off.
-- **Adding a passkey asks only for a live session** (as it did before this change), and a passkey counts as
-  both steps. A stolen session can therefore add a passkey that outlives a reset of the second step.
+- **Adding a passkey asked only for a live session**, and a passkey counts as both steps, so a stolen
+  session could add a passkey that outlived a reset of the second step and a password change. **Closed 14
+  Nov 2026:** for an account the step is asked of, `app/api/auth/biometric/register/options/route.ts` asks
+  the account's current password (`checkPasskeyAddPassword`, `second-step-management.ts`) after the session
+  and the rate limit and before any challenge exists: none sent answers 403 `password_required`, a wrong one
+  403 `wrong_password` with an audit row. The role is the account's own, from its session, read the way
+  sign-in reads it. The verify route asks nothing more: only the options route makes a registration
+  challenge, and a challenge is used once and only by the login it was made for. Every other role adds a
+  passkey with a live session, as before. A passkey added before this shipped stays: check the list.
 - **Wrong codes are capped only by the sign-in lock** (10 in 15 minutes, then 30 minutes): about 480
   guesses a day for somebody who already has the password, each with about 3 chances in a million.
 - **Two hand-run scripts sign in as a Super Admin with a password** and will now be answered 403:
@@ -186,5 +203,10 @@ What is left, and known:
   with a refusal; a half-made set-up undone.
 - `tests/leaked-password.test.ts`: what leaves; padded lines; an unreachable service; both doors asking
   before anything is written.
+- `tests/passkey-add-asks-password.test.ts`: who is asked and the three answers; the options route asking
+  after the session and before any challenge, from the session's own role, with an audit row; only that
+  route making a registration challenge; the card sending and asking for the password, square-edged; a
+  reset leaving every passkey; the card saying where to check them.
 
-Each was checked by breaking the fix and watching its own assertion fail (28 breaks, 13 Nov 2026).
+Each was checked by breaking the fix and watching its own assertion fail (28 breaks, 13 Nov 2026; 19 more
+for adding a passkey, 14 Nov 2026).

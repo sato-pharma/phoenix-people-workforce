@@ -1580,6 +1580,10 @@ export const MODULES = [
       "src/components/auth/second-step-card.tsx",
       "app/api/auth/second-step/**",
       "tests/second-sign-in-step*",
+      // Adding a passkey asks a Super Admin's password (2026-11-14): the second step's rule binds it.
+      "app/api/auth/biometric/register/**",
+      "src/components/auth/biometric-devices-card.tsx",
+      "tests/passkey-add-asks-password*",
       "src/lib/session-pulse-store.ts",
       "src/components/auth/session-security-guard.tsx",
       "app/api/auth/{pulse,heartbeat,login,logout}/**",
