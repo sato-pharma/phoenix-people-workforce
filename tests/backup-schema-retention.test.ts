@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   EXEMPT_SCHEMAS,
@@ -12,8 +14,10 @@ import {
   classifyTable,
   datesIn,
   isSnapshotTableName,
+  readDecisions,
   snapshotDateOf,
 } from "../scripts/audit-backup-schemas.mjs";
+import { csvField, toCsv } from "../scripts/export-backup-schema.mjs";
 
 /**
  * scripts/audit-backup-schemas.mjs decides which ad-hoc backup schemas have outlived their
@@ -30,6 +34,13 @@ import {
  */
 export function runBackupSchemaRetentionTests() {
   const TODAY = "2026-09-29";
+
+  // Since REC-040 (2026-11-13) age alone never makes a schema droppable: the owner's recorded
+  // decision does. The age and dependency rules below are asserted WITH a "drop" decision in hand,
+  // so EXPIRED still means "the age rule let it through"; the decision rules have their own section.
+  const drop = (schema: string) => ({
+    [schema]: { decision: "drop" as const, decidedOn: "2026-11-13", decidedBy: "owner", why: "test" },
+  });
 
   // ---------------------------------------------------------------- date extraction
 
@@ -86,7 +97,7 @@ export function runBackupSchemaRetentionTests() {
   // Negative control: the identical entry with the blocker removed MUST expire. If this does not
   // flip, the assertion above is proving nothing.
   assert.equal(
-    classify({ ...pinned, blockers: [] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    classify({ ...pinned, blockers: [] }, { today: "2031-01-01", retentionDays: 1, decisions: drop(pinned.schema) }).verdict,
     VERDICT.EXPIRED,
     "without the foreign key the same schema expires — so the check above is load-bearing",
   );
@@ -105,7 +116,7 @@ export function runBackupSchemaRetentionTests() {
   // Negative control: an unlisted sibling of the same vintage DOES expire, so the exemption is
   // doing the work and not some accident of the name.
   assert.equal(
-    classify({ schema: "hr_backup_20260830", tables: [], blockers: [] }, { today: TODAY, retentionDays: 1 }).verdict,
+    classify({ schema: "hr_backup_20260830", tables: [], blockers: [] }, { today: TODAY, retentionDays: 1, decisions: drop("hr_backup_20260830") }).verdict,
     VERDICT.EXPIRED,
     "an unlisted schema of the same shape expires — the exemption list is what holds the others",
   );
@@ -124,14 +135,16 @@ export function runBackupSchemaRetentionTests() {
 
   // Negative control: give the same schema a dated table and it becomes ageable.
   assert.equal(
-    classify({ ...undated, tables: ["deleted_employee_plans_20260101"] }, { today: "2031-01-01", retentionDays: 1 }).verdict,
+    classify({ ...undated, tables: ["deleted_employee_plans_20260101"] }, { today: "2031-01-01", retentionDays: 1, decisions: drop(undated.schema) }).verdict,
     VERDICT.EXPIRED,
   );
 
   // ---------------------------------------------------------------- the window boundary
 
-  const at = (date: string, retentionDays: number) =>
-    classify({ schema: `x_backup_${date.split("-").join("")}`, tables: [], blockers: [] }, { today: TODAY, retentionDays });
+  const at = (date: string, retentionDays: number) => {
+    const schema = `x_backup_${date.split("-").join("")}`;
+    return classify({ schema, tables: [], blockers: [] }, { today: TODAY, retentionDays, decisions: drop(schema) });
+  };
 
   assert.equal(at("2026-08-31", 30).verdict, VERDICT.YOUNG, "29 days old under a 30-day retention");
   assert.equal(at("2026-08-31", 30).ageDays, 29);
@@ -143,6 +156,127 @@ export function runBackupSchemaRetentionTests() {
   assert.equal(at("2027-01-01", 30).verdict, VERDICT.YOUNG);
 
   assert.equal(RETENTION_DAYS, 90, "the default is deliberately generous — see docs/security/backup-schema-retention.md");
+
+  // ------------------------------------------------- every expired schema needs his decision
+  //
+  // 🔴 REC-040 (enterprise audit 2026-11-13). Until then a schema past 90 days printed a drop
+  // statement on age alone. Now nothing past retention is offered for dropping until the owner has
+  // a recorded decision for THAT schema in scripts/backup-schema-decisions.json.
+
+  const old = { schema: "x_backup_20260101", tables: [], blockers: [] };
+  const LATER = { today: "2026-11-13", retentionDays: 90 };
+
+  assert.equal(
+    classify(old, LATER).verdict,
+    VERDICT.UNDECIDED,
+    "PAST RETENTION WITH NO DECISION IS UNDECIDED, NEVER EXPIRED — age alone drops nothing",
+  );
+  // Negative control: the same schema with his "drop" recorded does expire.
+  assert.equal(classify(old, { ...LATER, decisions: drop(old.schema) }).verdict, VERDICT.EXPIRED);
+  // A decision for a DIFFERENT schema decides nothing here.
+  assert.equal(classify(old, { ...LATER, decisions: drop("x_backup_20260102") }).verdict, VERDICT.UNDECIDED);
+
+  const exportThenDrop = {
+    [old.schema]: { decision: "export-then-drop" as const, decidedOn: "2026-11-13", decidedBy: "owner", why: "test" },
+  };
+  const exported = classify(old, { ...LATER, decisions: exportThenDrop });
+  assert.equal(exported.verdict, VERDICT.EXPIRED, "export-then-drop is a decision that it goes");
+  assert.equal(
+    exported.decision?.decision,
+    "export-then-drop",
+    "the decision travels with the verdict — the drop step needs it to demand the export first",
+  );
+
+  // A decision never beats a live dependency: drop recorded, foreign key still there, it stays.
+  assert.equal(
+    classify({ ...old, blockers: ["foreign key x points into it"] }, { ...LATER, decisions: drop(old.schema) }).verdict,
+    VERDICT.PINNED,
+    "A RECORDED DROP MUST NOT BEAT A LIVE DEPENDENCY",
+  );
+
+  // Inside the window a decision changes nothing but the note.
+  const youngDecided = classify({ ...old, schema: "x_backup_20261101" }, { ...LATER, decisions: drop("x_backup_20261101") });
+  assert.equal(youngDecided.verdict, VERDICT.YOUNG, "a decision never drops a schema before its 90 days");
+  assert.match(youngDecided.reason, /owner decided drop on 2026-11-13/);
+
+  // Keep — for good, or until a date, after which it is put to him again.
+  const keep = (until?: string) => ({
+    [old.schema]: { decision: "keep" as const, until, decidedOn: "2026-11-13", decidedBy: "owner", why: "test" },
+  });
+  assert.equal(
+    classify(old, { today: "2031-01-01", retentionDays: 1, decisions: keep() }).verdict,
+    VERDICT.PROTECTED,
+    "keep with no date is for good",
+  );
+  assert.equal(
+    classify(old, { ...LATER, today: "2026-11-30", decisions: keep("2026-12-01") }).verdict,
+    VERDICT.PROTECTED,
+    "kept until 1 Dec, read on 30 Nov",
+  );
+  assert.equal(
+    classify(old, { ...LATER, today: "2026-12-01", decisions: keep("2026-12-01") }).verdict,
+    VERDICT.UNDECIDED,
+    "A KEEP THAT RUNS OUT GOES BACK TO HIM — never straight to a drop",
+  );
+
+  // The decisions file: every entry must name what was decided, when, by whom and why.
+  const dir = mkdtempSync(path.join(tmpdir(), "backup-decisions-"));
+  try {
+    const write = (decisions: unknown) => {
+      const file = path.join(dir, "decisions.json");
+      writeFileSync(file, JSON.stringify({ decisions }), "utf8");
+      return file;
+    };
+    const good = { decision: "drop", decidedOn: "2026-11-13", decidedBy: "owner", why: "test" };
+    assert.deepEqual(Object.keys(readDecisions(write({ x_backup_20260101: good }))), ["x_backup_20260101"]);
+    assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, decision: "archive" } })), /use drop, export-then-drop or keep/);
+    assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, why: "" } })), /needs decidedOn/);
+    assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, decidedOn: "13 Nov" } })), /needs decidedOn/);
+    assert.throws(() => readDecisions(write({ x_backup_20260101: { ...good, decidedBy: undefined } })), /needs decidedOn/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // The real file parses, and every schema in it is dated — an undated name could never reach it.
+  for (const [schema, entry] of Object.entries(readDecisions())) {
+    assert.ok(datesIn(schema).length > 0, `${schema} is in the decisions file but carries no date`);
+    assert.ok(entry.decidedBy, `${schema}: decidedBy`);
+  }
+
+  // ------------------------------------------------- export, then drop
+  //
+  // His "export, then drop" means the file copy exists BEFORE any drop statement is printed.
+
+  const auditSource = readFileSync(new URL("../scripts/audit-backup-schemas.mjs", import.meta.url), "utf8");
+  assert.match(
+    auditSource,
+    /decision === "export-then-drop" && !existsSync\(manifest\)\) \{[\s\S]{0,300}?continue;/,
+    "an export-then-drop schema must get NO drop statement until its export manifest is on disk",
+  );
+
+  const exportSource = readFileSync(new URL("../scripts/export-backup-schema.mjs", import.meta.url), "utf8");
+  const exportQueries: string[] = [];
+  const exportTemplates = /sql`([^`]*)`/g;
+  let exportMatch: RegExpExecArray | null;
+  while ((exportMatch = exportTemplates.exec(exportSource)) !== null) exportQueries.push(exportMatch[1]);
+  assert.ok(exportQueries.length >= 3, `expected the export's queries, found ${exportQueries.length}`);
+  for (const q of exportQueries) {
+    assert.ok(!/\b(drop|delete|update|insert|truncate|alter)\b/i.test(q), `the export only reads: ${q.slice(0, 80)}`);
+  }
+  assert.match(exportSource, /decision\?\.decision !== "export-then-drop"/, "only a schema he decided export-then-drop is exported");
+
+  // CSV fields: what the file holds must read back as what the table held.
+  assert.equal(csvField(null), "", "null is an empty field");
+  assert.equal(csvField(undefined), "");
+  assert.equal(csvField(0), "0", "zero is not empty");
+  assert.equal(csvField(false), "false");
+  assert.equal(csvField("plain"), "plain");
+  assert.equal(csvField("a,b"), '"a,b"');
+  assert.equal(csvField('say "hi"'), '"say ""hi"""');
+  assert.equal(csvField("two\nlines"), '"two\nlines"');
+  assert.equal(csvField({ a: 1 }), '"{""a"":1}"', "an object is its JSON, quoted");
+  assert.equal(csvField(new Date("2026-11-13T14:00:00Z")), "2026-11-13T14:00:00.000Z");
+  assert.equal(toCsv(["id", "name"], [{ id: 1, name: "x,y" }, { id: 2, name: null }]), 'id,name\r\n1,"x,y"\r\n2,\r\n');
 
   // ------------------------------------------------- snapshot TABLES in the standard schemas
   //
