@@ -1008,7 +1008,8 @@ What it does, and each limit is deliberate:
 - **Only on the day the run was missed, and only before 12:00 Cairo** (`latestCairoMinutes`).
 - **Production only, and only with `CRON_SECRET`.** The sweep starts the route on this server over
   loopback (`127.0.0.1:$PORT`, the server binds `0.0.0.0`) with the shared secret, inside `after()`, so
-  the 60-second sweep does not wait for a job that takes minutes.
+  the 60-second sweep does not wait for a job that takes minutes. Since 13 Nov 2026 it adds `?wait=1`,
+  because both routes now answer the scheduler 202 at once (the next section).
 
 What a re-fire does **not** heal, from that audit: a claim left `pending` by the killed send (it is closed
 by the orphan rule above, and that one message is lost, not resent); the Vacation SLA step writes two
@@ -1020,6 +1021,68 @@ message. The weekly steps are no-ops on any other day than their own.
 Pinned by `tests/job-heartbeat-register.test.ts`: the decision (same day, cut-off, no policy), the claim
 (once, fail closed, a failing trigger never throws) and the wiring (the stranded list only, after the
 alert, through `after()`).
+
+### Four routes answer the scheduler at once (13 November 2026)
+
+cron-job.org hangs up after 30 seconds, and that cap cannot be raised: a job "set to 300 s" is still cut
+at 30. The integration audit read the scheduler's own history on 13 Nov 2026 (finding ISS-002):
+
+| Job | What the scheduler recorded |
+|---|---|
+| `phoenix-notify-daily` | `timeout` at 30,141 ms |
+| `phoenix-reconciliation-check` | `timeout` at 30,155 ms |
+| `phoenix-mailbox-offboarding-sweep` | `timeout` at 30,172 ms |
+| the weekly Private Calendar notice | finished at 28,987 ms |
+
+No work was lost. The server is long-lived and finishes a request whose caller has gone, and each job's
+heartbeat still arrived. What was wrong is the scheduler's record: a failure every day for work that had
+succeeded, which hides a real failure among the false ones, and its terms switch a job off after more
+than 25 failures in a row. That would have stopped the daily notification run with nothing red anywhere.
+
+`answerNowThenFinish` (`src/lib/http/answer-now.ts`) is the change. Each of the four routes checks the
+cron secret, answers **202** at once, and runs the same code as before inside Next's `after()`.
+
+- **The verdict is the heartbeat, never the route's status.** 202 says "started". All four already report
+  success or failure to the heartbeat on every path out, and the 15-minute sweep alarms on a job that
+  never reported. Use the helper only on a route of which that is true.
+- **`?wait=1` is the old behaviour, whole:** the run is awaited and its own body and status come back. A
+  person running a job by hand uses it to read the report.
+- **The stranded-job re-fire uses `?wait=1`.** `fireCronRouteOnLoopback` reads the status to say whether
+  the re-fire worked, and a 202 would read as success whatever the run then did. Loopback has no
+  30-second cap.
+- **No scheduler change was needed.** The same URLs, the same times.
+- A deploy that replaces the container mid-run still kills the run, as it did before. The start signal
+  and the re-fire above are what cover that.
+
+Nine other jobs were measured within reach of the cap (two sheet-token rotations at 16.1 s among them).
+They are left as they are: none has timed out, and each one moved is one more route whose HTTP status
+stops meaning anything.
+
+Pinned by `tests/cron-answer-now.test.ts`: the answer leaves before the run starts and the run happens
+once; `wait=1` returns the run's own response; the secret is checked before the answer; each route still
+reports to its heartbeat; the re-fire's URL ends in `?wait=1`.
+
+### The punch-feed alarm also reaches Telegram (13 November 2026)
+
+`runAttendanceIngestionAlert` (`src/lib/attendance/ingestion-health.ts`) rides the five-minute notification
+pass and notices a whole working day, weekend and holiday aware, on which no fingerprint punch was stored.
+It told the Super Admin in-app and by push, which only someone with Phoenix open reads (audit finding
+ISS-034). It now also sends one Telegram message per person per Cairo day
+(`src/lib/attendance/punch-feed-stalled-telegram.ts`, event `attendance_punch_feed_stalled`).
+
+- **A separate send, not one more channel on the old notice.** Telegram is governed per module and is
+  switched on for `system`; on module `attendance` the message would be dropped with nothing red.
+- **The same audience and the same switch** (`attendance_ingestion_alert` in Notification Recipients):
+  switching the alarm off silences both halves.
+- **Never email.** The event is in `operator-watch-channel-guard.ts`, so a failed Telegram send is not
+  re-sent as an email. The in-app half has held that rule since 2026-08-08.
+- **Still a day-level alarm, on purpose.** Over the four weeks before the change the first sync of a
+  working day arrived anywhere between 10:12 and 16:17 Cairo, so a same-day alarm would fire on normal
+  days.
+- **It does not hold the deduction run.** A day with no punches still reads as absent. Whether to hold
+  deductions while the feed is down is a money decision and is not made by this alarm.
+
+Pinned by `tests/punch-feed-stalled-telegram.test.ts`.
 
 ### The in-house register — `public.job_heartbeats`
 
@@ -1340,6 +1403,19 @@ personnel-record layout had changed) and nobody knew for three and a half days. 
 The "Outstation Expenses export" journey is **always skipped, deliberately**: the export writes a
 record, so it runs only with `SYNTHETIC_ALLOW_MUTATION=true`, which the workflow never sets. That is
 why a fully passing run reads `warning` (amber) on the dashboard rather than `healthy`.
+
+## Error tracking and the edge runtime
+
+Error tracking starts on the **Node runtime only** — `instrumentation.ts` begins with
+`process.env.NEXT_RUNTIME === "nodejs"`, and there is no edge start-up file. That is complete, not a
+gap, for one reason: **nothing in this app runs on the edge runtime.** No route declares it, and
+`proxy.ts` runs on Node.
+
+The integration audit of 13 Nov 2026 (finding ISS-033) asked for an edge start-up or this note.
+`tests/integration-audit-edges.test.ts` keeps the reason true: it reads every file under `app/` and
+`proxy.ts`, and fails if one declares `runtime = "edge"`. A route that needs the edge runtime adds an
+edge start-up for error tracking in the same change; until then an error thrown there would be
+reported nowhere.
 
 ## Railway runtime signals
 

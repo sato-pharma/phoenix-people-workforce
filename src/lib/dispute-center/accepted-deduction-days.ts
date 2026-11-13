@@ -16,10 +16,15 @@
  *   3. the module's own decision still reads "Do Not Take Action" — if HR later put the deduction back,
  *      the calendar must not show the day as verified while payroll charges it.
  *
+ * An accepted dispute on a RELEASED DAILY deduction (owner, 2026-11-13, "Withdraw + never charge") verifies
+ * its days the same way. Its truth is simpler: `daily_deductions_disputes.status` is `accepted` only while
+ * it stands — a granted reopen puts it back to `open` — and the line it argued with is already withdrawn.
+ *
  * Display only, and read best-effort: the calendar reads review requests the same way (a failed read
  * shows none), and nothing here can bring a person into a charge.
  */
 
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -115,7 +120,79 @@ export function selectAcceptedDeductionCorrections(input: {
   return out;
 }
 
-/** Every accepted deduction dispute's days for the people in scope. Best-effort: a failed read shows none. */
+export type AcceptedDailyDisputeCalendarRow = {
+  category: string | null;
+  dates: unknown;
+  decision_note: string | null;
+  employee_hr_id: string | null;
+  employee_name: string | null;
+  id: string;
+  status: string | null;
+};
+
+/** Pure: one calendar correction per day of every ACCEPTED daily-deduction dispute in scope and window. */
+export function selectAcceptedDailyDisputeCorrections(input: {
+  categoryLabel: (category: string) => string;
+  rows: readonly AcceptedDailyDisputeCalendarRow[];
+  scopeHrIds: readonly string[];
+  window: { end: string; start: string };
+}): PrivateCalendarAcceptedCorrection[] {
+  // Compact on both sides: the released line and the calendar's scope may spell the id with or without its hyphen.
+  const scope = new Set(input.scopeHrIds.map((hrId) => compactDeductionsHrId(hrId)).filter(Boolean));
+  const out: PrivateCalendarAcceptedCorrection[] = [];
+  for (const row of input.rows) {
+    if (row.status !== "accepted") continue;
+    const hrKey = compactDeductionsHrId(row.employee_hr_id);
+    if (!hrKey || !scope.has(hrKey)) continue;
+    const dates = Array.isArray(row.dates) ? (row.dates as unknown[]).map((value) => String(value).slice(0, 10)) : [];
+    const label = input.categoryLabel(String(row.category ?? ""));
+    const note = String(row.decision_note ?? "").trim() || null;
+    for (const date of new Set(dates)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < input.window.start || date > input.window.end) continue;
+      out.push({
+        adminDecisionNote: note,
+        claimSourceText: "the employee's daily deduction dispute",
+        claimText: `${label} daily deduction dispute accepted`,
+        disputeDate: date,
+        employeeHrId: String(row.employee_hr_id),
+        employeeName: row.employee_name,
+        id: `daily-deduction-dispute:${row.id}`,
+        itemSource: null,
+        origin: "deduction_dispute",
+        status: "accepted",
+      });
+    }
+  }
+  return out;
+}
+
+async function loadAcceptedDailyDisputeCorrections(input: {
+  categoryLabel: (category: string) => string;
+  end: string;
+  scopeHrIds: readonly string[];
+  start: string;
+}): Promise<PrivateCalendarAcceptedCorrection[]> {
+  try {
+    const rows = await fetchAllRows<AcceptedDailyDisputeCalendarRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("daily_deductions_disputes")
+          .select("id, employee_hr_id, employee_name, category, dates, status, decision_note")
+          .eq("status", "accepted"),
+      "id",
+    );
+    return selectAcceptedDailyDisputeCorrections({
+      categoryLabel: input.categoryLabel,
+      rows,
+      scopeHrIds: input.scopeHrIds,
+      window: { end: input.end, start: input.start },
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Every accepted deduction dispute's days — monthly and daily — for the people in scope. Best-effort. */
 export async function loadAcceptedDeductionCorrections(input: {
   categoryLabel: (category: string) => string;
   end: string;
@@ -123,6 +200,16 @@ export async function loadAcceptedDeductionCorrections(input: {
   start: string;
 }): Promise<PrivateCalendarAcceptedCorrection[]> {
   if (input.scopeHrIds.length === 0) return [];
+  const [monthly, daily] = await Promise.all([loadAcceptedMonthlyDeductionCorrections(input), loadAcceptedDailyDisputeCorrections(input)]);
+  return [...monthly, ...daily];
+}
+
+async function loadAcceptedMonthlyDeductionCorrections(input: {
+  categoryLabel: (category: string) => string;
+  end: string;
+  scopeHrIds: readonly string[];
+  start: string;
+}): Promise<PrivateCalendarAcceptedCorrection[]> {
   try {
     const supabase = getSupabaseAdmin();
     const events = await fetchAllRows<AcceptedDeductionEventRow & { id: string }>(

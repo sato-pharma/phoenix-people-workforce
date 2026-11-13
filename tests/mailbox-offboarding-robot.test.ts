@@ -74,6 +74,7 @@ function task(overrides: Partial<MailboxOffboardingTask> = {}): MailboxOffboardi
     isOverdue: true,
     daysOverdue: 24,
     isHalfRevoked: false,
+    appPasswordsMayBeLive: true,
     isForwardingExpired: false,
     canRecordDisposition: true,
     ...overrides,

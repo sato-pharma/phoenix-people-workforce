@@ -1,9 +1,15 @@
 // Shared AI provider resolution + failover + a single JSON chat helper for the Sales module.
 //
 // The first provider is OpenAI-compatible (/chat/completions). Set ONE of these in the env (no code change):
-//   OPENAI_API_KEY      -> OpenAI       GROQ_API_KEY -> Groq       OPENROUTER_API_KEY -> OpenRouter
-//   AI_API_KEY + AI_BASE_URL -> any other OpenAI-compatible provider
+//   OPENAI_API_KEY      -> OpenAI       GROQ_API_KEY -> Groq
 //   AI_MODEL (or OPENAI_MODEL) -> override the model for whichever of those is active
+//
+// 🔴 THE ADDRESS IS WRITTEN OUT, NEVER READ FROM THE ENVIRONMENT (integration audit, 13 Nov 2026, ISS-041).
+// Until then AI_BASE_URL replaced the address of EVERY leg here, OpenAI's and Groq's included, and two more
+// legs (OPENROUTER_API_KEY, and AI_API_KEY + AI_BASE_URL for "any other provider") existed that no
+// environment had ever set. One variable could send sales rows to any host. Both legs and the override are
+// gone: a sales AI call reaches api.openai.com or api.groq.com (src/lib/ai/provider-hosts.ts) or Anthropic.
+// The names "openrouter" and "generic" stay in the types only because older ai_call rows carry them.
 //
 // ANTHROPIC IS THE SECOND PROVIDER (owner, 2026-10-18, the OpenAI account failed to recharge). The three
 // sales AI paths — this file's aiChatJson, normalizer/ai-suggest.ts and weekly/ai-verify.ts — make their own
@@ -42,12 +48,9 @@ export const DEFAULT_AI_MODELS: AiModelDefaults = {
 };
 
 export function resolveAiProvider(models: AiModelDefaults = DEFAULT_AI_MODELS, env: AiEnv = process.env): AiProvider | null {
-  const baseOverride = env.AI_BASE_URL?.replace(/\/+$/, "");
   const modelOverride = env.AI_MODEL || env.OPENAI_MODEL;
-  if (env.OPENAI_API_KEY) return { baseUrl: baseOverride || "https://api.openai.com/v1", key: env.OPENAI_API_KEY, model: modelOverride || models.openai, name: "openai" };
-  if (env.GROQ_API_KEY) return { baseUrl: baseOverride || "https://api.groq.com/openai/v1", key: env.GROQ_API_KEY, model: modelOverride || models.groq, name: "groq" };
-  if (env.OPENROUTER_API_KEY) return { baseUrl: baseOverride || "https://openrouter.ai/api/v1", key: env.OPENROUTER_API_KEY, model: modelOverride || models.openrouter, name: "openrouter" };
-  if (env.AI_API_KEY && baseOverride) return { baseUrl: baseOverride, key: env.AI_API_KEY, model: modelOverride || models.generic, name: "generic" };
+  if (env.OPENAI_API_KEY) return { baseUrl: "https://api.openai.com/v1", key: env.OPENAI_API_KEY, model: modelOverride || models.openai, name: "openai" };
+  if (env.GROQ_API_KEY) return { baseUrl: "https://api.groq.com/openai/v1", key: env.GROQ_API_KEY, model: modelOverride || models.groq, name: "groq" };
   return null;
 }
 

@@ -91,7 +91,7 @@ export function runWorkflowRegistryEnforcementTests() {
   // deriving the action key from vacationDecisionAction (manager_*/hr_* per step).
   assert.match(vacationService, /const \{ actionKey \} = vacationDecisionAction\(\{/);
   assert.match(vacationService, /getPendingVacationApprovalStepForActor/);
-  assert.match(vacationService, /recordVacationApprovalStepDecision/);
+  assert.match(vacationService, /\.rpc\("phx_apply_vacation_step_decision"/);
 
   const lifecycleWorkflow = source("src/lib/employee-lifecycle/workflow.ts");
   assert.match(lifecycleWorkflow, /resignationWorkflowRegistryModuleKey = "resignations"/);

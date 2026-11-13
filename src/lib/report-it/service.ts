@@ -1,9 +1,12 @@
 import { cache } from "react";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { canAccess } from "@/lib/auth/permissions";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
@@ -39,7 +42,27 @@ export type SubmitReportInput = {
   area?: string | null;
 };
 
+/** The largest report body accepted — a full form with every block filled is a few kilobytes. */
+export const REPORT_IT_MAX_PAYLOAD_BYTES = 200_000;
+
+/**
+ * The shape a report must have before it is stored. A payload with no reaction list or medicine
+ * list used to throw a TypeError deep in `submitReport`; now it is refused at the door, by name.
+ */
+export function reportPayloadRefusal(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "Missing report payload.";
+  const record = payload as Record<string, unknown>;
+  if (!Array.isArray(record.reactions)) return "The report must list the reactions.";
+  if (!Array.isArray(record.medicines)) return "The report must list the medicines.";
+  if (record.reactions.some((item) => !item || typeof item !== "object")) return "A reaction entry is not readable.";
+  if (record.medicines.some((item) => !item || typeof item !== "object")) return "A medicine entry is not readable.";
+  if (JSON.stringify(payload).length > REPORT_IT_MAX_PAYLOAD_BYTES) return "The report is too large.";
+  return null;
+}
+
 export async function submitReport(input: SubmitReportInput): Promise<{ reportNumber: string; id: string }> {
+  const refusal = reportPayloadRefusal(input.payload);
+  if (refusal) throw new Error(`Validation: ${refusal}`);
   const supabase = getSupabaseAdmin();
 
   // Derive searchable summary fields from payload
@@ -111,7 +134,8 @@ export async function listReports(
     .select("*", { count: "exact" });
 
   // Employees without report_it:export see only their own reports
-  if (!(await canViewAllReports(access))) {
+  const readsAll = await canViewAllReports(access);
+  if (!readsAll) {
     if (!access.hrId) return { rows: [], total: 0 };
     query = query.eq("submitted_by_hr_id", access.hrId);
   }
@@ -146,14 +170,41 @@ export async function listReports(
     query = query.ilike("department", `%${opts.department}%`);
   }
 
+  const { limit, offset } = boundedReportPage(opts);
   query = query
     .order("created_at", { ascending: false })
-    .range(opts.offset ?? 0, (opts.offset ?? 0) + (opts.limit ?? 50) - 1);
+    .range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;
   if (error) throw new Error(`Failed to list reports: ${error.message}`);
 
-  return { rows: (data ?? []) as ReportItReportRow[], total: count ?? 0 };
+  const rows = (data ?? []) as ReportItReportRow[];
+  // Every read that shows a report is logged before it is shown — and if the log cannot be
+  // written, nothing is shown. A zero-row read disclosed nothing, so it leaves no row.
+  if (rows.length > 0) {
+    await logReportRead(access, {
+      action: "reports_listed",
+      reportId: rows.length === 1 ? rows[0].id : null,
+      metadata: {
+        count: rows.length,
+        offset,
+        reportNumbers: rows.map((row) => row.report_number),
+        scope: readsAll ? "all" : "own",
+      },
+    });
+  }
+
+  return { rows, total: count ?? 0 };
+}
+
+/** The most rows one list read may return — the dashboard asks for 50. */
+export const REPORT_IT_MAX_PAGE = 100;
+
+/** A page size and start that are whole numbers inside their bounds, whatever the query string said. */
+export function boundedReportPage(opts: { limit?: number; offset?: number }): { limit: number; offset: number } {
+  const limit = Number.isFinite(opts.limit) ? Math.trunc(opts.limit as number) : 50;
+  const offset = Number.isFinite(opts.offset) ? Math.trunc(opts.offset as number) : 0;
+  return { limit: Math.min(Math.max(limit, 1), REPORT_IT_MAX_PAGE), offset: Math.max(offset, 0) };
 }
 
 // ─── Get single report ─────────────────────────────────────────────────────
@@ -166,14 +217,184 @@ export async function getReport(
 
   let query = supabase.from("report_it_reports").select("*").eq("id", id);
 
-  if (!(await canViewAllReports(access))) {
+  const readsAll = await canViewAllReports(access);
+  if (!readsAll) {
     if (!access.hrId) return null;
     query = query.eq("submitted_by_hr_id", access.hrId);
   }
 
   const { data, error } = await query.single();
   if (error) return null;
-  return data as ReportItReportRow;
+  const report = data as ReportItReportRow;
+  await logReportRead(access, {
+    action: "report_viewed",
+    reportId: report.id,
+    metadata: { reportNumber: report.report_number, scope: readsAll ? "all" : "own" },
+  });
+  return report;
+}
+
+// ─── The read log ─────────────────────────────────────────────────────────
+
+export type ReportItAuditAction =
+  | "report_viewed"
+  | "reports_listed"
+  | "dashboard_access_granted"
+  | "dashboard_access_revoked";
+
+/**
+ * Writes one row to `report_it_audit_logs` for a read of patient data, and REFUSES the read if it
+ * cannot. These are adverse-event reports: who opened which one, and when, must always be
+ * answerable, so a read that could not be recorded is a read that did not happen.
+ */
+export async function logReportRead(
+  access: AccessContext,
+  input: { action: "report_viewed" | "reports_listed"; reportId: string | null; metadata: Record<string, unknown> },
+): Promise<void> {
+  const { error } = await getSupabaseAdmin()
+    .from("report_it_audit_logs")
+    .insert({
+      report_id: input.reportId,
+      actor_hr_id: hrIdForStorage(access.hrId),
+      action: input.action,
+      metadata: { ...input.metadata, role: access.role },
+    });
+  if (error) {
+    console.error("report-it: the read log could not be written, so the read was refused", error.message);
+    throw new Error("Unavailable: this report read could not be recorded, so it was not shown. Please try again.");
+  }
+}
+
+// ─── Who may read every report ────────────────────────────────────────────
+
+export type ReportItAccessGrant = {
+  hrId: string;
+  name: string | null;
+  grantedAt: string;
+  grantedByName: string | null;
+};
+
+export type ReportItAuditEntry = {
+  id: string;
+  action: string;
+  actorName: string | null;
+  reportNumber: string | null;
+  count: number | null;
+  subjectName: string | null;
+  createdAt: string;
+};
+
+/**
+ * The read-all list and the latest entries of the read log. Managed by whoever holds
+ * `report_it:export` — the Super Admin, the CEO and the Finance Manager (owner, 2026-11-13).
+ */
+export async function getDashboardAccessOverview(
+  access: AccessContext,
+  logLimit = 100,
+): Promise<{ grants: ReportItAccessGrant[]; log: ReportItAuditEntry[] }> {
+  await assertPermission(access, "report_it", "export");
+  const supabase = getSupabaseAdmin();
+  const [grantsRes, logRes] = await Promise.all([
+    supabase.from("report_it_dashboard_access").select("hr_id,granted_at,granted_by").order("granted_at", { ascending: true }),
+    supabase
+      .from("report_it_audit_logs")
+      .select("id,action,actor_hr_id,metadata,created_at")
+      .order("created_at", { ascending: false })
+      .limit(Math.min(Math.max(Math.trunc(logLimit), 1), 500)),
+  ]);
+  if (grantsRes.error) throw new Error(`Failed to read the access list: ${grantsRes.error.message}`);
+  if (logRes.error) throw new Error(`Failed to read the report log: ${logRes.error.message}`);
+
+  const grantRows = (grantsRes.data ?? []) as Array<{ hr_id: string; granted_at: string; granted_by: string | null }>;
+  const logRows = (logRes.data ?? []) as Array<{
+    id: string;
+    action: string;
+    actor_hr_id: string | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+  }>;
+  const names = await namesByHrId([
+    ...grantRows.flatMap((row) => [row.hr_id, row.granted_by]),
+    ...logRows.flatMap((row) => [row.actor_hr_id, typeof row.metadata?.hrId === "string" ? row.metadata.hrId : null]),
+  ]);
+
+  return {
+    grants: grantRows.map((row) => ({
+      hrId: row.hr_id,
+      name: names.get(row.hr_id),
+      grantedAt: row.granted_at,
+      grantedByName: names.get(row.granted_by) ?? (row.granted_by === "system-setup" ? "Initial setup" : null),
+    })),
+    log: logRows.map((row) => {
+      const meta = row.metadata ?? {};
+      return {
+        id: row.id,
+        action: row.action,
+        actorName: names.get(row.actor_hr_id),
+        reportNumber: typeof meta.reportNumber === "string" ? meta.reportNumber : null,
+        count: typeof meta.count === "number" ? meta.count : null,
+        subjectName: typeof meta.hrId === "string" ? names.get(meta.hrId) : null,
+        createdAt: row.created_at,
+      };
+    }),
+  };
+}
+
+/** The current employees who could be given read-all access, by name — the panel's choice list. */
+export async function listGrantableEmployees(access: AccessContext): Promise<Array<{ hrId: string; name: string }>> {
+  await assertPermission(access, "report_it", "export");
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,full_name,nickname")
+    .in("employment_status", Array.from(ACTIVE_EMPLOYMENT_STATUSES))
+    .order("full_name", { ascending: true })
+    .limit(2000);
+  if (error) throw new Error(`Failed to read employees: ${error.message}`);
+  return ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null; nickname: string | null }>)
+    .filter((row) => row.hr_id && row.full_name)
+    .map((row) => ({
+      hrId: row.hr_id as string,
+      name: resolveEmployeeDisplayName(row.full_name as string, row.nickname, row.hr_id),
+    }));
+}
+
+/**
+ * Gives or removes one person's read-all access. The change and its audit row are one database
+ * transaction (`phx_report_it_set_dashboard_access`), so neither can land without the other.
+ */
+export async function setDashboardAccess(
+  access: AccessContext,
+  input: { hrId: string; grant: boolean },
+): Promise<{ changed: boolean }> {
+  await assertPermission(access, "report_it", "export");
+  const key = canonicalHrIdKey(input.hrId);
+  if (!key) throw new Error("Validation: choose an employee.");
+  const supabase = getSupabaseAdmin();
+
+  if (input.grant) {
+    // Only a current employee can be given access to patient data.
+    const { data, error } = await supabase
+      .from("employees")
+      .select("hr_id,employment_status")
+      .in("hr_id", hrIdLookupKeys(input.hrId))
+      .limit(1);
+    if (error) throw new Error(`Failed to read the employee: ${error.message}`);
+    const employee = (data ?? [])[0] as { employment_status?: string | null } | undefined;
+    if (!employee) throw new Error("Validation: no employee has that id.");
+    if (!ACTIVE_EMPLOYMENT_STATUSES.has(String(employee.employment_status ?? "").trim().toLowerCase())) {
+      throw new Error("Validation: only a current employee can be given access.");
+    }
+  }
+
+  const names = await namesByHrId([input.hrId]);
+  const { data, error } = await supabase.rpc("phx_report_it_set_dashboard_access", {
+    p_hr_id: key,
+    p_grant: input.grant,
+    p_actor_hr_id: hrIdForStorage(access.hrId) ?? "",
+    p_metadata: { name: names.get(input.hrId), actorRole: access.role },
+  });
+  if (error) throw new Error(`Failed to change access: ${error.message}`);
+  return { changed: data === true };
 }
 
 // ─── KPI summary ──────────────────────────────────────────────────────────

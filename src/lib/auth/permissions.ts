@@ -230,6 +230,9 @@ export type PermissionResource =
   | "permission_admin"
   | "support_requests"
   | "business_card_requests"
+  // Internal messages from the top bar: read your own, send one (owner, 2026-11-13: everyone, as
+  // today). A named key so a role can be refused by an override, which an unnamed path cannot be.
+  | "internal_messages"
   | "recruitment"
   | "candidates"
   // CV Lookup (owner, 2026-09-30, asked for Yasmeena Elsafory / HR Operations): SEARCH the CV
@@ -377,6 +380,7 @@ export const permissionResources: PermissionResource[] = [
   "leave",
   "support_requests",
   "business_card_requests",
+  "internal_messages",
   "recruitment",
   "candidates",
   // Omitting this would offer CV Lookup — a search box over every CV the company holds, and the
@@ -1897,6 +1901,15 @@ for (const role of phoenixRoles) {
   if (defaultPermissionMatrix[role].employee_profile?.includes("read")) {
     defaultPermissionMatrix[role].incentive = ["read"];
   }
+}
+
+// Internal messages: every active role reads its own and sends — the audience the top bar has always
+// had (owner, 2026-11-13, "Everyone, as today"). Derived like incentive above so a new role is not
+// silently left without its inbox; the retired seat stays empty. HR seats take it from their
+// composition (HR_SEAT_SELF_SERVICE in hr-functions.ts), so the loop only fills what is missing.
+for (const role of phoenixRoles) {
+  if (retiredPhoenixRoles.has(role)) continue;
+  defaultPermissionMatrix[role].internal_messages ??= ["read", "create"];
 }
 
 export const permissionMatrix: PermissionMap = applyHardPermissionBoundaries(structuredClone(defaultPermissionMatrix));

@@ -473,6 +473,7 @@ import { runDeductionsModulePublishTests } from "./deductions-module-publish.tes
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
 import { runDailyDeductionsReleaseNoticeTests } from "./daily-deductions-release-notice.test.ts";
 import { runDailyDeductionsPortalAndReadersTests } from "./daily-deductions-portal-and-readers.test.ts";
+import { runDailyDeductionsDisputesTests } from "./daily-deductions-disputes.test.ts";
 import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
 import { runDeductionsAcceptedReviewDaysTests } from "./deductions-accepted-review-days.test.ts";
 import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
@@ -495,6 +496,7 @@ import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-
 import { runDeductionsCycleTests } from "./deductions-cycle.test.ts";
 import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
 import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.ts";
+import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-by-day.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
@@ -1325,6 +1327,7 @@ import { runEmailGreetingNamesTheAudienceTests } from "./email-greeting-names-th
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
 import { runPayrollDownloadLogTests } from "./payroll-download-log.test.ts";
+import { runReportItReadLogTests } from "./report-it-read-log.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
@@ -2287,6 +2290,8 @@ import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastruct
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
 import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-health.test.ts";
+import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
+import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
@@ -3080,8 +3085,15 @@ import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
 import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
 import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archive-screen.test.ts";
 import { runEmployeeAndDeductionHistoryTests } from "./employee-and-deduction-history.test.ts";
+import { runCronAnswerNowTests } from "./cron-answer-now.test.ts";
+import { runPunchFeedStalledTelegramTests } from "./punch-feed-stalled-telegram.test.ts";
 import { runAutomatedPayrollHeldRecordAtomicTests } from "./automated-payroll-held-record-atomic.test.ts";
 import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test.ts";
+import { runDirectOrdersAndMarketingAtomicTests } from "./direct-orders-and-marketing-atomic.test.ts";
+import { runHrAtomicWritesTests } from "./hr-atomic-writes.test.ts";
+import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
+import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
+import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4243,6 +4255,7 @@ await runTest("deductions outstation trip days (any trip not rejected spares the
 await runTest("deductions accepted review days (a day the Super Admin accepted a review request for is never charged)", runDeductionsAcceptedReviewDaysTests);
 await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
 await runTest("daily deductions on the employee portal and for readers (released lines show on his Deductions page and a failed read says so; the Finance Manager reads the page and only the Super Admin computes)", runDailyDeductionsPortalAndReadersTests);
+await runTest("daily deduction disputes (every released daily line can be disputed; an accepted dispute withdraws it and month-end collection never charges those days again; the Super Admin decides, the module readers read)", runDailyDeductionsDisputesTests);
 await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
@@ -4284,6 +4297,10 @@ await runTest(
 await runTest(
   "daily deductions release (one deduction at a time: line state, what a click sends, validation, merge-not-replace migration)",
   runDailyDeductionsReleaseTests,
+);
+await runTest(
+  "daily deductions are single (owner, 13 Nov 2026): one deduction per employee x type x day, each released and told on its own, priced only where the split is exact, never charged twice against an older whole-range row",
+  runDailyDeductionsReleaseByDayTests,
 );
 await runTest(
   "daily deductions no-records connector (skips reps, district managers and the SFE Manager; never charges an outage day or a person with no base salary)",
@@ -5854,6 +5871,10 @@ await runTest("report-it access", runReportItAccessTests);
 await runTest(
   "every payroll sheet and bank file download writes one row on its run, a person is limited per hour, and the run lists them",
   runPayrollDownloadLogTests,
+);
+await runTest(
+  "report-it: every report read is logged or refused, the read-all list changes only through its audited function, and a report is shape-checked before it is stored",
+  runReportItReadLogTests,
 );
 await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("system cleanup center", runSystemCleanupCenterTests);
@@ -8735,6 +8756,14 @@ await runTest(
 await runTest(
   "schema-shape recovery health (nothing captured anywhere is 'it never ran' and names pg_cron; some tables uncaptured is the function and names snapshot_runs; disabled rows and per-table age raise nothing)",
   runSchemaShapeRecoveryHealthTests,
+);
+await runTest(
+  "schema-shape employee keys (REC-037: the baseline of keys to employees only rises and holds every money, leave and attendance key; a key dropped or left NOT VALID fails the night; a new unlisted key only warns)",
+  runSchemaShapeEmployeeKeysTests,
+);
+await runTest(
+  "every foreign key in public has an index that leads with its columns (F-DB-006: the advisor's 59, the 21 employee keys among them, names within 63 bytes, inside the migration's transaction)",
+  runForeignKeyIndexesTests,
 );
 await runTest(
   "schema-shape snapshot in public (the five real pre-images are caught, live *_snapshots tables are not, and the SQL matches the TypeScript)",
@@ -12244,8 +12273,15 @@ await runTest("the code-scanning alerts that were real (9 Nov 2026): a sign-in r
 await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups its cards by region and district manager through the one shared rule, the meters and share bars add up, and the shared chrome stays flat, square and free of sideways scroll", runRepsListPremiumTests);
 await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page asks the database by uuid, never by the screen's own: id; the same-name check folds as the database does and the approver is told; an outside customer with a grade is filed for approval; a merged duplicate never comes back by a request; a seat's rep who left by the visit day is never credited and a missed day after it is refused; nobody who has left is told anything; and Validate again goes to whoever holds the seat now", runPhoenixCrmSweepTests);
 await runTest("every change to an employee and to a deduction decision is kept, and the money and people tables are in the hourly undo log (enterprise audit, 13 Nov 2026): salary figures and identifiers are named, never stored; the log refuses update, delete and truncate even in replica mode; no browser role reaches it; 43 tables registered, the five largest capped at 24 versions; and no later migration takes any of it back", runEmployeeAndDeductionHistoryTests);
+await runTest("a scheduled route that outlasts its scheduler answers at once (integration audit, 13 Nov 2026): the daily notification run, the reconciliation check, the mailbox sweep and the weekly Private Calendar notice answer 202 before the run starts and finish it after the response; wait=1 hands back the run's own report; the cron secret is checked before the answer; each still reports to its heartbeat; and the stranded-job re-fire waits for the run", runCronAnswerNowTests);
+await runTest("the punch-feed alarm also reaches Telegram (integration audit, 13 Nov 2026): once per person per Cairo day, after the feed is judged and the admin toggle is read, Telegram alone on the system module, the last punch in Cairo time, and a failed send never becomes an email", runPunchFeedStalledTelegramTests);
 await runTest("the held-salary record cannot be lost silently (enterprise audit F-PAY-002): publish marks the run and writes who was held in one database call under its claim, a record with no held list is refused, and the readers throw on a missing record instead of listing nobody", runAutomatedPayrollHeldRecordAtomicTests);
 await runTest("a pay, deduction, leave or attendance row must name a real employee (enterprise audit, 13 Nov 2026): 22 money, leave and attendance tables carry a key to the employee list, each added only after an orphan count that refuses, ON UPDATE CASCADE ON DELETE RESTRICT, and no later migration takes one off", runEmployeeKeyForeignKeysTests);
+await runTest("direct-order collection and marketing decision are atomic (the collection is one locked compare-and-set write with offsets summed under the lock; a marketing decision refuses a request that is no longer pending approval; cancel closes the open rungs in the same transaction)", runDirectOrdersAndMarketingAtomicTests);
+await runTest("two HR writes that could half-land are each one transaction now (enterprise audit, 13 Nov 2026): a retention conversation and its confidential themes are replaced together under a row lock and a compare-and-set, never a delete then an insert; a leave approver's step is decided and the request moved together under the request's row lock, paid approvals included, never the step first", runHrAtomicWritesTests);
+await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): every write runs in phx_merge_ats_candidates, which locks both rows lowest id first and refuses if one is gone; each table keeps its dedupe key, orphan clean-up and copy rule; the survivor columns are whitelisted; an RPC error throws before the Drive re-file; and the summary words are unchanged", runCandidateMergeAtomicTests);
+await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
+await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
