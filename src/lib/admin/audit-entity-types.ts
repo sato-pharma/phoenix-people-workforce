@@ -121,6 +121,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   job_post_download: true,
   job_post_publish: true,
   mailbox_offboarding: true,
+  internal_message: true,
   manageengine_app_repository: true,
   manageengine_device_app: true,
   manageengine_device_command: true,

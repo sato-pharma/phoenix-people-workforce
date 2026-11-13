@@ -882,6 +882,8 @@ const HR_SEAT_SELF_SERVICE: Partial<Record<PermissionResource, PermissionAction[
   overview: READ_ONLY,
   report_it: ["read", "create"],
   support_requests: ["create"],
+  // Read her own internal messages and send one, like every employee (owner, 2026-11-13).
+  internal_messages: ["read", "create"],
   // Request her own business card. applyHardPermissionBoundaries SETS this sender `create` on every
   // role that is not an HR authority (the same shape as support_requests above), so naming it here
   // changes no grant — it keeps the HR Operations Specialist seat, the first seat outside

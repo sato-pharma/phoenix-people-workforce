@@ -334,6 +334,9 @@ export type AuditEntityType =
   // step was done. Written BEFORE the state changes, carrying the old values, so a later
   // reopen corrects the register without erasing what was previously asserted.
   | "mailbox_offboarding"
+  // One internal message sent from the top bar (owner, 2026-11-13: an audit row per send). Who sent
+  // it, to whom, and whether it also went by email — never the subject or the body.
+  | "internal_message"
   // Handing a new hire's app password to Phoenix from the New Hire Mailboxes page, or ruling that
   // they need no company mailbox. The row carries the address and the outcome, NEVER the password.
   | "new_hire_mailbox"
