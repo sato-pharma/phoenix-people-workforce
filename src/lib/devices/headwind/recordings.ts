@@ -597,7 +597,7 @@ export async function purgeExpiredTabletRecordings(
       result.error = `The recording files could not be removed: ${removed.error.message}`;
       logWarning("Tablet recording retention: file removal failed; rows kept for the next run", {
         labels: { event: "tablet_recording_purge_files_failed" },
-        extra: { expired: rows.length },
+        context: { expired: rows.length },
       });
       return result;
     }
@@ -616,7 +616,7 @@ export async function purgeExpiredTabletRecordings(
   result.rowsDeleted = deleted?.length ?? 0;
   logInfo("Tablet recording retention: removed expired captures", {
     labels: { event: "tablet_recording_purge" },
-    extra: { cutoffIso, filesRemoved: result.filesRemoved, retentionDays, rowsDeleted: result.rowsDeleted },
+    context: { cutoffIso, filesRemoved: result.filesRemoved, retentionDays, rowsDeleted: result.rowsDeleted },
   });
   return result;
 }

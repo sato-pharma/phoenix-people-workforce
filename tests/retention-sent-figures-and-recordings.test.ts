@@ -84,7 +84,7 @@ export async function runRetentionSentFiguresAndRecordingsTests() {
     assert.deepEqual(cleared![kept], payload[kept], `${kept} stays — Email Activity and the outbox stats read it`);
   }
   assert.equal(JSON.stringify(cleared).includes("12345") || JSON.stringify(cleared).includes("12,345"), false, "no figure text survives anywhere");
-  assert.equal(sentFiguresClearedPayload({ subject: "x", title: "y" }), null, "an email with no figures is not rewritten");
+  assert.equal(sentFiguresClearedPayload({ metrics: [], subject: "x", title: "y" }), null, "an email with no figures is not rewritten");
   assert.equal(
     sentFiguresClearedPayload({ metrics: [{ label: "Employee", value: "A (B-1)" }] }),
     null,

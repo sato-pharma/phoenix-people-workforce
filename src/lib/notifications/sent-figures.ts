@@ -24,7 +24,7 @@ type FigureFields = {
 const KEPT_METRIC_LABELS = new Set(["employee"]);
 
 /** The payload a SENT row keeps, or null when there is nothing to clear and the row should not be rewritten. */
-export function sentFiguresClearedPayload<T extends FigureFields>(payload: T): T | null {
+export function sentFiguresClearedPayload<T extends FigureFields>(payload: T): (T & { figuresCleared: true }) | null {
   const metrics = Array.isArray(payload.metrics) ? payload.metrics : undefined;
   const keptMetrics = metrics?.filter((metric) => KEPT_METRIC_LABELS.has(String(metric?.label ?? "").trim().toLowerCase()));
   const hasFigures =
@@ -34,7 +34,7 @@ export function sentFiguresClearedPayload<T extends FigureFields>(payload: T): T
     payload.planTableText !== undefined;
   if (!hasFigures) return null;
 
-  const cleared: T = { ...payload, figuresCleared: true };
+  const cleared: T & { figuresCleared: true } = { ...payload, figuresCleared: true };
   if (keptMetrics && keptMetrics.length > 0) cleared.metrics = keptMetrics;
   else delete cleared.metrics;
   delete cleared.templateContext;

@@ -107,7 +107,14 @@ export async function runCredentialOutboxSealTests() {
     assert.match(outbox, /payload: \{ \.\.\.sealCredentialFields\(input\), originEnvironment: enqueueOriginEnvironment\(\) \}/, "the outbox writes the sealed payload");
     assert.match(outbox, /claimed = \{ \.\.\.claimedRow, payload: openCredentialFields\(claimedRow\.payload\) \};/, "and opens it after claiming the row");
     assert.match(outbox, /outboxDedupeDigest\(JSON\.stringify\(normalizeNotificationPayload\(input\)\), input\.credentialEmail\)/, "the dedupe key goes through the keyed digest");
-    assert.equal((outbox.match(/\.\.\.finishedCredentialPayload\(row\.payload\)/g) ?? []).length, 2, "sent and skipped rows drop the credential");
+    // A skipped row drops the credential; a SENT row drops it too, and then its figures (sent-figures.ts).
+    assert.equal((outbox.match(/\.\.\.finishedCredentialPayload\(row\.payload\)/g) ?? []).length, 1, "sent and skipped rows drop the credential: the skipped row");
+    assert.equal((outbox.match(/\.\.\.sentRowPayload\(row\.payload\)/g) ?? []).length, 1, "sent and skipped rows drop the credential: the sent row");
+    assert.match(
+      outbox,
+      /function sentRowPayload\(payload: NotificationEmailInput\): \{ payload\?: NotificationEmailInput \} \{\s*const afterCredential = redactedCredentialPayload\(payload\) \?\? payload;/,
+      "the sent row's payload drops the credential before anything else",
+    );
     assert.match(outbox, /\.\.\.\(terminal \? finishedCredentialPayload\(row\.payload\) : \{\}\)/, "an out-of-retries row drops it too, while a row still retrying keeps its seal");
 
     const migrations = readdirSync("supabase/migrations").filter((name) => name.endsWith("_notification_outbox_redact_credentials.sql"));
