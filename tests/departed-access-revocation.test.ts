@@ -175,8 +175,13 @@ export async function runDepartedAccessRevocationTests() {
   );
   assert.match(
     service,
-    /await deactivateEmployeeAccessIfSupported\(supabase, record\.employeeHrId, \{\s*effectiveDate: record\.effectiveDate,\s*employeeStatus: normalizeEmployeeExitStatus\(storedExitStatus\),\s*\}\);/,
-    "the approvals-hub completion path must pass the effective date and status",
+    /await deactivateEmployeeAccessIfSupported\(\s*supabase,\s*record\.employeeHrId,\s*\{ effectiveDate: record\.effectiveDate, employeeStatus \},\s*\{ strict: true \},\s*\);/,
+    "the approvals-hub completion path must pass the effective date and status (strict, REC-028)",
+  );
+  assert.match(
+    service,
+    /const employeeStatus = normalizeEmployeeExitStatus\(cleanText\(storedRow\.employee_status\)\);/,
+    "the approvals-hub completion path must normalise the stored exit status it hands over",
   );
 
   // The RPC path disables Telegram outside the RPC, and that is the same revocation, so it takes

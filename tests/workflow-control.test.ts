@@ -58,7 +58,8 @@ export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   const domains = listWorkflowDomains();
   const domainKeys = workflowDomainKeys();
-  assert.ok(domains.length <= 8, "top-level domains are few (<= 8)");
+  // 10 since 2026-11-13 (REC-005): Direct Orders and Weekly & Monthly Plans were registered machines with no map domain.
+  assert.ok(domains.length <= 10, "top-level domains are few (<= 10)");
 
   // The required business domains exist.
   for (const required of ["leave", "expenses-outstation", "employee-lifecycle", "offer-hiring", "payroll", "coaching", "marketing", "notifications"]) {

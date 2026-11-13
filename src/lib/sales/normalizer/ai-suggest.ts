@@ -171,14 +171,15 @@ async function generate(kind: AiKind, unknowns: AiUnknown[], candidates: AiCandi
     (leg, { failoverTo, timeoutMs }) =>
       leg.kind === "anthropic"
         ? askClaude(leg.model, kind, system, user, failoverTo, timeoutMs)
-        : askChatProvider(leg.provider, kind, system, user, failoverTo),
+        : askChatProvider(leg.provider, kind, system, user, failoverTo, timeoutMs),
     SUGGEST_MODELS,
     CLAUDE_BATCH_BUDGET_MS,
   );
 }
 
-// One batch of up to 60 rows: ~1.5k tokens of answer, so 4k is headroom, and a generous timeout because
-// the chat leg has none of its own. When Claude stands in for a dead account it gets only what is left of it.
+// One batch of up to 60 rows: ~1.5k tokens of answer, so 4k is headroom, and a generous timeout. The chat
+// leg had none of its own until REC-050 (13 Nov 2026); it now gets the same budget for each try. When Claude
+// stands in for a dead account it gets only what is left of it.
 const CLAUDE_BATCH_BUDGET_MS = 120_000;
 
 async function askClaude(
@@ -218,6 +219,7 @@ async function askChatProvider(
   system: string,
   user: string,
   failoverTo?: AiCallProvider,
+  timeoutMs = CLAUDE_BATCH_BUDGET_MS,
 ): Promise<string> {
   const body_ = JSON.stringify({
     messages: [
@@ -240,6 +242,8 @@ async function askChatProvider(
         body: body_,
         headers: { Authorization: `Bearer ${provider.key}`, "Content-Type": "application/json" },
         method: "POST",
+        // A run-out throws into the catch below: recorded as a failed leg and thrown, as a dropped connection is.
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.ok) {
         const json = (await res.json()) as {

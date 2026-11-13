@@ -1224,6 +1224,28 @@ export const MODULES = [
     keywords: ["employee master", "employee 360", "resignation", "resignations", "leaver", "leavers", "new hire", "hire date", "last working date", "retention", "hr command", "test account", "موظف"],
     tables: ["employees", "employee_", "exit_record", "resignation", "retention", "app_auth_users"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `employees` measured a
+  // 3,984-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, and the rule that
+  // completing a resignation ends the employee first (REC-028) took it to 4,065. The resignation
+  // workflow's own mechanics — the order Complete runs in, the date the seat falls vacant, the
+  // clearance trigger that was stopped — are one family, read while editing the resignation code, so
+  // their rules move together. Cancelling a resignation stays in `employees` beside the seat transfer it
+  // routes to (the safe half stays where the broad glob is). `employees` KEEPS EVERY GLOB IT HAD, so a
+  // resignation file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "resignations",
+    title: "Resignations — completing an exit and the seat it frees",
+    scope: "The resignation workflow's own mechanics: the order Complete runs in and what a failed step leaves, the date a resigner's seat falls vacant, and the clearance checklist a resignation no longer opens.",
+    globs: [
+      "src/lib/resignations/**",
+      "src/components/resignations/**",
+      "app/**/resignations/**",
+      "tests/*resignation*",
+      "supabase/migrations/*resignation*",
+    ],
+    keywords: ["complete the resignation", "resignation completed", "resignation workflow", "complete resignation", "vacate the seat", "resign_occupant", "clearance checklist"],
+    tables: ["employee_resignations"],
+  },
   {
     id: "probation",
     title: "Probation and employee milestones",

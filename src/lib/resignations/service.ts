@@ -16,6 +16,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { afterResponse } from "@/lib/http/after-response";
+import { ApiError } from "@/lib/http/api-errors";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
@@ -192,6 +193,61 @@ function isMissingColumn(error: unknown, column: string) {
 
 function missingColumnFromError(error: unknown, columns: string[]) {
   return columns.find((column) => isMissingColumn(error, column)) ?? null;
+}
+
+// ── STRICT schema tolerance, for completing a resignation ──────────────────────────────────────
+// The tolerant checks above match any message that merely MENTIONS a column or says "does not
+// exist" — so a constraint, a trigger fault or a function failing inside (`column "x" does not
+// exist` raised from PL/pgSQL, 42703) was skipped as if the schema object were absent, and the
+// resignation went on to read "completed" over a person still on payroll or still in the seat.
+// These three answer true only for the exact object being absent, in the exact words PostgREST
+// (PGRST202/204/205) and Postgres (42883/42703/42P01) use for it. Anything else is a real failure.
+
+function errorCodeOf(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : "";
+}
+
+/** True only when the named table itself is absent. */
+export function isMissingTableError(error: unknown, table: string) {
+  const message = lowerErrorMessage(error);
+  const name = table.toLowerCase();
+  const namesTable =
+    message.includes(`'public.${name}'`) ||
+    message.includes(`"public.${name}"`) ||
+    message.includes(`'${name}'`) ||
+    message.includes(`"${name}"`);
+  const saysAbsent =
+    ["PGRST205", "42P01"].includes(errorCodeOf(error)) ||
+    message.includes("could not find the table") ||
+    (message.includes("relation") && message.includes("does not exist"));
+  return namesTable && saysAbsent;
+}
+
+/** True only when `table` has no column called `column` — never a column missing somewhere else. */
+export function isMissingColumnOfTable(error: unknown, table: string, column: string) {
+  const message = lowerErrorMessage(error);
+  const t = table.toLowerCase();
+  const c = column.toLowerCase();
+  return (
+    // PostgREST: Could not find the 'crm_id' column of 'employees' in the schema cache (PGRST204)
+    message.includes(`'${c}' column of '${t}'`) ||
+    // Postgres: column "crm_id" of relation "employees" does not exist (42703)
+    message.includes(`column "${c}" of relation "${t}" does not exist`)
+  );
+}
+
+/** True only when the named database function itself is absent (not a failure inside it). */
+export function isMissingFunctionError(error: unknown, fn: string) {
+  const message = lowerErrorMessage(error);
+  const saysAbsent =
+    ["PGRST202", "42883"].includes(errorCodeOf(error)) ||
+    message.includes("could not find the function") ||
+    (message.includes("function") && message.includes("does not exist"));
+  // The name must be the function being CALLED: "could not find the function public.<fn>(" or
+  // "function public.<fn>(...) does not exist". A raise inside it ("<fn>: hr_id is required")
+  // never says absent; a missing function it calls names that other function.
+  return saysAbsent && (message.includes(`function public.${fn.toLowerCase()}(`) || message.includes(`function ${fn.toLowerCase()}(`));
 }
 
 function schemaReadinessError(scope: string, error: unknown) {
@@ -1171,7 +1227,11 @@ async function updateEmployeeLifecycleFallback(
     reason: string | null;
     submittedDate: string;
   },
+  // strict (the Complete action only): drop an optional column ONLY when `employees` genuinely
+  // lacks it, and fail when no employee row was written. The other callers keep the old tolerance.
+  options?: { strict?: boolean },
 ) {
+  const strict = options?.strict === true;
   const optionalColumns = [
     "exit_reason",
     "exit_status",
@@ -1213,16 +1273,24 @@ async function updateEmployeeLifecycleFallback(
   };
 
   for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
-    const { error } = await supabase
+    const query = supabase
       .from("employees")
       .update(payload)
       .eq("hr_id", employeeHrId);
+    const { data, error }: { data: unknown; error: unknown } = strict ? await query.select("hr_id") : await query;
 
     if (!error) {
+      // An UPDATE that matched nobody is not an error to PostgREST, and the employee would stay
+      // active and on payroll while the resignation went on to read "completed".
+      if (strict && (!Array.isArray(data) || data.length === 0)) {
+        throw new Error(`No employee record matched ${employeeHrId}, so nobody was taken off payroll.`);
+      }
       return;
     }
 
-    const missingColumn = optionalColumns.find((column) => isMissingColumn(error, column));
+    const missingColumn = optionalColumns.find((column) =>
+      strict ? isMissingColumnOfTable(error, "employees", column) : isMissingColumn(error, column),
+    );
     if (missingColumn) {
       delete payload[missingColumn];
       continue;
@@ -1290,11 +1358,13 @@ async function vacateAuSeatsIfSupported(
     p_reason: input.reason,
   });
 
-  // isMissingSchemaMessage also matches PostgREST's PGRST202 ("could not find the function
-  // ... in the schema cache"), so an environment without the migration degrades to today's
-  // behaviour instead of failing the whole workflow -- same tolerance
-  // normalizeTerminalEmployeeLifecycleFlags applies to its own RPC.
-  if (error && !isMissingSchemaMessage(error)) {
+  // Tolerated ONLY when the wrapper itself is absent (PGRST202 / 42883 naming it), so an
+  // environment without the migration degrades instead of failing the whole workflow. It used to
+  // tolerate anything isMissingSchemaMessage matched, which includes a 42703 raised INSIDE the
+  // function (the failure that broke every move onto an area seat on 2026-11-04) — a person left
+  // sitting in their seat while the resignation read "completed". This helper's only caller is
+  // the Complete action.
+  if (error && !isMissingFunctionError(error, "phx_vacate_au_seats_for_employee")) {
     throw schemaReadinessError("vacating au seats for the departing employee", error);
   }
 }
@@ -1324,7 +1394,12 @@ async function deactivateEmployeeAccessIfSupported(
   supabase: SupabaseClient,
   employeeHrId: string,
   departure: { effectiveDate: string | null; employeeStatus: string | null },
+  // strict (the Complete action only): skip a table ONLY when it genuinely does not exist. The
+  // old tolerance (any message isMissingSchemaMessage matches) stays for the other callers.
+  options?: { strict?: boolean },
 ): Promise<{ revoked: boolean }> {
+  const tolerated = (error: unknown, table: string) =>
+    options?.strict === true ? isMissingTableError(error, table) : isMissingSchemaMessage(error);
   const revoked = isEmploymentAccessRevoked({
     employmentStatus: departure.employeeStatus,
     lastWorkingDate: departure.effectiveDate,
@@ -1340,7 +1415,7 @@ async function deactivateEmployeeAccessIfSupported(
       })
       .eq("hr_id", employeeHrId);
 
-    if (appAuthResult.error && !isMissingSchemaMessage(appAuthResult.error)) {
+    if (appAuthResult.error && !tolerated(appAuthResult.error, "app_auth_users")) {
       throw appAuthResult.error;
     }
 
@@ -1352,7 +1427,7 @@ async function deactivateEmployeeAccessIfSupported(
       })
       .eq("hr_id", employeeHrId);
 
-    if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
+    if (accessProfileResult.error && !tolerated(accessProfileResult.error, "user_access_profiles")) {
       throw accessProfileResult.error;
     }
 
@@ -1410,8 +1485,13 @@ async function findOpenVacancyForSeat(
 
   if (error) {
     // Fail CLOSED. The caller's only response to "no vacancy exists" is to open one, so a read
-    // that did not actually complete must never be reported as an empty result.
-    if (isMissingSchemaMessage(error)) {
+    // that did not actually complete must never be reported as an empty result. Unresolved is
+    // reserved for the vacancy table (or its seat column) genuinely not existing; any other
+    // failure throws, so completing a resignation stops instead of skipping the link silently.
+    if (
+      isMissingTableError(error, "position_vacancies") ||
+      isMissingColumnOfTable(error, "position_vacancies", "replacement_for_hr_id")
+    ) {
       return { resolved: false, vacancyId: null };
     }
     throw error;
@@ -1472,16 +1552,24 @@ async function linkCompletedResignationVacancy(
     );
   }
 
+  // No `updated_at` here, on purpose: this runs BEFORE the row is stamped completed, and that
+  // final stamp is optimistic-locked on the updated_at read at the start. Bumping it here would
+  // make every Complete fail its own lock. The stamp sets updated_at a moment later.
   const { error } = await supabase
     .from("employee_resignations")
     .update({
       create_vacancy: true,
-      updated_at: new Date().toISOString(),
       vacancy_id: vacancyId,
     })
     .eq("id", input.resignationId);
 
-  if (error && !isMissingSchemaMessage(error) && !missingColumnFromError(error, ["create_vacancy", "vacancy_id"])) {
+  // Tolerated only when one of the two link columns genuinely does not exist. It used to swallow
+  // any error MENTIONING them — a foreign-key violation on vacancy_id included.
+  if (
+    error &&
+    !isMissingColumnOfTable(error, "employee_resignations", "create_vacancy") &&
+    !isMissingColumnOfTable(error, "employee_resignations", "vacancy_id")
+  ) {
     throw error;
   }
 }
@@ -2369,71 +2457,24 @@ export async function runResignationWorkflow(
     restoredEmployee = await restoreEmployeeAfterCancelledResignation(supabase, row.id, actorHrId);
   }
 
-  const { data: updated, error: updateError } = await supabase
-    .from("employee_resignations")
-    .update(updates)
-    .eq("id", id)
-    .eq("updated_at", row.updated_at)
-    .select("*")
-    .maybeSingle();
-
-  if (updateError) throw updateError;
-  if (!updated) throw new Error("Resignation workflow was updated by another user. Refresh and try again.");
-  const record = mapResignation(updated as ResignationRow);
-
-  // "Completed" has to mean the person actually left. Until now this workflow only stamped the
-  // employee_resignations row, so submit -> approve -> complete produced a resignation marked
-  // completed while the employee stayed active, payroll-eligible, organogram-visible and able to
-  // log in. Only the separate Employees-page "resign" action (resignEmployeeAndOpenVacancy) ever
-  // terminated anyone.
-  //
-  // These are the same two employee-side steps that path performs; deliberately NOT
-  // resignEmployeeAndOpenVacancy itself, because that inserts a SECOND employee_resignations row
-  // via phx_resign_employee_and_open_vacancy — this record already exists. Both helpers are
-  // schema-tolerant and idempotent, so completing an already-terminated employee (the normal case
-  // when HR used the Employees page first) is a harmless no-op re-assertion.
+  // "Completed" has to mean the person actually left, and the row may only SAY so once they have.
+  // Complete runs the four employee-side steps FIRST (resignationCompletionSteps, in this order:
+  // lifecycle, access, vacancy link, seat) and stamps the row completed LAST, through the same
+  // optimistic-locked update every other action uses. A failed step leaves the resignation
+  // Approved and tells HR which step stopped; pressing Complete again is safe, because every step
+  // is a re-assertion. Until 2026-11-13 the row was stamped first, so one failed step left a
+  // "completed" resignation over a person still active, on payroll, logged in or seated (REC-028).
+  let updated: ResignationRow;
   if (action === "complete") {
-    // mapResignation hardcodes employeeStatus: null, so read the stored column and let
-    // normalizeEmployeeExitStatus default it — "resigned" is the right outcome for this workflow
-    // (the Employees-page path is what produces "terminated").
-    const storedExitStatus = cleanText((updated as ResignationRow & { employee_status?: string | null }).employee_status);
-    await updateEmployeeLifecycleFallback(supabase, record.employeeHrId, {
-      effectiveDate: record.effectiveDate,
-      employeeStatus: normalizeEmployeeExitStatus(storedExitStatus),
-      reason: cleanText(record.reason),
-      submittedDate: record.submittedDate,
-    });
-    await deactivateEmployeeAccessIfSupported(supabase, record.employeeHrId, {
-      effectiveDate: record.effectiveDate,
-      employeeStatus: normalizeEmployeeExitStatus(storedExitStatus),
-    });
-
-    // The lifecycle write above is what opens the vacancy: it fires the
-    // phx_employee_terminal_vacancy_guard trigger, which adopts the seat's existing open vacancy
-    // or opens exactly one. This step only reconciles the record with it — see
-    // linkCompletedResignationVacancy for why opening one here unconditionally would double the seat.
-    await linkCompletedResignationVacancy(supabase, {
-      effectiveDate: record.effectiveDate,
-      employee: directoryEmployee,
-      employeeHrId: record.employeeHrId,
-      resignationId: record.id,
-      resignationVacancyId:
-        (updated as ResignationRow & { vacancy_id?: number | null }).vacancy_id ?? null,
-    });
-
-    // That trigger opens the replacement vacancy, but nothing above touches the au seat model,
-    // so the organogram still showed the departed person occupying their seat after the
-    // resignation was completed. The Employees-page path never had this gap — vacating is step 5
-    // of phx_resign_employee_and_open_vacancy, which complete deliberately cannot call.
-    // Runs last: the vacancy reconciliation reads position_vacancies, which vacating never
-    // writes (au.resign_occupant touches only au.occupancy_history and, via
-    // au.sync_area_state_for_seat, au.line_area_map), so the two are independent.
-    await vacateAuSeatsIfSupported(supabase, record.employeeHrId, {
-      actor: actorHrId,
-      effectiveDate: record.effectiveDate,
-      reason: cleanText(record.reason),
-    });
+    updated = await completeResignationInOrder(
+      row.id,
+      resignationCompletionSteps(supabase, { actorHrId, directoryEmployee, row }),
+      () => stampResignationWorkflowRow(supabase, id, row.updated_at, updates),
+    );
+  } else {
+    updated = await stampResignationWorkflowRow(supabase, id, row.updated_at, updates);
   }
+  const record = mapResignation(updated);
 
   // After the reply (afterResponse): the decision is saved, and the notice used to be awaited before the
   // answer left — a whole-directory read, the recipient lookup and the fan-out. A failed notice is logged,
@@ -2462,6 +2503,190 @@ export async function runResignationWorkflow(
   }
   invalidateExecutiveDashboardCache("resignation workflow updated", ["resignations", "employees", "vacancies"]);
   return record;
+}
+
+/**
+ * Writes a workflow decision onto the resignation row — the one write every action ends with.
+ * Optimistic-locked on the `updated_at` read at the start of runResignationWorkflow, so a row
+ * someone else changed meanwhile is never overwritten.
+ */
+async function stampResignationWorkflowRow(
+  supabase: SupabaseClient,
+  id: string,
+  expectedUpdatedAt: string,
+  updates: Record<string, unknown>,
+): Promise<ResignationRow> {
+  const { data: updated, error: updateError } = await supabase
+    .from("employee_resignations")
+    .update(updates)
+    .eq("id", id)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("*")
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  if (!updated) throw new Error("Resignation workflow was updated by another user. Refresh and try again.");
+  return updated as ResignationRow;
+}
+
+/**
+ * The cheap re-read before anyone is ended: the row must still be Approved with the SAME
+ * updated_at, so a concurrent edit (cancelled, reopened, completed by someone else) stops Complete
+ * before a single employee-side step runs. The final stamp keeps its own lock as well.
+ */
+async function assertResignationStillApproved(
+  supabase: SupabaseClient,
+  id: string,
+  expectedUpdatedAt: string,
+) {
+  const { data, error } = await supabase
+    .from("employee_resignations")
+    .select("status, exit_status, updated_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  const current = data as Pick<ResignationRow, "status" | "exit_status" | "updated_at"> | null;
+  if (!current || resignationRowStatus(current) !== "approved" || current.updated_at !== expectedUpdatedAt) {
+    throw new Error("Resignation workflow was updated by another user. Refresh and try again.");
+  }
+}
+
+export type ResignationCompletionStepKey = "endEmployment" | "revokeAccess" | "linkVacancy" | "vacateSeat";
+
+/** The employee-side steps of Complete, in the order they run, with the words HR is shown. */
+export const RESIGNATION_COMPLETION_STEPS: ReadonlyArray<{ key: ResignationCompletionStepKey; label: string }> = [
+  { key: "endEmployment", label: "End the employment record (status, payroll and organogram)" },
+  { key: "revokeAccess", label: "Switch off sign-in access" },
+  { key: "linkVacancy", label: "Link the replacement vacancy" },
+  { key: "vacateSeat", label: "Free the organogram seat" },
+];
+
+export type ResignationCompletionSteps = { recheck: () => Promise<void> } & Record<
+  ResignationCompletionStepKey,
+  () => Promise<void>
+>;
+
+/** What HR reads when a step stops Complete. Plain words; never the database's own text. */
+export function resignationCompletionFailureMessage(stepKey: ResignationCompletionStepKey) {
+  const index = RESIGNATION_COMPLETION_STEPS.findIndex((step) => step.key === stepKey);
+  const label = RESIGNATION_COMPLETION_STEPS[index]?.label ?? stepKey;
+  return (
+    `The resignation was not completed: step ${index + 1} of ${RESIGNATION_COMPLETION_STEPS.length}, ` +
+    `"${label}", failed. It is still Approved and nothing was marked completed. ` +
+    "Pressing Complete again is safe: the steps that already ran are simply repeated."
+  );
+}
+
+/**
+ * Complete, in the right order: re-check, end the employee, THEN stamp the row completed.
+ *
+ * Every step is injected so the order and the failure handling are tested without a database
+ * (tests/resignation-complete-order.test.ts). A step that throws stops the run before the stamp,
+ * is logged as `resignation_complete_step_failed` with the step and the resignation id only (no
+ * name, no salary), and reaches HR as a 409 naming the step.
+ */
+export async function completeResignationInOrder<T>(
+  resignationId: string,
+  steps: ResignationCompletionSteps,
+  stampCompleted: () => Promise<T>,
+  log: typeof logError = logError,
+): Promise<T> {
+  await steps.recheck();
+
+  for (const step of RESIGNATION_COMPLETION_STEPS) {
+    try {
+      await steps[step.key]();
+    } catch (error) {
+      log("A resignation was not completed: an employee-side step failed", {
+        labels: { event: "resignation_complete_step_failed", resignationId, step: step.key },
+        error,
+      });
+      const failure = new ApiError(409, "resignation_complete_step_failed", resignationCompletionFailureMessage(step.key));
+      failure.cause = error;
+      throw failure;
+    }
+  }
+
+  return stampCompleted();
+}
+
+/**
+ * The four employee-side steps of Complete, bound to this resignation.
+ *
+ * They are the same steps the Employees-page path performs, deliberately NOT
+ * resignEmployeeAndOpenVacancy itself: that inserts a SECOND employee_resignations row via
+ * phx_resign_employee_and_open_vacancy, and this record already exists.
+ *
+ * Every step is a re-assertion, which is what makes "press Complete again" safe after a partial
+ * failure (each checked 2026-11-13):
+ *   - endEmployment writes absolute values (terminal status, payroll and organogram off, CRM slot
+ *     released). Its write fires phx_employee_terminal_vacancy_guard, which ADOPTS the seat's open
+ *     vacancy before it would open one, and opens one under a deterministic VAC-TERM code.
+ *   - revokeAccess sets is_active false (a no-op the second time), disables Telegram again, and
+ *     the mailbox opener returns the employee's existing open task.
+ *   - linkVacancy returns at once when the row is already linked, else reads the open vacancy back.
+ *   - vacateSeat closes only OPEN person spans; a seat already vacated returns vacated_count 0.
+ *
+ * Strict where it matters: each step tolerates only its own schema object genuinely not existing;
+ * any other error propagates and stops Complete before the row is stamped.
+ */
+export function resignationCompletionSteps(
+  supabase: SupabaseClient,
+  input: { actorHrId: string; directoryEmployee: DirectoryEmployee | null; row: ResignationRow },
+): ResignationCompletionSteps {
+  const record = mapResignation(input.row);
+  // mapResignation hardcodes employeeStatus: null, so read the stored column and let
+  // normalizeEmployeeExitStatus default it — "resigned" is the right outcome for this workflow
+  // (the Employees-page path is what produces "terminated").
+  const storedRow = input.row as ResignationRow & { employee_status?: string | null; vacancy_id?: number | null };
+  const employeeStatus = normalizeEmployeeExitStatus(cleanText(storedRow.employee_status));
+  const reason = cleanText(record.reason);
+
+  return {
+    recheck: () => assertResignationStillApproved(supabase, input.row.id, input.row.updated_at),
+    endEmployment: () =>
+      updateEmployeeLifecycleFallback(
+        supabase,
+        record.employeeHrId,
+        {
+          effectiveDate: record.effectiveDate,
+          employeeStatus,
+          reason,
+          submittedDate: record.submittedDate,
+        },
+        { strict: true },
+      ),
+    revokeAccess: async () => {
+      await deactivateEmployeeAccessIfSupported(
+        supabase,
+        record.employeeHrId,
+        { effectiveDate: record.effectiveDate, employeeStatus },
+        { strict: true },
+      );
+    },
+    // The lifecycle write is what opens the vacancy (the guard trigger above). This step only
+    // reconciles the record with it — see linkCompletedResignationVacancy for why opening one
+    // here unconditionally would double the seat.
+    linkVacancy: () =>
+      linkCompletedResignationVacancy(supabase, {
+        effectiveDate: record.effectiveDate,
+        employee: input.directoryEmployee,
+        employeeHrId: record.employeeHrId,
+        resignationId: record.id,
+        resignationVacancyId: storedRow.vacancy_id ?? null,
+      }),
+    // Nothing above touches the au seat model, so without this the organogram kept showing the
+    // departed person on their seat. The vacancy link reads position_vacancies, which vacating
+    // never writes (au.resign_occupant touches only au.occupancy_history and au.line_area_map),
+    // so the two are independent.
+    vacateSeat: () =>
+      vacateAuSeatsIfSupported(supabase, record.employeeHrId, {
+        actor: input.actorHrId,
+        effectiveDate: record.effectiveDate,
+        reason,
+      }),
+  };
 }
 
 /**

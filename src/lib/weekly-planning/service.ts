@@ -126,6 +126,7 @@ import {
 } from "@/lib/weekly-planning/plan-revisions";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertEmployeePlanRegistryTransition } from "@/lib/weekly-planning/plan-registry";
 import {
   isSecondApproverForManager,
   managerHrIdsForSecondApprover,
@@ -4094,6 +4095,10 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   // truth. The RPC also runs SELECT FOR UPDATE on the header row before
   // writing, so two concurrent decides can't both succeed.
   const nextStatus = getNextEmployeePlanStatus(plan.status, input.action, { comment: input.comment, bypassCeo });
+  // The workflow registry's `employee_plans` row is the second gate (REC-005): an exact copy of the
+  // code table, so it refuses nothing the table allows — until a Super Admin edits it. With no row,
+  // or no answer from the registry, the code table above is the whole rule (plan-registry.ts).
+  await assertEmployeePlanRegistryTransition({ action: input.action, status: plan.status });
   await rpcDecidePlan({
     access,
     action: input.action,

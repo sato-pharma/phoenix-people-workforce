@@ -1976,6 +1976,7 @@ import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.te
 import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runResignationCancelRestoreTests } from "./resignation-cancel-restore.test.ts";
+import { runResignationCompleteOrderTests } from "./resignation-complete-order.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
@@ -3113,6 +3114,8 @@ import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomi
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
+import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
+import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -7195,6 +7198,11 @@ await runTest(
 await runTest(
   "resignation cancel restores the employee (status, pay, seat, vacancy, login, CRM id) before the row is stamped",
   runResignationCancelRestoreTests,
+);
+
+await runTest(
+  "resignation complete ends the employee FIRST and stamps completed LAST (a failed step leaves it Approved, names the step, and a retry completes cleanly)",
+  runResignationCompleteOrderTests,
 );
 
 await runTest(
@@ -12350,6 +12358,8 @@ await runTest("a dispute decision is all or nothing, one at a time, and a deduct
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 await runTest("the Integrations page: no credential value ever comes back out, the Super Admin gate runs before any read, a failed read says unavailable, and the messaging API version agrees in all seven files", runIntegrationsRegistryTests);
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
+await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
+await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
