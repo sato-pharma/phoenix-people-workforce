@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { sendPunchFeedStalledTelegram } from "@/lib/attendance/punch-feed-stalled-telegram";
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import {
   buildAttendanceCalendarContext,
@@ -167,6 +168,8 @@ export type AttendanceIngestionAlertResult = {
   error?: string;
   notified: boolean;
   status: AttendanceIngestionHealth["status"] | "unknown";
+  /** People newly told on Telegram by this run; 0 on every later run of the same Cairo day. */
+  telegramDelivered?: number;
 };
 
 /**
@@ -239,8 +242,19 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
       title: "Attendance agent not syncing",
     });
 
+    // The same alarm on Telegram (13 Nov 2026): in-app and push are read only by someone who has
+    // Phoenix open, and a feed that stops is the fault that happens while nobody is looking. Its own
+    // send with its own event, so the notice above keeps the channel list its tests pin. It never
+    // throws and never emails — see punch-feed-stalled-telegram.ts.
+    const telegram = await sendPunchFeedStalledTelegram({
+      dayIso: cairoTodayIso(),
+      lastIngestedAt: health.lastIngestedAt,
+      missedWorkingDays: health.missedWorkingDays,
+      priority: health.status === "attention" ? "high" : "normal",
+    });
+
     const notified = result.deliveries.some((delivery) => delivery.status === "sent" || delivery.status === "pending");
-    return { notified, status: health.status };
+    return { notified, status: health.status, telegramDelivered: telegram.delivered };
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Attendance ingestion alert failed.",

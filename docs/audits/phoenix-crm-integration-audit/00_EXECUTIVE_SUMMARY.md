@@ -77,4 +77,4 @@ The full ranked list is report 08; the plan that keeps recurring cost flat is "P
 | 14 | Research sources (151) |
 | 15 | Recommendation traceability |
 
-Machine-readable copies: `integration_inventory.csv`, `integration_health_matrix.csv`, `integration_recommendations_100_plus.csv`, `integration_remediation_register.csv`, `sidebar_inventory.csv`. Every table is generated from `scripts/data/` by `scripts/build-reports.mjs`, which refuses to build if a sidebar name, ID or cross-reference does not resolve.
+Machine-readable copies: `integration_inventory.csv`, `integration_health_matrix.csv`, `integration_recommendations_100_plus.csv`, `integration_remediation_register.csv`, `sidebar_inventory.csv`. **These five files are not in the repository:** `.gitignore` excludes every `*.csv`, and the owner decided on 13 Nov 2026 that they stay local. Run `scripts/dump-sidebar.ts`, then `scripts/build-reports.mjs`, to write them again beside the reports. Every table is generated from `scripts/data/` by `scripts/build-reports.mjs`, which refuses to build if a sidebar name, ID or cross-reference does not resolve.

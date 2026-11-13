@@ -26,6 +26,10 @@ const OPERATOR_WATCH_EVENTS: ReadonlySet<string> = new Set([
   // alarm is documented as deliberately never email (docs/environment.md, AGENTS.md section 3).
   "activity_inactivity_digest",
   "ai_key_rejected",
+  // The Telegram half of the punch-feed alarm (13 Nov 2026). Its in-app half was written as never
+  // email on 2026-08-08 and 2026-08-09 (attendance-alert-channel-guard.ts); this holds the same rule
+  // on the one path that guard cannot see, a failed Telegram send.
+  "attendance_punch_feed_stalled",
   "ai_quota_exhausted",
   "brick_move_net_unsettled",
   "brick_move_queue_stuck",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { runDepartedAccessSweep } from "@/lib/auth/departed-access-sweep";
+import { answerNowThenFinish } from "@/lib/http/answer-now";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
 import { runRobotSweepPass } from "@/lib/mailbox-offboarding/robot/sweep-hook";
@@ -59,10 +60,19 @@ export const maxDuration = 60;
  * all until its console driver is calibrated. See sweep-hook.ts for the three locks. Best-effort,
  * never throws, reported in the response under `robot`, and — like its neighbours — it drives no
  * alarm of its own: a robot that could not sign in must not turn the mailbox switch red.
+ *
+ * IT ANSWERS 202 AT ONCE AND FINISHES AFTER THE RESPONSE (13 Nov 2026): the scheduler hangs up at 30
+ * seconds and this pass was cut at 30,172 ms, so it recorded a failure for a sweep that had finished.
+ * `?wait=1` waits for the report as before. The verdict is the switch's ping, never this route's
+ * status. See answer-now.ts.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/mailbox-offboarding-sweep");
   if (denied) return denied;
+  return answerNowThenFinish(request, "phoenix-mailbox-offboarding-sweep", () => runSweep());
+}
+
+async function runSweep(): Promise<Response> {
   try {
     // First, because it is the cheap one and it never throws — a leaver whose last working day has
     // arrived should not keep a live login for the length of the mailbox sweep.
