@@ -18,6 +18,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Step 2 of enrolling this device: verify what the device signed, then store its public key.
+// No password here: it only accepts the single-use challenge step 1 issued to this login, and step 1 is
+// where a Super Admin's password is asked.
 export async function POST(request: Request) {
   try {
     const originRejection = rejectUntrustedForwardedOrigin(request);

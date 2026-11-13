@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestIp, writeAuthAudit } from "@/lib/auth/audit";
+import { checkPasskeyAddPassword } from "@/lib/auth/second-step-management";
 import { resolveSessionState } from "@/lib/auth/server";
 import { getCookieValue, phoenixSessionCookieName } from "@/lib/auth/session";
 import { buildRegistrationOptions, resolveRelyingParty } from "@/lib/auth/webauthn";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 // Step 1 of enrolling this device: hand the browser a challenge to sign.
 // Enrollment is only ever possible from INSIDE a live session — you prove who you are with your
-// password first, then bind a device to that identity.
+// password first, then bind a device to that identity. A Super Admin types the password again here.
 export async function POST(request: Request) {
   try {
     const originRejection = rejectUntrustedForwardedOrigin(request);
@@ -52,6 +53,31 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "rate_limited", message: "Too many attempts. Please wait before trying again." },
         { status: 429 },
+      );
+    }
+
+    // A Super Admin's passkey counts as both sign-in steps, so adding one asks the account's password
+    // before any challenge exists (second-step-management.ts says why). Other roles send no body.
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    const passwordCheck = await checkPasskeyAddPassword({
+      loginId,
+      password: body && typeof body === "object" ? body.password : undefined,
+      role: sessionState.access.role,
+    });
+    if (!passwordCheck.ok) {
+      if (passwordCheck.reason === "wrong_password") {
+        await writeAuthAudit({
+          actorLoginId: loginId,
+          entityId: loginId,
+          newValues: { ip: getRequestIp(request), reason: "wrong_password" },
+          summary: "Biometric enrollment refused: wrong password",
+        }).catch(() => undefined);
+      }
+      return NextResponse.json(
+        passwordCheck.reason === "wrong_password"
+          ? { error: "wrong_password", message: "That is not your current password." }
+          : { error: "password_required", message: "Type your password to add a device to this account." },
+        { status: 403 },
       );
     }
 
