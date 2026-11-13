@@ -1490,3 +1490,28 @@ could not have seen a toast that came and went inside the six seconds.
 **If it fails again,** the refusal now says which of the three it was: still on the form after 30 seconds
 with what Turbify flashed, a captcha, or two-step.
 
+## Calibrated from the live rehearsal (2026-11-13)
+
+The rehearsal of 2026-10-04 19:23 Cairo on Phoenix's own invite inbox (audit row
+`350b7480-a532-46eb-a4e9-5e98b523685d`) did everything the section above expected it to fail at.
+It minted one app password, read the page at all four stages, matched **Delete** at the confirm, and
+ended with the page empty: `minted: true`, `removed: true`, `outstanding: false`. No later
+rehearsal row exists, so this one run is the observation the four controls were waiting for.
+
+| control | wording | path |
+| --- | --- | --- |
+| `existingList` | region "Generated passwords" | `div.flex-1.overflow-y-auto > div.overflow-y-auto.inset-0` |
+| `removeOne` | Remove | `div.flex-1.overflow-y-auto > div.flex.items-center > button.turbify-btn.turbify-btn-error` |
+| `removeConfirm` | Delete (beside Cancel) | `div.flex.flex-col > div.flex.items-center > button.turbify-btn.turbify-btn-primary` |
+| `emptyState` | "You haven’t added any apps yet." | the `existingList` container with no Remove under it |
+
+- **No `nth-of-type` is kept.** The container sat at position 2 after the removal and position 3
+  while the confirm was open, so a position would have matched one stage and missed the other.
+- **The page listed one app password at a time.** It read one Remove before the mint and one after
+  it. Whether Turbify keeps only one per mailbox is not proven by one run; the clear step must loop
+  until the empty state shows, never press Remove a counted number of times.
+
+`APP_PASSWORD_CLEAR_CALIBRATED` is now `true`. 🔴 **That lifts the refusal and nothing else.**
+`runAppPasswordClear` still has no live console driver and no caller, so nothing clears a
+leaver's app passwords automatically yet. The register's "App passwords live" list is what tracks
+them until the driver exists.

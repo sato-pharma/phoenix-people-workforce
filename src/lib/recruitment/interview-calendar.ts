@@ -34,12 +34,15 @@
 // the scope: a signed-in Super Admin's scope is "company" (isInterviewCalendarOwner explains). HR
 // Operations is an owner too, as the calendar's admin (owner, 2026-09-21).
 
+import { createHash } from "node:crypto";
+
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { listOfferJobTitles } from "@/lib/offers/service";
 import { calendarCandidateNotice, resolveCalendarCandidate } from "@/lib/recruitment/calendar-candidate-resolve";
 import { candidateStatusLabels, normalizeCandidateStatus, statusChangeRefusal } from "@/lib/recruitment/candidate-status";
@@ -367,7 +370,10 @@ export function linkTokenFrom(request: Request | null | undefined): string | nul
 
 export type InterviewCalendarLinkRow = {
   id: string;
-  token: string;
+  /** The first 8 characters, for the owner's list. The link itself is stored only as `token_hash`. */
+  token_preview: string | null;
+  /** The link opens nothing after this moment (90 days from when it was made). */
+  expires_at: string | null;
   access_level: string;
   week_start: string | null;
   guest_cvs: boolean | null;
@@ -380,19 +386,32 @@ export type InterviewCalendarLinkRow = {
 };
 
 export const LINK_COLUMNS =
-  "id,token,access_level,week_start,guest_cvs,is_active,created_by_hr_id,created_at,updated_at,last_used_at,use_count";
+  "id,token_preview,expires_at,access_level,week_start,guest_cvs,is_active,created_by_hr_id,created_at,updated_at,last_used_at,use_count";
+
+/**
+ * How a copy link is stored and found: the SHA-256 of the token, never the token itself (REC-055).
+ * The token is 32 random bytes, so a plain hash is enough — there is nothing to guess.
+ */
+export function hashInterviewCalendarLinkToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
 
 export async function loadInterviewCalendarLinkByToken(token: string): Promise<InterviewCalendarLinkRow | null> {
   // A token that could not have been minted is not looked up at all.
   if (!TOKEN_SHAPE.test(token)) return null;
-  const { data, error } = await recruitmentDb().from(LINKS).select(LINK_COLUMNS).eq("token", token).maybeSingle();
+  const { data, error } = await recruitmentDb()
+    .from(LINKS)
+    .select(LINK_COLUMNS)
+    .eq("token_hash", hashInterviewCalendarLinkToken(token))
+    .maybeSingle();
   if (error) throw error;
   return (data as InterviewCalendarLinkRow | null) ?? null;
 }
 
-/** The grant a link row gives — none when it is switched off. */
-export function grantFromLinkRow(row: InterviewCalendarLinkRow, signedIn: boolean): InterviewCalendarLinkGrant | null {
+/** The grant a link row gives — none when it is switched off or past its expiry. */
+export function grantFromLinkRow(row: InterviewCalendarLinkRow, signedIn: boolean, now: Date = new Date()): InterviewCalendarLinkGrant | null {
   if (row.is_active === false || !isInterviewCalendarAccessLevel(row.access_level)) return null;
+  if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) return null;
   return {
     accessLevel: row.access_level,
     guestCvs: row.guest_cvs !== false,
@@ -402,7 +421,19 @@ export function grantFromLinkRow(row: InterviewCalendarLinkRow, signedIn: boolea
   };
 }
 
-const LINK_OFF = "Forbidden: this link to the interview calendar was switched off, or it does not exist.";
+const LINK_OFF = "Forbidden: this link to the interview calendar was switched off, has expired, or does not exist.";
+
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * Every lookup of a copy link is limited per address and per link, BEFORE the token is looked up, as
+ * the .ics feed is: a 429 says nothing about whether a token is real, and guessing is bounded per
+ * address. The limits sit far above a person working the calendar (each screen asks a few times).
+ */
+export async function assertInterviewCalendarLinkRate(request: Request, token: string): Promise<void> {
+  await assertApiRateLimit({ identifier: rateLimitIdentity({ request }), limit: 1200, scope: "interview_calendar_link_ip", windowMs: HOUR });
+  await assertApiRateLimit({ identifier: rateLimitIdentity({ request, token }), limit: 600, scope: "interview_calendar_link_token", windowMs: HOUR });
+}
 
 export async function interviewCalendarCaller(access: AccessContext, request?: Request | null): Promise<InterviewCalendarCaller> {
   const signedIn = isSignedInCaller(access);
@@ -410,6 +441,7 @@ export async function interviewCalendarCaller(access: AccessContext, request?: R
   const token = linkTokenFrom(request);
   let link: InterviewCalendarLinkGrant | null = null;
   if (token) {
+    if (request) await assertInterviewCalendarLinkRate(request, token);
     const row = await loadInterviewCalendarLinkByToken(token);
     link = row ? grantFromLinkRow(row, signedIn) : null;
     // A dead link refuses — unless the person holds the calendar in their own right anyway.

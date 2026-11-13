@@ -230,6 +230,9 @@ export type PermissionResource =
   | "permission_admin"
   | "support_requests"
   | "business_card_requests"
+  // Internal messages from the top bar: read your own, send one (owner, 2026-11-13: everyone, as
+  // today). A named key so a role can be refused by an override, which an unnamed path cannot be.
+  | "internal_messages"
   | "recruitment"
   | "candidates"
   // CV Lookup (owner, 2026-09-30, asked for Yasmeena Elsafory / HR Operations): SEARCH the CV
@@ -313,7 +316,12 @@ export type PermissionResource =
   // and a recorded run are append-only facts about a date. 🔴 `Manager` and `Employee` hold NOTHING
   // here even though the module's main user is a Manager: see productionPlanningLevel in
   // src/lib/production-planning/access.ts for why the gate is named people, not a role.
-  | "production_planning";
+  | "production_planning"
+  // Marketing ROI refresh: rebuilding the Marketing ROI fact tables on demand and reading the last
+  // run's status. The Super Admin and the CEO only — the same two the route always admitted by role
+  // name; the route keeps that check and asserts this key beside it. Capped in
+  // `hardBoundaryAllowedActions`, so an override can never hand it to anyone else.
+  | "marketing_roi_refresh";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -377,6 +385,7 @@ export const permissionResources: PermissionResource[] = [
   "leave",
   "support_requests",
   "business_card_requests",
+  "internal_messages",
   "recruitment",
   "candidates",
   // Omitting this would offer CV Lookup — a search box over every CV the company holds, and the
@@ -435,6 +444,7 @@ export const permissionResources: PermissionResource[] = [
   // Production Planner. Omitting this would offer the whole raw-material plan — and the prices and
   // costs on it — to every role in the company. Mechanism at the head of this array.
   "production_planning",
+  "marketing_roi_refresh",
   // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
   // view of every one of them — to every role in the company. Mechanism at the head of this array.
   "hr_reminders",
@@ -802,6 +812,8 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
         return ["read"];
       }
       return [];
+    case "marketing_roi_refresh":
+      return role === "Super Admin" || role === "CEO" ? ["read", "update"] : [];
     case "field_absence":
       // The owner's four, 2026-10-18 ("admin and national sales managers and SFE and CEO"), and READ
       // alone: the calendar is a view over records other modules own, so there is nothing to write.
@@ -1077,6 +1089,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
     production_planning: ["read", "create", "update", "export"],
+    marketing_roi_refresh: ["read", "update"],
     admin: allActions,
     attendance: allActions,
     // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen
@@ -1184,6 +1197,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // may ever write a decision row on his behalf.
     market_awareness: ["read", "approve", "export"],
     marketing_functions: ["read", "export"],
+    // Marketing ROI refresh: he and the Super Admin are the only two who may rebuild the ROI facts.
+    marketing_roi_refresh: ["read", "update"],
     marketing_field_feedback: ["read", "export"],
     // Segregation of duties: the CEO account is observational on irreversible HR/finance
     // workflows. It may read/export attendance but not create/update/delete records.
@@ -1899,6 +1914,15 @@ for (const role of phoenixRoles) {
   }
 }
 
+// Internal messages: every active role reads its own and sends — the audience the top bar has always
+// had (owner, 2026-11-13, "Everyone, as today"). Derived like incentive above so a new role is not
+// silently left without its inbox; the retired seat stays empty. HR seats take it from their
+// composition (HR_SEAT_SELF_SERVICE in hr-functions.ts), so the loop only fills what is missing.
+for (const role of phoenixRoles) {
+  if (retiredPhoenixRoles.has(role)) continue;
+  defaultPermissionMatrix[role].internal_messages ??= ["read", "create"];
+}
+
 export const permissionMatrix: PermissionMap = applyHardPermissionBoundaries(structuredClone(defaultPermissionMatrix));
 
 export const systemAccessContext: AccessContext = {
@@ -2245,6 +2269,23 @@ async function getPermissionMatrixFromDb(): Promise<PermissionMatrix> {
   return toPermissionMatrix(data as PermissionDbOverrideRow[]);
 }
 
+/**
+ * The matrix served when the override table cannot be read and no matrix was ever loaded (a cold
+ * start during a database blip). It fails CLOSED: every role holds nothing, so a permission an
+ * administrator revoked through an override can never come back from the compiled defaults. The one
+ * exception is the Super Admin, who keeps the compiled defaults — the person who repairs the table
+ * must never be locked out of it, and the Super Admin carries no override, so the defaults are its
+ * live matrix. Not cached: the next request retries the database.
+ */
+export function coldStartPermissionMatrix(): PermissionMatrix {
+  const defaults = applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
+  const closed = {} as PermissionMatrix;
+  for (const role of Object.keys(defaults) as PhoenixRole[]) {
+    closed[role] = role === "Super Admin" ? defaults[role] : {};
+  }
+  return closed;
+}
+
 async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
   if (permissionCache && permissionCache.fetchedAt + permissionCacheMs > Date.now()) {
     return permissionCache.matrix;
@@ -2258,11 +2299,11 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
       })
       .catch((error) => {
         // Fail observable, not silent. Retain the last-known-good matrix so a
-        // transient DB error can't quietly widen access; only a cold start with
-        // no prior matrix falls back to the built-in defaults. We intentionally
+        // transient DB error can't quietly widen access; a cold start with no
+        // prior matrix fails CLOSED (coldStartPermissionMatrix). We intentionally
         // do not cache this degraded result, so the next call retries the DB.
         logError("role_permission_overrides load failed; retaining last-known matrix", { labels: { event: "permission_matrix_load_failed" }, error });
-        return permissionCache?.matrix ?? applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
+        return permissionCache?.matrix ?? coldStartPermissionMatrix();
       })
       .finally(() => {
         permissionMatrixPromise = null;
@@ -2283,6 +2324,18 @@ export async function loadPermissionMatrixUncached(): Promise<PermissionMatrix> 
 
 export function clearPermissionMatrixCache() {
   permissionCache = null;
+}
+
+/**
+ * TEST RUNNER ONLY (tests/run-tests.ts, before every test): seeds the last-known matrix with what a
+ * database holding no override rows would load. CI's unit job has no database, and ~120 tests read
+ * the compiled defaults through `canAccess`; before the cold start failed closed they got them from
+ * the fallback. The seed is already stale (fetchedAt 0), so a reachable database — or a test's
+ * stand-in one — still replaces it on the next call. Nothing under app/ or src/ may call it
+ * (tests/permission-matrix-cold-start.test.ts).
+ */
+export function seedPermissionMatrixWithDefaultsForTests() {
+  permissionCache = { fetchedAt: 0, matrix: applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix)) };
 }
 
 export async function getPermissionMatrix(): Promise<PermissionMatrix> {

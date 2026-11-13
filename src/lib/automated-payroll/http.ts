@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
 import { logError } from "@/lib/observability/log";
+import { ApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 import { describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
 
@@ -20,6 +21,14 @@ export function jsonError(error: unknown, fallback = "Automated Payroll request 
 }
 
 function classifyRouteError(error: unknown, fallback: string): { status: number; clientMessage: string } {
+  // A person past the payroll download limit (download-log.ts): a readable refusal, never a 500.
+  if (error instanceof ApiRateLimitError) {
+    const minutes = Math.max(1, Math.ceil(error.retryAfterSeconds / 60));
+    return {
+      status: 429,
+      clientMessage: `Too many payroll files downloaded in the last hour. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+    };
+  }
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
 
