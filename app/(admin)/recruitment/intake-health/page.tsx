@@ -5,6 +5,7 @@ import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { adminChipDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { IntakeHealthView } from "@/components/recruitment/intake-health-view";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
+import { WhatsAppConnectLinkPanel } from "@/components/recruitment/whatsapp-connect-link-panel";
 import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -70,6 +71,8 @@ export default async function IntakeHealthPage() {
     <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
       <IntakeHealthHeader deadLettered={deadLetters.length} windowDays={analytics.windowDays} />
       <IntakeHealthView analytics={analytics} deadLetters={deadLetters} heldBack={heldBack} />
+      {/* The one-time WhatsApp connect link: Super Admin only, as its route checks on the server. */}
+      {access.scope === "system" ? <WhatsAppConnectLinkPanel /> : null}
     </div>
   );
 }
