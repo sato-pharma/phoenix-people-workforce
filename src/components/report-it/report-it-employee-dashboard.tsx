@@ -5,7 +5,7 @@ import { AlertTriangle, ChevronDown, ChevronUp, ClipboardList, Plus, RefreshCw, 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import { ReportItForm } from "@/components/report-it/report-it-form";
-import { reportItStatusLabel, type ReportItReportRow } from "@/lib/report-it/types";
+import type { ReportItReportRow } from "@/lib/report-it/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   PortalDesktopTable,
@@ -119,7 +119,7 @@ function rowToFullExport(r: ReportItReportRow) {
     department: r.department ?? "",
     line: r.line ?? "",
     area: r.area ?? "",
-    status: reportItStatusLabel(r.status),
+    status: r.status,
     patient_initials: p.patientInitials || r.patient_initials || "",
     patient_sex: p.patientSex || r.patient_sex || "",
     patient_country: p.country || r.patient_country,

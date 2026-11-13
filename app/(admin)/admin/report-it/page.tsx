@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { ReportItAccessPanel } from "@/components/report-it/report-it-access-panel";
 import { ReportItAdminDashboard } from "@/components/report-it/report-it-admin-dashboard";
-import { ReportItDueDesk } from "@/components/report-it/report-it-due-desk";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import {
@@ -10,7 +9,6 @@ import {
   getDashboardAccessOverview,
   getReportKpis,
   listGrantableEmployees,
-  listOpenReports,
   listReports,
 } from "@/lib/report-it/service";
 
@@ -36,11 +34,9 @@ export default async function AdminReportItPage() {
   // The read-all list and the read log belong to `report_it:export` holders alone (owner, 2026-11-13);
   // someone given read-all by name sees the reports, never who else may read them.
   const managesAccess = await canAccess(access, "report_it", "export");
-  const [kpis, initial, openReports, accessOverview, grantable] = await Promise.all([
+  const [kpis, initial, accessOverview, grantable] = await Promise.all([
     getReportKpis(),
     listReports(access, { limit: 50, offset: 0 }),
-    // The due-date view (REC-033): open reports, oldest due first, for whoever owns them.
-    listOpenReports(access),
     managesAccess ? getDashboardAccessOverview(access) : Promise.resolve(null),
     managesAccess ? listGrantableEmployees(access) : Promise.resolve([]),
   ]);
@@ -54,7 +50,6 @@ export default async function AdminReportItPage() {
           Review and export adverse drug reaction reports submitted by employees.
         </p>
       </header>
-      <ReportItDueDesk initial={openReports} />
       <ReportItAdminDashboard kpis={kpis} initialRows={initial.rows} initialTotal={initial.total} />
       {accessOverview ? <ReportItAccessPanel employees={grantable} initial={accessOverview} /> : null}
     </main>

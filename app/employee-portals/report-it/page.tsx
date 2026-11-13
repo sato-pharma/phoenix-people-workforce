@@ -1,12 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { ReportItDueDesk } from "@/components/report-it/report-it-due-desk";
 import { ReportItEmployeeDashboard } from "@/components/report-it/report-it-employee-dashboard";
 import { ReportItForm } from "@/components/report-it/report-it-form";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canViewAllReports, listOpenReports, listReports } from "@/lib/report-it/service";
+import { canViewAllReports, listReports } from "@/lib/report-it/service";
 
 export const dynamic = "force-dynamic";
 
@@ -48,12 +47,7 @@ export default async function ReportItPage() {
     );
   }
 
-  // The desk of someone who reads every report — the QPPV's, when her role keeps her in the portal:
-  // the due-date view of the open reports (REC-033) above the full list.
-  const [initial, openReports] = await Promise.all([
-    listReports(access, { limit: 50, offset: 0 }),
-    listOpenReports(access),
-  ]);
+  const initial = await listReports(access, { limit: 50, offset: 0 });
 
   return (
     <EmployeePortalPageShell
@@ -63,7 +57,6 @@ export default async function ReportItPage() {
       title="Report It Dashboard"
       disableErrorBoundary={false}
     >
-      <ReportItDueDesk initial={openReports} />
       <ReportItEmployeeDashboard initialRows={initial.rows} initialTotal={initial.total} />
     </EmployeePortalPageShell>
   );

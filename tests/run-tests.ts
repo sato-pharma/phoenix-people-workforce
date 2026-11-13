@@ -3113,7 +3113,6 @@ import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
-import { runReportItLifecycleTests } from "./report-it-lifecycle.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12342,7 +12341,6 @@ await runTest("the Integrations page: no credential value ever comes back out, t
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
 await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
 await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
-await runTest("a safety report is owned by whoever holds Report It read-all access (REC-033, 13 Nov 2026): her new-report notice and email carry no patient data, go to her alone and fire after the reply; a report moves received, under assessment, closed, one step forward, only by a read-all viewer, refused before any write otherwise, with its audit row in the same transaction; and the migration allows exactly the code's statuses", runReportItLifecycleTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

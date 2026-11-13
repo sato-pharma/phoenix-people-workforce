@@ -111,36 +111,7 @@ export type ReportItReportRow = {
   status: string;
   created_at: string;
   updated_at: string;
-  // The lifecycle (REC-033, 13 Nov 2026) — optional because a row read before the migration lacks them.
-  assessment_started_at?: string | null;
-  assessed_by_hr_id?: string | null;
-  closed_at?: string | null;
-  closed_by_hr_id?: string | null;
-  due_at?: string | null;
 };
-
-// ─── The lifecycle ──────────────────────────────────────────────────────────
-
-/**
- * A report is received, then under assessment, then closed (owner, 13 Nov 2026). The database
- * allows exactly these three (`report_it_reports_status_check`); the old `submitted` became
- * `received` in the migration that added them.
- */
-export const REPORT_IT_STATUSES = ["received", "under_assessment", "closed"] as const;
-export type ReportItStatus = (typeof REPORT_IT_STATUSES)[number];
-
-export const REPORT_IT_STATUS_LABELS: Record<ReportItStatus, string> = {
-  received: "Received",
-  under_assessment: "Under assessment",
-  closed: "Closed",
-};
-
-/** The words for any stored status, including one written before the lifecycle existed. */
-export function reportItStatusLabel(status: string | null | undefined): string {
-  const key = String(status ?? "").trim().toLowerCase();
-  if (key === "submitted") return REPORT_IT_STATUS_LABELS.received;
-  return (REPORT_IT_STATUS_LABELS as Record<string, string>)[key] ?? (key ? key.replace(/_/g, " ") : "—");
-}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
