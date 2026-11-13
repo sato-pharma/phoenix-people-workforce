@@ -1068,6 +1068,11 @@ export const accessRegistry = [
   // own loader underneath: the same audience, the same narrowing and the same 404 as the board page. A
   // read that changes nothing, so no audit row and no CSRF.
   sessionApi({ methods: ["GET"], pattern: "/api/admin/phoenix-crm/integrity/cases", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The streets behind a Location Integrity map: one Google picture, fetched with the server key (owner,
+  // 13 Nov 2026). `read` at the route, then the boards' own predicates (the Super Admin and the SFE Manager)
+  // and a per-person hourly limit, because every picture is counted against the company's account. A read
+  // that changes nothing, so no audit row and no CSRF.
+  sessionApi({ methods: ["GET"], pattern: "/api/admin/phoenix-crm/case-map-basemap", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
   // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.
@@ -1557,6 +1562,10 @@ export const accessRegistry = [
   // PATCH /api/notifications/settings, which this is: a notification preference write through
   // its own tiny endpoint. See dismissPushOptInNudge in src/lib/notifications/settings.ts.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/nudge", permission: { resource: "employee_profile", action: "update" } }),
+  // Records that the caller answered the home page's "Connect Telegram" card, so it is never drawn for them
+  // again (owner, 13 Nov 2026). `read`, like the connect route beside it and the settings read that draws
+  // the card: whoever is shown the card can answer it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/telegram/home-card", permission: { resource: "employee_profile", action: "read" } }),
   // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
   // outbox is a write, and reading it as a read-gated route understated who may trigger one.
   // TWO DOORS, TWO ROWS (integration audit, 13 Nov 2026, ISS-028). Until then this was one session row

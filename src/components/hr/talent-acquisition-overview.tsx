@@ -90,6 +90,7 @@ import { TaJoinersArriving } from "@/components/hr/talent-acquisition/joiners-ar
 import { TA_CAPS_CLASS, TaCaption } from "@/components/hr/talent-acquisition/panel";
 import { TaTodayInterviews } from "@/components/hr/talent-acquisition/today-interviews";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { TelegramHomeCard } from "@/components/notifications/telegram-home-card";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import type { HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandTile } from "@/lib/hr/command-center";
@@ -498,6 +499,7 @@ export function TalentAcquisitionOverview({
       />
 
       <PushOptInNudge />
+      <TelegramHomeCard />
 
       {/* ── 2. THE COMMAND RAIL — every pending behind ONE button (his ruling, 2026-10-13: "the needs
           attentions button is fair enough make it show all pendings when clicked on and remove the

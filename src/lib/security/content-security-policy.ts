@@ -169,7 +169,6 @@ export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"
  *   'self' data: blob:     employee photos (/api/employees/<hrId>/photo), bundled files, previews made
  *                          in the browser (a camera capture, a stored signature)
  *   *.supabase.co          every evidence, invoice and attachment picture (a signed storage address)
- *   tile.openstreetmap.org the integrity-board and refused-reading map tiles
  *   *.googleapis.com, *.gstatic.com, *.google.com, *.googleusercontent.com
  *                          the Maps JavaScript API's tiles and markers (Google's own CSP guide)
  *   *.onesignal.com        the push-permission prompt's pictures
@@ -179,7 +178,6 @@ export const REPORT_ONLY_IMAGE_SOURCES = [
   "data:",
   "blob:",
   "https://*.supabase.co",
-  "https://tile.openstreetmap.org",
   "https://*.googleapis.com",
   "https://*.gstatic.com",
   "https://*.google.com",

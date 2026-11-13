@@ -2,14 +2,19 @@
  * Location integrity — the mini-map that shows the difference between a case's readings.
  *
  * The owner asked to "show me live the difference in locations" (2026-10-13) and chose free
- * OpenStreetMap tiles plus the numbers over a paid map API — the same answer `geo.ts` already
- * carries ("never buy a map API").
+ * OpenStreetMap tiles plus the numbers over a paid map API. 🔴 On 13 Nov 2026 he moved the streets to
+ * Google ("why do not we go to Google Maps?", then "Move it to Google Maps"): the app already holds a
+ * Google server key for the route map and the outstation review map, and OpenStreetMap's own policy
+ * promises nothing to a business. So the frame's streets are ONE picture from Google's Maps Static
+ * API, asked of this app's own route (`CASE_MAP_BASEMAP_ROUTE`), which fetches it with the server key.
+ * The key never reaches a browser, and no browser asks a map host anything. Never point a reader's
+ * browser at a tile host again.
  *
- * 🔴 THE MARKERS AND THE DISTANCES ARE OURS, SO THE PANEL IS STILL TRUE WITH NO TILES BEHIND IT.
- * This module computes geometry only: where each reading sits in the frame, which tiles cover that
- * frame, and how far apart every pair is. The view draws square markers and a leader line on top.
- * If a tile never loads — a blocked host, a dead connection, a tile server refusing — the readings
- * and every metre figure are unchanged and the caption says the streets are missing. That is the
+ * 🔴 THE MARKERS AND THE DISTANCES ARE OURS, SO THE PANEL IS STILL TRUE WITH NO STREETS BEHIND IT.
+ * This module computes geometry only: where each reading sits in the frame, the address of the
+ * frame's streets, and how far apart every pair is. The view draws square markers and a leader line
+ * on top. If the picture never loads — a dead connection, Google refusing the key, the hourly limit —
+ * the readings and every metre figure are unchanged and the caption says the streets are missing. That is the
  * rule `src/lib/field-activity/map.ts` has carried since the route map lost its basemap for weeks,
  * and it is the reason the numbers are never left to the picture.
  *
@@ -20,27 +25,58 @@
 
 import { distanceMeters, formatDistance, type GeoPoint } from "@/lib/phoenix-crm/geo";
 
-/** The tile scheme OpenStreetMap uses: 256-pixel tiles, zoom 0 to 19. */
+/** The Web-Mercator scheme every web map shares, Google's included: 256-pixel tiles, zoom 0 to 19. */
 const TILE_SIZE = 256;
 const MAX_ZOOM = 18;
 const MIN_ZOOM = 3;
 
-/** Where the tiles come from, and the attribution that must travel with them. */
-export const OSM_TILE_HOST = "https://tile.openstreetmap.org";
-export const OSM_ATTRIBUTION = "Map data © OpenStreetMap contributors";
+/** Where the streets come from: this app's own route, which asks Google with the server key. */
+export const CASE_MAP_BASEMAP_ROUTE = "/api/admin/phoenix-crm/case-map-basemap";
+/** Google prints its own mark inside the picture; this line travels with it in words. */
+export const CASE_MAP_ATTRIBUTION = "Map data © Google";
+/** The Maps Static API draws at most 640 pixels a side (doubled in density, never in frame). */
+export const CASE_MAP_MAX_SIDE = 640;
+
+export type CaseMapBasemapRequest = { centre: GeoPoint; zoom: number; width: number; height: number };
+
+/** The address of one frame's streets. Six decimals is 11 cm: the frame the markers were placed in. */
+export function caseMapBasemapUrl(input: CaseMapBasemapRequest): string {
+  return (
+    `${CASE_MAP_BASEMAP_ROUTE}?lat=${input.centre.lat.toFixed(6)}&lon=${input.centre.lon.toFixed(6)}` +
+    `&zoom=${input.zoom}&w=${Math.round(input.width)}&h=${Math.round(input.height)}`
+  );
+}
+
+/**
+ * What the route accepts, or null. 🔴 Every picture Google draws is counted against the company's
+ * account, so the route draws only a frame `buildCaseMap` could have asked for: a real coordinate, a
+ * whole zoom this module uses, and a side between one tile and Google's own limit. Anything else is
+ * refused before Google is asked.
+ */
+export function parseCaseMapBasemapQuery(params: URLSearchParams): CaseMapBasemapRequest | null {
+  const read = (name: string): number | null => {
+    const raw = params.get(name);
+    if (raw === null || raw.trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+  const lat = read("lat");
+  const lon = read("lon");
+  const zoom = read("zoom");
+  const width = read("w");
+  const height = read("h");
+  if (lat === null || lon === null || zoom === null || width === null || height === null) return null;
+  if (lat < -85.06 || lat > 85.06 || lon < -180 || lon > 180) return null;
+  if (!Number.isInteger(zoom) || zoom < MIN_ZOOM || zoom > MAX_ZOOM) return null;
+  for (const side of [width, height]) {
+    if (!Number.isInteger(side) || side < TILE_SIZE || side > CASE_MAP_MAX_SIDE) return null;
+  }
+  return { centre: { lat, lon }, zoom, width, height };
+}
 
 export type CaseMapPoint = GeoPoint & {
   label: string;
   accuracyMeters: number | null;
-};
-
-export type CaseMapTile = {
-  /** Stable across renders, so a redraw does not refetch a tile the browser already holds. */
-  key: string;
-  url: string;
-  left: number;
-  top: number;
-  size: number;
 };
 
 export type CaseMapMarker = {
@@ -69,7 +105,8 @@ export type CaseMap = {
   height: number;
   zoom: number;
   centre: GeoPoint;
-  tiles: CaseMapTile[];
+  /** The streets behind the frame: one picture, asked of this app's own route. */
+  basemapUrl: string;
   markers: CaseMapMarker[];
   /** Every pair of readings, widest apart first. */
   pairs: CaseMapPair[];
@@ -78,7 +115,7 @@ export type CaseMap = {
   attribution: string;
 };
 
-/** Web-Mercator pixel at a zoom, in the 256-tile scheme OpenStreetMap uses. */
+/** Web-Mercator pixel at a zoom, in the 256-pixel scheme Google's pictures use too. */
 export function project(lon: number, lat: number, zoom: number): { x: number; y: number } {
   const size = TILE_SIZE * 2 ** zoom;
   // Clamped at the poles: `lat = ±90` sends the log to infinity, and one unusable fix would take the
@@ -129,7 +166,7 @@ function centreOf(points: ReadonlyArray<GeoPoint>): GeoPoint {
 }
 
 /**
- * The whole map for one case: the tiles that cover the frame, each reading's position in it, and
+ * The whole map for one case: the address of the streets behind the frame, each reading's position in it, and
  * every pair's distance in words.
  *
  * Null when the case has no usable reading at all — the panel then says so in words rather than
@@ -142,8 +179,8 @@ export function buildCaseMap(
   const usable = points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
   if (usable.length === 0) return null;
 
-  const width = Math.max(options.width ?? 320, TILE_SIZE);
-  const height = Math.max(options.height ?? 240, TILE_SIZE);
+  const width = Math.min(Math.max(Math.round(options.width ?? 320), TILE_SIZE), CASE_MAP_MAX_SIDE);
+  const height = Math.min(Math.max(Math.round(options.height ?? 240), TILE_SIZE), CASE_MAP_MAX_SIDE);
   const zoom = fitZoom(usable, width, height, options.padding ?? 48);
   const centre = centreOf(usable);
 
@@ -151,30 +188,6 @@ export function buildCaseMap(
   const centrePixel = project(centre.lon, centre.lat, zoom);
   const originX = centrePixel.x - width / 2;
   const originY = centrePixel.y - height / 2;
-  const tilesAcross = 2 ** zoom;
-
-  const tiles: CaseMapTile[] = [];
-  const firstTileX = Math.floor(originX / TILE_SIZE);
-  const lastTileX = Math.floor((originX + width) / TILE_SIZE);
-  const firstTileY = Math.floor(originY / TILE_SIZE);
-  const lastTileY = Math.floor((originY + height) / TILE_SIZE);
-  for (let tileY = firstTileY; tileY <= lastTileY; tileY += 1) {
-    // Past the poles there is no tile at all; the row is simply absent and the ground shows through.
-    if (tileY < 0 || tileY >= tilesAcross) continue;
-    for (let tileX = firstTileX; tileX <= lastTileX; tileX += 1) {
-      // The world wraps east to west, so the column does — a frame straddling the date line still
-      // draws, which is also the cheapest way to be sure a bad longitude cannot blank the map.
-      const wrapped = ((tileX % tilesAcross) + tilesAcross) % tilesAcross;
-      tiles.push({
-        key: `${zoom}/${wrapped}/${tileY}`,
-        url: `${OSM_TILE_HOST}/${zoom}/${wrapped}/${tileY}.png`,
-        left: tileX * TILE_SIZE - originX,
-        top: tileY * TILE_SIZE - originY,
-        size: TILE_SIZE,
-      });
-    }
-  }
-
   const markers: CaseMapMarker[] = usable.map((point, index) => {
     const pixel = project(point.lon, point.lat, zoom);
     const earlier = usable.findIndex((other) => other.lat === point.lat && other.lon === point.lon);
@@ -223,10 +236,10 @@ export function buildCaseMap(
     height,
     zoom,
     centre,
-    tiles,
+    basemapUrl: caseMapBasemapUrl({ centre, zoom, width, height }),
     markers,
     pairs,
     spreadMeters: caseSpreadMeters(usable),
-    attribution: OSM_ATTRIBUTION,
+    attribution: CASE_MAP_ATTRIBUTION,
   };
 }

@@ -33,6 +33,7 @@ import {
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { TelegramHomeCard } from "@/components/notifications/telegram-home-card";
 import { RepKpiMonthPicker } from "@/components/employee-portal/rep-kpi-month-picker";
 import { RepHonourStrip } from "@/components/employee-portal/rep-honour-strip";
 import { RepTodayPlanPanel } from "@/components/employee-portal/rep-today-plan-panel";
@@ -376,6 +377,7 @@ export function PortalIdentityBand({
           this is the one place a push opt-in nudge reaches every employee-portal role's home in
           a single edit. Renders nothing until it has checked this person's own state. */}
       <PushOptInNudge />
+      <TelegramHomeCard />
     </>
   );
 }

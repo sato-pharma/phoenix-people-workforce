@@ -77,6 +77,7 @@ import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrOnVacationToday } from "@/components/hr/hr-on-vacation-today";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { TelegramHomeCard } from "@/components/notifications/telegram-home-card";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
@@ -479,6 +480,7 @@ export function HrCommandCenter({
       />
 
       <PushOptInNudge />
+      <TelegramHomeCard />
 
       {/* ── Who is on a vacation today, by name (owner, 2026-09-29). It is the same kind of fact as
           the day panel — today's reality rather than a monthly figure — and it sits above the

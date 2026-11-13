@@ -336,7 +336,7 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
     name: "Google Maps, server",
     provider: "Google",
     category: "Maps and location",
-    usedFor: "Finds addresses and places, measures routes and draws map pictures.",
+    usedFor: "Finds addresses and places, measures routes and draws map pictures, the Location Integrity maps' streets included.",
     credential: { kind: "env", anyOf: [["GOOGLE_MAPS_SERVER_KEY"]] },
     health: { kind: "none", why: NOT_LOGGED_PER_CALL },
   },
@@ -358,15 +358,8 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
     credential: { kind: "env", anyOf: [["LOCATIONIQ_API_KEY"]] },
     health: { kind: "none", why: NOT_LOGGED_PER_CALL },
   },
-  {
-    id: "openstreetmap-tiles",
-    name: "OpenStreetMap tiles",
-    provider: "OpenStreetMap Foundation",
-    category: "Maps and location",
-    usedFor: "The map background on the Location Integrity board.",
-    credential: { kind: "none", why: "An open service with no key." },
-    health: { kind: "none", why: BROWSER_LOADS_IT },
-  },
+  // OpenStreetMap's tiles left this list on 13 Nov 2026 (ISS-012): the integrity maps' streets are a Google
+  // map picture, fetched by the server with the key above.
 
   // ── Google Workspace ───────────────────────────────────────────────────────────────────────────────────
   {

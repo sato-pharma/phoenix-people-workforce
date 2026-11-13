@@ -20,6 +20,7 @@ import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-cent
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { TelegramHomeCard } from "@/components/notifications/telegram-home-card";
 import { financeDownloadScope } from "@/lib/automated-payroll/finance-links";
 import type {
   FinanceCommandCenterData,
@@ -822,6 +823,7 @@ export function FinanceCommandCenter({
       </AdminHeroFrame>
 
       <PushOptInNudge />
+      <TelegramHomeCard />
 
       <UnavailableNotice sources={view.unavailable} />
 
