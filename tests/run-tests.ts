@@ -1151,6 +1151,7 @@ import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
 import { runNewHireMailboxAppPasswordCaptureTests } from "./new-hire-mailbox-app-password-capture.test.ts";
+import { runMailboxEditFormCaptureTests } from "./mailbox-edit-form-capture.test.ts";
 import { runNewHireMailboxAppPasswordRehearsalTests } from "./new-hire-mailbox-app-password-rehearsal.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
@@ -3113,6 +3114,7 @@ import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
+import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -5479,6 +5481,13 @@ await runTest(
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
   + "clear step — the flag is true only because the live rehearsal of 4 Oct 2026 read all four controls)",
   runNewHireMailboxAppPasswordCaptureTests,
+);
+await runTest(
+  "a leaver's mailbox Edit form is read and left without keeping anything (the System Administrator "
+  + "gate is checked before the body is read, an address that is not a leaver on the register is "
+  + "refused before a driver is built and never by a substring, leaving can press only Close modal, "
+  + "Cancel or Close and then Escape, and the answer carries a text field's length but never its value)",
+  runMailboxEditFormCaptureTests,
 );
 await runTest(
   "the app-password rehearsal mints ONE app password only on Phoenix's own invite inbox, refused "
@@ -12346,6 +12355,7 @@ await runTest(
   "the morning jobs move to one schedule each behind PHOENIX_DAILY_JOBS_SPLIT: switched off (what ships) /api/notifications/daily runs every job once, through the shared runners, digest first, and /api/cron/daily/<job> runs none and records no heartbeat; switched on, the reverse; never both and never neither, in the routes, the heartbeat declarations, the Healthchecks check and the re-fire policies; every job has exactly one cron-job.org entry and one heartbeat at the same minute, no two share a minute, the job route runs one job per request, and the jobs run are exactly the thirty the fan-out ran",
   runDailyJobsSplitTests,
 );
+await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

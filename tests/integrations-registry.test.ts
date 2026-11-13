@@ -243,10 +243,22 @@ function noPageLoadsATypefaceFromAFontService() {
       if (entry.isDirectory()) walk(rel);
       // The content-security policy names the hosts it allows; that is a rule, not a load.
       else if (/\.(ts|tsx|css)$/.test(entry.name) && rel !== "src/lib/security/content-security-policy.ts" && FONT_SERVICE.test(stripComments(read(rel)))) offenders.push(rel);
+      // A page served as a file from public/ is a page too. The marketing guide imported Inter from Google
+      // Fonts and the first sweep, which read only app/ and src/, never saw it (found 13 Nov 2026).
+      // Its own comment may NAME the service it left, so the page is read with its comments taken out.
+      else if (dir.startsWith("public") && /\.(html?|css|js|svg)$/.test(entry.name) && FONT_SERVICE.test(read(rel).replace(/\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->/g, ""))) offenders.push(rel);
     }
   };
-  for (const dir of ["app", "src"]) walk(dir);
+  for (const dir of ["app", "src", "public"]) walk(dir);
   assert.deepEqual(offenders, [], "🔴 a page loads a typeface from a font service: serve it from public/fonts, as the joining form does (ISS-043)");
+
+  // The marketing guide's Inter: one variable file, every weight the page asks for, with its licence.
+  const guide = read("public/marketing-guide.html");
+  assert.ok(guide.includes("src:url('/fonts/inter-latin.woff2') format('woff2')"), "the marketing guide declares Inter from the app's own /fonts");
+  assert.match(guide, /font-family:'Inter';[^}]*font-weight:300 900/, "the one file answers every weight the guide asks for (it uses 400 to 900)");
+  assert.ok(!/@import\s+url\(/.test(guide), "the guide imports no stylesheet from anywhere: an import is how the font service got in");
+  assert.equal(readFileSync(path.join(ROOT, "public/fonts/inter-latin.woff2")).subarray(0, 4).toString("latin1"), "wOF2", "public/fonts/inter-latin.woff2 is a real woff2 file");
+  assert.match(read("public/fonts/inter-OFL.txt"), /SIL OPEN FONT LICENSE/, "Inter's licence ships beside it");
 
   const form = stripComments(read("src/components/offers/joining-form-page.tsx"));
   for (const file of ["cairo-arabic.woff2", "cairo-latin-ext.woff2", "cairo-latin.woff2"]) {

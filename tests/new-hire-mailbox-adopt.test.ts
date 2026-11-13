@@ -84,6 +84,15 @@ function spyDriver(failAt?: "resetAndCapture" | "setMailboxPassword" | "generate
         why: "spy driver: nothing was minted and nothing was removed",
       };
     },
+    // The leaver register's read-only Edit-form capture. Neither path may reach it; it is here only
+    // so this spy satisfies the driver contract, and the whole call lists below prove nothing calls it.
+    async captureMailboxEditForm({ address }) {
+      calls.push(`captureMailboxEditForm:${address}`);
+      return {
+        address, buttons: [], closed: null, controls: [], fields: [], headings: [], leftWith: null,
+        namesAddress: null, observed: 0, reached: false, redacted: 0, scope: null, why: "spy driver: nothing was read",
+      };
+    },
     async close() { calls.push("close"); },
   };
 }
