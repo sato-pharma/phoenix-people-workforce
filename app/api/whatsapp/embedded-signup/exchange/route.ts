@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { logError, logInfo, logWarning } from "@/lib/observability/log";
+import { WHATSAPP_CONNECT_LINK_SCOPE, WHATSAPP_CONNECT_LINK_TTL_SECONDS, readWhatsAppConnectLink } from "@/lib/recruitment/inbound/whatsapp-connect-link";
 import { WHATSAPP_EMBEDDED_SIGNUP_APP_ID } from "@/lib/recruitment/inbound/whatsapp-embedded-signup";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
@@ -38,10 +39,12 @@ async function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Pr
  *   2. subscribes THIS app to that WABA's webhooks, so the handset's inbound messages are delivered
  *      to the existing /api/webhooks/whatsapp endpoint and flow into recruitment intake.
  *
- * No session is required: the code is only valid for this app + secret and is issued by Facebook only
- * to a person who already holds a role on the app (Standard Access), so it cannot be forged, and the
- * only Meta-side effect — subscribing our own app to a WABA — is idempotent and harmless. It writes no
- * business data (only the shared api_rate_limit bucket) and returns nothing sensitive to the browser.
+ * No session is required — the handset has none — but a ONE-TIME CONNECT LINK is (13 Nov 2026, S01
+ * F-PLT-008): a Super Admin makes it on Inbound CV Intake Health, and the page sends its ticket as
+ * `link`. A connection is finished only for a live, genuine ticket, and the ticket is spent before Meta
+ * is called, so one link connects one number within 30 minutes (whatsapp-connect-link.ts). The code
+ * itself is valid only for this app + secret. It writes no business data (only the shared
+ * api_rate_limit buckets) and returns nothing sensitive to the browser.
  */
 export async function POST(request: Request) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
@@ -81,12 +84,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "rate_limit_unavailable" }, { status: 503 });
   }
 
-  let body: { code?: unknown; wabaId?: unknown };
+  let body: { code?: unknown; wabaId?: unknown; link?: unknown };
   try {
-    body = (await request.json()) as { code?: unknown; wabaId?: unknown };
+    body = (await request.json()) as { code?: unknown; wabaId?: unknown; link?: unknown };
   } catch {
     return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
   }
+
+  // The one-time connect link: read first, spent before Meta is called, so a link that has been used
+  // or has run out connects nothing.
+  const link = readWhatsAppConnectLink(body.link);
+  if (!link) {
+    return NextResponse.json({ ok: false, error: "link_invalid" }, { status: 403 });
+  }
+  try {
+    await assertApiRateLimit({
+      identifier: link.nonce,
+      limit: 1,
+      scope: WHATSAPP_CONNECT_LINK_SCOPE,
+      windowMs: (WHATSAPP_CONNECT_LINK_TTL_SECONDS + 60) * 1000,
+    });
+  } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json({ ok: false, error: "link_used" }, { status: 403 });
+    }
+    // The store could not say whether this link was already used: refused, never waved through.
+    logWarning("WhatsApp connect link could not be spent; refused", {
+      error,
+      labels: { event: "whatsapp_connect_link_store_error" },
+    });
+    return NextResponse.json({ ok: false, error: "link_unavailable" }, { status: 503 });
+  }
+  logInfo("WhatsApp connect link spent", {
+    labels: { event: "whatsapp_connect_link_spent", made_by: link.madeBy },
+  });
 
   const code = typeof body.code === "string" ? body.code.trim() : "";
   const wabaId = typeof body.wabaId === "string" ? body.wabaId.trim() : "";
