@@ -8,6 +8,7 @@ import {
   PG_DUMP_DOCKER_IMAGE,
   PG_DUMP_MAJOR,
   assertProductionUrl,
+  toPooler,
   compareDumps,
   explainDrift,
   normalizeDump,
@@ -136,6 +137,16 @@ export function runSchemaBaselineTests() {
   assert.doesNotThrow(() => assertProductionUrl(PROD), "production's pooler URL is accepted");
   assert.throws(() => assertProductionUrl(STAGING), /does not name production/, "staging is refused — the baseline describes production only");
   assert.throws(() => assertProductionUrl(""), /no database URL/, "no URL is refused, never a silent pass");
+
+  // ── IPv4: the runner cannot reach the direct host (IPv6 only) ─────────────────────────────────────
+  assert.equal(
+    toPooler("postgresql://postgres:p%40ss@db.ozucdzovmcqvepbozvqf.supabase.co:5432/postgres"),
+    "postgresql://postgres.ozucdzovmcqvepbozvqf:p%40ss@aws-1-eu-central-1.pooler.supabase.com:5432/postgres",
+    "a direct production URL is rewritten to production's IPv4 session pooler (aws-1), keeping the password as given",
+  );
+  assert.equal(toPooler(PROD), PROD, "a URL already in pooler form passes untouched");
+  assert.doesNotThrow(() => assertProductionUrl(toPooler("postgresql://postgres:x@db.ozucdzovmcqvepbozvqf.supabase.co:5432/postgres")),
+    "the rewritten URL still names production");
 
   // ── one pg_dump, pinned ───────────────────────────────────────────────────────────────────────────
   for (const schema of BASELINE_SCHEMAS) {

@@ -22,6 +22,7 @@ import {
   PG_DUMP_DOCKER_IMAGE,
   PG_DUMP_MAJOR,
   assertProductionUrl,
+  toPooler,
   compareDumps,
   explainDrift,
   normalizeDump,
@@ -110,7 +111,8 @@ function list(title, keys) {
 }
 
 try {
-  const url = databaseUrl();
+  // Direct host → IPv4 session pooler: the runner has no IPv6 (toPooler, scripts/lib/schema-baseline.mjs).
+  const url = toPooler(databaseUrl(), process.env.SCHEMA_BASELINE_POOLER_HOST || undefined);
   assertProductionUrl(url);
   const started = Date.now();
   const live = dump(url);

@@ -66,6 +66,12 @@ The leg runs on production only, like the advisor leg, and only when the reposit
 `PHOENIX_PRODUCTION_DATABASE_URL` secret; without it the run prints a warning that production was not
 compared. A red leg reaches the run's report, the Telegram alarm and the run's own verdict.
 
+**The runner has no IPv6, and production's direct host `db.<ref>.supabase.co` has only an IPv6 address.**
+The first run from GitHub on 13 Nov 2026 failed with `Network unreachable`. The script therefore
+rewrites a direct URL to production's IPv4 session pooler, `aws-1-eu-central-1.pooler.supabase.com:5432`
+(aws-1, not the aws-0 the staging tools assume), before pg_dump runs. `SCHEMA_BASELINE_POOLER_HOST`
+overrides it if production ever moves.
+
 ## What it does not do yet
 
 - **It does not prove that a fresh database built from this file matches production.** That needs a

@@ -21,6 +21,22 @@ export const PG_DUMP_DOCKER_IMAGE = "postgres:18.4-alpine";
 
 export const PRODUCTION_REF = "ozucdzovmcqvepbozvqf";
 
+/** Production's session pooler (port 5432, session mode, so pg_dump works through it). Production sits
+ *  behind aws-1, not the aws-0 the staging tools default to: measured from .env.local, 2026-11-13. */
+export const PRODUCTION_POOLER_HOST = "aws-1-eu-central-1.pooler.supabase.com";
+
+/**
+ * `db.<ref>.supabase.co` has ONLY an IPv6 address, and GitHub's runners have no IPv6: the first nightly
+ * run on 2026-11-13 answered "Network unreachable". The session pooler answers on IPv4, so a direct URL
+ * is rewritten to it (the user becomes `postgres.<ref>`). A URL already in pooler form passes untouched.
+ */
+export function toPooler(raw, host = PRODUCTION_POOLER_HOST) {
+  const m = /^(\w+):\/\/([^:@]+):([^@]+)@db\.([a-z0-9]+)\.supabase\.co:\d+\/(.+)$/.exec(raw);
+  if (!m) return raw;
+  const [, scheme, user, pass, ref, db] = m;
+  return `${scheme}://${user}.${ref}:${pass}@${host}:5432/${db}`;
+}
+
 export const BASELINE_HEADER = [
   "-- Phoenix production schema baseline (REC-041). GENERATED — never edit by hand.",
   "--",
