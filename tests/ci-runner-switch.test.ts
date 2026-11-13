@@ -45,6 +45,7 @@ export const HOSTED_ONLY: Record<string, Record<string, string>> = {
     standby: "pulls and pushes the amd64 image with Docker",
   },
   "headwind-image.yml": { build: "builds the amd64 tablet-server image with Docker" },
+  "backup-image.yml": { rehearse: "builds the backup image and starts a throwaway database with Docker" },
   "codeql-weekly.yml": { analyze: "runs GitHub's CodeQL bundle, free on hosted runners for this public repository" },
 };
 

@@ -1,0 +1,43 @@
+name: Backup image rehearsal
+
+# WHY THIS EXISTS (integration audit, 13 Nov 2026: ISS-009, INT-096, INT-097). A merge under
+# infra/code-backup/ ships straight to the Railway service that makes the nightly backups, and nothing ran
+# those scripts before that: `ci.yml` never looks at this folder and there is no Docker on the owner's
+# laptop. A mistake would first show at 02:17 Cairo, on the live service, as a night with no backup — or,
+# worse, as a backup holding a migration and every reader behind it.
+#
+# This builds the exact image Railway builds and runs infra/code-backup/ci/rehearse.sh against a throwaway
+# PostgreSQL 17: the migration's login reads everything and writes nothing, a night's backup is made and
+# restored, the drill fails when it should, and the backup steps aside for a waiting migration. It touches
+# no real database, no Drive and no real key, and it pushes and deploys NOTHING.
+#
+# WHAT IT DOES NOT PROVE: the upload to Drive, the size of the real database, or how long the real dump
+# takes. Those are the first night's run and the restore drill on its file (infra/code-backup/README.md).
+#
+# COST: only pull requests that touch this folder, the login's migration or this file, and a manual
+# dispatch. About three minutes. Not required by branch protection; it reports.
+
+on:
+  pull_request:
+    paths:
+      - "infra/code-backup/**"
+      - "supabase/migrations/*_phoenix_backup_reader_role.sql"
+      - ".github/workflows/backup-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rehearse:
+    name: backup-image
+    runs-on: ubuntu-latest # hosted-only: builds the backup image and starts a throwaway database with Docker
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Rehearse the nightly backup, the restore drill and the step-aside (nothing is pushed or deployed)
+        run: bash infra/code-backup/ci/rehearse.sh

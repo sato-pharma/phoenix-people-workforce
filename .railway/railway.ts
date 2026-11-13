@@ -154,7 +154,8 @@ export default defineRailway(() => {
     // JAVA_TOOL_OPTIONS caps the Tomcat JVM heap (-Xmx768m, owner cost cuts 2026-10-14: the service held 60.6% of the project's memory-minutes at ~0 vCPU). preserve() keeps it, because dropping a name here deletes the variable on the next apply.
     env: { ADMIN_EMAIL: preserve(), BASE_DOMAIN: preserve(), HEADWIND_IMAGE_TAG: preserve(), JAVA_TOOL_OPTIONS: preserve(), PHX_ACCESS_AUD: preserve(), PHX_ACCESS_TEAM_DOMAIN: preserve(), PROTOCOL: preserve(), SQL_BASE: preserve(), SQL_HOST: preserve(), SQL_PASS: preserve(), SQL_PORT: preserve(), SQL_USER: preserve() },
   });
-  // The nightly code backup (owner, 2026-11-03). Created directly, never through a whole-project apply.
+  // The nightly code backup (owner, 2026-11-03), and since 13 Nov 2026 the nightly database backup in the same run.
+  // Created directly, never through a whole-project apply.
   // Its schedule, `17 0 * * *` UTC, has no setting here: Railway documents no cron option for service(),
   // so it is set with GraphQL `serviceInstanceUpdate { cronSchedule }`. See infra/code-backup/README.md.
   // Its watch pattern stops every merge to `main` rebuilding it: a rebuild replaces the container, which
@@ -164,7 +165,9 @@ export default defineRailway(() => {
     build: { watchPatterns: ["infra/code-backup/**"] },
     replicas: { "europe-west4-drams3a": 1 },
     deploy: { restartPolicyType: "NEVER" },
-    env: { CODE_BACKUP_AGE_RECIPIENT: preserve(), CODE_BACKUP_MIN_REPOS: preserve(), GITHUB_BACKUP_TOKEN: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_ID: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: preserve(), GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: preserve() },
+    // DB_BACKUP_DATABASE_URL (13 Nov 2026) is the database backup's read-only login (db-backup.sh). It is on this
+    // service and on no other: it reads every table.
+    env: { CODE_BACKUP_AGE_RECIPIENT: preserve(), CODE_BACKUP_MIN_REPOS: preserve(), DB_BACKUP_DATABASE_URL: preserve(), GITHUB_BACKUP_TOKEN: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_ID: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: preserve(), GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: preserve() },
   });
   const headwindDbEu = service("headwind-db-eu", {
     source: image("ghcr.io/railwayapp-templates/postgres-ssl:18"),

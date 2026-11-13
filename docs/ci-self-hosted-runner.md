@@ -49,6 +49,7 @@ retirement of the Hetzner box — is history.
 | `emergency-host.yml` | `gate` | Reads the image registry with Docker. |
 | `emergency-host.yml` | `standby` | Pulls and pushes the amd64 image with Docker. |
 | `headwind-image.yml` | `build` | Builds the amd64 tablet-server image with Docker, which Railway builds as amd64. |
+| `backup-image.yml` | `rehearse` | Builds the nightly backup image and starts a throwaway PostgreSQL with Docker. |
 
 Because none of the switched jobs uses Docker, `services:` or `container:`, our machines get no Docker.
 

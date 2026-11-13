@@ -159,6 +159,17 @@ commit.
 - **Point-in-time recovery / backups:** Supabase dashboard → Database → Backups, or the Supabase
   MCP's restore capability — same blast radius either way. Confirm PITR and retention meet policy
   before you need them, not during the incident (§8 below).
+- **The company's own copy (since 13 Nov 2026).** Every night the Railway service `phoenix-code-backup`
+  writes the whole database, encrypted, to Drive: `phoenix-db-backup/daily/db-backup-YYYY-MM-DD.tar.age`,
+  7 daily and 4 weekly. Only the owner's private age key opens it. It is the copy to reach for when the
+  provider's own backups are gone, too old, or the thing that failed. It restores into a NEW project or a
+  scratch schema, never over the live one, and the same rule applies: the owner says go first. How to
+  decrypt, drill and restore: `infra/code-backup/README.md`, "Nightly database backup". It does not hold
+  the files in Storage or any secret.
+- **A backup nobody has restored is a hope.** `infra/code-backup/restore-drill.sh` restores a night's
+  file into a throwaway server and compares every table's row count with the count taken when the
+  backup was made. Run it after any change to the backup, and write the date and the time it took in
+  `docs/audits/phoenix-crm-integration-audit/16_IMPLEMENTATION_PLAN.md`.
 - All schema changes are migration-based (`supabase/migrations/`). To recover schema, re-apply
   migrations to a fresh project in order — see docs/migrations.md. History before 2026-07-11 was
   collapsed into one baseline-snapshot migration

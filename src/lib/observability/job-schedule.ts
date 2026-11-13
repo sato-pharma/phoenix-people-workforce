@@ -128,6 +128,10 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-marketing-pharmacy-code-sync", kind: "cron", schedule: "47 2 * * *", graceSeconds: 2 * HOUR },
   // 10:57 Cairo, every day (owner, 2026-11-03: the nightly code backup, read from Drive). Under the period.
   { slug: "phoenix-code-backup-verify", kind: "cron", schedule: "57 10 * * *", graceSeconds: 2 * HOUR },
+  // The same 10:57 call (integration audit, 13 Nov 2026): /api/cron/code-backup-verify reads the database
+  // backup's folder too and reports it under this slug, so each backup has its own alarm and its own
+  // detail. It has no scheduler job of its own: the code backup's fires both. NO watchingSince: a new declaration.
+  { slug: "phoenix-db-backup-verify", kind: "cron", schedule: "57 10 * * *", graceSeconds: 2 * HOUR },
   // 10:37 Cairo, every day including Friday (owner, 2026-11-03: the HR handset's 14-day reminder). Under
   // seven days it says nothing and still reports, so a quiet run is correct. A minute no other job holds.
   // Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting. NO watchingSince: a new declaration.

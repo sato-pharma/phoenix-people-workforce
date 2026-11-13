@@ -40,10 +40,12 @@ on:
         required: false
         default: main
 
+# Read-only for every job. Until 13 Nov 2026 the whole workflow held `packages: write` (integration audit, ISS-025).
+# Each job that touches the image registry now asks for its own scope, below; a job that declares permissions gets
+# ONLY what it lists. status, setup and back-to-railway never touch the registry.
 permissions:
   contents: read
   actions: read
-  packages: write
 
 # Never cancel and never overlap: a flip interrupted half way leaves the domain somewhere nobody chose.
 concurrency:
@@ -131,6 +133,11 @@ jobs:
 
   gate:
     if: ${{ inputs.action == 'rehearse' || inputs.action == 'go-live' }}
+    # Asks the registry whether the image exists: a read.
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     runs-on: ubuntu-latest # hosted-only: reads the image registry with Docker
     timeout-minutes: 5
     outputs:
@@ -184,6 +191,12 @@ jobs:
   image:
     needs: gate
     if: ${{ needs.gate.outputs.image_exists != 'true' }}
+    # A called workflow can never hold more than the job that calls it, and fallback-image.yml's own `image` job
+    # pushes: this is the ceiling it pushes under.
+    permissions:
+      contents: read
+      actions: read
+      packages: write
     # The fallback route's own build: the repository's Dockerfile, Railway's NEXT_PUBLIC values, the commit stamped in,
     # booted and read before it is pushed. deploy=none — it touches no Railway service.
     uses: ./.github/workflows/fallback-image.yml
@@ -194,6 +207,11 @@ jobs:
 
   standby:
     needs: [gate, image]
+    # Pulls the image from ghcr.io (a read) and hands it to Fly's registry with Fly's own token.
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     if: ${{ always() && needs.gate.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
     runs-on: ubuntu-latest # hosted-only: pulls and pushes the amd64 image with Docker
     timeout-minutes: 40

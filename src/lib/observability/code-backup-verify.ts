@@ -1,6 +1,6 @@
-// The nightly code backup, checked from production rather than from the job that makes it. A job that
-// dies before it starts cannot report itself, so this reads what is really on Drive.
-// The job is infra/code-backup/.
+// The nightly backups, code and database, checked from production rather than from the job that makes them.
+// A job that dies before it starts cannot report itself, so this reads what is really on Drive.
+// The job is infra/code-backup/: backup.sh makes the code file, db-backup.sh the database file.
 
 import { getDriveAccessToken } from "@/lib/recruitment/drive-storage";
 
@@ -8,6 +8,13 @@ export const CODE_BACKUP_FOLDER = "phoenix-code-backup";
 export const CODE_BACKUP_MAX_AGE_HOURS = 36;
 // Measured on the 26 Oct bundles: 453 MB. A file under this is missing most of what it should hold.
 export const CODE_BACKUP_MIN_BYTES = 100 * 1024 * 1024;
+
+// The database backup sits in its own folder, so neither job can prune or overwrite the other's files.
+export const DB_BACKUP_FOLDER = "phoenix-db-backup";
+// A floor that only catches a file that is plainly not the database. Measured 13 Nov 2026: the tables hold
+// 2,157 MB, and a rehearsal dump of production had written 94.7 MB when it was stopped part way. The rule
+// that does the fine work is the one below it: under half of the night before.
+export const DB_BACKUP_MIN_BYTES = 64 * 1024 * 1024;
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const READ_TIMEOUT_MS = 20_000;
@@ -20,20 +27,29 @@ function megabytes(bytes: number): string {
 }
 
 /** Newest first. Too small is judged two ways: against a floor, and against the file before it. */
-export function assessCodeBackup(files: readonly CodeBackupFile[], nowMs: number): CodeBackupVerdict {
+export function assessCodeBackup(
+  files: readonly CodeBackupFile[],
+  nowMs: number,
+  minBytes: number = CODE_BACKUP_MIN_BYTES,
+): CodeBackupVerdict {
   const [newest, previous] = [...files].sort((a, b) => b.createdTime.localeCompare(a.createdTime));
   if (!newest) return { detail: "No backup file has reached Drive yet.", outcome: "fail" };
   const hours = Math.floor((nowMs - new Date(newest.createdTime).getTime()) / (60 * 60 * 1000));
   if (!(hours <= CODE_BACKUP_MAX_AGE_HOURS)) {
     return { detail: `The newest backup, ${newest.name}, is ${hours} hours old (limit ${CODE_BACKUP_MAX_AGE_HOURS}).`, outcome: "fail" };
   }
-  if (newest.size < CODE_BACKUP_MIN_BYTES) {
-    return { detail: `The newest backup, ${newest.name}, is only ${megabytes(newest.size)} (floor ${megabytes(CODE_BACKUP_MIN_BYTES)}).`, outcome: "fail" };
+  if (newest.size < minBytes) {
+    return { detail: `The newest backup, ${newest.name}, is only ${megabytes(newest.size)} (floor ${megabytes(minBytes)}).`, outcome: "fail" };
   }
   if (previous && newest.size < previous.size / 2) {
     return { detail: `The newest backup, ${newest.name}, is ${megabytes(newest.size)}, under half of the one before it (${megabytes(previous.size)}).`, outcome: "fail" };
   }
   return { detail: `${newest.name}, ${megabytes(newest.size)}, ${hours} hours old.`, outcome: "success" };
+}
+
+/** The database file is judged by the same three rules, against its own floor. */
+export function assessDatabaseBackup(files: readonly CodeBackupFile[], nowMs: number): CodeBackupVerdict {
+  return assessCodeBackup(files, nowMs, DB_BACKUP_MIN_BYTES);
 }
 
 async function driveList(token: string, query: string, extra: Record<string, string> = {}): Promise<Record<string, string>[]> {
