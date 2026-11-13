@@ -1,3 +1,4 @@
+import { conflictError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { DisputeCaseKind } from "./types.ts";
@@ -29,6 +30,17 @@ export type DeductionDisputeSnapshot = {
   publicationIds: string[];
   refunds: Array<Record<string, unknown>>;
 };
+
+/**
+ * The claim is no longer this decision's: it lapsed and another decision took it over. Stamping,
+ * renewing and releasing by token touch no row then, and that is never taken as success.
+ */
+export const DISPUTE_DECISION_CLAIM_LOST =
+  "This dispute was taken over by another decision while this one was still running (its hold had lapsed). Nothing more was written by this one. Reload the dispute and read what was decided.";
+
+function claimLost(): Error {
+  return conflictError(DISPUTE_DECISION_CLAIM_LOST, "claim_lost");
+}
 
 export type DisputeDecisionClaim =
   | {
@@ -72,24 +84,42 @@ export async function stampDisputeDecisionSnapshot(input: {
   token: string;
   snapshot: DeductionDisputeSnapshot;
 }): Promise<void> {
-  const { error } = await getSupabaseAdmin()
+  const { data, error } = await getSupabaseAdmin()
     .from("dispute_case_decision_claims")
     .update({ snapshot: input.snapshot })
     .eq("case_kind", input.kind)
     .eq("case_ref", input.ref)
-    .eq("claim_token", input.token);
+    .eq("claim_token", input.token)
+    .select("case_ref");
   if (error) throw new Error(`Could not record the deduction's state before the decision: ${error.message}`);
+  if (!Array.isArray(data) || data.length === 0) throw claimLost();
 }
 
-/** Release the claim — only this decision's own, by its token. */
+/**
+ * Prove the claim is still this decision's, and renew it, in one statement — immediately before the
+ * decision's last write. Throws the claim-lost Conflict when another decision has taken it over.
+ */
+export async function renewDisputeDecision(input: { kind: DisputeCaseKind; ref: string; token: string }): Promise<void> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_renew_dispute_case_decision", {
+    p_case_kind: input.kind,
+    p_case_ref: input.ref,
+    p_claim_token: input.token,
+  });
+  if (error) throw new Error(`Could not confirm the decision claim: ${error.message}`);
+  if (data !== true) throw claimLost();
+}
+
+/** Release the claim — only this decision's own, by its token. Throws when it was no longer held. */
 export async function releaseDisputeDecision(input: { kind: DisputeCaseKind; ref: string; token: string }): Promise<void> {
-  const { error } = await getSupabaseAdmin()
+  const { data, error } = await getSupabaseAdmin()
     .from("dispute_case_decision_claims")
     .delete()
     .eq("case_kind", input.kind)
     .eq("case_ref", input.ref)
-    .eq("claim_token", input.token);
+    .eq("claim_token", input.token)
+    .select("case_ref");
   if (error) throw new Error(`Could not release the decision claim: ${error.message}`);
+  if (!Array.isArray(data) || data.length === 0) throw claimLost();
 }
 
 export async function captureDeductionDisputeState(candidateId: string): Promise<DeductionDisputeSnapshot> {
@@ -101,16 +131,36 @@ export async function captureDeductionDisputeState(candidateId: string): Promise
   return data as DeductionDisputeSnapshot;
 }
 
-/** Put the before-state back, in one transaction. Throws when it could not. */
+/** The undo refused because somebody else changed these rows after this decision wrote them. */
+export class DisputeUndoConflictError extends Error {
+  readonly conflicts: string[];
+  constructor(conflicts: string[]) {
+    super(`changed by somebody else since this decision wrote them, so they were left as they are: ${conflicts.join(", ")}`);
+    this.name = "DisputeUndoConflictError";
+    this.conflicts = conflicts;
+  }
+}
+
+/**
+ * Put back what THIS attempt changed, in one transaction — `snapshot` is the before-state, `left` the
+ * state this attempt left after its last successful write. A row is put back only while it still equals
+ * what this attempt left; if any was changed by somebody else since, nothing is written and this throws
+ * DisputeUndoConflictError naming them. Throws on any other failure too.
+ */
 export async function restoreDeductionDisputeState(input: {
   snapshot: DeductionDisputeSnapshot;
+  left: DeductionDisputeSnapshot;
   actor: string | null;
 }): Promise<{ publicationsLeftEmpty: string[] }> {
   const { data, error } = await getSupabaseAdmin().rpc("phx_restore_deduction_dispute_state", {
     p_actor: input.actor,
+    p_left: input.left,
     p_snapshot: input.snapshot,
   });
   if (error) throw new Error(error.message);
-  const row = (data ?? {}) as { publicationsLeftEmpty?: string[] | null };
+  const row = (data ?? {}) as { conflicts?: string[] | null; publicationsLeftEmpty?: string[] | null; restored?: boolean };
+  if (row.restored !== true) {
+    throw new DisputeUndoConflictError(Array.isArray(row.conflicts) && row.conflicts.length ? row.conflicts : ["(not named)"]);
+  }
   return { publicationsLeftEmpty: Array.isArray(row.publicationsLeftEmpty) ? row.publicationsLeftEmpty : [] };
 }

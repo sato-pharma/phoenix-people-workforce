@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 
-import { DISPUTE_DECISION_CLAIM_LAPSE_MINUTES, type DeductionDisputeSnapshot } from "../src/lib/dispute-center/decision-claim.ts";
+import {
+  DISPUTE_DECISION_CLAIM_LAPSE_MINUTES,
+  DISPUTE_DECISION_CLAIM_LOST,
+  DisputeUndoConflictError,
+  releaseDisputeDecision,
+  renewDisputeDecision,
+  stampDisputeDecisionSnapshot,
+  type DeductionDisputeSnapshot,
+} from "../src/lib/dispute-center/decision-claim.ts";
+import { conflictError } from "../src/lib/http/api-errors.ts";
 import { decideDeductionDispute, type DecideDeductionDisputeDeps } from "../src/lib/dispute-center/deduction.ts";
 import type { CaseEventInput } from "../src/lib/dispute-center/events.ts";
 import { deriveDisputeCaseState } from "../src/lib/dispute-center/state.ts";
@@ -91,6 +101,7 @@ function world(options: { pushed?: boolean; monthState?: "open" | "paid" } = {})
           decision_reason: "Approved",
           decision_status: "Approved for Payroll",
           hr_note: "",
+          updated_at: "2026-10-29T09:00:00.000000+00:00",
         },
       ],
     ]),
@@ -306,9 +317,10 @@ function fakeDeps(
         decision_reason: input.decisionReason,
         decision_status: input.decisionStatus,
         hr_note: input.hrNote ?? "",
+        updated_at: nowIso(w),
       };
       w.decisions.set(input.candidateId, row);
-      return { appliedAmount: row.applied_amount, appliedValue: row.applied_value, payrollNotices: [] as string[] };
+      return { appliedAmount: row.applied_amount, appliedValue: row.applied_value, payrollNotices: [] as string[], updatedAt: row.updated_at };
     }),
     recordEvents: failing("recordEvents", async (inputs: CaseEventInput[]) => {
       write("recordEvents");
@@ -316,7 +328,13 @@ function fakeDeps(
     }),
     release: failing("release", async (input: { kind: string; ref: string; token: string }) => {
       const key = `${input.kind}:${input.ref}`;
-      if (w.claims.get(key)?.token === input.token) w.claims.delete(key);
+      if (w.claims.get(key)?.token !== input.token) throw conflictError(DISPUTE_DECISION_CLAIM_LOST);
+      w.claims.delete(key);
+    }),
+    renewClaim: failing("renewClaim", async (input: { kind: string; ref: string; token: string }) => {
+      const claim = w.claims.get(`${input.kind}:${input.ref}`);
+      if (claim?.token !== input.token) throw conflictError(DISPUTE_DECISION_CLAIM_LOST);
+      claim.lapseAt = Date.now() + 5 * 60_000;
     }),
     resolveParticipant: failing("resolveParticipant", async () => ({
       canRead: true,
@@ -325,27 +343,56 @@ function fakeDeps(
       ownerHrId: "B-77",
       viewerHrId: "B-10",
     })),
-    restore: failing("restore", async (input: { snapshot: DeductionDisputeSnapshot }) => {
-      // What phx_restore_deduction_dispute_state does, in one go.
+    restore: failing("restore", async (input: { snapshot: DeductionDisputeSnapshot; left: DeductionDisputeSnapshot }) => {
+      // What phx_restore_deduction_dispute_state does, in one go, by the same rules.
       if (options.restoreFails) throw new Error("the undo was refused");
-      const snap = input.snapshot;
-      const keepLines = new Set(snap.lines.map((line) => String(line.id)));
-      w.lines = w.lines.filter((line) => line.candidate_id !== snap.candidateId || keepLines.has(String(line.id)));
-      for (const before of snap.lines) {
-        const line = w.lines.find((row) => row.id === before.id)!;
-        Object.assign(line, clone(before));
+      const before = input.snapshot;
+      const left = input.left;
+      const id = before.candidateId;
+      const same = (a: unknown, b: unknown) => isDeepStrictEqual(a ?? null, b ?? null);
+      const conflicts: string[] = [];
+      const compare = (label: string, now: Row[], leftRows: Row[], beforeRows: Row[]) => {
+        const ids = new Set([...now, ...leftRows, ...beforeRows].map((row) => String(row.id)));
+        for (const rowId of ids) {
+          const n = now.find((row) => String(row.id) === rowId);
+          const l = leftRows.find((row) => String(row.id) === rowId);
+          const b = beforeRows.find((row) => String(row.id) === rowId);
+          if (!l || (!same(l, b) && !same(n, l))) conflicts.push(`${label} ${rowId}`);
+        }
+      };
+      compare("payslip line", w.lines.filter((line) => line.candidate_id === id), left.lines, before.lines);
+      if (!same(left.decision, before.decision) && !same(w.decisions.get(id), left.decision)) conflicts.push("the decision");
+      compare("refund", w.refunds.filter((refund) => refund.case_ref === id), left.refunds, before.refunds);
+      const lockTouched = left.lockedAt !== before.lockedAt;
+      const candidate = w.candidates.get(id)!;
+      if (lockTouched && candidate.locked_at !== left.lockedAt) conflicts.push("the publication lock");
+      if (conflicts.length) throw new DisputeUndoConflictError(conflicts.sort());
+
+      const beforeLineIds = new Set(before.lines.map((line) => String(line.id)));
+      const leftLineIds = new Set(left.lines.map((line) => String(line.id)));
+      w.lines = w.lines.filter((line) => line.candidate_id !== id || !leftLineIds.has(String(line.id)) || beforeLineIds.has(String(line.id)));
+      for (const b of before.lines) {
+        const l = left.lines.find((row) => row.id === b.id);
+        if (l && !same(l, b)) Object.assign(w.lines.find((row) => row.id === b.id)!, clone(b));
       }
-      if (snap.decision) w.decisions.set(snap.candidateId, clone(snap.decision));
-      else w.decisions.delete(snap.candidateId);
-      const keepRefunds = new Set(snap.refunds.map((refund) => String(refund.id)));
-      w.refunds = w.refunds.filter((refund) => refund.case_ref !== snap.candidateId || keepRefunds.has(String(refund.id)));
-      for (const before of snap.refunds) Object.assign(w.refunds.find((row) => row.id === before.id)!, clone(before));
-      w.candidates.get(snap.candidateId)!.locked_at = snap.lockedAt;
+      if (!same(left.decision, before.decision)) {
+        if (before.decision) w.decisions.set(id, clone(before.decision));
+        else w.decisions.delete(id);
+      }
+      const beforeRefundIds = new Set(before.refunds.map((refund) => String(refund.id)));
+      const leftRefundIds = new Set(left.refunds.map((refund) => String(refund.id)));
+      w.refunds = w.refunds.filter((refund) => refund.case_ref !== id || !leftRefundIds.has(String(refund.id)) || beforeRefundIds.has(String(refund.id)));
+      for (const b of before.refunds) {
+        const l = left.refunds.find((row) => row.id === b.id);
+        if (l && !same(l, b)) Object.assign(w.refunds.find((row) => row.id === b.id)!, clone(b));
+      }
+      if (lockTouched) candidate.locked_at = before.lockedAt;
       return { publicationsLeftEmpty: [] };
     }),
     stampSnapshot: failing("stampSnapshot", async (input: { kind: string; ref: string; token: string; snapshot: DeductionDisputeSnapshot }) => {
       const claim = w.claims.get(`${input.kind}:${input.ref}`);
-      if (claim?.token === input.token) claim.snapshot = clone(input.snapshot);
+      if (claim?.token !== input.token) throw conflictError(DISPUTE_DECISION_CLAIM_LOST);
+      claim.snapshot = clone(input.snapshot);
     }),
     withdrawDeduction: failing("withdrawDeduction", async (input: { lineId: string }) => {
       write("withdrawDeduction");
@@ -509,6 +556,7 @@ type Captured = { method: string; table: string; params: URLSearchParams; body: 
 async function withFakePostgrest(
   tablesIn: Record<string, Row[]>,
   body: (requests: Captured[]) => Promise<void>,
+  rpc: Record<string, (args: Row) => unknown> = {},
 ): Promise<void> {
   const requests: Captured[] = [];
   const realFetch = globalThis.fetch;
@@ -526,6 +574,7 @@ async function withFakePostgrest(
     const parsed: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : null;
     requests.push({ body: parsed, method, params: url.searchParams, table });
     const wantsObject = String(new Headers(init?.headers).get("accept") ?? "").includes("pgrst.object");
+    if (table.startsWith("rpc/") && rpc[table.slice(4)]) return json(rpc[table.slice(4)]((parsed ?? {}) as Row));
     const rows = tablesIn[table];
     if (!rows) return json(wantsObject ? null : [], method === "GET" ? 200 : 201);
     // eq filters only — all recordDecision sends.
@@ -550,6 +599,10 @@ async function withFakePostgrest(
         else rows.push({ ...row, created_at: "2026-11-13T10:00:00+00:00", id: `dec-${rows.length + 1}`, updated_at: "2026-11-13T10:00:00+00:00" });
       }
       return json(wantsObject ? rows[rows.length - 1] : incoming, 201);
+    }
+    if (method === "DELETE") {
+      for (const row of matches) rows.splice(rows.indexOf(row), 1);
+      return json(wantsObject ? matches[0] ?? null : matches);
     }
     return json(null, 200);
   }) as typeof fetch;
@@ -700,7 +753,8 @@ function runSourcePins() {
   for (const signature of [
     "phx_claim_dispute_case_decision(text, text, text)",
     "phx_capture_deduction_dispute_state(uuid)",
-    "phx_restore_deduction_dispute_state(jsonb, text)",
+    "phx_restore_deduction_dispute_state(jsonb, jsonb, text)",
+    "phx_renew_dispute_case_decision(text, text, uuid)",
   ]) {
     assert.ok(
       claimSql.includes(`revoke execute on function public.${signature} from public, anon, authenticated;`) &&
@@ -726,12 +780,83 @@ function runSourcePins() {
   );
   const unlock = restore.indexOf("set locked_at = null");
   const decisionWrite = restore.indexOf("update public.deductions_decisions");
-  const relock = restore.indexOf("set locked_at = nullif(p_snapshot->>'lockedat'");
+  const relock = restore.indexOf("set locked_at = v_final_lock");
   assert.ok(
     unlock >= 0 && unlock < decisionWrite && decisionWrite < relock,
     "the undo takes the lock off, writes the decision back, then restores the lock — the lock trigger is obeyed, not bypassed",
   );
   assert.ok(claimSql.includes("'decision_interrupted'::text"), "the timeline may hold the needs-attention marker");
+
+  // The undo touches only what THIS attempt wrote, and only while it is still as this attempt left it.
+  assert.ok(
+    restore.includes("create or replace function public.phx_restore_deduction_dispute_state(p_snapshot jsonb, p_left jsonb, p_actor text)"),
+    "the undo is given the state this attempt left, not only the before-state",
+  );
+  assert.ok(
+    restore.split("when lft.left_row is distinct from bef.before_row then cur.now_row is distinct from lft.left_row").length - 1 === 2 &&
+      restore.indexOf("from public.deductions_publication_lines l where l.candidate_id = v_candidate) cur") <
+        restore.indexOf("then cur.now_row is distinct from lft.left_row") &&
+      restore.includes("v_now_json is distinct from v_left_decision") &&
+      restore.includes("v_locked_now is distinct from v_left_lock"),
+    "lines, refunds, the decision and the lock are each compared with what this attempt left",
+  );
+  const refusedAt = restore.indexOf("if array_length(v_conflicts, 1) is not null then");
+  const firstWrite = Math.min(
+    ...["delete from public.deductions_publication_lines", "update public.deductions_publication_lines", "update public.deductions_candidates", "delete from public.dispute_refunds"].map(
+      (statement) => restore.indexOf(statement),
+    ),
+  );
+  assert.ok(refusedAt > 0 && refusedAt < firstWrite, "every conflict is found before the first write");
+  const refusedBlock = restore.slice(refusedAt, restore.indexOf("end if;", refusedAt));
+  assert.ok(
+    refusedBlock.includes("'restored', false") && refusedBlock.includes("'conflicts', to_jsonb(v_conflicts)") && refusedBlock.includes("return"),
+    "a conflict returns the named rows and writes nothing to the money tables",
+  );
+  for (const [statement, scope] of [
+    ["delete from public.deductions_publication_lines l", "l.candidate_id = v_candidate"],
+    ["update public.deductions_publication_lines l", "l.candidate_id = v_candidate"],
+    ["delete from public.dispute_refunds r", "r.case_kind = 'deduction' and r.case_ref = v_ref"],
+    ["update public.dispute_refunds d", "d.case_kind = 'deduction' and d.case_ref = v_ref"],
+  ] as const) {
+    let at = restore.indexOf(statement);
+    assert.ok(at >= 0, `${statement} is in the undo`);
+    while (at >= 0) {
+      const end = restore.indexOf(";", at);
+      assert.ok(restore.slice(at, end).includes(scope), `${statement} is scoped to this case (${scope}), never to an id alone`);
+      at = restore.indexOf(statement, end);
+    }
+  }
+
+  // A decision row the undo DELETES is not seen by the history trigger (inserts and updates only), so
+  // the undo writes that history row itself, in the trigger's own shape — and the trigger is untouched.
+  const removal = restore.slice(restore.indexOf("delete from public.deductions_decisions"));
+  const removalRow = removal.slice(0, removal.indexOf("));"));
+  assert.ok(
+    removalRow.includes("insert into public.deductions_audit (candidate_id, actor_hr_id, action, detail)") && removalRow.includes("'decision_removed'"),
+    "the removed decision is written to the decision history in the same transaction",
+  );
+  for (const key of ["'decision_id'", "'changed_fields'", "'before'", "'after'", "'decided_at'", "'actor_role_at_decision'"]) {
+    assert.ok(removalRow.includes(key), `the removal row carries the history trigger's ${key}`);
+  }
+  for (const sql of [claimSql, lockSql]) {
+    assert.ok(
+      !sql.includes("phx_log_deduction_decision_change") && !sql.includes("on public.deductions_decisions for each row execute function public.phx_log"),
+      "neither migration redefines the history trigger or its function",
+    );
+  }
+
+  // A lost claim is never a silent success.
+  const claimTs = stripComments(readFileSync("src/lib/dispute-center/decision-claim.ts", "utf8"));
+  assert.equal(
+    (claimTs.match(/\.select\("case_ref"\);\n\s*if \(error\)[^\n]*\n\s*if \(!Array\.isArray\(data\) \|\| data\.length === 0\) throw claimLost\(\);/g) ?? []).length,
+    2,
+    "stamping and releasing by token throw when they touch no row",
+  );
+  assert.ok(claimTs.includes("if (data !== true) throw claimLost();"), "a renewal answered false throws");
+  assert.ok(
+    claimSql.includes("where case_kind = p_case_kind and case_ref = p_case_ref and claim_token = p_claim_token;\n  return found;"),
+    "the renewal proves the token in the same statement that renews it",
+  );
 
   // F-PAY-004: the database refuses a decision on a locked candidate.
   const guard = functionBody(lockSql, "phx_deductions_decisions_refuse_locked");
@@ -765,6 +890,16 @@ function runSourcePins() {
     "the refund events and the decided event are written together, as the decision's last write",
   );
   assert.ok(!/recordCaseEvent\(\{[^}]*eventType: "decided"/.test(decide), "the decided event is no longer a write of its own");
+  const renewAt = decide.indexOf("await deps.renewClaim(");
+  const lastEventsAt = decide.indexOf("await deps.recordEvents([\n      ...deferredEvents,");
+  assert.ok(
+    renewAt > decide.lastIndexOf("await write(") && renewAt < lastEventsAt,
+    "the claim is proved still held immediately before the last write, after every other write",
+  );
+  assert.ok(
+    decide.includes("left = await deps.capture(input.candidateId);") && decide.includes("undoHalfDecision({ access, deps, error, input, left,"),
+    "the state each write left is re-read and handed to the undo",
+  );
 
   const service = stripComments(readFileSync("src/lib/deductions/service.ts", "utf8"));
   assert.ok(
@@ -776,8 +911,183 @@ function runSourcePins() {
   assert.ok(route.includes("expectedUpdatedAt:"), "the Decide route passes the revision the screen read");
 }
 
+// ─────────────────────── the undo never overwrites somebody else's change, and a lost claim stops
+
+async function runForeignChangesAndLostClaims() {
+  const accept = { candidateId: CANDIDATE_ID, note: "", outcome: "accept" as const };
+
+  // A Deductions workspace save lands on the decision AFTER this attempt wrote it, then the attempt
+  // fails: the undo must not put the old decision back over HR's save.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const deps = fakeDeps(w);
+    const renew = deps.renewClaim;
+    deps.renewClaim = async (input) => {
+      const decision = w.decisions.get(CANDIDATE_ID)!;
+      decision.hr_note = "HR changed this in the workspace";
+      decision.updated_at = "2026-11-13T11:11:11.111111+00:00";
+      await renew(input);
+      // The last write then fails — so the marker itself, a separate insert, can still be written.
+      throw new Error("injected failure of the last write");
+    };
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, deps));
+    assert.equal(statusOf(error), 409, "a refused undo is still a Conflict");
+    assert.match(error.message, /could NOT be put back/, "the reviewer is told the undo did not run");
+    assert.match(error.message, /the decision/, "…and which row somebody else changed");
+    assert.equal(
+      w.decisions.get(CANDIDATE_ID)?.hr_note,
+      "HR changed this in the workspace",
+      "a workspace save made after this attempt wrote the decision is NOT reverted by the undo",
+    );
+    assert.equal(w.decisions.get(CANDIDATE_ID)?.decision_status, "Do Not Take Action", "nothing of the decision was rolled back over it");
+    assert.ok(
+      w.lines.every((line) => line.line_status === "withdrawn"),
+      "the undo is all or nothing: with one row contested, no other row was put back either",
+    );
+    assert.equal(
+      w.refunds.filter((refund) => refund.status === "recommended").length,
+      1,
+      "the refund this attempt made stays, for a person to settle",
+    );
+    const marker = w.events.find((event) => event.event_type === "decision_interrupted");
+    assert.ok(marker, "the case is marked");
+    assert.deepEqual((marker!.details as Row).conflicts, ["the decision"], "the marker names the contested rows");
+    assert.ok(!w.events.some((event) => event.event_type === "decided"), "no decided event");
+    assert.equal(
+      deriveDisputeCaseState({ decided: false, events: w.events.map(toEvent), messages: [], openedAt: "2026-11-01T00:00:00.000Z" }),
+      "needs_attention",
+      "and it reads Needs attention",
+    );
+  }
+
+  // A month push adds a line for the candidate after this attempt's last write: the undo leaves it.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const deps = fakeDeps(w);
+    const renew = deps.renewClaim;
+    deps.renewClaim = async (input) => {
+      w.lines.push({ ...clone(w.lines[0]), id: "line-pushed-by-someone-else", line_status: "active" });
+      await renew(input);
+      // The last write then fails — so the marker itself, a separate insert, can still be written.
+      throw new Error("injected failure of the last write");
+    };
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, deps));
+    assert.match(error.message, /payslip line line-pushed-by-someone-else/, "the foreign line is named");
+    assert.ok(
+      w.lines.some((line) => line.id === "line-pushed-by-someone-else" && line.line_status === "active"),
+      "a line somebody else pushed is never deleted or withdrawn by the undo",
+    );
+  }
+
+  // Somebody writes the decision in the instant between this attempt's write and its re-read. The
+  // re-read alone would take their row as ours; the revision this attempt's own write returned does not.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const deps = fakeDeps(w, { failAt: "recordEvents" });
+    const capture = deps.capture;
+    let reads = 0;
+    deps.capture = async (candidateId) => {
+      reads += 1;
+      // Read 1 is the before-state, read 2 follows the withdraw, read 3 follows the decision write.
+      if (reads === 3) {
+        const decision = w.decisions.get(CANDIDATE_ID)!;
+        decision.hr_note = "written in between";
+        decision.updated_at = "2026-11-13T12:00:00.000001+00:00";
+      }
+      return capture(candidateId);
+    };
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, deps));
+    assert.match(error.message, /the decision/, "the decision written in between is seen as somebody else's");
+    assert.equal(w.decisions.get(CANDIDATE_ID)?.hr_note, "written in between", "and it is not overwritten");
+  }
+
+  // The claim lapses and is taken over while this decision still runs. It stops before its last write,
+  // puts back what it changed, and answers 409 — it never finishes on a case somebody else holds.
+  {
+    const w = world({ monthState: "paid", pushed: true });
+    const before = tables(w);
+    const deps = fakeDeps(w);
+    const recommend = deps.recommendDisputeRefund;
+    deps.recommendDisputeRefund = async (input) => {
+      const result = await recommend(input);
+      w.claims.set(`deduction:${CANDIDATE_ID}`, {
+        claimedAt: "2026-11-13T10:06:00.000Z",
+        lapseAt: Date.now() + 60_000,
+        snapshot: null,
+        token: "taken-over",
+      });
+      return result;
+    };
+    const error = await refusal(decideDeductionDispute(SUPER_ADMIN, accept, deps));
+    assert.equal(statusOf(error), 409, "a lost claim is a Conflict");
+    assert.match(error.message, /taken over by another decision/, "…that says the claim was taken over");
+    assert.match(error.message, /put back/, "…and that what it had changed was put back");
+    assert.deepEqual(tables(w), before, "every table is as it was before the decision began");
+    assert.ok(!w.events.some((event) => event.event_type === "decided"), "no decided event");
+    assert.equal(w.claims.get(`deduction:${CANDIDATE_ID}`)?.token, "taken-over", "the other decision's claim is left alone");
+    assert.equal(w.notified, 0, "nobody is told");
+  }
+
+  // Stamping, renewing and releasing by token THROW when the claim is no longer this decision's.
+  const claimRow = (token: string): Row => ({ case_kind: "deduction", case_ref: CANDIDATE_ID, claim_token: token, snapshot: null });
+  const snapshot: DeductionDisputeSnapshot = {
+    candidateId: CANDIDATE_ID,
+    decision: null,
+    lines: [],
+    lockedAt: null,
+    monthKey: "2026-10",
+    publicationIds: [],
+    refunds: [],
+  };
+  {
+    const db = { dispute_case_decision_claims: [claimRow("theirs")] };
+    await withFakePostgrest(db, async () => {
+      await assert.rejects(
+        stampDisputeDecisionSnapshot({ kind: "deduction", ref: CANDIDATE_ID, snapshot, token: "mine" }),
+        (error: Error) => error.message === DISPUTE_DECISION_CLAIM_LOST && statusOf(error) === 409,
+        "a stamp that touches no row is the claim-lost Conflict, never a silent success",
+      );
+      await assert.rejects(
+        releaseDisputeDecision({ kind: "deduction", ref: CANDIDATE_ID, token: "mine" }),
+        (error: Error) => error.message === DISPUTE_DECISION_CLAIM_LOST && statusOf(error) === 409,
+        "a release that touches no row is the claim-lost Conflict, never a silent success",
+      );
+    });
+    assert.equal(db.dispute_case_decision_claims.length, 1, "the other decision's claim is not released");
+    assert.equal(db.dispute_case_decision_claims[0].snapshot, null, "nor stamped");
+  }
+  {
+    const db = { dispute_case_decision_claims: [claimRow("mine")] };
+    await withFakePostgrest(db, async () => {
+      await stampDisputeDecisionSnapshot({ kind: "deduction", ref: CANDIDATE_ID, snapshot, token: "mine" });
+      assert.deepEqual(db.dispute_case_decision_claims[0].snapshot, snapshot, "a held claim is stamped");
+      await releaseDisputeDecision({ kind: "deduction", ref: CANDIDATE_ID, token: "mine" });
+    });
+    assert.equal(db.dispute_case_decision_claims.length, 0, "…and released");
+  }
+  await withFakePostgrest(
+    {},
+    async () => {
+      await assert.rejects(
+        renewDisputeDecision({ kind: "deduction", ref: CANDIDATE_ID, token: "mine" }),
+        (error: Error) => error.message === DISPUTE_DECISION_CLAIM_LOST,
+        "a renewal the database answers false is the claim-lost Conflict",
+      );
+    },
+    { phx_renew_dispute_case_decision: () => false },
+  );
+  await withFakePostgrest(
+    {},
+    async () => {
+      await renewDisputeDecision({ kind: "deduction", ref: CANDIDATE_ID, token: "mine" });
+    },
+    { phx_renew_dispute_case_decision: () => true },
+  );
+}
+
 export async function runDisputeAndDeductionAtomicTests() {
   await runBehaviour();
+  await runForeignChangesAndLostClaims();
   await runCompareAndSet();
   runSourcePins();
 }

@@ -18,7 +18,9 @@ import { compareCasesForReviewer, deriveDisputeCaseState, isDecidedByEvents, las
 import {
   claimDisputeDecision,
   captureDeductionDisputeState,
+  DisputeUndoConflictError,
   releaseDisputeDecision,
+  renewDisputeDecision,
   restoreDeductionDisputeState,
   stampDisputeDecisionSnapshot,
   type DeductionDisputeSnapshot,
@@ -539,6 +541,7 @@ export type DecideDeductionDisputeDeps = {
   claim: typeof claimDisputeDecision;
   stampSnapshot: typeof stampDisputeDecisionSnapshot;
   release: typeof releaseDisputeDecision;
+  renewClaim: typeof renewDisputeDecision;
   capture: typeof captureDeductionDisputeState;
   restore: typeof restoreDeductionDisputeState;
 };
@@ -556,6 +559,7 @@ const DATABASE_DEPS: DecideDeductionDisputeDeps = {
   recordDecision,
   recordEvents: recordCaseEvents,
   release: releaseDisputeDecision,
+  renewClaim: renewDisputeDecision,
   resolveParticipant: resolveCaseParticipant,
   restore: restoreDeductionDisputeState,
   stampSnapshot: stampDisputeDecisionSnapshot,
@@ -628,8 +632,10 @@ export async function decideDeductionDispute(
   try {
     outcome = await decideUnderClaim(access, input, deps, participant, claim);
   } finally {
-    // Only this decision's own claim, by its token. A release that fails leaves a claim that lapses by
-    // itself; the next decision sees the "decided" event this one wrote and is not misled by it.
+    // Only this decision's own claim, by its token. Release throws when the claim was no longer held;
+    // by then this decision has either finished (its own "decided" event is what any later decision
+    // sees) or already answered with its undo, so that refusal is not turned into a second error. A
+    // release that fails for any other reason leaves a claim that lapses by itself.
     await deps.release({ kind: "deduction", ref: input.candidateId, token: claim.token }).catch(() => undefined);
   }
 
@@ -734,12 +740,27 @@ async function decideUnderClaim(
   const snapshot = await deps.capture(input.candidateId);
   await deps.stampSnapshot({ kind: "deduction", ref: input.candidateId, snapshot, token: claim.token });
 
-  // Every write goes through here, so the undo knows whether there is anything to undo.
+  // Every write goes through here, so the undo knows whether there is anything to undo — and WHAT this
+  // attempt left: the state is re-read after each write, so the undo puts a row back only while it is
+  // still as this attempt left it, never over a change the Deductions workspace or a push made since.
+  // A decision write is pinned to the updated_at its own write returned: if anybody wrote the decision
+  // between that write and the re-read, the pin cannot match and the undo leaves the decision alone.
   let wrote = false;
-  const write = <T>(step: () => Promise<T>): Promise<T> => {
+  let left: DeductionDisputeSnapshot = snapshot;
+  // The revision of the decision as THIS attempt last wrote it, held for every later re-read too, so a
+  // write by somebody else after it is never taken as this attempt's own, however many writes follow.
+  let decisionWeWrote: string | null = null;
+  const write = async <T>(step: () => Promise<T>, revisionOf?: (result: T) => string | null | undefined): Promise<T> => {
     wrote = true;
-    return step();
+    const result = await step();
+    decisionWeWrote = revisionOf?.(result) ?? decisionWeWrote;
+    left = await deps.capture(input.candidateId);
+    if (decisionWeWrote && left.decision && String(left.decision.updated_at ?? "") !== decisionWeWrote) {
+      left = { ...left, decision: { ...left.decision, updated_at: decisionWeWrote } };
+    }
+    return result;
   };
+  const decisionRevision = (decision: { updatedAt?: string | null }) => decision.updatedAt ?? null;
   // The refund events go out WITH the "decided" event, as one insert, as the last write.
   const deferredEvents: CaseEventInput[] = [];
   let refundSentence: string | null = null;
@@ -764,6 +785,7 @@ async function decideUnderClaim(
           hrNote: note,
           ...(input.outcome === "reduce" ? { appliedValue: reduced as number } : {}),
         }),
+        decisionRevision,
       );
       payrollNotices.push(...decision.payrollNotices);
       chargedValue = input.outcome === "accept" ? 0 : num(decision.appliedValue);
@@ -788,6 +810,7 @@ async function decideUnderClaim(
           decisionStatus: "Approved for Payroll",
           hrNote: note,
         }),
+        decisionRevision,
       );
       payrollNotices.push(...approved.payrollNotices);
       chargedValue = num(approved.appliedValue);
@@ -823,6 +846,7 @@ async function decideUnderClaim(
               decisionStatus: "Approved for Payroll",
               hrNote: note,
             }),
+            decisionRevision,
           );
           payrollNotices.push(...restored.payrollNotices);
           chargedValue = num(restored.appliedValue);
@@ -897,37 +921,42 @@ async function decideUnderClaim(
       }
     }
 
-    // THE LAST WRITE: the refund events and the decision's own event, in one insert.
-    await write(() =>
-      deps.recordEvents([
-        ...deferredEvents,
-        {
-          actorHrId: participant.viewerHrId,
-          actorRole: access.role,
-          details: {
-            chargedAfter: chargedAmount,
-            chargedBefore,
-            // The FIGURE behind each amount, in the candidate's own unit. `chargedValueBefore` is what a
-            // later REJECT restores the deduction to, and an amount alone cannot be restored: a day count
-            // is what `recordDecision` takes, and it scales the money from the candidate's own estimate.
-            chargedValueAfter: chargedValue,
-            chargedValueBefore: before.value,
-            monthKey,
-            outcome: input.outcome,
-            payrollMonthState: monthState,
-            ...(reduced == null ? {} : { reducedTo: reduced }),
-          },
-          eventType: "decided",
-          kind: "deduction",
-          note,
-          ref: input.candidateId,
+    // Immediately before the last write, prove the claim is still this decision's (and renew it). One
+    // that lapsed and was taken over stops here: what this attempt changed is put back below, and the
+    // reviewer gets a Conflict — never a decision finished on a case somebody else now holds.
+    await deps.renewClaim({ kind: "deduction", ref: input.candidateId, token: claim.token });
+
+    // THE LAST WRITE: the refund events and the decision's own event, in one insert. Not re-read after:
+    // once the "decided" event is in, the decision is whole and there is nothing to undo.
+    wrote = true;
+    await deps.recordEvents([
+      ...deferredEvents,
+      {
+        actorHrId: participant.viewerHrId,
+        actorRole: access.role,
+        details: {
+          chargedAfter: chargedAmount,
+          chargedBefore,
+          // The FIGURE behind each amount, in the candidate's own unit. `chargedValueBefore` is what a
+          // later REJECT restores the deduction to, and an amount alone cannot be restored: a day count
+          // is what `recordDecision` takes, and it scales the money from the candidate's own estimate.
+          chargedValueAfter: chargedValue,
+          chargedValueBefore: before.value,
+          monthKey,
+          outcome: input.outcome,
+          payrollMonthState: monthState,
+          ...(reduced == null ? {} : { reducedTo: reduced }),
         },
-      ]),
-    );
+        eventType: "decided",
+        kind: "deduction",
+        note,
+        ref: input.candidateId,
+      },
+    ]);
   } catch (error) {
     // Nothing written yet: a plain refusal, exactly as it was raised.
     if (!wrote) throw error;
-    throw await undoHalfDecision({ access, deps, error, input, monthKey, participant, snapshot });
+    throw await undoHalfDecision({ access, deps, error, input, left, monthKey, participant, snapshot });
   }
 
   const headline =
@@ -972,11 +1001,17 @@ async function undoHalfDecision(input: {
   monthKey: string;
   participant: Awaited<ReturnType<typeof resolveCaseParticipant>>;
   snapshot: DeductionDisputeSnapshot;
+  /** What this attempt left after its last successful write — the undo touches only rows still like this. */
+  left: DeductionDisputeSnapshot;
 }): Promise<Error> {
   const reason = messageOf(input.error);
   let restoreFailure: unknown = null;
   try {
-    await input.deps.restore({ actor: input.participant.viewerHrId ?? input.access.loginId ?? null, snapshot: input.snapshot });
+    await input.deps.restore({
+      actor: input.participant.viewerHrId ?? input.access.loginId ?? null,
+      left: input.left,
+      snapshot: input.snapshot,
+    });
   } catch (restoreError) {
     restoreFailure = restoreError;
   }
@@ -994,6 +1029,9 @@ async function undoHalfDecision(input: {
           error: reason,
           monthKey: input.monthKey,
           outcome: input.input.outcome,
+          // The rows somebody else changed after this attempt wrote them, which the undo left alone.
+          ...(restoreFailure instanceof DisputeUndoConflictError ? { conflicts: restoreFailure.conflicts } : {}),
+          left: input.left,
           restoreError: messageOf(restoreFailure),
           snapshot: input.snapshot,
         },

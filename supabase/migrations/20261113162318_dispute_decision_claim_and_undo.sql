@@ -10,12 +10,22 @@
 --   * public.phx_capture_deduction_dispute_state(candidate) — the before-state of a deduction dispute:
 --     the candidate's lock, its decision row, every publication line of it, the month's publications
 --     and the case's refunds, read in one statement.
---   * public.phx_restore_deduction_dispute_state(snapshot, actor) — puts all of that back in ONE
---     transaction, in reverse order, when a decision fails after its first write. Rows the failed
---     attempt created (a pushed line, a recommended refund) are removed; rows it changed are set back.
---     Every decision write it makes still goes through deductions_decisions, so the history trigger
---     phx_deductions_decisions_history keeps recording it; nothing here disables a trigger. The undo
---     itself is written to the append-only deductions_audit as 'dispute_decision_undone'.
+--   * public.phx_renew_dispute_case_decision(kind, ref, token) — proves the claim is still this
+--     decision's and renews it, immediately before the last write. A claim lost to a takeover stops
+--     the decision, which then puts back what it changed.
+--   * public.phx_restore_deduction_dispute_state(snapshot, left, actor) — puts back, in ONE
+--     transaction, what a decision that failed after its first write had changed. It is given the
+--     before-state AND the state this attempt left after its last successful write, and puts a row back
+--     ONLY while it still equals what this attempt left: the claim stops other dispute decisions, not
+--     the Deductions workspace or a month push, so a change somebody else made in between is never
+--     reverted. Any such change makes the undo refuse whole, write nothing but an audit row
+--     ('dispute_decision_undo_refused'), and name the rows; the case then reads "needs attention".
+--     Every UPDATE and DELETE is scoped to this candidate's lines and this case's refunds. Decision
+--     writes go through deductions_decisions, so phx_deductions_decisions_history keeps recording an
+--     update or an insert; a decision row the undo DELETES (none existed before) is not seen by that
+--     trigger, so the undo writes its history row itself ('decision_removed', the trigger's own detail
+--     shape). Nothing here disables or changes a trigger. The undo itself is written to the append-only
+--     deductions_audit as 'dispute_decision_undone'.
 --   * dispute_case_events may now hold 'decision_interrupted' — the visible "needs attention" marker
 --     for a decision that stopped half-way and could not be put back.
 --
@@ -28,14 +38,21 @@
 --
 -- WHAT CANNOT BE PUT BACK, EXACTLY:
 --   * deductions_decisions.updated_at — its touch trigger stamps now() on the restoring write (the
---     row is only rewritten when a deciding field actually differs from the before-state).
+--     row is only rewritten when this attempt changed the decision).
+--   * a row somebody else changed after this attempt wrote it — never overwritten: the undo refuses and
+--     the case reads "needs attention" with those rows named, for a person to settle.
+--   * the one window it cannot see: publication lines and refunds carry no revision column, so a
+--     change by another writer in the milliseconds between this attempt's write and its re-capture is
+--     taken as this attempt's own. The decision is pinned to the updated_at its own write returned,
+--     so for the decision that window is closed.
 --   * a publication the failed attempt's push created for a month that had none — deductions_audit
 --     (append-only) references it, so it stays, with zero lines and zero totals; the next push reuses it.
 --   * the audit trails (deductions_audit, audit logs) — append-only by design; they record the attempt
 --     and its undo.
 --
 -- ROLLBACK:
---   drop function if exists public.phx_restore_deduction_dispute_state(jsonb, text);
+--   drop function if exists public.phx_restore_deduction_dispute_state(jsonb, jsonb, text);
+--   drop function if exists public.phx_renew_dispute_case_decision(text, text, uuid);
 --   drop function if exists public.phx_capture_deduction_dispute_state(uuid);
 --   drop function if exists public.phx_claim_dispute_case_decision(text, text, text);
 --   drop table if exists public.dispute_case_decision_claims;  -- SAFE: holds only in-flight claims
@@ -43,7 +60,7 @@
 --
 -- Production has NO point-in-time recovery — 7 daily backups are the whole recovery story.
 -- Anything destructive or bulk is announced to the owner in plain words BEFORE it is applied.
--- Nothing here is destructive: one new table, three functions, one widened check constraint.
+-- Nothing here is destructive: one new table, four functions, one widened check constraint.
 
 begin;
 
@@ -141,6 +158,33 @@ comment on function public.phx_claim_dispute_case_decision(text, text, text) is
 revoke execute on function public.phx_claim_dispute_case_decision(text, text, text) from public, anon, authenticated;
 grant execute on function public.phx_claim_dispute_case_decision(text, text, text) to service_role;
 
+-- Proves the claim is still this decision's, and renews it, in one statement — called immediately
+-- before the decision's last write. A claim taken over after its lapse answers false: the decision
+-- stops and puts back what it changed instead of finishing on a case somebody else now holds.
+create or replace function public.phx_renew_dispute_case_decision(
+  p_case_kind   text,
+  p_case_ref    text,
+  p_claim_token uuid
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $
+begin
+  update public.dispute_case_decision_claims
+     set lapse_at = now() + interval '5 minutes'
+   where case_kind = p_case_kind and case_ref = p_case_ref and claim_token = p_claim_token;
+  return found;
+end;
+$;
+
+comment on function public.phx_renew_dispute_case_decision(text, text, uuid) is
+  'True and renewed when the claim is still held by this token (F-PAY-005); false when it was lost.';
+
+revoke execute on function public.phx_renew_dispute_case_decision(text, text, uuid) from public, anon, authenticated;
+grant execute on function public.phx_renew_dispute_case_decision(text, text, uuid) to service_role;
+
 -- ------------------------------------------------------------------------ the before-state
 
 create or replace function public.phx_capture_deduction_dispute_state(p_candidate_id uuid)
@@ -179,33 +223,57 @@ grant execute on function public.phx_capture_deduction_dispute_state(uuid) to se
 
 -- --------------------------------------------------------------------------------- the undo
 
-create or replace function public.phx_restore_deduction_dispute_state(p_snapshot jsonb, p_actor text)
+-- p_snapshot is the before-state (captured before the first write); p_left is the state THIS attempt
+-- left after its last successful write (re-captured after each one, the decision pinned to the
+-- updated_at its own write returned). A row this attempt changed is put back ONLY while it still
+-- equals what this attempt left; any other writer's change since — a Deductions workspace save, a
+-- month push, a refund screen — makes the whole undo refuse, touching nothing, and the conflicting rows
+-- are named. All or nothing, because a half-undo is another half-state, and the one-active-line and
+-- one-live-refund indexes would refuse most mixes anyway.
+create or replace function public.phx_restore_deduction_dispute_state(p_snapshot jsonb, p_left jsonb, p_actor text)
 returns jsonb
 language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
 declare
-  v_candidate    uuid := nullif(p_snapshot->>'candidateId', '')::uuid;
-  v_ref          text := p_snapshot->>'candidateId';
-  v_lines        jsonb := coalesce(p_snapshot->'lines', '[]'::jsonb);
-  v_refunds      jsonb := coalesce(p_snapshot->'refunds', '[]'::jsonb);
-  v_pub_ids      uuid[];
-  v_known_pubs   uuid[];
-  v_left_pubs    uuid[];
-  v_month_key    text;
-  v_locked_now   timestamptz;
-  v_item         jsonb;
-  v_now          public.deductions_decisions%rowtype;
-  v_want         public.deductions_decisions%rowtype;
-  v_decision_due boolean := false;
-  v_has_decision boolean := coalesce(jsonb_typeof(p_snapshot->'decision') = 'object', false);
+  deciding constant text[] := array[
+    'decision_status', 'decision_reason', 'hr_note',
+    'applied_value', 'applied_amount', 'applied_dates', 'decided_by'
+  ];
+  v_candidate       uuid := nullif(p_snapshot->>'candidateId', '')::uuid;
+  v_ref             text := p_snapshot->>'candidateId';
+  v_before_lines    jsonb := coalesce(p_snapshot->'lines', '[]'::jsonb);
+  v_left_lines      jsonb := coalesce(p_left->'lines', '[]'::jsonb);
+  v_before_refunds  jsonb := coalesce(p_snapshot->'refunds', '[]'::jsonb);
+  v_left_refunds    jsonb := coalesce(p_left->'refunds', '[]'::jsonb);
+  v_before_decision jsonb := case when jsonb_typeof(p_snapshot->'decision') = 'object' then p_snapshot->'decision' end;
+  v_left_decision   jsonb := case when jsonb_typeof(p_left->'decision') = 'object' then p_left->'decision' end;
+  v_before_lock     timestamptz := nullif(p_snapshot->>'lockedAt', '')::timestamptz;
+  v_left_lock       timestamptz := nullif(p_left->>'lockedAt', '')::timestamptz;
+  v_lock_touched    boolean;
+  v_final_lock      timestamptz;
+  v_conflicts       text[] := '{}';
+  v_more            text[];
+  v_pub_ids         uuid[];
+  v_known_pubs      uuid[];
+  v_left_pubs       uuid[];
+  v_month_key       text;
+  v_locked_now      timestamptz;
+  v_item            jsonb;
+  v_now             public.deductions_decisions%rowtype;
+  v_now_json        jsonb;
+  v_want            public.deductions_decisions%rowtype;
 begin
   if v_candidate is null then
     raise exception 'phx_restore_deduction_dispute_state: the snapshot names no candidate';
   end if;
+  if nullif(p_left->>'candidateId', '')::uuid is distinct from v_candidate then
+    raise exception 'phx_restore_deduction_dispute_state: the before-state and the left-state name different candidates';
+  end if;
 
-  -- 1. Hold the candidate for the whole undo.
+  -- 1. Hold the candidate, its lines, its decision and the case's refunds for the whole undo, so
+  --    nothing changes between the comparison below and the writes after it.
   select locked_at, month_key into v_locked_now, v_month_key
   from public.deductions_candidates
   where id = v_candidate
@@ -213,31 +281,91 @@ begin
   if not found then
     raise exception 'phx_restore_deduction_dispute_state: candidate % no longer exists', v_candidate;
   end if;
+  perform 1 from public.deductions_publication_lines where candidate_id = v_candidate for update;
+  select * into v_now from public.deductions_decisions where candidate_id = v_candidate for update;
+  v_now_json := case when v_now.id is null then null else to_jsonb(v_now) end;
+  perform 1 from public.dispute_refunds where case_kind = 'deduction' and case_ref = v_ref for update;
+
+  -- 2. WHAT SOMEBODY ELSE CHANGED SINCE THIS ATTEMPT'S LAST WRITE. A row this attempt changed (it
+  --    differs between the before-state and the left-state) must still be exactly as it was left; a row
+  --    that is here now but not in the left-state, or was in the before-state and vanished, is somebody
+  --    else's. A row this attempt never touched is not compared and not written.
+  select coalesce(array_agg(msg order by msg), '{}') into v_more
+  from (
+    select format('payslip line %s', id) as msg
+    from (select l.id, to_jsonb(l) as now_row
+            from public.deductions_publication_lines l where l.candidate_id = v_candidate) cur
+    full join (select nullif(s->>'id', '')::uuid as id, s as left_row from jsonb_array_elements(v_left_lines) s) lft using (id)
+    full join (select nullif(s->>'id', '')::uuid as id, s as before_row from jsonb_array_elements(v_before_lines) s) bef using (id)
+    where case
+            when lft.left_row is null then true
+            when lft.left_row is distinct from bef.before_row then cur.now_row is distinct from lft.left_row
+            else false
+          end
+  ) q;
+  v_conflicts := v_conflicts || v_more;
+
+  if v_left_decision is distinct from v_before_decision and v_now_json is distinct from v_left_decision then
+    v_conflicts := v_conflicts || array['the decision'];
+  end if;
+
+  select coalesce(array_agg(msg order by msg), '{}') into v_more
+  from (
+    select format('refund %s', id) as msg
+    from (select r.id, to_jsonb(r) as now_row
+            from public.dispute_refunds r where r.case_kind = 'deduction' and r.case_ref = v_ref) cur
+    full join (select nullif(s->>'id', '')::uuid as id, s as left_row from jsonb_array_elements(v_left_refunds) s) lft using (id)
+    full join (select nullif(s->>'id', '')::uuid as id, s as before_row from jsonb_array_elements(v_before_refunds) s) bef using (id)
+    where case
+            when lft.left_row is null then true
+            when lft.left_row is distinct from bef.before_row then cur.now_row is distinct from lft.left_row
+            else false
+          end
+  ) q;
+  v_conflicts := v_conflicts || v_more;
+
+  v_lock_touched := v_left_lock is distinct from v_before_lock;
+  if v_lock_touched and v_locked_now is distinct from v_left_lock then
+    v_conflicts := v_conflicts || array['the publication lock'];
+  end if;
+
+  if array_length(v_conflicts, 1) is not null then
+    insert into public.deductions_audit (candidate_id, actor_hr_id, action, detail)
+    values (
+      v_candidate, p_actor, 'dispute_decision_undo_refused',
+      jsonb_build_object('conflicts', to_jsonb(v_conflicts), 'restore_to', p_snapshot, 'left', p_left)
+    );
+    return jsonb_build_object('restored', false, 'conflicts', to_jsonb(v_conflicts), 'publicationsLeftEmpty', '[]'::jsonb);
+  end if;
 
   select coalesce(array_agg((value #>> '{}')::uuid), '{}') into v_known_pubs
   from jsonb_array_elements(coalesce(p_snapshot->'publicationIds', '[]'::jsonb));
 
-  -- Every publication whose totals this undo may move: those holding the candidate's lines now, those
-  -- that held them before, and any the failed attempt created for the month.
+  -- Every publication whose totals this undo may move.
   select coalesce(array_agg(distinct x), '{}') into v_pub_ids
   from (
     select l.publication_id as x from public.deductions_publication_lines l where l.candidate_id = v_candidate
     union
-    select nullif(s->>'publication_id', '')::uuid from jsonb_array_elements(v_lines) s
+    select nullif(s->>'publication_id', '')::uuid from jsonb_array_elements(v_before_lines) s
     union
     select p.id from public.deductions_publications p
      where p.month_key = v_month_key and not (p.id = any (v_known_pubs))
   ) q
   where x is not null;
 
-  -- 2. Lines the failed attempt pushed are removed; lines it withdrew or superseded are set back,
-  --    withdrawn ones first so the one-active-line index never sees two.
+  -- 3. Lines this attempt pushed are removed; lines it withdrew or superseded are set back, withdrawn
+  --    ones first so the one-active-line index never sees two. Only this candidate's lines.
   delete from public.deductions_publication_lines l
    where l.candidate_id = v_candidate
-     and not exists (select 1 from jsonb_array_elements(v_lines) s where nullif(s->>'id', '')::uuid = l.id);
+     and exists (select 1 from jsonb_array_elements(v_left_lines) s where nullif(s->>'id', '')::uuid = l.id)
+     and not exists (select 1 from jsonb_array_elements(v_before_lines) s where nullif(s->>'id', '')::uuid = l.id);
 
   for v_item in
-    select value from jsonb_array_elements(v_lines) order by (value->>'line_status' = 'active')
+    select b.value
+      from jsonb_array_elements(v_before_lines) b
+      join jsonb_array_elements(v_left_lines) a on a.value->>'id' = b.value->>'id'
+     where a.value is distinct from b.value
+     order by (b.value->>'line_status' = 'active')
   loop
     update public.deductions_publication_lines l
        set line_status           = r.line_status,
@@ -246,57 +374,70 @@ begin
            notification_status   = r.notification_status
       from jsonb_populate_record(null::public.deductions_publication_lines, v_item) r
      where l.id = r.id
-       and (l.line_status, l.superseded_by_line_id, l.notified_at, l.notification_status)
-           is distinct from (r.line_status, r.superseded_by_line_id, r.notified_at, r.notification_status);
+       and l.candidate_id = v_candidate;
   end loop;
 
-  -- 3. The decision. Written back through the table, so phx_deductions_decisions_history records it,
-  --    and only when a deciding field differs. A decision on a LOCKED candidate is refused by
-  --    phx_deductions_decisions_refuse_locked, so the lock comes off first and goes back in step 5.
-  select * into v_now from public.deductions_decisions where candidate_id = v_candidate for update;
-  if v_has_decision then
-    v_want := jsonb_populate_record(null::public.deductions_decisions, p_snapshot->'decision');
-    v_decision_due := v_now.id is null
-      or (v_now.decision_status, v_now.decision_reason, v_now.hr_note, v_now.applied_value, v_now.applied_amount,
-          v_now.applied_dates, v_now.decided_by, v_now.decided_at, v_now.actor_role_at_decision)
-         is distinct from
-         (v_want.decision_status, v_want.decision_reason, v_want.hr_note, v_want.applied_value, v_want.applied_amount,
-          v_want.applied_dates, v_want.decided_by, v_want.decided_at, v_want.actor_role_at_decision);
-  else
-    v_decision_due := v_now.id is not null;
-  end if;
-
-  if v_decision_due then
+  -- 4. The decision, only where this attempt changed it. Written through the table, so
+  --    phx_deductions_decisions_history records an update or an insert; a decision on a LOCKED
+  --    candidate is refused by phx_deductions_decisions_refuse_locked, so the lock comes off first and
+  --    goes back in step 6.
+  if v_left_decision is distinct from v_before_decision then
     if v_locked_now is not null then
       update public.deductions_candidates set locked_at = null where id = v_candidate;
     end if;
-    if not v_has_decision then
-      delete from public.deductions_decisions where candidate_id = v_candidate;
-    elsif v_now.id is null then
-      insert into public.deductions_decisions select v_want.*;
+    if v_before_decision is null then
+      delete from public.deductions_decisions where candidate_id = v_candidate and id = v_now.id;
+      -- The history trigger records inserts and updates only, so the removal is written here, in the
+      -- trigger's own row shape (20261113151739_deduction_decision_history.sql), in this transaction.
+      insert into public.deductions_audit (candidate_id, actor_hr_id, action, detail)
+      values (
+        v_candidate,
+        p_actor,
+        'decision_removed',
+        jsonb_build_object(
+          'decision_id', v_now.id,
+          'changed_fields', (select coalesce(jsonb_agg(k), '[]'::jsonb) from unnest(deciding) k
+                              where jsonb_typeof(v_now_json -> k) <> 'null'),
+          'before', (select jsonb_object_agg(k, v_now_json -> k) from unnest(deciding) k),
+          'after', null,
+          'decided_at', v_now.decided_at,
+          'actor_role_at_decision', v_now.actor_role_at_decision,
+          'removed_by', 'phx_restore_deduction_dispute_state'
+        )
+      );
     else
-      update public.deductions_decisions
-         set decision_status        = v_want.decision_status,
-             decision_reason        = v_want.decision_reason,
-             hr_note                = v_want.hr_note,
-             applied_value          = v_want.applied_value,
-             applied_amount         = v_want.applied_amount,
-             applied_dates          = v_want.applied_dates,
-             decided_by             = v_want.decided_by,
-             decided_at             = v_want.decided_at,
-             actor_role_at_decision = v_want.actor_role_at_decision
-       where candidate_id = v_candidate;
+      v_want := jsonb_populate_record(null::public.deductions_decisions, v_before_decision);
+      if v_now.id is null then
+        insert into public.deductions_decisions select v_want.*;
+      else
+        update public.deductions_decisions
+           set decision_status        = v_want.decision_status,
+               decision_reason        = v_want.decision_reason,
+               hr_note                = v_want.hr_note,
+               applied_value          = v_want.applied_value,
+               applied_amount         = v_want.applied_amount,
+               applied_dates          = v_want.applied_dates,
+               decided_by             = v_want.decided_by,
+               decided_at             = v_want.decided_at,
+               actor_role_at_decision = v_want.actor_role_at_decision
+         where candidate_id = v_candidate;
+      end if;
     end if;
   end if;
 
-  -- 4. The case's refunds: one the failed attempt recommended is removed; one it cancelled is live
-  --    again. Cancelled first, so the one-live-refund-per-case index never sees two.
+  -- 5. The case's refunds: one this attempt recommended is removed; one it cancelled is live again.
+  --    Cancelled first, so the one-live-refund-per-case index never sees two. Only this case's refunds.
   delete from public.dispute_refunds r
    where r.case_kind = 'deduction' and r.case_ref = v_ref
-     and not exists (select 1 from jsonb_array_elements(v_refunds) s where nullif(s->>'id', '')::uuid = r.id);
+     and exists (select 1 from jsonb_array_elements(v_left_refunds) s where nullif(s->>'id', '')::uuid = r.id)
+     and not exists (select 1 from jsonb_array_elements(v_before_refunds) s where nullif(s->>'id', '')::uuid = r.id);
 
   for v_item in
-    select value from jsonb_array_elements(v_refunds) order by (value->>'status' = 'recommended')
+    select b.value
+      from jsonb_array_elements(v_before_refunds) b
+      join jsonb_array_elements(v_left_refunds) a on a.value->>'id' = b.value->>'id'
+     where a.value is distinct from b.value
+     order by (b.value->>'status' = 'recommended')
   loop
     update public.dispute_refunds d
        set status             = r.status,
@@ -305,17 +446,17 @@ begin
            cancel_reason      = r.cancel_reason
       from jsonb_populate_record(null::public.dispute_refunds, v_item) r
      where d.id = r.id
-       and (d.status, d.cancelled_at, d.cancelled_by_hr_id, d.cancel_reason)
-           is distinct from (r.status, r.cancelled_at, r.cancelled_by_hr_id, r.cancel_reason);
+       and d.case_kind = 'deduction' and d.case_ref = v_ref;
   end loop;
 
-  -- 5. The lock, exactly as it was.
+  -- 6. The lock: back to the before-state where this attempt changed it, otherwise as it was found.
+  v_final_lock := case when v_lock_touched then v_before_lock else v_locked_now end;
   update public.deductions_candidates
-     set locked_at = nullif(p_snapshot->>'lockedAt', '')::timestamptz
+     set locked_at = v_final_lock
    where id = v_candidate
-     and locked_at is distinct from nullif(p_snapshot->>'lockedAt', '')::timestamptz;
+     and locked_at is distinct from v_final_lock;
 
-  -- 6. The publications' counts and totals follow their active lines, as push and withdraw keep them.
+  -- 7. The publications' counts and totals follow their active lines, as push and withdraw keep them.
   update public.deductions_publications p
      set candidate_count = t.candidate_count,
          employee_count  = t.employee_count,
@@ -345,20 +486,22 @@ begin
   insert into public.deductions_audit (candidate_id, actor_hr_id, action, detail)
   values (
     v_candidate, p_actor, 'dispute_decision_undone',
-    jsonb_build_object('restored_to', p_snapshot, 'publications_left_empty', to_jsonb(v_left_pubs))
+    jsonb_build_object('restored_to', p_snapshot, 'left', p_left, 'publications_left_empty', to_jsonb(v_left_pubs))
   );
 
-  return jsonb_build_object('restored', true, 'publicationsLeftEmpty', to_jsonb(v_left_pubs));
+  return jsonb_build_object('restored', true, 'conflicts', '[]'::jsonb, 'publicationsLeftEmpty', to_jsonb(v_left_pubs));
 end;
 $$;
 
-comment on function public.phx_restore_deduction_dispute_state(jsonb, text) is
+comment on function public.phx_restore_deduction_dispute_state(jsonb, jsonb, text) is
   'Undo of a deduction dispute decision that failed after its first write (F-PAY-005): puts back the '
-  'lines, the decision, the refunds and the lock captured by phx_capture_deduction_dispute_state, in '
-  'one transaction. Writes the decision through the table so its history trigger still fires.';
+  'lines, the decision, the refunds and the lock THIS attempt changed, only while each still equals '
+  'what the attempt left; otherwise refuses whole and names the rows changed by somebody else. One '
+  'transaction. Writes the decision through the table so its history trigger still fires, and writes '
+  'the history row for a removed decision itself.';
 
-revoke execute on function public.phx_restore_deduction_dispute_state(jsonb, text) from public, anon, authenticated;
-grant execute on function public.phx_restore_deduction_dispute_state(jsonb, text) to service_role;
+revoke execute on function public.phx_restore_deduction_dispute_state(jsonb, jsonb, text) from public, anon, authenticated;
+grant execute on function public.phx_restore_deduction_dispute_state(jsonb, jsonb, text) to service_role;
 
 -- ------------------------------------------------------------- the "needs attention" marker
 
