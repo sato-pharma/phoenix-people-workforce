@@ -18,6 +18,9 @@ import path from "node:path";
 
 const MIGRATIONS = "supabase/migrations";
 const FILE = "20261113160008_money_leave_attendance_rows_name_a_real_employee.sql";
+const SLICE2 = "20261113160747_leavers_known_only_from_payroll_become_historical_records.sql";
+const SLICE2_TABLES = ["payroll_resignation_candidates", "salary_records"];
+const RESTORED = ["B-20", "B-21", "B-29", "B-36", "B-44", "B-70", "B-71", "B-87", "B-89", "B-90", "B-93", "B-121", "B-165"];
 
 const TABLES = [
   "attendance_annual_balance_charges",
@@ -78,7 +81,7 @@ export async function runEmployeeKeyForeignKeysTests() {
   // ---- Nothing LATER takes a key off --------------------------------------------------------------
   for (const name of files.filter((file) => file > FILE)) {
     const later = readFileSync(path.join(MIGRATIONS, name), "utf8").toLowerCase();
-    for (const table of TABLES) {
+    for (const table of [...TABLES, ...(name > SLICE2 ? SLICE2_TABLES : [])]) {
       assert.ok(
         !later.includes(`drop constraint ${table}_phx_employee_fkey`) &&
           !later.includes(`drop constraint if exists ${table}_phx_employee_fkey`),
@@ -88,7 +91,38 @@ export async function runEmployeeKeyForeignKeysTests() {
     }
   }
 
-  // ---- No ledger row, so it needs its evidenced exception ----------------------------------------
+  // ---- Slice 2: the 13 leavers known only from payroll, then salary history and candidates keyed ---
+  assert.ok(files.includes(SLICE2), `the migration must still be here: ${SLICE2}`);
+  const slice2 = readFileSync(path.join(MIGRATIONS, SLICE2), "utf8");
+  const [insertPart] = slice2.split("do $$");
+  const restored = [...insertPart.matchAll(/'(B-\d+)'/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(restored)].sort(), [...RESTORED].sort(), "exactly the 13 leavers are restored");
+  assert.match(
+    insertPart,
+    /'historical_payroll_record', false, false/,
+    "the owner chose Historical payroll record, kept off payroll and the organogram — a 'resigned' insert opens " +
+      "a replacement vacancy for each person and needs a resignation date 12 of them do not have",
+  );
+  assert.doesNotMatch(
+    insertPart.split("insert into public.employees")[1] ?? "",
+    /resignation_date|last_working_date|hire_date/,
+    "no date is invented for the restored people",
+  );
+  const off = insertPart.indexOf("disable trigger phx_employee_insert_reconcile_stale_vacancies");
+  const ins = insertPart.indexOf("insert into public.employees");
+  const on = insertPart.indexOf("enable trigger phx_employee_insert_reconcile_stale_vacancies");
+  assert.ok(off > 0 && off < ins && ins < on, "the vacancy re-reconcile is off for the insert only, and back on after it");
+  const pairs2 = [...slice2.matchAll(/array\['([a-z_0-9]+)',\s*'hr_id'\]/g)].map((m) => m[1]);
+  assert.deepEqual([...pairs2].sort(), SLICE2_TABLES, "salary history and resignation candidates carry the key");
+  assert.ok(
+    slice2.indexOf("naming no employee") < slice2.indexOf("add constraint %I foreign key"),
+    "the orphan count runs before the key",
+  );
+  assert.match(slice2, /references public\.employees \(hr_id\) on update cascade on delete restrict not valid/);
+
+  // ---- No ledger row, so each needs its evidenced exception -------------------------------------
   const inventory = readFileSync("scripts/lib/migration-inventory.ts", "utf8");
-  assert.ok(inventory.includes(`"${FILE}",`), `${FILE} needs its ACKNOWLEDGED_EXCEPTIONS entry`);
+  for (const name of [FILE, SLICE2]) {
+    assert.ok(inventory.includes(`"${name}",`), `${name} needs its ACKNOWLEDGED_EXCEPTIONS entry`);
+  }
 }
