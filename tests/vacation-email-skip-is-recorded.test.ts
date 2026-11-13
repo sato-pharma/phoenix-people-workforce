@@ -10,8 +10,10 @@ import { describeSkippedVacationEmail } from "@/lib/vacation/service";
 // email globally disabled, no provider, no sender, no deliverable recipient, all recipients
 // suppressed, blocked before sending, and one more. Every vacation caller was written as
 // `send(...).catch(...)`, which only ever sees a THROW — so a skip returned normally was dropped
-// on the floor. These sends also bypass `notification_outbox`, so a skipped vacation email left
-// NO trace anywhere: no outbox row, no provider id, no event.
+// on the floor. These sends also bypassed `notification_outbox` then, so a skipped vacation email
+// left NO trace anywhere: no outbox row, no provider id, no event. (Since REC-048, 13 Nov 2026, each
+// writes its outbox row first — tests/durable-approval-emails.test.ts — and the recorder below still
+// runs: a skip the outbox will retry reaches it as "Queued for retry: …".)
 //
 // On 2026-09-05 that made "are vacation emails firing?" unanswerable from this database. It took
 // reading Resend's own API to establish that they were (an Annual Leave Application to A-9 at
@@ -27,6 +29,11 @@ function testOnlyAnExplicitSkipCountsAsASkip() {
     "EMAIL_NOTIFICATIONS_ENABLED is not true.");
   assert.equal(describeSkippedVacationEmail({ skipped: true }), "no reason given",
     "a skip with no reason must still be recorded, not swallowed");
+  assert.equal(
+    describeSkippedVacationEmail({ skipped: true, reason: "Queued for retry: Recipient check unavailable" }),
+    "Queued for retry: Recipient check unavailable",
+    "an email the outbox will retry is still recorded as not sent yet, with the words that say it is queued",
+  );
 
   for (const sent of [undefined, null, {}, { skipped: false }, { id: "abc" }, "ok", 0]) {
     assert.equal(describeSkippedVacationEmail(sent), null,

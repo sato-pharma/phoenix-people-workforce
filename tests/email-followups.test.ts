@@ -78,7 +78,9 @@ export function runEmailFollowupsTests() {
 
   // --- W2: interview templates (source-pattern) ------------------------------------
   const interviewNotif = readFileSync("src/lib/recruitment/interview-notifications.ts", "utf8");
-  assert.match(interviewNotif, /sendTemplatedEmail/, "interview emails use the template sender");
+  // REC-048: the template sender is now reached through the durable outbox (sendDurableEmail with
+  // sender: "templated") — still the template sender, now retried if the provider fails.
+  assert.match(interviewNotif, /sendDurableEmail\([\s\S]*?sender: "templated"/, "interview emails use the template sender, through the durable outbox");
   assert.match(interviewNotif, /EMAIL_TEMPLATE_KEYS\.INTERVIEW_INVITATION/, "scheduled/rescheduled use the invitation template");
   assert.match(interviewNotif, /export async function notifyInterviewFeedback/, "feedback notifier exists");
   assert.match(interviewNotif, /EMAIL_TEMPLATE_KEYS\.INTERVIEW_FEEDBACK/, "feedback uses the feedback template");

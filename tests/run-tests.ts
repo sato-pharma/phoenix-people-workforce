@@ -3024,6 +3024,7 @@ import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
 import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
 import { runJobLeaseTests } from "./job-lease.test.ts";
+import { runSharedInstanceStateTests } from "./shared-instance-state.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
@@ -3109,6 +3110,7 @@ import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
 import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
+import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4049,7 +4051,7 @@ await runTest(
   runShareLinkListsOmitTokenTests,
 );
 await runTest(
-  "the Direct Orders, Marketing Requests and Territory preview share links are stored only as a SHA-256 hash and an 8-character preview, found by the hash of a well-formed token, rotated and revoked by hash and id, and every public share route meters the caller per address and per link before the lookup",
+  "the Direct Orders, Marketing Requests, Territory preview and CV Lifecycle share links are stored only as a SHA-256 hash and an 8-character preview, found by the hash of a well-formed token, rotated and revoked by hash and id, and every public share route meters the caller per address and per link before the lookup",
   runShareLinkTokenHashTests,
 );
 await runTest(
@@ -12080,6 +12082,10 @@ await runTest(
   runJobLeaseTests,
 );
 await runTest(
+  "per-process state is shared across instances (REC-083): two instances start the notification drain and exactly one drains — the other is skipped as overlapping-run by the shared job lease, the next run drains once it is released or runs out, and an unreadable lease falls back to the in-process guard; the page-timing beacon and CSP report keep their per-instance address caps on purpose (F-PLT-012), never the shared store; the employee directory drops its copy when the shared version moves",
+  runSharedInstanceStateTests,
+);
+await runTest(
   "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
   runWorkerOnlyCronRoutesTests,
 );
@@ -12329,6 +12335,7 @@ await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): ev
 await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 await runTest("the Integrations page: no credential value ever comes back out, the Super Admin gate runs before any read, a failed read says unavailable, and the messaging API version agrees in all seven files", runIntegrationsRegistryTests);
+await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

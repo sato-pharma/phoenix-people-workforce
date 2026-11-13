@@ -11,6 +11,7 @@ import {
   AdminStatCard,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import { ExhaustedApprovalEmails, type ExhaustedApprovalEmailView } from "@/components/admin/exhausted-approval-emails";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,8 @@ type EmailOutboxStats = {
 };
 
 type EmailNotificationCenterProps = {
+  /** Approval emails out of retries (REC-048); null when the outbox could not be read. */
+  exhaustedApprovalEmails?: ExhaustedApprovalEmailView[] | null;
   initialPolicies: EmailPolicyView[];
   outboxStats: EmailOutboxStats;
   routingOptions: {
@@ -139,6 +142,7 @@ function formatDateTime(value: string | null) {
 }
 
 export function EmailNotificationCenter({
+  exhaustedApprovalEmails = [],
   initialPolicies,
   outboxStats,
   routingOptions,
@@ -285,6 +289,8 @@ export function EmailNotificationCenter({
           value={outboxStats.available ? outboxStats.recentTotal : "—"}
         />
       </div>
+
+      <ExhaustedApprovalEmails initialEmails={exhaustedApprovalEmails} />
 
       {message ? (
         <div className="rounded-[16px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-sm font-bold text-[#9A3412]">

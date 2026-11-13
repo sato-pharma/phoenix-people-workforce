@@ -187,13 +187,19 @@ export function runCvLifecycleShareLinksScreenTests() {
   const listBlock = service.slice(service.indexOf("export async function listCvLifecycleShareLinks"));
   const typeBlock = service.slice(
     service.indexOf("export type CvLifecycleShareLink = {"),
-    service.indexOf("/** The first 8 characters"),
+    service.indexOf("function mapLink("),
   );
   assert.ok(
     !/^\s*token:/m.test(typeBlock),
     "CvLifecycleShareLink must NOT carry a `token` field — the list is what reaches the browser",
   );
   assert.ok(typeBlock.includes("tokenPreview: string;"), "the list identifies a link by its 8-char preview");
+  // The token itself is not stored (REC-055): the preview is read from its own column, never cut from a token.
+  assert.ok(
+    service.includes('tokenPreview: String(row.token_preview ?? ""),'),
+    "mapLink must read the stored 8-character token_preview",
+  );
+  assert.ok(!/\brow\.token\b/.test(service), "the service must never read a stored plain token");
   assert.ok(
     listBlock.includes("mapLink(row, names)"),
     "the list must go through mapLink, which is where the token is dropped",
