@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   borrowableFields,
@@ -13,6 +13,21 @@ import {
   splitRowsByExistingKey,
 } from "../src/lib/recruitment/candidate-merge.ts";
 import { copyLabelsFor, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
+
+/**
+ * The body of the LATEST migration that defines phx_merge_ats_candidates, comments stripped. Every
+ * write of a merge moved into that one function on 2026-11-13, so the ordering pins below read it.
+ */
+function mergeFunctionSql(): string {
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
+  for (let at = files.length - 1; at >= 0; at -= 1) {
+    const sql = readFileSync(new URL(files[at], dir), "utf8");
+    if (/create or replace function public\.phx_merge_ats_candidates\(/i.test(sql)) return stripSqlComments(sql).toLowerCase();
+  }
+  throw new Error("no migration defines public.phx_merge_ats_candidates");
+}
 
 /**
  * The same person arriving twice is the normal state of this pool — 337 CVs on WhatsApp, 211 by
@@ -200,9 +215,10 @@ export function runRecruitmentCandidateMergeTests() {
     appendOnlyStart > 0 && appendOnly.includes("ats_candidate_status_events"),
     "the duplicate's decision history still has to reach the survivor — as COPIES, since append is the only verb the table permits",
   );
+  const mergeSql = mergeFunctionSql();
   assert.ok(
-    service.includes("await copyAppendOnlyRows("),
-    "declaring the append-only list without walking it loses the duplicate's history entirely, which is worse than the failure it replaced",
+    mergeSql.includes("insert into public.ats_candidate_status_events"),
+    "declaring the append-only list without copying it loses the duplicate's history entirely, which is worse than the failure it replaced",
   );
 
   // ── THE SECOND append-only table, missed by the first fix ────────────────────────────────────
@@ -343,17 +359,19 @@ export function runRecruitmentCandidateMergeTests() {
   // -1 is less than every real position — so the ordering assertion below passes on a merge that
   // repoints nothing at all. That is the exact bug being fixed here, and the first draft of this
   // test was green against it.
-  const relinkLoopAt = service.indexOf("of linkedByOwnColumn");
+  const relinkSqlAt = mergeSql.search(/update public\.ats_whatsapp_classification_sessions\s+set applied_candidate_id = p_survivor_id/);
+  const deleteSqlAt = mergeSql.indexOf("delete from public.ats_candidates where id = p_duplicate_id");
+  const borrowSqlAt = mergeSql.indexOf("update public.ats_candidates c set");
   assert.ok(
-    relinkLoopAt > 0 && service.includes("await relink("),
-    "the merge never walks linkedByOwnColumn — declaring the list without acting on it leaves the session pointing at the row that was just deleted, which is the whole defect",
+    relinkSqlAt > 0,
+    "the merge never repoints applied_candidate_id — declaring the list without acting on it leaves the session pointing at the row that was just deleted, which is the whole defect",
   );
   assert.ok(
-    relinkLoopAt < service.indexOf("Step 6: the duplicate row itself"),
+    deleteSqlAt > 0 && relinkSqlAt < deleteSqlAt,
     "the session must be repointed BEFORE the duplicate is deleted — afterwards nothing can find it from either end",
   );
   assert.ok(
-    service.indexOf(".delete().eq(\"id\", duplicateId)") < service.indexOf("borrowedPayload(borrowed)"),
+    borrowSqlAt > 0 && deleteSqlAt < borrowSqlAt,
     "the duplicate must be deleted BEFORE its email/national ID are written onto the survivor — both carry a partial UNIQUE index, so borrowing one while the duplicate still holds it is a 23505 every time. (phone_norm's unique index was dropped 2026-08-30 when phone stopped being an identity key, so phone alone would no longer conflict — the ordering is still required for the other two.)",
   );
   for (const norm of ["email_norm", "phone_norm", "national_id_norm"]) {
@@ -368,16 +386,15 @@ export function runRecruitmentCandidateMergeTests() {
   );
 
   // ── THE PHASE ORDER: everything refusable before anything that is not ────────────────────────
-  // This is the property that makes a failed merge survivable. A merge is several round trips with
-  // no transaction around them, so the question is never "can it fail" but "what does the duplicate
-  // look like when it does". Every step the database could still reject has to happen while the
-  // duplicate is still whole.
-  const mergeAt = service.indexOf("export async function mergeCandidates");
-  const dedupedLoopAt = service.indexOf("of dedupedChildTables", mergeAt);
-  const childLoopAt = service.indexOf("of childTables", mergeAt);
-  const copyAt = service.indexOf("await copyAppendOnlyRows(", mergeAt);
-  const relinkAt = service.indexOf("of linkedByOwnColumn", mergeAt);
-  const deleteAt = service.indexOf("Step 6: the duplicate row itself", mergeAt);
+  // This was the property that made a failed merge survivable while a merge was several round trips
+  // with no transaction around them. Since 2026-11-13 the steps run inside ONE SQL function
+  // (phx_merge_ats_candidates), so a failure rolls all of them back — the order is still pinned,
+  // because it is also what keeps a borrowed email from colliding, and it costs nothing to keep.
+  const dedupedLoopAt = mergeSql.indexOf("update public.ats_candidate_manager_sends");
+  const childLoopAt = mergeSql.indexOf("update public.ats_applications set candidate_id");
+  const copyAt = mergeSql.indexOf("insert into public.ats_candidate_status_events");
+  const relinkAt = relinkSqlAt;
+  const deleteAt = deleteSqlAt;
   // Existence first: indexOf answers -1 for a step that is not there, and -1 is less than every
   // real position, so an ordering assertion alone passes on a merge that skips the step entirely.
   for (const [label, at] of [
@@ -565,7 +582,7 @@ export function runCandidateMergeRefilesTheCabinetTests() {
   // the source CAN prove is the two things that were actually wrong — the call was absent, and
   // where it sits decides whether it reads the merged state or the stale one.
   assert.ok(
-    service.includes("await mirrorCandidateCvsToDrive(survivorId)"),
+    service.includes("await mirrorCvs(survivorId)") && service.includes("deps.mirrorCvs ?? mirrorCandidateCvsToDrive"),
     "a merge must re-file the surviving record's CVs in the cabinet — without this the two files keep one name",
   );
   assert.ok(
@@ -577,8 +594,9 @@ export function runCandidateMergeRefilesTheCabinetTests() {
   // reads the SURVIVING record's answers and `copyLabelsFor` reads its CV siblings — run this while
   // the duplicate still owns half of them and it re-files against the pre-merge shape, writing names
   // that are wrong in a new way instead of the old one.
-  const deleteAt = service.indexOf('.delete().eq("id", duplicateId)');
-  const mirrorAt = service.indexOf("await mirrorCandidateCvsToDrive(survivorId)");
+  // The duplicate is deleted inside the merge function, so "after the delete" is "after the RPC".
+  const deleteAt = service.indexOf("supabase.rpc(MERGE_CANDIDATES_RPC");
+  const mirrorAt = service.indexOf("await mirrorCvs(survivorId)");
   assert.ok(deleteAt > 0 && mirrorAt > 0);
   assert.ok(
     mirrorAt > deleteAt,
