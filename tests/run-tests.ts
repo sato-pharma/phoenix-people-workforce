@@ -473,6 +473,7 @@ import { runDeductionsModulePublishTests } from "./deductions-module-publish.tes
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
 import { runDailyDeductionsReleaseNoticeTests } from "./daily-deductions-release-notice.test.ts";
 import { runDailyDeductionsPortalAndReadersTests } from "./daily-deductions-portal-and-readers.test.ts";
+import { runDailyDeductionsDisputesTests } from "./daily-deductions-disputes.test.ts";
 import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
 import { runDeductionsAcceptedReviewDaysTests } from "./deductions-accepted-review-days.test.ts";
 import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
@@ -1763,6 +1764,7 @@ import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expen
 import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
 import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
 import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-run-transition-claim.test.ts";
+import { runAutomatedPayrollBankFileDownloadGuardTests } from "./automated-payroll-bank-file-download-guard.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
@@ -3078,6 +3080,9 @@ import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
 import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
 import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archive-screen.test.ts";
 import { runEmployeeAndDeductionHistoryTests } from "./employee-and-deduction-history.test.ts";
+import { runCronAnswerNowTests } from "./cron-answer-now.test.ts";
+import { runPunchFeedStalledTelegramTests } from "./punch-feed-stalled-telegram.test.ts";
+import { runAutomatedPayrollHeldRecordAtomicTests } from "./automated-payroll-held-record-atomic.test.ts";
 import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test.ts";
 import { runDirectOrdersAndMarketingAtomicTests } from "./direct-orders-and-marketing-atomic.test.ts";
 import { runHrAtomicWritesTests } from "./hr-atomic-writes.test.ts";
@@ -4244,6 +4249,7 @@ await runTest("deductions outstation trip days (any trip not rejected spares the
 await runTest("deductions accepted review days (a day the Super Admin accepted a review request for is never charged)", runDeductionsAcceptedReviewDaysTests);
 await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
 await runTest("daily deductions on the employee portal and for readers (released lines show on his Deductions page and a failed read says so; the Finance Manager reads the page and only the Super Admin computes)", runDailyDeductionsPortalAndReadersTests);
+await runTest("daily deduction disputes (every released daily line can be disputed; an accepted dispute withdraws it and month-end collection never charges those days again; the Super Admin decides, the module readers read)", runDailyDeductionsDisputesTests);
 await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
@@ -6552,6 +6558,10 @@ await runTest(
 await runTest(
   "automated payroll: one transition at a time, and a Part 2 that asks about people who vanished",
   runAutomatedPayrollRunTransitionClaimTests,
+);
+await runTest(
+  "automated payroll: a run whose bank files were downloaded is not cancelled without a reason, and an unchanged outstation re-approve changes nothing",
+  runAutomatedPayrollBankFileDownloadGuardTests,
 );
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
@@ -12237,6 +12247,9 @@ await runTest("the code-scanning alerts that were real (9 Nov 2026): a sign-in r
 await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups its cards by region and district manager through the one shared rule, the meters and share bars add up, and the shared chrome stays flat, square and free of sideways scroll", runRepsListPremiumTests);
 await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page asks the database by uuid, never by the screen's own: id; the same-name check folds as the database does and the approver is told; an outside customer with a grade is filed for approval; a merged duplicate never comes back by a request; a seat's rep who left by the visit day is never credited and a missed day after it is refused; nobody who has left is told anything; and Validate again goes to whoever holds the seat now", runPhoenixCrmSweepTests);
 await runTest("every change to an employee and to a deduction decision is kept, and the money and people tables are in the hourly undo log (enterprise audit, 13 Nov 2026): salary figures and identifiers are named, never stored; the log refuses update, delete and truncate even in replica mode; no browser role reaches it; 43 tables registered, the five largest capped at 24 versions; and no later migration takes any of it back", runEmployeeAndDeductionHistoryTests);
+await runTest("a scheduled route that outlasts its scheduler answers at once (integration audit, 13 Nov 2026): the daily notification run, the reconciliation check, the mailbox sweep and the weekly Private Calendar notice answer 202 before the run starts and finish it after the response; wait=1 hands back the run's own report; the cron secret is checked before the answer; each still reports to its heartbeat; and the stranded-job re-fire waits for the run", runCronAnswerNowTests);
+await runTest("the punch-feed alarm also reaches Telegram (integration audit, 13 Nov 2026): once per person per Cairo day, after the feed is judged and the admin toggle is read, Telegram alone on the system module, the last punch in Cairo time, and a failed send never becomes an email", runPunchFeedStalledTelegramTests);
+await runTest("the held-salary record cannot be lost silently (enterprise audit F-PAY-002): publish marks the run and writes who was held in one database call under its claim, a record with no held list is refused, and the readers throw on a missing record instead of listing nobody", runAutomatedPayrollHeldRecordAtomicTests);
 await runTest("a pay, deduction, leave or attendance row must name a real employee (enterprise audit, 13 Nov 2026): 22 money, leave and attendance tables carry a key to the employee list, each added only after an orphan count that refuses, ON UPDATE CASCADE ON DELETE RESTRICT, and no later migration takes one off", runEmployeeKeyForeignKeysTests);
 await runTest("direct-order collection and marketing decision are atomic (the collection is one locked compare-and-set write with offsets summed under the lock; a marketing decision refuses a request that is no longer pending approval; cancel closes the open rungs in the same transaction)", runDirectOrdersAndMarketingAtomicTests);
 await runTest("two HR writes that could half-land are each one transaction now (enterprise audit, 13 Nov 2026): a retention conversation and its confidential themes are replaced together under a row lock and a compare-and-set, never a delete then an insert; a leave approver's step is decided and the request moved together under the request's row lock, paid approvals included, never the step first", runHrAtomicWritesTests);

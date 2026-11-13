@@ -103,6 +103,42 @@ argued with — and his new words put the dispute before the money. Now:
 
 Pinned by `tests/deduction-dispute-outcome.test.ts`.
 
+## Disputing a released daily deduction (13 November 2026)
+
+> "IN DEDUCTION MODULE IN EMPLOYEE PORTAL NO DISPUTE OR COMMENT BUTTON"
+
+The employee's Deductions page lists the daily deductions the Super Admin released during the month
+above the monthly ledger, and those lines had no Dispute box. On 13 November seven employees held a
+released line and four of them had nothing on the monthly ledger, so the release email sent them to
+a page where they could not argue with the amount. Asked what accepting such a dispute should do, he
+chose **"Withdraw + never charge"**.
+
+- **The box** sits under every released line ("Dispute this deduction"). One dispute per line
+  (unique on `line_id`); a decided one is reopened through the Dispute Center, never opened twice.
+  `POST /api/daily-deductions/disputes` checks the line is in the ACTIVE released snapshot and is the
+  caller's own.
+- **The case** is kind `daily` in the Dispute Center. `daily_deductions_disputes` keeps its own copy
+  of the line (days, amount, dates, reason), because withdrawing a line deletes it and a superseded
+  snapshot cascades its lines away. Messages live in `daily_deductions_dispute_messages`. The owner
+  is the employee, matched on the compact HR id; the Super Admin decides (he alone releases a daily
+  line); the Deductions module's readers may read.
+- **Accept** withdraws the line (`withdrawDailyLine`) and the days are never charged again for that
+  employee and that category. Both month-end collection doors in `src/lib/deductions/collect.ts` and
+  the daily tally (`runConnectorForRange`) pass their drafts through `applyAcceptedDailyDisputes`
+  (`src/lib/daily-deductions/accepted-dispute-days.ts`): a draft wholly on won days is dropped, an
+  exact one-day-per-date draft is narrowed and re-priced through `scaleDeductionAmountToKeptDates`
+  (a CRM Thursday keeps its half-day weight), and a draft whose day count differs from its dates (a
+  vacation request) is kept and named in a note for a hand narrowing. The read **fails closed**: if
+  the disputes cannot be read, collection stops rather than charge a won day.
+- **Reject** keeps the line; it is charged at month end like any other.
+- **No reduce** — a released line is withdrawn whole or it stands.
+- **The calendar** — every day of an accepted daily dispute is a ✓ Verified entry on the Private
+  Calendar (`selectAcceptedDailyDisputeCorrections` in `accepted-deduction-days.ts`), display only.
+- **Reopen** puts the status back to `open`, which lifts the spare and the ✓ with it.
+
+Pinned by `tests/daily-deductions-disputes.test.ts`. Migration:
+`supabase/migrations/20261113181500_daily_deductions_disputes.sql`.
+
 ## Money owed back after a paid month
 
 A published, paid month is a record of what was paid. It is never rewritten to agree with a later
@@ -281,6 +317,7 @@ holding `attendance:read` opens the page and sees nothing of a rep's pay-affecti
 
 | Test | What it refuses |
 | --- | --- |
+| `tests/daily-deductions-disputes.test.ts` | a released daily line with no Dispute box, a won day charged again by either month-end door or the daily tally, an open or rejected dispute sparing a day, a reduce on a daily case |
 | `tests/dispute-center-state.test.ts` | a stored state, a case that expires, an employee reopening their own case |
 | `tests/dispute-center-participants.test.ts` | a case readable on `attendance:read` alone; a decide or reopen that does not assert the participant inside the domain helper |
 | `tests/dispute-center-assist-accuracy.test.ts` | a statement with no citation, or with a figure the cited records do not hold; a stale briefing read as current |

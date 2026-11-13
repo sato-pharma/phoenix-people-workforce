@@ -10,13 +10,17 @@
 //
 // Pure types only — safe to import from a client component.
 
-/** Which module a case lives in. The `ref` is that module's own id for it. */
-export type DisputeCaseKind = "calendar" | "deduction" | "digest";
+/**
+ * Which module a case lives in. The `ref` is that module's own id for it. `daily` is a released DAILY
+ * deduction line (owner, 2026-11-13), whose ref is the dispute's own id — the line itself is deleted when
+ * it is withdrawn.
+ */
+export type DisputeCaseKind = "calendar" | "deduction" | "digest" | "daily";
 
-export const DISPUTE_CASE_KINDS: readonly DisputeCaseKind[] = ["calendar", "deduction", "digest"];
+export const DISPUTE_CASE_KINDS: readonly DisputeCaseKind[] = ["calendar", "deduction", "digest", "daily"];
 
 export function isDisputeCaseKind(value: unknown): value is DisputeCaseKind {
-  return value === "calendar" || value === "deduction" || value === "digest";
+  return value === "calendar" || value === "deduction" || value === "digest" || value === "daily";
 }
 
 /** The human name of each module, for a heading or a notification. */
@@ -24,6 +28,7 @@ export const DISPUTE_CASE_KIND_LABELS: Record<DisputeCaseKind, string> = {
   calendar: "Calendar dispute",
   deduction: "Deduction dispute",
   digest: "Weekly attendance dispute",
+  daily: "Daily deduction dispute",
 };
 
 /**

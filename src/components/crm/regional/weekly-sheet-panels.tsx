@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { KpiSection, KpiTile } from "@/components/crm/kpis-chrome";
-import type { WeeklySheet } from "@/lib/crm/weekly-sheet";
+import type { WeeklySheet, WeeklySheetRep } from "@/lib/crm/weekly-sheet";
 import {
   WEEKLY_SHEET_ACCOUNT_STATE_LABEL,
   WEEKLY_SHEET_ACCOUNT_STATES,
@@ -194,12 +194,20 @@ export function WeeklySheetStandPanel({ sheet }: { sheet: WeeklySheet }) {
   );
 }
 
-/** A quiet name link to a rep's row, only when that row is on the page under the filter. */
-function RepName({ anchor, listed, name }: { anchor: string; listed: boolean; name: string }) {
+/**
+ * A quiet name link to a rep's row, only when that row is on the page under the filter. The row is a table row
+ * from `md` and a card below it, so the link goes to whichever of the two is showing.
+ */
+function RepName({ listed, name, rep }: { listed: boolean; name: string; rep: Pick<WeeklySheetRep, "seatId"> }) {
   return listed ? (
-    <a className="break-words text-phx-md font-black text-slate-900 hover:underline" href={`#${anchor}`}>
-      {name}
-    </a>
+    <>
+      <a className="hidden break-words text-phx-md font-black text-slate-900 hover:underline md:inline" href={`#${weeklySheetRepAnchor(rep)}`}>
+        {name}
+      </a>
+      <a className="break-words text-phx-md font-black text-slate-900 hover:underline md:hidden" href={`#${weeklySheetRepAnchor(rep, "card")}`}>
+        {name}
+      </a>
+    </>
   ) : (
     <span className="break-words text-phx-md font-black text-slate-900">{name}</span>
   );
@@ -228,7 +236,7 @@ export function WeeklySheetAttentionPanel({ sheet, show }: { sheet: WeeklySheet;
               {items.map((item) => (
                 <li className="grid gap-1 px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-4" key={item.rep.seatId}>
                   <div className="min-w-0">
-                    <RepName anchor={weeklySheetRepAnchor(item.rep)} listed={listed.has(item.rep.seatId)} name={item.rep.person} />
+                    <RepName rep={item.rep} listed={listed.has(item.rep.seatId)} name={item.rep.person} />
                     <p className="break-words text-phx-sm text-slate-500">
                       {item.rep.territory} · {regionManagerTitle(item.district.regionName, item.district.managerName)}
                     </p>

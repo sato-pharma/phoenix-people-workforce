@@ -318,11 +318,13 @@ export function runOutstationEvidenceWaiverTests() {
   // 9 since 2026-08-19: resendOutstationDeparturePhotoReminder resolves the gate a second time to
   // explain WHY a refused resend was refused. Raise this number only alongside a real new call
   // site — it is a census, and a census that drifts upward on its own stops counting anything.
+  // 10 since 2026-11-13: approveOutstationRequestForPayroll resolves the gate on the claim as it stands to
+  // decide whether a re-approve of an already-accepted claim changes anything (isUnchangedOutstationReapproval).
   const gateCallSites = service.match(/resolveOutstationGateState\(\{ employeeRole:/g) ?? [];
   assert.equal(
     gateCallSites.length,
-    9,
-    `every resolveOutstationGateState call in service.ts must pass employeeRole first — found ${gateCallSites.length} of 9`,
+    10,
+    `every resolveOutstationGateState call in service.ts must pass employeeRole first — found ${gateCallSites.length} of 10`,
   );
 
   // ── The form and the gate agree ─────────────────────────────────────────────────

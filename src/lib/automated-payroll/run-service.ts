@@ -18,6 +18,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import {
+  assertCancelAllowedAfterDownloads,
+  listBankFileDownloads,
+  recordBankFileDownloaded,
+} from "./bank-file-downloads.ts";
 import { holdRun } from "./run-hold.ts";
 import {
   landQueuedPayrollResyncsForPeriod,
@@ -140,6 +145,7 @@ import {
   listDraftRows,
   listLatestCellWrites,
   listStepStates,
+  markRunPublished,
   updateRun,
   upsertDraftRows,
   upsertStepState,
@@ -664,7 +670,17 @@ export async function getRunForPeriod(
   return (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
 }
 
-export async function cancelRun(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function cancelRun(
+  access: AccessContext,
+  runId: string,
+  options: {
+    /**
+     * Cancel even though finance has downloaded a bank file (F-PAY-016). Refused without a reason;
+     * the reason is kept on the cancel's audit row. See bank-file-downloads.ts.
+     */
+    overrideDownloaded?: { reason?: string | null } | null;
+  } = {},
+): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "cancel a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
@@ -672,7 +688,10 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
 
   // One transition at a time (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part1", "part2", "ready"], "Cancelling this run");
-  const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+  const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
+    // A file that has left for the bank is not undone by cancelling the run — refuse first, before
+    // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too.
+    const override = assertCancelAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded);
     // Undo this run's effect on the carry-forward ledger BEFORE marking it
     // cancelled. A run whose Part 2 was confirmed has already marked previous
     // months' overpayments as recovered — but a cancelled run pays nobody, so
@@ -680,13 +699,17 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
     // exists to prevent). See releaseCarryForwardForCancelledRun.
     const released = await releaseCarryForwardForCancelledRun(runId);
     const cancelled = await updateRun(runId, { phase: "cancelled" }, { transitionToken: transition });
-    return { ledger: released, updated: cancelled };
+    return { ledger: released, updated: cancelled, override };
   });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
     action: "run_cancelled",
-    detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
+    detail: {
+      carryForwardReleased: ledger.released,
+      carryForwardDiscarded: ledger.discarded,
+      ...(override.overridden ? { cancelledAfterBankFileDownload: true, overrideReason: override.reason } : {}),
+    },
   });
   return updated;
 }
@@ -2896,9 +2919,49 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
       releases: heldReleasesOf(rows),
     });
 
-    const updated = await updateRun(
+    // THE PHASE WRITE AND THE HELD RECORD ARE ONE DATABASE CALL (F-PAY-002): the `published` audit row
+    // is the only ledger of who was held and what they are owed, so the run is marked published only
+    // together with it. A failure here leaves the run in `ready`; the retry finds its own batch and
+    // finishes. See markRunPublished.
+    const updated = await markRunPublished(
       runId,
-      { phase: "published", publishedBatchId: batchId, publishedAt: nowIso(), publishedBy: actorId(access) },
+      {
+        batchId,
+        publishedBy: actorId(access),
+        action: "published",
+        detail: {
+          batchId,
+          publishedCount: publishRows.length,
+          heldExcluded,
+          carryForwardRecovered,
+          // Earlier months' held salary this month paid, by person and held month.
+          heldReleased,
+          // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
+          totalsComparedToConfirm: !predatesStamp,
+          // A leftover batch replaced, or a create or rewrite that wrote the batch and then threw (S-PAY-09, F-18).
+          ...batchNotes,
+          // The permanent answer to "who was held this month, for how much, and why".
+          held: heldRecord,
+          heldFirstPartTotal,
+          heldSecondPartTotal,
+          heldWithoutMeaningfulReason,
+          // The other money this month withheld and still owes (held-settlements.ts reads all three lists).
+          part1Unpaid,
+          deferred,
+          // The permanent answer to "did the bank files carry everybody".
+          bankCoverage: bankCoverage.map((entry) => ({
+            scope: entry.scope,
+            covered: entry.covered,
+            fabRows: entry.fab.rows,
+            fabTotal: entry.fab.total,
+            cibRows: entry.cib.rows,
+            cibTotal: entry.cib.total,
+            unroutable: entry.unroutable,
+            unroutableTotal: entry.unroutableTotal,
+            summary: describeBankCoverage(entry),
+          })),
+        },
+      },
       { transitionToken: transition },
     );
     return { batchId, carryForwardRecovered, heldReleased, updated };
@@ -2940,48 +3003,21 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // It cannot throw, and it reports what happened so a month that told nobody reads as one.
   const payslipNotice = await notifyPayslipAvailable({ batchId });
 
+  // What happened AFTER the month became final — who was told, which trips were marked paid. Nothing is
+  // rebuilt from this row, so it stays best-effort: the money record was written with the phase above.
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
-    action: "published",
+    action: "published_follow_up",
     detail: {
       batchId,
-      publishedCount: publishRows.length,
-      heldExcluded,
       // Who was actually told. `payslipNoticeFailed` above zero, or an error, means people hold a
       // payslip nobody announced — recoverable, but only if it is visible.
       payslipNoticeSent: payslipNotice.notified,
       payslipNoticeFailed: payslipNotice.failed,
       payslipNoticeError: payslipNotice.error,
-      carryForwardRecovered,
-      // Earlier months' held salary this month paid, by person and held month.
-      heldReleased,
       // Which outstation trips this month paid, or why marking them failed.
       expenseStamp,
-      // False only for a run confirmed before the stamp existed; anything else without one is refused (S-PAY-08).
-      totalsComparedToConfirm: !predatesStamp,
-      // A leftover batch replaced, or a create or rewrite that wrote the batch and then threw (S-PAY-09, F-18).
-      ...batchNotes,
-      // The permanent answer to "who was held this month, for how much, and why".
-      held: heldRecord,
-      heldFirstPartTotal,
-      heldSecondPartTotal,
-      heldWithoutMeaningfulReason,
-      // The other money this month withheld and still owes (held-settlements.ts reads all three lists).
-      part1Unpaid,
-      deferred,
-      // The permanent answer to "did the bank files carry everybody".
-      bankCoverage: bankCoverage.map((entry) => ({
-        scope: entry.scope,
-        covered: entry.covered,
-        fabRows: entry.fab.rows,
-        fabTotal: entry.fab.total,
-        cibRows: entry.cib.rows,
-        cibTotal: entry.cib.total,
-        unroutable: entry.unroutable,
-        unroutableTotal: entry.unroutableTotal,
-        summary: describeBankCoverage(entry),
-      })),
     },
   });
   await notifyPublished(updated);
@@ -3376,6 +3412,9 @@ export async function buildFinanceSheet(
   period: PayrollPeriod,
   scope: "part1" | "full",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage[]; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download the finance sheet");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
@@ -3409,7 +3448,10 @@ export async function buildFinanceSheet(
           buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part2" }),
         ];
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
+  const fileName = `Automated-Payroll-${label}-${scope}-finance.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "finance", scope, fileName });
+  return { buffer, coverage, fileName };
 }
 
 /** Which finance scopes are available for a period (drives the finance dropdown). */
@@ -3457,6 +3499,9 @@ export async function buildFabSheet(
   scope: "part1" | "part2",
   valueDateIso?: string,
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download a FAB bank file");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
@@ -3493,7 +3538,10 @@ export async function buildFabSheet(
     salaryColumnLabel: scope === "part2" ? "Expense" : "Salary",
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `FAB-Salary-Transfer-${label}-${scope}.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "fab", scope, fileName });
+  return { buffer, coverage, fileName };
 }
 
 /**
@@ -3508,6 +3556,9 @@ export async function buildCibSheet(
   period: PayrollPeriod,
   scope: "part1" | "part2",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download a CIB bank file");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
@@ -3532,5 +3583,8 @@ export async function buildCibSheet(
 
   const buffer = await buildCibSheetWorkbook({ rows: cibRows });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `CIB-Salary-Transfer-${label}-${scope}.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "cib", scope, fileName });
+  return { buffer, coverage, fileName };
 }

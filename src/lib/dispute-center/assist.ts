@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { factsFingerprint, verifyAssistAnswer, type AssistStatement, type VerifiedAnswer } from "./assist-verify.ts";
 import { loadCalendarCase } from "./calendar.ts";
+import { loadDailyCase } from "./daily.ts";
 import { loadDeductionCase } from "./deduction.ts";
 import { loadDigestCase } from "./digest.ts";
 import { viewerHrIdOf } from "./participants.ts";
@@ -157,6 +158,7 @@ export async function loadDisputeCaseForAssist(
 ): Promise<DisputeCase> {
   if (kind === "calendar") return loadCalendarCase(access, ref);
   if (kind === "deduction") return loadDeductionCase(access, ref);
+  if (kind === "daily") return loadDailyCase(access, ref);
   const lineId = Number(ref);
   if (!Number.isInteger(lineId) || lineId <= 0) throw validationError("That day was not found.");
   return loadDigestCase(access, lineId);
