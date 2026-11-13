@@ -998,6 +998,22 @@ export const MODULES = [
     keywords: ["doctor list check", "doctor-list check", "list check", "on the rep's list", "two photos", "finance ageing"],
     tables: ["marketing_customer_list_checks"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the decide-and-cancel
+  // locking rule (enterprise audit F-MKT-006) took `marketing`'s pointer to 4,128 bytes, over the
+  // 4,000-byte margin. The approval chain's database functions — decide, cancel, reopen, resubmit — are
+  // the clean cut. `marketing` KEEPS EVERY GLOB IT HAD, so a file here loads the PAIR.
+  {
+    id: "marketing-approval-chain",
+    title: "Marketing approval chain — deciding, cancelling, reopening and resubmitting a request",
+    scope: "The database functions that move a marketing request through its approval rungs (phx_decide_marketing_request_step, phx_cancel_marketing_request, the reopen and the resubmit) and the locks and status guards that keep two of them from overwriting each other.",
+    globs: [
+      "src/lib/marketing-requests/{cancel,reopen-rule}*",
+      "tests/*{marketing-cancel-request,marketing-reject-terminalises,marketing-reopen-rejected-request,marketing-finance-requirement-on-approval,direct-orders-and-marketing-atomic}*",
+      "supabase/migrations/*{marketing_decide,marketing_reject_terminalises,marketing_reopen_rejected,marketing_resubmit_atomic,marketing_refuse_self_approval,marketing_finance_requirement_on_approval}*",
+    ],
+    keywords: ["approval step", "approval rung", "decide marketing", "cancel marketing request", "reopen marketing request", "resubmit marketing request", "phx_decide_marketing_request_step"],
+    tables: ["marketing_request_approval_steps"],
+  },
   // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the careers-page rules took
   // `recruitment` to 4,295 bytes of pointer, over the 4,000-byte margin. The Job Posts page and the careers
   // page are the clean cut: none of it is read while working a candidate, a CV or an offer. `recruitment`

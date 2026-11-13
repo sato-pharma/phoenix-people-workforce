@@ -130,6 +130,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `marketing-functions` — Monthly Marketing Functions and the Marketing Field Visit Feedback | `src/lib/marketing-functions/**` and 4 more |
 | `marketing-roi` — Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard | `src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*` and 4 more |
 | `marketing-list-check` — Marketing doctor-list check and Finance Ageing | `src/lib/marketing-requests/{crm-list-check,crm-doctor-pick,finance-ageing}*` and 5 more |
+| `marketing-approval-chain` — Marketing approval chain — deciding, cancelling, reopening and resubmitting a request | `src/lib/marketing-requests/{cancel,reopen-rule}*` and 2 more |
 | `recruitment-job-posts` — Job Posts and the careers page — the picture, the Publish press and the guard | `src/lib/recruitment/job-posts/**` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
 | `recruitment-inbound` — Recruitment — the WhatsApp bot, the screening questions and the careers form | `src/lib/recruitment/inbound/**` and 4 more |
