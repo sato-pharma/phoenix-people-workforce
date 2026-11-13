@@ -16,6 +16,8 @@
 // Read-only: the single call is the phx_ci_schema_shape() RPC (see
 // 20260731210000_ci_schema_shape_rpc.sql).
 
+import { readFileSync } from "node:fs";
+
 import { createClient } from "@supabase/supabase-js";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -181,7 +183,41 @@ export type SchemaShape = {
   recovery_runs?: RecoveryRuns;
   /** Optional for the same reason: only present once 20260929203200 is applied to this target. */
   browser_reachable?: BrowserReachable[];
+  /**
+   * Every foreign key to public.employees(hr_id) (20261113171643_ci_employee_keys.sql). Optional for
+   * the same reason; when present it is compared with scripts/employee-key-baseline.json.
+   */
+  employee_keys?: EmployeeKey[];
 };
+
+/**
+ * One foreign key from a column to public.employees(hr_id), as the live catalogue reports it.
+ *
+ * 🔴 REC-037 (enterprise audit 2026-11-13): "the orphan count is zero and stays zero". A VALIDATED key
+ * makes an orphan row impossible, so "stays zero" is "every key stays, and stays validated". The
+ * baseline is the list of keys that must exist; it may only grow.
+ */
+export type EmployeeKey = {
+  table_schema: string;
+  table_name: string;
+  column_name: string;
+  constraint_name: string;
+  validated: boolean;
+};
+
+const EMPLOYEE_KEY_BASELINE_FILE = new URL("./employee-key-baseline.json", import.meta.url);
+
+/** The committed list of keys that must exist, as `schema.table.column`. */
+export function readEmployeeKeyBaseline(): string[] {
+  const raw = JSON.parse(readFileSync(EMPLOYEE_KEY_BASELINE_FILE, "utf8")) as { keys?: unknown };
+  if (!Array.isArray(raw.keys) || raw.keys.some((k) => typeof k !== "string")) {
+    throw new Error("scripts/employee-key-baseline.json must hold { keys: string[] }");
+  }
+  return raw.keys as string[];
+}
+
+export const employeeKeyName = (k: Pick<EmployeeKey, "table_schema" | "table_name" | "column_name">) =>
+  `${k.table_schema}.${k.table_name}.${k.column_name}`;
 
 /** Whether each browser-facing/server role holds USAGE on a given schema. */
 export type SchemaUsage = { anon: boolean; authenticated: boolean; service_role: boolean };
@@ -293,7 +329,7 @@ export type Violation = { severity: "error" | "warning"; code: string; message: 
  */
 export function evaluateSchemaShape(
   shape: SchemaShape,
-  options: { truePolicyAllowed?: ReadonlyMap<string, string> } = {},
+  options: { truePolicyAllowed?: ReadonlyMap<string, string>; employeeKeyBaseline?: readonly string[] } = {},
 ): Violation[] {
   const truePolicyAllowed = options.truePolicyAllowed ?? TRUE_POLICY_ALLOWED;
   const v: Violation[] = [];
@@ -720,6 +756,50 @@ export function evaluateSchemaShape(
     }
   }
 
+  // 🔴 REC-037 — EVERY EMPLOYEE KEY IN THE BASELINE STAYS, AND STAYS VALIDATED. The repository test
+  // pins the migrations that added the keys; it cannot see one dropped or re-added NOT VALID by hand,
+  // and by hand is how most of this schema has changed. A key gone means a money, leave or attendance
+  // row can name nobody again, silently, in every report that joins on the id.
+  if (shape.employee_keys !== undefined) {
+    const baseline = options.employeeKeyBaseline ?? readEmployeeKeyBaseline();
+    const live = new Map(shape.employee_keys.map((k) => [employeeKeyName(k), k]));
+    const dropped = baseline.filter((name) => !live.has(name));
+    if (dropped.length > 0) {
+      v.push({
+        severity: "error",
+        code: "employee_key_dropped",
+        message:
+          `${dropped.length} of the ${baseline.length} foreign keys to public.employees(hr_id) in ` +
+          `scripts/employee-key-baseline.json are gone from this database: ${dropped.join(", ")}. ` +
+          "Each one is what stops a row naming nobody. Put it back with a migration (orphan count first, " +
+          "then NOT VALID, then VALIDATE); removing one is a decision the owner is told about first.",
+      });
+    }
+    const unvalidated = shape.employee_keys.filter((k) => !k.validated).map(employeeKeyName);
+    if (unvalidated.length > 0) {
+      v.push({
+        severity: "error",
+        code: "employee_key_not_validated",
+        message:
+          `${unvalidated.length} foreign key(s) to public.employees(hr_id) are NOT VALID: ` +
+          `${unvalidated.join(", ")}. A key that was never validated does not vouch for the rows already ` +
+          "there. Count the orphans, repair them, then `alter table ... validate constraint ...`.",
+      });
+    }
+    const listed = new Set(baseline);
+    const unlisted = [...live.keys()].filter((name) => !listed.has(name));
+    if (unlisted.length > 0) {
+      v.push({
+        severity: "warning",
+        code: "employee_key_baseline_behind",
+        message:
+          `${unlisted.length} foreign key(s) to public.employees(hr_id) exist here but are not in ` +
+          `scripts/employee-key-baseline.json: ${unlisted.join(", ")}. Add them, so the count can never ` +
+          "fall back below them unnoticed.",
+      });
+    }
+  }
+
   return v;
 }
 
@@ -798,6 +878,17 @@ async function loadShape(): Promise<SchemaShape> {
     shape.browser_reachable = (reachable.data ?? []) as BrowserReachable[];
   }
 
+  // Same pattern again (20261113171643_ci_employee_keys.sql, REC-037): every key that ties a row to a
+  // real employee, judged against scripts/employee-key-baseline.json.
+  const employeeKeys = await supabase.rpc("phx_ci_employee_keys");
+  if (employeeKeys.error) {
+    console.log(
+      `[schema-shape] employee-key gate not available on this target (${employeeKeys.error.message}) — skipping.`,
+    );
+  } else {
+    shape.employee_keys = (employeeKeys.data ?? []) as EmployeeKey[];
+  }
+
   return shape;
 }
 
@@ -826,6 +917,14 @@ async function main() {
       `[schema-shape] schema private USAGE — authenticated: ${u.authenticated} · ` +
         `service_role: ${u.service_role} · anon: ${u.anon} ` +
         `(${shape.policies_using_private_schema ?? 0} policies depend on it)`,
+    );
+  }
+
+  if (shape.employee_keys) {
+    const validated = shape.employee_keys.filter((k) => k.validated).length;
+    console.log(
+      `[schema-shape] employee keys — ${shape.employee_keys.length} live, ${validated} validated · ` +
+        `baseline ${readEmployeeKeyBaseline().length} (may only rise)`,
     );
   }
 
