@@ -333,7 +333,9 @@ two screencasts until it comes back.
 1. Confirm both permissions read **Advanced Access** in the app dashboard.
 2. **Free the WABA slot**: delete the *Unverified* `+20 11 59888247` entry, which currently occupies the
    second of two number slots. This is reversible and does **not** affect WhatsApp on the handset.
-3. Owner opens `https://phoenix-hr.satopharma.com/whatsapp-connect` **on the handset** and runs the
-   ~2-minute confirm (enter number → WhatsApp sends a code → **Connect** → **Connect to the Business
+3. Owner makes a **connect link** on Recruitment → Inbound CV Intake Health ("Connect a WhatsApp
+   number" → **Make connect link**, Super Admin only; since 13 Nov 2026, S01 F-PLT-008). It opens
+   `/whatsapp-connect` and works **once, for 30 minutes**; the page refuses to finish without one.
+   He opens that link **on the handset** and runs the ~2-minute confirm (enter number → WhatsApp sends a code → **Connect** → **Connect to the Business
    Platform** → **Confirm** to sync history → enter the code). Requires WhatsApp Business app 2.24.17+.
 4. Verify a test CV sent to the handset reaches the webhook and lands in recruitment intake.

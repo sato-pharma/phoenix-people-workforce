@@ -232,14 +232,15 @@ export const accessRegistry = [
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret in the Authorization: Bearer header ONLY, compared in constant time against BREVO_WEBHOOK_SECRET; a request carrying ?token= is refused (audit point 20, 2026-10-26)." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/sentry", reason: "Sentry alert webhook is protected by the HMAC-SHA256 signature in sentry-hook-signature, verified against SENTRY_WEBHOOK_SECRET; it only forwards a short error summary to the owner's Telegram." }),
   tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
-  // Completes WhatsApp coexistence onboarding started on the public /whatsapp-connect page. Public
-  // by design: no Phoenix session exists (the owner runs it on a phone), and the credential is Meta's
-  // one-time Embedded Signup `code`, which Meta issues only to a holder of a role on our Meta app. It
+  // Completes WhatsApp coexistence onboarding started on the public /whatsapp-connect page. No Phoenix
+  // session exists (the owner runs it on a phone), so it needs a one-time connect link a Super Admin
+  // made (/api/recruitment/intake/whatsapp-connect-link), spent here, plus Meta's one-time Embedded
+  // Signup `code`, which Meta issues only to a holder of a role on our Meta app. It
   // exchanges that code for a business token server-side (WHATSAPP_APP_SECRET) and subscribes this app
   // to the joined WABA so its inbound routes to /api/webhooks/whatsapp; it writes nothing to our
   // database and returns nothing sensitive. CSRF-exempt because it carries no ambient cookie authority
   // — a forged cross-site POST reaches nothing without a valid Meta code.
-  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/whatsapp/embedded-signup/exchange", reason: "Unauthenticated WhatsApp coexistence onboarding callback; the credential is Meta's one-time Embedded Signup code (issued only to a role-holder on our Meta app), exchanged server-side for a business token. No Phoenix session, no DB write, no sensitive response." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/whatsapp/embedded-signup/exchange", reason: "WhatsApp coexistence onboarding callback with no Phoenix session; it requires a one-time connect link a Super Admin made (signed, 30 minutes, spent on use) and Meta's one-time Embedded Signup code (issued only to a role-holder on our Meta app), exchanged server-side for a business token. No Phoenix session, no DB write, no sensitive response." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/integrations/telegram/webhook", reason: "Telegram bot webhook is protected by the Telegram secret-token header." }),
   tokenApi({ authMode: "machine-token", methods: ["GET", "POST"], pattern: "/api/integrations/ftp-videos", reason: "FTP portal lists WhatsApp closing videos waiting to be filed (short-lived signed links, sender submission IDs) and claims them once filed; bearer-guarded by its own FTP_VIDEO_HANDOFF_SECRET, never CRON_SECRET. No session, so CSRF-exempt." }),
   tokenApi({ authMode: "machine-token", methods: ["GET"], pattern: "/api/integrations/cns-line/members", reason: "The CNS Line detailing app's server checks whether an email belongs to someone it admits: an active CNS-line employee, an active manager anywhere up their manager_hr_id chain, or an active Head Office employee. Answers HMAC-SHA256 hashes (key CNS_LINE_MEMBERS_HASH_KEY, kept apart from the token) of the active members' work and personal addresses ONLY — never an address, name or HR id. Bearer-guarded by its own CNS_LINE_MEMBERS_TOKEN (constant-time), no development bypass: token or key unset answers 503, missing or wrong bearer 401. GET only and mutates nothing, so no CSRF exemption is needed." }),
@@ -1660,6 +1661,8 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/probation/config", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/probation/**", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/requisitions/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
+  // The one-time WhatsApp connect link (S01, F-PLT-008): recruitment update AND the system scope, checked in the route.
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/intake/whatsapp-connect-link", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/intake/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   // Advertising channels — the Facebook groups a vacancy gets posted into, and the tracking code
   // each one hands out. Same authority as the rest of the pipeline; the handlers ask for create/

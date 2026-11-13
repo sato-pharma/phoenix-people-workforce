@@ -11,6 +11,34 @@ import {
   WHATSAPP_EMBEDDED_SIGNUP_SDK_VERSION,
 } from "@/lib/recruitment/inbound/whatsapp-embedded-signup";
 
+// The fragment key only — the ticket is read and checked on the server (whatsapp-connect-link.ts).
+const CONNECT_LINK_FRAGMENT = "link";
+
+/**
+ * The connect-link ticket in this page's #fragment, or null. A fragment never reaches a server log.
+ * Only its expiry is read here, to say so before the WhatsApp window opens; the server decides.
+ */
+function readConnectLink(): { ticket: string; expired: boolean } | null {
+  const ticket = new URLSearchParams(window.location.hash.replace(/^#/, "")).get(CONNECT_LINK_FRAGMENT);
+  if (!ticket) return null;
+  try {
+    const encoded = ticket.split(".")[0] ?? "";
+    const payload = JSON.parse(atob(encoded.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: unknown };
+    return { ticket, expired: typeof payload.exp === "number" && payload.exp * 1000 < Date.now() };
+  } catch {
+    return { ticket, expired: false };
+  }
+}
+
+const LINK_MISSING_MESSAGE =
+  "This page opens from a connect link made in Phoenix (Recruitment, Inbound CV Intake Health). Ask the Phoenix administrator for a new link.";
+const LINK_INVALID_MESSAGE =
+  "This connect link has run out or was not made in Phoenix. Ask the Phoenix administrator for a new link.";
+const LINK_REFUSED_MESSAGES: Record<string, string> = {
+  link_invalid: LINK_INVALID_MESSAGE,
+  link_used: "This connect link has already been used. Ask the Phoenix administrator for a new link.",
+};
+
 // Minimal typing for just the two Facebook JS SDK calls this page makes — narrower than pulling in a
 // full @types package, and enough to keep the file free of `any`.
 type FacebookLoginResponse = {
@@ -118,9 +146,15 @@ export default function WhatsAppConnectPage() {
       const response = await fetch("/api/whatsapp/embedded-signup/exchange", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, wabaId: wabaIdRef.current }),
+        body: JSON.stringify({ code, link: readConnectLink()?.ticket ?? "", wabaId: wabaIdRef.current }),
       });
       if (!response.ok) {
+        const answer = (await response.json().catch(() => null)) as { error?: string } | null;
+        const refused = answer?.error ? LINK_REFUSED_MESSAGES[answer.error] : undefined;
+        if (refused) {
+          setStatus({ kind: "error", message: refused });
+          return;
+        }
         setStatus({
           kind: "error",
           message: "The connection could not be completed. Please try again in a moment.",
@@ -137,6 +171,16 @@ export default function WhatsAppConnectPage() {
   }, []);
 
   const launch = useCallback(() => {
+    // No link, or one that has visibly run out: say so BEFORE the WhatsApp window opens.
+    const link = readConnectLink();
+    if (!link) {
+      setStatus({ kind: "error", message: LINK_MISSING_MESSAGE });
+      return;
+    }
+    if (link.expired) {
+      setStatus({ kind: "error", message: LINK_INVALID_MESSAGE });
+      return;
+    }
     const sdk = window.FB;
     if (!sdk || !fbReadyRef.current) {
       setStatus({ kind: "error", message: "Still loading — give it a second, then tap Connect again." });
