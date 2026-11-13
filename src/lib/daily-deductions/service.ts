@@ -13,6 +13,7 @@ import {
 } from "@/lib/deductions/connectors/vacation.ts";
 import { dropDeductionExemptDrafts } from "@/lib/deductions/exempt-employees.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
+import { loadSparedDailyDays, spareAcceptedDailyDisputeDays } from "./accepted-dispute-days.ts";
 import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "./compute.ts";
 import { collectNoRecordsDailyCandidates } from "./no-records.ts";
 import { collectNoWeeklyPlanCandidates } from "./no-weekly-plan.ts";
@@ -77,11 +78,16 @@ export async function runConnectorForRange(input: {
   const runner = CONNECTOR_RUNNERS[input.connector];
   const clipped: ClippedDraftLine[] = [];
   const warnings: string[] = [];
+  // A day the employee won a dispute on is never raised again (owner, 2026-11-13). Read once, before any
+  // connector runs, and fails closed: an unreadable list stops the tally rather than re-raising won days.
+  const spared = await loadSparedDailyDays();
 
   for (const period of monthsInRange(resolved.from, resolved.effectiveTo)) {
     try {
       const drafts = await runner({ month: period.month, year: period.year });
-      for (const draft of dropDeductionExemptDrafts(drafts).kept) {
+      const sparedResult = spareAcceptedDailyDisputeDays(dropDeductionExemptDrafts(drafts).kept, spared);
+      warnings.push(...sparedResult.notes.map((note) => `${label}: ${note}`));
+      for (const draft of sparedResult.kept) {
         const line = clipDraftToRange(draft, resolved.from, resolved.effectiveTo);
         if (line) clipped.push(line);
       }
@@ -164,6 +170,7 @@ export function mapDailyLineRow(row: Record<string, unknown>): DailyDeductionsLi
     reason: (row.reason as string | null) ?? null,
     hrNote: String(row.hr_note ?? ""),
     createdAt: String(row.created_at),
+    deductionDate: typeof row.deduction_date === "string" ? row.deduction_date.slice(0, 10) : null,
     releasedAt: String(row.released_at ?? row.created_at),
     releasedBy: (row.released_by as string | null) ?? null,
     rangeStart: (row.range_start as string | null) ?? null,

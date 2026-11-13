@@ -1509,6 +1509,28 @@ export const MODULES = [
     keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out"],
     tables: ["app_sessions"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 30
+  // rules and its injected pointer measured 3,973 bytes; the rule that an AI address is written out in
+  // the code (integration audit, ISS-041) took it to 4,046 against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds. The one door every AI call goes through, the second provider
+  // behind it, what a failed-over leg is called, which account the out-of-credit alarm names and where
+  // an AI address may come from are one family — how Phoenix reaches an AI provider — so their five
+  // rules moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so a file under `src/lib/ai/` loads the
+  // PAIR and nothing that used to arrive stops arriving. `sales-imports` keeps `src/lib/sales/ai/**`
+  // too: its own pointer measured 3,950 that day, so the address rule could not go there either.
+  {
+    id: "platform-ai",
+    title: "Platform — the one door to an AI provider, the second provider and where an AI address comes from",
+    scope: "How Phoenix reaches an AI provider: the one shared call every module uses, Anthropic as the second provider behind it, what a leg the next account covers is called, which account the out-of-credit alarm names, and the rule that a provider's address is written out in the code and never read from a variable.",
+    globs: [
+      "src/lib/ai/**",
+      "src/lib/sales/ai/**",
+      "tests/ai-{one-door,provider-failover,failure-visibility}*",
+      "tests/sales-ai-failover*",
+    ],
+    keywords: ["ai provider", "one door", "createOpenAiResponseText", "runWithSalesAiFailover", "resolveAiProvider", "failed_over", "out of credit", "AI_BASE_URL"],
+    tables: [],
+  },
   // 🔴 SPLIT 2026-10-18, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 29
   // rules and its injected pointer measured 4,141 bytes against the 4,000-byte margin
   // `tests/module-memory.test.ts` holds, the moment the AI-providers rule landed. The cut is the

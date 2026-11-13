@@ -83,6 +83,14 @@ export type ResolvedDailyRange = {
   empty: boolean;
 };
 
+/** What ONE day of a tally line charges — so a day can be released on its own (owner, 2026-11-13). */
+export type DailyDeductionDayFigure = {
+  date: string;
+  /** The day's weight: 1, or 0.5 for a CRM Thursday. */
+  daysCount: number;
+  amount: number;
+};
+
 /** One employee×category running-tally row, computed from the clipped connector output. */
 export type DailyDeductionTallyLine = {
   category: DailyDeductionCategory;
@@ -99,6 +107,9 @@ export type DailyDeductionTallyLine = {
   amount: number;
   /** The specific in-range days behind this row, de-duplicated and sorted. */
   dates: string[];
+  /** The same days, each priced on its own by the connector's own rule — what lets the Super Admin
+   * release 9 and 11 November and leave the 10th. Absent when a day could not be priced alone. */
+  days?: DailyDeductionDayFigure[];
   sourceSystem: string;
   reason: string | null;
   /** True when part of this row has no computable amount (usually no base salary on file). The
@@ -155,6 +166,9 @@ export type DailyDeductionsLine = {
   reason: string | null;
   hrNote: string;
   createdAt: string;
+  /** The ONE day this row charges when it was released on its own (owner, 2026-11-13: "I want each
+   * deduction to be single"); null on a row that carries a whole range. */
+  deductionDate: string | null;
   /** When THIS line was released into the snapshot (a re-release refreshes it). */
   releasedAt: string;
   releasedBy: string | null;
@@ -196,4 +210,6 @@ export type DailyDeductionsPublishLineInput = {
   sourceSystem: string;
   reason: string | null;
   hrNote?: string;
+  /** A single deduction's one day — `dates` is then exactly this day. Absent for a whole-range row. */
+  deductionDate?: string | null;
 };

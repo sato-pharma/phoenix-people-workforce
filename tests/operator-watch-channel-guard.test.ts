@@ -31,6 +31,7 @@ const ALARMS: Alarm[] = [
   { event: "ai_key_rejected", file: "src/lib/notifications/ai-quota-alert.ts" },
   { event: "system_audit_daily", file: "src/lib/system-audit/daily-message.ts" },
   { event: "activity_inactivity_digest", file: "src/lib/notifications/inactive-user-digest.ts" },
+  { event: "attendance_punch_feed_stalled", file: "src/lib/attendance/punch-feed-stalled-telegram.ts" },
   { event: "background_jobs_run_failed", file: "src/lib/notifications/background-jobs-digest.ts", spelledAs: "`background_jobs_run_${input.status}`" },
   { event: "recruitment_whatsapp_intake_unhealthy", file: "src/lib/recruitment/inbound/recruitment-notify.ts" },
   { event: "recruitment_inbound_intake_dead_letter", file: "src/lib/recruitment/inbound/recruitment-notify.ts" },

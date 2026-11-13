@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { listCalendarCases } from "@/lib/dispute-center/calendar.ts";
+import { listDailyCases } from "@/lib/dispute-center/daily.ts";
 import { listDeductionCases } from "@/lib/dispute-center/deduction.ts";
 import { listDigestCases } from "@/lib/dispute-center/digest.ts";
 import { disputeCenterError } from "@/lib/dispute-center/http.ts";
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
         try {
           if (kind === "calendar") return await listCalendarCases(access);
           if (kind === "deduction") return await listDeductionCases(access);
+          if (kind === "daily") return await listDailyCases(access);
           return await listDigestCases(access);
         } catch (error) {
           // One module that cannot be read must not hide the other two — but it is NAMED, never

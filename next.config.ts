@@ -60,7 +60,7 @@ const contentSecurityPolicy = [
   // cdn.onesignal.com / api.onesignal.com / onesignal.com: the Web Push SDK (script,
   // its own REST calls, and its permission-prompt UI). If the browser console ever shows
   // a CSP violation for a different OneSignal subdomain, add it here too.
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://cdn.onesignal.com https://api.onesignal.com https://onesignal.com",
+  "connect-src 'self' https://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://cdn.onesignal.com https://api.onesignal.com https://onesignal.com",
   // https://*.supabase.co: a saved CRM visit voice note plays from a signed Supabase Storage URL set
   // directly as an <audio src> (src/components/phoenix-crm/voice-playback.tsx). connect-src already
   // allows Supabase, but an <audio> element's source is governed by media-src, not connect-src, so

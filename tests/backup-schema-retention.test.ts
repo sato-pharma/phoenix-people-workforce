@@ -237,11 +237,17 @@ export function runBackupSchemaRetentionTests() {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  // The real file parses, and every schema in it is dated — an undated name could never reach it.
-  for (const [schema, entry] of Object.entries(readDecisions())) {
-    assert.ok(datesIn(schema).length > 0, `${schema} is in the decisions file but carries no date`);
-    assert.ok(entry.decidedBy, `${schema}: decidedBy`);
+  // The real file parses, and every entry names one real schema and the sheet that put it to him.
+  // A schema need not carry a date in its OWN name: `ops_backup`, `marketing_rollback` and
+  // `map_audit_baseline` are aged by the dates on their tables (snapshotDateOf), and all three were
+  // put to him on the December 2026 sheet.
+  const real = readDecisions();
+  for (const [schema, entry] of Object.entries(real)) {
+    assert.match(schema, /^[a-z_][a-z0-9_]*$/, `${schema} is not a schema name`);
+    assert.ok(!STANDARD_SCHEMAS.has(schema), `${schema} is a standard schema — never a snapshot to decide`);
+    assert.ok(entry.decidedBy && entry.sheet, `${schema}: decidedBy and the sheet that put it to him`);
   }
+  assert.ok(Object.keys(real).length >= 101, "the November nine and the December 92 are all recorded");
 
   // ------------------------------------------------- export, then drop
   //
