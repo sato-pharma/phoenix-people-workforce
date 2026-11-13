@@ -1541,7 +1541,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/nudge", permission: { resource: "employee_profile", action: "update" } }),
   // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
   // outbox is a write, and reading it as a read-gated route understated who may trigger one.
-  sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
+  // TWO DOORS, TWO ROWS (integration audit, 13 Nov 2026, ISS-028). Until then this was one session row
+  // for every method, while the scheduler's GET was — and is — let in by the cron secret alone. The row
+  // told a reviewer the five-minute drain needed an admin session, and tests/cron-control-registry.test.ts
+  // carried a named exception to step around it. POST is the admin's own "drain now" button.
+  sessionApi({ methods: ["POST"], pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/notifications/process", reason: "The scheduler's five-minute outbox drain, guarded by the cron secret (assertCronAuthorized)." }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
   // The native app's "which of my trips still owe a departure photo" list. It declares

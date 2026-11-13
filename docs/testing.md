@@ -185,10 +185,17 @@ consecutive green runs that proved nothing). 🔴 **It no longer runs on a PR at
 removed on 2026-09-29 and the same gitleaks moved into `bash-guard.mjs` clause C12, which refuses the
 push instead, earlier and closer to the author. What remains is the daily 20:17 UTC run over `main` (moved from 05:17 on 2026-10-16)
 plus a dispatch. Semgrep's `sast-scan` **is** in the file (its own job, deliberately never a required
-check); an earlier version of this paragraph said SAST "no longer runs at all", which is wrong. Since
-GHAS is not purchasable on a personal account (`security_and_analysis: null`), these two are the
-repo's only automated secret and SAST detection — and neither one gates a merge, so a finding from
-either has already shipped by the time you read it.
+check); an earlier version of this paragraph said SAST "no longer runs at all", which is wrong.
+Neither one gates a merge, so a finding from either has already shipped by the time you read it.
+
+🔴 **These two are no longer the only detection, and `security_and_analysis` is no longer null**
+(corrected 13 Nov 2026, integration audit finding ISS-057; this paragraph said both until then). The
+repository is **public**, and GitHub's own scanning is on for it. Read live on 13 Nov 2026 with
+`gh api repos/sato-pharma/phoenix-people-workforce --jq .security_and_analysis`: secret scanning,
+push protection, non-provider patterns and validity checks are `enabled`, and Dependabot security
+updates are `enabled` (switched on that day). Code scanning reports too: the audit counted 92 open
+alerts, 72 rated high, and nothing gates on them (ISS-022, triaged in its own session). Read the
+settings again before relying on this paragraph — it is a dated reading, like the one it replaces.
 
 There is no longer a separate `preview-smoke` job — the login smoke test moved into `validate`. The
 full Playwright E2E suite runs only on manual `workflow_dispatch` (the `full-e2e` job).

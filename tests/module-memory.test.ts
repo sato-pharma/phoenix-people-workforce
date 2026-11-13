@@ -30,7 +30,10 @@ import {
 const lib = { MODULES, mentions, modulesForPath };
 
 /** Cross-cutting modules: a rule citing their files can legitimately be global. */
-const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform", "platform-design-tokens"]);
+// `platform-ai` joined on 2026-11-13, the day it was split out of `platform`: the one door every AI
+// call goes through binds every module (`tests/ai-one-door.test.ts` reads the whole repo), so the
+// AGENTS.md rule that cites its files is a rule for everyone, exactly as it was under `platform`.
+const CROSS_CUTTING = new Set(["engineering", "sessions", "database", "platform", "platform-design-tokens", "platform-ai"]);
 
 /**
  * Global rules in AGENTS.md that cite ONE business module's files on purpose. Adding to this list
