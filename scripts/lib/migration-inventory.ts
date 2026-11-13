@@ -2386,6 +2386,30 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // real primary key; it creates no function, so there is no prosrc to digest. Read back on BOTH projects: 50 enabled
   // registry rows (7 before), the script reporting count 43 on each. Re-applying is a no-op.
   "20261113151741_recovery_protects_money_and_people_tables.sql",
+  // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
+  // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all
+  // convalidated, all ON UPDATE CASCADE ON DELETE RESTRICT (production then carried 109 keys to employees, 87
+  // before). Staging first refused it, as designed, on two 21 Sep test rows (`ZZZ-SMOKE` in
+  // deductions_publication_lines, staging only), which were deleted; production had none. Proven on staging:
+  // an update naming a missing employee is refused with 23503. Re-applying is a no-op (each key is skipped
+  // when present).
+  "20261113160008_money_leave_attendance_rows_name_a_real_employee.sql",
+  // Applied 13 Nov 2026 at about 16:15 Cairo through the Supabase MCP execute_sql (staging, then production); no
+  // ledger row. It creates no function, so there is no prosrc to digest: read back on BOTH projects, 13 employees
+  // rows inserted as historical_payroll_record with payroll_eligible and organogram_visible false (28 such rows
+  // after, 15 before), salary_records_phx_employee_fkey and payroll_resignation_candidates_phx_employee_fkey both
+  // convalidated (production then carried 111 keys to employees), no position_vacancies or probation_cases row
+  // for any of the 13, and phx_employee_insert_reconcile_stale_vacancies enabled again. Re-applying is a no-op.
+  "20261113160747_leavers_known_only_from_payroll_become_historical_records.sql",
+  // Applied 13 Nov 2026 at about 16:25 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler); no ledger row. Read back on BOTH projects: the pre-image holds every row with a medical-trip id
+  // (production 117, staging 14), 0 ids name no employee, 0 rows changed person (only the case changed; 42
+  // people), outstation_expense_requests_medical_trip_phx_employee_fkey convalidated (production then carried 112
+  // keys to employees), the trigger enabled and SECURITY INVOKER, and anon has no usage on the backup schema.
+  // Proven on staging: a lower-case id with spaces is stored as B-148; an id naming nobody is cleared and the
+  // name kept. Re-applying is a no-op.
+  "20261113161558_medical_trip_ids_name_a_real_employee.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
