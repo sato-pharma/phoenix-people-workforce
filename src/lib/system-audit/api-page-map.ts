@@ -337,6 +337,7 @@ export const API_NO_UI: Readonly<Record<string, string>> = {
   "/api/whatsapp": "WhatsApp connection setup",
   "/api/errors": "Error reporter",
   "/api/telemetry": "Browser timing beacon (every page)",
+  "/api/security/csp-report": "Browser-sent report-only content security policy reports (every page)",
   "/api/health": "Health check",
   "/api/healthz": "Health check",
   "/api/readyz": "Health check",

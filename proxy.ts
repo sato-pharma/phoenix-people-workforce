@@ -20,8 +20,10 @@ import {
 } from "@/lib/security/csrf";
 import {
   CSP_NONCE_HEADER,
+  CSP_REPORTING_ENDPOINTS,
   createCspNonce,
   pageContentSecurityPolicy,
+  pageReportOnlyContentSecurityPolicy,
   shouldSendPageCsp,
 } from "@/lib/security/content-security-policy";
 import { logStructured } from "@/lib/observability/log";
@@ -330,7 +332,12 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // CV cross-origin. It has no session and no shared secret — a public page cannot hold one — so
       // it stands on reCAPTCHA + a per-IP rate limit, both verified inside the route. CSRF-exempt for
       // the same reason the provider webhooks are: the authorisation lives in the route, not a cookie.
-      request.nextUrl.pathname === "/api/public/apply"
+      request.nextUrl.pathname === "/api/public/apply" ||
+      // Report-only content security policy reports: the BROWSER sends them itself, a report-uri POST
+      // often with no Origin or Referer and a sandboxed frame's with `Origin: null`. The route reads no
+      // session and writes no database (it counts a directive, an origin and a page shape in memory),
+      // so there is nothing for a cross-site request to forge.
+      request.nextUrl.pathname === "/api/security/csp-report"
     )
   ) {
     return null;
@@ -474,6 +481,11 @@ function pageCspFor(pathname: string): PageCsp | null {
 function withPageCsp(response: NextResponse, pageCsp: PageCsp | null, requestHeaders: Headers): NextResponse {
   if (pageCsp) {
     response.headers.set("Content-Security-Policy", pageCsp.policy);
+    // Reported, never enforced: a `<style>` without this nonce and a picture from an unlisted host
+    // (pageReportOnlyContentSecurityPolicy). Only on the RESPONSE — Next.js reads the nonce from the
+    // request's enforced policy, which is set in forwardRequest below.
+    response.headers.set("Content-Security-Policy-Report-Only", pageReportOnlyContentSecurityPolicy(pageCsp.nonce));
+    response.headers.set("Reporting-Endpoints", CSP_REPORTING_ENDPOINTS);
     // Behind Cloudflare, `no-transform` keeps it from rewriting the email addresses a page renders into
     // "[email protected]", which broke hydration (React #418). Served directly, the page is left without
     // it, because `no-transform` also stops Next.js compressing the page — src/lib/security/page-cache-control.ts.
