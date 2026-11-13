@@ -22,11 +22,14 @@ import { readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { mintTemporaryPasswordSetupToken } from "@/lib/auth/password-setup";
+import { trustedDeviceCookieName } from "@/lib/auth/second-step";
+import { issueTrustedDevice, resetSecondStep, secondStepAtSignIn } from "@/lib/auth/second-step-store";
 import {
   createSessionToken,
   phoenixSessionCookieName,
   sessionIdleTimeoutSecondsForRole,
 } from "@/lib/auth/session";
+import { getCookieValue } from "@/lib/auth/session-token";
 import { shouldRepairSupabaseAuthBridge } from "@/lib/auth/supabase-bridge-repair";
 import { temporaryPasswordSetupPath, temporaryPasswordSignInGate } from "@/lib/auth/temporary-password";
 import {
@@ -56,6 +59,10 @@ type LoginPayload = {
   loginId?: string;
   password?: string;
   remember?: boolean;
+  /** The second sign-in step (src/lib/auth/second-step.ts): an authenticator code or a recovery code. */
+  secondStepCode?: string;
+  /** False only when the person unticked "do not ask on this browser for 30 days". */
+  trustDevice?: boolean;
 };
 
 type LoginRequestPayload = LoginPayload & {
@@ -87,8 +94,28 @@ function parseJsonLoginPayload(payload: unknown): LoginPayload {
     throw new InvalidLoginPayloadError("Login request body has invalid fields.");
   }
 
-  return { loginId, password, remember };
+  const secondStepCode = record.secondStepCode;
+  const trustDevice = record.trustDevice;
+  if (
+    (secondStepCode !== undefined && typeof secondStepCode !== "string") ||
+    (trustDevice !== undefined && typeof trustDevice !== "boolean")
+  ) {
+    throw new InvalidLoginPayloadError("Login request body has invalid fields.");
+  }
+
+  return { loginId, password, remember, secondStepCode, trustDevice };
 }
+
+/** The trusted-browser cookie as sent, or null. A value that cannot be decoded is no cookie at all. */
+function readTrustedDeviceCookie(request: Request): string | null {
+  try {
+    return getCookieValue(request.headers.get("cookie"), trustedDeviceCookieName);
+  } catch {
+    return null;
+  }
+}
+
+const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" } as const;
 
 async function readLoginPayload(request: Request): Promise<LoginRequestPayload> {
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
@@ -101,6 +128,7 @@ async function readLoginPayload(request: Request): Promise<LoginRequestPayload> 
       password: String(formData.get("password") ?? ""),
       remember: formData.has("remember"),
       responseMode: "redirect",
+      secondStepCode: String(formData.get("secondStepCode") ?? ""),
     };
   }
 
@@ -197,6 +225,9 @@ function resolveCiSmokeUser(loginId: string, password: string) {
 }
 
 export async function POST(request: Request) {
+  // The account whose second-step set-up THIS request finished, until its session exists. If the sign-in
+  // then fails, the set-up is undone: its recovery codes are shown only in the reply that never went out.
+  let undoSecondStepSetupFor: string | null = null;
   try {
     const payload = await readLoginPayload(request);
     const loginId = normalizeLoginId(payload.loginId ?? "");
@@ -429,6 +460,109 @@ export async function POST(request: Request) {
       );
     }
 
+    // THE SECOND SIGN-IN STEP (owner, 13 Nov 2026 — src/lib/auth/second-step.ts). The password above was
+    // verified; for a Super Admin that is half a sign-in. The other half is a code from their
+    // authenticator app, unless this browser passed the step in the last 30 days. Nothing below this
+    // block runs, and no session is opened, until the step says "pass".
+    //
+    // 🔴 It runs for EVERY caller of this route, whatever the request says it is: "I am the native app" is
+    // a header anyone can send, so it excuses nothing. Only CI smoke mode is left out: its one hardcoded
+    // account is a National Sales Manager, which the step does not ask, and that mode makes no database call.
+    // 🔴 A read that fails here THROWS into the 500 below. Never catch it into a pass.
+    const secondStep = ciSmokeMode
+      ? ({ by: "not_required", kind: "pass" } as const)
+      : await secondStepAtSignIn({
+          account: user.loginId,
+          // A form posted with no script cannot show the ten recovery codes, so it may not finish a set-up.
+          canFinishSetup: payload.responseMode === "json",
+          code: payload.secondStepCode,
+          loginId: user.loginId,
+          role: user.role,
+          trustedDeviceToken: readTrustedDeviceCookie(request),
+        });
+
+    if (secondStep.kind === "ask_code") {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, reason: "second_step_required" },
+        summary: "Password accepted: second sign-in step asked",
+      }).catch(() => undefined);
+
+      if (payload.responseMode === "redirect") {
+        return loginFailureResponse(request, payload, "second_step_required", "", 403);
+      }
+      // 403, never 200: a client that does not know this answer must read it as "not signed in".
+      return NextResponse.json(
+        { error: "second_step_required", message: "Enter the 6-digit code from your authenticator app." },
+        { headers: NO_STORE, status: 403 },
+      );
+    }
+
+    if (secondStep.kind === "offer_setup") {
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, reason: "second_step_setup_required" },
+        summary: "Password accepted: second sign-in step set-up offered",
+      }).catch(() => undefined);
+
+      if (payload.responseMode === "redirect") {
+        // The key never travels in a redirect's address. The page signs in again with its script.
+        return loginFailureResponse(request, payload, "second_step_setup_required", "", 403);
+      }
+      return NextResponse.json(
+        {
+          error: "second_step_setup_required",
+          message: "Set up your authenticator app to finish signing in.",
+          setup: secondStep.setup,
+        },
+        { headers: NO_STORE, status: 403 },
+      );
+    }
+
+    if (secondStep.kind === "wrong_code") {
+      // Counted with the wrong passwords, so guessing a code locks the account on the same clock.
+      await registerFailedLoginAttempt({ ip, loginId: user.loginId }).catch(() => undefined);
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, reason: "second_step_invalid", duringSetup: secondStep.duringSetup },
+        summary: "Login failed: wrong second sign-in step code",
+      }).catch(() => undefined);
+
+      if (payload.responseMode === "redirect") {
+        return loginFailureResponse(request, payload, "second_step_invalid", "", 401);
+      }
+      // 🔴 The set-up key is never sent with a refusal: the screen that was handed it still shows it, and a
+      // refusal that carried it would hand the waiting key to anyone who knows the password.
+      return NextResponse.json(
+        {
+          error: "second_step_invalid",
+          message: secondStep.duringSetup
+            ? "That code is not right. Wait for the app's next code and try again. If it keeps failing, sign in again for a new key."
+            : "That code is not right, or it was already used. Wait for the next code and try again.",
+        },
+        { headers: NO_STORE, status: 401 },
+      );
+    }
+
+    const secondStepRecoveryCodes = secondStep.by === "set_up" ? secondStep.recoveryCodes : null;
+    if (secondStep.by === "set_up") {
+      undoSecondStepSetupFor = user.loginId;
+      await writeAuthAudit({
+        actorLoginId: user.loginId,
+        entityId: user.loginId,
+        newValues: { ip, recoveryCodes: secondStepRecoveryCodes?.length ?? 0 },
+        summary: "Second sign-in step set up",
+      }).catch(() => undefined);
+    }
+    // A browser is remembered only when a code was just given on it, and never for the native caller,
+    // which keeps no cookie. His choice is "once per device, 30 days", so remembering is the default.
+    const rememberThisBrowser =
+      (secondStep.by === "totp" || secondStep.by === "recovery" || secondStep.by === "set_up") &&
+      payload.trustDevice !== false;
+
     const maxAgeSeconds = sessionIdleTimeoutSecondsForRole(user.role);
     const absoluteTimeoutSeconds = sessionAbsoluteTimeoutSecondsForRole(user.role);
     const supabaseSessionRequired = isSupabaseBridgeRequiredForRole(user.role);
@@ -538,6 +672,10 @@ export async function POST(request: Request) {
         },
         summary: "Login blocked: privileged Supabase bridge unavailable",
       }).catch(() => undefined);
+      if (undoSecondStepSetupFor) {
+        await resetSecondStep(undoSecondStepSetupFor).catch(() => undefined);
+        undoSecondStepSetupFor = null;
+      }
 
       return loginFailureResponse(
         request,
@@ -575,6 +713,8 @@ export async function POST(request: Request) {
       sessionId,
       sessionVersion: user.sessionVersion,
     });
+    // The session exists: a set-up finished by this request now stands.
+    undoSecondStepSetupFor = null;
 
     // The bookkeeping of a sign-in that has already succeeded. The success row and the lockout reset
     // run AFTER the reply (src/lib/http/after-response.ts): nothing in the reply depends on them, they
@@ -599,6 +739,7 @@ export async function POST(request: Request) {
           role: user.role,
           absoluteExpiresAt: appSession.absoluteExpiresAt,
           idleExpiresAt: appSession.idleExpiresAt,
+          secondStep: secondStep.by,
           sessionId,
           supabaseBridgeWarning,
           supabaseSessionRequired,
@@ -629,13 +770,15 @@ export async function POST(request: Request) {
       ? NextResponse.redirect(getRedirectUrl(request, resolveLandingPathForRole(user.role)), 303)
       : NextResponse.json({
           ...(nativeSession ?? {}),
+          // Shown ONCE, by the page, before it moves on: these ten codes are never readable again.
+          ...(secondStepRecoveryCodes ? { secondStep: { recoveryCodes: secondStepRecoveryCodes } } : {}),
           user: {
             hrId: user.hrId,
             loginId: user.loginId,
             role: user.role,
           },
           warning: supabaseBridgeWarning,
-        });
+        }, secondStepRecoveryCodes ? { headers: NO_STORE } : undefined);
 
     // A native caller authenticates by the bearer token in the body above — it has no cookie jar we
     // control and must carry NO cookie. React Native's Android networking persists whatever the login
@@ -714,8 +857,32 @@ export async function POST(request: Request) {
       value: token,
     });
 
+    if (rememberThisBrowser) {
+      // The sign-in already succeeded, so a failure here costs only the convenience: the next sign-in on
+      // this browser is asked for a code again.
+      const trusted = await issueTrustedDevice({
+        loginId: user.loginId,
+        userAgent: request.headers.get("user-agent"),
+      }).catch(() => null);
+      if (trusted) {
+        response.cookies.set({
+          httpOnly: true,
+          maxAge: trusted.maxAgeSeconds,
+          name: trustedDeviceCookieName,
+          // Sent to the sign-in routes and nowhere else.
+          path: "/api/auth",
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          value: trusted.token,
+        });
+      }
+    }
+
     return response;
   } catch (error) {
+    if (undoSecondStepSetupFor) {
+      await resetSecondStep(undoSecondStepSetupFor).catch(() => undefined);
+    }
     if (error instanceof InvalidLoginPayloadError) {
       return NextResponse.json(
         { error: "invalid_request", message: error.message },
