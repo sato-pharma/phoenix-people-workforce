@@ -1498,6 +1498,12 @@ export const accessRegistry = [
   // monitoring this feature promises not to do.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST", "DELETE"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Internal messages from the top bar: every active role reads its own and sends (owner,
+  // 2026-11-13, "Everyone, as today"), each send capped per sender and written to the audit log.
+  sessionApi({ methods: ["GET"], pattern: "/api/messages", permission: { resource: "internal_messages", action: "read" }, guard: "assert-permission" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/messages", permission: { resource: "internal_messages", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/messages/recipients", permission: { resource: "internal_messages", action: "create" }, guard: "assert-permission" }),
+  sessionApi({ methods: ["PATCH"], pattern: "/api/messages/:id/read", permission: { resource: "internal_messages", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
   // there is no resource to gate on, because the route can only ever read or write the CALLER'S
