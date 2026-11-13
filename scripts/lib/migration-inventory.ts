@@ -2456,6 +2456,10 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // public.employees fell from 112 to 110, the two the dropped tables carried. Every table was counted empty
   // inside the migration's own transaction; re-applying is a no-op.
   "20261113191017_drop_ten_never_used_empty_tables.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs (the production MCP declined it; staging took it through
+  // the MCP). Evidence, production: public.activity_events keeps exactly activity_events_created_idx,
+  // activity_events_hr_created_idx and its primary key, its indexes down to 33 MB. Indexes only; re-applying is a no-op.
+  "20261113192416_drop_three_unused_activity_log_indexes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
