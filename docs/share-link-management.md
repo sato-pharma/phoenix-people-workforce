@@ -12,11 +12,11 @@ Direct Orders and Marketing mapped `token: String(row.token)` into the row their
 
 ## Stored as a hash, metered before the lookup (13 Nov 2026)
 
-The Direct Orders report, Marketing Requests report and Territory preview links keep only `token_hash` (the SHA-256 of the token, hex, unique) and `token_preview` (its first 8 characters). The interview calendar links work the same way.
+The Direct Orders report, Marketing Requests report, Territory preview and CV Lifecycle links keep only `token_hash` (the SHA-256 of the token, hex, unique) and `token_preview` (its first 8 characters). The interview calendar links work the same way.
 
 - `src/lib/share-links/token-hash.ts` hashes a token, refuses one that could not have been minted (it is never looked up), and meters a public read per address and per link before the lookup. A refusal is 429 with `Retry-After`, or 503 when the limiter cannot be read; neither serves anything.
 - The weekly rotations observe the sheet's first read by hash, delete an unconfirmed new link by hash, and revoke the old one by its row id.
-- `20261113183501` added the columns and filled them from each row's own token, so every link already in a sheet kept opening. `20261113183503` cleared the plain tokens once the new code was serving.
+- `20261113183501` added the columns and filled them from each row's own token, so every link already in a sheet kept opening. `20261113183503` cleared the plain tokens once the new code was serving. The CV Lifecycle links followed the same afternoon with their own pair, `20261113195226` (fill) and `20261113195228` (clear), and its feed route is metered at the same feed limits.
 - Pinned by `tests/share-link-token-hash.test.ts`.
 
 ## The Marketing panel (13 Oct 2026)

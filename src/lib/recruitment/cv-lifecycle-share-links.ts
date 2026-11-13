@@ -23,6 +23,9 @@
 //     not a feature anybody asked for.
 //   * No 'live' human surface and so no passcode. The only consumer is a script. Adding a human
 //     page later is a `surface` value and a route, not a migration.
+//
+// A token is stored only as its SHA-256 (`token_hash`) and its first 8 characters (`token_preview`) —
+// `@/lib/share-links/token-hash` (REC-055). The whole token is returned once, by the mint.
 
 import { randomBytes } from "node:crypto";
 
@@ -33,6 +36,7 @@ import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-e
 import { hrIdForStorage } from "@/lib/hr-id";
 import { namesByHrId, type EmployeeNameIndex } from "@/lib/employees/names-by-hr-id";
 import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
+import { hashShareToken, shareTokenLookupHash, shareTokenPreview } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildCvLifecycleCsv,
@@ -80,11 +84,6 @@ export type CvLifecycleShareLink = {
   tokenPreview: string;
 };
 
-/** The first 8 characters, matching what the audit rows above store. Never the whole token. */
-function previewOf(token: string): string {
-  return String(token ?? "").slice(0, 8);
-}
-
 function mapLink(row: Record<string, unknown>, names: EmployeeNameIndex): CvLifecycleShareLink {
   const createdByHrId = String(row.created_by_hr_id ?? "");
   const revokedByHrId = row.revoked_by_hr_id ? String(row.revoked_by_hr_id) : null;
@@ -101,7 +100,7 @@ function mapLink(row: Record<string, unknown>, names: EmployeeNameIndex): CvLife
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
     revokedByHrId,
     revokedByName: revokedByHrId ? (names.get(revokedByHrId) ?? revokedByHrId) : null,
-    tokenPreview: previewOf(String(row.token ?? "")),
+    tokenPreview: String(row.token_preview ?? ""),
   };
 }
 
@@ -138,7 +137,8 @@ export async function createCvLifecycleShareLink(
       expires_at: expiresAt,
       label: input.label ? String(input.label).slice(0, 200) : null,
       surface: "feed",
-      token,
+      token_hash: hashShareToken(token),
+      token_preview: shareTokenPreview(token),
     })
     .select("id")
     .single();
@@ -149,18 +149,15 @@ export async function createCvLifecycleShareLink(
     // The first 8 characters only. Enough to tie a row to a link when reading the log beside the
     // link list; far too little to BE the link. The token itself is never written to the audit
     // trail — a log that stores the credential it audits turns every reader into a holder.
-    entityId: `share-link:${token.slice(0, 8)}`,
+    entityId: `share-link:${shareTokenPreview(token)}`,
     entityType: "cv_lifecycle_share_link",
     newValues: { expiresAt, label: input.label ?? null, surface: "feed" },
     summary: `Live CV-lifecycle sheet link created by ${createdBy}, expires ${expiresAt.slice(0, 10)}.`,
   });
 
-  return {
-    expiresAt,
-    id: String((data as { id?: string } | null)?.id ?? ""),
-    token,
-    url: `/api/share/cv-lifecycle/${token}/feed`,
-  };
+  // The one and only time the whole token leaves Phoenix: it is not stored, so it cannot be shown again.
+  const id = String((data as { id?: string } | null)?.id ?? "");
+  return { expiresAt, id, token, url: `/api/share/cv-lifecycle/${token}/feed` };
 }
 
 export async function listCvLifecycleShareLinks(access: AccessContext): Promise<CvLifecycleShareLink[]> {
@@ -189,20 +186,20 @@ export async function revokeCvLifecycleShareLink(access: AccessContext, linkId: 
 
   const revokedBy = hrIdForStorage(access.hrId ?? "") ?? "";
   const supabase = getSupabaseAdmin();
-  // `select` on the update so the audit row can name WHICH link died by its token prefix. Reading
+  // `select` on the update so the audit row can name WHICH link died by its token preview. Reading
   // it back afterwards would race a second revoke; returning it from the write cannot.
   const { data, error } = await supabase
     .from(TABLE)
     .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: revokedBy })
     .eq("id", id)
-    .select("token")
+    .select("token_preview")
     .maybeSingle();
   if (error) throw error;
   if (!data) throw notFoundError("Link not found.");
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? revokedBy,
-    entityId: `share-link:${String((data as { token?: string }).token ?? "").slice(0, 8)}`,
+    entityId: `share-link:${String((data as { token_preview?: string | null }).token_preview ?? "")}`,
     entityType: "cv_lifecycle_share_link",
     newValues: { revoked: true },
     summary: `Live CV-lifecycle sheet link revoked by ${revokedBy || "unknown"}.`,
@@ -215,11 +212,12 @@ export async function revokeCvLifecycleShareLink(access: AccessContext, linkId: 
  * learns nothing about which ones exist.
  */
 export async function assertCvLifecycleShareToken(token: string): Promise<Record<string, unknown>> {
-  const trimmed = String(token ?? "").trim();
-  if (!trimmed) throw notFoundError("Link not found.");
+  // Found by its hash; a token that could not have been minted here is not looked up at all.
+  const tokenHash = shareTokenLookupHash(token);
+  if (!tokenHash) throw notFoundError("Link not found.");
 
   const supabase = getSupabaseAdmin();
-  const { data: row } = await supabase.from(TABLE).select("*").eq("token", trimmed).maybeSingle();
+  const { data: row } = await supabase.from(TABLE).select("*").eq("token_hash", tokenHash).maybeSingle();
   if (!row) throw notFoundError("Link not found.");
 
   const link = row as Record<string, unknown>;

@@ -2,6 +2,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rotatedLabel } from "@/lib/share-links/rotated-label";
+import { hashShareToken, shareTokenPreview } from "@/lib/share-links/token-hash";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rotate the CV-lifecycle sheet's feed token, end to end, with nobody opening an editor.
@@ -65,7 +66,7 @@ async function tokenHasBeenUsed(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   token: string,
 ): Promise<boolean> {
-  const { data } = await supabase.from(TABLE).select("access_count").eq("token", token).maybeSingle();
+  const { data } = await supabase.from(TABLE).select("access_count").eq("token_hash", hashShareToken(token)).maybeSingle();
   return Number((data as { access_count?: number } | null)?.access_count ?? 0) > 0;
 }
 
@@ -75,7 +76,7 @@ export type CvLifecycleSheetTokenRotationResult =
 
 /** Never log or return a whole token — the first 8 characters are enough to correlate. */
 function preview(token: string): string {
-  return `${token.slice(0, 8)}…`;
+  return `${shareTokenPreview(token)}…`;
 }
 
 /** 32 random bytes, URL-safe — the same shape createCvLifecycleShareLink mints. */
@@ -147,7 +148,8 @@ export async function rotateCvLifecycleSheetToken(): Promise<CvLifecycleSheetTok
     expires_at: expiresAt,
     label: rotatedLabel(old.label, "Rotated CV-lifecycle feed link"),
     surface: String(old.surface ?? "feed"),
-    token: newToken,
+    token_hash: hashShareToken(newToken),
+    token_preview: shareTokenPreview(newToken),
   });
   if (insertError) throw insertError;
 
@@ -193,7 +195,7 @@ export async function rotateCvLifecycleSheetToken(): Promise<CvLifecycleSheetTok
     // The sheet never took the new token. Delete the one we minted and leave everything on the old
     // one — a working sheet with an old token beats a dead sheet with a new one. Deleting also
     // keeps the "more than one live link" guard above meaningful on the next run.
-    await supabase.from(TABLE).delete().eq("token", newToken);
+    await supabase.from(TABLE).delete().eq("token_hash", hashShareToken(newToken));
     return {
       rotated: false,
       reason:
@@ -206,14 +208,14 @@ export async function rotateCvLifecycleSheetToken(): Promise<CvLifecycleSheetTok
   await supabase
     .from(TABLE)
     .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: "system:rotation" })
-    .eq("token", String(old.token));
+    .eq("id", String(old.id));
 
   await writeRequiredAuditLog({
     actorLoginId: "system:rotation",
-    entityId: `share-link:${String(newToken).slice(0, 8)}`,
+    entityId: `share-link:${shareTokenPreview(newToken)}`,
     entityType: "cv_lifecycle_share_link",
     newValues: { confirmedBySheet: true, expiresAt, token: preview(newToken) },
-    oldValues: { revoked: true, token: preview(String(old.token)) },
+    oldValues: { revoked: true, token: `${String(old.token_preview ?? "")}…` },
     summary:
       `CV-lifecycle live sheet feed token rotated. The sheet confirmed the new token before the old ` +
       `one was revoked, so a previously exposed token no longer reads any candidate's name or phone ` +
@@ -222,7 +224,7 @@ export async function rotateCvLifecycleSheetToken(): Promise<CvLifecycleSheetTok
 
   return {
     newTokenPreview: preview(newToken),
-    revokedTokenPreview: preview(String(old.token)),
+    revokedTokenPreview: `${String(old.token_preview ?? "")}…`,
     rotated: true,
   };
 }
