@@ -1,4 +1,5 @@
 import { isProductionRuntime } from "@/config/system-settings";
+import { WAIT_FOR_THE_RUN_PARAM } from "@/lib/http/answer-now";
 import type { JobHeartbeatProblem } from "@/lib/observability/job-heartbeat-assess";
 import { JOB_SCHEDULE_TIMEZONE } from "@/lib/observability/job-schedule";
 import { logError, logInfo } from "@/lib/observability/log";
@@ -160,13 +161,18 @@ export async function refireStrandedJobs(
  * end, so the run is not cut off when the request that asked for it has been answered. The server
  * binds 0.0.0.0 on PORT (Dockerfile), so 127.0.0.1 always reaches it and no proxy timeout applies.
  * Production only; without the secret the route would refuse it anyway, so it says so instead.
+ *
+ * It asks the route to WAIT (`?wait=1`). Both re-fired routes answer 202 at once for the scheduler,
+ * which hangs up at 30 seconds (answer-now.ts); a 202 here would read as a re-fire that worked
+ * whatever the run then did, and the status below is the only thing this function reports.
  */
 export async function fireCronRouteOnLoopback(path: string): Promise<void> {
   if (!isProductionRuntime()) throw new Error("re-fire is production only");
   const secret = process.env.CRON_SECRET;
   if (!secret) throw new Error("CRON_SECRET is not set, so the cron route would refuse the call");
   const port = process.env.PORT || "8080";
-  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+  const waitForTheReport = `${path.includes("?") ? "&" : "?"}${WAIT_FOR_THE_RUN_PARAM}=1`;
+  const response = await fetch(`http://127.0.0.1:${port}${path}${waitForTheReport}`, {
     headers: { authorization: `Bearer ${secret}` },
     method: "GET",
     signal: AbortSignal.timeout(6 * 60 * 1000),
