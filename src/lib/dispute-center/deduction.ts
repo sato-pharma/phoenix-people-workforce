@@ -616,7 +616,12 @@ export async function decideDeductionDispute(
   input: { candidateId: string; outcome: DeductionDisputeOutcome; reducedValue?: number | null; note: string },
   deps: DecideDeductionDisputeDeps = DATABASE_DEPS,
 ): Promise<DeductionDecisionResult> {
-  const participant = await deps.resolveParticipant(access, "deduction", input.candidateId);
+  // A real request always asks the shared participant check itself; only a test's stand-in deps
+  // replace it (tests/dispute-center-participants.test.ts pins the direct call).
+  const participant =
+    deps === DATABASE_DEPS
+      ? await resolveCaseParticipant(access, "deduction", input.candidateId)
+      : await deps.resolveParticipant(access, "deduction", input.candidateId);
   if (!participant.isReviewer) throw new Error("Forbidden: only the Super Admin can decide a deduction dispute.");
 
   // ONE DECISION PER REOPEN. Without this a decided case could be decided again behind the
