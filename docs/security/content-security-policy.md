@@ -19,7 +19,7 @@ Every page Phoenix renders carries two policies, both set by `proxy.ts` from
 | `img-src` | `REPORT_ONLY_IMAGE_SOURCES` | a picture from any host not on the list |
 
 The picture list, measured on 13 Nov 2026: the app itself, `data:` and `blob:` previews, signed
-storage addresses (`*.supabase.co`), the OpenStreetMap tiles of the integrity maps, the Google Maps hosts
+storage addresses (`*.supabase.co`), the Google Maps hosts
 from Google's own CSP guide, and OneSignal's prompt. Employee photos are served from Phoenix itself.
 
 ## Where the reports go

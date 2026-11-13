@@ -93,16 +93,25 @@ function centreOf(points: RouteMapPoint[]): { lat: number; lon: number } {
  * The key is stripped from anything logged: it is a URL parameter here, so a bare `url` or a
  * verbatim Google error would put a live credential in the log.
  */
-export async function fetchBasemap(input: {
+export type BasemapRequest = {
   centre: { lat: number; lon: number };
   zoom: number;
   width: number;
   height: number;
   apiKey: string | null;
   fetchImpl?: typeof fetch;
-}): Promise<string | null> {
+  /** Who is asking, for the log line. The route map when left out. */
+  caller?: string;
+};
+
+/**
+ * The picture's own bytes, or null. `fetchBasemap` below wraps them for a sheet that embeds the picture;
+ * the Location Integrity maps' route (13 Nov 2026) serves them as they are.
+ */
+export async function fetchBasemapPng(input: BasemapRequest): Promise<Buffer | null> {
+  const caller = input.caller ?? "field-activity basemap";
   if (!input.apiKey) {
-    console.warn("field-activity basemap: GOOGLE_MAPS_SERVER_KEY is not set — the route map prints without streets");
+    console.warn(`${caller}: GOOGLE_MAPS_SERVER_KEY is not set — the map is drawn without streets`);
     return null;
   }
   const url =
@@ -122,19 +131,24 @@ export async function fetchBasemap(input: {
       // it is logged rather than discarded.
       const reason = await response.text().catch(() => "");
       console.warn(
-        `field-activity basemap: Google refused the Maps Static API with HTTP ${response.status} — ` +
+        `${caller}: Google refused the Maps Static API with HTTP ${response.status} — ` +
           `${withoutKey(reason).replace(/\s+/g, " ").trim().slice(0, 300)}`,
       );
       return null;
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return `data:image/png;base64,${buffer.toString("base64")}`;
+    return Buffer.from(await response.arrayBuffer());
   } catch (error) {
     // A map is worth having and never worth failing an export for — but a timeout that leaves no
     // trace is how this stayed unexplained, so the throw is recorded on its way to the same null.
-    console.warn(`field-activity basemap: the Maps Static API request failed — ${withoutKey(error instanceof Error ? error.message : String(error))}`);
+    console.warn(`${caller}: the Maps Static API request failed — ${withoutKey(error instanceof Error ? error.message : String(error))}`);
     return null;
   }
+}
+
+/** The same picture as a data address, for a sheet that embeds it. Null on every failure, each one logged above. */
+export async function fetchBasemap(input: BasemapRequest): Promise<string | null> {
+  const png = await fetchBasemapPng(input);
+  return png ? `data:image/png;base64,${png.toString("base64")}` : null;
 }
 
 /** Groups of markers whose pixels collide, fanned onto a short arc with leader lines. */

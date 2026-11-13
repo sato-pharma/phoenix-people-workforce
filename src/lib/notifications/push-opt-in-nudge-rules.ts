@@ -18,27 +18,59 @@
  * in that JSON blob means "this exact card was dismissed". */
 export const PUSH_OPT_IN_NUDGE_DISMISSED_KEY = "pushOptInNudgeDismissedAt";
 
-/** True once this person has dismissed the push opt-in nudge — permanently, per the owner's rule
- * that a nudge asked more than once becomes wallpaper. Never re-shown after this, on any device. */
+/** True once this person has answered the push opt-in nudge: closed it, or turned push on through it.
+ * The answer stands until a device that was receiving push stops (`pushWasDroppedSinceAnswer`). */
 export function isPushOptInNudgeDismissed(modulePreferences: Record<string, unknown> | null | undefined): boolean {
   return typeof modulePreferences?.[PUSH_OPT_IN_NUDGE_DISMISSED_KEY] === "string";
 }
 
+/** The answer and the device's own record are written by two requests seconds apart; either may land first. */
+export const PUSH_RE_ASK_SLACK_MS = 2 * 60_000;
+
 /**
- * Whether the nudge should be offered right now, given the same two facts the Notification
- * Settings panel already has: how many ACTIVE (`status = "subscribed"`) devices this person has,
- * and their own module preferences.
+ * Did a device that was receiving push stop, after this person last answered the card?
  *
- * `deviceCount > 0` is the whole "already enabled" check: `mapPushState` (settings.ts) only
- * counts rows whose status is `"subscribed"`, so a person who once enabled push and later revoked
- * it is NOT considered already-subscribed and can still be offered the nudge.
+ * Owner, 13 Nov 2026 (integration audit): "Ask again after a drop". Measured on production that day: 97
+ * devices receiving push and 303 rows of devices that had stopped; 63 of the 130 people who ever turned
+ * push on had no device left, and the card, answered once, never told any of them.
+ *
+ * `lastDroppedSubscribedAt` is when the most recent device that no longer receives push was last seen
+ * receiving it (`mapPushState`, settings.ts). If that is at or after the answer, the device was working
+ * since the person answered and has stopped since: ask again. Answering again moves the answer past it,
+ * so one drop is asked about once.
+ *
+ * 🔴 NEVER READ `unsubscribed_at` FOR THIS. `upsertPushSubscription` stamps it again on EVERY page load of
+ * a browser that is not receiving push, so it is always newer than any answer and the card would come
+ * back on every visit, for ever. `subscribed_at` is stamped only while a device IS receiving, so on a
+ * dropped device it stops moving.
+ */
+export function pushWasDroppedSinceAnswer(answeredAtIso: string, lastDroppedSubscribedAt: string | null | undefined): boolean {
+  if (typeof lastDroppedSubscribedAt !== "string") return false;
+  const answered = Date.parse(answeredAtIso);
+  const lastReceiving = Date.parse(lastDroppedSubscribedAt);
+  // A date nobody can read is never a reason to ask: silence, rather than a card that will not go away.
+  if (!Number.isFinite(answered) || !Number.isFinite(lastReceiving)) return false;
+  return lastReceiving >= answered - PUSH_RE_ASK_SLACK_MS;
+}
+
+/**
+ * Whether the nudge should be offered right now, from three facts the settings read hands the card:
+ * how many devices are receiving push now (`status = "subscribed"`), the person's own module
+ * preferences, and when their most recently dropped device was last receiving.
+ *
+ *   - a device receiving now: never asked;
+ *   - no device and never answered: asked;
+ *   - no device and answered: asked again only when a device dropped since the answer.
  */
 export function shouldShowPushOptInNudge(input: {
   deviceCount: number;
   modulePreferences: Record<string, unknown> | null | undefined;
+  lastDroppedSubscribedAt?: string | null;
 }): boolean {
   if (input.deviceCount > 0) return false;
-  return !isPushOptInNudgeDismissed(input.modulePreferences);
+  const answeredAt = input.modulePreferences?.[PUSH_OPT_IN_NUDGE_DISMISSED_KEY];
+  if (typeof answeredAt !== "string") return true;
+  return pushWasDroppedSinceAnswer(answeredAt, input.lastDroppedSubscribedAt);
 }
 
 /** Merges the dismissal timestamp into an existing `module_preferences` object without touching
