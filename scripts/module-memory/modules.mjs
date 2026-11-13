@@ -67,6 +67,24 @@ export const MODULES = [
     keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
     tables: ["deduction_disputes", "dispute_"],
   },
+  // 🔴 SPLIT, 2026-11-13, FOR THE REASON `phoenix-crm-approvals` RECORDS: `payroll` measured a 4,062-byte
+  // pointer against the 4,000 margin once the download record (REC-054) and the bank-file guard (F-PAY-016)
+  // landed the same day. The files that LEAVE the system — the run sheet, the finance sheet, the FAB and CIB
+  // bank files — and the record each download writes are one family, so their rules move together.
+  // `payroll` KEEPS EVERY GLOB IT HAD, so an automated-payroll file still loads it, and loads this one too.
+  {
+    id: "payroll-files",
+    title: "Payroll — the files that leave, and their download record",
+    scope: "The run sheet, the finance sheet and the FAB and CIB bank files: who may take them, the row each download writes, the hourly limit, the download history, and cancelling a run after a file left.",
+    globs: [
+      "src/lib/automated-payroll/{download-log,bank-file-downloads}.ts",
+      "src/components/automated-payroll/download-history-panel.tsx",
+      "app/api/automated-payroll/runs/*/{downloads,cancel}/**",
+      "tests/{payroll-download-log,automated-payroll-bank-file-download-guard}*",
+    ],
+    keywords: ["bank file", "fab file", "cib file", "finance sheet", "run sheet", "payroll download", "download history", "salary transfer file"],
+    tables: [],
+  },
   // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
   //
   // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap

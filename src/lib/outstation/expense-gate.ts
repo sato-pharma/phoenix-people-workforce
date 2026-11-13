@@ -43,6 +43,31 @@ export type OutstationGateBlocker = "arrival_photo" | "departure_photo" | "workl
  * `imported_payroll_batch_id`. Held claims could therefore never be released, and the reason given
  * actively misdirected whoever read it. One definition, so the two readings cannot drift again.
  */
+/**
+ * A SECOND APPROVE OF A CLAIM ALREADY ACCEPTED, WITH NOTHING NEW TO SAY, CHANGES NOTHING (F-PAY-015).
+ *
+ * Approving re-ran the whole accept on a claim that was already accepted: a fresh status write, a
+ * second push into payroll and a second "accepted and added to payroll" audit row, for a claim
+ * nobody had changed. The push is keyed on the request, so it did not double the money, but the
+ * record said the claim was approved twice and the payroll row was rewritten each time.
+ *
+ * Unchanged means: the same accepted status this approver would write, no new comment, and either
+ * the claim already has its payroll row or the evidence gate is still holding it out (the release
+ * path delivers that row when the evidence lands, not a second approve). Anything else — a system
+ * acceptance an admin now confirms, a comment, an accepted claim whose row is missing — still runs.
+ */
+export function isUnchangedOutstationReapproval(input: {
+  currentStatus: string;
+  acceptedStatus: string;
+  typedComment: string | null;
+  alreadyPushed: boolean;
+  payrollEligible: boolean;
+}): boolean {
+  if (input.currentStatus !== input.acceptedStatus) return false;
+  if (input.typedComment) return false;
+  return input.alreadyPushed || !input.payrollEligible;
+}
+
 export function isOutstationExpenseInPayroll(
   linked: { importedPayrollBatchId: string | null; importedToPayrollAt: string | null } | null,
 ): boolean {

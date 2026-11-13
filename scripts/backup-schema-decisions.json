@@ -1,0 +1,68 @@
+{
+  "about": "The owner's decision for each snapshot schema, one entry per schema, read by scripts/audit-backup-schemas.mjs. A schema past 90 days with no entry here is never offered for dropping. decision: drop | export-then-drop | keep (keep takes an optional until date). Rule: docs/security/backup-schema-retention.md, 'The owner decides each one'.",
+  "decisions": {
+    "ez_split_backup_20260826": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Feb-Jul 2026 sales attribution before the 26 Aug Office allocation re-run; published months are never corrected, so it can undo nothing, but it is the only record of the figures before the change",
+      "sheet": "November 2026 review, group 1"
+    },
+    "territory_restamp_backup_20260831": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "July 2026 sales lines before the 31 Aug territory re-stamp; July is published",
+      "sheet": "November 2026 review, group 1"
+    },
+    "expense_refresh_backup_20260829": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Jun-Aug 2026 expense claims before a 29 Aug refresh; those months are paid and closed",
+      "sheet": "November 2026 review, group 2"
+    },
+    "deductions_governance_backup_20260830": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "the old deductions screen retired on 30 Aug (candidates and HR decisions); superseded by the deductions module",
+      "sheet": "November 2026 review, group 2"
+    },
+    "direct_area_backup_20260826": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "direct-order area rows before a 26 Aug fix that shipped and stands",
+      "sheet": "November 2026 review, group 3"
+    },
+    "pos_quarantine_backup_20260830": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "one weekly sales upload before it was quarantined on 30 Aug; weekly sales are not the sales truth",
+      "sheet": "November 2026 review, group 3"
+    },
+    "zz_rollback_archive_20260830": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "19 Aug area and region assignment copies, archived 30 Aug for work already shipped and stable",
+      "sheet": "November 2026 review, group 3"
+    },
+    "hossam_cover_backup_20260830": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "six rows before one area-cover change on 30 Aug that stands",
+      "sheet": "November 2026 review, group 3"
+    },
+    "lacto_family_backup_20260831": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "product rows before the Lacto Advanced / Lacto Basic split, which stands",
+      "sheet": "November 2026 review, group 3"
+    }
+  }
+}

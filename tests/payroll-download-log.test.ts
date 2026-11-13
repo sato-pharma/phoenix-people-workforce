@@ -62,13 +62,15 @@ export async function runPayrollDownloadLogTests() {
 
   // ── All four builders: gate, limit, build, then the row ───────────────────
   const service = stripComments(readFileSync("src/lib/automated-payroll/run-service.ts", "utf8"));
+  // The run sheet writes its own best-effort row; the finance sheet and the two bank files write ONE
+  // row only — the REQUIRED bank_file_downloaded (F-PAY-016) — carrying the same rows and role.
   const builders: Array<[string, string, string]> = [
-    ["buildRunSheet", "assertAutomatedPayrollHrActor(access)", '"run_sheet"'],
-    ["buildFinanceSheet", "assertAutomatedPayrollFinanceActor(access)", '"finance_sheet"'],
-    ["buildFabSheet", "assertAutomatedPayrollFinanceActor(access)", '"fab_bank_file"'],
-    ["buildCibSheet", "assertAutomatedPayrollFinanceActor(access)", '"cib_bank_file"'],
+    ["buildRunSheet", "assertAutomatedPayrollHrActor(access)", 'await recordPayrollFileDownload(access, { runId: run.id, file: "run_sheet"'],
+    ["buildFinanceSheet", "assertAutomatedPayrollFinanceActor(access)", 'await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "finance", scope, fileName, rows: rows.length, role: access.role })'],
+    ["buildFabSheet", "assertAutomatedPayrollFinanceActor(access)", 'await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "fab", scope, fileName, rows: fabRows.length, role: access.role })'],
+    ["buildCibSheet", "assertAutomatedPayrollFinanceActor(access)", 'await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "cib", scope, fileName, rows: cibRows.length, role: access.role })'],
   ];
-  for (const [name, gate, file] of builders) {
+  for (const [name, gate, record] of builders) {
     const start = service.indexOf(`export async function ${name}(`);
     assert.ok(start >= 0, `${name} exists`);
     const end = service.indexOf("\nexport ", start + 1);
@@ -76,11 +78,12 @@ export async function runPayrollDownloadLogTests() {
     const gateAt = body.indexOf(gate);
     const limitAt = body.indexOf("await assertPayrollDownloadAllowed(access)");
     const buildAt = body.indexOf("Workbook(");
-    const recordAt = body.indexOf(`await recordPayrollFileDownload(access, { runId: run.id, file: ${file}`);
+    const recordAt = body.indexOf(record);
     const returnAt = body.lastIndexOf("return {");
     assert.ok(gateAt >= 0 && limitAt > gateAt, `${name} checks the role, then the limit`);
     assert.ok(buildAt > limitAt, `${name} builds nothing before the limit`);
     assert.ok(recordAt > buildAt && recordAt < returnAt, `${name} writes its row after the file is built and before it is returned`);
+    assert.equal((body.match(/await record(PayrollFileDownload|BankFileDownloaded)\(/g) ?? []).length, 1, `${name} writes exactly one download row`);
   }
 
   // ── The history route is Super Admin's, like the wizard ───────────────────
@@ -93,5 +96,9 @@ export async function runPayrollDownloadLogTests() {
   const log = stripComments(readFileSync("src/lib/automated-payroll/download-log.ts", "utf8"));
   const list = log.slice(log.indexOf("export async function listRunDownloads"));
   assert.match(list, /^[^{]*\{\s*assertAutomatedPayrollHrActor\(access\);/, "the service gates the history too");
-  assert.match(list, /\.eq\("run_id", runId\)\s*\.eq\("action", PAYROLL_FILE_DOWNLOADED\)/, "only this run's downloads");
+  assert.match(
+    list,
+    /\.eq\("run_id", runId\)\s*\.in\("action", \[PAYROLL_FILE_DOWNLOADED, BANK_FILE_DOWNLOADED_ACTION\]\)/,
+    "only this run's downloads, from both the run sheet's row and the required bank-file row",
+  );
 }
