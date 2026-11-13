@@ -3744,7 +3744,7 @@ export async function approveOutstationRequestForPayroll(
       alreadyApproved: true,
       expenseTripId: outstationPayrollTripId(existing.id),
       gate: existingGate,
-      payrollExpenseRows: [] as Awaited<ReturnType<typeof pushAcceptedOutstationExpenseToPayroll>>,
+      payrollExpenseRows: 0,
       request: await withLiveRequestName(existing),
     };
   }

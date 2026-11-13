@@ -3398,6 +3398,9 @@ export async function buildFinanceSheet(
   period: PayrollPeriod,
   scope: "part1" | "full",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage[]; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download the finance sheet");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
@@ -3482,6 +3485,9 @@ export async function buildFabSheet(
   scope: "part1" | "part2",
   valueDateIso?: string,
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download a FAB bank file");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
@@ -3536,6 +3542,9 @@ export async function buildCibSheet(
   period: PayrollPeriod,
   scope: "part1" | "part2",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
+  // A download is now RECORDED and blocks a later cancel (bank-file-downloads.ts), so a preview session
+  // may not make one: it looks as another role and decides nothing.
+  assertRealSessionForDecision(access, "download a CIB bank file");
   assertAutomatedPayrollFinanceActor(access);
   const run = await findFinanceRun(period);
 
