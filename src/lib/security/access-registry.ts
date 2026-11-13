@@ -2674,6 +2674,9 @@ export const accessRegistry = [
   // Page-timing beacon (performance roadmap phase 3): a painted page reports two durations and its page shape,
   // kept in process memory only. It reads no session, so it is a public route rather than a session one.
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/telemetry/page-timing", reason: "Fire-and-forget timing beacon sent with sendBeacon, open to guests too (the login page is timed as well). It reads no cookie and takes no identity: the body is reduced to a page shape (ids replaced) and two durations, kept in process memory for the per-minute health log. Capped at 1 KB and 60 a minute per address. Nothing is written to the database, so there is no state-changing or cross-site mutation surface." }),
+  // Report-only content security policy reports (S01, F-PLT-011): what the stricter page policy WOULD
+  // have blocked. A browser sends them without a session, so it is a public route like the beacon above.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/security/csp-report", reason: "Browser-sent report of what the report-only content security policy would have blocked (report-uri and Reporting API, sent by the browser itself with no session and from frames too). It reads no cookie and takes no identity: each report is reduced to a measured directive, the blocked origin and the page shape, counted in process memory and logged. Capped at 32 KB and 120 a minute per address. Nothing is written to the database, so there is no state-changing or cross-site mutation surface." }),
   // The error screenshot (owner, 23 Oct 2026): the picture of an error or a block the signed-in caller
   // just met, filed under the caller's own session identity — never one from the body. Signed-in only
   // (a guest gets 401), same-origin checked, 40 an hour per person; read back only by the Super Admin.
