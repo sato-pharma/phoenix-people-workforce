@@ -387,6 +387,7 @@ export async function buildPrivateCalendarWorkbook(
 
 const PDF_CELL_FONT_SIZE = 7;
 const PDF_CELL_LINE_HEIGHT = 9;
+const PDF_ROW_MIN_LINES_BEFORE_BREAK = 4;
 
 /**
  * Splits a cell's text into lines that each fit `maxWidth` (measured by `measure`), breaking at
@@ -508,9 +509,10 @@ export async function buildPrivateCalendarPdf(
     const cellLines = cols.map((val, i) => wrapPdfCellText(asciiSafe(val), colWidths[i] - 6, (t) => font.widthOfTextAtSize(t, PDF_CELL_FONT_SIZE)));
     const lineCount = Math.max(1, ...cellLines.map((lines) => lines.length));
     const linesThatFit = (top: number) => Math.floor((top - margin - rowH) / PDF_CELL_LINE_HEIGHT) + 1;
-    // A row that does not fit what is left of this page starts on a new one; a row taller than a
-    // whole page carries on over the next page instead of running off the bottom.
-    if (linesThatFit(y) < lineCount && y < pageTop) {
+    // A short row that does not fit what is left of this page starts on a new one. A tall row (a
+    // day of many visits) starts here and carries on over the next page, so it never leaves most
+    // of a page empty and never runs off the bottom.
+    if (linesThatFit(y) < Math.min(lineCount, PDF_ROW_MIN_LINES_BEFORE_BREAK) && y < pageTop) {
       const next = addPage();
       page = next.page;
       y = next.y;
