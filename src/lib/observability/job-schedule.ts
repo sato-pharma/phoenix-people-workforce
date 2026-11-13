@@ -102,6 +102,10 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // a minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME
   // sitting as its cron job. NO watchingSince: a new declaration, never a restored one.
   { slug: "phoenix-recruitment-requisition-autopilot", kind: "cron", schedule: "27 * * * *", graceSeconds: 2 * HOUR },
+  // Hourly on :09 (enterprise audit 2026-11-13, REC-027): the hire hand-off reconciler retries the
+  // follow-up steps a hiring door left failed. Silent when clean. On :09, a minute no other hourly
+  // job holds. Must match scripts/cronjob-sync.mjs. NO watchingSince: a new declaration.
+  { slug: "phoenix-hire-handoff-reconcile", kind: "cron", schedule: "9 * * * *", graceSeconds: 2 * HOUR },
   // Hourly on :41 (owner, 2026-10-16: a manager's CV folder keeps notifying until its CV is opened).
   // The route sends only between 08:00 and 21:59 Cairo and still pings its heartbeat at night, so the
   // check stays a straight hourly one. On :41, a minute no other job holds. Must match

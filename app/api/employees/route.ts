@@ -11,6 +11,13 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
+import {
+  cvAttachmentFailure,
+  loginProvisioningFailure,
+  mailboxTaskFailure,
+  startHireHandoff,
+  syncOutcomeFailure,
+} from "@/lib/employees/hire-handoff";
 import { assertCanEditEmployeeRecord } from "@/lib/employees/edit-scope";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { hrIdsMatch } from "@/lib/hr-id";
@@ -236,32 +243,50 @@ export async function POST(request: Request) {
     // the same one access provisioning has always keyed on.
     const isNewEmployee = !payload.employee.originalHrId?.trim();
     const newEmployeeHrId = savedRows[0]?.hr_id ?? payload.employee.hrId;
+    // THE HAND-OFF LEDGER (REC-027): every follow-up below leaves a row, so one that fails is retried
+    // by the hourly `hire-handoff-reconcile` job and, if it keeps failing, reaches the Needs You board
+    // by the employee's name. It never changes this reply — each step returns or throws exactly what it
+    // did before — and its writes are queued and flushed after the reply (src/lib/employees/hire-handoff.ts).
+    // An edit has no HR id here, so it records nothing.
+    const handoff = startHireHandoff(isNewEmployee ? newEmployeeHrId : null, "add_employee");
+    const handoffActor = { actorHrId: access.hrId ?? null, actorRole: access.role };
     // The record EXISTS from here, so the letter it was made from is pointed at it first — before the
     // follow-ups below, any of which can throw. Without this write the letter stays unlinked for good:
     // 24 of 26 accepted letters were in that state on 2026-10-14 and the Talent Acquisition
     // dashboard read "Offer to join" as 2 of 26. Best effort: it never fails the save.
     if (isNewEmployee && payload.offerId?.trim()) {
-      await recordHireFromOfferLetter({
-        actorHrId: access.hrId ?? null,
-        hrId: newEmployeeHrId,
-        offerId: payload.offerId,
-      });
+      await handoff.run(
+        "offer_link",
+        { ...handoffActor, offerId: payload.offerId },
+        () => recordHireFromOfferLetter({
+          actorHrId: access.hrId ?? null,
+          hrId: newEmployeeHrId,
+          offerId: payload.offerId ?? "",
+        }),
+        { failureOf: syncOutcomeFailure },
+      );
     }
     // The fifth door, at the same moment and for the same reason: the candidate the form was opened
     // for becomes Hired and the seat's requisition closes before any follow-up can throw. Best effort.
     if (isNewEmployee && payload.fromCandidateId?.trim()) {
-      await recordHireFromCandidate({
-        actorHrId: access.hrId ?? null,
-        candidateId: payload.fromCandidateId,
-        hrId: newEmployeeHrId,
-      });
+      await handoff.run(
+        "candidate_hired",
+        { ...handoffActor, candidateId: payload.fromCandidateId },
+        () => recordHireFromCandidate({
+          actorHrId: access.hrId ?? null,
+          candidateId: payload.fromCandidateId ?? "",
+          hrId: newEmployeeHrId,
+        }),
+        { failureOf: syncOutcomeFailure },
+      );
     }
+    // A login that throws still fails this save, exactly as before — the ledger records it first.
     const accessProvisioning = isNewEmployee
-      ? await provisionNewHireAccess({
+      ? await handoff.run("login", handoffActor, async () => await provisionNewHireAccess({
         actor: { loginId: access.loginId ?? null, role: access.role },
         hrIds: [newEmployeeHrId],
         source: "manual employee add",
-      })
+      }), { failureOf: loginProvisioningFailure })
       : null;
 
     // The CV goes on the record on the CREATE branch only (owner instruction 2026-09-09) — an edit
@@ -269,14 +294,27 @@ export async function POST(request: Request) {
     //
     // Swallows its own failures for the same reason the follow-up below does: the employee row is
     // already written, and a rejected PDF must not fail a save that has succeeded.
+    //
+    // Recorded in the ledger only when a CV was actually given (a chosen file, an application or a
+    // candidate) — a hire with no CV has nothing to hand off.
+    const cvGiven = Boolean(payload.cvDraftId?.trim() || payload.fromApplicationId?.trim() || payload.fromCandidateId?.trim());
+    const cvSources = {
+      applicationId: payload.fromApplicationId,
+      candidateId: payload.fromCandidateId,
+      cvDraftFileName: payload.cvDraftFileName,
+      cvDraftId: payload.cvDraftId,
+    };
     const cvAttachment = isNewEmployee
-      ? await attachEmployeeCvOnCreate({
+      ? await handoff.run("cv", { ...handoffActor, ...cvSources }, () => attachEmployeeCvOnCreate({
         actorHrId: access.hrId ?? null,
         applicationId: payload.fromApplicationId ?? null,
         candidateId: payload.fromCandidateId ?? null,
         cvDraftFileName: payload.cvDraftFileName ?? null,
         cvDraftId: payload.cvDraftId ?? null,
         hrId: newEmployeeHrId,
+      }), {
+        failureOf: cvAttachmentFailure,
+        record: cvGiven,
       })
       : null;
 
@@ -294,11 +332,13 @@ export async function POST(request: Request) {
         // pasted there connects the hire's My email before their first day. It swallows its own
         // failures: the employee is already saved, and a notice that could 500 the save would mean an
         // unreachable recipient stops HR hiring anybody.
-        await openAndAnnounceNewHireMailboxes({
+        await handoff.run("mailbox_task", { ...handoffActor, mailboxSource: "manual_add" }, async () => await openAndAnnounceNewHireMailboxes({
           actorId: access.loginId ?? access.hrId ?? access.role,
           hrIds: [newEmployeeHrId],
           source: "manual_add",
-        });
+        }), { failureOf: mailboxTaskFailure });
+        // Every ledger write of this hire has landed (or been logged as not landing) before the task ends.
+        await handoff.flush();
       });
     }
 

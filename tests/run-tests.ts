@@ -2884,6 +2884,7 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
 import { runNeedsYouSeatDriftTests } from "./needs-you-seat-drift.test.ts";
+import { runHireHandoffStepsTests } from "./hire-handoff-steps.test.ts";
 import { runNeedsYouVendorAccountsTests } from "./needs-you-vendor-accounts.test.ts";
 import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts";
 import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
@@ -11474,6 +11475,10 @@ await runTest(
 await runTest(
   "the organogram seat-drift board row reports an active person whose employees record disagrees with the seat they occupy — the area, the region or the manager — which au_v_employee_seat_drift had been flagging for two days on 2026-10-15 with nothing reading it as an alarm while a new rep was silently missing from her own area's weekly plan; one row per PERSON however many facts disagree, both values side by side with an absent one reading as \"holds no area\" rather than a blank, the person NAMED and no HR id anywhere a reader sees one, no automatic repair because which side is right is a judgement, a clean view producing no row at all, the Super Admin's lane alone, the light lane (3.228 ms over 97 rows on production), and the read selecting on the three drift booleans only — a person with NO seat is not drift and all 16 Head Office people would be on the board for ever if it were widened to that",
   runNeedsYouSeatDriftTests,
+);
+await runTest(
+  "the hire hand-off is complete or self-repairing (REC-027): both hiring doors record every follow-up step — offer link, candidate hired, login, CV, mailbox task, offer stamp, acceptance audit row — in hire_handoff_steps without changing the reply (a thrown step re-throws the same error, a returned one returns the same object, a dead ledger never fails a hire); each retry is idempotent (an existing login, CV, audit row or linked letter is DONE, a letter naming someone else is never overwritten), the hourly run is leased, bounded and backs off, the fifth failure gives up onto the Needs You board by NAME with a link to the record, and a recent active hire with no login and nothing retrying one breaches a reconciliation check",
+  runHireHandoffStepsTests,
 );
 
 await runTest(

@@ -89,7 +89,8 @@ the identical 14 / 9 / 1 lanes.
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
 `phoenix-crm-decisions` · `orphaned-requests` ·
 `uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
-`office-allocation-drift` · `organogram-seat-drift` · `vendor-github` · `vendor-whatsapp` · `vendor-telegram`
+`office-allocation-drift` · `organogram-seat-drift` · `hire-handoff-gaps` · `vendor-github` · `vendor-whatsapp` ·
+`vendor-telegram`
 
 `vendor-github`, `vendor-whatsapp` and `vendor-telegram` joined on 2026-11-03, after GitHub suspended the account on
 2 Nov and Supabase showed outstanding invoices, and neither reached any board. **Three sources, not one**, so one failed
@@ -255,6 +256,31 @@ in one pass — `Execution Time: 3.228 ms`, planning 6.134 ms, 0 drifted rows �
 magnitude inside the 8-second budget, so it joins the light lane. The three name lookups behind it
 (the employee's area, the region names, the two managers) run only when something has drifted.
 Pinned by `tests/needs-you-seat-drift.test.ts`, which is also one of the offline contract gates.
+
+### `hire-handoff-gaps` — joined 2026-11-13
+
+**A new hire whose hand-off did not finish** (enterprise audit REC-027). After the employee row is
+written, both hiring doors — HR's Add Employee and the candidate's offer joining form — run up to
+seven follow-up steps: the offer letter linked, the candidate marked hired, the portal login, the
+CV, the mailbox task, the offer stamped accepted and the joining form's audit row. Each one only
+logged its failure before, so a joiner with no login was found by a person noticing. Every step now
+leaves a row in `hire_handoff_steps`, the hourly `hire-handoff-reconcile` job retries the failed
+ones, and this source shows what is still failed or was given up after five attempts.
+
+**One item per PERSON**, by name, never an HR id: "Mona Adel: the portal login was not created".
+The note says whether the hourly retry is still trying (and which attempt it is on) or has given up,
+with the short reason. The row links to that person's own record on Employee Master
+(`/employees?edit=<hr id>`) and stops there — **the board never retries anything**. A retry before
+the next hour goes through `POST /api/employees/hire-handoff/retry`, permission-checked with
+`employees:create`, which runs exactly the hourly job's retry and sends nothing the step does not
+already send.
+
+Gated on `employees:create`; a viewer without it gets a true zero. A failed read of the ledger, or
+the table not existing yet, is amber, never "nothing": an empty answer would claim every hire
+finished. **`cost` is light** — one read on a partial index that holds only the unfinished rows,
+normally none, and a name lookup only when something is there. Pinned by
+`tests/hire-handoff-steps.test.ts`; the whole design is in
+[recruitment-offer-hire-sync.md](recruitment-offer-hire-sync.md), "The hire hand-off ledger".
 
 ## Who produces what
 

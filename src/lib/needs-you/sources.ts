@@ -69,6 +69,12 @@ import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-rev
 import { VISIT_RECORDING_ADMIN_PATH } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { loadEmployeeSeatDrift } from "@/lib/org/employee-seat-drift";
+import {
+  HIRE_HANDOFF_MAX_ATTEMPTS,
+  hireHandoffStepProblems,
+  loadUnfinishedHireHandoffSteps,
+} from "@/lib/employees/hire-handoff";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
@@ -81,6 +87,7 @@ import { ACTION_HUB_MODULE_LABELS, type ActionHubItem } from "@/components/actio
 import { ageDaysSince, plural } from "./item-fields";
 import { officeAllocationDriftItems } from "./office-allocation-drift-items";
 import { employeeSeatDriftItems } from "./seat-drift-items";
+import { hireHandoffItems } from "./hire-handoff-items";
 import {
   needsYouDestinations,
   type NeedsYouItem,
@@ -1332,6 +1339,45 @@ const organogramSeatDrift: NeedsYouAdapter = {
   },
 };
 
+/**
+ * A new employee whose hiring hand-off did not finish (REC-027, added 2026-11-13).
+ *
+ * Gated on `employees:create` — the right that makes a hire is the right that finishes one; a viewer
+ * without it is refused with `Forbidden:`, which `service.ts` reads as a TRUE zero. The ledger read
+ * THROWS on failure (amber, never a calm "nothing"), and so does a missing table before its
+ * migration lands — an empty board would claim every hire finished, which a failed read cannot know.
+ *
+ * NO `cost`: one indexed read of the unfinished rows (a partial index on exactly them, normally
+ * none), then one name lookup only when something is there — far inside the 8-second budget, so it
+ * belongs in the light lane.
+ */
+const hireHandoffGaps: NeedsYouAdapter = {
+  id: "hire-handoff-gaps",
+  load: async (access, now) => {
+    await assertPermission(access, "employees", "create");
+    const rows = (await loadUnfinishedHireHandoffSteps()).filter(
+      (row): row is typeof row & { status: "failed" | "gave_up" } => row.status === "failed" || row.status === "gave_up",
+    );
+    if (rows.length === 0) return EMPTY;
+    const names = await namesByHrId(rows.map((row) => row.employeeHrId));
+    return ok(
+      hireHandoffItems(
+        rows.map((row) => ({
+          attempts: row.attempts,
+          createdAt: row.createdAt,
+          hrId: row.employeeHrId,
+          lastError: row.lastError,
+          name: names.get(row.employeeHrId),
+          problem: hireHandoffStepProblems[row.step],
+          status: row.status,
+        })),
+        now,
+        HIRE_HANDOFF_MAX_ATTEMPTS,
+      ),
+    );
+  },
+};
+
 // ── The vendor accounts (owner, 3 Nov 2026, vendor-accounts-rules.ts) ──
 
 const VENDOR_NOT_YOURS = "A vendor account is the Super Admin's to settle";
@@ -1381,6 +1427,7 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   closingPublicationDrift,
   officeAllocationDrift,
   organogramSeatDrift,
+  hireHandoffGaps,
   vendorGithub,
   vendorWhatsApp,
   vendorTelegram,

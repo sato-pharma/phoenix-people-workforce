@@ -200,6 +200,18 @@ const JOBS = {
     // none on most fires.
     requestTimeout: 300,
   },
+  "hire-handoff-reconcile": {
+    title: "Phoenix — hire hand-off reconciler",
+    path: "/api/cron/hire-handoff-reconcile",
+    // Hourly on :09 (enterprise audit 2026-11-13, REC-027): re-runs the follow-up steps a new hire's
+    // door left failed (offer link, candidate hired, login, CV, mailbox task, offer stamp, audit row)
+    // and gives up visibly after five attempts. On :09, a minute no other hourly job holds, so a red
+    // execution names one job. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [9], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read of the unfinished ledger rows, then at most 25 retries inside a 40-second
+    // budget — none on almost every fire.
+    requestTimeout: 300,
+  },
   "recruitment-manager-cv-reminders": {
     title: "Phoenix — manager CV folder reminders",
     path: "/api/cron/recruitment-manager-cv-reminders",

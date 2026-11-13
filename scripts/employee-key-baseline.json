@@ -1,5 +1,5 @@
 {
-  "about": "Every column that carries a foreign key to public.employees(hr_id), as public.<table>.<column>. Read live 2026-11-13 on production and staging (112, identical); 110 since 13 Nov 2026, when the empty tables geo_bricks and probation_feedback_comments were dropped on the owner's decision (migration 20261113191017). scripts/check-schema-shape.ts fails the nightly Migration Drift Check when a key listed here is missing or not validated. The list may only grow: add a key here in the same PR as the migration that creates it; removing one is a decision the owner is told about first. Rule: enterprise audit REC-037; tests/schema-shape-employee-keys.test.ts.",
+  "about": "Every column that carries a foreign key to public.employees(hr_id), as public.<table>.<column>. Read live 2026-11-13 on production and staging (112, identical); 110 since 13 Nov 2026, when the empty tables geo_bricks and probation_feedback_comments were dropped on the owner's decision (migration 20261113191017); 111 with public.hire_handoff_steps (migration 20261113201756, REC-027). scripts/check-schema-shape.ts fails the nightly Migration Drift Check when a key listed here is missing or not validated. The list may only grow: add a key here in the same PR as the migration that creates it; removing one is a decision the owner is told about first. Rule: enterprise audit REC-037; tests/schema-shape-employee-keys.test.ts.",
   "keys": [
     "public.app_auth_users.hr_id",
     "public.app_auth_users.test_persona_of_hr_id",
@@ -60,6 +60,7 @@
     "public.employee_salary_structure.employee_hr_id",
     "public.employees.manager_hr_id",
     "public.expense_claims.employee_hr_id",
+    "public.hire_handoff_steps.employee_hr_id",
     "public.hiring_document_employee_notes.employee_hr_id",
     "public.hiring_document_statuses.employee_hr_id",
     "public.marketing_customer_contacts.created_by_hr_id",
