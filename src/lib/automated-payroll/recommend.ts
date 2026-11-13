@@ -70,12 +70,8 @@ import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./stan
 import { notYetDue, type HeldBalance } from "./held-settlements.ts";
 import {
   getCarryLateExpensesSetting,
-  lateExpensesShownFrom,
   loadLateApprovedExpenses,
   type LateApprovedExpense,
-  type LateExpenseRow,
-  type LateExpenseShownTrip,
-  type LateExpensesShown,
 } from "./late-expenses.ts";
 import type {
   DraftRow,
@@ -403,9 +399,16 @@ export type PayoutExpenseTrip = {
    * carry switch (late-expenses.ts): that month, and the outstation row id Part 2 confirm records.
    */
   carriedFrom?: { month: number; year: number; rowId: string };
+  /**
+   * The outstation row id. Kept so the confirmed Expenses step can record WHICH own-month trips its
+   * figure counted (late-expenses.ts) — publish writes them as paid. Optional so fixtures stay valid.
+   */
+  rowId?: string;
 };
 
 export type PayoutExpenseRow = {
+  /** The outstation row id; absent on a hand-built fixture. */
+  id?: string | null;
   hr_id: string | null;
   trip_id: string | null;
   expense_date: string | null;
@@ -511,6 +514,7 @@ function payoutExpenseTripFromRow(row: PayoutExpenseRow): PayoutExpenseTrip {
     tripType: text(row.trip_type),
     hrId: text(row.hr_id),
     specialist: text(row.specialist),
+    ...(row.id ? { rowId: String(row.id) } : {}),
   };
 }
 
@@ -548,7 +552,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
       const { data, error } = await getSupabaseAdmin()
         .from("outstation_expenses")
         .select(
-          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description,specialist",
+          "id,hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description,specialist",
         )
         .eq("payout_month", period.month)
         .eq("payout_year", period.year)
@@ -951,10 +955,15 @@ async function recommendExpenses(
   members: PopulationMember[],
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
+  expenseTrips?: ExpenseStepTrips,
 ): Promise<StepRow[]> {
   const memberCompacts = new Set(members.map((member) => member.compact));
-  return buildExpenseStepRows(members, (await loadExpenseStepTrips(period, memberCompacts)).tripsByCompact, drafts);
+  const trips = expenseTrips ?? (await loadExpenseStepTrips(period, memberCompacts));
+  return buildExpenseStepRows(members, trips.tripsByCompact, drafts);
 }
+
+/** The trips one Expenses step load is built from — shared by its figure and its confirm's snapshot. */
+export type ExpenseStepTrips = { carryOn: boolean; tripsByCompact: Map<string, PayoutExpenseTrip[]> };
 
 /**
  * The trips the Expenses step is built from: this payout month's own, plus, ONLY while the carry switch
@@ -965,7 +974,7 @@ async function recommendExpenses(
 export async function loadExpenseStepTrips(
   period: PayrollPeriod,
   memberCompacts: ReadonlySet<string>,
-): Promise<{ carryOn: boolean; tripsByCompact: Map<string, PayoutExpenseTrip[]> }> {
+): Promise<ExpenseStepTrips> {
   const own = await loadPayoutExpenseTrips(period);
   const carryOn = await getCarryLateExpensesSetting();
   if (!carryOn) return { carryOn, tripsByCompact: own };
@@ -977,51 +986,21 @@ export async function loadExpenseStepTrips(
 }
 
 /**
- * What a confirmed Expenses step showed of the carried trips (late-expenses.ts), kept in its summary so
- * Part 2 confirm can prove the trips still stand as shown and the switch has not moved.
- */
-export async function lateExpensesShownAtStepConfirm(
-  period: PayrollPeriod,
-  members: ReadonlyArray<PopulationMember>,
-): Promise<LateExpensesShown> {
-  const { carryOn, tripsByCompact } = await loadExpenseStepTrips(period, new Set(members.map((member) => member.compact)));
-  return lateExpensesShownFrom(carryOn, tripsByCompact);
-}
-
-/**
- * Part 2 confirm's trips: the month's own, plus the carried trips the confirmed Expenses step SHOWED,
- * built from their rows as they stand now (the caller has checked they did not change). A trip the
- * list gained after the step was confirmed is not in its figure, so it is not here either.
- */
-export async function loadShownExpenseTrips(
-  period: PayrollPeriod,
-  shown: ReadonlyArray<LateExpenseShownTrip>,
-  rows: ReadonlyArray<LateExpenseRow>,
-  memberCompacts: ReadonlySet<string>,
-): Promise<Map<string, PayoutExpenseTrip[]>> {
-  const byId = new Map(rows.map((row) => [String(row.id), row]));
-  const late = shown.flatMap((trip) => {
-    const row = byId.get(trip.rowId);
-    return row ? [{ id: trip.rowId, compact: trip.compact, payoutMonth: trip.payoutMonth, payoutYear: trip.payoutYear, duplicateOf: null, row }] : [];
-  });
-  return mergeCarriedLateTrips(await loadPayoutExpenseTrips(period), late, memberCompacts);
-}
-
-/**
  * Adds the late-approved trips of people IN this run to the month's own trips, each marked with the
  * payout month it is carried from. A late trip of someone outside the run is not proposed here: it
  * stays on the "Approved, not yet in a run" list, and so does one flagged as a likely duplicate of a trip
- * already paid. Pure; returns a new map and leaves `own` untouched.
+ * already paid, and one that needs checking by hand (nothing on record says whether it was paid). Pure;
+ * returns a new map and leaves `own` untouched.
  */
 export function mergeCarriedLateTrips(
   own: ReadonlyMap<string, PayoutExpenseTrip[]>,
-  late: ReadonlyArray<Pick<LateApprovedExpense, "id" | "compact" | "payoutMonth" | "payoutYear" | "duplicateOf" | "row">>,
+  late: ReadonlyArray<Pick<LateApprovedExpense, "id" | "compact" | "payoutMonth" | "payoutYear" | "duplicateOf" | "row"> & { needsChecking?: string | null }>,
   memberCompacts: ReadonlySet<string>,
 ): Map<string, PayoutExpenseTrip[]> {
   const merged = new Map<string, PayoutExpenseTrip[]>();
   for (const [compact, trips] of own) merged.set(compact, [...trips]);
   for (const trip of late) {
-    if (!memberCompacts.has(trip.compact) || trip.duplicateOf) continue;
+    if (!memberCompacts.has(trip.compact) || trip.duplicateOf || trip.needsChecking) continue;
     const list = merged.get(trip.compact) ?? [];
     list.push({
       ...payoutExpenseTripFromRow(trip.row),
@@ -2340,6 +2319,11 @@ export async function recommendStep(input: {
   part1Corrections?: Map<string, number>;
   /** Held Salary Release only: held amounts HR entered while working in this run (enteredHeldAddedInRun). */
   addedInRun?: Map<string, number>;
+  /**
+   * Expenses only: the trips already read for this load. Confirming the step passes the list it also
+   * snapshots (late-expenses.ts), so the figure and the record of what it counted come from ONE read.
+   */
+  expenseTrips?: ExpenseStepTrips;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
   const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
@@ -2417,7 +2401,7 @@ async function recommendStepRows(
     case "p1_special_situations":
       return recommendSpecialSituations(input.members, input.sources, drafts);
     case "p2_expenses":
-      return recommendExpenses(input.members, input.period, drafts);
+      return recommendExpenses(input.members, input.period, drafts, input.expenseTrips);
     case "p2_vacation":
       return recommendVacation(
         input.members,

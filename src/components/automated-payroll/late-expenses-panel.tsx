@@ -131,8 +131,8 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
       {on ? (
         <div className="border-l-4 border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
           Trips of people in this run are in the Expenses step below, marked as carried from their month. A trip is
-          recorded as paid only when the confirmed Expenses figure covers it in full; anyone else&apos;s stays on this
-          list, and so does a trip marked as a likely duplicate.
+          recorded as paid only when the confirmed Expenses figure covers it exactly; anyone else&apos;s stays on this
+          list, and so does a trip marked as a likely duplicate or as needing a check by hand.
         </div>
       ) : null}
 
@@ -173,6 +173,12 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
                   <td className="break-words px-3 py-2 text-slate-700">
                     {trip.payoutLabel}
                     {trip.duplicateOf ? <span className="mt-1 block text-xs font-semibold text-amber-800">{trip.duplicateOf}</span> : null}
+                    {trip.needsChecking ? (
+                      <span className="mt-1 block text-xs text-slate-700">
+                        <span className="font-black uppercase tracking-wide text-slate-900">Needs checking by hand · </span>
+                        {trip.needsChecking}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">{money(trip.amount)}</td>
                 </tr>
@@ -196,6 +202,12 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
                   <dd className="break-words text-slate-800">
                     {trip.payoutLabel}
                     {trip.duplicateOf ? <span className="mt-1 block text-xs font-semibold text-amber-800">{trip.duplicateOf}</span> : null}
+                    {trip.needsChecking ? (
+                      <span className="mt-1 block text-xs text-slate-700">
+                        <span className="font-black uppercase tracking-wide text-slate-900">Needs checking by hand · </span>
+                        {trip.needsChecking}
+                      </span>
+                    ) : null}
                   </dd>
                   <dt className="text-[11px] font-black uppercase tracking-wide text-slate-500">Amount</dt>
                   <dd className="font-semibold tabular-nums text-slate-900">{money(trip.amount)}</dd>

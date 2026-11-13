@@ -7,12 +7,18 @@ import {
   expenseDecisionsThatChanged,
   resyncCarriedLateTrips,
 } from "../src/lib/automated-payroll/expense-resync.ts";
+import { queuedPayrollResyncIsForPeriod, readQueuedPayrollResync } from "../src/lib/automated-payroll/resync-outbox.ts";
 import {
   assertLateExpensesNotCarriedElsewhere,
   assertLateExpensesShownMatchesSwitch,
   assertLateExpensesUnchanged,
+  clearAfterLateExpenseRefusal,
+  describeLateExpenseHandAdded,
   describeLateExpensePartialCoverage,
+  expensesCoveredAtPublish,
   findOpenRunsShowingLateTrips,
+  LateExpenseRefusal,
+  parseStampFollowUp,
   flagLateExpenseDuplicates,
   getCarryLateExpensesSetting,
   LATE_EXPENSE_CARRY_FLOOR,
@@ -203,6 +209,7 @@ function member(hrId: string, fullName: string): PopulationMember {
 function trip(overrides: Partial<PayoutExpenseTrip> = {}): PayoutExpenseTrip {
   return {
     tripId: "T-own",
+    rowId: "own-row",
     expenseDate: "2026-11-05",
     toDate: "2026-11-05",
     fromLocation: "Cairo",
@@ -225,6 +232,35 @@ function trip(overrides: Partial<PayoutExpenseTrip> = {}): PayoutExpenseTrip {
 
 const superAdmin = { hrId: "b10", role: "Super Admin", scope: "all", source: "session" } as unknown as AccessContext;
 const NAMES = new Map([["b12", "Dina Hamdy Fadel"], ["b77", "Omar Gawish"]]);
+
+/** A published run as the plan reads it: covered list kept (empty) and the stamp settled, unless told otherwise. */
+function pub(
+  runId: string,
+  month: number,
+  overrides: Partial<PublishedRunForLateExpenses> = {},
+): PublishedRunForLateExpenses {
+  return {
+    runId,
+    month,
+    year: 2026,
+    heldCompacts: [],
+    carriedTripIds: [],
+    coveredTripIds: [],
+    differing: [],
+    stampSettled: true,
+    ...overrides,
+  };
+}
+
+/** The error a promise rejects with. */
+async function caught(work: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await work();
+  } catch (error) {
+    return error;
+  }
+  return null;
+}
 
 async function rejects(work: () => Promise<unknown>, pattern: RegExp, message: string): Promise<void> {
   let returned: unknown = "(nothing thrown)";
@@ -250,16 +286,16 @@ export async function runAutomatedPayrollLateExpensesTests() {
   assert.deepEqual({ ...LATE_EXPENSE_CARRY_FLOOR }, { month: 9, year: 2026 }, "the floor is payout September 2026");
 
   const publishedRuns: PublishedRunForLateExpenses[] = [
-    { runId: "run-aug", month: 8, year: 2026, heldCompacts: [], carriedTripIds: [] },
-    { runId: "run-sep", month: 9, year: 2026, heldCompacts: ["b50"], carriedTripIds: [] },
-    { runId: "run-oct", month: 10, year: 2026, heldCompacts: [], carriedTripIds: ["sep-carried"] },
+    pub("run-aug", 8),
+    pub("run-sep", 9, { heldCompacts: ["b50"] }),
+    pub("run-oct", 10, { carriedTripIds: ["sep-carried"] }),
   ];
   const rows: LateExpenseRow[] = [
     expenseRow({ id: "sep-ok" }),
     expenseRow({ id: "sep-hr-reduced", approved_amount: 250, expense_date: "2026-09-12", to_date: "2026-09-12" }),
     expenseRow({ id: "aug-below-floor", payout_month: 8, expense_date: "2026-08-10" }),
     expenseRow({ id: "sep-held", hr_id: "B-50" }),
-    expenseRow({ id: "sep-carried" }),
+    expenseRow({ id: "sep-carried", expense_date: "2026-09-04", to_date: "2026-09-04" }),
     expenseRow({ id: "sep-stamped", imported_payroll_batch_id: "batch-9", expense_date: "2026-09-02" }),
     expenseRow({ id: "sep-stamped-at", imported_to_payroll_at: "2026-10-01T00:00:00Z", expense_date: "2026-09-03" }),
     expenseRow({ id: "sep-pending", hr_approved: false, status: "Pending" }),
@@ -291,11 +327,67 @@ export async function runAutomatedPayrollLateExpensesTests() {
     !planLateApprovedExpenses({ currentPeriod: NOVEMBER, publishedRuns: [], rows }).length,
     "a payout month with no published run is never listed",
   );
+  assert.ok(listed.every((entry) => entry.needsChecking === null), "a month with its covered list and a settled stamp lists trips as owed");
+
+  // UNSTAMPED IS NOT UNPAID (round 3, fix 1).
+  const withSep = (overrides: Partial<PublishedRunForLateExpenses>) =>
+    planLateApprovedExpenses({
+      currentPeriod: NOVEMBER,
+      publishedRuns: publishedRuns.map((run) => (run.runId === "run-sep" ? { ...run, ...overrides } : run)),
+      rows,
+    });
+  assert.deepEqual(
+    withSep({ coveredTripIds: ["sep-ok"] }).map((entry) => entry.id),
+    ["sep-hr-reduced", "oct-ok"],
+    "HEADLINE: a trip its own month's published figure paid is never listed, stamp or no stamp",
+  );
+  const noCovered = withSep({ coveredTripIds: null }).filter((entry) => entry.payoutMonth === 9);
+  assert.ok(
+    noCovered.length === 2 && noCovered.every((entry) => /published before payroll kept a list of the trips each figure paid/.test(String(entry.needsChecking))),
+    "HEADLINE: a month published with no covered list is listed as NEEDS CHECKING BY HAND, never as owed",
+  );
+  assert.ok(
+    withSep({ stampSettled: false }).filter((entry) => entry.payoutMonth === 9).every((entry) => /Marking September 2026's paid trips failed or never finished/.test(String(entry.needsChecking))),
+    "HEADLINE: a month whose stamp failed or never ran is listed as needing a check by hand",
+  );
+  const differs = withSep({ differing: [{ compact: "b12", paid: 0, tripsTotal: 650 }] }).find((entry) => entry.id === "sep-ok");
+  assert.match(
+    String(differs?.needsChecking),
+    /September 2026 Expenses figure \(0\.00\) was not the total of their approved trips \(650\.00\)/,
+    "HEADLINE: a person whose published figure differed from their approved trips (a 0.00 refusal, a typed amount) needs checking by hand",
+  );
+  assert.equal(
+    withSep({ differing: [{ compact: "b12", paid: 0, tripsTotal: 650 }] }).find((entry) => entry.id === "oct-ok")?.needsChecking,
+    null,
+    "only that person's trips of that month",
+  );
+  assert.deepEqual(
+    mergeCarriedLateTrips(new Map(), noCovered, new Set(["b12"])).get("b12"),
+    undefined,
+    "HEADLINE: a trip needing a check by hand is never proposed in the Expenses step",
+  );
 
   // LIKELY DUPLICATES (fix 7): a copy of a trip already paid in its own month, or already in the carrying
   // run, is flagged and never proposed.
   const paidTwin = expenseRow({ id: "sep-paid-twin", imported_payroll_batch_id: "batch-9" });
   const flagged = flagLateExpenseDuplicates(listed, [...rows, paidTwin], NOVEMBER);
+  // Round 3, fix 3: against EVERY loaded month, stamped or covered.
+  assert.match(
+    String(
+      flagLateExpenseDuplicates(listed, [...rows, expenseRow({ id: "oct-paid-twin", payout_month: 10, imported_payroll_batch_id: "batch-10" })], NOVEMBER)
+        .find((entry) => entry.id === "sep-ok")?.duplicateOf,
+    ),
+    /Likely a duplicate of a trip already paid in October 2026, T-oct-paid-twin/,
+    "HEADLINE: a copy of a trip already paid in ANOTHER loaded month is flagged too",
+  );
+  assert.match(
+    String(
+      flagLateExpenseDuplicates(listed, [...rows, expenseRow({ id: "oct-covered-twin", payout_month: 10 })], NOVEMBER, new Set(["oct-covered-twin"]))
+        .find((entry) => entry.id === "sep-ok")?.duplicateOf,
+    ),
+    /already paid in October 2026, T-oct-covered-twin/,
+    "HEADLINE: and a copy of a trip a published figure covered (unstamped) is flagged",
+  );
   assert.match(
     String(flagged.find((entry) => entry.id === "sep-ok")?.duplicateOf),
     /Likely a duplicate of a trip already paid in September 2026, T-sep-paid-twin/,
@@ -322,11 +414,20 @@ export async function runAutomatedPayrollLateExpensesTests() {
   );
 
   // ---- 2. The reads fail closed ----------------------------------------------------------------
-  const publishedDetail = (held: string[], carried: string[] = [], carriedHeld: string[] = []) => ({
+  const publishedDetail = (
+    held: string[],
+    carried: string[] = [],
+    carriedHeld: string[] = [],
+    expensesCovered: unknown = { tripIds: [], differing: [] },
+  ) => ({
     held: held.map((hrId) => ({ hrId, name: hrId })),
     heldExcluded: held.length,
     lateExpensesCarried: carried.map((id) => ({ id, compact: "b12", payoutMonth: 9, payoutYear: 2026, amount: 400 })),
     lateExpensesCarriedHeld: carriedHeld.map((id) => ({ id, compact: "b12", payoutMonth: 9, payoutYear: 2026, amount: 250 })),
+    expensesCovered,
+  });
+  const stampDetail = (differing: unknown[] = []) => ({
+    expenseStamp: { differing, employees: 0, stamped: 0, total: 0, carriedStamped: 0, carriedSkipped: [] },
   });
   const healthy = (): Record<string, TableSpec> => ({
     automated_payroll_runs: {
@@ -340,6 +441,8 @@ export async function runAutomatedPayrollLateExpensesTests() {
       rows: [
         { run_id: "run-sep", action: "published", created_at: "2026-10-05T10:00:00Z", detail: publishedDetail(["B-50"]) },
         { run_id: "run-oct", action: "published", created_at: "2026-11-05T10:00:00Z", detail: publishedDetail([], ["sep-carried"]) },
+        { run_id: "run-sep", action: "published_follow_up", created_at: "2026-10-05T10:01:00Z", detail: stampDetail() },
+        { run_id: "run-oct", action: "published_follow_up", created_at: "2026-11-05T10:01:00Z", detail: stampDetail() },
       ],
     },
     outstation_expenses: { rows: rows as unknown as Array<Record<string, unknown>> },
@@ -352,6 +455,83 @@ export async function runAutomatedPayrollLateExpensesTests() {
     [...new Set(loaded.map((entry) => entry.name))],
     ["Dina Hamdy Fadel", "Omar Gawish"],
     "the list carries names from the employee record, never codes",
+  );
+  assert.ok(loaded.every((entry) => entry.needsChecking === null), "a month with its covered list and a settled follow-up is listed as owed");
+
+  // UNSTAMPED IS NOT UNPAID, as the loader reads it (round 3, fix 1).
+  {
+    const tables = healthy();
+    tables.automated_payroll_audit.rows![0] = {
+      ...tables.automated_payroll_audit.rows![0],
+      detail: publishedDetail(["B-50"], [], [], { tripIds: ["sep-ok"], differing: [] }),
+    };
+    assert.deepEqual(
+      (await loadLateApprovedExpenses(NOVEMBER, fakeDb(tables))).map((entry) => entry.id),
+      ["sep-hr-reduced", "oct-ok"],
+      "HEADLINE: the loader leaves out a trip the published record says its figure covered",
+    );
+  }
+  {
+    const tables = healthy();
+    tables.automated_payroll_audit.rows![0] = {
+      ...tables.automated_payroll_audit.rows![0],
+      detail: publishedDetail(["B-50"], [], [], null),
+    };
+    const sep = (await loadLateApprovedExpenses(NOVEMBER, fakeDb(tables))).filter((entry) => entry.payoutMonth === 9);
+    assert.ok(
+      sep.length === 2 && sep.every((entry) => /published before payroll kept a list/.test(String(entry.needsChecking))),
+      "HEADLINE: the loader marks a month published before the covered list as needing a check by hand",
+    );
+  }
+  for (const [label, followUp] of [
+    ["missing", null],
+    ["failed", { expenseStamp: { error: "stamp down" } }],
+  ] as const) {
+    const tables = healthy();
+    tables.automated_payroll_audit.rows = tables.automated_payroll_audit.rows!.filter(
+      (row) => !(row.run_id === "run-sep" && row.action === "published_follow_up"),
+    );
+    if (followUp) {
+      tables.automated_payroll_audit.rows.push({ run_id: "run-sep", action: "published_follow_up", created_at: "2026-10-05T10:01:00Z", detail: followUp });
+    }
+    const sep = (await loadLateApprovedExpenses(NOVEMBER, fakeDb(tables))).filter((entry) => entry.payoutMonth === 9);
+    assert.ok(
+      sep.length === 2 && sep.every((entry) => /failed or never finished/.test(String(entry.needsChecking))),
+      `HEADLINE: a month whose stamp follow-up is ${label} is listed as needing a check by hand`,
+    );
+  }
+  {
+    const tables = healthy();
+    tables.automated_payroll_audit.rows![2] = { ...tables.automated_payroll_audit.rows![2], detail: stampDetail([{ compact: "b12", paid: 0, tripsTotal: 650 }]) };
+    const sep = await loadLateApprovedExpenses(NOVEMBER, fakeDb(tables));
+    assert.match(
+      String(sep.find((entry) => entry.id === "sep-ok")?.needsChecking),
+      /was not the total of their approved trips/,
+      "HEADLINE: the stamp's own differing list marks that person's late trips as needing a check by hand",
+    );
+  }
+  {
+    // A copy of a trip a published figure COVERED (never stamped) in another month is flagged (fix 3).
+    const tables = healthy();
+    tables.outstation_expenses.rows = [
+      ...(rows as unknown as Array<Record<string, unknown>>),
+      expenseRow({ id: "oct-covered-twin", payout_month: 10 }) as unknown as Record<string, unknown>,
+    ];
+    tables.automated_payroll_audit.rows![1] = {
+      ...tables.automated_payroll_audit.rows![1],
+      detail: publishedDetail([], ["sep-carried"], [], { tripIds: ["oct-covered-twin"], differing: [] }),
+    };
+    assert.match(
+      String((await loadLateApprovedExpenses(NOVEMBER, fakeDb(tables))).find((entry) => entry.id === "sep-ok")?.duplicateOf),
+      /already paid in October 2026, T-oct-covered-twin/,
+      "HEADLINE: the loader compares a late trip against the covered trips of EVERY published month",
+    );
+  }
+  assert.deepEqual(parseStampFollowUp(undefined), { settled: false, differing: [] }, "no follow-up row is not settled");
+  assert.deepEqual(parseStampFollowUp({ expenseStamp: { error: "x" } }), { settled: false, differing: [] }, "a failed stamp is not settled");
+  assert.deepEqual(
+    parseStampFollowUp(stampDetail([{ compact: "B-12", paid: 0, tripsTotal: 650 }])),
+    { settled: true, differing: [{ compact: "b12", paid: 0, tripsTotal: 650 }] },
   );
 
   // HELD IN THE CARRYING RUN (fix 1): the October run held Dina, so her carried trip sits in her held
@@ -569,15 +749,52 @@ export async function runAutomatedPayrollLateExpensesTests() {
     "the confirmed step keeps each carried trip's row, trip id, amount and person",
   );
   assert.deepEqual(parseLateExpensesShown({ lateExpensesShown: shown }), shown, "and reads it back");
+  assert.deepEqual(
+    shown.own,
+    [{ compact: "b12", hrId: "b12", total: 500, tripIds: ["own-row"] }],
+    "HEADLINE: the confirmed step also keeps each person's OWN approved trips — their total and row ids — from the same trip list",
+  );
+  {
+    const mixed = new Map<string, PayoutExpenseTrip[]>([
+      [
+        "b12",
+        [
+          trip({ rowId: "a1", tripId: "T-a1", hrId: "B-12" }),
+          trip({ rowId: "p1", tripId: "T-p1", hrApproved: false, expenseDate: "2026-11-07", toDate: "2026-11-07" }),
+          trip({ rowId: "a2", tripId: "T-a2", total: 300, approvedAmount: 200, expenseDate: "2026-11-09", toDate: "2026-11-09" }),
+        ],
+      ],
+      ["b99", [trip({ rowId: "x1", tripId: "T-x1" })]],
+    ]);
+    assert.deepEqual(
+      lateExpensesShownFrom(false, mixed, new Set(["b12"])).own,
+      [{ compact: "b12", hrId: "B-12", total: 700, tripIds: ["a1", "a2"] }],
+      "HEADLINE: own trips are the approved ones only, at HR's figure, for run members only",
+    );
+    const twins = new Map<string, PayoutExpenseTrip[]>([
+      ["b12", [trip({ rowId: "a1", tripId: "T-a1" }), trip({ rowId: "a1-copy", tripId: "T-a1-copy" })]],
+    ]);
+    assert.deepEqual(
+      lateExpensesShownFrom(false, twins).own?.[0]?.tripIds,
+      ["a1"],
+      "a trip held as a duplicate is not counted among the own trips",
+    );
+  }
+  assert.equal(parseLateExpensesShown({ lateExpensesShown: { carryOn: true, trips: [] } })?.own, null, "a step confirmed before own trips were kept reads own as null");
   assert.equal(parseLateExpensesShown({}), null, "a step confirmed before the record existed has none");
   assertLateExpensesShownMatchesSwitch(true, shown);
   assertLateExpensesShownMatchesSwitch(false, null);
   assert.throws(
     () => assertLateExpensesShownMatchesSwitch(true, lateExpensesShownFrom(false, own)),
-    /^Error: Conflict: the switch for expenses approved after their month was paid is ON now, but the Expenses step was confirmed while it was OFF/,
+    /^LateExpenseRefusal: Conflict: the switch for expenses approved after their month was paid is ON now, but the Expenses step was confirmed while it was OFF/,
     "HEADLINE: Part 2 confirm refuses when the switch moved since the Expenses step was confirmed",
   );
   assert.throws(() => assertLateExpensesShownMatchesSwitch(true, null), /confirmed while it was OFF/, "a step with no record reads as confirmed OFF");
+  {
+    const moved = await caught(async () => assertLateExpensesShownMatchesSwitch(false, shown));
+    assert.ok(moved instanceof LateExpenseRefusal, "HEADLINE: a moved switch is a refusal that clears the figure");
+    assert.deepEqual(moved.compacts, ["b12"], "naming the people whose figure counted carried trips");
+  }
 
   // A carried trip whose approval changed after the step was confirmed (fix 2).
   const expected = shown.trips.map((entry) => ({ ...entry, id: entry.rowId }));
@@ -593,6 +810,11 @@ export async function runAutomatedPayrollLateExpensesTests() {
     /^Conflict: Dina Hamdy Fadel's trip of 2026-09-12 \(carried from September 2026\) now pays 150\.00, not 250\.00 since the Expenses step was confirmed\. Nothing was confirmed\. Reload the Expenses step/,
     "HEADLINE: a carried trip cut after the Expenses step was confirmed refuses Part 2 confirm, naming the person and trip",
   );
+  {
+    const changed = await caught(() => assertLateExpensesUnchanged(expected, NAMES, "confirm", live({ "sep-ok": { hr_approved: false, status: "Rejected" } })));
+    assert.ok(changed instanceof LateExpenseRefusal, "HEADLINE: a changed carried trip is a refusal that clears the figure");
+    assert.deepEqual(changed.compacts, ["b12"], "of exactly that trip's person");
+  }
   await rejects(
     () => assertLateExpensesUnchanged(expected, NAMES, "confirm", live({ "sep-ok": { hr_approved: false, status: "Rejected" } })),
     /Dina Hamdy Fadel's trip of 2026-09-10 \(carried from September 2026\) is no longer approved/,
@@ -615,7 +837,7 @@ export async function runAutomatedPayrollLateExpensesTests() {
   );
 
   // Coverage.
-  const covered = planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map([["b12", 1150]]) });
+  const covered = planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 1150]]) });
   assert.deepEqual(
     covered.carried.map((entry) => [entry.id, entry.amount, entry.payoutMonth, entry.expenseDate]),
     [["sep-ok", 400, 9, "2026-09-10"], ["sep-hr-reduced", 250, 9, "2026-09-12"]],
@@ -623,36 +845,58 @@ export async function runAutomatedPayrollLateExpensesTests() {
   );
   assert.equal(covered.notCovered.length + covered.partial.length, 0);
   assert.equal(
-    planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map([["b12", 1149.6]]) }).carried.length,
+    planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 1149.6]]) }).carried.length,
     2,
     "half a pound of rounding is tolerated",
   );
-  const under = planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map([["b12", 500]]) });
+  const under = planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 500]]) });
   assert.deepEqual(under.carried, [], "HEADLINE: an under-covering figure records nothing as carried");
   assert.deepEqual(
     under.notCovered.map((entry) => [entry.id, entry.paid, entry.needed, entry.reason]),
     [["sep-ok", 500, 1150, "not_covered"], ["sep-hr-reduced", 500, 1150, "not_covered"]],
     "and names the trips left on the list",
   );
-  const part = planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map([["b12", 900]]) });
+  const part = planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 900]]) });
   assert.deepEqual(
     part.partial.map((entry) => [entry.compact, entry.paid, entry.own, entry.needed, entry.trips.map((one) => one.id)]),
     [["b12", 900, 500, 1150, ["sep-ok", "sep-hr-reduced"]]],
     "HEADLINE: a figure above the own trips but short of own plus carried is a PARTIAL payment, never silently 'not covered'",
   );
-  assert.deepEqual([part.carried, part.notCovered], [[], []], "and records nothing either way");
+  assert.deepEqual([part.carried, part.notCovered, part.handAdded], [[], [], []], "and records nothing either way");
+  // FIX 4: coverage reads the SNAPSHOTTED own total, never a live re-read. A trip approved after the step
+  // was confirmed is not in the snapshot, so a figure counting it is not read as covering the carried trips.
+  assert.deepEqual(
+    planLateExpenseCoverage({
+      shown: { ...shown, own: [{ compact: "b12", hrId: "B-12", total: 900, tripIds: ["own-row", "later"] }] },
+      expensesByCompact: new Map([["b12", 1150]]),
+    }).partial.map((person) => [person.own, person.needed]),
+    [[900, 1550]],
+    "HEADLINE: coverage is computed from the step's snapshot of own trips",
+  );
+  const typed = planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 1500]]) });
+  assert.deepEqual(
+    typed.handAdded.map((person) => [person.compact, person.paid, person.own, person.needed, person.trips.map((one) => one.id)]),
+    [["b12", 1500, 500, 1150, ["sep-ok", "sep-hr-reduced"]]],
+    "HEADLINE: a figure holding money beyond its own and carried trips (a hand-added row) never counts as covering them",
+  );
+  assert.deepEqual([typed.carried, typed.notCovered, typed.partial], [[], [], []], "and records nothing");
+  assert.match(
+    describeLateExpenseHandAdded(typed.handAdded, NAMES),
+    /^Conflict: Dina Hamdy Fadel's Expenses figure 1,500\.00 is more than their own approved trips this month \(500\.00\) plus the carried trip of 2026-09-10 \(carried from September 2026\), trip of 2026-09-12 \(carried from September 2026\) \(1,150\.00\)\. The extra was typed by hand/,
+    "the refusal names the person, the figure and the carried trips",
+  );
   assert.match(
     describeLateExpensePartialCoverage(part.partial, NAMES),
     /^Conflict: Dina Hamdy Fadel's Expenses figure 900\.00 is above their own trips this month \(500\.00\) but short of those plus the carried trip of 2026-09-10 \(carried from September 2026\), trip of 2026-09-12 \(carried from September 2026\) \(1,150\.00\)\. .*either pay every carried trip in full or take them out/,
     "the refusal names the person, their figure and each carried trip",
   );
   assert.equal(
-    planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map([["b12", 500.4]]) }).partial.length,
+    planLateExpenseCoverage({ shown, expensesByCompact: new Map([["b12", 500.4]]) }).partial.length,
     0,
     "a figure within rounding of the own trips takes the carried trips out — not partial",
   );
   assert.deepEqual(
-    planLateExpenseCoverage({ tripsByCompact: merged, expensesByCompact: new Map() }).carried,
+    planLateExpenseCoverage({ shown, expensesByCompact: new Map() }).carried,
     [],
     "no confirmed figure at all records nothing",
   );
@@ -661,7 +905,7 @@ export async function runAutomatedPayrollLateExpensesTests() {
     [carriedSep[0]],
     new Set(["b12"]),
   );
-  const dupPlan = planLateExpenseCoverage({ tripsByCompact: duplicate, expensesByCompact: new Map([["b12", 800]]) });
+  const dupPlan = planLateExpenseCoverage({ shown: lateExpensesShownFrom(true, duplicate), expensesByCompact: new Map([["b12", 800]]) });
   assert.deepEqual(dupPlan.carried, [], "a carried copy of a trip already in the run is never recorded as paid");
   assert.equal(dupPlan.notCovered[0]?.reason, "duplicate_held");
 
@@ -679,6 +923,26 @@ export async function runAutomatedPayrollLateExpensesTests() {
       /^Conflict: Dina Hamdy Fadel's trip of 2026-09-10 \(carried from September 2026\) is already being paid by the December 2026 payroll run\. Nothing was confirmed/,
       "HEADLINE: a trip another run reserved at its Part 2 confirm refuses this run's confirm, naming the trip and that run's month",
     );
+    {
+      const clash = await caught(() => reserveLateExpenses("run-nov", covered.carried, NAMES, fakeDb(tables)));
+      assert.ok(clash instanceof LateExpenseRefusal, "HEADLINE: a trip another run reserved is a refusal that clears the figure");
+      assert.deepEqual(clash.compacts, ["b12"]);
+    }
+    {
+      // The 23505: another run reserved it between the read and the write.
+      const raced = await caught(() =>
+        reserveLateExpenses(
+          "run-nov",
+          covered.carried,
+          NAMES,
+          fakeDb({
+            automated_payroll_carried_expenses: { rows: [], writeResults: [null, { message: "duplicate key", code: "23505" }] },
+            automated_payroll_runs: { rows: [] },
+          }),
+        ),
+      );
+      assert.ok(raced instanceof LateExpenseRefusal, "HEADLINE: a reservation lost to a race (23505) is a refusal that clears the figure too");
+    }
     tables.automated_payroll_carried_expenses.rows = [{ expense_id: "stale", run_id: "run-nov" }];
     await reserveLateExpenses("run-nov", covered.carried, NAMES, fakeDb(tables));
     assert.deepEqual(
@@ -706,6 +970,25 @@ export async function runAutomatedPayrollLateExpensesTests() {
     );
   }
 
+  {
+    const calls: string[] = [];
+    const refusal = new LateExpenseRefusal("Conflict: a carried trip changed. Nothing was confirmed.", ["B-12", "b77"]);
+    const cleared = await clearAfterLateExpenseRefusal("run-nov", refusal, ["part2"], NAMES, async (runId, hrIds, expected) => {
+      calls.push(`${runId}:${[...(hrIds as string[])].join(",")}:${expected.join(",")}`);
+      return { clearedHrIds: [], reopenedStep: true };
+    });
+    assert.deepEqual(calls, ["run-nov:b12,b77:part2"], "HEADLINE: a carried-trip refusal clears those people's figure in that run and reopens the step");
+    assert.match(
+      cleared.message,
+      /^Conflict: a carried trip changed\. Nothing was confirmed\. Dina Hamdy Fadel and Omar Gawish's saved Expenses figure in this run was cleared and the Expenses step was reopened/,
+      "HEADLINE: and the refusal says the figure was cleared",
+    );
+    const failed = await clearAfterLateExpenseRefusal("run-nov", refusal, ["part2"], NAMES, async () => {
+      throw new Error("held by another action");
+    });
+    assert.match(failed.message, /also failed \(held by another action\): reopen the Expenses step and enter the figure again by hand/, "a failed clear says so");
+  }
+
   const service = stripComments(readFileSync("src/lib/automated-payroll/run-service.ts", "utf8"));
   const confirm = bodyOf(service, "export async function confirmPart2(");
   const lateAt = confirm.indexOf("await lateExpenseCarryAtConfirm(run, rowsUnderClaim)");
@@ -722,24 +1005,53 @@ export async function runAutomatedPayrollLateExpensesTests() {
     "assertLateExpensesShownMatchesSwitch(carryOn, shown)",
     "if (!carryOn || !shown) {",
     "await assertLateExpensesUnchanged(",
-    "planLateExpenseCoverage(",
-    "if (coverage.partial.length > 0) throw new Error(describeLateExpensePartialCoverage(",
+    "planLateExpenseCoverage({\n    shown,",
+    "if (coverage.handAdded.length > 0) {",
+    "describeLateExpenseHandAdded(coverage.handAdded, names)",
+    "if (coverage.partial.length > 0) {",
+    "describeLateExpensePartialCoverage(coverage.partial, names)",
     "await reserveLateExpenses(run.id, coverage.carried, names)",
   ].map((needle) => atConfirm.indexOf(needle));
-  assert.ok(order.every((at) => at > 0), "the switch, the re-read, the coverage, the partial refusal and the reservation are all at confirm");
-  assert.deepEqual([...order].sort((a, b) => a - b), order, "in that order: nothing is reserved before every check passed");
+  assert.ok(order.every((at) => at > 0), "the switch, the re-read, the coverage from the snapshot, the hand-added and partial refusals and the reservation are all at confirm");
+  assert.doesNotMatch(atConfirm, /loadShownExpenseTrips|loadExpenseStepTrips|loadPayoutExpenseTrips/, "HEADLINE: Part 2 confirm never re-reads the month's own trips live");
   assert.match(
-    bodyOf(service, "export async function confirmStep("),
-    /if \(stepKey === "p2_expenses"\) summary\[LATE_EXPENSES_SHOWN_KEY\] = await lateExpensesShownAtStepConfirm\(period, members\);/,
-    "confirming the Expenses step records what it showed",
+    confirm,
+    /\}\)\.catch\(\(confirmError: unknown\) => \{\s*if \(confirmError instanceof LateExpenseRefusal\) return refuseAfterClearing\(runId, confirmError, \["part2"\], rows\);/,
+    "HEADLINE: a carried-trip refusal at Part 2 confirm clears the person's figure and reopens the step",
   );
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "in that order: nothing is reserved before every check passed");
+  {
+    const confirmStepBody = bodyOf(service, "export async function confirmStep(");
+    assert.match(
+      confirmStepBody,
+      /const expenseTrips = stepKey === "p2_expenses" \? await loadExpenseStepTrips\(period, memberCompacts\) : undefined;/,
+      "the Expenses step reads its trips once",
+    );
+    assert.match(confirmStepBody, /\.\.\.\(expenseTrips \? \{ expenseTrips \} : \{\}\),/, "HEADLINE: the figure is built from that list");
+    assert.match(
+      confirmStepBody,
+      /summary\[LATE_EXPENSES_SHOWN_KEY\] = lateExpensesShownFrom\(expenseTrips\.carryOn, expenseTrips\.tripsByCompact, memberCompacts\);/,
+      "HEADLINE: and the record of what it showed from the SAME list",
+    );
+    assert.equal((confirmStepBody.match(/loadExpenseStepTrips\(/g) ?? []).length, 1, "never a second read");
+  }
   for (const signature of ["export async function unconfirmPart1(", "export async function unconfirmPart2(", "export async function cancelRun("]) {
     const body = bodyOf(service, signature);
     const claimed = body.indexOf("whileClaimed(runId, transition");
     const releaseAt = body.indexOf("await releaseLateExpenseReservations(runId);");
     assert.ok(claimed > 0 && releaseAt > claimed, `${signature} releases the run's reservations under its claim`);
     assert.ok(releaseAt < body.indexOf("updateRun(", claimed), `${signature} releases them before the phase moves`);
+    const ledgerAt = body.indexOf("releaseCarryForwardForCancelledRun(runId)");
+    if (ledgerAt >= 0) {
+      assert.ok(releaseAt < ledgerAt, `HEADLINE: ${signature} releases the reservations BEFORE the carry-forward ledger`);
+    }
   }
+  assert.ok(
+    ["export async function unconfirmPart2(", "export async function cancelRun("].every((signature) =>
+      bodyOf(service, signature).includes("releaseCarryForwardForCancelledRun(runId)"),
+    ),
+    "cancel and Part 2 reopen both release the ledger, so the order above is checked for both",
+  );
 
   // ---- 6. Publish ------------------------------------------------------------------------------------
   const stamped = parseLateExpensesCarried({
@@ -803,6 +1115,73 @@ export async function runAutomatedPayrollLateExpensesTests() {
     "HEADLINE: a held person's carried trips are written with the phase too, so they are never carried again",
   );
   assert.match(publish, /carried: lateExpensesCarried,/, "and the paid carried rows are stamped after publish");
+  assert.match(
+    markCall,
+    /\[LATE_EXPENSES_COVERED_KEY\]: expensesCovered/,
+    "HEADLINE: the own-month trips the figures paid are written with the phase, in the same write",
+  );
+  assert.match(
+    publish,
+    /const expensesCovered = await expensesCoveredForPublish\(runId, rows, lateExpensesCarried\);/,
+    "computed in publish, before the phase write",
+  );
+  assert.match(
+    bodyOf(service, "async function expensesCoveredForPublish("),
+    /const shown = parseLateExpensesShown\(\(await listStepStates\(runId\)\)\.find\(\(state\) => state\.stepKey === "p2_expenses"\)\?\.summary\);\s*return expensesCoveredAtPublish\(\{ shown, entries: rows, carriedPaid \}\);/,
+    "from what the confirmed Expenses step counted",
+  );
+  assert.match(
+    bodyOf(service, "async function refuseAfterClearing("),
+    /throw await clearAfterLateExpenseRefusal\(runId, refusal, expected, lateExpenseNames\(rows\)\);/,
+    "the refusal is replaced by the one saying what was cleared",
+  );
+  assert.match(
+    publish,
+    /\}\)\.catch\(\(publishError: unknown\) => \{\s*if \(publishError instanceof LateExpenseRefusal\) return refuseAfterClearing\(runId, publishError, \["ready"\], rows\);/,
+    "HEADLINE: a carried-trip refusal at publish clears the person's figure and reopens the step",
+  );
+
+  // What publish records as paid by this month's own figures (fix 1).
+  {
+    const snapshot = {
+      own: [
+        { compact: "b12", hrId: "B-12", total: 500, tripIds: ["own-b12"] },
+        { compact: "b77", hrId: "B-77", total: 300, tripIds: ["own-b77"] },
+        { compact: "b80", hrId: "B-80", total: 200, tripIds: ["own-b80"] },
+        { compact: "b50", hrId: "B-50", total: 100, tripIds: ["own-b50"] },
+        { compact: "b81", hrId: "B-81", total: 250, tripIds: ["own-b81"] },
+      ],
+    };
+    const result = expensesCoveredAtPublish({
+      shown: snapshot,
+      entries: [
+        { compact: "b12", onHold: false, row: { expenses: 900 } },
+        { compact: "b77", onHold: false, row: { expenses: 0 } },
+        { compact: "b80", onHold: false, row: { expenses: 650 } },
+        { compact: "b50", onHold: true, row: { expenses: 100 } },
+        { compact: "b81", onHold: false, row: { expenses: 250.3 } },
+        { compact: "b90", onHold: false, row: { expenses: 120 } },
+        { compact: "b91", onHold: false, row: { expenses: 0 } },
+      ],
+      carriedPaid: [{ id: "c1", compact: "b12", payoutMonth: 9, payoutYear: 2026, amount: 400 }],
+    });
+    assert.deepEqual(
+      result?.tripIds,
+      ["own-b12", "own-b81"],
+      "HEADLINE: publish records the own trips a figure covered exactly — own plus carried, within rounding",
+    );
+    assert.deepEqual(
+      result?.differing,
+      [
+        { compact: "b77", paid: 0, tripsTotal: 300 },
+        { compact: "b80", paid: 650, tripsTotal: 200 },
+        { compact: "b90", paid: 120, tripsTotal: 0 },
+      ],
+      "HEADLINE: a 0.00 figure, a typed figure and a figure with no trip behind it are recorded as differing — never covered",
+    );
+    assert.equal(expensesCoveredAtPublish({ shown: { own: null }, entries: [], carriedPaid: [] }), null, "no snapshot of own trips → no list, checked by hand");
+    assert.equal(expensesCoveredAtPublish({ shown: null, entries: [], carriedPaid: [] }), null);
+  }
 
   const stampSource = stripComments(readFileSync("src/lib/automated-payroll/expense-stamp.ts", "utf8"));
   const stampFn = bodyOf(stampSource, "export async function stampPaidExpenseTrips(");
@@ -832,6 +1211,11 @@ export async function runAutomatedPayrollLateExpensesTests() {
     ["T-sep-ok"],
     "the resync target names the trips whose decision moved",
   );
+  assert.deepEqual(
+    expenseDecisionsThatChanged([snap("T-sep-ok", null)], [snap("T-sep-ok", 300)]).changedTrips,
+    [{ tripId: "T-sep-ok", hrId: "B-12", month: 9, year: 2026 }],
+    "HEADLINE: with each trip's person and payout month, so a run whose step was never confirmed is found",
+  );
   const openRuns = fakeDb({
     automated_payroll_runs: {
       rows: [
@@ -852,6 +1236,49 @@ export async function runAutomatedPayrollLateExpensesTests() {
     "HEADLINE: a changed carried trip finds the open run whose Expenses step showed it — its own payout month is published",
   );
   assert.deepEqual(await findOpenRunsShowingLateTrips(["T-other"], openRuns), [], "a trip no run carries finds none");
+  {
+    const base = (carry: boolean, extra: Record<string, TableSpec> = {}) =>
+      fakeDb({
+        automated_payroll_runs: {
+          rows: [
+            { id: "run-sep", month: 9, year: 2026, phase: "published" },
+            { id: "run-nov", month: 11, year: 2026, phase: "part1" },
+            { id: "run-dec", month: 12, year: 2026, phase: "ready" },
+          ],
+        },
+        automated_payroll_step_state: { rows: [] },
+        automated_payroll_settings: { rows: [{ id: 1, carry_late_expenses: carry }] },
+        automated_payroll_carried_expenses: { rows: [] },
+        outstation_expenses: { rows: rows as unknown as Array<Record<string, unknown>> },
+        ...extra,
+      });
+    const ref = { tripId: "T-sep-ok", hrId: "B-12", month: 9, year: 2026 };
+    assert.deepEqual(
+      (await findOpenRunsShowingLateTrips([ref], base(true))).map((hit) => `${hit.run.id}:${hit.hrIds.join(",")}`),
+      ["run-nov:B-12", "run-dec:B-12"],
+      "HEADLINE: with the switch ON, every open run after the trip's published month lists it — its Expenses step confirmed or not",
+    );
+    assert.deepEqual(
+      await findOpenRunsShowingLateTrips([ref], base(false)),
+      [],
+      "with the switch OFF and no step record or reservation, no run lists it",
+    );
+    assert.deepEqual(
+      await findOpenRunsShowingLateTrips([{ ...ref, month: 10 }], base(true)),
+      [],
+      "a trip whose month was never published is not carried by anyone",
+    );
+    assert.deepEqual(
+      (
+        await findOpenRunsShowingLateTrips(
+          ["T-sep-ok"],
+          base(false, { automated_payroll_carried_expenses: { rows: [{ expense_id: "sep-ok", run_id: "run-dec" }] } }),
+        )
+      ).map((hit) => `${hit.run.id}:${hit.hrIds.join(",")}`),
+      ["run-dec:B-12"],
+      "HEADLINE: a run that RESERVED the trip at its Part 2 confirm is found by the reservation",
+    );
+  }
   const reopenedRuns: string[] = [];
   const outcomes = await resyncCarriedLateTrips(["T-sep-ok"], {
     findRuns: async () => [
@@ -869,10 +1296,65 @@ export async function runAutomatedPayrollLateExpensesTests() {
     ["resync:11", "skip:12"],
     "a run already confirmed at Part 2 is reported as a skip (its publish re-reads the trip and refuses)",
   );
+  {
+    const parked: Array<{ forRuns: unknown; changedTrips: unknown }> = [];
+    const queueRetry = (async (job: { target: { forRuns?: unknown; changedTrips?: unknown } }) => {
+      parked.push({ forRuns: job.target.forRuns, changedTrips: job.target.changedTrips });
+      return true;
+    }) as unknown as NonNullable<Parameters<typeof resyncCarriedLateTrips>[1]>["queueRetry"];
+    const ref = { tripId: "T-sep-ok", hrId: "B-12", month: 9, year: 2026 };
+    const failedReopen = await resyncCarriedLateTrips([ref], {
+      findRuns: async () => [{ run: { id: "run-nov", month: 11, year: 2026, phase: "part2" }, hrIds: ["B-12"] }],
+      reopen: async () => {
+        throw new Error("held");
+      },
+      queueRetry,
+    });
+    assert.deepEqual(
+      failedReopen.map((outcome) => [outcome.action, outcome.month, (outcome as { queued?: boolean }).queued]),
+      [["failed", 11, true]],
+      "HEADLINE: a carried trip's run that could not be reopened is PARKED for retry, not skipped",
+    );
+    assert.deepEqual(parked, [{ forRuns: [{ month: 11, year: 2026 }], changedTrips: [ref] }], "with that run's month, so its Part 2 confirm sees it waiting");
+    parked.length = 0;
+    const failedFind = await resyncCarriedLateTrips([ref], {
+      findRuns: async () => {
+        throw new Error("read down");
+      },
+      queueRetry,
+    });
+    assert.deepEqual(failedFind.map((outcome) => [outcome.action, outcome.month]), [["failed", 9]], "HEADLINE: a failed find is reported, never silent");
+    assert.equal(parked.length, 1, "and parked too");
+    parked.length = 0;
+    await resyncCarriedLateTrips([ref], {
+      findRuns: async () => {
+        throw new Error("read down");
+      },
+      queueRetry,
+      fromOutbox: true,
+    });
+    assert.equal(parked.length, 0, "a retry from the outbox never parks itself again");
+  }
+  {
+    const queued = readQueuedPayrollResync({
+      kind: "expense",
+      target: {
+        hrIds: [],
+        periods: [],
+        byPeriod: [],
+        tripIds: ["T-sep-ok"],
+        changedTrips: [{ tripId: "T-sep-ok", hrId: "B-12", month: 9, year: 2026 }],
+        forRuns: [{ month: 11, year: 2026 }],
+      },
+    });
+    assert.ok(queued, "HEADLINE: the outbox reads a parked carried trip with no period of its own");
+    assert.equal(queuedPayrollResyncIsForPeriod(queued!, 11, 2026), true, "HEADLINE: and the run it failed to reach sees it waiting");
+    assert.equal(queuedPayrollResyncIsForPeriod(queued!, 12, 2026), false, "no other run does");
+  }
   const resyncSource = stripComments(readFileSync("src/lib/automated-payroll/expense-resync.ts", "utf8"));
   assert.match(
     bodyOf(resyncSource, "export async function resyncPayrollExpenseStep("),
-    /await resyncCarriedLateTrips\(target\.tripIds \?\? \[\]\)/,
-    "every expense resync also reaches the runs carrying the trip",
+    /await resyncCarriedLateTrips\(target\.changedTrips \?\? target\.tripIds \?\? \[\], \{\s*fromOutbox: options\.fromOutbox,\s*queueRetry,/,
+    "HEADLINE: every expense resync — a retry from the outbox too — also reaches the runs carrying the trip",
   );
 }

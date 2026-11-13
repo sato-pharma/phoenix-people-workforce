@@ -30,21 +30,30 @@ import type { PayrollPeriod, RunPhase } from "./types.ts";
  *     carried from their payout month, and count in the proposed figure.
  *
  * HOW A CARRIED TRIP IS PAID EXACTLY ONCE.
- *   1. Confirming the Expenses step records what it showed (`lateExpensesShown` in the step's summary):
- *      the switch, and each carried trip's row, trip id, person and amount.
+ *   1. Confirming the Expenses step records what it showed (`lateExpensesShown` in the step's summary),
+ *      from the SAME trip list that built the figure: the switch, each carried trip's row, trip id,
+ *      person and amount, and each person's own-month approved trips (row ids and total).
  *   2. Part 2 confirm refuses when the switch moved since, or when any shown trip is no longer approved,
- *      changed amount, moved month or was paid; it refuses a figure that pays the carried trips only in
- *      part; and it RESERVES every trip it records (`automated_payroll_carried_expenses`, one row per
- *      trip, so a second run's confirm is refused). A reopen or cancel of the run releases them.
+ *      changed amount, moved month or was paid. Coverage is the snapshot's own trips plus the carried
+ *      ones — never a live re-read — and a figure that pays the carried trips only in part, or holds
+ *      money beyond its trips (typed by hand, or an undecided trip), is refused. It RESERVES every trip it
+ *      records (`automated_payroll_carried_expenses`, one row per trip, so a second run's confirm is
+ *      refused). A reopen or cancel of the run releases them.
  *   3. Publish re-reads the trips again, refuses another published run that carried one, and writes the
- *      paid ones (`lateExpensesCarried`) AND the ones of people held in this run
- *      (`lateExpensesCarriedHeld` — their money is in the held balance Held Salary Release pays) into
- *      the `published` record atomically with the phase. Both lists count as carried from then on.
+ *      paid ones (`lateExpensesCarried`), the ones of people held in this run (`lateExpensesCarriedHeld`
+ *      — their money is in the held balance Held Salary Release pays) AND the own-month trips each paid
+ *      person's figure covered (`expensesCovered`) into the `published` record atomically with the phase.
  *   4. After publish the paid rows are stamped, each only while still approved at the recorded amount.
- *   5. The list leaves out any trip in a published run's two carried lists, any trip reserved by a run
- *      of another month, and flags (never proposes) a likely duplicate of a trip already paid.
- *   An approval change to a carried trip reopens the Expenses step of the run showing it
- *   (expense-resync.ts); flipping the switch reopens it on every open run.
+ *   5. The list leaves out any trip in a published run's carried or covered lists and any trip reserved
+ *      by a run of another month. UNSTAMPED IS NOT UNPAID: a trip of a month with no covered list (every
+ *      month published before it was kept), of a month whose stamp failed or never ran, or of a person
+ *      whose published figure differed from their approved trips is listed as NEEDS CHECKING BY HAND and
+ *      never proposed. A likely duplicate of a trip already paid in any loaded month is flagged, never
+ *      proposed.
+ *   Every refusal about a carried trip (Part 2 confirm, publish) clears THAT person's saved Expenses
+ *   figure in the run and reopens the step. An approval change to a carried trip clears the person in
+ *   every open run that lists or reserves it (expense-resync.ts); flipping the switch reopens every open
+ *   run.
  *
  * THE FLOOR IS PAYOUT PERIOD SEPTEMBER 2026, and nothing older is ever listed or carried. Measured on
  * production read-only on 2026-11-13: the July 2026 and August 2026 publishes stamped NO trips, and 82
@@ -69,6 +78,10 @@ export const LATE_EXPENSES_NOT_COVERED_KEY = "lateExpensesNotCovered";
 export const LATE_EXPENSES_CARRIED_HELD_KEY = "lateExpensesCarriedHeld";
 /** What a confirmed Expenses step showed: the switch and each carried trip (step state summary). */
 export const LATE_EXPENSES_SHOWN_KEY = "lateExpensesShown";
+/** The own-month trips each published person's figure paid (the `published` record). */
+export const LATE_EXPENSES_COVERED_KEY = "expensesCovered";
+/** The audit action of the record written after publish, which says whether the paid trips were marked. */
+const PUBLISHED_FOLLOW_UP_ACTION = "published_follow_up";
 
 const SETTINGS_TABLE = "automated_payroll_settings";
 const RESERVATIONS_TABLE = "automated_payroll_carried_expenses";
@@ -125,7 +138,22 @@ export type PublishedRunForLateExpenses = {
   heldCompacts: ReadonlyArray<string>;
   /** Outstation row ids that run carried from an earlier payout month — paid, or held in its held balance. */
   carriedTripIds: ReadonlyArray<string>;
+  /**
+   * The month's own trip row ids its published figures paid (`expensesCovered`). NULL when the record has
+   * none — every month published before it was kept — and then nothing of that month is listed as owed.
+   */
+  coveredTripIds: ReadonlyArray<string> | null;
+  /** People whose published figure differed from their approved trips (the record's and the stamp's lists). */
+  differing: ReadonlyArray<LateExpenseDiffering>;
+  /** True only when the stamp after publish ran and reported no failure. */
+  stampSettled: boolean;
 };
+
+/** One published person whose Expenses figure was not the total of their approved trips. */
+export type LateExpenseDiffering = { compact: string; paid: number; tripsTotal: number };
+
+/** What publish records of the own-month trips its figures paid. */
+export type LateExpensesCovered = { tripIds: string[]; differing: LateExpenseDiffering[] };
 
 /** One approved trip whose payout month was published without it. */
 export type LateApprovedExpense = {
@@ -150,6 +178,12 @@ export type LateApprovedExpense = {
    * and never proposed or carried — HR decides it on Expense Approvals.
    */
   duplicateOf: string | null;
+  /**
+   * Set when nothing on record can say whether the trip was already paid — its month kept no list of the
+   * trips its figures paid, its stamp failed or never ran, or the person's figure differed from their
+   * approved trips. Listed with these words, never proposed or carried: HR checks it by hand.
+   */
+  needsChecking: string | null;
   row: LateExpenseRow;
 };
 
@@ -172,7 +206,10 @@ export type LateExpenseNotCoveredEntry = LateExpenseCarriedEntry & {
   reason: "not_covered" | "duplicate_held";
 };
 
-/** One employee whose figure pays the carried trips only in part — Part 2 confirm refuses it. */
+/**
+ * One employee whose figure pays the carried trips only in part, or holds money beyond their own trips
+ * plus the carried ones — Part 2 confirm refuses both.
+ */
 export type LateExpensePartialCoverage = {
   compact: string;
   paid: number;
@@ -191,9 +228,33 @@ export type LateExpenseShownTrip = {
   payoutYear: number;
   amount: number;
   expenseDate: string;
+  /** A copy of a trip beside it in the step: held out of the figure, never recorded as paid. */
+  heldDuplicate?: boolean;
 };
 
-export type LateExpensesShown = { carryOn: boolean; trips: LateExpenseShownTrip[] };
+/** One person's own-month trips a confirmed Expenses step counted: approved, not held as a duplicate. */
+export type LateExpenseShownOwn = { compact: string; hrId: string; total: number; tripIds: string[] };
+
+export type LateExpensesShown = {
+  carryOn: boolean;
+  trips: LateExpenseShownTrip[];
+  /** NULL on a record written before the own trips were kept. */
+  own: LateExpenseShownOwn[] | null;
+};
+
+/**
+ * A refusal about carried trips. Its `compacts` are the people whose saved Expenses figure must be
+ * cleared (clearAfterLateExpenseRefusal): a save writes every row, so a figure built on the trip as it was
+ * would otherwise survive the refusal and be confirmed again.
+ */
+export class LateExpenseRefusal extends Error {
+  readonly compacts: string[];
+  constructor(message: string, compacts: ReadonlyArray<string>) {
+    super(message);
+    this.name = "LateExpenseRefusal";
+    this.compacts = [...new Set(compacts.map((compact) => compactHrKey(compact)).filter(Boolean))];
+  }
+}
 
 function periodIndex(period: { month: number; year: number }): number {
   return period.year * 12 + (period.month - 1);
@@ -369,6 +430,40 @@ export async function reopenExpensesStepForRun(
   });
 }
 
+function joinNames(names: ReadonlyArray<string>): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * After a carried-trip refusal (Part 2 confirm, publish): clears the saved Expenses figure of the people it
+ * names in this run and reopens the Expenses step, exactly as the own-month resync does, so the figure
+ * built on the trip as it was cannot be confirmed again. Returns the error to throw, which says what was
+ * cleared — or that clearing failed too, so HR does it by hand. Never throws itself.
+ */
+export async function clearAfterLateExpenseRefusal(
+  runId: string,
+  refusal: LateExpenseRefusal,
+  expected: RunPhase[],
+  names: ReadonlyMap<string, string>,
+  reopen: typeof reopenExpensesStepForRun = reopenExpensesStepForRun,
+): Promise<Error> {
+  const who = joinNames(refusal.compacts.map((compact) => names.get(compact) || "An employee"));
+  try {
+    await reopen(runId, refusal.compacts, expected);
+  } catch (error) {
+    return new Error(
+      `${refusal.message} Clearing ${who ? `${who}'s` : "the"} saved Expenses figure and reopening the Expenses step ` +
+        `also failed (${error instanceof Error ? error.message : String(error)}): reopen the Expenses step and enter ` +
+        "the figure again by hand before confirming.",
+    );
+  }
+  return new Error(
+    `${refusal.message} ${who ? `${who}'s saved Expenses figure in this run was cleared and the` : "The"} Expenses ` +
+      "step was reopened, so it shows the trips as they stand now.",
+  );
+}
+
 // ---- The plan (pure) --------------------------------------------------------------------------
 
 /**
@@ -379,7 +474,14 @@ export async function reopenExpensesStepForRun(
  *   - it carries no paid stamp (`imported_payroll_batch_id` and `imported_to_payroll_at` both empty);
  *   - its payout period has a PUBLISHED run, at or after the floor and strictly before `currentPeriod`;
  *   - its employee was not held in that run (held money is paid through Held Salary Release);
- *   - no published run has already carried it (paid, or held in that run's held balance).
+ *   - no published run has already carried it (paid, or held in that run's held balance);
+ *   - its month's published figures did not pay it (the month's `expensesCovered` list).
+ *
+ * UNSTAMPED IS NOT UNPAID. A trip can be paid with no stamp: a pending trip whose amount HR typed and
+ * that was approved later, a person paid 0.00 because HR refused their trips (the stamp skips them), or
+ * a stamp that failed or was cut short. So a listed trip is marked `needsChecking` — shown, never
+ * proposed or carried — when its month has no covered list, when its month's stamp did not report
+ * success, or when the person's published figure differed from their approved trips.
  */
 export function planLateApprovedExpenses(input: {
   currentPeriod: PayrollPeriod;
@@ -390,12 +492,28 @@ export function planLateApprovedExpenses(input: {
   const current = periodIndex(input.currentPeriod);
 
   const carried = new Set<string>();
-  const byPeriod = new Map<number, { runId: string; held: Set<string> }>();
+  const byPeriod = new Map<
+    number,
+    {
+      runId: string;
+      held: Set<string>;
+      covered: Set<string> | null;
+      differing: Map<string, LateExpenseDiffering>;
+      stampSettled: boolean;
+    }
+  >();
   for (const run of input.publishedRuns) {
     for (const id of run.carriedTripIds) carried.add(String(id));
     const index = periodIndex(run);
-    const entry = byPeriod.get(index) ?? { runId: run.runId, held: new Set<string>() };
+    const entry = byPeriod.get(index) ?? {
+      runId: run.runId,
+      held: new Set<string>(),
+      covered: run.coveredTripIds ? new Set(run.coveredTripIds.map(String)) : null,
+      differing: new Map<string, LateExpenseDiffering>(),
+      stampSettled: run.stampSettled,
+    };
     for (const compact of run.heldCompacts) entry.held.add(compactHrKey(compact));
+    for (const person of run.differing) entry.differing.set(compactHrKey(person.compact), person);
     byPeriod.set(index, entry);
   }
 
@@ -414,6 +532,21 @@ export function planLateApprovedExpenses(input: {
     if (!compact || run.held.has(compact)) continue;
     const id = String(row.id ?? "");
     if (!id || carried.has(id)) continue;
+    // Paid by its own month's published figure, stamp or no stamp.
+    if (run.covered?.has(id)) continue;
+    const label = monthNameAndYear(payoutMonth, payoutYear);
+    const differs = run.differing.get(compact);
+    const needsChecking = !run.covered
+      ? `${label} was published before payroll kept a list of the trips each figure paid, so whether this ` +
+        "trip was paid cannot be told from the record. Check it by hand; it is not added to a run."
+      : !run.stampSettled
+        ? `Marking ${label}'s paid trips failed or never finished, so whether this trip was paid cannot be ` +
+          "told from the record. Check it by hand; it is not added to a run."
+        : differs
+          ? `This person's ${label} Expenses figure (${money(differs.paid)}) was not the total of their approved ` +
+            `trips (${money(differs.tripsTotal)}), so this trip may already have been paid by a typed amount. ` +
+            "Check it by hand; it is not added to a run."
+          : null;
     listed.push({
       id,
       hrId: text(row.hr_id),
@@ -421,7 +554,7 @@ export function planLateApprovedExpenses(input: {
       name: "",
       payoutMonth,
       payoutYear,
-      payoutLabel: monthNameAndYear(payoutMonth, payoutYear),
+      payoutLabel: label,
       publishedRunId: run.runId,
       amount: rowPayable(row),
       expenseDate: text(row.expense_date).slice(0, 10),
@@ -429,6 +562,7 @@ export function planLateApprovedExpenses(input: {
       fromLocation: text(row.from_location),
       toLocation: text(row.to_location) || text(row.location),
       duplicateOf: null,
+      needsChecking,
       row,
     });
   }
@@ -444,15 +578,17 @@ export function planLateApprovedExpenses(input: {
 }
 
 /**
- * Flags a listed trip that looks like a copy of one ALREADY PAID in its own payout month (approved and
- * stamped) or already IN the carrying run (an approved trip of `currentPeriod`), using the payroll
- * duplicate rule (same person, day, destination and amount). A flagged trip stays on the list, says why,
- * and is never proposed or carried. Pure.
+ * Flags a listed trip that looks like a copy of one ALREADY PAID in ANY loaded month — stamped, or in a
+ * published run's covered or carried list (`paidIds`) — or already IN the carrying run (an approved trip
+ * of `currentPeriod`), using the payroll duplicate rule (same person, day, destination and amount). A
+ * copy is often filed under another payout month than its twin, so no month is left out. A flagged trip
+ * stays on the list, says why, and is never proposed or carried. Pure.
  */
 export function flagLateExpenseDuplicates(
   listed: ReadonlyArray<LateApprovedExpense>,
   rows: ReadonlyArray<LateExpenseRow>,
   currentPeriod: PayrollPeriod,
+  paidIds: ReadonlySet<string> = new Set(),
 ): LateApprovedExpense[] {
   const current = periodIndex(currentPeriod);
   const asCandidate = (row: LateExpenseRow) => ({
@@ -463,12 +599,12 @@ export function flagLateExpenseDuplicates(
     approvedAmount: row.approved_amount,
   });
   return listed.map((trip) => {
-    const listedIndex = periodIndex({ month: trip.payoutMonth, year: trip.payoutYear });
     const others = rows.filter((row) => {
-      if (String(row.id ?? "") === trip.id || !isApproved(row)) return false;
+      const id = String(row.id ?? "");
+      if (id === trip.id || !isApproved(row)) return false;
       if (compactHrKey(row.hr_id ?? "") !== trip.compact) return false;
       const index = periodIndex({ month: Number(row.payout_month), year: Number(row.payout_year) });
-      return (index === listedIndex && isStamped(row)) || index === current;
+      return isStamped(row) || paidIds.has(id) || index === current;
     });
     if (others.length === 0) return trip;
     const holds = findDuplicateExpenseHolds([...others.map(asCandidate), asCandidate(trip.row)]);
@@ -479,7 +615,7 @@ export function flagLateExpenseDuplicates(
     const where =
       keptIndex === current
         ? `a trip already in this run's own month (${monthNameAndYear(currentPeriod.month, currentPeriod.year)})`
-        : `a trip already paid in ${trip.payoutLabel}`;
+        : `a trip already paid in ${kept ? monthNameAndYear(Number(kept.payout_month), Number(kept.payout_year)) : trip.payoutLabel}`;
     return {
       ...trip,
       duplicateOf:
@@ -506,58 +642,87 @@ export function parseLateExpensesCarried(detail: unknown, key: string = LATE_EXP
 }
 
 /**
- * Which carried trips Part 2 confirm records as paid. Pure.
+ * Which carried trips Part 2 confirm records as paid, from what the confirmed Expenses step SHOWED — its
+ * own-month trips as snapshotted plus the carried ones, never a live re-read of the month. Pure.
  *
- * An employee's carried trips are recorded ONLY when their confirmed Expenses figure is at least their
- * own month's approved payable total plus the carried total (less 0.50 for rounding). A figure at or
- * below the own trips pays none of them: they are left OUT (`notCovered`) and stay on the list. A
- * figure ABOVE the own trips but short of own plus carried pays them in part — that is `partial`, and
- * Part 2 confirm refuses it: recording would mark unpaid money paid, and leaving them out would pay the
- * part twice. A carried trip held as a duplicate is never recorded either.
+ * An employee's carried trips are recorded ONLY when their confirmed Expenses figure equals their own
+ * month's approved total plus the carried total (within 0.50 for rounding). A figure at or below the own
+ * trips pays none of them: they are left OUT (`notCovered`) and stay on the list. A figure ABOVE the own
+ * trips but short of own plus carried pays them in part — `partial`. A figure ABOVE own plus carried holds
+ * money no trip on the step explains (an amount typed by hand, or an undecided trip) — `handAdded`: it
+ * cannot show the carried trips were paid rather than the typed money. Part 2 confirm refuses both. A
+ * carried trip held as a duplicate is never recorded either.
  */
 export function planLateExpenseCoverage(input: {
-  tripsByCompact: ReadonlyMap<string, ReadonlyArray<PayoutExpenseTrip>>;
+  shown: Pick<LateExpensesShown, "trips" | "own">;
   expensesByCompact: ReadonlyMap<string, number | null | undefined>;
-}): { carried: LateExpenseCarriedEntry[]; notCovered: LateExpenseNotCoveredEntry[]; partial: LateExpensePartialCoverage[] } {
+}): {
+  carried: LateExpenseCarriedEntry[];
+  notCovered: LateExpenseNotCoveredEntry[];
+  partial: LateExpensePartialCoverage[];
+  handAdded: LateExpensePartialCoverage[];
+} {
   const carried: LateExpenseCarriedEntry[] = [];
   const notCovered: LateExpenseNotCoveredEntry[] = [];
   const partial: LateExpensePartialCoverage[] = [];
-  for (const [compact, trips] of input.tripsByCompact) {
-    if (!trips.some((trip) => trip.carriedFrom)) continue;
-    const holds = findDuplicateExpenseHolds([...trips]);
-    let own = 0;
+  const handAdded: LateExpensePartialCoverage[] = [];
+  const ownByCompact = new Map((input.shown.own ?? []).map((person) => [compactHrKey(person.compact), roundCurrency(person.total)]));
+  const tripsByCompact = new Map<string, LateExpenseShownTrip[]>();
+  for (const trip of input.shown.trips) {
+    const compact = compactHrKey(trip.compact);
+    tripsByCompact.set(compact, [...(tripsByCompact.get(compact) ?? []), trip]);
+  }
+  for (const [compact, trips] of tripsByCompact) {
+    const own = ownByCompact.get(compact) ?? 0;
     let carriedTotal = 0;
     const counted: LateExpenseCarriedEntry[] = [];
     const held: LateExpenseCarriedEntry[] = [];
     for (const trip of trips) {
-      const payable = roundCurrency(payableExpenseAmount(trip.approvedAmount, trip.total));
-      if (!trip.carriedFrom) {
-        if (!holds.has(trip.tripId) && trip.hrApproved) own = roundCurrency(own + payable);
-        continue;
-      }
       const entry: LateExpenseCarriedEntry = {
-        id: trip.carriedFrom.rowId,
+        id: trip.rowId,
         compact,
-        payoutMonth: trip.carriedFrom.month,
-        payoutYear: trip.carriedFrom.year,
-        amount: payable,
+        payoutMonth: trip.payoutMonth,
+        payoutYear: trip.payoutYear,
+        amount: roundCurrency(trip.amount),
         expenseDate: trip.expenseDate,
       };
-      if (holds.has(trip.tripId)) {
+      if (trip.heldDuplicate) {
         held.push(entry);
         continue;
       }
-      carriedTotal = roundCurrency(carriedTotal + payable);
+      carriedTotal = roundCurrency(carriedTotal + entry.amount);
       counted.push(entry);
     }
     const paid = roundCurrency(Number(input.expensesByCompact.get(compact) ?? 0) || 0);
     const needed = roundCurrency(own + carriedTotal);
-    if (counted.length > 0 && paid >= needed - COVERAGE_TOLERANCE) carried.push(...counted);
+    if (counted.length > 0 && paid > needed + COVERAGE_TOLERANCE) handAdded.push({ compact, paid, own, needed, trips: counted });
+    else if (counted.length > 0 && paid >= needed - COVERAGE_TOLERANCE) carried.push(...counted);
     else if (counted.length > 0 && paid > own + COVERAGE_TOLERANCE) partial.push({ compact, paid, own, needed, trips: counted });
     else for (const entry of counted) notCovered.push({ ...entry, paid, needed, reason: "not_covered" });
     for (const entry of held) notCovered.push({ ...entry, paid, needed, reason: "duplicate_held" });
   }
-  return { carried, notCovered, partial };
+  return { carried, notCovered, partial, handAdded };
+}
+
+/** The refusal for a figure holding money beyond its own and carried trips, naming each person and trip. */
+export function describeLateExpenseHandAdded(
+  handAdded: ReadonlyArray<LateExpensePartialCoverage>,
+  names: ReadonlyMap<string, string>,
+): string {
+  const people = handAdded.map((person) => {
+    const name = names.get(compactHrKey(person.compact)) || "An employee";
+    const trips = person.trips.map((trip) => tripWords(trip, names).replace(/^.*?'s /, "")).join(", ");
+    return (
+      `${name}'s Expenses figure ${money(person.paid)} is more than their own approved trips this month ` +
+      `(${money(person.own)}) plus the carried ${trips} (${money(person.needed)})`
+    );
+  });
+  return (
+    `Conflict: ${people.join("; ")}. The extra was typed by hand or is an undecided trip, so the figure cannot ` +
+    "show the carried trips were paid. Nothing was confirmed. Decide every undecided trip on Expense Approvals, " +
+    "make the figure exactly their trips — or only their own trips to leave the carried ones on the list — confirm " +
+    "the Expenses step, then confirm Part 2 again."
+  );
 }
 
 /** The refusal for a figure that pays carried trips in part, naming each person and trip. */
@@ -618,6 +783,79 @@ export function lateExpensesPaidAtPublish(
   return lateExpensesAtPublish(carried, entries).paid;
 }
 
+/**
+ * The own-month trips this month's published figures PAID, written with the phase (`expensesCovered`).
+ * Pure. Read from what the confirmed Expenses step showed (its own trips as snapshotted), so a trip
+ * approved after the step was confirmed is never counted as paid by a figure that did not include it.
+ *
+ * For each published (not held) person: when the figure equals their snapshotted approved trips plus the
+ * carried trips this run pays them (within 0.50), those own trips are covered. Otherwise — a typed amount,
+ * a 0.00 figure that refused their trips, money with no trip behind it — they are `differing`, and their
+ * later-approved trips of this month are listed as needing a check by hand, never carried.
+ * NULL when the step kept no snapshot of its own trips: the month is then checked by hand entirely.
+ */
+export function expensesCoveredAtPublish(input: {
+  shown: Pick<LateExpensesShown, "own"> | null;
+  entries: ReadonlyArray<{ compact: string; onHold: boolean; row: { expenses: number } }>;
+  carriedPaid: ReadonlyArray<LateExpenseCarriedEntry>;
+}): LateExpensesCovered | null {
+  if (!input.shown?.own) return null;
+  const ownByCompact = new Map(input.shown.own.map((person) => [compactHrKey(person.compact), person]));
+  const carriedByCompact = new Map<string, number>();
+  for (const entry of input.carriedPaid) {
+    const compact = compactHrKey(entry.compact);
+    carriedByCompact.set(compact, roundCurrency((carriedByCompact.get(compact) ?? 0) + entry.amount));
+  }
+  const tripIds: string[] = [];
+  const differing: LateExpenseDiffering[] = [];
+  for (const entry of input.entries) {
+    if (entry.onHold) continue;
+    const compact = compactHrKey(entry.compact);
+    if (!compact) continue;
+    const own = ownByCompact.get(compact);
+    const tripsTotal = roundCurrency((own?.total ?? 0) + (carriedByCompact.get(compact) ?? 0));
+    const paid = roundCurrency(Number(entry.row.expenses) || 0);
+    if (!own?.tripIds.length && tripsTotal === 0 && Math.abs(paid) <= COVERAGE_TOLERANCE) continue;
+    if (Math.abs(paid - tripsTotal) <= COVERAGE_TOLERANCE) tripIds.push(...(own?.tripIds ?? []));
+    else differing.push({ compact, paid, tripsTotal });
+  }
+  return { tripIds: [...new Set(tripIds)], differing };
+}
+
+/** The covered list in a `published` record; null when the record has none. */
+export function parseExpensesCovered(detail: unknown): LateExpensesCovered | null {
+  const value = (detail as Record<string, unknown> | null | undefined)?.[LATE_EXPENSES_COVERED_KEY] as
+    | { tripIds?: unknown; differing?: unknown }
+    | null
+    | undefined;
+  if (!value || typeof value !== "object" || !Array.isArray(value.tripIds)) return null;
+  return {
+    tripIds: (value.tripIds as unknown[]).map((id) => String(id ?? "").trim()).filter(Boolean),
+    differing: parseDiffering(value.differing),
+  };
+}
+
+function parseDiffering(list: unknown): LateExpenseDiffering[] {
+  if (!Array.isArray(list)) return [];
+  return (list as Array<Record<string, unknown>>)
+    .map((person) => ({
+      compact: compactHrKey(String(person?.compact ?? "")),
+      paid: roundCurrency(Number(person?.paid ?? 0) || 0),
+      tripsTotal: roundCurrency(Number(person?.tripsTotal ?? 0) || 0),
+    }))
+    .filter((person) => person.compact);
+}
+
+/**
+ * What the record written after publish says of the stamp: settled only when it ran and reported no
+ * failure. A missing record (the follow-up never ran) or one carrying an error is NOT settled. Pure.
+ */
+export function parseStampFollowUp(detail: unknown): { settled: boolean; differing: LateExpenseDiffering[] } {
+  const stamp = (detail as Record<string, unknown> | null | undefined)?.expenseStamp as Record<string, unknown> | null | undefined;
+  if (!stamp || typeof stamp !== "object" || "error" in stamp) return { settled: false, differing: [] };
+  return { settled: true, differing: parseDiffering(stamp.differing) };
+}
+
 /** The ids another published run already carried. Two runs must never pay the same late trip. Pure. */
 export function lateExpensesAlreadyCarried(
   ids: ReadonlyArray<string>,
@@ -635,15 +873,32 @@ export function lateExpensesAlreadyCarried(
 
 // ---- What the Expenses step showed (pure) ------------------------------------------------------
 
-/** The record a confirmed Expenses step keeps of its carried trips. Pure. */
+/**
+ * The record a confirmed Expenses step keeps: its carried trips, and each run member's own-month trips
+ * that count in the proposed figure (approved, not held as a duplicate) — built from the SAME trip map the
+ * step's figure was built from, never a second read. Pure.
+ */
 export function lateExpensesShownFrom(
   carryOn: boolean,
   tripsByCompact: ReadonlyMap<string, ReadonlyArray<PayoutExpenseTrip>>,
+  memberCompacts?: ReadonlySet<string>,
 ): LateExpensesShown {
   const trips: LateExpenseShownTrip[] = [];
+  const own: LateExpenseShownOwn[] = [];
   for (const [compact, list] of tripsByCompact) {
+    if (memberCompacts && !memberCompacts.has(compact)) continue;
+    const holds = findDuplicateExpenseHolds([...list]);
+    let ownTotal = 0;
+    const ownIds: string[] = [];
     for (const trip of list) {
-      if (!trip.carriedFrom) continue;
+      const amount = roundCurrency(payableExpenseAmount(trip.approvedAmount, trip.total));
+      if (!trip.carriedFrom) {
+        if (trip.hrApproved && !holds.has(trip.tripId)) {
+          ownTotal = roundCurrency(ownTotal + amount);
+          if (trip.rowId) ownIds.push(trip.rowId);
+        }
+        continue;
+      }
       trips.push({
         rowId: trip.carriedFrom.rowId,
         tripId: trip.tripId,
@@ -651,21 +906,35 @@ export function lateExpensesShownFrom(
         compact,
         payoutMonth: trip.carriedFrom.month,
         payoutYear: trip.carriedFrom.year,
-        amount: roundCurrency(payableExpenseAmount(trip.approvedAmount, trip.total)),
+        amount,
         expenseDate: trip.expenseDate,
+        ...(holds.has(trip.tripId) ? { heldDuplicate: true } : {}),
       });
     }
+    if (ownIds.length > 0 || ownTotal > 0) {
+      own.push({ compact, hrId: text(list[0]?.hrId) || compact, total: ownTotal, tripIds: ownIds });
+    }
   }
-  return { carryOn, trips };
+  return { carryOn, trips, own };
 }
 
 /** The record in a step state's summary; null when the step was confirmed before it was kept. */
 export function parseLateExpensesShown(summary: unknown): LateExpensesShown | null {
   const value = (summary as Record<string, unknown> | null | undefined)?.[LATE_EXPENSES_SHOWN_KEY] as
-    | { carryOn?: unknown; trips?: unknown }
+    | { carryOn?: unknown; trips?: unknown; own?: unknown }
     | undefined;
   if (!value || typeof value !== "object") return null;
   const trips = Array.isArray(value.trips) ? (value.trips as Array<Record<string, unknown>>) : [];
+  const own = Array.isArray(value.own)
+    ? (value.own as Array<Record<string, unknown>>)
+        .map((person) => ({
+          compact: compactHrKey(String(person?.compact ?? "")),
+          hrId: String(person?.hrId ?? "").trim(),
+          total: roundCurrency(Number(person?.total ?? 0) || 0),
+          tripIds: Array.isArray(person?.tripIds) ? (person.tripIds as unknown[]).map((id) => String(id ?? "").trim()).filter(Boolean) : [],
+        }))
+        .filter((person) => person.compact)
+    : null;
   return {
     carryOn: value.carryOn === true,
     trips: trips
@@ -678,8 +947,10 @@ export function parseLateExpensesShown(summary: unknown): LateExpensesShown | nu
         payoutYear: Number(trip?.payoutYear ?? 0),
         amount: roundCurrency(Number(trip?.amount ?? 0) || 0),
         expenseDate: String(trip?.expenseDate ?? ""),
+        ...(trip?.heldDuplicate === true ? { heldDuplicate: true } : {}),
       }))
       .filter((trip) => trip.rowId && trip.compact),
+    own,
   };
 }
 
@@ -691,10 +962,12 @@ export function parseLateExpensesShown(summary: unknown): LateExpensesShown | nu
 export function assertLateExpensesShownMatchesSwitch(carryOn: boolean, shown: LateExpensesShown | null): void {
   const shownOn = shown?.carryOn === true;
   if (shownOn === carryOn) return;
-  throw new Error(
+  // The people whose figure counted carried trips under the old setting.
+  throw new LateExpenseRefusal(
     `Conflict: the switch for expenses approved after their month was paid is ${carryOn ? "ON" : "OFF"} now, but ` +
       `the Expenses step was confirmed while it was ${shownOn ? "ON" : "OFF"}. Nothing was confirmed. Reload the ` +
       "Expenses step, confirm it again, then confirm Part 2.",
+    (shown?.trips ?? []).map((trip) => trip.compact),
   );
 }
 
@@ -820,7 +1093,12 @@ export async function assertLateExpensesUnchanged(
     client,
   );
   const changes = lateExpenseChanges(expected, current);
-  if (changes.length > 0) throw new Error(describeLateExpenseChanges(changes, names, stage));
+  if (changes.length > 0) {
+    throw new LateExpenseRefusal(
+      describeLateExpenseChanges(changes, names, stage),
+      changes.map((change) => change.entry.compact),
+    );
+  }
   return current;
 }
 
@@ -841,23 +1119,25 @@ export async function loadPublishedRunsForLateExpenses(client?: LateExpenseDb): 
     .filter((run) => run.runId && periodIndex(run) >= floor);
   if (recent.length === 0) return [];
 
-  const audit = await readAllPages<{ run_id: string; detail: unknown; created_at: string }>(
+  const audit = await readAllPages<{ run_id: string; action: string; detail: unknown; created_at: string }>(
     (from, to) =>
       db
         .from("automated_payroll_audit")
-        .select("run_id,detail,created_at")
-        .eq("action", "published")
+        .select("run_id,action,detail,created_at")
+        .in("action", ["published", PUBLISHED_FOLLOW_UP_ACTION])
         .in("run_id", recent.map((run) => run.runId))
         .order("created_at", { ascending: false })
         .range(from, to),
     "the published payroll records",
   );
   const newest = new Map<string, { detail: unknown; createdAt: string }>();
+  const newestFollowUp = new Map<string, { detail: unknown; createdAt: string }>();
   for (const row of audit) {
     const runId = String(row.run_id ?? "");
     const createdAt = String(row.created_at ?? "");
-    const seen = newest.get(runId);
-    if (!seen || createdAt > seen.createdAt) newest.set(runId, { detail: row.detail, createdAt });
+    const into = row.action === PUBLISHED_FOLLOW_UP_ACTION ? newestFollowUp : newest;
+    const seen = into.get(runId);
+    if (!seen || createdAt > seen.createdAt) into.set(runId, { detail: row.detail, createdAt });
   }
 
   return recent.map((run) => {
@@ -866,6 +1146,9 @@ export async function loadPublishedRunsForLateExpenses(client?: LateExpenseDb): 
     if (!record) throw conflict(`the ${label} payroll run is published but its record of who was held is missing`);
     const held = parsePublishedHoldDetail(record.detail).held;
     if (!held) throw conflict(`the ${label} payroll run's record does not say who was held`);
+    const covered = parseExpensesCovered(record.detail);
+    // No follow-up record, or one whose stamp failed: whether the month's trips were marked is unknown.
+    const followUp = parseStampFollowUp(newestFollowUp.get(run.runId)?.detail);
     return {
       ...run,
       heldCompacts: held.map((person) => person.compact),
@@ -874,6 +1157,9 @@ export async function loadPublishedRunsForLateExpenses(client?: LateExpenseDb): 
         ...parseLateExpensesCarried(record.detail),
         ...parseLateExpensesCarried(record.detail, LATE_EXPENSES_CARRIED_HELD_KEY),
       ].map((entry) => entry.id),
+      coveredTripIds: covered?.tripIds ?? null,
+      differing: [...(covered?.differing ?? []), ...followUp.differing],
+      stampSettled: followUp.settled,
     };
   });
 }
@@ -945,7 +1231,9 @@ export async function loadLateApprovedExpenses(
   const reservedElsewhere = await loadReservedElsewhere(planned.map((trip) => trip.id), currentPeriod, db);
   const open = planned.filter((trip) => !reservedElsewhere.has(trip.id));
   if (open.length === 0) return open;
-  const listed = flagLateExpenseDuplicates(open, [...rows, ...(await readMonth(currentPeriod))], currentPeriod);
+  // Every trip any published run paid, stamped or not: a copy is compared against all of them.
+  const paidIds = new Set(publishedRuns.flatMap((run) => [...run.carriedTripIds, ...(run.coveredTripIds ?? [])]));
+  const listed = flagLateExpenseDuplicates(open, [...rows, ...(await readMonth(currentPeriod))], currentPeriod, paidIds);
 
   const employees = await readAllPages<{ hr_id: string | null; full_name: string | null }>(
     (from, to) => db.from("employees").select("hr_id,full_name").order("hr_id", { ascending: true }).range(from, to),
@@ -986,10 +1274,12 @@ export async function assertLateExpensesNotCarriedElsewhere(
   );
   if (clashes.length === 0) return;
   const months = [...new Set(clashes.map((clash) => monthNameAndYear(clash.month, clash.year)))].join(", ");
-  throw new Error(
+  const clashing = new Set(clashes.map((clash) => clash.id));
+  throw new LateExpenseRefusal(
     `Conflict: ${clashes.length} late-approved outstation trip${clashes.length === 1 ? "" : "s"} this run would pay ` +
       `${clashes.length === 1 ? "was" : "were"} already paid by the ${months} run. Nothing was published. Reopen ` +
       "Part 2, take the trip out of the Expenses figure, and confirm again.",
+    carried.filter((entry) => clashing.has(entry.id)).map((entry) => entry.compact),
   );
 }
 
@@ -1053,9 +1343,10 @@ export async function reserveLateExpenses(
       const what = entry ? tripWords(entry, names) : "A carried trip";
       return `${what} is already being paid by the ${monthOf.get(String(row.run_id)) ?? "another"} payroll run`;
     });
-    throw new Error(
+    throw new LateExpenseRefusal(
       `Conflict: ${lines.join("; ")}. Nothing was confirmed. Reload the Expenses step — the trip is no longer ` +
         "offered here — confirm it again, then confirm Part 2.",
+      holders.map((row) => byId.get(String(row.expense_id))?.compact ?? ""),
     );
   };
 
@@ -1063,7 +1354,16 @@ export async function reserveLateExpenses(
   const { error } = await db.from(RESERVATIONS_TABLE).insert(ids.map((id) => ({ expense_id: id, run_id: runId })));
   if (error) {
     // Another run's confirm took one in the moment between: say which.
-    if ((error as { code?: string }).code === "23505") await refuseHeldElsewhere();
+    if ((error as { code?: string }).code === "23505") {
+      await refuseHeldElsewhere();
+      // The holder released it again in the meantime: still a clash over a carried trip, so the figure
+      // built on it is cleared like any other.
+      throw new LateExpenseRefusal(
+        "Conflict: another payroll run set aside one of the carried trips at the same moment, so nothing was " +
+          "confirmed. Reload the Expenses step, confirm it again, then confirm Part 2.",
+        carried.map((entry) => entry.compact),
+      );
+    }
     throw new Error(
       "Conflict: the carried outstation trips could not be reserved for this run, so nothing was confirmed. " +
         `Confirm Part 2 again in a moment. (${error.message})`,
@@ -1096,41 +1396,90 @@ export async function releaseLateExpenseReservations(
   }
 }
 
+/** A trip whose decision moved, as the resync knows it: its trip id, and its person and payout month when known. */
+export type LateTripRef = { tripId: string; hrId?: string | null; month?: number | null; year?: number | null };
+
 /**
- * The open runs (not published or cancelled) whose confirmed Expenses step showed any of these trips as
- * carried, with the people to clear. expense-resync.ts reopens them when a trip's approval changes:
- * the trip's own payout month is published, so the ordinary resync never reaches the run carrying it.
+ * Every open run (Part 1, Part 2 or ready — not published or cancelled) that LISTS or RESERVES any of these
+ * trips as carried, with the people whose figure to clear. expense-resync.ts clears them when a trip's
+ * decision moves: the trip's own payout month is published, so the ordinary resync never reaches them.
+ *
+ * A run lists the trip when its confirmed Expenses step showed it, or — step confirmed or not — when the
+ * switch is ON and the trip's payout month is an earlier, published month at or after the floor, so the
+ * step proposes it to whoever saves it. A run reserves it when its Part 2 confirm took it. Throws on any
+ * failed read.
  */
 export async function findOpenRunsShowingLateTrips(
-  tripIds: ReadonlyArray<string>,
+  trips: ReadonlyArray<string | LateTripRef>,
   client?: LateExpenseDb,
 ): Promise<Array<{ run: { id: string; month: number; year: number; phase: RunPhase }; hrIds: string[] }>> {
-  const wanted = new Set(tripIds.map((id) => String(id).trim()).filter(Boolean));
+  const refs = trips
+    .map((trip) => (typeof trip === "string" ? { tripId: trip } : trip))
+    .map((trip) => ({ ...trip, tripId: String(trip.tripId ?? "").trim() }))
+    .filter((trip) => trip.tripId);
+  const wanted = new Set(refs.map((trip) => trip.tripId));
   if (wanted.size === 0) return [];
   const db = client ?? getSupabaseAdmin();
   const runs = await readAllPages<{ id: string; month: number; year: number; phase: RunPhase }>(
     (from, to) =>
-      db.from("automated_payroll_runs").select("id,month,year,phase").in("phase", ["part1", "part2", "ready"]).order("id", { ascending: true }).range(from, to),
+      db
+        .from("automated_payroll_runs")
+        .select("id,month,year,phase")
+        .in("phase", ["part1", "part2", "ready", "published"])
+        .order("id", { ascending: true })
+        .range(from, to),
     "the open payroll runs",
   );
-  if (runs.length === 0) return [];
+  const open = runs.filter((run) => run.phase !== "published");
+  if (open.length === 0) return [];
+  const publishedPeriods = new Set(
+    runs.filter((run) => run.phase === "published").map((run) => periodIndex({ month: Number(run.month), year: Number(run.year) })),
+  );
+  const openIds = open.map((run) => String(run.id));
   const states = await readAllPages<{ run_id: string; summary: unknown }>(
     (from, to) =>
       db
         .from("automated_payroll_step_state")
         .select("run_id,summary")
         .eq("step_key", "p2_expenses")
-        .in("run_id", runs.map((run) => String(run.id)))
+        .in("run_id", openIds)
         .order("run_id", { ascending: true })
         .range(from, to),
     "the open runs' Expenses steps",
   );
+  const reserved = await readAllPages<{ expense_id: string; run_id: string }>(
+    (from, to) =>
+      db.from(RESERVATIONS_TABLE).select("expense_id,run_id").in("run_id", openIds).order("expense_id", { ascending: true }).range(from, to),
+    "the trips the open payroll runs set aside",
+  );
+  const reservedRows = reserved.length
+    ? await loadLateExpenseRowsById(reserved.map((row) => String(row.expense_id)), db)
+    : [];
+  const reservedRowById = new Map(reservedRows.map((row) => [String(row.id), row]));
+  const carryOn = await getCarryLateExpensesSetting(db);
+  const floor = periodIndex(LATE_EXPENSE_CARRY_FLOOR);
+
   const hits: Array<{ run: { id: string; month: number; year: number; phase: RunPhase }; hrIds: string[] }> = [];
-  for (const run of runs) {
+  for (const run of open) {
+    const runIndex = periodIndex({ month: Number(run.month), year: Number(run.year) });
+    const people = new Set<string>();
     const shown = parseLateExpensesShown(states.find((state) => String(state.run_id) === String(run.id))?.summary);
-    const hrIds = [...new Set((shown?.trips ?? []).filter((trip) => wanted.has(trip.tripId)).map((trip) => trip.hrId || trip.compact))];
-    if (hrIds.length > 0) {
-      hits.push({ run: { id: String(run.id), month: Number(run.month), year: Number(run.year), phase: run.phase }, hrIds });
+    for (const trip of shown?.trips ?? []) if (wanted.has(trip.tripId)) people.add(trip.hrId || trip.compact);
+    for (const row of reserved) {
+      if (String(row.run_id) !== String(run.id)) continue;
+      const trip = reservedRowById.get(String(row.expense_id));
+      if (trip && wanted.has(text(trip.trip_id)) && text(trip.hr_id)) people.add(text(trip.hr_id));
+    }
+    if (carryOn) {
+      for (const trip of refs) {
+        const hrId = text(trip.hrId);
+        if (!hrId || !Number.isInteger(Number(trip.month)) || !Number.isInteger(Number(trip.year))) continue;
+        const index = periodIndex({ month: Number(trip.month), year: Number(trip.year) });
+        if (index >= floor && index < runIndex && publishedPeriods.has(index)) people.add(hrId);
+      }
+    }
+    if (people.size > 0) {
+      hits.push({ run: { id: String(run.id), month: Number(run.month), year: Number(run.year), phase: run.phase }, hrIds: [...people] });
     }
   }
   return hits;
@@ -1168,6 +1517,7 @@ export async function getLateExpensesOverview(
       fromLocation: trip.fromLocation,
       toLocation: trip.toLocation,
       duplicateOf: trip.duplicateOf,
+      needsChecking: trip.needsChecking,
     })),
   };
 }

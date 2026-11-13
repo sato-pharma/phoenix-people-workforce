@@ -3,7 +3,7 @@ import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 
 import { clearDraftExpenses, findActiveRun, listStepStates, upsertStepState } from "./draft-store.ts";
-import { findOpenRunsShowingLateTrips, reopenExpensesStepForRun } from "./late-expenses.ts";
+import { findOpenRunsShowingLateTrips, reopenExpensesStepForRun, type LateTripRef } from "./late-expenses.ts";
 import { maybeDrainPayrollResyncOutbox, queuePayrollResyncRetry } from "./resync-outbox.ts";
 import { holdRun } from "./run-hold.ts";
 import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
@@ -61,6 +61,16 @@ export type ExpenseResyncTarget = {
    * resync parked before it existed still reads.
    */
   tripIds?: string[];
+  /**
+   * Each moved trip with its person and payout month, so the run carrying it is found even when its
+   * Expenses step was never confirmed (late-expenses.ts findOpenRunsShowingLateTrips).
+   */
+  changedTrips?: LateTripRef[];
+  /**
+   * A parked retry of a carried trip: the months of the runs it failed to reach, so that run's Part 2
+   * confirm sees it waiting (resync-outbox.ts).
+   */
+  forRuns?: Array<{ month: number; year: number }>;
 };
 
 export type ExpenseResyncSkipReason = "no_active_run" | "part2_already_confirmed";
@@ -127,6 +137,7 @@ export function expenseDecisionsThatChanged(
   const periods = new Map<string, { month: number; year: number }>();
   const byPeriod = new Map<string, { month: number; year: number; hrIds: Set<string> }>();
   const tripIds = new Set<string>();
+  const changedTrips = new Map<string, LateTripRef>();
 
   // One call per side of a change, so an employee is filed under the period of THAT row. A trip
   // moving between months is noted once per side, which files the employee under both months.
@@ -136,6 +147,9 @@ export function expenseDecisionsThatChanged(
     if (row.tripId) tripIds.add(row.tripId);
     const month = Number(row.payoutMonth);
     const year = Number(row.payoutYear);
+    if (row.tripId) {
+      changedTrips.set(`${row.tripId}|${year}-${month}`, { tripId: row.tripId, hrId: hrId || null, month, year });
+    }
     if (Number.isFinite(month) && Number.isFinite(year) && month > 0 && year > 0) {
       const key = periodKey(month, year);
       periods.set(key, { month, year });
@@ -185,36 +199,71 @@ export function expenseDecisionsThatChanged(
       hrIds: Array.from(entry.hrIds),
     })),
     tripIds: Array.from(tripIds),
+    changedTrips: Array.from(changedTrips.values()),
   };
 }
 
 /**
- * The runs carrying a moved trip from an earlier, published payout month (late-expenses.ts). Each open
- * run whose confirmed Expenses step showed the trip has that person's figure cleared and the step
- * reopened, exactly as for the month's own trips; a run already confirmed at Part 2 is reported as the
- * same skip (its publish re-reads the trip and refuses). Never throws, like the rest of the resync.
+ * The runs carrying a moved trip from an earlier, published payout month (late-expenses.ts). Every open
+ * run in Part 1 or Part 2 that lists or reserves the trip — its Expenses step confirmed or not — has that
+ * person's figure cleared and the step reopened, exactly as for the month's own trips; a run already
+ * confirmed at Part 2 is reported as the same skip (its publish re-reads the trip, refuses, and clears the
+ * figure). A run that cannot be reached is PARKED for retry like a month's own trips, unless this is that
+ * retry. Never throws, like the rest of the resync.
  */
 export async function resyncCarriedLateTrips(
-  tripIds: ReadonlyArray<string>,
+  trips: ReadonlyArray<string | LateTripRef>,
   deps: {
     findRuns?: typeof findOpenRunsShowingLateTrips;
     reopen?: typeof reopenExpensesStepForRun;
+    queueRetry?: typeof queuePayrollResyncRetry;
+    fromOutbox?: boolean;
   } = {},
 ): Promise<ExpenseResyncOutcome[]> {
-  if (tripIds.length === 0) return [];
+  const refs: LateTripRef[] = trips
+    .map((trip) => (typeof trip === "string" ? { tripId: trip } : trip))
+    .filter((trip) => Boolean(trip.tripId));
+  if (refs.length === 0) return [];
   const findRuns = deps.findRuns ?? findOpenRunsShowingLateTrips;
   const reopen = deps.reopen ?? reopenExpensesStepForRun;
+  const queueRetry = deps.queueRetry ?? queuePayrollResyncRetry;
+  const park = async (error: unknown, forRuns: Array<{ month: number; year: number }>): Promise<boolean> =>
+    deps.fromOutbox
+      ? false
+      : queueRetry(
+          {
+            kind: "expense",
+            target: {
+              hrIds: [],
+              periods: [],
+              byPeriod: [],
+              tripIds: [...new Set(refs.map((trip) => trip.tripId))],
+              changedTrips: refs,
+              forRuns,
+            },
+          },
+          error,
+        ).catch(() => false);
+  // The month a failure is reported under: the trip's own payout month, the one HR decided it for.
+  const first = refs.find((trip) => Number(trip.month) > 0 && Number(trip.year) > 0);
   let hits: Awaited<ReturnType<typeof findOpenRunsShowingLateTrips>>;
   try {
-    hits = await findRuns(tripIds);
+    hits = await findRuns(refs);
   } catch (error) {
-    // Part 2 confirm and publish re-read every carried trip and refuse a changed one, so this is logged
-    // loudly rather than parked: nothing can be paid on the stale figure.
+    const queued = await park(error, []);
     logError("Automated payroll: could not find the runs carrying a changed late-approved trip", {
-      labels: { event: "automated_payroll_carried_expense_resync_failed", trips: tripIds.length },
+      labels: { event: "automated_payroll_carried_expense_resync_failed", trips: refs.length, queued, retry: Boolean(deps.fromOutbox) },
       error,
     });
-    return [];
+    return [
+      {
+        action: "failed",
+        month: Number(first?.month ?? 0),
+        year: Number(first?.year ?? 0),
+        message: error instanceof Error ? error.message : "Unknown error",
+        queued,
+      },
+    ];
   }
   const outcomes: ExpenseResyncOutcome[] = [];
   for (const { run, hrIds } of hits) {
@@ -229,11 +278,19 @@ export async function resyncCarriedLateTrips(
       const { clearedHrIds, reopenedStep } = await reopen(run.id, hrIds, ["part1", "part2"]);
       outcomes.push({ action: "resync", month: run.month, year: run.year, runId: run.id, clearedHrIds, reopenedStep });
     } catch (error) {
+      // Parked with the run's month, so that run's Part 2 confirm sees the decision still waiting.
+      const queued = await park(error, [{ month: run.month, year: run.year }]);
       logError("Automated payroll: expense step resync failed for a carried late-approved trip", {
-        labels: { event: "automated_payroll_expense_resync_failed", runId: run.id, month: run.month, year: run.year },
+        labels: { event: "automated_payroll_expense_resync_failed", runId: run.id, month: run.month, year: run.year, queued },
         error,
       });
-      outcomes.push({ action: "failed", month: run.month, year: run.year, message: error instanceof Error ? error.message : "Unknown error" });
+      outcomes.push({
+        action: "failed",
+        month: run.month,
+        year: run.year,
+        message: error instanceof Error ? error.message : "Unknown error",
+        queued,
+      });
     }
   }
   return outcomes;
@@ -270,8 +327,12 @@ export async function resyncPayrollExpenseStep(
   if (target.byPeriod.length === 0 && !target.tripIds?.length) return [];
   const queueRetry = options.queueRetry ?? queuePayrollResyncRetry;
 
-  // A carried trip's run first: its own payout month is published, so the loop below never reaches it.
-  const outcomes: ExpenseResyncOutcome[] = options.fromOutbox ? [] : await resyncCarriedLateTrips(target.tripIds ?? []);
+  // A carried trip's run first: its own payout month is published, so the loop below never reaches it. A
+  // retry from the outbox runs it too (a parked carried trip has no period of its own), without parking again.
+  const outcomes: ExpenseResyncOutcome[] = await resyncCarriedLateTrips(target.changedTrips ?? target.tripIds ?? [], {
+    fromOutbox: options.fromOutbox,
+    queueRetry,
+  });
   for (const period of target.byPeriod) {
     try {
       const run = await findActiveRun(period.month, period.year);

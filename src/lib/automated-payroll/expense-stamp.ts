@@ -228,9 +228,14 @@ export type ExpenseStampAudit =
 /**
  * What publishToPayslips calls, right after the run is marked published. It NEVER throws, for the
  * same reason as the payslip notice there: the money and the payslips exist by then, so a failed
- * stamp must not present a completed payroll as failed or invite a second publish. Nothing is paid
- * twice while a stamp is missing — the legacy import already refuses a wizard-paid month — so a
- * failure is logged loudly and returned for the run's audit row instead.
+ * stamp must not present a completed payroll as failed or invite a second publish. A failure is logged
+ * loudly and returned for the run's `published_follow_up` audit row instead.
+ *
+ * A MISSING STAMP IS NOT HARMLESS. The legacy import refuses a wizard-paid month, but the late-expense list
+ * (late-expenses.ts) reads approved trips of published months, so an unmarked paid trip could be offered
+ * again. That list therefore never trusts the stamp alone: it reads the `expensesCovered` list written
+ * with the phase, and a month whose follow-up row is missing or records this error is shown as needing a
+ * check by hand — never carried.
  */
 export async function recordPaidExpenseStamp(input: {
   actorHrId: string;
