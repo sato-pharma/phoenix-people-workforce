@@ -11,6 +11,7 @@ import {
 import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
 import { stepDefinition } from "@/lib/automated-payroll/step-definitions";
 import type {
@@ -44,6 +45,14 @@ import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
 import { SectionHeading } from "./section-shell";
 import { SelectField } from "./select-field";
+
+/**
+ * A reopen refused because finance already downloaded a bank file starts with these words, and the
+ * shortest reason that lets it through — both mirror bank-file-downloads.ts (a server module the page
+ * cannot import), and tests/automated-payroll-bank-file-download-guard.test.ts pins them equal.
+ */
+const DOWNLOAD_REFUSAL_OPENING = "finance has already downloaded";
+const OVERRIDE_MIN_REASON = 10;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -144,7 +153,21 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     label: string;
     url: string;
     ok: string;
+    /** Reopen Part 1 / Part 2: refused after a bank-file download unless a reason is given (REC-035). */
+    overridable?: boolean;
   } | null>(null);
+  /**
+   * The reopen the server refused because finance already downloaded a bank file (bank-file-downloads.ts),
+   * waiting for the reason that lets it through. The server keeps the reason on the reopen's audit row.
+   */
+  const [downloadOverride, setDownloadOverride] = useState<{
+    title: string;
+    label: string;
+    url: string;
+    ok: string;
+    message: string;
+  } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
   // The confirm sits with the page's messages, far above the Part 2 buttons that open it. Measured on
   // production: pressing "Unconfirm Part 1" opened it out of sight, so the click looked dead. Bring it
   // into view, and hand the keyboard to it.
@@ -154,6 +177,12 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     dialog?.scrollIntoView({ block: "center", behavior: "smooth" });
     dialog?.focus({ preventScroll: true });
   }, [pendingAction]);
+  useEffect(() => {
+    if (!downloadOverride) return;
+    const dialog = document.getElementById("payroll-download-override");
+    dialog?.scrollIntoView({ block: "center", behavior: "smooth" });
+    dialog?.focus({ preventScroll: true });
+  }, [downloadOverride]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [recon, setRecon] = useState<ReconciliationTotals | null>(null);
@@ -399,6 +428,46 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed.");
       if (okMessage) setNotice(okMessage);
+      await loadRun(month, year);
+      return data;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Action failed.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Reopen Part 1 or Part 2. A refusal because finance already downloaded a bank file opens the override
+   * prompt instead of a plain error; sending it again with a reason (`override`) lets the reopen through.
+   */
+  const postReopen = async (
+    action: { title: string; label: string; url: string; ok: string },
+    override?: { reason: string },
+  ) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(action.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(override ? { overrideDownloaded: true, reason: override.reason } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const message = String(data.error ?? "Action failed.");
+        if (res.status === 409 && message.startsWith(DOWNLOAD_REFUSAL_OPENING)) {
+          setDownloadOverride({ ...action, message });
+          if (!override) setOverrideReason("");
+          return null;
+        }
+        throw new Error(message);
+      }
+      setDownloadOverride(null);
+      setOverrideReason("");
+      setNotice(action.ok);
       await loadRun(month, year);
       return data;
     } catch (actionError) {
@@ -809,12 +878,54 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               onClick={() => {
                 const action = pendingAction;
                 setPendingAction(null);
-                void post(action.url, action.ok);
+                if (action.overridable) void postReopen(action);
+                else void post(action.url, action.ok);
               }}
             >
               {pendingAction.label}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingAction(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {downloadOverride ? (
+        <div id="payroll-download-override" tabIndex={-1} role="alertdialog" aria-labelledby="payroll-download-override-title" className="outline-none border border-red-300 border-l-4 border-l-red-600 bg-red-50 px-4 py-3 text-sm text-red-950">
+          <div id="payroll-download-override-title" className="font-black">Finance already has this run&apos;s bank files</div>
+          <p className="mt-1 break-words">{downloadOverride.message}</p>
+          <FormField
+            className="mt-3"
+            label="Why reopen anyway"
+            required
+            htmlFor="payroll-download-override-reason"
+            hint={`At least ${OVERRIDE_MIN_REASON} characters. Kept on the run's record with your name.`}
+          >
+            <Input
+              id="payroll-download-override-reason"
+              value={overrideReason}
+              onChange={(event) => setOverrideReason(event.target.value)}
+              placeholder="e.g. the bank rejected the file and finance will send a new one"
+            />
+          </FormField>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="border border-red-700 bg-red-700 text-white hover:bg-red-800"
+              disabled={busy || overrideReason.trim().length < OVERRIDE_MIN_REASON}
+              onClick={() => void postReopen(downloadOverride, { reason: overrideReason.trim() })}
+            >
+              {downloadOverride.label} anyway
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setDownloadOverride(null);
+                setOverrideReason("");
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -1260,6 +1371,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                               label: "Unconfirm Part 1",
                               url: `/api/automated-payroll/runs/${run.id}/part1/unconfirm`,
                               ok: "Part 1 unconfirmed. First Part values cleared for recompute.",
+                              overridable: true,
                             })
                           }
                         >
@@ -1279,6 +1391,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                               label: "Reopen Part 2",
                               url: `/api/automated-payroll/runs/${run.id}/part2/unconfirm`,
                               ok: "Part 2 reopened. Steps are editable again; confirm Part 2 to re-lock the sheet.",
+                              overridable: true,
                             })
                           }
                         >

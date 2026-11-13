@@ -18,6 +18,7 @@ import {
   expensesCoveredAtPublish,
   findOpenRunsShowingLateTrips,
   LateExpenseRefusal,
+  refusalKeepingConfirmedFigures,
   parseStampFollowUp,
   flagLateExpenseDuplicates,
   getCarryLateExpensesSetting,
@@ -366,6 +367,32 @@ export async function runAutomatedPayrollLateExpensesTests() {
     undefined,
     "HEADLINE: a trip needing a check by hand is never proposed in the Expenses step",
   );
+  // REC-035: a figure typed in a LATER published month may have paid the trip by hand while the switch was OFF.
+  {
+    const withOct = (differing: PublishedRunForLateExpenses["differing"]) =>
+      planLateApprovedExpenses({
+        currentPeriod: NOVEMBER,
+        publishedRuns: publishedRuns.map((run) => (run.runId === "run-oct" ? { ...run, differing } : run)),
+        rows,
+      });
+    const laterTyped = withOct([{ compact: "b12", paid: 900, tripsTotal: 0 }]);
+    assert.match(
+      String(laterTyped.find((entry) => entry.id === "sep-ok")?.needsChecking),
+      /October 2026 Expenses figure \(900\.00\) was not the total of their approved trips \(0\.00\), so this September 2026 trip may have been paid by hand in October 2026/,
+      "HEADLINE: a person whose figure in a LATER published month differed has their earlier listed trips marked for a check by hand",
+    );
+    assert.deepEqual(
+      mergeCarriedLateTrips(new Map(), laterTyped.filter((entry) => entry.compact === "b12"), new Set(["b12"])).get("b12"),
+      undefined,
+      "HEADLINE: and they are never proposed once the switch is ON",
+    );
+    assert.equal(laterTyped.find((entry) => entry.id === "oct-ok")?.needsChecking, null, "another person's trips are untouched");
+    assert.equal(
+      withSep({ differing: [{ compact: "b77", paid: 50, tripsTotal: 0 }] }).find((entry) => entry.id === "oct-ok")?.needsChecking,
+      null,
+      "an EARLIER month's figure never marks a later trip",
+    );
+  }
 
   // LIKELY DUPLICATES (fix 7): a copy of a trip already paid in its own month, or already in the carrying
   // run, is flagged and never proposed.
@@ -1135,11 +1162,20 @@ export async function runAutomatedPayrollLateExpensesTests() {
     /throw await clearAfterLateExpenseRefusal\(runId, refusal, expected, lateExpenseNames\(rows\)\);/,
     "the refusal is replaced by the one saying what was cleared",
   );
+  // REC-035: at publish the run is Part 2-confirmed and its files may be at the bank — nothing is cleared.
   assert.match(
     publish,
-    /\}\)\.catch\(\(publishError: unknown\) => \{\s*if \(publishError instanceof LateExpenseRefusal\) return refuseAfterClearing\(runId, publishError, \["ready"\], rows\);/,
-    "HEADLINE: a carried-trip refusal at publish clears the person's figure and reopens the step",
+    /\}\)\.catch\(\(publishError: unknown\) => \{\s*if \(publishError instanceof LateExpenseRefusal\) throw refusalKeepingConfirmedFigures\(publishError\);/,
+    "HEADLINE: a carried-trip refusal at publish refuses WITHOUT clearing any figure of the Part 2-confirmed run",
   );
+  assert.doesNotMatch(publish, /refuseAfterClearing\(|clearAfterLateExpenseRefusal\(|reopenExpensesStepForRun\(/, "publish never clears a figure");
+  {
+    const kept = refusalKeepingConfirmedFigures(
+      new LateExpenseRefusal("Conflict: Dina's trip is no longer approved. Nothing was published.", ["b12"]),
+    );
+    assert.match(kept.message, /^Conflict: Dina's trip is no longer approved\. Nothing was published\. No figure was cleared/, "the refusal keeps its words and its 409");
+    assert.match(kept.message, /bank files may already have been downloaded/, "and says why nothing was cleared");
+  }
 
   // What publish records as paid by this month's own figures (fix 1).
   {
@@ -1277,6 +1313,24 @@ export async function runAutomatedPayrollLateExpensesTests() {
       ).map((hit) => `${hit.run.id}:${hit.hrIds.join(",")}`),
       ["run-dec:B-12"],
       "HEADLINE: a run that RESERVED the trip at its Part 2 confirm is found by the reservation",
+    );
+    // REC-035: a confirmed step's record of what it showed is the answer; a decision on another trip of the
+    // same published month clears nobody there.
+    const otherTrips = { ...shown, trips: shown.trips.filter((entry) => entry.tripId !== "T-sep-ok") };
+    const stepState = (status: string) => ({
+      automated_payroll_step_state: {
+        rows: [{ run_id: "run-nov", step_key: "p2_expenses", status, summary: { lateExpensesShown: otherTrips } }],
+      },
+    });
+    assert.deepEqual(
+      (await findOpenRunsShowingLateTrips([ref], base(true, stepState("confirmed")))).map((hit) => `${hit.run.id}:${hit.hrIds.join(",")}`),
+      ["run-dec:B-12"],
+      "HEADLINE: a run whose CONFIRMED Expenses step did not show the changed trip is not cleared",
+    );
+    assert.deepEqual(
+      (await findOpenRunsShowingLateTrips([ref], base(true, stepState("pending")))).map((hit) => `${hit.run.id}:${hit.hrIds.join(",")}`),
+      ["run-nov:B-12", "run-dec:B-12"],
+      "a step with no confirmed record still falls back to the switch — nothing records what its saved figure holds",
     );
   }
   const reopenedRuns: string[] = [];
