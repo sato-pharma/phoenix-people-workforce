@@ -5,8 +5,14 @@ import { ROBOT_SERVICE_NAME, ROBOT_SERVICE_URL_ENV, robotServiceUrl } from "@/li
 
 import type { RobotActor } from "./actor";
 
-/** The four robot buttons the website forwards, each one route on the robot service. */
-export const ROBOT_ACTIONS = ["adopt", "invite-inbox", "app-password-controls", "app-password-rehearsal"] as const;
+/** The robot buttons the website forwards, each one route on the robot service. */
+export const ROBOT_ACTIONS = [
+  "adopt",
+  "invite-inbox",
+  "app-password-controls",
+  "app-password-rehearsal",
+  "edit-form-controls",
+] as const;
 export type RobotAction = (typeof ROBOT_ACTIONS)[number];
 
 /** The robot service's route for one action. */

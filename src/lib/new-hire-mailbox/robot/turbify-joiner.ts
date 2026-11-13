@@ -58,6 +58,8 @@ import type {
   AppPasswordRehearsal,
   CreatedMailbox,
   JoinerConsoleDriver,
+  MailboxEditFormField,
+  MailboxEditFormReading,
 } from "./driver";
 import { TURBIFY_INVITE_RECIPIENT } from "./initial-password";
 import type { InvitationReading } from "./invitation";
@@ -65,6 +67,7 @@ import {
   APP_PASSWORD_PAGE,
   APP_PASSWORD_WORDINGS,
   ECP_LOCATORS,
+  MAILBOX_EDIT_FORM,
   ONE_TIME_PASSWORD_DIALOG,
   type Locator,
 } from "@/lib/turbify/locators";
@@ -228,6 +231,8 @@ type ConsolePage = {
   type: (selector: string, text: string, options?: Record<string, unknown>) => Promise<void>;
   url: () => string;
   waitForSelector: (selector: string, options?: Record<string, unknown>) => Promise<unknown>;
+  /** Puppeteer's keyboard. Optional so a fake page need not carry one; used only to press Escape. */
+  keyboard?: { press: (key: string) => Promise<void> };
 };
 
 export class TurbifyJoinerStepError extends Error {
@@ -296,20 +301,29 @@ async function act(page: ConsolePage, locator: Locator, action: (handle: Handle)
  * reach anything else — which is why an obstruction is handled rather than refused.
  */
 async function clickResolved(page: ConsolePage, locator: Locator): Promise<void> {
-  await act(page, locator, async (handle) => {
-    const hit = await handle
-      .evaluate<HitTest>(readHitTest)
-      .catch(() => ({ isTopmost: true, obstruction: null }) as HitTest);
-    const delivery = decideClickDelivery(hit, locator.purpose);
-    if (delivery.via === "coordinates") {
-      await handle.click();
-      return;
-    }
-    logInfo("Turbify click delivered on the node because something was covering the control", {
-      labels: { event: "turbify_click_obstructed", purpose: locator.purpose, reason: delivery.reason },
-    });
-    await handle.evaluate<void>(clickNode);
+  await act(page, locator, (handle) => deliverClick(handle, locator.purpose));
+}
+
+/**
+ * The hit-tested click itself, on a handle that has already been resolved to exactly one control.
+ *
+ * Split out of `clickResolved` unchanged (13 Nov 2026) so the Edit-form capture can check WHICH ROW
+ * its one Edit button sits in before pressing it, and still press it through this one path rather
+ * than a second copy of it — the module's rule is that a second copy is where the next defect lives.
+ */
+async function deliverClick(handle: Handle, purpose: string): Promise<void> {
+  const hit = await handle
+    .evaluate<HitTest>(readHitTest)
+    .catch(() => ({ isTopmost: true, obstruction: null }) as HitTest);
+  const delivery = decideClickDelivery(hit, purpose);
+  if (delivery.via === "coordinates") {
+    await handle.click();
+    return;
+  }
+  logInfo("Turbify click delivered on the node because something was covering the control", {
+    labels: { event: "turbify_click_obstructed", purpose, reason: delivery.reason },
   });
+  await handle.evaluate<void>(clickNode);
 }
 
 const clickOne = (page: ConsolePage, locator: Locator) => clickResolved(page, locator);
@@ -1088,6 +1102,209 @@ export async function describePage(page: ConsolePage, secrets: readonly string[]
   return describeShape(shape, secrets);
 }
 
+// ─── The mailbox Edit form, read and left without saving (13 Nov 2026) ──────────────────────────
+//
+// WHY THIS EXISTS. A leaver's password reset leaves their app passwords working, and clearing those
+// from inside the mailbox is blocked for good: after a reset the mailbox's setup page's submit IS the
+// acceptance of Yahoo's terms, which no automation may give. The console's own row offers Add alias,
+// Reset password, Edit and More actions (Reset password, Edit, Transfer account, Delete) — no
+// suspend. The one place left to look for an on/off, status or access switch is INSIDE Edit, and
+// nobody has read it. These four functions are how the capture reads it without changing it.
+//
+// 🔴 IN-PAGE CODE IS A REAL FUNCTION, NEVER A STRING (module rule): each `...InPage` function below is
+// handed to `evaluate` as itself, closes over nothing, and is unit-tested against a fake page.
+
+/** What the in-page reader hands back, before `shapeMailboxEditForm` cleans it. */
+export type RawMailboxEditForm = {
+  scope: "dialog" | "page";
+  /** The scope's own text, used ONLY to ask whether it names the address. Never returned to a caller. */
+  scopeText: string;
+  headings: string[];
+  buttons: string[];
+  fields: MailboxEditFormField[];
+};
+
+/** Is a dialog on screen? The proof that Edit opened something, and later that leaving closed it. */
+export function readEditDialogOpenInPage(): boolean {
+  return Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"], .modal-container'))
+    .some((element) => element.getClientRects().length > 0);
+}
+
+/**
+ * The text of the table row an element sits in, cell by cell — so the capture can prove its one Edit
+ * button belongs to the row that carries the leaver's address, and not to a substring neighbour's.
+ * Each cell is read on its own, because a row's whole `textContent` glues the name onto the address.
+ */
+export function readOwningRowCellsInPage(element: Element): string[] {
+  const row = element.closest("tr, [role=row]");
+  if (!row) return [];
+  return Array.from(row.querySelectorAll("td, th, [role=cell], [role=gridcell]"))
+    .map((cell) => (cell.textContent || "").trim());
+}
+
+/**
+ * Read the open Edit form: every control's KIND and STATE, its headings and its button wordings.
+ *
+ * 🔴 NO VALUE LEAVES THIS FUNCTION. A text field reports `value.length`; a box reports ticked or not;
+ * a select reports its option LABELS and which one is chosen — what a person reads off the screen.
+ * Nothing is pressed, focused, typed or dispatched here: it only looks.
+ *
+ * Scoped to the topmost visible dialog, so the account list behind it is not read as part of the
+ * form. When Edit opened no dialog at all the whole page is read and `scope` says so.
+ */
+export function readMailboxEditFormInPage(): RawMailboxEditForm {
+  const seen = (element: Element) => element.getClientRects().length > 0;
+  const words = (element: Element | null) =>
+    element ? (((element as HTMLElement).innerText || element.textContent || "").replace(/\s+/g, " ").trim()) : "";
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"], .modal-container'))
+    .filter(seen);
+  const dialog = dialogs.length > 0 ? dialogs[dialogs.length - 1] : null;
+  const scope: Element = dialog || document.body;
+
+  const notText = ["checkbox", "radio", "hidden", "submit", "button", "reset", "file", "image", "range", "color"];
+  const fields = Array.from(
+    scope.querySelectorAll('input, select, textarea, [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"]'),
+  )
+    .slice(0, 40)
+    .map((element) => {
+      const field = element as HTMLInputElement;
+      const list = element as HTMLSelectElement;
+      const tag = (element.tagName || "").toLowerCase();
+      const role = element.getAttribute("role") || "";
+      const type = tag === "input"
+        ? String(field.type || "text").toLowerCase()
+        : tag === "select" || tag === "textarea" ? tag : role || tag;
+      const id = element.getAttribute("id") || "";
+      const labelledBy = element.getAttribute("aria-labelledby") || "";
+      const label =
+        (id && /^[A-Za-z][\w:.-]*$/.test(id) ? words(document.querySelector(`label[for="${id}"]`)) : "")
+        || element.getAttribute("aria-label")
+        || (labelledBy ? words(document.getElementById(labelledBy)) : "")
+        || words(element.closest("label"))
+        || element.getAttribute("title")
+        || element.getAttribute("placeholder")
+        // Last resort, capped: the nearest text is the only wording an unlabelled toggle has.
+        || words(element.parentElement).slice(0, 80);
+      const box = (tag === "input" && (type === "checkbox" || type === "radio"))
+        || role === "switch" || role === "checkbox" || role === "radio";
+      const checked = !box
+        ? null
+        : tag === "input" ? Boolean(field.checked) : element.getAttribute("aria-checked") === "true";
+      const options = tag === "select"
+        ? Array.from(list.options || []).map((option) => words(option)).slice(0, 30)
+        : [];
+      const chosen = tag === "select" && list.selectedIndex >= 0 && list.options
+        ? words(list.options[list.selectedIndex] || null)
+        : null;
+      const textLike = tag === "textarea" || (tag === "input" && notText.indexOf(type) === -1);
+      return {
+        checked,
+        disabled: Boolean(field.disabled) || element.getAttribute("aria-disabled") === "true",
+        // 🔴 A LENGTH, NEVER THE VALUE.
+        filled: textLike ? (typeof field.value === "string" ? field.value.length : 0) : null,
+        hidden: !seen(element),
+        label: String(label || "").replace(/\s+/g, " ").trim(),
+        name: element.getAttribute("name") || id,
+        options,
+        required: Boolean(field.required) || element.getAttribute("aria-required") === "true",
+        selected: chosen,
+        tag,
+        type,
+      };
+    });
+
+  return {
+    // Visible labels only; an `input[type=submit]` is named by its aria-label here, never its value.
+    buttons: Array.from(scope.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]'))
+      .filter(seen)
+      .map((element) => words(element) || element.getAttribute("aria-label") || "")
+      .filter((label) => label.length > 0)
+      .slice(0, 20),
+    fields,
+    headings: Array.from(scope.querySelectorAll('h1, h2, h3, h4, legend, [role="heading"]'))
+      .filter(seen)
+      .map((element) => words(element))
+      .filter((label) => label.length > 0)
+      .slice(0, 10),
+    scope: dialog ? "dialog" : "page",
+    scopeText: String(scope.textContent || "").slice(0, 4000),
+  };
+}
+
+/** The longest any label in the Edit-form answer may be. Cut, never ellipsised (owner rule). */
+const EDIT_FORM_LABEL_MAX = 120;
+
+/**
+ * Clean the raw reading into the answer: secrets removed, the scope's text dropped, radios grouped.
+ *
+ * 🔴 `scopeText` IS USED FOR ONE BOOLEAN AND THEN DISCARDED — it is the form's prose, and the answer
+ * carries no prose that was not a label. The address check is `dialogNamesAddress` (whole tokens),
+ * because `adel.sayed@` contains `el.sayed@`.
+ */
+export function shapeMailboxEditForm(
+  raw: RawMailboxEditForm | null,
+  address: string,
+  secrets: readonly string[],
+): Pick<MailboxEditFormReading, "buttons" | "fields" | "headings" | "namesAddress" | "scope"> {
+  if (!raw) return { buttons: [], fields: [], headings: [], namesAddress: null, scope: null };
+  const clean = (value: unknown) =>
+    withoutSecrets(String(value ?? ""), secrets).replace(/\s+/g, " ").trim().slice(0, EDIT_FORM_LABEL_MAX);
+  const fields = (Array.isArray(raw.fields) ? raw.fields : []).map((field): MailboxEditFormField => ({
+    checked: typeof field.checked === "boolean" ? field.checked : null,
+    disabled: Boolean(field.disabled),
+    filled: typeof field.filled === "number" ? field.filled : null,
+    hidden: Boolean(field.hidden),
+    label: clean(field.label),
+    name: clean(field.name),
+    options: (Array.isArray(field.options) ? field.options : []).map(clean).filter((label) => label.length > 0),
+    required: Boolean(field.required),
+    selected: typeof field.selected === "string" ? clean(field.selected) : null,
+    tag: clean(field.tag),
+    type: clean(field.type),
+  }));
+  // A radio's choices are its group's labels, which is what "the options" of a radio group means.
+  for (const field of fields) {
+    if (field.type !== "radio" || field.name.length === 0) continue;
+    field.options = fields
+      .filter((other) => other.type === "radio" && other.name === field.name)
+      .map((other) => other.label)
+      .filter((label) => label.length > 0);
+  }
+  return {
+    buttons: (Array.isArray(raw.buttons) ? raw.buttons : []).map(clean).filter((label) => label.length > 0),
+    fields,
+    headings: (Array.isArray(raw.headings) ? raw.headings : []).map(clean).filter((label) => label.length > 0),
+    namesAddress: dialogNamesAddress(raw.scopeText, address),
+    scope: raw.scope === "dialog" || raw.scope === "page" ? raw.scope : null,
+  };
+}
+
+/**
+ * Close the Edit form WITHOUT KEEPING ANYTHING, and say whether it actually closed.
+ *
+ * 🔴 THE ONLY CONTROLS THIS MAY PRESS ARE `MAILBOX_EDIT_FORM.leave` — Close modal, Cancel, Close — and
+ * then the Escape key. Each is resolved exactly (`resolveOne`: one match, exact wording) and pressed
+ * through the hit-tested path; an ambiguous or missing one is skipped, never guessed at. After each
+ * press the dialog is re-read, so "closed" is an observation and not an assumption.
+ */
+async function closeEditFormKeepingNothing(page: ConsolePage): Promise<{ closed: boolean | null; leftWith: string | null }> {
+  const isOpen = () => page.evaluate<boolean>(readEditDialogOpenInPage).catch(() => true);
+  if (!(await isOpen())) return { closed: null, leftWith: null };
+  for (const control of MAILBOX_EDIT_FORM.leave) {
+    try {
+      await clickResolved(page, control);
+    } catch {
+      continue;
+    }
+    await settle(1_000);
+    if (!(await isOpen())) return { closed: true, leftWith: control.value };
+  }
+  await page.keyboard?.press("Escape").catch(() => {});
+  await settle(1_000);
+  const closed = !(await isOpen());
+  return { closed, leftWith: closed ? "Escape" : null };
+}
+
 /**
  * What the driver needs from outside the browser.
  *
@@ -1223,18 +1440,23 @@ export async function createTurbifyJoinerDriver(
     }
   }
 
+  /** The administrator's sign-in, shared by `signIn` and the Edit-form capture so there is one copy. */
+  async function signInAsAdministrator() {
+    await signInAs(
+      page,
+      LOGIN_URL,
+      credentials.username,
+      credentials.password,
+      // The HOST, never a substring: LOGIN_URL itself carries `ecp.turbify.com` in its `.done` query.
+      async () => isConsoleHost(page.url()),
+      "the administrator",
+      [credentials.password],
+    );
+  }
+
   return {
     async signIn() {
-      await signInAs(
-        page,
-        LOGIN_URL,
-        credentials.username,
-        credentials.password,
-        // The HOST, never a substring: LOGIN_URL itself carries `ecp.turbify.com` in its `.done` query.
-        async () => isConsoleHost(page.url()),
-        "the administrator",
-        [credentials.password],
-      );
+      await signInAsAdministrator();
     },
 
     async createMailbox({ displayName, local }): Promise<CreatedMailbox> {
@@ -1718,6 +1940,124 @@ export async function createTurbifyJoinerDriver(
         reached: true,
         redacted: report.redacted,
         why: null,
+      };
+    },
+
+    /**
+     * Open ONE mailbox row's Edit form, read every control on it, and leave without keeping anything.
+     *
+     * 🔴 WHAT IT MAY TOUCH, IN FULL: the administrator sign-in (`signInAsAdministrator`, the same one
+     * `signIn` uses), the account-list search (cleared, then typed — `searchFor`), the row's Edit
+     * button, and then only `closeEditFormKeepingNothing`'s closing controls or Escape. It types
+     * nothing into the form, and the answer carries a text field's LENGTH, never its value.
+     *
+     * 🔴 THE ROW IS PROVED BY IDENTITY TWICE. `rowIdentityRefusal` requires exactly one row whose OWN
+     * address cell equals the address — the search is a substring match, so `el.sayed@` also returns
+     * `adel.sayed@` — and the Edit press goes through `act`, which requires exactly ONE Edit button on
+     * the filtered page, AND checks that button's own row carries the address before pressing it.
+     */
+    async captureMailboxEditForm({ address }) {
+      const wanted = String(address ?? "").trim().toLowerCase();
+      const secrets = [credentials.password];
+      const notRead = (why: string): MailboxEditFormReading => ({
+        address: wanted,
+        buttons: [],
+        closed: null,
+        controls: [],
+        fields: [],
+        headings: [],
+        leftWith: null,
+        namesAddress: null,
+        observed: 0,
+        reached: false,
+        redacted: 0,
+        scope: null,
+        why,
+      });
+      if (!wanted.includes("@")) return notRead("No mailbox address was given, so nothing was opened.");
+
+      await signInAsAdministrator();
+      // A FRESH LOAD before the search: only the first search after a load actually filters.
+      await page.goto(consoleUrl, { timeout: 60_000, waitUntil: "networkidle2" });
+      await searchFor(page, wanted);
+      const rows = await page
+        .$$eval<ConsoleMailboxRow[]>(MAILBOX_ROW_QUERY, readMailboxRowCells)
+        .catch(() => null);
+      const refusal = rowIdentityRefusal(rows, wanted, "Read the Edit form of");
+      if (refusal) return notRead(refusal);
+
+      try {
+        await act(page, ECP_LOCATORS.editUser, async (handle) => {
+          const cells = await handle.evaluate<string[]>(readOwningRowCellsInPage).catch(() => [] as string[]);
+          if (!cells.some((cell) => cell.trim().toLowerCase() === wanted)) {
+            throw new TurbifyJoinerStepError(
+              `the one Edit button on the filtered page does not sit in the row that carries ${wanted}, `
+              + "so it was not pressed",
+            );
+          }
+          await deliverClick(handle, ECP_LOCATORS.editUser.purpose);
+        });
+      } catch (error) {
+        return notRead(
+          `The Edit form of ${wanted} was not opened: ${error instanceof Error ? error.message : String(error)}. `
+          + `Nothing was changed. The page it was on — ${await describePage(page, secrets)}`,
+        );
+      }
+
+      // Positive wait for the form: a dialog on screen, polled, up to the ceiling.
+      let opened = false;
+      for (let waited = 0; waited < MAILBOX_EDIT_FORM.waitMs && !opened; waited += 500) {
+        await settle(500);
+        opened = await page.evaluate<boolean>(readEditDialogOpenInPage).catch(() => false);
+      }
+
+      // Read BEFORE leaving — the form exists only while it is open.
+      const raw = await page.evaluate<RawMailboxEditForm>(readMailboxEditFormInPage).catch(() => null);
+      const observed = await page
+        .evaluate<ObservedControl[]>(CONTROL_READ_EXPRESSION)
+        .catch(() => [] as ObservedControl[]);
+      const report = buildControlReport(`the Edit form (read-only capture) for ${wanted}`, observed ?? [], secrets);
+      const shaped = shapeMailboxEditForm(raw, wanted, secrets);
+
+      const left = await closeEditFormKeepingNothing(page);
+
+      const notes: string[] = [];
+      if (!raw) notes.push("The page could not be read after Edit was pressed.");
+      if (!opened) {
+        notes.push(
+          `No dialog appeared within ${Math.round(MAILBOX_EDIT_FORM.waitMs / 1000)} seconds of pressing Edit, `
+          + "so the whole page was read instead.",
+        );
+      }
+      if (shaped.namesAddress === false) {
+        notes.push(`The form's own text does not name ${wanted}, so what was read may not be this mailbox's form.`);
+      }
+      if (left.closed === false) {
+        notes.push(
+          "The form was still open after Close modal, Cancel, Close and Escape. Nothing was typed into it, and "
+          + "the browser was closed without keeping anything.",
+        );
+      }
+      logInfo("Turbify mailbox Edit form read", {
+        labels: {
+          closed: String(left.closed),
+          event: "turbify_edit_form_capture",
+          fields: shaped.fields.length,
+          leftWith: left.leftWith ?? "none",
+          observed: report.observed,
+          scope: shaped.scope ?? "none",
+        },
+      });
+      return {
+        address: wanted,
+        ...shaped,
+        closed: left.closed,
+        controls: report.controls,
+        leftWith: left.leftWith,
+        observed: report.observed,
+        reached: raw !== null,
+        redacted: report.redacted,
+        why: notes.length > 0 ? notes.join(" ") : null,
       };
     },
 

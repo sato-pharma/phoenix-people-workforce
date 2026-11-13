@@ -1515,3 +1515,41 @@ rehearsal row exists, so this one run is the observation the four controls were 
 `runAppPasswordClear` still has no live console driver and no caller, so nothing clears a
 leaver's app passwords automatically yet. The register's "App passwords live" list is what tracks
 them until the driver exists.
+
+## The mailbox Edit form: a one-time, read-only look (2026-11-13)
+
+**Why.** The leaver register resets a leaver's mailbox password, and Turbify app passwords survive a
+reset. Clearing them by signing in AS the mailbox is permanently blocked: after a reset the setup
+page's submit is the acceptance of Yahoo's terms, which an automation must never give. The console's
+own row offers **Add alias**, **Reset password**, **Edit** and **More actions** (Reset password, Edit,
+Transfer account, Delete) — no suspend. The owner chose to look inside **Edit** once, read-only, to
+see whether it carries an on/off, status or access switch that would cut a leaver off.
+
+**What runs.** The System Administrator picks a leaver by name on the register's "Read a leaver's
+mailbox Edit form" card. `POST /api/mailbox-offboarding/edit-form-controls` refuses anyone else
+before reading the body, refuses an address that is not on the register (exact, lowered — never a
+substring) before a browser exists, rate-limits, and calls `captureMailboxEditForm` on the joiner
+driver. Every run that reaches the driver writes an audit row (a failed one included); no email.
+
+**What the driver does, step by step.**
+
+| step | reused from proven code | written fresh |
+| --- | --- | --- |
+| administrator sign-in, floor-and-ceiling wait | `signInAs` + `waitForSignInLanding` (shared with `signIn` through `signInAsAdministrator`) | — |
+| fresh page load, clear-then-type the search | `page.goto(consoleUrl)`, `searchFor` → `fillOne` → `clearField` | — |
+| exactly one row whose own address cell equals the address | `readMailboxRowCells` + `rowIdentityRefusal` | — |
+| press that row's Edit | `act` (one match on the page) + the hit-tested click, split out unchanged as `deliverClick` | `readOwningRowCellsInPage` — the one Edit button's own row must carry the address |
+| wait for the form | — | `readEditDialogOpenInPage`, polled every 500 ms up to `MAILBOX_EDIT_FORM.waitMs` (10 s) |
+| read the form | `CONTROL_READ_EXPRESSION` + `buildControlReport` for the page's controls | `readMailboxEditFormInPage` (kind, name, label, ticked, chosen option, option labels, disabled, required, hidden, and a text field's LENGTH) and `shapeMailboxEditForm` (secrets removed, radios grouped, the dialog's prose used only for `dialogNamesAddress`) |
+| leave without keeping anything | `clickResolved` for each control | `closeEditFormKeepingNothing`: Close modal → Cancel → Close → Escape, re-reading after each whether the dialog is gone |
+
+**The boundaries.** It types into nothing but the account-list search. After Edit it may press only
+`MAILBOX_EDIT_FORM.leave` and Escape; `MAILBOX_EDIT_FORM.neverPress` (Save, Update, Apply, Submit,
+Delete, Reset, Transfer) is the list a change must never reach for, and the test checks the
+method's comment-stripped source against every word in it. In-page code is real functions, unit-run
+against a fake page whose fields hold recognisable values, so "lengths, never values" is proved and
+not promised.
+
+**What it does NOT do.** It does not suspend, disable or change anything. Whatever the form shows,
+acting on it is a separate change with the owner's approval. Pinned by
+`tests/mailbox-edit-form-capture.test.ts` (11 of 11 deliberate breaks fired).

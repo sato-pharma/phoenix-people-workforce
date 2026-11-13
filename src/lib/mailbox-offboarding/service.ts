@@ -652,3 +652,47 @@ export async function recordMailboxOffboardingStepsBulk(
 export function isMailboxBulkStep(value: unknown): value is MailboxBulkStep {
   return value === "password_reset" || value === "app_passwords_cleared" || value === "disposition";
 }
+
+/** The one leaver the Edit-form capture may open, as the register knows them. */
+export type RegisterLeaver = {
+  taskId: string;
+  employeeName: string;
+  /** The register's own spelling of the address, lowered — what the capture searches for. */
+  workEmail: string;
+};
+
+/**
+ * Is this address a leaver on the register? An EXACT, lowered match — never a substring.
+ *
+ * 🔴 THE GATE IN FRONT OF A BROWSER SIGNED IN AS THE CONSOLE ADMINISTRATOR. The Edit-form capture
+ * (`POST /api/mailbox-offboarding/edit-form-controls`) opens one mailbox row's Edit form, so the
+ * address must be one this register already holds as a leaver: a colleague still at work is not
+ * the capture's business, and `el.sayed@` must not match `adel.sayed@`. Pure, so the rule is pinned
+ * without a database (`tests/mailbox-edit-form-capture.test.ts`).
+ */
+export function matchLeaverOnRegister(
+  rows: ReadonlyArray<{ id: string; employee_name: string | null; work_email: string | null }>,
+  address: string,
+): RegisterLeaver | null {
+  const wanted = String(address ?? "").trim().toLowerCase();
+  if (!wanted.includes("@")) return null;
+  const row = rows.find((candidate) => String(candidate.work_email ?? "").trim().toLowerCase() === wanted);
+  if (!row) return null;
+  return { employeeName: String(row.employee_name ?? ""), taskId: row.id, workEmail: wanted };
+}
+
+/** Read the register and answer `matchLeaverOnRegister` for one address. Paged to the last row. */
+export async function findLeaverOnRegister(address: string): Promise<RegisterLeaver | null> {
+  const supabase = getSupabaseAdmin();
+  type Row = { id: string; employee_name: string | null; work_email: string | null };
+  let rows: Row[];
+  try {
+    rows = await fetchAllRows<Row>(
+      () => supabase.from("mailbox_offboarding_tasks").select("id,employee_name,work_email").order("opened_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(mailboxOffboardingErrorMessage(error));
+  }
+  return matchLeaverOnRegister(rows, address);
+}

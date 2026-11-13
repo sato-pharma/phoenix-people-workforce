@@ -58,6 +58,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { MailboxEditFormProbeCard } from "@/components/mailbox-offboarding/mailbox-edit-form-probe-card";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import type {
   MailboxBulkOutcome,
@@ -857,11 +858,17 @@ export function MailboxOffboardingWorkspace({
   initialError,
   canRecord,
   canOpen,
+  canReadEditForm = false,
 }: {
   initialData: MailboxOffboardingDashboardData | null;
   initialError: string | null;
   canRecord: boolean;
   canOpen: boolean;
+  /**
+   * The System Administrator alone (`canReadInitialPassword`) — the Edit-form capture signs in to
+   * the Turbify console as its administrator. UX only: the route asserts the same gate again.
+   */
+  canReadEditForm?: boolean;
 }) {
   const [data, setData] = useState(initialData);
   const [error, setError] = useState(initialError);
@@ -1129,6 +1136,20 @@ export function MailboxOffboardingWorkspace({
             ))}
           </ul>
         </div>
+      ) : null}
+
+      {canReadEditForm && data ? (
+        <MailboxEditFormProbeCard
+          leavers={data.tasks
+            .filter((task) => task.status !== "not_applicable")
+            .map((task) => ({
+              address: task.workEmail,
+              lastDay: task.lastWorkingDate ? `left ${formatDate(task.lastWorkingDate)}` : "last day unknown",
+              name: task.employeeName,
+              taskId: task.id,
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name))}
+        />
       ) : null}
 
       {data && data.awaiting.length > 0 ? (

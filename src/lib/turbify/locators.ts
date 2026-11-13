@@ -78,6 +78,11 @@ export const ECP_LOCATORS = {
   moreActions: aria("More actions", "the row's More actions menu button"),
   /** Inside the More actions menu. Permanent: no restore, no backup. */
   deleteUser: text("Delete", "the Delete item in the More actions menu"),
+  /**
+   * Opens the row's Edit form. Pressed ONLY by the read-only Edit-form capture
+   * (`captureMailboxEditForm`), which reads the form and leaves it without saving.
+   */
+  editUser: aria("Edit", "the row's Edit button"),
 
   // ── creating a mailbox ───────────────────────────────────────────────────────────────────────
   /** Opens the new-mailbox form. */
@@ -112,6 +117,30 @@ export const ONE_TIME_PASSWORD_DIALOG = {
   close: aria("Close modal", "the dialog's close button"),
   /** Never pressed. Listed so a driver change that reaches for one is obviously wrong. */
   neverPress: ["Send invite", "Print"] as readonly string[],
+} as const;
+
+/**
+ * The per-mailbox Edit form, as far as the read-only capture may touch it (13 Nov 2026).
+ *
+ * The capture exists to answer one question about a leaver's mailbox: does Edit hold an on/off,
+ * status or access switch that would cut the leaver off, the way an app password reset does not? It
+ * opens the form, reads it, and LEAVES WITHOUT SAVING. So the only controls it may ever press after
+ * Edit are the ones that close a form without keeping anything — tried in this order, then Escape.
+ *
+ * 🔴 `neverPress` IS THE LIST A CHANGE TO THE CAPTURE MUST NEVER REACH FOR. It is not consulted by the
+ * driver (the driver never names those words at all); `tests/mailbox-edit-form-capture.test.ts`
+ * checks the leave list against it and the driver's own source against every word in it.
+ */
+export const MAILBOX_EDIT_FORM = {
+  /** How long the form is given to appear after Edit is pressed. */
+  waitMs: 10_000,
+  /** Closing controls, most specific first. Each one closes a form without keeping any change. */
+  leave: [
+    aria("Close modal", "the Edit form's Close modal button"),
+    text("Cancel", "the Edit form's Cancel button"),
+    text("Close", "the Edit form's Close button"),
+  ] as readonly Locator[],
+  neverPress: ["Save", "Update", "Apply", "Submit", "Delete", "Reset", "Transfer"] as readonly string[],
 } as const;
 
 /**

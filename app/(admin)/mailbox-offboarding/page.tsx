@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MailboxOffboardingWorkspace } from "@/components/mailbox-offboarding/mailbox-offboarding-workspace";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
 import {
   getMailboxOffboardingDashboardData,
   isMailboxOffboardingSchemaMissing,
@@ -31,6 +32,9 @@ export default async function MailboxOffboardingPage() {
   // security boundary.
   const canRecord = await canAccess(access, "mailbox_offboarding", "update");
   const canOpen = await canAccess(access, "mailbox_offboarding", "create");
+  // The Edit-form capture signs in to the Turbify console as its administrator, so its card is the
+  // System Administrator's alone — the same audience its route enforces before reading the body.
+  const canReadEditForm = canReadInitialPassword(access.role);
 
   let initialData: MailboxOffboardingDashboardData | null = null;
   let initialError: string | null = null;
@@ -44,6 +48,7 @@ export default async function MailboxOffboardingPage() {
   return (
     <MailboxOffboardingWorkspace
       canOpen={canOpen}
+      canReadEditForm={canReadEditForm}
       canRecord={canRecord}
       initialData={initialData}
       initialError={initialError}
