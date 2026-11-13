@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
  * function whose source was nowhere in the repository; it now lives in `supabase/functions/`.
  *
  * This keeps both true: no new `.sql` file at the root (only `seed.sql`, which `config.toml` loads), and
- * the edge function's source present, kept out of the app's typecheck and lint because it is Deno code.
+ * the old edge function's source kept (deleted from production 13 Nov 2026), kept out of the app's typecheck and lint because it is Deno code.
  */
 export function runSupabaseFolderLayoutTests() {
   const rootSql = readdirSync("supabase").filter((f) => f.endsWith(".sql")).sort();
@@ -24,7 +24,7 @@ export function runSupabaseFolderLayoutTests() {
   assert.ok(scripts.length >= 62, `the hand-run scripts are kept as a record (${scripts.length})`);
   assert.ok(existsSync("supabase/scripts/README.md"), "the scripts folder says what it holds");
 
-  assert.ok(existsSync("supabase/functions/summarize-thread/index.ts"), "the one edge function production runs has its source here");
+  assert.ok(existsSync("supabase/functions/summarize-thread/index.ts"), "the edge function production ran until 13 Nov 2026 keeps its source here as the record");
   const tsconfig = readFileSync("tsconfig.json", "utf8");
   assert.match(tsconfig, /"supabase\/functions",/, "the typecheck leaves the Deno edge functions out");
   assert.match(readFileSync("eslint.config.mjs", "utf8"), /"supabase\/functions\/\*\*",/, "lint leaves them out too");

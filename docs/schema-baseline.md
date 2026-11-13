@@ -82,7 +82,8 @@ overrides it if production ever moves.
   scratch Postgres with Supabase's roles and extensions (the `supabase/postgres` image), and it is the next
   step for REC-041.
 - The loose SQL files (F-ENG-016) moved to `supabase/scripts/`, and the `summarize-thread` edge
-  function's source (F-DB-013) is in `supabase/functions/`, on 13 Nov 2026.
+  function's source (F-DB-013) is in `supabase/functions/`, on 13 Nov 2026; the function itself was
+  deleted from production the same day.
 
 ## Files
 
