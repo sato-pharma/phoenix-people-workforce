@@ -31,7 +31,11 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { computeMailboxFlags } from "../src/lib/mailbox-offboarding/service.ts";
+import {
+  buildAppPasswordReport,
+  computeMailboxFlags,
+  leaverAppPasswordsMayBeLive,
+} from "../src/lib/mailbox-offboarding/service.ts";
 import { buildMailboxAlertSignature } from "../src/lib/mailbox-offboarding/sweep.ts";
 import type { MailboxOffboardingTask } from "../src/lib/mailbox-offboarding/types.ts";
 import { stripSqlComments } from "./support/comment-strip.ts";
@@ -270,6 +274,50 @@ export async function runMailboxOffboardingTests(): Promise<void> {
   );
   assert.equal(notYetGone.isOverdue, false, "someone who has not left yet is not overdue");
   assert.equal(notYetGone.daysOverdue, 0, "and never carries a negative day count");
+
+  // ── 2b. THE APP-PASSWORD REPORT ───────────────────────────────────────────
+  // Every leaver whose app passwords may still work. A reset changes nothing here (an app password
+  // survives it); only a recorded clear or a deleted mailbox ends one. The step that removes app
+  // passwords is accepted when this report reads zero, so a row wrongly left off it is the defect.
+  const live = (overrides: Partial<Parameters<typeof leaverAppPasswordsMayBeLive>[0]>) =>
+    leaverAppPasswordsMayBeLive(
+      { status: "pending", appPasswordsClearedAt: null, disposition: null, lastWorkingDate: "2026-08-15", ...overrides },
+      today,
+    );
+  assert.equal(live({}), true, "an untouched leaver mailbox has live app passwords — no reset is needed to be on the report");
+  assert.equal(live({ status: "in_progress" }), true, "a reset-only mailbox is on the report");
+  assert.equal(live({ appPasswordsClearedAt: "2026-08-20T10:05:00Z", status: "revoked" }), false, "a recorded clear ends it");
+  assert.equal(live({ disposition: "deleted", status: "revoked" }), false, "a deleted mailbox has no app passwords left");
+  assert.equal(live({ status: "not_applicable" }), false, "no mailbox, nothing to report");
+  assert.equal(live({ disposition: "retained", status: "revoked" }), true, "a retained mailbox revoked without a clear is still reachable");
+  assert.equal(live({ lastWorkingDate: "2026-09-30" }), false, "a colleague still at work is not a leaver");
+  assert.equal(live({ lastWorkingDate: today }), false, "the last working day itself is still a working day");
+  assert.equal(live({ lastWorkingDate: null }), true, "an unknown last working day is reported, never hidden");
+
+  const reportTask = (id: string, mayBeLive: boolean, lastWorkingDate: string): MailboxOffboardingTask =>
+    ({
+      id,
+      employeeHrId: `HR-${id}`,
+      employeeName: `Leaver ${id}`,
+      workEmail: `${id}@satopharma.com`,
+      lastWorkingDate,
+      passwordResetAt: null,
+      appPasswordsMayBeLive: mayBeLive,
+    }) as MailboxOffboardingTask;
+  const report = buildAppPasswordReport(
+    [reportTask("b", true, "2026-08-10"), reportTask("c", false, "2026-08-01")],
+    [
+      { employeeHrId: "HR-a", employeeName: "Leaver a", workEmail: "a@satopharma.com", jobTitle: null, lastWorkingDate: "2026-08-01", employmentStatus: "resigned" },
+      { employeeHrId: "HR-d", employeeName: "Leaver d", workEmail: "d@satopharma.com", jobTitle: null, lastWorkingDate: "2026-09-30", employmentStatus: "resigned" },
+    ],
+    today,
+  );
+  assert.deepEqual(
+    report.map((row) => [row.employeeHrId, row.hasRecord]),
+    [["HR-a", false], ["HR-b", true]],
+    "the report carries tasked leavers not cleared AND leavers with no record, oldest last day first — and never someone still at work",
+  );
+  assert.deepEqual(buildAppPasswordReport([reportTask("c", false, "2026-08-01")], [], today), [], "zero rows when every leaver is cleared");
 
   // ── 3. THE ALERT SIGNATURE ────────────────────────────────────────────────
   // The signature decides whether a day's alert is suppressed as a repeat. Two properties matter:

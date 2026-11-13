@@ -1053,12 +1053,18 @@ export function MailboxOffboardingWorkspace({
       ) : null}
 
       {stats ? (
-        <div className="mt-5 grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-5 grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3 lg:grid-cols-6">
           <MetricTile
             label="Not started"
             sub="nothing recorded"
             tone={stats.pending > 0 ? "amber" : "emerald"}
             value={stats.pending.toLocaleString("en-US")}
+          />
+          <MetricTile
+            label="App passwords live"
+            sub="leavers, not cleared"
+            tone={stats.appPasswordsMayBeLive > 0 ? "rose" : "emerald"}
+            value={stats.appPasswordsMayBeLive.toLocaleString("en-US")}
           />
           <MetricTile
             label="Still reachable"
@@ -1096,6 +1102,34 @@ export function MailboxOffboardingWorkspace({
           will not call a mailbox revoked on a reset alone.
         </p>
       </div>
+
+      {data && data.appPasswordReport.length > 0 ? (
+        <div className="mt-5 border border-rose-200 bg-white px-4 py-3">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-rose-700">
+            App-password report — {data.appPasswordReport.length} leaver
+            {data.appPasswordReport.length === 1 ? "" : "s"} whose phone or Outlook may still be connected
+          </p>
+          <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-600">
+            Only clearing the app passwords, or deleting the mailbox, ends them. A password reset does not.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {data.appPasswordReport.map((row) => (
+              <li
+                key={row.employeeHrId}
+                className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2"
+              >
+                <span className="min-w-0 break-words text-[12px] font-bold text-slate-900">
+                  {row.employeeName} — {row.workEmail}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                  {row.lastWorkingDate ? `Left ${formatDate(row.lastWorkingDate)}` : "Last day unknown"} ·{" "}
+                  {!row.hasRecord ? "no record" : row.passwordReset ? "reset, not cleared" : "nothing done"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {data && data.awaiting.length > 0 ? (
         <div className="mt-5 border border-slate-300 bg-white px-4 py-3">
