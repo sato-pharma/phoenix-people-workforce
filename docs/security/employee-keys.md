@@ -45,6 +45,28 @@ the same fingerprint as the committed baseline.
 Until step 3 merges, the night only warns. It never goes red between the migration being applied
 and its PR merging.
 
+## Every key has its index
+
+Postgres checks a foreign key from both ends. Deleting, merging or renaming the parent row (an
+employee, a customer, a brick) has to find every child row that names it. Without an index, that
+means scanning the whole child table, once per parent row. With ON UPDATE CASCADE, every `hr_id`
+change walked every keyed table this way.
+
+The database advisor's `unindexed_foreign_keys` lint read 59 on production on 2026-11-13 (F-DB-006):
+
+- the audit's 41;
+- the 21 keys to `employees(hr_id)` added that afternoon, which came without an index.
+
+Migration `20261113181700` gave all 59 an index named `<table>_<column>_fk_idx`, each leading with the
+key's columns in the key's order. After it the advisor reported no such lint on production or on
+staging. The three largest tables were indexed `CONCURRENTLY` by hand first, so no write waited on a
+lock: `source_of_sales_customer_map` (105,577 rows), `automated_payroll_draft_cell_history` and
+`hr_ops_report_lines`. Pinned by `tests/foreign-key-indexes.test.ts`.
+
+A new foreign key gets its index in the same migration. On a table already holding thousands of rows,
+create it `CONCURRENTLY` on production by hand first, and keep the plain `create index if not exists`
+in the file, with a name nobody already uses.
+
 ## Removing a key
 
 Removing a key is a decision the owner is told about first. Take it out of the baseline and lower
