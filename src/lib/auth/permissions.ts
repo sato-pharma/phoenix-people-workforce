@@ -2269,6 +2269,23 @@ async function getPermissionMatrixFromDb(): Promise<PermissionMatrix> {
   return toPermissionMatrix(data as PermissionDbOverrideRow[]);
 }
 
+/**
+ * The matrix served when the override table cannot be read and no matrix was ever loaded (a cold
+ * start during a database blip). It fails CLOSED: every role holds nothing, so a permission an
+ * administrator revoked through an override can never come back from the compiled defaults. The one
+ * exception is the Super Admin, who keeps the compiled defaults — the person who repairs the table
+ * must never be locked out of it, and the Super Admin carries no override, so the defaults are its
+ * live matrix. Not cached: the next request retries the database.
+ */
+export function coldStartPermissionMatrix(): PermissionMatrix {
+  const defaults = applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
+  const closed = {} as PermissionMatrix;
+  for (const role of Object.keys(defaults) as PhoenixRole[]) {
+    closed[role] = role === "Super Admin" ? defaults[role] : {};
+  }
+  return closed;
+}
+
 async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
   if (permissionCache && permissionCache.fetchedAt + permissionCacheMs > Date.now()) {
     return permissionCache.matrix;
@@ -2282,11 +2299,11 @@ async function resolvePermissionMatrix(): Promise<PermissionMatrix> {
       })
       .catch((error) => {
         // Fail observable, not silent. Retain the last-known-good matrix so a
-        // transient DB error can't quietly widen access; only a cold start with
-        // no prior matrix falls back to the built-in defaults. We intentionally
+        // transient DB error can't quietly widen access; a cold start with no
+        // prior matrix fails CLOSED (coldStartPermissionMatrix). We intentionally
         // do not cache this degraded result, so the next call retries the DB.
         logError("role_permission_overrides load failed; retaining last-known matrix", { labels: { event: "permission_matrix_load_failed" }, error });
-        return permissionCache?.matrix ?? applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix));
+        return permissionCache?.matrix ?? coldStartPermissionMatrix();
       })
       .finally(() => {
         permissionMatrixPromise = null;
@@ -2307,6 +2324,18 @@ export async function loadPermissionMatrixUncached(): Promise<PermissionMatrix> 
 
 export function clearPermissionMatrixCache() {
   permissionCache = null;
+}
+
+/**
+ * TEST RUNNER ONLY (tests/run-tests.ts, before every test): seeds the last-known matrix with what a
+ * database holding no override rows would load. CI's unit job has no database, and ~120 tests read
+ * the compiled defaults through `canAccess`; before the cold start failed closed they got them from
+ * the fallback. The seed is already stale (fetchedAt 0), so a reachable database — or a test's
+ * stand-in one — still replaces it on the next call. Nothing under app/ or src/ may call it
+ * (tests/permission-matrix-cold-start.test.ts).
+ */
+export function seedPermissionMatrixWithDefaultsForTests() {
+  permissionCache = { fetchedAt: 0, matrix: applyHardPermissionBoundaries(clonePermissionMatrix(defaultPermissionMatrix)) };
 }
 
 export async function getPermissionMatrix(): Promise<PermissionMatrix> {
