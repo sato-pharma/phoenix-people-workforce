@@ -50,10 +50,11 @@ import type { PayrollPeriod, RunPhase } from "./types.ts";
  *      whose published figure differed from their approved trips is listed as NEEDS CHECKING BY HAND and
  *      never proposed. A likely duplicate of a trip already paid in any loaded month is flagged, never
  *      proposed.
- *   Every refusal about a carried trip (Part 2 confirm, publish) clears THAT person's saved Expenses
- *   figure in the run and reopens the step. An approval change to a carried trip clears the person in
- *   every open run that lists or reserves it (expense-resync.ts); flipping the switch reopens every open
- *   run.
+ *   A refusal about a carried trip at Part 2 confirm clears THAT person's saved Expenses figure in the
+ *   run and reopens the step; at publish it clears nothing, because the run is Part 2-confirmed and its
+ *   files may already be at the bank (REC-035). An approval change to a carried trip clears the person in
+ *   every open run that shows or reserves THAT trip (expense-resync.ts); flipping the switch reopens every
+ *   open run.
  *
  * THE FLOOR IS PAYOUT PERIOD SEPTEMBER 2026, and nothing older is ever listed or carried. Measured on
  * production read-only on 2026-11-13: the July 2026 and August 2026 publishes stamped NO trips, and 82
@@ -436,7 +437,7 @@ function joinNames(names: ReadonlyArray<string>): string {
 }
 
 /**
- * After a carried-trip refusal (Part 2 confirm, publish): clears the saved Expenses figure of the people it
+ * After a carried-trip refusal at Part 2 confirm: clears the saved Expenses figure of the people it
  * names in this run and reopens the Expenses step, exactly as the own-month resync does, so the figure
  * built on the trip as it was cannot be confirmed again. Returns the error to throw, which says what was
  * cleared — or that clearing failed too, so HR does it by hand. Never throws itself.
@@ -464,6 +465,20 @@ export async function clearAfterLateExpenseRefusal(
   );
 }
 
+/**
+ * A carried-trip refusal at PUBLISH (REC-035). The run is Part 2-confirmed, so its bank files may already
+ * be at the bank: no figure is written. Skipping the changed trip and publishing is not an option either —
+ * the confirmed figure would pay the trip as it was while the trip went back on the list to be paid again.
+ * So the refusal stands and nothing is cleared; reopening Part 2 (which asks why once a file has left) and
+ * confirming it again clears the figure there. Pure: returns the error to throw.
+ */
+export function refusalKeepingConfirmedFigures(refusal: LateExpenseRefusal): Error {
+  return new Error(
+    `${refusal.message} No figure was cleared: Part 2 is confirmed and its bank files may already have been ` +
+      "downloaded, so this run keeps the figures it confirmed until Part 2 is reopened.",
+  );
+}
+
 // ---- The plan (pure) --------------------------------------------------------------------------
 
 /**
@@ -481,7 +496,9 @@ export async function clearAfterLateExpenseRefusal(
  * that was approved later, a person paid 0.00 because HR refused their trips (the stamp skips them), or
  * a stamp that failed or was cut short. So a listed trip is marked `needsChecking` — shown, never
  * proposed or carried — when its month has no covered list, when its month's stamp did not report
- * success, or when the person's published figure differed from their approved trips.
+ * success, or when the person's published figure differed from their approved trips — in the trip's own
+ * month, or in ANY later published month (REC-035): a trip listed while the switch was OFF may have been
+ * paid by a typed amount in a later month, and carrying it once the switch is ON would pay it again.
  */
 export function planLateApprovedExpenses(input: {
   currentPeriod: PayrollPeriod;
@@ -516,6 +533,17 @@ export function planLateApprovedExpenses(input: {
     for (const person of run.differing) entry.differing.set(compactHrKey(person.compact), person);
     byPeriod.set(index, entry);
   }
+  // A published month in which this person's figure was not their approved trips, latest first — so a trip
+  // of an earlier month can be checked against every month after its own.
+  const differingMonths = [...byPeriod.entries()].sort((left, right) => right[0] - left[0]);
+  const laterDiffering = (compact: string, ownIndex: number) => {
+    for (const [index, entry] of differingMonths) {
+      if (index <= ownIndex) break;
+      const person = entry.differing.get(compact);
+      if (person) return { index, person };
+    }
+    return null;
+  };
 
   const listed: LateApprovedExpense[] = [];
   for (const row of input.rows) {
@@ -536,6 +564,8 @@ export function planLateApprovedExpenses(input: {
     if (run.covered?.has(id)) continue;
     const label = monthNameAndYear(payoutMonth, payoutYear);
     const differs = run.differing.get(compact);
+    const later = differs ? null : laterDiffering(compact, index);
+    const laterLabel = later ? monthNameAndYear((later.index % 12) + 1, Math.floor(later.index / 12)) : "";
     const needsChecking = !run.covered
       ? `${label} was published before payroll kept a list of the trips each figure paid, so whether this ` +
         "trip was paid cannot be told from the record. Check it by hand; it is not added to a run."
@@ -546,7 +576,11 @@ export function planLateApprovedExpenses(input: {
           ? `This person's ${label} Expenses figure (${money(differs.paid)}) was not the total of their approved ` +
             `trips (${money(differs.tripsTotal)}), so this trip may already have been paid by a typed amount. ` +
             "Check it by hand; it is not added to a run."
-          : null;
+          : later
+            ? `This person's ${laterLabel} Expenses figure (${money(later.person.paid)}) was not the total of their ` +
+              `approved trips (${money(later.person.tripsTotal)}), so this ${label} trip may have been paid by hand in ` +
+              `${laterLabel}. Check it by hand; it is not added to a run.`
+            : null;
     listed.push({
       id,
       hrId: text(row.hr_id),
@@ -1404,9 +1438,11 @@ export type LateTripRef = { tripId: string; hrId?: string | null; month?: number
  * trips as carried, with the people whose figure to clear. expense-resync.ts clears them when a trip's
  * decision moves: the trip's own payout month is published, so the ordinary resync never reaches them.
  *
- * A run lists the trip when its confirmed Expenses step showed it, or — step confirmed or not — when the
- * switch is ON and the trip's payout month is an earlier, published month at or after the floor, so the
- * step proposes it to whoever saves it. A run reserves it when its Part 2 confirm took it. Throws on any
+ * A run lists the trip when its confirmed Expenses step showed it. A CONFIRMED step's record of what it
+ * showed is the whole answer (REC-035): a decision on another trip of the same published month clears
+ * nobody there. Only a step with no confirmed record — whose saved figure may hold a proposed trip that
+ * nothing wrote down — falls back to: the switch is ON and the trip's payout month is an earlier,
+ * published month at or after the floor. A run reserves it when its Part 2 confirm took it. Throws on any
  * failed read.
  */
 export async function findOpenRunsShowingLateTrips(
@@ -1436,11 +1472,11 @@ export async function findOpenRunsShowingLateTrips(
     runs.filter((run) => run.phase === "published").map((run) => periodIndex({ month: Number(run.month), year: Number(run.year) })),
   );
   const openIds = open.map((run) => String(run.id));
-  const states = await readAllPages<{ run_id: string; summary: unknown }>(
+  const states = await readAllPages<{ run_id: string; summary: unknown; status?: unknown }>(
     (from, to) =>
       db
         .from("automated_payroll_step_state")
-        .select("run_id,summary")
+        .select("run_id,summary,status")
         .eq("step_key", "p2_expenses")
         .in("run_id", openIds)
         .order("run_id", { ascending: true })
@@ -1463,14 +1499,17 @@ export async function findOpenRunsShowingLateTrips(
   for (const run of open) {
     const runIndex = periodIndex({ month: Number(run.month), year: Number(run.year) });
     const people = new Set<string>();
-    const shown = parseLateExpensesShown(states.find((state) => String(state.run_id) === String(run.id))?.summary);
+    const state = states.find((entry) => String(entry.run_id) === String(run.id));
+    const shown = parseLateExpensesShown(state?.summary);
     for (const trip of shown?.trips ?? []) if (wanted.has(trip.tripId)) people.add(trip.hrId || trip.compact);
+    // What a confirmed step showed is the record; the switch-wide reading is only for a step without one.
+    const confirmedRecord = Boolean(shown) && state?.status === "confirmed";
     for (const row of reserved) {
       if (String(row.run_id) !== String(run.id)) continue;
       const trip = reservedRowById.get(String(row.expense_id));
       if (trip && wanted.has(text(trip.trip_id)) && text(trip.hr_id)) people.add(text(trip.hr_id));
     }
-    if (carryOn) {
+    if (carryOn && !confirmedRecord) {
       for (const trip of refs) {
         const hrId = text(trip.hrId);
         if (!hrId || !Number.isInteger(Number(trip.month)) || !Number.isInteger(Number(trip.year))) continue;
