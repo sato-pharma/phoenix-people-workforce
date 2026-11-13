@@ -12077,7 +12077,7 @@ await runTest(
   runJobLeaseTests,
 );
 await runTest(
-  "per-process state is shared across instances (REC-083): two instances start the notification drain and exactly one drains — the other is skipped as overlapping-run by the shared job lease, the next run drains once it is released or runs out, and an unreadable lease falls back to the in-process guard; the page-timing beacon and CSP report count each address across instances; the employee directory drops its copy when the shared version moves",
+  "per-process state is shared across instances (REC-083): two instances start the notification drain and exactly one drains — the other is skipped as overlapping-run by the shared job lease, the next run drains once it is released or runs out, and an unreadable lease falls back to the in-process guard; the page-timing beacon and CSP report keep their per-instance address caps on purpose (F-PLT-012), never the shared store; the employee directory drops its copy when the shared version moves",
   runSharedInstanceStateTests,
 );
 await runTest(

@@ -9,7 +9,7 @@ import {
   countCspViolation,
   parseCspReports,
 } from "@/lib/security/csp-report-intake";
-import { createSharedAddressLimit } from "@/lib/security/shared-address-limit";
+import { createMemoryRateBuckets } from "@/lib/security/memory-rate-buckets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,23 +18,15 @@ export const dynamic = "force-dynamic";
 // `<style>` without the page's nonce, or a picture from a host outside the measured list. Nothing was
 // blocked; this measures what enforcing the stricter policy would break. See csp-report-intake.ts.
 //
-// Like the page-timing beacon, it reads no session and records no identity: a report becomes a
-// (directive, blocked origin, page shape) count in process memory, logged as
+// Like the page-timing beacon, it reads no session, records no identity and touches no database: a
+// report becomes a (directive, blocked origin, page shape) count in process memory, logged as
 // `csp_report_only_violation` the first time a shape is seen and at 10, 100, 1,000 …. A body over
-// 32 KB is refused, and one address gets CSP_REPORT_RATE_LIMIT reports a minute ACROSS EVERY INSTANCE
-// (the shared bucket store, keyed by the hashed address — REC-083); that count is its only database
-// touch, and an address already over its limit in this process is refused without one. The answer is
-// an empty 204 — the browser does not wait on it.
+// 32 KB is refused, and one address gets CSP_REPORT_RATE_LIMIT reports a minute. The answer is an
+// empty 204 — the browser does not wait on it.
 const shapeCounts = new Map<string, number>();
 
 const CSP_REPORT_MAX_ADDRESSES = 5_000;
-const CSP_REPORT_RATE_SCOPE = "csp-report";
-const addressLimit = createSharedAddressLimit({
-  limit: CSP_REPORT_RATE_LIMIT,
-  maxAddresses: CSP_REPORT_MAX_ADDRESSES,
-  scope: CSP_REPORT_RATE_SCOPE,
-  windowMs: CSP_REPORT_RATE_WINDOW_MS,
-});
+const addressBuckets = createMemoryRateBuckets(CSP_REPORT_MAX_ADDRESSES);
 
 export async function POST(request: Request) {
   const length = Number(request.headers.get("content-length"));
@@ -42,7 +34,7 @@ export async function POST(request: Request) {
     return new NextResponse(null, { status: 413 });
   }
   const address = clientAddress(request) || "unknown-ip";
-  if (!(await addressLimit.allow(address))) {
+  if (addressBuckets.consume(address, CSP_REPORT_RATE_LIMIT, CSP_REPORT_RATE_WINDOW_MS) !== 0) {
     return new NextResponse(null, { status: 429 });
   }
   try {

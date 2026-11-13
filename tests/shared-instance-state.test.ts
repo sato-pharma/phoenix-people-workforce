@@ -10,9 +10,6 @@ import {
   type DirectorySharedVersion,
 } from "../src/lib/employees/employee-directory.ts";
 import { createExclusiveRunGuard, type JobLeaseRpcClient } from "../src/lib/platform/job-lease.ts";
-import { ApiRateLimitError } from "../src/lib/security/api-rate-limit.ts";
-import { createSharedAddressLimit, type SharedAddressLimitConsume } from "../src/lib/security/shared-address-limit.ts";
-import { PAGE_TIMING_RATE_LIMIT, PAGE_TIMING_RATE_WINDOW_MS } from "../src/lib/observability/page-timing-intake.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,15 +19,14 @@ import { stripComments } from "./support/comment-strip.ts";
 //      the new container during a deploy) could each drain at once. It is a database lease now
 //      (public.job_leases): TWO INSTANCES RUN, ONE DRAINS. A lease that cannot be read falls back to
 //      the in-process guard, never to "the drain stops".
-//   2. The page-timing beacon and the CSP report counted each address per instance and reset at every
-//      deploy. They count in the shared bucket store now; memory is a flood shield and the outage
-//      fallback, never the limit.
+//   2. The page-timing beacon and the CSP report KEEP their per-instance address caps on purpose
+//      (F-PLT-012): a shared count would write the caller's address to the database on every page view.
 //   3. The employee directory cache was dropped only in the process that wrote. A copy held for the
 //      check interval now asks a cheap shared version (the newest updated_at of its tables) and is
 //      dropped when it moved — never served staler than the TTL it already had.
 //
-// Nothing here reaches a database: the lease and the bucket store are in-memory fakes shared by the
-// two "instances", and the directory's reads go to a stand-in fetch.
+// Nothing here reaches a database: the lease is an in-memory fake shared by the two "instances", and
+// the directory's reads go to a stand-in fetch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROOT = new URL("../", import.meta.url);
@@ -215,73 +211,17 @@ async function runDrainLeaseTests() {
   assert.match(code("src/lib/platform/job-lease.ts"), /export async function releaseJobLease[\s\S]*?ttlSeconds: 1,/, "a release re-claims for one second, so it can only shorten this holder's own lease");
 }
 
-async function runBeaconLimitTests() {
-  // One bucket store shared by two instances, with the semantics of api_rate_limit_consume.
-  const now = { ms: 1_800_000_000_000 };
-  const buckets = new Map<string, { count: number; resetAt: number }>();
-  const asked: Array<Parameters<SharedAddressLimitConsume>[0]> = [];
-  const sharedStore: SharedAddressLimitConsume = async (input) => {
-    asked.push(input);
-    const key = `${input.scope}:${input.identifier}`;
-    const bucket = buckets.get(key);
-    if (!bucket || bucket.resetAt <= now.ms) {
-      buckets.set(key, { count: 1, resetAt: now.ms + input.windowMs });
-      return;
-    }
-    if (bucket.count >= input.limit) throw new ApiRateLimitError(Math.ceil((bucket.resetAt - now.ms) / 1000));
-    bucket.count += 1;
-  };
-  const instance = () =>
-    createSharedAddressLimit({
-      consume: sharedStore,
-      limit: PAGE_TIMING_RATE_LIMIT,
-      maxAddresses: 5_000,
-      scope: "page-timing-beacon",
-      windowMs: PAGE_TIMING_RATE_WINDOW_MS,
-    });
-  const one = instance();
-  const two = instance();
-
-  // One address, its beacons spread over two instances: PAGE_TIMING_RATE_LIMIT in all, not per instance.
-  let allowed = 0;
-  for (let hit = 0; hit < PAGE_TIMING_RATE_LIMIT * 2; hit += 1) {
-    if (await (hit % 2 === 0 ? one : two).allow("8.8.4.4")) allowed += 1;
-  }
-  assert.equal(
-    allowed,
-    PAGE_TIMING_RATE_LIMIT,
-    `🔴 one address gets PAGE_TIMING_RATE_LIMIT beacons a minute ACROSS instances — counted per instance it got ${PAGE_TIMING_RATE_LIMIT * 2}`,
-  );
-  assert.equal(await one.allow("8.8.8.8"), true, "another address has its own allowance");
-  assert.deepEqual(
-    { identifier: asked[0].identifier, limit: asked[0].limit, onStoreError: asked[0].onStoreError, scope: asked[0].scope, windowMs: asked[0].windowMs },
-    { identifier: "8.8.4.4", limit: PAGE_TIMING_RATE_LIMIT, onStoreError: "memory", scope: "page-timing-beacon", windowMs: PAGE_TIMING_RATE_WINDOW_MS },
-    "the store is asked with the same key, limit and window the in-process map used, and falls back to memory only on a store error",
-  );
-
-  // The flood shield: once an address is over its limit in THIS process, the store is not asked again.
-  const flood = createSharedAddressLimit({ consume: sharedStore, limit: 3, maxAddresses: 10, scope: "flood-test", windowMs: 60_000 });
-  const askedBefore = asked.length;
-  for (let hit = 0; hit < 50; hit += 1) await flood.allow("9.9.9.9");
-  assert.equal(asked.length - askedBefore, 3, "a flood from one address costs the store its limit in queries, then none");
-
-  // A new window in the store starts the count again.
-  now.ms += PAGE_TIMING_RATE_WINDOW_MS + 1;
-  const three = createSharedAddressLimit({ consume: sharedStore, limit: PAGE_TIMING_RATE_LIMIT, maxAddresses: 5_000, scope: "page-timing-beacon", windowMs: PAGE_TIMING_RATE_WINDOW_MS });
-  assert.equal(await three.allow("8.8.4.4"), true, "the store's window ran out, so the address is answered again");
-
-  // Both public beacons count through it; neither keeps a memory-only limiter.
-  for (const [file, limit] of [
-    ["app/api/telemetry/page-timing/route.ts", "PAGE_TIMING_RATE_LIMIT"],
-    ["app/api/security/csp-report/route.ts", "CSP_REPORT_RATE_LIMIT"],
-  ] as const) {
+function runBeaconLimitTests() {
+  // F-PLT-012, reviewed 13 Nov 2026: the two public telemetry endpoints keep their per-instance caps on
+  // purpose. A shared count keyed by the caller's address would write an address-keyed row to the
+  // database on every page view; with N instances the cap is N× the limit, still bounded.
+  for (const file of ["app/api/telemetry/page-timing/route.ts", "app/api/security/csp-report/route.ts"]) {
     const route = code(file);
-    assert.ok(route.includes("createSharedAddressLimit({") && route.includes(`limit: ${limit},`), `${file} must count each address in the shared store with its own limit`);
-    assert.ok(!route.includes("createMemoryRateBuckets("), `🔴 ${file} must not count in a per-instance map — that reset at every deploy`);
+    assert.ok(route.includes("createMemoryRateBuckets("), `${file} keeps its bounded per-instance address cap`);
+    for (const forbidden of ["assertApiRateLimit", "api_rate_limit", "getSupabaseAdmin", "supabase"]) {
+      assert.ok(!route.includes(forbidden), `🔴 ${file} must not count addresses in the shared store (${forbidden}) — that writes the caller's address on every page view`);
+    }
   }
-  const helper = code("src/lib/security/shared-address-limit.ts");
-  assert.match(helper, /input\.consume \?\? assertApiRateLimit/, "production counts through the shared bucket store");
-  assert.match(helper, /onStoreError: "memory"/, "memory is the fallback only when the store cannot be read");
 }
 
 const STAND_URL = "http://directory-stand-in.invalid";
@@ -382,6 +322,6 @@ async function runDirectoryVersionTests() {
 
 export async function runSharedInstanceStateTests() {
   await runDrainLeaseTests();
-  await runBeaconLimitTests();
+  runBeaconLimitTests();
   await runDirectoryVersionTests();
 }
