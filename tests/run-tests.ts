@@ -1,4 +1,5 @@
 import { runDisplayScaleTests } from "./display-scale.test.ts";
+import { seedPermissionMatrixWithDefaultsForTests } from "../src/lib/auth/permissions.ts";
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
@@ -1326,6 +1327,8 @@ import { runEmailZebraSurvivesSanitizerTests } from "./email-zebra-survives-sani
 import { runEmailGreetingNamesTheAudienceTests } from "./email-greeting-names-the-audience.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
+import { runPayrollDownloadLogTests } from "./payroll-download-log.test.ts";
+import { runReportItReadLogTests } from "./report-it-read-log.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
@@ -1334,6 +1337,7 @@ import { runExpenseAccessScopeTests } from "./expense-access-scope.test.ts";
 import { runRlsFallbackDoorTests } from "./rls-fallback-door.test.ts";
 import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-scope.test.ts";
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
+import { runPermissionChecksS01Tests } from "./permission-checks-s01.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
@@ -3020,6 +3024,7 @@ import { runMemoryRateBucketsTests } from "./memory-rate-buckets.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import { runCredentialOutboxSealTests } from "./credential-outbox-seal.test.ts";
+import { runPermissionMatrixColdStartTests } from "./permission-matrix-cold-start.test.ts";
 import { runCredentialRedactionTests } from "./credential-redaction.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
@@ -3088,6 +3093,10 @@ import { runPunchFeedStalledTelegramTests } from "./punch-feed-stalled-telegram.
 import { runAutomatedPayrollHeldRecordAtomicTests } from "./automated-payroll-held-record-atomic.test.ts";
 import { runAutomatedPayrollLateExpensesTests } from "./automated-payroll-late-expenses.test.ts";
 import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test.ts";
+import { runDirectOrdersAndMarketingAtomicTests } from "./direct-orders-and-marketing-atomic.test.ts";
+import { runHrAtomicWritesTests } from "./hr-atomic-writes.test.ts";
+import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
+import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3190,6 +3199,9 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
     return;
   }
   ranCount += 1;
+  // CI has no database and the permission matrix fails closed on a cold start: every test starts from
+  // the compiled defaults, as a database with no override rows would load (permissions.ts).
+  seedPermissionMatrixWithDefaultsForTests();
   const watchId = seenCount;
   writeWatchMarker?.(`PHX_TEST_START ${watchId} ${name.replace(/\s+/g, " ")}\n`);
   const startedAt = performance.now();
@@ -5443,7 +5455,7 @@ await runTest(
   + "body, the setup screen is reported as an ANSWER rather than hunted past, the browser closes "
   + "whatever happened, no credential reaches the response or the audit row, it is absent from the "
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
-  + "clear step — the flag stays false until a live run replaces all four placeholders)",
+  + "clear step — the flag is true only because the live rehearsal of 4 Oct 2026 read all four controls)",
   runNewHireMailboxAppPasswordCaptureTests,
 );
 await runTest(
@@ -5863,6 +5875,14 @@ await runTest("email zebra striping survives the sanitizer", runEmailZebraSurviv
 await runTest("email greetings name the audience (never Dear Team)", runEmailGreetingNamesTheAudienceTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
+await runTest(
+  "every payroll sheet and bank file download writes one row on its run, a person is limited per hour, and the run lists them",
+  runPayrollDownloadLogTests,
+);
+await runTest(
+  "report-it: every report read is logged or refused, the read-all list changes only through its audited function, and a report is shape-checked before it is stored",
+  runReportItReadLogTests,
+);
 await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("system cleanup center", runSystemCleanupCenterTests);
 await runTest("excuses", runExcusesTests);
@@ -5871,6 +5891,7 @@ await runTest("expense access scope (PM/GPM/TM self+reports)", runExpenseAccessS
 await runTest("payroll and outstation reads go through one logged row-security door and re-narrow their rows (audit L10)", runRlsFallbackDoorTests);
 await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver adoption)", runSalesPayrollHierarchyScopeTests);
 await runTest("internal messages", runInternalMessagesTests);
+await runTest("four routes assert their permission key on the server and refuse with no write (fingerprint decisions, ROI refresh, employee edits)", runPermissionChecksS01Tests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("gcloud migration hardening", runGcloudMigrationHardeningTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);
@@ -12063,6 +12084,10 @@ await runTest(
   runCredentialOutboxSealTests,
 );
 await runTest(
+  "the permission matrix fails closed on a cold start with the override table unreadable — every role holds nothing but the Super Admin, who keeps the defaults to repair it, and the next readable load serves the real matrix; and a chosen password is never a well-known one, a straight run, a word dressed with numbers or the person's own login id",
+  runPermissionMatrixColdStartTests,
+);
+await runTest(
   "no record keeps a usable password code or set-your-password link: the review queue's copy of the email, the notification's own row and the provider's click events are stripped before they are stored, a held credential email is never re-sent from review, and every other email is stored as it was",
   runCredentialRedactionTests,
 );
@@ -12265,6 +12290,10 @@ await runTest("the punch-feed alarm also reaches Telegram (integration audit, 13
 await runTest("the held-salary record cannot be lost silently (enterprise audit F-PAY-002): publish marks the run and writes who was held in one database call under its claim, a record with no held list is refused, and the readers throw on a missing record instead of listing nobody", runAutomatedPayrollHeldRecordAtomicTests);
 await runTest("late-approved outstation trips (REC-029 / F-PAY-012): only approved, unstamped trips of a published month from September 2026, strictly before the run, not held and not already carried, are listed; every read throws rather than listing nothing; the switch is refused while a run is in Part 2 or ready; OFF leaves the Expenses step identical; Part 2 confirm records a carried trip only when the confirmed figure covers it; publish pays only published non-held people and never a trip another published run carried", runAutomatedPayrollLateExpensesTests);
 await runTest("a pay, deduction, leave or attendance row must name a real employee (enterprise audit, 13 Nov 2026): 22 money, leave and attendance tables carry a key to the employee list, each added only after an orphan count that refuses, ON UPDATE CASCADE ON DELETE RESTRICT, and no later migration takes one off", runEmployeeKeyForeignKeysTests);
+await runTest("direct-order collection and marketing decision are atomic (the collection is one locked compare-and-set write with offsets summed under the lock; a marketing decision refuses a request that is no longer pending approval; cancel closes the open rungs in the same transaction)", runDirectOrdersAndMarketingAtomicTests);
+await runTest("two HR writes that could half-land are each one transaction now (enterprise audit, 13 Nov 2026): a retention conversation and its confidential themes are replaced together under a row lock and a compare-and-set, never a delete then an insert; a leave approver's step is decided and the request moved together under the request's row lock, paid approvals included, never the step first", runHrAtomicWritesTests);
+await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): every write runs in phx_merge_ats_candidates, which locks both rows lowest id first and refuses if one is gone; each table keeps its dedupe key, orphan clean-up and copy rule; the survivor columns are whitelisted; an RPC error throws before the Drive re-file; and the summary words are unchanged", runCandidateMergeAtomicTests);
+await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

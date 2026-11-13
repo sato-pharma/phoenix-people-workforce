@@ -114,3 +114,119 @@ export function deriveDirectOrderCollection(input: {
 
 /** Today in Cairo as YYYY-MM-DD. At 01:00 Cairo, UTC still reads yesterday. */
 export { todayInCairo } from "@/lib/date-only";
+
+/** The words of a compare-and-set loss — the same sentence whether TypeScript or the database finds it. */
+export const DIRECT_ORDER_COLLECTION_CONFLICT_MESSAGE =
+  "Conflict: this order's collection was changed by someone else a moment ago; refresh and try again.";
+
+/**
+ * The exception text `phx_record_direct_order_collection` raises, as the error a caller acts on.
+ *
+ * The database function re-checks the money arithmetic under the order's row lock, after the rules
+ * above have already passed in TypeScript — so reaching one of these means the order changed between
+ * the read and the write (an offset recorded, a second Finance save). `conflict` is the
+ * compare-and-set loss: the caller's figures were stale, and the answer is to refresh. Every other
+ * code is the same refusal `deriveDirectOrderCollection` gives, in the same words.
+ *
+ * Checked in this order so no code is matched inside a longer one.
+ */
+const COLLECTION_DB_ERRORS: ReadonlyArray<{ code: string; kind: "conflict" | "validation"; message: string }> = [
+  {
+    code: "direct_order_collection_conflict",
+    kind: "conflict",
+    message: DIRECT_ORDER_COLLECTION_CONFLICT_MESSAGE,
+  },
+  { code: "direct_order_collection_order_not_found", kind: "validation", message: "Direct order request not found." },
+  {
+    code: "direct_order_collection_not_approved",
+    kind: "validation",
+    message: "Only an approved direct order can have a collection recorded against it.",
+  },
+  {
+    code: "direct_order_collection_amount_invalid",
+    kind: "validation",
+    message: "Enter the amount collected as a number greater than zero.",
+  },
+  { code: "direct_order_collection_no_value", kind: "validation", message: "This order has no value to collect against." },
+  {
+    code: "direct_order_collection_exceeds_net_value",
+    kind: "validation",
+    message:
+      "Collected cannot exceed what is still owed on this order once its marketing settlements are deducted — " +
+      "a settlement was recorded on it a moment ago; refresh and try again.",
+  },
+  {
+    code: "direct_order_collection_exceeds_value",
+    kind: "validation",
+    message: "Collected cannot exceed the order value.",
+  },
+  {
+    code: "direct_order_collection_date_required",
+    kind: "validation",
+    message: "Enter the date the money was collected (YYYY-MM-DD).",
+  },
+];
+
+/** Maps a `phx_record_direct_order_collection` error to its kind and words; null when it is not one of ours. */
+export function directOrderCollectionDbError(
+  error: unknown,
+): { code: string; kind: "conflict" | "validation"; message: string } | null {
+  const text =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : String(error ?? "");
+  return COLLECTION_DB_ERRORS.find((entry) => text.includes(entry.code)) ?? null;
+}
+
+/** The collection the screen showed when Finance pressed Save — what the write is compared against. */
+export type ExpectedDirectOrderCollection = { paidAmount: number | null; paymentDate: string | null };
+
+/**
+ * Read the optional `expectedPaidAmount` / `expectedPaymentDate` a collection request carries.
+ *
+ * The screen sends the paid amount and payment date it LOADED, so a save made on a page opened
+ * minutes ago is compared against what that person actually saw — not against what the server
+ * happens to read at the moment of the save, which would let the later of two Finance saves silently
+ * replace the earlier one. Both keys absent means an older open tab that never sent them: `expected`
+ * is null and the service falls back to its own read. Sending one without the other, or a value of
+ * the wrong shape, is refused rather than guessed at.
+ */
+export function parseExpectedDirectOrderCollection(
+  body: unknown,
+): { ok: true; expected: ExpectedDirectOrderCollection | null } | { ok: false; message: string } {
+  const record = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const hasAmount = Object.prototype.hasOwnProperty.call(record, "expectedPaidAmount");
+  const hasDate = Object.prototype.hasOwnProperty.call(record, "expectedPaymentDate");
+  if (!hasAmount && !hasDate) return { ok: true, expected: null };
+  if (!hasAmount || !hasDate) {
+    return { ok: false, message: "Send both the collected total and the date this screen showed, or neither." };
+  }
+
+  const rawAmount = record.expectedPaidAmount;
+  let paidAmount: number | null;
+  if (rawAmount === null) paidAmount = null;
+  else if (typeof rawAmount === "number" && Number.isFinite(rawAmount) && rawAmount >= 0) paidAmount = round2(rawAmount);
+  else return { ok: false, message: "The collected total this screen showed is not a valid amount. Refresh and try again." };
+
+  const rawDate = record.expectedPaymentDate;
+  let paymentDate: string | null;
+  if (rawDate === null) paymentDate = null;
+  else if (typeof rawDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDate.trim())) paymentDate = rawDate.trim();
+  else return { ok: false, message: "The collection date this screen showed is not a valid date. Refresh and try again." };
+
+  return { ok: true, expected: { paidAmount, paymentDate } };
+}
+
+/** Does the stored collection still match what the screen showed? Money to the piastre, dates exactly. */
+export function collectionMatchesExpected(
+  stored: ExpectedDirectOrderCollection,
+  expected: ExpectedDirectOrderCollection,
+): boolean {
+  const amountsMatch =
+    stored.paidAmount == null || expected.paidAmount == null
+      ? stored.paidAmount == null && expected.paidAmount == null
+      : round2(Number(stored.paidAmount)) === round2(Number(expected.paidAmount));
+  return amountsMatch && (stored.paymentDate ?? null) === (expected.paymentDate ?? null);
+}

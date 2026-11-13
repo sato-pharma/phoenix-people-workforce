@@ -67,6 +67,24 @@ export const MODULES = [
     keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
     tables: ["deduction_disputes", "dispute_"],
   },
+  // 🔴 SPLIT, 2026-11-13, FOR THE REASON `phoenix-crm-approvals` RECORDS: `payroll` measured a 4,062-byte
+  // pointer against the 4,000 margin once the download record (REC-054) and the bank-file guard (F-PAY-016)
+  // landed the same day. The files that LEAVE the system — the run sheet, the finance sheet, the FAB and CIB
+  // bank files — and the record each download writes are one family, so their rules move together.
+  // `payroll` KEEPS EVERY GLOB IT HAD, so an automated-payroll file still loads it, and loads this one too.
+  {
+    id: "payroll-files",
+    title: "Payroll — the files that leave, and their download record",
+    scope: "The run sheet, the finance sheet and the FAB and CIB bank files: who may take them, the row each download writes, the hourly limit, the download history, and cancelling a run after a file left.",
+    globs: [
+      "src/lib/automated-payroll/{download-log,bank-file-downloads}.ts",
+      "src/components/automated-payroll/download-history-panel.tsx",
+      "app/api/automated-payroll/runs/*/{downloads,cancel}/**",
+      "tests/{payroll-download-log,automated-payroll-bank-file-download-guard}*",
+    ],
+    keywords: ["bank file", "fab file", "cib file", "finance sheet", "run sheet", "payroll download", "download history", "salary transfer file"],
+    tables: [],
+  },
   // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `payroll` reached 33
   // rules and its injected pointer measured 4,118 bytes against the 4,000-byte margin
   // `tests/module-memory.test.ts` holds, the moment the late-expense carry rule (REC-029) landed. The
@@ -1020,6 +1038,22 @@ export const MODULES = [
     keywords: ["doctor list check", "doctor-list check", "list check", "on the rep's list", "two photos", "finance ageing"],
     tables: ["marketing_customer_list_checks"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the decide-and-cancel
+  // locking rule (enterprise audit F-MKT-006) took `marketing`'s pointer to 4,128 bytes, over the
+  // 4,000-byte margin. The approval chain's database functions — decide, cancel, reopen, resubmit — are
+  // the clean cut. `marketing` KEEPS EVERY GLOB IT HAD, so a file here loads the PAIR.
+  {
+    id: "marketing-approval-chain",
+    title: "Marketing approval chain — deciding, cancelling, reopening and resubmitting a request",
+    scope: "The database functions that move a marketing request through its approval rungs (phx_decide_marketing_request_step, phx_cancel_marketing_request, the reopen and the resubmit) and the locks and status guards that keep two of them from overwriting each other.",
+    globs: [
+      "src/lib/marketing-requests/{cancel,reopen-rule}*",
+      "tests/*{marketing-cancel-request,marketing-reject-terminalises,marketing-reopen-rejected-request,marketing-finance-requirement-on-approval,direct-orders-and-marketing-atomic}*",
+      "supabase/migrations/*{marketing_decide,marketing_reject_terminalises,marketing_reopen_rejected,marketing_resubmit_atomic,marketing_refuse_self_approval,marketing_finance_requirement_on_approval}*",
+    ],
+    keywords: ["approval step", "approval rung", "decide marketing", "cancel marketing request", "reopen marketing request", "resubmit marketing request", "phx_decide_marketing_request_step"],
+    tables: ["marketing_request_approval_steps"],
+  },
   // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the careers-page rules took
   // `recruitment` to 4,295 bytes of pointer, over the 4,000-byte margin. The Job Posts page and the careers
   // page are the clean cut: none of it is read while working a candidate, a CV or an offer. `recruitment`
@@ -1483,6 +1517,24 @@ export const MODULES = [
     ],
     keywords: ["system audit", "system-audit", "daily message", "error screenshot", "crash screenshot", "what the person saw", "what the employee saw", "blocked"],
     tables: ["system_audit_", "user_error_screens"],
+  },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform`'s injected
+  // pointer measured 4,137 bytes against the 4,000-byte margin `tests/module-memory.test.ts` holds once
+  // REC-058 added the cold-start and chosen-password rules. Passwords and access control — who may
+  // sign in with what, and what the permission matrix gives each seat — are one family, so their rules
+  // moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so an auth file loads the PAIR and nothing that
+  // used to arrive stops arriving.
+  {
+    id: "platform-access",
+    title: "Platform — passwords and access control",
+    scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.",
+    globs: [
+      "src/lib/auth/{permissions,password-strength,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
+      "app/api/auth/{change-password,password-reset,password-setup}/**",
+      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,seat-fence,signed-out}*",
+    ],
+    keywords: ["password", "password reset", "reset code", "weak password", "permission matrix", "seat fence", "signed out", "retired seat"],
+    tables: ["role_permission_overrides", "app_auth_users"],
   },
   // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
   // rules and its injected pointer measured 3,909 bytes; the two session-pulse rules (one live login
