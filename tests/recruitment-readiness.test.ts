@@ -151,7 +151,7 @@ export function runRecruitmentReadinessTests() {
   assert.match(fileStorage, /isSupabaseStorageConfigured/, "file storage must prefer Supabase Storage");
 
   // --- Daily cron composition (no new Vercel cron) -----------------------
-  const daily = read("app/api/notifications/daily/route.ts");
+  const daily = read("app/api/cron/daily/_lib/daily-job-runners.ts");
   assert.match(daily, /runRecruitmentDailyNotifications/, "recruitment daily work must ride the existing cron");
   const notifications = read("src/lib/recruitment/notifications.ts");
   assert.match(notifications, /listInterviewsDueForReminder/, "daily run must send interview reminders");

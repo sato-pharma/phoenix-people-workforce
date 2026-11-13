@@ -92,7 +92,7 @@ const vacationAuditExportRouteSource = readFileSync(
   "utf8",
 );
 const dailyNotificationsRouteSource = readFileSync(
-  new URL("../app/api/notifications/daily/route.ts", import.meta.url),
+  new URL("../app/api/cron/daily/_lib/daily-job-runners.ts", import.meta.url),
   "utf8",
 );
 

@@ -22,7 +22,8 @@ export const maxDuration = 120;
  *
  * 07:40 Cairo — after the morning CRM sync and after the 07:20 distributor nudge, so the visits
  * mirror is fresh before this reads it, and a clock of its own rather than another sub-job on
- * `phoenix-notify-daily`, which is already at cron-job.org's unraisable 30-second cut.
+ * `phoenix-notify-daily`, which was then at cron-job.org's unraisable 30-second cut (that bundle was
+ * split into one job per schedule on 13 Nov 2026).
  *
  * Safe to run repeatedly: the idempotency key carries each run's START date, so a person is
  * announced once per streak and never again while that streak continues.

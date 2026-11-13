@@ -276,7 +276,7 @@ pointer: the index carries the hook, this block carries the detail.)
   `PHOENIX_EMAIL_FORCE_TESTING=true` is set explicitly: **one variable, nothing behind it.**
 - **FIXED 2026-08-27 (PR #2479) — the `APP_ENV`/cron-secret hole below is closed, all 22 of 22.**
   Until this PR, **18** cron/notification routes carried `if (!secret) return
-  !isProductionRuntime();` — including `/api/notifications/process`, `/api/notifications/daily`,
+  !isProductionRuntime();` — including `/api/notifications/process`, `/api/notifications/daily` (the morning fan-out until `PHOENIX_DAILY_JOBS_SPLIT` is on),
   `/api/cron/background-jobs`, `/api/cron/recruitment-email-intake` and
   `/api/sales/master-map/sheet` — while only **4** (the three `ireports360-visits-*` plus
   `reconciliation-check`) used the hardened form `if (!secret) return process.env.NODE_ENV ===

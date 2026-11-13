@@ -11,6 +11,8 @@ import {
   rollUpDrops,
   WINDOW_HOURS,
 } from "../src/lib/notifications/dead-telegram-link-alert.ts";
+import { DAILY_JOBS, dailyJobHeartbeatSlug } from "../src/lib/scheduled-jobs/daily-jobs.ts";
+import { jobSchedulesFor } from "../src/lib/observability/job-schedule.ts";
 
 /**
  * Telegram messages thrown away with nothing saying so.
@@ -80,42 +82,29 @@ export function runDeadTelegramLinkAlertTests(): void {
     assert.equal(DEAD_TELEGRAM_AUDIENCE, "weekly_system_health_digest", "the existing Super Admin system-health audience, not a new registry key");
   }
 
-  // ── 4. It rides the daily job and declares no schedule ──────────────────────────────────────────
+  // ── 4. It is its own morning job, on its own schedule and heartbeat ─────────────────────────────
   {
+    // It rides the 06:36 fan-out under the fan-out's heartbeat while PHOENIX_DAILY_JOBS_SPLIT is off.
+    // On 13 Nov 2026 the owner gave every morning job its own schedule: it is the job
+    // `dead-telegram-link-alert`, with a cron-job.org entry and, once the switch is on, a heartbeat
+    // of its own, `phoenix-daily-dead-telegram-link-alert`.
+    const job = DAILY_JOBS.find((entry) => entry.key === "dead-telegram-link-alert");
+    assert.ok(job, "it is one of the morning jobs (src/lib/scheduled-jobs/daily-jobs.ts)");
     assert.ok(
-      !/telegram[-_]link|dead[-_]telegram/i.test(source("src/lib/observability/job-schedule.ts")),
-      "NO JOB_SCHEDULES entry: a declaration with no cron job behind it reads as a STOPPED job and pages every Super Admin for ever",
+      jobSchedulesFor(true).some((entry) => entry.slug === dailyJobHeartbeatSlug("dead-telegram-link-alert")),
+      "and it has its own heartbeat declaration once PHOENIX_DAILY_JOBS_SPLIT is on (while it is off, the fan-out's covers it)",
     );
-    const daily = source("app/api/notifications/daily/route.ts");
-    assert.ok(/runDeadTelegramLinkAlert\(\)\.catch\(/.test(daily), "it runs in the daily job, with its own catch like every other pass");
-    // 🔴 The count is checked against REALITY, not against a literal somebody remembered to bump.
-    // `totalJobs` is hand-maintained and feeds the run summary that is alerted on
-    // (`event="cron_run_summary" failedCount>0`), so a stale number silently under-reports how many
-    // sub-jobs exist — and the file's own comment records that it has drifted before. Counting the
-    // passes is the only version of this assertion that cannot itself go stale.
-    // 🔴 The window starts at `onJobFailure`'s DEFINITION, not at the fan-out, because a sub-job
-    // does not have to be inside the `Promise.all` to run. The Needs You digest is awaited on its
-    // own just above it (2026-10-23) so its 22 sources do not spend their budgets queueing behind
-    // the other 30 — counting only the array would have read that as a LOST pass and demanded
-    // `totalJobs` be cut to 30, which would have under-reported a job that still runs and can
-    // still fail. The definition itself carries no `.catch(onJobFailure(`, so it adds nothing.
-    const body = daily.slice(daily.indexOf("function onJobFailure"), daily.indexOf("\n  ]);"));
-    const passes = (body.match(/\.catch\(\s*onJobFailure\(/g) ?? []).length;
-    const declared = Number(/const totalJobs = (\d+);/.exec(daily)?.[1] ?? "0");
+    const daily = source("app/api/cron/daily/_lib/daily-job-runners.ts");
+    assert.ok(/runDeadTelegramLinkAlert\(\)\.catch\(/.test(daily), "it runs as a morning job, with its own catch like every other job");
+    // 🔴 The count is checked against REALITY: every morning job is exactly one pass with its own
+    // failure handler, so the passes in the runners equal the jobs in the registry. The old
+    // hand-maintained `totalJobs` that this used to pin went with the fan-out.
+    const passes = (daily.match(/\.catch\(\s*onJobFailure\(/g) ?? []).length;
     assert.equal(
-      declared,
       passes,
-      `totalJobs says ${declared} but the daily job runs ${passes} sub-jobs — the run summary would under-report by ${passes - declared}`,
+      DAILY_JOBS.length,
+      `the runners carry ${passes} guarded passes for ${DAILY_JOBS.length} morning jobs — each job is exactly one`,
     );
-    assert.ok(passes >= 29, "the daily job must not silently LOSE passes either");
-    const destructure = daily.slice(daily.indexOf("  const ["), daily.indexOf("] = await Promise.all(["));
-    // Order, never "last" — "last" is only true until the next sub-job lands. Anchored on the Needs
-    // You weekly email (position 27): the account-setup reminder that sat between them was retired on
-    // 2026-11-07, and an anchor that is no longer in the file reads as -1 and would pass for anything.
-    assert.ok(destructure.indexOf("needsYouWeeklyEmail") > 0, "the anchor must really be in the destructure");
-    assert.ok(
-      destructure.indexOf("deadTelegramLinkAlert") > destructure.indexOf("needsYouWeeklyEmail"),
-      "named AFTER position 27, so positions 1-27 keep their meaning",
-    );
+    assert.ok(passes >= 29, "the morning jobs must not silently LOSE passes either");
   }
 }

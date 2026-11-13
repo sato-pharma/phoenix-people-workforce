@@ -166,8 +166,8 @@ export async function signalDeadMansSwitchStart(jobSlug: string): Promise<void> 
  * as diagnostic detail) if it throws — then re-throws unchanged, so the caller's own try/catch,
  * logError, and HTTP status logic are completely undisturbed. Use this when a route's existing
  * throw/no-throw shape already means what it says (most of the 7 routes). For
- * app/api/notifications/daily/route.ts, which deliberately never throws on a PARTIAL sub-job
- * failure (see that route's own comment), call `pingDeadMansSwitch` directly instead so the ping
+ * app/api/cron/daily/[job]/route.ts, whose jobs hand their errors to a failure handler instead of
+ * throwing (see that route's own comment), call `pingDeadMansSwitch` directly instead so the ping
  * can reflect that nuance.
  *
  * `signalStart: true` sends the `/start` signal first - see `signalDeadMansSwitchStart`.

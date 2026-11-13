@@ -385,11 +385,19 @@ export async function runDeadMansSwitchTests() {
     {
       const read = (path: string) => stripComments(readFileSync(new URL(path, import.meta.url), "utf8"));
       const sweep = read("../app/api/cron/phoenix-crm-integrity-sweep/route.ts");
-      const daily = read("../app/api/notifications/daily/route.ts");
+      // The morning jobs signal start wherever they run: the 06:36 fan-out under `phoenix-notify-daily`
+      // while PHOENIX_DAILY_JOBS_SPLIT is off, each job's own route under its own slug once it is on.
+      const fanOut = read("../app/api/notifications/daily/route.ts");
+      const daily = read("../app/api/cron/daily/[job]/route.ts");
       assert.match(sweep, /withDeadMansSwitch\(\s*"phoenix-crm-integrity-sweep"[\s\S]*?signalStart:\s*true/, "integrity sweep must signal start");
-      assert.match(daily, /signalDeadMansSwitchStart\("phoenix-notify-daily"\)/, "notify-daily must signal start");
+      assert.match(fanOut, /await signalDeadMansSwitchStart\("phoenix-notify-daily"\);/, "the morning fan-out must signal start");
       assert.ok(
-        daily.indexOf('signalDeadMansSwitchStart("phoenix-notify-daily")') < daily.indexOf("await runDailyNotifications(request)"),
+        fanOut.indexOf('await signalDeadMansSwitchStart("phoenix-notify-daily");') < fanOut.indexOf("await runDailyNotifications(request"),
+        "and before the run, not after it",
+      );
+      assert.match(daily, /await signalDeadMansSwitchStart\(slug\);/, "each morning job must signal start");
+      assert.ok(
+        daily.indexOf("await signalDeadMansSwitchStart(slug);") < daily.indexOf("await runOneDailyJob(request"),
         "and before the run, not after it",
       );
     }
