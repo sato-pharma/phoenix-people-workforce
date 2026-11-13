@@ -36,8 +36,26 @@ $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=E
 $log = Join-Path $env:USERPROFILE '.claude\logs\spare-follow-production.log'
 function Log($m) { $l = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m; Write-Output $l; Add-Content -LiteralPath $log -Value $l -Encoding utf8 }
 
+# THE DEV SERVER IS STARTED WHEN IT IS NOT RUNNING (2026-11-13). "Phoenix Dev Server" on the spare is on-demand
+# only, so after the spare lost power at 06:47 and came back at 13:37 nothing started it, and localhost:3000
+# answered nothing while every run here saw the right version and exited. This check runs first, before
+# production is asked (this laptop often cannot reach production), and never while a pnpm install is running
+# (the reinstall below stops the server on purpose) or while the packages are incomplete (the reinstall
+# starts it again when it is done).
+$srv = @(& "$PSScriptRoot\spare.ps1" -Command 'if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { "SRV up" } elseif (Get-CimInstance Win32_Process -Filter "Name=''node.exe''" | Where-Object { $_.CommandLine -match "pnpm.*install" }) { "SRV installing" } elseif (-not (Test-Path D:\Phoenix\phoenix-workforce\node_modules\.bin\next.cmd)) { "SRV no-packages" } else { Start-ScheduledTask -TaskName "Phoenix Dev Server"; "SRV started" }' -ConnectTimeout 20)
+if ("$srv" -match 'SRV started') { Log 'dev server was not running on the spare (a restart or a power cut) - started it' }
+
 if ($Target -eq 'production') {
-  try { $rev = (Invoke-RestMethod 'https://phoenix-hr.satopharma.com/api/healthz' -TimeoutSec 30).revision } catch { Log "production did not answer: $($_.Exception.Message)"; exit 1 }
+  # Three tries, 15 s each (2026-11-13): from this home network about one connection in three to production's
+  # Railway address (153.52.255.32) never completes - measured 7/20 from this laptop and 8/20 from the spare,
+  # while staging (153.52.255.122), GitHub and Google failed 0/20. One try made most runs log "production did
+  # not answer"; three fail together about 4% of the time.
+  $rev = $null; $err = $null
+  foreach ($try in 1..3) {
+    try { $rev = (Invoke-RestMethod 'https://phoenix-hr.satopharma.com/api/healthz' -TimeoutSec 15).revision; break }
+    catch { $err = $_.Exception.Message; Start-Sleep 2 }
+  }
+  if (-not $rev) { Log "production did not answer after 3 tries: $err"; exit 1 }
   if ($rev -notmatch '^[0-9a-f]{40}$') { Log "production gave no revision ($rev)"; exit 1 }
 } else {
   git -C $repo fetch -q origin main 2>$null
