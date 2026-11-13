@@ -144,7 +144,7 @@ export function TelegramHomeCard() {
           Got it
         </button>
       ) : (
-        <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 self-start sm:shrink-0 sm:self-center">
           {finishing ? (
             <>
               {link ? (
