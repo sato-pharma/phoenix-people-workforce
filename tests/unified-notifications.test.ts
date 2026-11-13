@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 const rootPath = fileURLToPath(new URL("..", import.meta.url));
 
@@ -122,7 +123,13 @@ export function runUnifiedNotificationsTests() {
       // it) is allowed for src/lib/observability/config-drift.ts's operator-facing drift
       // warning — it only calls the notifications module's own telegramEnvironmentStatus()
       // boolean helper, never touches process.env.TELEGRAM_BOT_TOKEN or the API directly.
-      (/TELEGRAM_BOT_TOKEN/.test(text) && file !== "src/lib/observability/config-drift.ts"))
+      //
+      // src/lib/integrations/registry.ts NAMES the variable, as data: the Integrations page (13 Nov 2026)
+      // lists which variable holds each outside service's credential. It is pinned below to read no
+      // variable at all and to call nothing.
+      (/TELEGRAM_BOT_TOKEN/.test(text) &&
+        file !== "src/lib/observability/config-drift.ts" &&
+        file !== "src/lib/integrations/registry.ts"))
     .map(({ file }) => file);
 
   assert.deepEqual(forbidden, [], "modules must not call Telegram directly");
@@ -130,6 +137,11 @@ export function runUnifiedNotificationsTests() {
     source("src/lib/observability/config-drift.ts"),
     /telegramEnvironmentStatus/,
     "the one allowed TELEGRAM_BOT_TOKEN mention outside notifications/ must go through the module's own boolean status helper, not a raw env read",
+  );
+  assert.doesNotMatch(
+    stripComments(source("src/lib/integrations/registry.ts")),
+    /process\.env|api\.telegram\.org|\bfetch\(|from "@\/lib\/supabase/,
+    "the integration registry names variables as data: it reads no variable, calls no service and opens no database",
   );
 
   const webhookSource = source("app/api/integrations/telegram/webhook/route.ts");
