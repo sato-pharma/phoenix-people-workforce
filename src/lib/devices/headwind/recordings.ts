@@ -45,7 +45,7 @@ import { callHeadwind } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 import { isUuid } from "@/lib/http/uuid";
-import { logWarning } from "@/lib/observability/log";
+import { logInfo, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const TABLET_RECORDING_BUCKET = "device-screen-recordings";
@@ -61,6 +61,13 @@ export const RECORDING_SIGNED_URL_TTL_SECONDS = 60 * 60;
 /** The bucket's own ceiling, matched here so an oversize upload is refused before it is stored. */
 export const RECORDING_MAX_BYTES = 268_435_456;
 export const RECORDING_ALLOWED_MIME = ["video/mp4", "video/webm"] as const;
+/**
+ * How long a capture is kept (owner, 13 Nov 2026: "recordings 90 days"). The daily notification run
+ * calls `purgeExpiredTabletRecordings`, which deletes the file and then its row, and says how many.
+ */
+export const TABLET_RECORDING_RETENTION_DAYS = 90;
+/** One pass's ceiling; the next day's run takes the rest. The Storage API removes at most this many paths per call. */
+const RECORDING_PURGE_BATCH = 100;
 /**
  * The largest REQUEST the upload door reads: the file's own cap plus room for the multipart framing
  * and the three small form fields. Judged on `Content-Length` before a byte of the body is read
@@ -546,4 +553,70 @@ function normaliseCaptured(value: number | null): number | null {
   const rounded = Math.round(value);
   if (rounded < 1) return null;
   return Math.min(600, rounded);
+}
+
+export type TabletRecordingPurgeResult = {
+  cutoffIso: string;
+  /** Rows older than the cutoff that this pass found. */
+  expired: number;
+  /** Files the Storage API reported it removed. A slot that never received a file has none. */
+  filesRemoved: number;
+  /** Rows deleted — only after their file's removal succeeded. */
+  rowsDeleted: number;
+  error?: string;
+};
+
+/**
+ * Deletes every capture older than the retention period: the FILE first, through the Storage API (a
+ * delete on storage.objects is refused), and only then its row. If the file removal fails, the row
+ * stays, so the file is never left behind without the record that names it; the next run retries.
+ */
+export async function purgeExpiredTabletRecordings(
+  retentionDays = TABLET_RECORDING_RETENTION_DAYS,
+  nowMs = Date.now(),
+): Promise<TabletRecordingPurgeResult> {
+  const cutoffIso = new Date(nowMs - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000).toISOString();
+  const result: TabletRecordingPurgeResult = { cutoffIso, expired: 0, filesRemoved: 0, rowsDeleted: 0 };
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(TABLET_RECORDING_TABLE)
+    .select("id, storage_path")
+    .lt("requested_at", cutoffIso)
+    .order("requested_at", { ascending: true })
+    .limit(RECORDING_PURGE_BATCH);
+  if (error) throw new Error(`Could not read the expired recordings: ${error.message}`);
+  const rows = (data ?? []) as Array<{ id: string; storage_path: string | null }>;
+  result.expired = rows.length;
+  if (rows.length === 0) return result;
+
+  const paths = rows.map((row) => row.storage_path).filter((path): path is string => Boolean(path));
+  if (paths.length > 0) {
+    const removed = await supabase.storage.from(TABLET_RECORDING_BUCKET).remove(paths);
+    if (removed.error) {
+      result.error = `The recording files could not be removed: ${removed.error.message}`;
+      logWarning("Tablet recording retention: file removal failed; rows kept for the next run", {
+        labels: { event: "tablet_recording_purge_files_failed" },
+        context: { expired: rows.length },
+      });
+      return result;
+    }
+    result.filesRemoved = removed.data?.length ?? 0;
+  }
+
+  const { data: deleted, error: deleteError } = await supabase
+    .from(TABLET_RECORDING_TABLE)
+    .delete()
+    .in("id", rows.map((row) => row.id))
+    .select("id");
+  if (deleteError) {
+    result.error = `The recording rows could not be deleted: ${deleteError.message}`;
+    return result;
+  }
+  result.rowsDeleted = deleted?.length ?? 0;
+  logInfo("Tablet recording retention: removed expired captures", {
+    labels: { event: "tablet_recording_purge" },
+    context: { cutoffIso, filesRemoved: result.filesRemoved, retentionDays, rowsDeleted: result.rowsDeleted },
+  });
+  return result;
 }
