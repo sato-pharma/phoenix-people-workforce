@@ -4,6 +4,7 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertDirectOrderShareToken } from "@/lib/direct-orders/report-share-links";
 import { DIRECT_ORDER_EVIDENCE_BUCKET } from "@/lib/direct-orders/pharmacy-validation";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -35,8 +36,15 @@ function plain(message: string, status: number) {
  * GPS-stamped photograph of a real shop front.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 1200, linkLimit: 1200, scope: "direct_order_share_file" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "text");
+  }
+  try {
     const url = new URL(request.url);
     if (String(url.searchParams.get("kind") ?? "") !== "evidence") {
       return plain("Unknown file kind.", 400);

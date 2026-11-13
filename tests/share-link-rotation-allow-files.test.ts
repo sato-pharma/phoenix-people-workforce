@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 import { rotatedLabel } from "../src/lib/share-links/rotated-label.ts";
+import { hashShareToken, shareTokenPreview } from "../src/lib/share-links/token-hash.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A ROTATED SHARE LINK KEEPS ITS FILE GRANT — exactly, never more.
@@ -88,9 +89,11 @@ function mintedRow(relative: string, old: Record<string, unknown>): Record<strin
   return vm.runInNewContext(`(${insertLiteral(relative)})`, {
     String,
     expiresAt: String(old.expires_at),
+    hashShareToken,
     newToken: NEW_TOKEN,
     old,
     rotatedLabel,
+    shareTokenPreview,
   }) as Record<string, unknown>;
 }
 

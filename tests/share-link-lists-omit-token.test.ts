@@ -55,6 +55,12 @@ export function runShareLinkListsOmitTokenTests() {
       type: "export type MarketingShareLink = {",
       list: "export async function listMarketingReportShareLinks(",
     },
+    {
+      name: "Territory preview",
+      file: "../src/lib/territory-management/preview-links.ts",
+      type: "export type TerritoryPreviewLink = {",
+      list: "export async function listTerritoryPreviewLinks(",
+    },
   ] as const;
 
   for (const service of services) {
@@ -68,19 +74,17 @@ export function runShareLinkListsOmitTokenTests() {
     );
     assert.ok(/^\s*tokenPreview: string;/m.test(type), `${service.name}: a link is identified by its 8-char tokenPreview`);
 
-    // ── 2. The mapper drops the token, and only ever slices it ────────────────
+    // ── 2. The mapper reads only the stored preview — the token itself is not stored (REC-055) ──
     const list = functionBlock(source, service.list);
-    assert.ok(list.includes("previewOf(row.token)"), `${service.name}: the list must build tokenPreview through previewOf`);
+    assert.ok(
+      /tokenPreview: (?:String|str)\(row\.token_preview\b/.test(list),
+      `${service.name}: the list must build tokenPreview from row.token_preview`,
+    );
     assert.ok(
       !/\btoken\s*:/.test(list),
       `${service.name}: the list mapper must not emit a \`token:\` key — only \`tokenPreview:\``,
     );
-    const rawReads = list.match(/row\.token\b/g) ?? [];
-    assert.equal(rawReads.length, 1, `${service.name}: the list may touch row.token once, inside previewOf, and nowhere else`);
-    assert.ok(
-      /function previewOf\(token: unknown\): string \{\s*return String\(token \?\? ""\)\.slice\(0, 8\);\s*\}/.test(source),
-      `${service.name}: previewOf must be the first 8 characters — the same length the audit rows store`,
-    );
+    assert.ok(!/row\.token\b/.test(list), `${service.name}: the list must never read row.token`);
 
     // ── 3. The whole token still has exactly one way out: the mint ────────────
     assert.ok(
@@ -88,6 +92,14 @@ export function runShareLinkListsOmitTokenTests() {
       `${service.name}: the create function must still return the token, once, to the person who minted it`,
     );
   }
+
+  // The preview every service stores is the first 8 characters — the same length the audit rows carry.
+  assert.ok(
+    /export function shareTokenPreview\(token: string\): string \{\s*return token\.slice\(0, 8\);\s*\}/.test(
+      stripComments(read("../src/lib/share-links/token-hash.ts")),
+    ),
+    "shareTokenPreview must be the first 8 characters",
+  );
 
   // ── 4. The routes serialise the list as returned, and add nothing to it ──────
   for (const route of [
