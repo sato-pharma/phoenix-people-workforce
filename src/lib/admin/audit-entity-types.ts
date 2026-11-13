@@ -80,6 +80,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   cv_lifecycle_share_link: true,
   cv_lookup_open: true,
   cv_lookup_search: true,
+  daily_deductions_dispute: true,
   daily_deductions_publication: true,
   deduction_candidate: true,
   deduction_comment: true,
