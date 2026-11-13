@@ -71,6 +71,8 @@ type CandidateApiRow = {
     appliedDates: string[] | null;
     decidedBy: string | null;
     decidedAt: string | null;
+    /** The row's revision as this screen read it — sent back so a save over someone else's change is refused. */
+    updatedAt?: string;
   } | null;
   /**
    * The id of this candidate's ACTIVE pushed line, or null when it has not been
@@ -377,6 +379,7 @@ function DeductionDaysEditor({
           hrNote: row.decision?.hrNote ?? "",
           appliedValue: parsedQuantity,
           appliedDates: selected,
+          ...expectedRevision(row),
         }),
       });
       const notices = payload.decision?.payrollNotices ?? [];
@@ -624,6 +627,15 @@ function monthLabel(monthKey: string) {
   );
 }
 
+/**
+ * The decision's revision as this screen read it, for a compare-and-set save (F-PAY-004): a decision
+ * somebody else changed since — the Dispute Center, another tab — is refused instead of overwritten.
+ * Sent only when the row carries one; a row with no revision saves as before.
+ */
+function expectedRevision(row: CandidateApiRow): { expectedUpdatedAt?: string } {
+  return typeof row.decision?.updatedAt === "string" && row.decision.updatedAt ? { expectedUpdatedAt: row.decision.updatedAt } : {};
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init });
   const payload = await response.json().catch(() => ({}));
@@ -731,7 +743,7 @@ function CandidateDecideRow({
       }>("/api/admin/deductions/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason }),
+        body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason, ...expectedRevision(row) }),
       });
       onDecided(row.id, payload.decision);
       const notices = payload.decision?.payrollNotices ?? [];
@@ -1106,7 +1118,7 @@ function BulkDecideBar({
           }>("/api/admin/deductions/decisions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason }),
+            body: JSON.stringify({ candidateId: row.id, decisionStatus: status, decisionReason: effectiveReason, ...expectedRevision(row) }),
           });
           onDecided(row.id, payload.decision);
           succeeded.push(row.id);

@@ -227,14 +227,15 @@ export function RetentionWorkspace({
    * the number would stop meaning anything. The service stamps follow_up_done_at server-side — the
    * client never sends a timestamp, so a wrong clock on a laptop cannot date-stamp the record.
    */
-  const markFollowUp = useCallback(async (id: string, done: boolean) => {
+  const markFollowUp = useCallback(async (id: string, done: boolean, expectedUpdatedAt: string) => {
     setBusy(true);
     setError(null);
     try {
       const response = await fetch("/api/retention", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation: { id, followUpDone: done } }),
+        // The version this screen loaded: a save over a newer one is refused (409), not last-wins.
+        body: JSON.stringify({ conversation: { id, followUpDone: done, expectedUpdatedAt } }),
       });
       const payload = (await response.json()) as RetentionDashboardData & { message?: string };
       if (!response.ok) {
@@ -770,7 +771,7 @@ export function RetentionWorkspace({
                             className="rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={busy}
                             onClick={() =>
-                              void markFollowUp(conversation.id, !conversation.followUpDoneAt)
+                              void markFollowUp(conversation.id, !conversation.followUpDoneAt, conversation.updatedAt)
                             }
                             type="button"
                           >
@@ -814,7 +815,7 @@ function ConversationCard({
   busy: boolean;
   canUpdate: boolean;
   conversation: RetentionConversation;
-  onMarkFollowUp: (id: string, done: boolean) => Promise<void>;
+  onMarkFollowUp: (id: string, done: boolean, expectedUpdatedAt: string) => Promise<void>;
 }) {
   return (
     <div className="border border-slate-200 bg-white px-4 py-4">
@@ -885,7 +886,7 @@ function ConversationCard({
             <button
               className="ml-2 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={busy}
-              onClick={() => void onMarkFollowUp(conversation.id, !conversation.followUpDoneAt)}
+              onClick={() => void onMarkFollowUp(conversation.id, !conversation.followUpDoneAt, conversation.updatedAt)}
               type="button"
             >
               {conversation.followUpDoneAt ? "Reopen" : "Mark done"}

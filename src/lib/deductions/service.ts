@@ -1752,6 +1752,14 @@ export async function recordDecision(input: {
    * by hand would leave the days on the leave balance AND on salary, or the other way round.
    */
   viaLeaveBalance?: boolean;
+  /**
+   * The decision's `updated_at` as the reviewer's screen read it (F-PAY-004). When given, the write is a
+   * COMPARE-AND-SET: it lands only if the row still carries exactly that revision, and otherwise is
+   * refused with a Conflict before anything is written. `null` means the screen saw NO decision row,
+   * so the write is an insert that refuses if one has appeared since. Omitted: the plain upsert, as
+   * every caller that does not hold a revision (the bridges, leave balance, the Dispute Center) writes.
+   */
+  expectedUpdatedAt?: string | null;
 }): Promise<DeductionsDecision & { payrollNotices: string[] }> {
   assertDeductionsDecisionActor(input.actor);
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
@@ -1880,12 +1888,19 @@ export async function recordDecision(input: {
     actor_role_at_decision: input.actor.role,
   };
 
-  const { data, error } = await supabase
-    .from("deductions_decisions")
-    .upsert(payload, { onConflict: "candidate_id" })
-    .select("*")
-    .single();
-  if (error) throw new Error(`Failed to save the deduction decision: ${error.message}`);
+  const { data, error } = await writeDecisionRow(supabase, payload, input.expectedUpdatedAt);
+  if (error) {
+    // THE DATABASE HAS THE LAST WORD ON THE LOCK (F-PAY-004): the check above is a read, and a push or
+    // publication can lock the candidate between it and this write. The trigger
+    // phx_deductions_decisions_refuse_locked (migration 20261113162321) refuses that write.
+    if (isPublicationLockRefusal(error)) {
+      throw new Error(
+        "Conflict: this candidate was locked by a publication a moment ago — it can no longer be decided directly.",
+      );
+    }
+    throw new Error(`Failed to save the deduction decision: ${error.message}`);
+  }
+  if (!data) throw new Error(STALE_DECISION_CONFLICT);
 
   await writeAuditLog({
     actorLoginId: input.actor.loginId ?? input.actor.hrId ?? "unknown",
@@ -1919,6 +1934,53 @@ export async function recordDecision(input: {
       : [];
 
   return { ...mapDecisionRow(data as Record<string, unknown>)!, payrollNotices };
+}
+
+export const STALE_DECISION_CONFLICT =
+  "Conflict: this decision was changed by someone else after you opened it. Reload the month to see the decision on record, then decide again.";
+
+/** The trigger's refusal of a decision on a candidate a publication has locked (errcode 55000). */
+export function isPublicationLockRefusal(error: { code?: string | null; message?: string | null }): boolean {
+  return error.code === "55000" && /locked by a publication/i.test(error.message ?? "");
+}
+
+type DecisionWriteClient = ReturnType<typeof getSupabaseAdmin>;
+
+/**
+ * The decision write. Without an expected revision it is the plain upsert. With one it is a TRUE
+ * compare-and-set in a single statement — `update … where candidate_id = ? and updated_at = ?`, or an
+ * insert when the screen saw no row — never a read followed by a write: `data` comes back null when the
+ * row moved, and nothing was written.
+ */
+export async function writeDecisionRow(
+  supabase: DecisionWriteClient,
+  payload: Record<string, unknown> & { candidate_id: string },
+  expectedUpdatedAt: string | null | undefined,
+): Promise<{ data: Record<string, unknown> | null; error: { code?: string | null; message: string } | null }> {
+  if (expectedUpdatedAt === undefined) {
+    const { data, error } = await supabase
+      .from("deductions_decisions")
+      .upsert(payload, { onConflict: "candidate_id" })
+      .select("*")
+      .single();
+    return { data: (data as Record<string, unknown> | null) ?? null, error };
+  }
+  if (expectedUpdatedAt === null) {
+    const { data, error } = await supabase.from("deductions_decisions").insert(payload).select("*");
+    // 23505: a decision row appeared since the screen read "none" — somebody else decided first.
+    if (error && error.code === "23505") return { data: null, error: null };
+    if (error) return { data: null, error };
+    return { data: ((data ?? []) as Array<Record<string, unknown>>)[0] ?? null, error: null };
+  }
+  const { candidate_id: candidateId, ...changes } = payload;
+  const { data, error } = await supabase
+    .from("deductions_decisions")
+    .update(changes)
+    .eq("candidate_id", candidateId)
+    .eq("updated_at", expectedUpdatedAt)
+    .select("*");
+  if (error) return { data: null, error };
+  return { data: ((data ?? []) as Array<Record<string, unknown>>)[0] ?? null, error: null };
 }
 
 /**

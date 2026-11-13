@@ -68,7 +68,9 @@ export function DirectOrderCollectionControl({
       const res = await fetch(`/api/direct-orders/${encodeURIComponent(requestId)}/collection`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
+        // The collection this screen LOADED goes with the save, so a save from a page opened
+        // before someone else's is refused (409) instead of silently replacing it.
+        body: JSON.stringify({ ...next, expectedPaidAmount: paidAmount, expectedPaymentDate: paymentDate }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;

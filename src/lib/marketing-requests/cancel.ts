@@ -122,8 +122,9 @@ async function resolveCancelActor(access: AccessContext): Promise<string> {
 /**
  * Call off a marketing request.
  *
- * The status flip is a compare-and-set (`.eq("status", expectedCurrentStatus)`): two admins acting
- * on the same request would otherwise both "succeed", and the second would overwrite the first. It
+ * The status flip is a compare-and-set against the status read here (inside
+ * `phx_cancel_marketing_request`, under the request's row lock): two admins acting on the same
+ * request would otherwise both "succeed", and the second would overwrite the first. It
  * stamps `updated_by_hr_id` and `updated_at`, which is what makes the `AFTER UPDATE`
  * `phx_capture_marketing_request_event` trigger record WHO cancelled it and from which state — the
  * timeline entry is automatic, exactly as it is for a finance hold. The reason is written to the
@@ -157,28 +158,41 @@ export async function cancelMarketingRequest(params: {
     );
   }
 
+  // ONE transaction (F-MKT-006): phx_cancel_marketing_request locks the request, compare-and-sets its
+  // status against the one read above, flips it to `cancelled` and closes every approval rung still
+  // `current` or `pending` as `skipped` — the status a reject already gives the rungs it ends. A
+  // cancel that left its `current` rung open let that approver decide it afterwards, and the decision
+  // wrote the cancelled request back to approved or rejected. phx_decide_marketing_request_step now
+  // also refuses any request that is no longer `pending_approval`, under the same lock, so the two
+  // guards hold each other up.
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("marketing_requests")
-    .update({ status: MARKETING_CANCELLED_STATUS, updated_at: now, updated_by_hr_id: actorHrId })
-    .eq("id", requestId)
-    .eq("status", request.status)
-    .select("id")
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) {
-    throw conflictError(
-      "The request changed status while it was being cancelled. Reload and try again.",
-      "marketing_cancel_conflict",
-    );
+  const { data, error } = await supabase.rpc("phx_cancel_marketing_request", {
+    p_actor_hr_id: actorHrId,
+    p_cancelled_at: now,
+    p_expected_status: request.status,
+    p_request_id: requestId,
+  });
+  if (error) {
+    const text = String(error.message ?? "");
+    if (text.includes("marketing_cancel_conflict")) {
+      throw conflictError(
+        "The request changed status while it was being cancelled. Reload and try again.",
+        "marketing_cancel_conflict",
+      );
+    }
+    if (text.includes("marketing_request_not_found")) {
+      throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+    }
+    throw error;
   }
+  const closedApprovalSteps = Number((data as { closedSteps?: number } | null)?.closedSteps ?? 0);
 
   await writeRequiredAuditLog({
     actorLoginId: params.access.loginId ?? params.access.hrId,
     entityId: requestId,
     entityType: "marketing_request",
-    newValues: { status: MARKETING_CANCELLED_STATUS },
+    newValues: { status: MARKETING_CANCELLED_STATUS, closedApprovalSteps },
     oldValues: { status: request.status },
     summary:
       `Marketing request ${request.requestCode ?? requestId} cancelled `

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -51,6 +52,11 @@ export async function POST(
     const message = vacationErrorMessage(error) || "Unable to decide vacation request.";
     if (isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:")) {
       return NextResponse.json({ error: "forbidden", message, success: false }, { status: 403 });
+    }
+    // Lost a race: the request moved, or the approver's step was already decided, since the approver
+    // read it (vacationDecisionWriteError). Nothing was written; the screen should reload, not retry blind.
+    if (error instanceof ApiError && error.status === 409) {
+      return NextResponse.json({ error: error.code, message, success: false }, { status: 409 });
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });

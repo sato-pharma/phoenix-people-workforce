@@ -48,7 +48,8 @@ export function nameFor(names: Map<string, string>, hrId: string | null | undefi
   return key ? names.get(key) ?? null : null;
 }
 
-export async function recordCaseEvent(input: {
+/** One event to write — what `recordCaseEvent` takes, and what `recordCaseEvents` writes several of at once. */
+export type CaseEventInput = {
   kind: DisputeCaseKind;
   ref: string;
   eventType: DisputeCaseEventType;
@@ -56,18 +57,35 @@ export async function recordCaseEvent(input: {
   actorRole: string | null;
   note?: string | null;
   details?: Record<string, unknown>;
-}): Promise<DisputeCaseEvent> {
+};
+
+function eventInsertRow(input: CaseEventInput) {
+  return {
+    actor_hr_id: input.actorHrId,
+    actor_role: input.actorRole,
+    case_kind: input.kind,
+    case_ref: input.ref,
+    details: input.details ?? {},
+    event_type: input.eventType,
+    note: input.note?.trim() || null,
+  };
+}
+
+/**
+ * Several events in ONE insert — all of them land, or none. A dispute decision writes its refund
+ * events and its "decided" event together as its last write (F-PAY-005): the events table is
+ * append-only, so an event written before a later step failed could never be taken back.
+ */
+export async function recordCaseEvents(inputs: CaseEventInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  const { error } = await getSupabaseAdmin().from("dispute_case_events").insert(inputs.map(eventInsertRow));
+  if (error) throw error;
+}
+
+export async function recordCaseEvent(input: CaseEventInput): Promise<DisputeCaseEvent> {
   const { data, error } = await getSupabaseAdmin()
     .from("dispute_case_events")
-    .insert({
-      actor_hr_id: input.actorHrId,
-      actor_role: input.actorRole,
-      case_kind: input.kind,
-      case_ref: input.ref,
-      details: input.details ?? {},
-      event_type: input.eventType,
-      note: input.note?.trim() || null,
-    })
+    .insert(eventInsertRow(input))
     .select(EVENT_COLUMNS)
     .single();
   if (error) throw error;
@@ -87,6 +105,25 @@ function mapEvent(row: EventRow, names: Map<string, string>): DisputeCaseEvent {
     id: row.id,
     note: row.note,
   };
+}
+
+/**
+ * Events whose `details` are for HR alone. A "decision_interrupted" marker carries the decider's HR id
+ * and role, the HR note, the before-state and left-state rows (refunds included) and raw database error
+ * text — the case's own employee sees that the case needs attention, never what is inside it.
+ */
+const REVIEWER_ONLY_DETAILS: ReadonlySet<DisputeCaseEvent["eventType"]> = new Set(["decision_interrupted"]);
+
+/** The events as this viewer may see them: a reviewer gets everything; anyone else gets no HR-only details. */
+export function eventsForViewer(events: DisputeCaseEvent[], viewer: { isReviewer: boolean }): DisputeCaseEvent[] {
+  if (viewer.isReviewer) return events;
+  return events.map((event) => (REVIEWER_ONLY_DETAILS.has(event.eventType) ? { ...event, details: {} } : event));
+}
+
+function compareEventsOldestFirst(left: DisputeCaseEvent, right: DisputeCaseEvent): number {
+  const byTime = (Date.parse(left.createdAt) || 0) - (Date.parse(right.createdAt) || 0);
+  if (byTime !== 0) return byTime;
+  return Number(left.eventType === "decided") - Number(right.eventType === "decided");
 }
 
 /**
@@ -125,5 +162,8 @@ export async function listCaseEvents(kind: DisputeCaseKind, refs: string[]): Pro
     list.push(mapEvent(row, names));
     byRef.set(row.case_ref, list);
   }
+  // Events written by one insert share one timestamp (recordCaseEvents). Oldest first, and within one
+  // moment the "decided" event last — it is the one a decision writes after its refunds.
+  for (const list of byRef.values()) list.sort(compareEventsOldestFirst);
   return byRef;
 }

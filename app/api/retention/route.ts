@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isDevelopment } from "@/lib/env";
+import { ApiError } from "@/lib/http/api-errors";
 import {
   createRetentionConversation,
   getRetentionDashboardData,
@@ -22,6 +23,11 @@ export const dynamic = "force-dynamic";
 
 function retentionApiError(error: unknown) {
   if (isForbiddenError(error)) return { message: retentionErrorMessage(error), status: 403 };
+  // A save that lost its compare-and-set (someone else saved the conversation since this screen
+  // loaded it) is 409, and a malformed loaded version is 400 — the service throws both as ApiError.
+  if (error instanceof ApiError && (error.status === 409 || error.status === 400)) {
+    return { message: error.message, status: error.status };
+  }
   if (isRetentionSchemaMissing(error)) {
     return {
       message: isDevelopment ? retentionErrorMessage(error) : "Retention schema is not ready.",

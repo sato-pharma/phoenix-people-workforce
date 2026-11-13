@@ -99,7 +99,8 @@ export function runTransactionWorkflowAuditTests() {
     vacationService.indexOf("async function applyVacationDecision"),
     vacationService.indexOf("export async function decideVacationRequest"),
   );
-  assert.match(vacationDecision, /\.eq\("status", input\.request\.status\)/);
+  // The status compare-and-set now runs inside phx_apply_vacation_step_decision (F-HR-010, 13 Nov 2026).
+  assert.match(vacationDecision, /p_expected_status: input\.request\.status/);
   assert.match(vacationDecision, /eventType: `approval_\$\{step\.stepKey\}_\$\{decisionValue\}`/);
   assert.match(vacationDecision, /stepKey: step\.stepKey/);
   assert.match(vacationDecision, /writeRequiredAuditLog\(\{[\s\S]*entityType: "vacation_request"/);

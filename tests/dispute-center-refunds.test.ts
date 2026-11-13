@@ -345,7 +345,9 @@ export async function runDisputeCenterRefundsTests() {
 
   // A DECIDED case is decided again only after a reopen — the gate digest.ts has had all along.
   assert.ok(
-    decide.includes("isDecidedByEvents(events)") && decide.includes("Reopen it first, then decide it again."),
+    decide.includes("isDecidedByEvents(events)") &&
+      decide.includes("conflictError(ALREADY_DECIDED)") &&
+      deduction.includes("Reopen it first, then decide it again."),
     "without this a decided case could be decided twice over, and each decision measured what it " +
       "owed against what the last one left — a second refund stacked on the first",
   );
@@ -368,12 +370,14 @@ export async function runDisputeCenterRefundsTests() {
       "charged before the dispute touched it, since the decision row is overwritten each time",
   );
 
-  // Half a decision must never pass as a whole one: the line comes off first, and if the decision
-  // then fails the line goes back rather than leaving payroll and the portal disagreeing.
+  // Half a decision must never pass as a whole one (F-PAY-005): a failure after the first write puts
+  // the whole before-state back, and where even that fails the case is marked, never left reading open.
+  // The behaviour itself is pinned by tests/dispute-and-deduction-atomic.test.ts.
   assert.ok(
-    decide.includes("The deduction was taken off the payslip but the decision did not save") &&
-      decide.includes("It could NOT be put back"),
-    "a failed recordDecision after a successful withdraw is reported as the state it leaves behind",
+    decide.includes("Everything it had started to change was put back") &&
+      decide.includes("could NOT be put back") &&
+      decide.includes('eventType: "decision_interrupted"'),
+    "a failed decision after a successful write is undone, or reported as the state it leaves behind",
   );
 
   // One live refund per case is a database rule, and a PAID one cannot be cancelled to make room.

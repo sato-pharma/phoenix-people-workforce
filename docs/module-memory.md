@@ -88,6 +88,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | --- | --- |
 | `payroll` — Payroll, salaries and deductions | `src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**` and 4 more |
 | `payroll-disputes` — Payroll — disputes and the Dispute Center | `src/lib/dispute-center/**` and 3 more |
+| `payroll-automated` — Payroll — the automated payroll run | `src/lib/automated-payroll/**` and 3 more |
 | `sales-closing` — Monthly Closing, the Office and El Qema money rules, the Business Review | `src/lib/sales/*` and 6 more |
 | `sales-closing-exports` — Monthly Closing — the exports, the premium workbook and the Performance Review pack | `src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-portal,closing-performance-review-regions,closing-performance-review-scope,closing-ranking-dress,closing-rep-ranking,closing-rep-ranking-export,closing-rep-ranking-filter,closing-rep-ranking-legacy-shape,closing-rep-ranking-line,closing-rep-ranking-workbook,closing-review-sheets,closing-workbook-lock,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts` and 5 more |
 | `sales-closing-screens` — Monthly Closing — the screens, the deep links and the drift detectors | `src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-load-gate,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts` and 7 more |
@@ -130,6 +131,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `marketing-functions` — Monthly Marketing Functions and the Marketing Field Visit Feedback | `src/lib/marketing-functions/**` and 4 more |
 | `marketing-roi` — Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard | `src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*` and 4 more |
 | `marketing-list-check` — Marketing doctor-list check and Finance Ageing | `src/lib/marketing-requests/{crm-list-check,crm-doctor-pick,finance-ageing}*` and 5 more |
+| `marketing-approval-chain` — Marketing approval chain — deciding, cancelling, reopening and resubmitting a request | `src/lib/marketing-requests/{cancel,reopen-rule}*` and 2 more |
 | `recruitment-job-posts` — Job Posts and the careers page — the picture, the Publish press and the guard | `src/lib/recruitment/job-posts/**` and 4 more |
 | `recruitment` — Recruitment, CVs and offers | `src/lib/{recruitment,cv,offers,whatsapp-inbox,mailbox-monitor,zoom}/**` and 4 more |
 | `recruitment-inbound` — Recruitment — the WhatsApp bot, the screening questions and the careers form | `src/lib/recruitment/inbound/**` and 4 more |

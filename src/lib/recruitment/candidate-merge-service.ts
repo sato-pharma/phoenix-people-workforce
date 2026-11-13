@@ -2,7 +2,14 @@
 //
 // Kept apart from candidate-merge.ts so the refusal rules stay unit testable without a Supabase
 // client, the same split as contact-review / contact-review-service.
+//
+// EVERY WRITE OF THE MERGE IS ONE SQL FUNCTION, SO ONE TRANSACTION — `phx_merge_ats_candidates`
+// (supabase/migrations/20261113161727_ats_candidate_merge_atomic.sql). The table lists below are the
+// map that function follows, kept here because the summary reads its counts table by table and
+// tests/candidate-merge-atomic.test.ts pins the SQL against every entry. Before 2026-11-13 these
+// were ~20 separate PostgREST calls, and a failure part-way left a half merge.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canReviewCandidateContacts } from "@/lib/recruitment/access";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
@@ -17,16 +24,15 @@ import {
   describeCopiedHistoryLine,
   mergeBlockReason,
   mergeScreeningExtraAnswers,
-  splitRowsByExistingKey,
   type BorrowedField,
   type MergeApplicationFacts,
 } from "@/lib/recruitment/candidate-merge";
 import { getCandidate } from "@/lib/recruitment/candidates";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
+import { conflictError, notFoundError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import type { Candidate } from "@/lib/recruitment/types";
-import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export type CandidateMergeResult = {
   borrowedFields: string[];
@@ -78,7 +84,7 @@ export type CandidateMergeResult = {
  * Safe as a plain reassign: the only UNIQUE index on the table is its primary key on `id`, so
  * moving `candidate_id` cannot collide, and two interviews for one person is an ordinary state.
  */
-const childTables = [
+export const childTables = [
   "ats_applications",
   "ats_interview_bookings",
   "ats_files",
@@ -106,9 +112,11 @@ type DedupedChildTable = {
  *
  * A collision here is ordinary rather than exceptional — the same manager being sent both records
  * of one person is exactly what makes them a duplicate — so the merge predicts it instead of
- * letting the database raise a 23505 half-way through. `splitRowsByExistingKey` decides; the
- * survivor's own row always wins, and the duplicate's is reported to the recruiter and then left to
- * die with the delete.
+ * letting the database raise a 23505 half-way through. `phx_merge_ats_candidates` decides, by the
+ * same rule as `splitRowsByExistingKey` (a NULL or empty key never blocks; a PARTIAL index's
+ * predicate applies on both sides); the survivor's own row always wins, and the duplicate's is
+ * reported to the recruiter and then left to die with the delete. Every field of every entry here
+ * is mirrored in that function, and tests/candidate-merge-atomic.test.ts fails if the two drift.
  *
  * `keyColumn` must name the column the unique INDEX is actually on, which is not always the
  * obvious one: `ats_candidate_manager_folders` is unique on `manager_hr_id_norm`, not on the
@@ -135,7 +143,7 @@ type DedupedChildTable = {
  * puts one CV back in one manager's folder. Both are one press to redo. Reserving the survivor to
  * the wrong manager, or failing a live merge outright, are the two outcomes this avoids.
  */
-const dedupedChildTables: readonly DedupedChildTable[] = [
+export const dedupedChildTables: readonly DedupedChildTable[] = [
   {
     identityColumn: "id",
     keyColumn: "manager_hr_id",
@@ -238,7 +246,7 @@ type AppendOnlyChildTable = {
  * deleted, and has no foreign key, so its original must be removed or it outlives the duplicate as
  * an orphan.
  */
-const appendOnlyChildTables: readonly AppendOnlyChildTable[] = [
+export const appendOnlyChildTables: readonly AppendOnlyChildTable[] = [
   {
     canDeleteOriginals: false,
     columns: ["actor_hr_id", "created_at", "from_status", "note", "to_status"],
@@ -272,7 +280,7 @@ const appendOnlyChildTables: readonly AppendOnlyChildTable[] = [
  * Keep this list BELOW childTables: recruitment-candidate-merge.test.ts slices childTables to the
  * first `] as const` in the file, so a second one above it silently empties what that test reads.
  */
-const linkedByOwnColumn = [
+export const linkedByOwnColumn = [
   { column: "applied_candidate_id", table: "ats_whatsapp_classification_sessions" },
 ] as const;
 
@@ -284,11 +292,13 @@ type ApplicationScopeRow = {
 };
 
 /** Both candidates' applications, with the job title of the opening each one is against. */
-async function loadApplicationFacts(candidateIds: readonly string[]): Promise<Map<string, MergeApplicationFacts[]>> {
+async function loadApplicationFacts(
+  supabase: SupabaseClient,
+  candidateIds: readonly string[],
+): Promise<Map<string, MergeApplicationFacts[]>> {
   const byCandidate = new Map<string, MergeApplicationFacts[]>();
   for (const id of candidateIds) byCandidate.set(id, []);
 
-  const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_applications")
     .select("candidate_id,converted_employee_hr_id,requisition_id,stage")
@@ -324,171 +334,49 @@ async function loadApplicationFacts(candidateIds: readonly string[]): Promise<Ma
   return byCandidate;
 }
 
-/** Points one table's rows at the survivor. Returns how many rows moved. */
-async function reassign(table: string, fromCandidateId: string, toCandidateId: string): Promise<number> {
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from(table)
-    .update({ candidate_id: toCandidateId })
-    .eq("candidate_id", fromCandidateId)
-    .select("id");
-  if (error) throw error;
-  return (data ?? []).length;
+/** The one SQL function that performs every write of a merge, in one transaction. */
+export const MERGE_CANDIDATES_RPC = "phx_merge_ats_candidates";
+
+/** The SQLSTATE the merge function raises when a row read a moment earlier is gone under the lock. */
+export const MERGE_RACE_SQLSTATE = "PX409";
+
+/** What the recruiter reads when another merge or delete got there first. */
+export const MERGE_RACE_MESSAGE =
+  "This candidate was merged or changed by someone else a moment ago; refresh and try again.";
+
+function isMergeRaceError(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === MERGE_RACE_SQLSTATE;
 }
 
-/**
- * Repoints one table's own candidate column at the survivor. Returns how many rows moved.
- *
- * Separate from `reassign` rather than a parameter on it: that one moves CHILD rows, whose whole
- * existence belongs to the candidate, and this one repairs a reference held by a record that
- * stands on its own. Same UPDATE, different meaning — and a merge that confused the two would
- * either miss this link or try to write `candidate_id` onto a table that has no such column.
- */
-async function relink(
-  table: string,
-  column: string,
-  fromCandidateId: string,
-  toCandidateId: string,
-): Promise<number> {
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from(table)
-    .update({ [column]: toCandidateId })
-    .eq(column, fromCandidateId)
-    .select("id");
-  if (error) throw error;
-  return (data ?? []).length;
-}
-
-/** PostgREST answers an over-long `.in()` with ZERO rows and no error, so filters are chunked. */
-function chunk<T>(items: readonly T[], size = 50): T[][] {
-  const out: T[][] = [];
-  for (let at = 0; at < items.length; at += size) out.push(items.slice(at, at + size));
-  return out;
-}
-
-type DedupedMoveOutcome = {
-  blocked: number;
-  moved: number;
+/** What `phx_merge_ats_candidates` answers: counts per table, and the survivor row when it changed. */
+type MergeOutcome = {
+  candidate: CandidateDbRow | null;
+  copied: Record<string, unknown>;
+  deduped: Record<string, unknown>;
+  reassigned: Record<string, unknown>;
+  relinked: Record<string, unknown>;
 };
 
-/**
- * Moves what can move from a table that is UNIQUE on `(candidate_id, key)`.
- *
- * The survivor's own rows are read first and the duplicate's are split against them, so a
- * collision is decided here rather than raised by the database part-way through the merge. The
- * survivor always keeps its own row: it is the record being kept, and its send or view marker is
- * the one already referred to elsewhere.
- */
-async function moveDeduped(
-  spec: DedupedChildTable,
-  fromCandidateId: string,
-  toCandidateId: string,
-): Promise<DedupedMoveOutcome> {
-  const supabase = recruitmentDb();
-  const columns = [...new Set([spec.identityColumn, spec.keyColumn, ...(spec.onlyWhen ? [spec.onlyWhen.column] : [])])];
-
-  // Every row of the candidate, paged to a short page by the table's own unique column. The split
-  // below decides what moves and what is blocked, so a row cut off by the response cap would be
-  // neither moved nor compared against the survivor's.
-  const read = (candidateId: string) =>
-    fetchAllRows<Record<string, unknown>>(
-      () => supabase.from(spec.table).select(columns.join(",")).eq("candidate_id", candidateId),
-      spec.identityColumn,
-    );
-  const [duplicateRows, survivorRows] = await Promise.all([read(fromCandidateId), read(toCandidateId)]);
-
-  // A row outside a PARTIAL index's predicate is unconstrained, so it reports no key and always
-  // moves — on BOTH sides, or a resolved return on the survivor would block an open one.
-  const keyOf = (row: Record<string, unknown>): string | null => {
-    if (spec.onlyWhen && String(row[spec.onlyWhen.column] ?? "") !== spec.onlyWhen.value) return null;
-    const key = row[spec.keyColumn];
-    return key === null || key === undefined ? null : String(key);
-  };
-
-  const { blocked, movable } = splitRowsByExistingKey(duplicateRows, survivorRows.map(keyOf), keyOf);
-
-  let moved = 0;
-  for (const batch of chunk(movable.map((row) => String(row[spec.identityColumn])))) {
-    if (batch.length === 0) continue;
-    const { data, error } = await supabase
-      .from(spec.table)
-      .update({ candidate_id: toCandidateId })
-      .eq("candidate_id", fromCandidateId)
-      .in(spec.identityColumn, batch)
-      .select(spec.identityColumn);
-    if (error) throw error;
-    moved += (data ?? []).length;
-  }
-
-  // Without a foreign key nothing cleans a blocked row up, and it would sit in the table pointing
-  // at a candidate that no longer exists. The survivor already holds the equivalent row.
-  if (spec.orphansOnDelete && blocked.length > 0) {
-    for (const batch of chunk(blocked.map((row) => String(row[spec.identityColumn])))) {
-      const { error } = await supabase
-        .from(spec.table)
-        .delete()
-        .eq("candidate_id", fromCandidateId)
-        .in(spec.identityColumn, batch);
-      if (error) throw error;
-    }
-  }
-
-  return { blocked: blocked.length, moved };
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-/**
- * Copies an append-only table's rows onto the survivor. Returns how many rows were copied.
- *
- * Every declared column is carried over verbatim so a copy sits in the survivor's history at the
- * moment it actually happened, rather than bunching at the merge. Only the note column is touched,
- * to say where the row came from — see `describeCopiedHistoryLine`.
- */
-async function copyAppendOnlyRows(
-  spec: AppendOnlyChildTable,
-  fromCandidateId: string,
-  toCandidateId: string,
-  mergedOn: string,
-): Promise<number> {
-  const supabase = recruitmentDb();
-  // Every row, paged to a short page: the originals are DELETED below with one filter on the
-  // candidate, so a read cut off by the response cap would delete rows that were never copied.
-  const rows = await fetchAllRows<Record<string, unknown>>(
-    () =>
-      supabase
-        .from(spec.table)
-        .select(spec.columns.join(","))
-        .eq("candidate_id", fromCandidateId)
-        .order("created_at", { ascending: true }),
-    "id",
-  );
-  if (rows.length === 0) return 0;
+function readMergeOutcome(data: unknown): MergeOutcome {
+  const bag = objectOrEmpty(data);
+  const candidate = objectOrEmpty(bag.candidate);
+  return {
+    candidate: Object.keys(candidate).length > 0 ? (candidate as CandidateDbRow) : null,
+    copied: objectOrEmpty(bag.copied),
+    deduped: objectOrEmpty(bag.deduped),
+    reassigned: objectOrEmpty(bag.reassigned),
+    relinked: objectOrEmpty(bag.relinked),
+  };
+}
 
-  const copies = rows.map((row) => {
-    const copy: Record<string, unknown> = { candidate_id: toCandidateId };
-    for (const column of spec.columns) copy[column] = row[column] ?? null;
-    const existing = row[spec.noteColumn];
-    copy[spec.noteColumn] = describeCopiedHistoryLine({
-      duplicateId: fromCandidateId,
-      existingNote: existing === null || existing === undefined ? null : String(existing),
-      mergedOn,
-      table: spec.table,
-    });
-    return copy;
-  });
-
-  const { data: inserted, error: insertError } = await supabase.from(spec.table).insert(copies).select("id");
-  if (insertError) throw insertError;
-
-  // Only where the table allows it. ats_candidate_status_events refuses a DELETE as firmly as an
-  // UPDATE, so its originals stay; a comment can be deleted and has no foreign key, so leaving it
-  // would strand it on a candidate that no longer exists.
-  if (spec.canDeleteOriginals) {
-    const { error: deleteError } = await supabase.from(spec.table).delete().eq("candidate_id", fromCandidateId);
-    if (deleteError) throw deleteError;
-  }
-
-  return (inserted ?? []).length;
+/** A row count the function reported; anything that is not a whole number reads as none. */
+function countIn(bag: Record<string, unknown>, key: string): number {
+  const value = Number(bag[key]);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
 /** Today in Cairo, as the recruiter would write it. */
@@ -499,34 +387,33 @@ function cairoToday(): string {
 /**
  * Joins a duplicate candidate record into the one being kept, then deletes the duplicate.
  *
- * The order is what makes this safe to interrupt. EVERY step the database could still refuse comes
- * before every step it cannot, so a refusal nobody predicted leaves the duplicate looking like a
- * whole candidate rather than an empty shell:
+ * TypeScript decides; ONE SQL function writes. This side holds the gate, the reads, the refusal
+ * (`mergeBlockReason`), the choice of what the survivor borrows, the provenance wording of a copied
+ * row and the summary. Everything that touches a row runs inside `phx_merge_ats_candidates`, one
+ * transaction, in this order:
  *
- *  1. refuse outright if the merge cannot complete (candidate-merge.ts decides);
- *  2. move the deduped tables — the only moves whose collision is predicted from a separate read
- *     and could therefore still race, and the cheapest ones to have moved if a later step throws;
- *  3. move every plain child row — applications first, see childTables;
- *  4. copy the append-only history, which can only ever be appended to;
- *  5. repoint the records that link by a column of their own naming;
+ *  1. lock BOTH candidate rows FOR UPDATE, lowest id first, and refuse if either is gone — so a
+ *     second click, or a second recruiter merging the same pair, loses cleanly instead of racing;
+ *  2. move the deduped tables (`dedupedChildTables`), dropping a row whose key the survivor holds;
+ *  3. move every plain child row (`childTables`) — applications first;
+ *  4. copy the append-only history (`appendOnlyChildTables`);
+ *  5. repoint the records that link by a column of their own naming (`linkedByOwnColumn`);
  *  6. delete the duplicate;
- *  7. only THEN fill the survivor's blanks from the values captured in step 1.
+ *  7. only THEN fill the survivor's blanks from `p_borrow` — whitelisted column by column in SQL.
  *
- * Steps 2 and 4 are where this went wrong before 2026-09-04, and the shape of that failure is why
- * the ordering is spelled out here. `ats_candidate_status_events` sat LAST in `childTables` and was
- * moved with an UPDATE its immutability trigger refuses unconditionally — so the one step that
- * could never succeed ran after the files, the CV extractions and the intake events had already
- * moved. Two of twenty-three production merges stopped there, leaving a duplicate with 0 files and
- * 0 extractions that reads to a recruiter as "a candidate with no CV", not as a merge that failed.
+ * A failure at ANY step rolls back every step. Before 2026-11-13 these were separate PostgREST
+ * calls, and the order above was the only protection: on 2026-09-04 two of twenty-three production
+ * merges stopped at the status-events copy, leaving a duplicate with 0 files and 0 extractions that
+ * read to a recruiter as "a candidate with no CV". The order is kept for the reasons it was chosen —
+ * step 7 still comes after step 6 because `national_id` and `email` each carry a partial UNIQUE
+ * index, so the duplicate has to free a value before the survivor can borrow it.
  *
- * Step 7 comes last because `national_id` and `email` each carry a partial UNIQUE index (phone's
- * was dropped 2026-08-30, when phone stopped being an identity key).
- * Writing the duplicate's email onto the survivor while the duplicate still holds it is a 23505,
- * every time — the value has to be freed before it can be borrowed.
+ * `deps` exists for tests only; production passes nothing.
  */
 export async function mergeCandidates(
   access: AccessContext,
   input: { duplicateId: string; survivorId: string },
+  deps: CandidateMergeDeps = {},
 ): Promise<CandidateMergeResult> {
   // A merge writes the two columns dedupe itself is decided on (email_norm / phone_norm), so it is
   // gated on who may work the pipeline — the same authority as the contact review, not the broader
@@ -540,8 +427,12 @@ export async function mergeCandidates(
   const duplicateId = String(input.duplicateId ?? "").trim();
   if (!survivorId || !duplicateId) throw new Error("Both the candidate to keep and the duplicate are required.");
 
-  const [survivor, duplicate] = await Promise.all([getCandidate(survivorId), getCandidate(duplicateId)]);
-  const applications = await loadApplicationFacts([survivorId, duplicateId]);
+  const supabase = deps.client ?? recruitmentDb();
+  const loadCandidate = deps.loadCandidate ?? getCandidate;
+  const mirrorCvs = deps.mirrorCvs ?? mirrorCandidateCvsToDrive;
+
+  const [survivor, duplicate] = await Promise.all([loadCandidate(survivorId), loadCandidate(duplicateId)]);
+  const applications = await loadApplicationFacts(supabase, [survivorId, duplicateId]);
 
   const blocked = mergeBlockReason({
     duplicate,
@@ -549,10 +440,12 @@ export async function mergeCandidates(
     survivor,
     survivorApplications: applications.get(survivorId) ?? [],
   });
+  // An id that is not there BEFORE the merge starts is a 404 in mergeBlockReason's own words — never
+  // the 409 below, which is kept for a row that vanished between this read and the lock.
+  if (!survivor || !duplicate) throw notFoundError(blocked ?? "Candidate not found.");
   if (blocked) throw new Error(blocked);
-  if (!survivor || !duplicate) throw new Error("Candidate not found.");
 
-  // Captured BEFORE the duplicate is deleted — after step 3 there is nothing left to read.
+  // Captured BEFORE the duplicate is deleted — after the function runs there is nothing left to read.
   const borrowed = borrowableFields(survivor, duplicate);
   // TWO DIFFERENT OFFER LETTERS CANNOT BOTH SURVIVE ONE MERGE, and this is the one skipped field
   // that has to be said out loud. `borrowableFields` fills a blank and steps over a collision, which
@@ -570,13 +463,40 @@ export async function mergeCandidates(
   // candidateDisplayName is what turns it back into one.
   const duplicateName = candidateDisplayName(duplicate.fullName) || "this duplicate record";
 
-  // Step 2 — see the ordering note above. These run before the plain moves precisely because their
-  // collision is a prediction: it is read from the survivor a moment earlier, so it can race.
+  // What the survivor borrows, decided here and whitelisted again column by column in SQL.
+  const borrow: Record<string, unknown> = { ...borrowedPayload(borrowed) };
+  if (extraAnswersChanged) borrow.screening_extra_answers = mergedExtraAnswers;
+
+  // The provenance line a copied row carries. The SQL appends it to the row's own note exactly as
+  // describeCopiedHistoryLine does (the note trimmed, one space, this line; or this line alone).
+  const mergedOn = cairoToday();
+  const provenance = (table: string) => describeCopiedHistoryLine({ duplicateId, existingNote: null, mergedOn, table });
+
+  // Steps 1–7, ONE transaction. A refusal anywhere leaves both records exactly as they were.
+  const { data, error } = await supabase.rpc(MERGE_CANDIDATES_RPC, {
+    p_borrow: borrow,
+    p_comment_provenance: provenance("ats_candidate_comments"),
+    p_duplicate_id: duplicateId,
+    p_status_event_provenance: provenance("ats_candidate_status_events"),
+    p_survivor_id: survivorId,
+  });
+  if (error) {
+    // A LOST RACE IS A 409, NEVER A 404. Both rows were read a moment ago, so a row the function
+    // cannot lock is one a concurrent merge or delete just took — the recruiter refreshes and sees
+    // what happened. An id that never existed is refused above, before the function is called.
+    if (isMergeRaceError(error)) throw conflictError(MERGE_RACE_MESSAGE, "merge_race");
+    throw error;
+  }
+  const outcome = readMergeOutcome(data);
+
+  // Step 2's counts. A blocked row is one the survivor already held its own of, so it was dropped.
   const blockedDeduped: { count: number; plural: string; singular: string }[] = [];
   const leftBehind: string[] = [];
   const movedDeduped: { count: number; plural: string; singular: string }[] = [];
   for (const spec of dedupedChildTables) {
-    const { blocked, moved } = await moveDeduped(spec, duplicateId, survivorId);
+    const counts = objectOrEmpty(outcome.deduped[spec.table]);
+    const moved = countIn(counts, "moved");
+    const blocked = countIn(counts, "blocked");
     if (moved > 0) movedDeduped.push({ count: moved, plural: spec.plural, singular: spec.singular });
     if (blocked > 0) {
       blockedDeduped.push({ count: blocked, plural: spec.plural, singular: spec.singular });
@@ -587,12 +507,12 @@ export async function mergeCandidates(
     }
   }
 
-  // Step 3.
+  // Step 3's counts.
   let movedApplications = 0;
   let movedFiles = 0;
   let movedInterviews = 0;
   for (const table of childTables) {
-    const moved = await reassign(table, duplicateId, survivorId);
+    const moved = countIn(outcome.reassigned, table);
     if (table === "ats_applications") movedApplications = moved;
     if (table === "ats_files") movedFiles = moved;
     // Counted and reported, not merely moved. An interview is the one thing on a merged record that
@@ -601,41 +521,20 @@ export async function mergeCandidates(
     if (table === "ats_interview_bookings") movedInterviews = moved;
   }
 
-  // Step 4. An INSERT is the only verb these tables permit, so their rows are copied, not moved —
-  // and the summary says "copied" for exactly that reason.
-  const mergedOn = cairoToday();
+  // Step 4's counts. An INSERT is the only verb these tables permit, so their rows are copied, not
+  // moved — and the summary says "copied" for exactly that reason.
   const copied: { count: number; plural: string; singular: string }[] = [];
   let copiedAppendOnlyRows = 0;
   for (const spec of appendOnlyChildTables) {
-    const count = await copyAppendOnlyRows(spec, duplicateId, survivorId, mergedOn);
+    const count = countIn(outcome.copied, spec.table);
     copiedAppendOnlyRows += count;
     if (count > 0) copied.push({ count, plural: spec.plural, singular: spec.singular });
   }
 
-  // Step 5, before the delete, for the same reason the child rows move first: once the duplicate is
-  // gone, a row still pointing at it cannot be found from either end.
-  for (const link of linkedByOwnColumn) {
-    await relink(link.table, link.column, duplicateId, survivorId);
-  }
-
-  // Step 6: the duplicate row itself. Every step that could be refused has already run, so reaching
-  // here means the delete is the only thing left that can fail.
-  const supabase = recruitmentDb();
-  const { error: deleteError } = await supabase.from("ats_candidates").delete().eq("id", duplicateId);
-  if (deleteError) throw deleteError;
-
+  // Step 7's result: the survivor as the function left it, read inside the same transaction.
   let merged = survivor;
-  if (borrowed.length > 0 || extraAnswersChanged) {
-    const payload: Record<string, unknown> = { ...borrowedPayload(borrowed) };
-    if (extraAnswersChanged) payload.screening_extra_answers = mergedExtraAnswers;
-    const { data, error } = await supabase
-      .from("ats_candidates")
-      .update({ ...payload, updated_at: new Date().toISOString() })
-      .eq("id", survivorId)
-      .select("*")
-      .single();
-    if (error) throw error;
-    merged = mapCandidate(data as CandidateDbRow);
+  if ((borrowed.length > 0 || extraAnswersChanged) && outcome.candidate) {
+    merged = mapCandidate(outcome.candidate);
   }
 
   const summary = buildSummary({
@@ -650,7 +549,9 @@ export async function mergeCandidates(
     movedInterviews,
     strandedOffer,
   });
-  await recordMergeEvent({
+  // Outside the transaction on purpose: its note IS the summary, which is built from the counts the
+  // function returned, and it is best effort — see recordMergeEvent.
+  await recordMergeEvent(supabase, {
     actorHrId: access.hrId ?? null,
     candidateId: survivorId,
     note: summary,
@@ -674,8 +575,9 @@ export async function mergeCandidates(
   //
   // IT CANNOT FAIL THE MERGE. `mirrorCandidateCvsToDrive` logs and swallows its own errors, and the
   // database work above is already committed: a Drive outage must not turn a finished merge into an
-  // exception the caller reads as "nothing happened".
-  await mirrorCandidateCvsToDrive(survivorId);
+  // exception the caller reads as "nothing happened". And it never runs for a merge the function
+  // refused — that threw above, before this line.
+  await mirrorCvs(survivorId);
 
   return {
     borrowedFields: borrowed.map((field) => field.label),
@@ -689,6 +591,13 @@ export async function mergeCandidates(
     summary,
   };
 }
+
+/** Seams for tests. Production passes nothing and gets the real client, reader and Drive mirror. */
+export type CandidateMergeDeps = {
+  client?: SupabaseClient;
+  loadCandidate?: (id: string) => Promise<Candidate | null>;
+  mirrorCvs?: (candidateId: string) => Promise<unknown>;
+};
 
 /**
  * The borrowed values as columns — plus the `_norm` twin of each of the three identity columns.
@@ -788,13 +697,15 @@ function buildSummary(input: {
  * line is a gap; reporting a completed merge as a failure would invite a second click, and the
  * second click would refuse because the duplicate is already gone.
  */
-async function recordMergeEvent(input: {
-  actorHrId: string | null;
-  candidateId: string;
-  note: string;
-  status: string;
-}): Promise<void> {
-  const supabase = recruitmentDb();
+async function recordMergeEvent(
+  supabase: SupabaseClient,
+  input: {
+    actorHrId: string | null;
+    candidateId: string;
+    note: string;
+    status: string;
+  },
+): Promise<void> {
   const { error } = await supabase.from("ats_candidate_status_events").insert({
     actor_hr_id: input.actorHrId,
     candidate_id: input.candidateId,

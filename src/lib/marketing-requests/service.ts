@@ -4532,6 +4532,12 @@ export async function decideMarketingRequestWorkflow(
     if (rpcErr.message?.includes("marketing_step_already_decided")) {
       throw conflictError("This marketing approval step was already decided. Refresh Phoenix and try again.");
     }
+    // The request left `pending_approval` between the pre-check above and the decision — cancelled,
+    // most often. The function locks the request and refuses, so the decision can never write a
+    // cancelled request back to approved/rejected/returned (F-MKT-006). Same 409 as the pre-check.
+    if (rpcErr.message?.includes("marketing_request_not_pending")) {
+      throw conflictError("This marketing request is no longer pending approval.");
+    }
     // The database refused a self-decision. Reaching here means the chain had the requester on a
     // gating rung despite the submit-time guard — a request that predates this change, a hand-edited
     // assignment, or a routing change that re-pointed the rung. Surfaced as a 403 with the reason,

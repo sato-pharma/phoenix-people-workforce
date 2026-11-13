@@ -70,6 +70,8 @@ export type RetentionConversation = {
   followUpOverdue: boolean;
   themes: RetentionConversationTheme[];
   createdAt: string;
+  /** The row's version. An edit sends it back as expectedUpdatedAt, so a stale screen cannot overwrite a newer save. */
+  updatedAt: string;
 };
 
 /** One row of the themes roll-up — the "summarised into themes" the job description asks for. */
@@ -144,4 +146,9 @@ export type UpdateRetentionConversationInput = {
   /** Set true to stamp the follow-up as done, false to reopen it. */
   followUpDone?: boolean;
   themes?: RetentionThemeInput[];
+  /**
+   * The conversation's updatedAt as the editor's screen loaded it. The save is refused (409) when
+   * the row has moved on since; absent, the server compares against its own read instead.
+   */
+  expectedUpdatedAt?: string | null;
 };

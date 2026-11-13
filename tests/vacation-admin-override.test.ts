@@ -277,8 +277,11 @@ export function runVacationAdminOverrideTests() {
     SERVICE.includes("a transferred approval can approve or reject, not return the request"),
     "a transferred approval cannot return the request to the employee",
   );
+  // Since 13 Nov 2026 (F-HR-010) the step is decided inside phx_apply_vacation_step_decision /
+  // phx_apply_vacation_paid_approval_with_step; both are handed the overriding admin.
   assert.ok(
-    SERVICE.includes("overriddenByHrId: overrideContext ? input.actorHrId : null"),
+    SERVICE.includes("const stepOverriddenByHrId = overrideContext ? hrIdForStorage(input.actorHrId) || null : null;") &&
+      SERVICE.split("p_overridden_by_hr_id: stepOverriddenByHrId,").length === 3,
     "the decided step must record WHO overrode it, or it reads as the approver's own decision",
   );
   assert.ok(

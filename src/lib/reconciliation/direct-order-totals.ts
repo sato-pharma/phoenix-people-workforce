@@ -199,8 +199,9 @@ export type RemainderMismatch = {
 
 /**
  * What `remaining_amount` must hold, by the rule every writer follows (deriveDirectOrderCollection,
- * deriveRemainingWhenCollectionCleared, phx_record_direct_order_offset and its remove twin): null
- * when no cash and no offset was ever recorded, otherwise value − cash − offsets, each to 2 decimals.
+ * deriveRemainingWhenCollectionCleared, phx_record_direct_order_collection which repeats both under
+ * the order lock, phx_record_direct_order_offset and its remove twin): null when no cash and no
+ * offset was ever recorded, otherwise value − cash − offsets, each to 2 decimals.
  */
 export function expectedRemainder(input: {
   salesValue: number;
