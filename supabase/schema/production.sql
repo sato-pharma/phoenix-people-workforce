@@ -51010,7 +51010,7 @@ CREATE TABLE public.ats_interview_calendar_links (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_used_at timestamp with time zone,
     use_count integer DEFAULT 0 NOT NULL,
-    token_hash text,
+    token_hash text NOT NULL,
     token_preview text,
     expires_at timestamp with time zone,
     CONSTRAINT ats_interview_calendar_links_level_valid CHECK ((access_level = ANY (ARRAY['viewer'::text, 'commenter'::text, 'editor'::text]))),
@@ -71838,6 +71838,22 @@ CREATE TABLE public.workflow_registry_modules (
 );
 
 ALTER TABLE public.workflow_registry_modules OWNER TO postgres;
+
+--
+-- Name: zz_backup_reader_probe; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.zz_backup_reader_probe (
+    id integer
+);
+
+ALTER TABLE public.zz_backup_reader_probe OWNER TO postgres;
+
+--
+-- Name: TABLE zz_backup_reader_probe; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.zz_backup_reader_probe IS 'Created by mistake on 13 Nov 2026 during the backup rehearsal: empty, no grants, row security on. Safe to drop.';
 
 --
 -- Name: protected_tables; Type: TABLE; Schema: recovery; Owner: postgres
@@ -97071,6 +97087,12 @@ ALTER TABLE public.workflow_registry_modules ENABLE ROW LEVEL SECURITY;
 CREATE POLICY workflow_registry_modules_service_role_all ON public.workflow_registry_modules TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: zz_backup_reader_probe; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.zz_backup_reader_probe ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: SCHEMA analytics; Type: ACL; Schema: -; Owner: postgres
 --
 
@@ -106289,6 +106311,12 @@ GRANT ALL ON TABLE public.whatsapp_inbox_messages TO service_role;
 --
 
 GRANT ALL ON TABLE public.workflow_registry_modules TO service_role;
+
+--
+-- Name: TABLE zz_backup_reader_probe; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.zz_backup_reader_probe TO service_role;
 
 --
 -- Name: TABLE protected_tables; Type: ACL; Schema: recovery; Owner: postgres
