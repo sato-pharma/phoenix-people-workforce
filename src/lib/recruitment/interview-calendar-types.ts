@@ -273,7 +273,10 @@ export function bestCalendarRole(input: {
 /** A link as the owner's share dialog shows it. The token is his to copy again, as Sheets allows. */
 export type InterviewCalendarLink = {
   id: string;
-  token: string;
+  /** The link's first 8 characters. The whole link is shown once, when it is made (REC-055). */
+  tokenPreview: string;
+  /** It opens nothing after this moment — 90 days from when it was made. */
+  expiresAt: string | null;
   accessLevel: InterviewCalendarAccessLevel;
   weekStart: string | null;
   guestCvs: boolean;

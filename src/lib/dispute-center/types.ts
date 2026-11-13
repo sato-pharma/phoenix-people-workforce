@@ -41,10 +41,16 @@ export const DISPUTE_CASE_KIND_LABELS: Record<DisputeCaseKind, string> = {
  *
  * There is no deadline and nothing closes on its own (owner, 2026-10-09: "wait, no deadline").
  */
-export type DisputeCaseState = "waiting_reviewer" | "waiting_employee" | "reopen_requested" | "decided";
+/**
+ * `needs_attention`: a decision on the case stopped half-way and what it had already changed could not
+ * be put back (F-PAY-005, decideDeductionDispute). It reads neither open nor decided until the reviewer
+ * decides it again; its "decision_interrupted" event says what was left.
+ */
+export type DisputeCaseState = "needs_attention" | "waiting_reviewer" | "waiting_employee" | "reopen_requested" | "decided";
 
 export const DISPUTE_CASE_STATE_LABELS: Record<DisputeCaseState, string> = {
   decided: "Decided",
+  needs_attention: "Needs attention",
   reopen_requested: "Reopen requested",
   waiting_employee: "Waiting for employee",
   waiting_reviewer: "Waiting for reviewer",
@@ -74,6 +80,7 @@ export type DisputeMessage = {
 
 export type DisputeCaseEventType =
   | "decided"
+  | "decision_interrupted"
   | "refund_cancelled"
   | "refund_recommended"
   | "reopen_declined"

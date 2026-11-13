@@ -37,6 +37,7 @@ import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/ce
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
+import { DownloadHistoryPanel } from "./download-history-panel";
 import { HeldEnteredPanel } from "./held-entered-panel";
 import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
@@ -1557,6 +1558,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <div className="p-6 text-center text-sm text-slate-500">Select a step above to begin.</div>
             )}
           </div>
+
+          <DownloadHistoryPanel key={run.id} runId={run.id} />
         </div>
       )}
     </div>
