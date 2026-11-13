@@ -1621,6 +1621,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/downloads", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Approved outstation trips of an already published payout month that no run paid, and the switch that
+  // decides whether the next open run carries them (REC-029). Same Super-Admin domain-helper gate.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/late-expenses", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/automated-payroll/settings/carry-late-expenses", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Non-Employees Payroll — free-form list, no employee/HR_ID record; same domain-helper gate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/automated-payroll/runs/:runId/non-employees", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/non-employees/:id", permission: null, guard: "domain-helper", csrfRequired: true }),

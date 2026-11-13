@@ -92,10 +92,31 @@ export function readQueuedPayrollResync(payload: unknown): QueuedPayrollResync |
       const period = entry as { month: number; year: number; hrIds: string[] };
       byPeriod.push({ month: period.month, year: period.year, hrIds: period.hrIds });
     }
-    if (byPeriod.length === 0) return null;
+    // A carried late trip's retry has no period of its own (expense-resync.ts resyncCarriedLateTrips): it
+    // names the trips, and the months of the runs it failed to reach.
+    const tripIds = isStringArray(target.tripIds) ? (target.tripIds as string[]) : [];
+    const changedTrips = Array.isArray(target.changedTrips)
+      ? (target.changedTrips as unknown[])
+          .filter((trip): trip is Record<string, unknown> => Boolean(trip) && typeof (trip as { tripId?: unknown }).tripId === "string")
+          .map((trip) => ({
+            tripId: String(trip.tripId),
+            hrId: typeof trip.hrId === "string" ? trip.hrId : null,
+            month: Number.isInteger(trip.month) ? (trip.month as number) : null,
+            year: Number.isInteger(trip.year) ? (trip.year as number) : null,
+          }))
+      : [];
+    const forRuns = Array.isArray(target.forRuns) ? (target.forRuns as unknown[]).filter(isPeriod) : [];
+    if (byPeriod.length === 0 && tripIds.length === 0 && changedTrips.length === 0) return null;
     return {
       kind: "expense",
-      target: { hrIds: target.hrIds, periods: target.periods as ExpenseResyncTarget["periods"], byPeriod },
+      target: {
+        hrIds: target.hrIds,
+        periods: target.periods as ExpenseResyncTarget["periods"],
+        byPeriod,
+        ...(tripIds.length > 0 ? { tripIds } : {}),
+        ...(changedTrips.length > 0 ? { changedTrips } : {}),
+        ...(forRuns.length > 0 ? { forRuns: forRuns.map((period) => ({ month: period.month, year: period.year })) } : {}),
+      },
     };
   }
 
@@ -107,7 +128,11 @@ export function queuedPayrollResyncIsForPeriod(payload: QueuedPayrollResync, mon
   if (payload.kind === "deduction") {
     return payload.target.monthKey === `${year}-${String(month).padStart(2, "0")}`;
   }
-  return payload.target.byPeriod.some((period) => period.month === month && period.year === year);
+  return (
+    payload.target.byPeriod.some((period) => period.month === month && period.year === year) ||
+    // A carried late trip parked for the run of this month (expense-resync.ts resyncCarriedLateTrips).
+    (payload.target.forRuns ?? []).some((period) => period.month === month && period.year === year)
+  );
 }
 
 /**
@@ -212,7 +237,10 @@ export async function queuedPayrollResyncsForPeriod(month: number, year: number)
             ? payload.target.employees.length
             : payload.target.byPeriod
                 .filter((period) => period.month === month && period.year === year)
-                .reduce((sum, period) => sum + period.hrIds.length, 0),
+                .reduce((sum, period) => sum + period.hrIds.length, 0) +
+              ((payload.target.forRuns ?? []).some((period) => period.month === month && period.year === year)
+                ? new Set((payload.target.changedTrips ?? []).map((trip) => trip.hrId).filter(Boolean)).size
+                : 0),
         queuedAt: row.created_at,
         attempts: row.attempts ?? 0,
       });

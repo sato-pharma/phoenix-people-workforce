@@ -5,6 +5,11 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { lateExpenseChanges, loadLateExpenseRowsById } from "./late-expenses.ts";
+
+/** A late-approved trip of an earlier payout month this run carried and paid, at the amount Part 2 recorded. */
+export type CarriedExpenseToStamp = { id: string; compact: string; payoutMonth: number; payoutYear: number; amount: number };
+
 /**
  * Publishing a month MARKS the outstation trips it paid.
  *
@@ -96,7 +101,13 @@ export function planPaidExpenseStamp(input: {
   };
 }
 
-export type ExpenseStampResult = ExpenseStampPlan & { stamped: number };
+export type ExpenseStampResult = ExpenseStampPlan & {
+  stamped: number;
+  /** Late-approved trips of earlier payout months this run carried and paid, marked by row id (late-expenses.ts). */
+  carriedStamped: number;
+  /** Carried trips NOT marked because they no longer stood as recorded (approval or amount changed). */
+  carriedSkipped: string[];
+};
 
 const PAGE_SIZE = 1000;
 const UPDATE_CHUNK = 200;
@@ -109,6 +120,12 @@ const UPDATE_CHUNK = 200;
 export async function stampPaidExpenseTrips(input: {
   actorHrId: string;
   batchId: string;
+  /**
+   * Late-approved trips from EARLIER payout months that this run carried and paid (the
+   * `lateExpensesCarried` list of its `published` record). Each is marked only while it is still approved
+   * and unpaid at the amount recorded, besides the month's own never-twice guards.
+   */
+  carried?: ReadonlyArray<CarriedExpenseToStamp>;
   month: number;
   paid: ReadonlyArray<PaidExpenseEmployee>;
   year: number;
@@ -132,9 +149,7 @@ export async function stampPaidExpenseTrips(input: {
 
   const plan = planPaidExpenseStamp({ paid: input.paid, rows });
   const now = new Date().toISOString();
-  let stamped = 0;
-  for (let index = 0; index < plan.rowIds.length; index += UPDATE_CHUNK) {
-    const chunk = plan.rowIds.slice(index, index + UPDATE_CHUNK);
+  const stampChunk = async (chunk: string[]): Promise<number> => {
     const { data, error } = await supabase
       .from("outstation_expenses")
       .update({
@@ -147,10 +162,43 @@ export async function stampPaidExpenseTrips(input: {
       .is("imported_to_payroll_at", null)
       .select("id");
     if (error) throw new Error(`Marking the paid outstation trips failed: ${error.message}`);
-    stamped += (data ?? []).length;
+    return (data ?? []).length;
+  };
+  let stamped = 0;
+  for (let index = 0; index < plan.rowIds.length; index += UPDATE_CHUNK) {
+    stamped += await stampChunk(plan.rowIds.slice(index, index + UPDATE_CHUNK));
+  }
+  // The carried trips are named by id, not found by payout month: their month is an earlier one. Each is
+  // re-read, and marked only if it still stands exactly as recorded; the update repeats those values as
+  // guards, so a decision landing between the read and the write marks nothing.
+  const carried = [...new Map((input.carried ?? []).filter((entry) => entry.id).map((entry) => [entry.id, entry])).values()];
+  const current = carried.length > 0 ? await loadLateExpenseRowsById(carried.map((entry) => entry.id)) : [];
+  const changed = new Set(lateExpenseChanges(carried, current).map((change) => change.entry.id));
+  const byId = new Map(current.map((row) => [String(row.id), row]));
+  let carriedStamped = 0;
+  const carriedSkipped: string[] = [];
+  for (const entry of carried) {
+    const row = byId.get(entry.id);
+    if (!row || changed.has(entry.id)) {
+      carriedSkipped.push(entry.id);
+      continue;
+    }
+    let update = supabase
+      .from("outstation_expenses")
+      .update({ imported_payroll_batch_id: input.batchId, imported_to_payroll_at: now, imported_to_payroll_by: input.actorHrId })
+      .eq("id", entry.id)
+      .eq("hr_approved", true)
+      .is("imported_payroll_batch_id", null)
+      .is("imported_to_payroll_at", null);
+    update = row.total === null ? update.is("total", null) : update.eq("total", row.total);
+    update = row.approved_amount === null ? update.is("approved_amount", null) : update.eq("approved_amount", row.approved_amount);
+    const { data, error } = await update.select("id");
+    if (error) throw new Error(`Marking the paid outstation trips failed: ${error.message}`);
+    if ((data ?? []).length > 0) carriedStamped += 1;
+    else carriedSkipped.push(entry.id);
   }
 
-  return { ...plan, stamped };
+  return { ...plan, stamped, carriedStamped, carriedSkipped };
 }
 
 /**
@@ -167,19 +215,33 @@ export function paidExpenseEmployees(
 
 /** What the publish audit row records: the stamp's outcome, or why it failed. */
 export type ExpenseStampAudit =
-  | { differing: ExpenseStampPlan["differing"]; employees: number; stamped: number; total: number }
+  | {
+      differing: ExpenseStampPlan["differing"];
+      employees: number;
+      stamped: number;
+      total: number;
+      carriedStamped: number;
+      carriedSkipped: string[];
+    }
   | { error: string };
 
 /**
  * What publishToPayslips calls, right after the run is marked published. It NEVER throws, for the
  * same reason as the payslip notice there: the money and the payslips exist by then, so a failed
- * stamp must not present a completed payroll as failed or invite a second publish. Nothing is paid
- * twice while a stamp is missing — the legacy import already refuses a wizard-paid month — so a
- * failure is logged loudly and returned for the run's audit row instead.
+ * stamp must not present a completed payroll as failed or invite a second publish. A failure is logged
+ * loudly and returned for the run's `published_follow_up` audit row instead.
+ *
+ * A MISSING STAMP IS NOT HARMLESS. The legacy import refuses a wizard-paid month, but the late-expense list
+ * (late-expenses.ts) reads approved trips of published months, so an unmarked paid trip could be offered
+ * again. That list therefore never trusts the stamp alone: it reads the `expensesCovered` list written
+ * with the phase, and a month whose follow-up row is missing or records this error is shown as needing a
+ * check by hand — never carried.
  */
 export async function recordPaidExpenseStamp(input: {
   actorHrId: string;
   batchId: string;
+  /** Late-approved trips of earlier months this run paid (late-expenses.ts); marked by id at the recorded amount. */
+  carried?: ReadonlyArray<CarriedExpenseToStamp>;
   entries: ReadonlyArray<{ compact: string; onHold: boolean; row: { expenses: number } }>;
   month: number;
   runId: string;
@@ -189,6 +251,7 @@ export async function recordPaidExpenseStamp(input: {
     const result = await stampPaidExpenseTrips({
       actorHrId: input.actorHrId,
       batchId: input.batchId,
+      carried: input.carried,
       month: input.month,
       paid: paidExpenseEmployees(input.entries),
       year: input.year,
@@ -198,6 +261,8 @@ export async function recordPaidExpenseStamp(input: {
       employees: result.employees,
       stamped: result.stamped,
       total: result.total,
+      carriedStamped: result.carriedStamped,
+      carriedSkipped: result.carriedSkipped,
     };
   } catch (error) {
     logError("Automated payroll: marking the paid outstation trips failed", {

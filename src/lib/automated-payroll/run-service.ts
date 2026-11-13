@@ -32,6 +32,32 @@ import {
   queuedPayrollResyncsForPeriod,
 } from "./resync-outbox.ts";
 import { recordPaidExpenseStamp } from "./expense-stamp.ts";
+import {
+  assertLateExpensesPublishable,
+  assertLateExpensesShownMatchesSwitch,
+  assertLateExpensesUnchanged,
+  clearAfterLateExpenseRefusal,
+  describeLateExpenseHandAdded,
+  describeLateExpensePartialCoverage,
+  expensesCoveredAtPublish,
+  getCarryLateExpensesSetting,
+  LATE_EXPENSES_CARRIED_HELD_KEY,
+  LATE_EXPENSES_CARRIED_KEY,
+  LATE_EXPENSES_COVERED_KEY,
+  LATE_EXPENSES_NOT_COVERED_KEY,
+  LATE_EXPENSES_SHOWN_KEY,
+  LateExpenseRefusal,
+  lateExpensesAtPublish,
+  lateExpensesShownFrom,
+  parseLateExpensesCarried,
+  parseLateExpensesShown,
+  planLateExpenseCoverage,
+  releaseLateExpenseReservations,
+  reserveLateExpenses,
+  type LateExpenseCarriedEntry,
+  type LateExpensesCovered,
+  type LateExpenseNotCoveredEntry,
+} from "./late-expenses.ts";
 import { buildFinanceSheetWorkbook } from "./exports/finance-sheet.ts";
 import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "./exports/cib-sheet.ts";
 import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fabRowsForScope } from "./exports/fab-sheet.ts";
@@ -169,6 +195,7 @@ import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import {
   filterExcludedMembers,
   isSettledInPart1,
+  loadExpenseStepTrips,
   loadStepContext,
   recommendStep,
   releaseOnlyMembersFor,
@@ -698,6 +725,9 @@ export async function cancelRun(
     // months' overpayments as recovered — but a cancelled run pays nobody, so
     // leaving that would silently forgive real money (the exact bug the ledger
     // exists to prevent). See releaseCarryForwardForCancelledRun.
+    // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
+    // cancel before the ledger is touched (late-expenses.ts).
+    await releaseLateExpenseReservations(runId);
     const released = await releaseCarryForwardForCancelledRun(runId);
     const cancelled = await updateRun(runId, { phase: "cancelled" }, { transitionToken: transition });
     return { ledger: released, updated: cancelled, override };
@@ -1306,6 +1336,10 @@ export async function confirmStep(
     loadRunContext(period, runId),
     listStepStates(runId),
   ]);
+  // The Expenses step reads its trips ONCE: the same list builds the figure and the record of what it
+  // counted (late-expenses.ts), so the two can never describe different trips.
+  const memberCompacts = new Set(members.map((member) => member.compact));
+  const expenseTrips = stepKey === "p2_expenses" ? await loadExpenseStepTrips(period, memberCompacts) : undefined;
   const recommended = await recommendStep({
     access,
     period,
@@ -1314,6 +1348,7 @@ export async function confirmStep(
     sources,
     draftRows,
     ...(await heldReleaseInputs(stepKey, runId, directory, period)),
+    ...(expenseTrips ? { expenseTrips } : {}),
   });
   // RE-CONFIRMING TAKES THE MODULE'S CURRENT FIGURE for every line nobody overrode — the remedy the
   // drift block names. Without this the saved figure won and the re-confirm stored it again.
@@ -1372,6 +1407,11 @@ export async function confirmStep(
   // module-drift.ts. Stored in the step state's existing jsonb summary, so it costs no schema.
   if (MODULE_SOURCED_STEP_KEYS.includes(stepKey)) {
     summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(stepKey, rows);
+  }
+  // What the Expenses step counted — carried late trips and each person's own trips — from the trip list that
+  // built its figure. Part 2 confirm and publish read it (late-expenses.ts).
+  if (expenseTrips) {
+    summary[LATE_EXPENSES_SHOWN_KEY] = lateExpensesShownFrom(expenseTrips.carryOn, expenseTrips.tripsByCompact, memberCompacts);
   }
 
   // CONFIRMING p2_vacation TOUCHES NO LEAVE BALANCE, AND READS NO CRM LEAVE TO DECIDE ONE.
@@ -1857,6 +1897,7 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
     // What confirming Part 1 (and any Part 2 confirm since) reserved of earlier months' held salary is
     // withdrawn with the freeze: re-confirming records it again from the figures as they then stand.
     await recordHeldReleases({ runId, actorHrId: actorId(access), stage: "part1_reopened", releases: [] });
+    await releaseLateExpenseReservations(runId);
     return updateRun(
       runId,
       { phase: "part1", part1ConfirmedAt: null, part1ConfirmedBy: null },
@@ -1904,6 +1945,9 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["ready"], "Reopening Part 2");
   const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+    // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
+    // reopen before the ledger is touched (late-expenses.ts).
+    await releaseLateExpenseReservations(runId);
     const released = await releaseCarryForwardForCancelledRun(runId);
     const reopened = await updateRun(
       runId,
@@ -1921,6 +1965,58 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
   // A decision parked after Part 2 was confirmed was waiting for exactly this (resync-outbox.ts).
   await landParkedResyncs(updated);
   return updated;
+}
+
+/**
+ * The late-approved trips Part 2 confirm records as carried (late-expenses.ts), under the confirm's claim.
+ * Refuses when the switch moved since the Expenses step was confirmed, when a trip that step showed is no
+ * longer approved or changed amount, and when a figure pays the carried trips only in part or holds money
+ * beyond its trips. Coverage is computed from what the step SHOWED — its own trips as snapshotted plus the
+ * carried ones — never from a live re-read of the month. What it records it RESERVES, so no other run can
+ * record the same trip. Nothing while the switch is OFF. Every refusal is a LateExpenseRefusal: the caller
+ * clears the people it names and reopens the step. Any failed read throws and the confirm is refused.
+ */
+async function lateExpenseCarryAtConfirm(
+  run: MonthlySalaryRun,
+  rows: AssembledRow[],
+): Promise<{ carried: LateExpenseCarriedEntry[]; notCovered: LateExpenseNotCoveredEntry[] }> {
+  const carryOn = await getCarryLateExpensesSetting();
+  const shown = parseLateExpensesShown((await listStepStates(run.id)).find((state) => state.stepKey === "p2_expenses")?.summary);
+  assertLateExpensesShownMatchesSwitch(carryOn, shown);
+  if (!carryOn || !shown) {
+    await releaseLateExpenseReservations(run.id);
+    return { carried: [], notCovered: [] };
+  }
+  const names = lateExpenseNames(rows);
+  await assertLateExpensesUnchanged(
+    shown.trips.map((trip) => ({ ...trip, id: trip.rowId })),
+    names,
+    "confirm",
+  );
+  const drafts = await listDraftRows(run.id);
+  const coverage = planLateExpenseCoverage({
+    shown,
+    expensesByCompact: new Map(drafts.map((draft) => [draft.employeeHrIdCompact, draft.expenses])),
+  });
+  if (coverage.handAdded.length > 0) {
+    throw new LateExpenseRefusal(
+      describeLateExpenseHandAdded(coverage.handAdded, names),
+      coverage.handAdded.map((person) => person.compact),
+    );
+  }
+  if (coverage.partial.length > 0) {
+    throw new LateExpenseRefusal(
+      describeLateExpensePartialCoverage(coverage.partial, names),
+      coverage.partial.map((person) => person.compact),
+    );
+  }
+  await reserveLateExpenses(run.id, coverage.carried, names);
+  return { carried: coverage.carried, notCovered: coverage.notCovered };
+}
+
+/** Each person's name by compact HR key, for the sentences that name a carried trip. */
+function lateExpenseNames(rows: AssembledRow[]): Map<string, string> {
+  return new Map(rows.map((entry) => [compactHrKey(entry.compact ?? ""), String(entry.row.fullName ?? "")]));
 }
 
 /** The audit action of the stamp row a Part 2 confirm writes inside its claim. */
@@ -1944,7 +2040,11 @@ async function readPart2ConfirmedTotals(runId: string): Promise<ConfirmedTotals 
  */
 async function readPart2ConfirmedStamp(
   runId: string,
-): Promise<{ totals: ConfirmedTotals | null; bankDetails: BankDetailsStamp | null }> {
+): Promise<{
+  totals: ConfirmedTotals | null;
+  bankDetails: BankDetailsStamp | null;
+  lateExpensesCarried: LateExpenseCarriedEntry[];
+}> {
   // The stamp row written inside the confirm's claim, and the older `part2_confirmed` row that
   // carried it before 2026-10-23. Both hold the same totals for the same confirm; the newest wins.
   const { data, error } = await getSupabaseAdmin()
@@ -1961,8 +2061,13 @@ async function readPart2ConfirmedStamp(
     );
   }
   const newest = (data ?? [])[0] as { detail?: unknown } | undefined;
-  if (!newest) return { totals: null, bankDetails: null };
-  return { totals: readConfirmedTotals(newest.detail), bankDetails: readConfirmedBankDetails(newest.detail) };
+  if (!newest) return { totals: null, bankDetails: null, lateExpensesCarried: [] };
+  return {
+    totals: readConfirmedTotals(newest.detail),
+    bankDetails: readConfirmedBankDetails(newest.detail),
+    // The late-approved trips this confirm recorded as carried (late-expenses.ts); none on an older stamp.
+    lateExpensesCarried: parseLateExpensesCarried(newest.detail),
+  };
 }
 
 /** Confirm Part 2: assemble the full sheet, run the pre-flight gate, notify. */
@@ -2158,7 +2263,7 @@ export async function confirmPart2(
   const transition = await claimTransition(runId, ["part2"], "Confirming Part 2");
   const confirmedTotals = part2Totals(rows.length, totals);
   const confirmedBankDetails = part2BankDetails(runId, rows);
-  const { carryForwardRecorded, updated } = await whileClaimed(runId, transition, async () => {
+  const { carryForwardRecorded, lateExpenses, updated } = await whileClaimed(runId, transition, async () => {
     // Under the claim nothing can land or be parked against this run's hold, so this is the last word: a
     // decision still parked (it failed again, or arrived after the landing above) has NOT reached these
     // figures, and confirming would pay the old ones. A queue that cannot be read refuses too.
@@ -2193,6 +2298,10 @@ export async function confirmPart2(
           "expense decision reached it). Nothing was confirmed; confirm Part 2 again.",
       );
     }
+    // LATE-APPROVED TRIPS THIS RUN CARRIES (REC-029 / F-PAY-012, late-expenses.ts). Only while the switch
+    // is ON, and only for an employee whose confirmed Expenses figure covers them: what is recorded here
+    // is what publish marks paid, so a trip whose money is not in the figure is left out and stays listed.
+    const lateExpenses = await lateExpenseCarryAtConfirm(run, rowsUnderClaim);
     // THE STAMP IS WRITTEN FIRST, AND IT MUST LAND (audit 2026-10-23, S-PAY-08). It used to ride on the
     // best-effort audit row written after the claim, so a lost insert left a `ready` run with no stamp —
     // and publish then skipped the comparison. Publish and every Part 2 bank file now refuse without it,
@@ -2202,7 +2311,12 @@ export async function confirmPart2(
       runId,
       actorHrId: actorId(access),
       action: PART2_TOTALS_STAMP_ACTION,
-      detail: { [PART2_TOTALS_KEY]: confirmedTotals, [PART2_BANK_DETAILS_KEY]: confirmedBankDetails },
+      detail: {
+        [PART2_TOTALS_KEY]: confirmedTotals,
+        [PART2_BANK_DETAILS_KEY]: confirmedBankDetails,
+        [LATE_EXPENSES_CARRIED_KEY]: lateExpenses.carried,
+        [LATE_EXPENSES_NOT_COVERED_KEY]: lateExpenses.notCovered,
+      },
     });
     const recorded = await recordOverpaidCarryForward({ runId, rows, actorHrId: actorId(access) });
     // RESERVE THE HELD SALARY THIS MONTH RELEASES, before the run is ready: from here the Part 2 bank
@@ -2218,7 +2332,12 @@ export async function confirmPart2(
       { phase: "ready", part2ConfirmedAt: nowIso(), part2ConfirmedBy: actorId(access) },
       { transitionToken: transition },
     );
-    return { carryForwardRecorded: recorded, updated: confirmed };
+    return { carryForwardRecorded: recorded, lateExpenses, updated: confirmed };
+  }).catch((confirmError: unknown) => {
+    // A CARRIED-TRIP REFUSAL CLEARS THE FIGURE BUILT ON IT. A save writes every row, so the person's saved
+    // figure would otherwise survive and be confirmed again. Outside the claim, which is released by now.
+    if (confirmError instanceof LateExpenseRefusal) return refuseAfterClearing(runId, confirmError, ["part2"], rows);
+    throw confirmError;
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -2240,6 +2359,10 @@ export async function confirmPart2(
       // Carried here too: readPart2ConfirmedStamp takes the NEWEST of the two rows, and this one is
       // written after the stamp row, so without the fingerprints it would switch the bank check off.
       [PART2_BANK_DETAILS_KEY]: confirmedBankDetails,
+      // The same reason: publish reads the carried late trips from whichever of the two rows is newest.
+      [LATE_EXPENSES_CARRIED_KEY]: lateExpenses.carried,
+      // Late trips HR saw but the confirmed figure does not cover: not recorded, still on the list.
+      [LATE_EXPENSES_NOT_COVERED_KEY]: lateExpenses.notCovered,
     },
   });
   await notifyPart2Ready(updated);
@@ -2663,6 +2786,33 @@ function owedLaterRecords(
 }
 
 /**
+ * WHICH OF THIS MONTH'S OWN TRIPS ITS FIGURES PAID (late-expenses.ts expensesCoveredAtPublish): unstamped is
+ * not unpaid, so the late-expense list reads this, written with the phase, never the stamp alone. From what
+ * the confirmed Expenses step counted; null when it kept no record, and the month is then checked by hand.
+ */
+async function expensesCoveredForPublish(
+  runId: string,
+  rows: AssembledRow[],
+  carriedPaid: LateExpenseCarriedEntry[],
+): Promise<LateExpensesCovered | null> {
+  const shown = parseLateExpensesShown((await listStepStates(runId)).find((state) => state.stepKey === "p2_expenses")?.summary);
+  return expensesCoveredAtPublish({ shown, entries: rows, carriedPaid });
+}
+
+/**
+ * After a carried-trip refusal at Part 2 confirm or publish: clears the saved Expenses figure of the people
+ * it names in this run, reopens the Expenses step, and rejects with a message saying so (late-expenses.ts).
+ */
+async function refuseAfterClearing(
+  runId: string,
+  refusal: LateExpenseRefusal,
+  expected: RunPhase[],
+  rows: AssembledRow[],
+): Promise<never> {
+  throw await clearAfterLateExpenseRefusal(runId, refusal, expected, lateExpenseNames(rows));
+}
+
+/**
  * Publish the confirmed run to payslips. Deliberate, Super-Admin-only. Held
  * employees are excluded (no payslip until released). Guards against a foreign
  * batch already claiming the month; idempotent if this run already published.
@@ -2726,6 +2876,13 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   if (!predatesStamp) {
     assertMatchesPart2Confirm(confirmedStamp, part2Totals(rows.length, publishTotals), "publish");
   }
+
+  // THE LATE-APPROVED TRIPS THIS MONTH PAYS (REC-029 / F-PAY-012, late-expenses.ts): what Part 2 confirm
+  // recorded as carried, kept only for people actually published (not held) with expenses above zero. A
+  // held person was not paid, so neither was their carried trip, and it stays on the list.
+  const lateAtPublish = lateExpensesAtPublish((await readPart2ConfirmedStamp(runId)).lateExpensesCarried, rows);
+  const lateExpensesCarried = lateAtPublish.paid;
+  const expensesCovered = await expensesCoveredForPublish(runId, rows, lateExpensesCarried);
 
   // WHAT EACH HELD PERSON WAS OWED, recorded permanently at the moment they are dropped.
   //
@@ -2794,6 +2951,10 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   // its records were not this run's, or a create whose own follow-up threw after the batch was written.
   const batchNotes: Record<string, unknown> = {};
   const published = await whileClaimed(runId, transition, async () => {
+    // TWO RUNS NEVER PAY THE SAME LATE TRIP, AND NONE PAYS ONE THAT CHANGED. Checked under the claim and before
+    // anything is written, so a refusal leaves no batch behind: another published run that carried one of
+    // these trips wins, and a trip no longer approved at the amount Part 2 recorded refuses the publish.
+    await assertLateExpensesPublishable(runId, lateAtPublish, lateExpenseNames(rows));
     const ownFileName = `automated-payroll:${runId}`;
     let existing = await findSalaryBatchForPeriod(run.month, run.year);
 
@@ -2949,6 +3110,14 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
           // The other money this month withheld and still owes (held-settlements.ts reads all three lists).
           part1Unpaid,
           deferred,
+          // Late-approved trips of earlier published months this month paid. Recorded with the phase, so a
+          // later run can never carry them again (late-expenses.ts).
+          [LATE_EXPENSES_CARRIED_KEY]: lateExpensesCarried,
+          // Carried trips of people this month HELD: in their held balance (Held Salary Release pays it), so
+          // they count as carried and are never listed or carried again.
+          [LATE_EXPENSES_CARRIED_HELD_KEY]: lateAtPublish.held,
+          // The own-month trips the figures paid, and who was paid a figure that was not their trips.
+          [LATE_EXPENSES_COVERED_KEY]: expensesCovered,
           // The permanent answer to "did the bank files carry everybody".
           bankCoverage: bankCoverage.map((entry) => ({
             scope: entry.scope,
@@ -2967,6 +3136,8 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     );
     return { batchId, carryForwardRecovered, heldReleased, updated };
   }).catch((publishError: unknown) => {
+    // A carried-trip refusal comes before anything is written: the figure built on the trip is cleared.
+    if (publishError instanceof LateExpenseRefusal) return refuseAfterClearing(runId, publishError, ["ready"], rows);
     // A lost claim HERE is not "nothing happened": the payslips are live and the run is not marked.
     // Saying otherwise invites the two moves that make it worse — re-publishing, or reopening Part 2 and
     // releasing a carry-forward that was genuinely collected.
@@ -2987,6 +3158,8 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
   const expenseStamp = await recordPaidExpenseStamp({
     actorHrId: actorId(access),
     batchId,
+    // The late-approved trips of earlier months this run paid are marked too, by row id.
+    carried: lateExpensesCarried,
     entries: rows,
     month: run.month,
     runId,
