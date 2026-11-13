@@ -120,9 +120,41 @@ export async function runEmployeeKeyForeignKeysTests() {
   );
   assert.match(slice2, /references public\.employees \(hr_id\) on update cascade on delete restrict not valid/);
 
+  // ---- Slice 3: medical-trip ids stored in the employee's own case, then keyed ------------------------
+  const SLICE3 = "20261113161558_medical_trip_ids_name_a_real_employee.sql";
+  assert.ok(files.includes(SLICE3), `the migration must still be here: ${SLICE3}`);
+  const slice3 = readFileSync(path.join(MIGRATIONS, SLICE3), "utf8");
+  const preimage = slice3.indexOf("create table if not exists outstation_backup_20261113.medical_trip_ids_pre_case_repair");
+  const repair = slice3.indexOf("set medical_trip_hr_id = o.medical_trip_hr_id");
+  const trigger = slice3.indexOf("create trigger phx_outstation_medical_trip_hr_id_canonical");
+  const key = slice3.indexOf("add constraint outstation_expense_requests_medical_trip_phx_employee_fkey");
+  assert.ok(
+    preimage > 0 && preimage < trigger && trigger < repair && repair < key,
+    "pre-image first, then the trigger, then the repair through it, then the key",
+  );
+  assert.match(
+    slice3,
+    /before insert or update of medical_trip_hr_id on public\.outstation_expense_requests/,
+    "the seat model still hands the forms lower-case ids: without the trigger every new medical-trip expense is refused",
+  );
+  assert.match(
+    slice3,
+    /new\.medical_trip_hr_id := null;/,
+    "an id naming nobody is cleared (the name is kept) so a District Manager's expense is never refused over it",
+  );
+  assert.match(slice3, /references public\.employees \(hr_id\)\s+on update cascade on delete restrict not valid/);
+  for (const name of files.filter((file) => file > SLICE3)) {
+    const later = readFileSync(path.join(MIGRATIONS, name), "utf8").toLowerCase();
+    assert.ok(
+      !later.includes("drop trigger phx_outstation_medical_trip_hr_id_canonical") &&
+        !later.includes("drop trigger if exists phx_outstation_medical_trip_hr_id_canonical"),
+      `${name} drops the medical-trip canonical trigger — the key then refuses every new medical-trip expense`,
+    );
+  }
+
   // ---- No ledger row, so each needs its evidenced exception -------------------------------------
   const inventory = readFileSync("scripts/lib/migration-inventory.ts", "utf8");
-  for (const name of [FILE, SLICE2]) {
+  for (const name of [FILE, SLICE2, SLICE3]) {
     assert.ok(inventory.includes(`"${name}",`), `${name} needs its ACKNOWLEDGED_EXCEPTIONS entry`);
   }
 }
