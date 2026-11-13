@@ -149,7 +149,7 @@ const tally = { pharmacies: pharmacies.length, noArea: 0, exact: 0, strong: 0, s
 for (const p of pharmacies) {
   const area = seatArea.get(String(p.seat_id))?.area ?? null;
   const pool = area ? shopsByArea.get(area) : undefined;
-  const crmName = String(p.name ?? "").replace(/\s*\/.{12,}$/s, "").trim() || String(p.name ?? "");
+  const crmName = String(p.name ?? "").replace(/\s*\/[\s\S]{12,}$/, "").trim() || String(p.name ?? "");
   const name = prepare(crmName);
   if (!area || !pool || !name.core.length) { tally.noArea++; continue; }
   const grams = bigrams(name.core.join(""));
