@@ -47,7 +47,7 @@ export async function runReportItReadLogTests() {
   assert.equal(reportItJsonError(new Error("Forbidden: no"), "x").status, 403);
   assert.equal(reportItJsonError(new Error("Unavailable: not recorded"), "x").status, 503);
   assert.equal(reportItJsonError(new Error("Authentication is required."), "x").status, 401);
-  assert.equal(reportItJsonError(new ApiRateLimitError("Too many", 60), "x").status, 429);
+  assert.equal(reportItJsonError(new ApiRateLimitError(60), "x").status, 429);
   assert.equal(reportItJsonError(new Error("Validation: bad"), "x").status, 400);
 
   // ── A read that cannot be logged is refused ────────────────────────────────
