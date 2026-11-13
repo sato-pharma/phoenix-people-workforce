@@ -40,7 +40,9 @@ const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" } as const;
  * "Recovery codes plus your reset", 13 Nov 2026). It takes the caller's own password and writes an audit
  * row naming both accounts.
  */
-async function requireSuperAdminSession(request: Request) {
+type SessionCheck = { failure: "unauthenticated" | "forbidden" } | { loginId: string };
+
+async function requireSuperAdminSession(request: Request): Promise<SessionCheck> {
   const sessionToken = getCookieValue(request.headers.get("cookie"), phoenixSessionCookieName);
   const sessionState = await resolveSessionState(sessionToken, { allowRecentCopy: false });
   const access = sessionState?.access;
