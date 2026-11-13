@@ -3,7 +3,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { recordCaseEvent } from "./events.ts";
+import { recordCaseEvent, type CaseEventInput } from "./events.ts";
 import { monthKeyLabel, nextOpenPayrollMonth, payrollMonthState } from "./payroll-month.ts";
 import type { DisputeRefund } from "./types.ts";
 
@@ -97,6 +97,12 @@ export async function cancelLiveRefund(input: {
   actorHrId: string | null;
   actorRole: string | null;
   reason: string;
+  /**
+   * When given, the "refund_cancelled" event is ADDED here instead of written — the caller writes it
+   * with its own last write (decideDeductionDispute, F-PAY-005), so a decision that fails after this
+   * step leaves no event behind in the append-only timeline. Omitted: written at once, as before.
+   */
+  deferEvents?: CaseEventInput[];
 }): Promise<{ cancelled: DisputeRefund | null; alreadyPaid: DisputeRefund | null }> {
   const { data, error } = await getSupabaseAdmin()
     .from("dispute_refunds")
@@ -120,7 +126,7 @@ export async function cancelLiveRefund(input: {
     .eq("id", live.id)
     .eq("status", "recommended");
   if (updateError) throw updateError;
-  await recordCaseEvent({
+  const cancelledEvent: CaseEventInput = {
     actorHrId: input.actorHrId,
     actorRole: input.actorRole,
     details: { amount: live.amount, refundId: live.id, targetMonthKey: live.targetMonthKey },
@@ -128,7 +134,9 @@ export async function cancelLiveRefund(input: {
     kind: input.kind,
     note: input.reason,
     ref: input.ref,
-  });
+  };
+  if (input.deferEvents) input.deferEvents.push(cancelledEvent);
+  else await recordCaseEvent(cancelledEvent);
   return { alreadyPaid: null, cancelled: { ...live, status: "cancelled" } };
 }
 
@@ -152,6 +160,8 @@ export async function recommendDisputeRefund(input: {
   reason: string;
   actorHrId: string | null;
   actorRole: string | null;
+  /** As on cancelLiveRefund: collect the events for the caller's own last write instead of writing them. */
+  deferEvents?: CaseEventInput[];
 }): Promise<{ refund: DisputeRefund | null; sentence: string }> {
   const amount = roundCurrency(input.amount);
   if (!(amount > 0)) throw new Error("Validation: a refund must be more than zero.");
@@ -161,6 +171,7 @@ export async function recommendDisputeRefund(input: {
     kind: input.kind,
     reason: "Replaced by a newer decision on the same dispute.",
     ref: input.ref,
+    ...(input.deferEvents ? { deferEvents: input.deferEvents } : {}),
   });
   if (replaced.alreadyPaid) {
     const paid = replaced.alreadyPaid;
@@ -191,7 +202,7 @@ export async function recommendDisputeRefund(input: {
     .single();
   if (error) throw error;
   const refund = mapRefund(data as RefundRow);
-  await recordCaseEvent({
+  const recommendedEvent: CaseEventInput = {
     actorHrId: input.actorHrId,
     actorRole: input.actorRole,
     details: { amount, refundId: refund.id, sourceMonthKey: input.sourceMonthKey, targetMonthKey },
@@ -199,7 +210,9 @@ export async function recommendDisputeRefund(input: {
     kind: input.kind,
     note: input.reason,
     ref: input.ref,
-  });
+  };
+  if (input.deferEvents) input.deferEvents.push(recommendedEvent);
+  else await recordCaseEvent(recommendedEvent);
   return {
     refund,
     sentence:

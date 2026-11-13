@@ -46,6 +46,17 @@ export function reopenedSince(events: DisputeCaseEvent[], decidedAt: string | nu
   return !decidedAt || time(reopened.createdAt) > time(decidedAt);
 }
 
+/**
+ * A decision that stopped half-way and could not be put back (F-PAY-005): its "decision_interrupted"
+ * event is newer than the newest "decided". Cleared by the next decision that completes.
+ */
+export function needsAttentionByEvents(events: DisputeCaseEvent[]): boolean {
+  const interrupted = newest(events, ["decision_interrupted"]);
+  if (!interrupted) return false;
+  const decided = newest(events, ["decided"]);
+  return !decided || time(interrupted.createdAt) > time(decided.createdAt);
+}
+
 export function deriveDisputeCaseState(input: {
   /** The module's own answer: is a decision on record right now (not reopened since)? */
   decided: boolean;
@@ -53,6 +64,8 @@ export function deriveDisputeCaseState(input: {
   messages: Pick<DisputeMessage, "createdAt" | "side">[];
   openedAt: string;
 }): DisputeCaseState {
+  // Never read as open or decided while a half-finished decision is on it.
+  if (needsAttentionByEvents(input.events)) return "needs_attention";
   if (input.decided) {
     const latest = newest(input.events, ["reopen_requested", "reopen_declined", "reopened", "decided"]);
     return latest?.eventType === "reopen_requested" ? "reopen_requested" : "decided";
@@ -100,7 +113,13 @@ export function compareCasesForReviewer(
   left: { state: DisputeCaseState; lastActivityAt: string },
   right: { state: DisputeCaseState; lastActivityAt: string },
 ): number {
-  const rank: Record<DisputeCaseState, number> = { waiting_reviewer: 0, reopen_requested: 1, waiting_employee: 2, decided: 3 };
+  const rank: Record<DisputeCaseState, number> = {
+    needs_attention: -1,
+    waiting_reviewer: 0,
+    reopen_requested: 1,
+    waiting_employee: 2,
+    decided: 3,
+  };
   const byState = rank[left.state] - rank[right.state];
   if (byState !== 0) return byState;
   return time(right.lastActivityAt) - time(left.lastActivityAt);

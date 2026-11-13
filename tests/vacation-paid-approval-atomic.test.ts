@@ -62,7 +62,14 @@ export function runVacationPaidApprovalAtomicTests() {
   // ---- Service rewire: contended final approval routes through the atomic RPC. ----
   const service = source("src/lib/vacation/service.ts");
   assert.match(service, /const isPaidBalanceContended =/);
-  assert.match(service, /\.rpc\("phx_apply_vacation_paid_approval"/);
+  // Since 13 Nov 2026 (F-HR-010) through the wrapper that writes the approver's step in the same
+  // transaction; the wrapper runs this RPC unchanged (pinned in tests/hr-atomic-writes.test.ts).
+  assert.match(service, /\.rpc\("phx_apply_vacation_paid_approval_with_step"/);
+  assert.match(
+    source("supabase/migrations/20261113161725_vacation_step_and_request_atomic.sql"),
+    /from public\.phx_apply_vacation_paid_approval\(/,
+    "the wrapper must still run the unchanged paid-balance RPC",
+  );
   assert.match(service, /p_expected_status: input\.request\.status/);
   // Forced-unpaid and compensatory must NOT take the atomic path.
   assert.match(service, /balance\.unpaidReason !== "first_six_months"/);
