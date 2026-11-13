@@ -178,6 +178,7 @@ import { runAutomatedPayrollPayModeOrderTests } from "./automated-payroll-pay-mo
 import { runPayrollSheetSectionsTests } from "./payroll-sheet-sections.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
+import { runCspReportOnlyTests } from "./csp-report-only.test.ts";
 import { runPageCacheControlNoTransformTests } from "./page-cache-control-no-transform.test.ts";
 import { runSentryProductionOnlyTests } from "./sentry-production-only.test.ts";
 import { runSupabaseUnreachableTests } from "./supabase-unreachable.test.ts";
@@ -3667,6 +3668,7 @@ await runTest("automated payroll settlement summary (the four figures reconcile 
 await runTest("automated payroll population diff (silent-disappearance guard)", runAutomatedPayrollPopulationDiffTests);
 await runTest("automated payroll data quality (a missing field must never become a default that pays money)", runAutomatedPayrollDataQualityTests);
 await runTest("content security policy headers (wasm + maps + onesignal)", runCspHeaderTests);
+await runTest("report-only page policy measures un-nonced styles and unlisted picture hosts, and its report route is bounded", runCspReportOnlyTests);
 await runTest("behind Cloudflare every page answers Cache-Control no-transform, so it never rewrites an email address into \"[email protected]\" and breaks hydration (React #418 on Employees, 31 Oct 2026); served directly a page answers without it, because no-transform also switches off Next.js's compression (Ranks went out as 1.7 MB of raw HTML, 12 Nov 2026); APIs, files and redirects keep their own header, and Next.js still keeps one the proxy set", runPageCacheControlNoTransformTests);
 await runTest("pdf canvas file-tracing (@napi-rs is hoisted AND the trace globs actually resolve it)", runPdfCanvasTraceTests);
 await runTest("ready payroll proration (real month length, not a fixed 30)", runReadyPayrollProrationTests);
