@@ -145,6 +145,9 @@ export type DeductionPushNoticeLine = {
   daysCount?: number | null;
   /** The exact days charged, so the email can list them instead of only counting them. */
   dates?: readonly string[];
+  /** What makes this notice "already sent". Defaults to the line id; the DAILY page passes the id
+   * plus the days, so releasing 11 November after the 9th tells the employee again. */
+  noticeKey?: string;
 };
 
 /**
@@ -297,7 +300,7 @@ export async function notifyDeductionPushed(input: {
         tone: "warning",
       },
       metadata: {
-        idempotencyKey: `deduction-pushed:${line.id}`,
+        idempotencyKey: `deduction-pushed:${line.noticeKey ?? line.id}`,
         monthKey: line.monthKey,
         lineId: line.id,
       },
@@ -334,7 +337,7 @@ export async function notifyDeductionPushed(input: {
           message: `A payroll deduction has been recorded for ${employeeName} for ${monthLabel}.`,
           metadata: {
             authorizedRecipient: true,
-            idempotencyKey: `deduction-pushed-cc:${line.id}`,
+            idempotencyKey: `deduction-pushed-cc:${line.noticeKey ?? line.id}`,
             monthKey: line.monthKey,
             lineId: line.id,
             subjectEmployeeName: employeeName,
