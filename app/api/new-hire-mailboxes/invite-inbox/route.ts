@@ -14,15 +14,12 @@
  */
 import { NextResponse } from "next/server";
 
-import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { addMonitor } from "@/lib/mailbox-monitor/service";
 import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
-import { readCompanyInitialPassword } from "@/lib/new-hire-mailbox/robot/initial-password";
-import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
-import { runInviteInboxAdoption } from "@/lib/new-hire-mailbox/robot/invite-inbox-runner";
-import { createJoinerDriverFromEnv } from "@/lib/new-hire-mailbox/robot/sweep-deps";
+import { forwardToRobotService } from "@/lib/new-hire-mailbox/robot/actions/forward";
+import { runInviteInboxAction } from "@/lib/new-hire-mailbox/robot/actions/invite-inbox-action";
+import { robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -65,47 +62,15 @@ export async function POST(request: Request) {
       });
     }
 
-    const result = await runInviteInboxAdoption({
-      address: INVITE_INBOX_ADDRESS,
-      deps: {
-        companyPassword: () => readCompanyInitialPassword(),
-        monitor: (input) => addMonitor(
-          { appPassword: input.appPassword, displayLabel: input.displayLabel, emailAddress: input.emailAddress },
-          access.hrId ?? null,
-        ),
-      },
-      driver: dryRun ? undefined : await createJoinerDriverFromEnv(),
-      dryRun,
-    });
-
-    // Audited even for a dry run: asking is worth a record of who asked. The result carries no
-    // credential — a test asserts that on every path.
-    //
-    // 🔴 `detail` IS THE ONLY THING HERE THAT SAYS WHY, SO IT IS AUDITED. `refusal` is the gate's
-    // enum and is null on every run the gate allowed — so a run that reached Turbify and came back
-    // beaten stored `refusal: null`, `adopted: false` and nothing else, and the sentence naming the
-    // control that stopped it existed only on the screen of whoever clicked. Measured 2026-10-03:
-    // the two live runs that night both read exactly that, and the diagnostic had to be copied out
-    // of the browser by hand to be read at all. `handover` is deliberately NOT audited — for a new
-    // hire the company password becomes their real password, so that sentence can carry a
-    // credential where `detail` never does.
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: result.address ?? INVITE_INBOX_ADDRESS,
-      entityType: "new_hire_mailbox_adoption",
-      newValues: {
-        address: result.address,
-        adopted: result.adopted,
-        detail: result.detail,
-        dryRun: result.dryRun,
-        refusal: result.refusal,
-      },
-      summary: result.adopted
-        ? `Adopted the invite inbox ${result.address}, which Phoenix can now read`
-        : (dryRun ? `Planned the invite inbox adoption of ${INVITE_INBOX_ADDRESS}` : `Invite inbox adoption did not finish`),
-    });
-
-    return NextResponse.json({ result, success: true });
+    // AFTER every check above, in the same order as before the robot service existed (audit
+    // REC-075). A LIVE run opens a robot browser, so once PHOENIX_ROBOT_SERVICE_URL is set it runs on
+    // the robot service and its answer comes back unchanged; a dry run opens nothing and stays here.
+    // Either way it is the ONE implementation in runInviteInboxAction, audit row included.
+    const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
+    if (!dryRun && robotServiceConfigured()) {
+      return await forwardToRobotService({ action: "invite-inbox", actor, request: { dryRun } });
+    }
+    return await runInviteInboxAction({ actor, dryRun });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "You do not have access to this.", success: false }, { status: 403 });

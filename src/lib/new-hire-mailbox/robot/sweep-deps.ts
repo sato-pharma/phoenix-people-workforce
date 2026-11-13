@@ -28,6 +28,7 @@ import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employe
 import { listMonitors, listMonitorMessages, openMonitorMessage } from "@/lib/mailbox-monitor/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
+import { assertRobotDriverAllowedHere } from "@/lib/platform/robot-service";
 
 import { connectNewHireMailboxTask, getNewHireMailboxQueue, NEW_HIRE_MAILBOX_TABLE } from "../service";
 import { initialPasswordRecord } from "../initial-password-store";
@@ -215,6 +216,9 @@ export function defaultInviteInboxReaderDeps(): InviteInboxReaderDeps {
  * drive the driver with no inbox at all and see that honest refusal.
  */
 export async function createJoinerDriverFromEnv() {
+  // FIRST, before the credentials are read or anything is launched (audit REC-075): once
+  // PHOENIX_ROBOT_SERVICE_URL is set, a robot browser opens on the robot service and nowhere else.
+  assertRobotDriverAllowedHere();
   const username = String(process.env.PHOENIX_TURBIFY_ADMIN_USER ?? "").trim();
   const password = String(process.env.PHOENIX_TURBIFY_ADMIN_PASSWORD ?? "");
   if (!username || !password) {
