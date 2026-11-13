@@ -77452,24 +77452,6 @@ CREATE INDEX activity_events_created_idx ON public.activity_events USING btree (
 CREATE INDEX activity_events_hr_created_idx ON public.activity_events USING btree (hr_id, created_at DESC);
 
 --
--- Name: activity_events_login_created_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX activity_events_login_created_idx ON public.activity_events USING btree (login_id, created_at DESC);
-
---
--- Name: activity_events_module_created_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX activity_events_module_created_idx ON public.activity_events USING btree (module_key, created_at DESC);
-
---
--- Name: activity_events_session_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX activity_events_session_idx ON public.activity_events USING btree (session_id, created_at);
-
---
 -- Name: admin_cleanup_events_actor_created_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
