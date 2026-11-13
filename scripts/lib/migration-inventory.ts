@@ -2437,6 +2437,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   "20261113161727_ats_candidate_merge_atomic.sql",
   "20261113162318_dispute_decision_claim_and_undo.sql",
   "20261113162321_deduction_decision_refuses_locked_candidate.sql",
+  // Applied 13 Nov 2026 at about 17:35 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler) after the Supabase MCP declined it; no ledger row. Read back on production: still 7 rows, 0
+  // with a deduction_date, daily_deductions_lines_pub_employee_category_day_idx in place of the old key,
+  // phx_release_daily_deduction_lines' body reads deductionDate (md5(prosrc) 62bceeb51fa7797233f68c68c3af23a7),
+  // execute held by postgres and service_role only. Proven on staging inside a rolled-back block: the 9th then
+  // the 11th are two rows (1,400), a repeat of the 9th adds none, a one-day row is filed under its own day, and
+  // a whole range over a released day, a day inside an old whole-range row, and a second whole row are refused.
+  "20261113181600_daily_deductions_one_row_per_day.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

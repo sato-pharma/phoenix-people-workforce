@@ -64,18 +64,18 @@ export function runDailyDeductionsReleaseTests() {
       line({ employeeHrIdCompact: "M102" }), // never released -> sent
       line({ employeeHrIdCompact: "M103", amount: 180, daysCount: 2, dates: ["2026-09-05", "2026-09-06"] }), // changed -> sent
     ];
-    const sent = linesToRelease(selection, released);
+    const sent = linesToRelease(selection, released, null);
     assert.deepEqual(
       sent.map((l) => l.employeeHrIdCompact),
       ["M102", "M103"],
       "a bulk release sends the unreleased and the changed, never the already-released",
     );
-    assert.deepEqual(linesToRelease([], released), [], "an empty selection sends nothing");
+    assert.deepEqual(linesToRelease([], released, null), [], "an empty selection sends nothing");
 
     // A line the tally could not price (no base salary on file) reads 0.00 only because nothing could
     // be priced. Released, it emailed the employee "EGP 0.00 · N days" (audit, 2026-11-07).
     assert.deepEqual(
-      linesToRelease([line({ employeeHrIdCompact: "M104", amount: 0, amountUnknown: true })], released),
+      linesToRelease([line({ employeeHrIdCompact: "M104", amount: 0, amountUnknown: true })], released, null),
       [],
       "REGRESSION: a line with no computable amount is never sent to release",
     );
@@ -100,9 +100,14 @@ export function runDailyDeductionsReleaseTests() {
     );
   }
 
-  // ── the key is employee x category, shared by the client and the server ──
+  // ── the key is employee x category x day, shared by the client and the server ──
   {
-    assert.equal(releaseLineKey({ category: "crm", employeeHrIdCompact: "B7" }), "crm|B7");
+    assert.equal(releaseLineKey({ category: "crm", employeeHrIdCompact: "B7" }), "crm|B7|");
+    assert.equal(releaseLineKey({ category: "crm", deductionDate: "2026-11-09", employeeHrIdCompact: "B7" }), "crm|B7|2026-11-09");
+    assert.equal(
+      dailyLineKey({ category: "crm", deductionDate: "2026-11-09", employeeHrIdCompact: "B7" }),
+      releaseLineKey({ category: "crm", deductionDate: "2026-11-09", employeeHrIdCompact: "B7" }),
+    );
     assert.equal(
       dailyLineKey({ category: "crm", employeeHrIdCompact: "B7" }),
       releaseLineKey({ category: "crm", employeeHrIdCompact: "B7" }),
