@@ -16,6 +16,7 @@ import {
   reportItTransitionRefusal,
 } from "./lifecycle";
 import type { ReportItPayload, ReportItReportRow, ReportItStatus } from "./types";
+import { isUuid } from "@/lib/http/uuid";
 
 // Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
 //
@@ -495,7 +496,6 @@ export type ReportStatusChangeDeps = {
   }) => Promise<string | null>;
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const defaultStatusChangeDeps: ReportStatusChangeDeps = {
   canViewAll: (access) => canViewAllReports(access),
@@ -541,7 +541,7 @@ export async function changeReportStatus(
   const actorHrId = hrIdForStorage(access.hrId);
   if (!actorHrId) throw new Error("Authentication is required.");
   const reportId = String(input.reportId ?? "").trim();
-  if (!UUID_PATTERN.test(reportId)) throw new Error("Validation: choose a report.");
+  if (!isUuid(reportId)) throw new Error("Validation: choose a report.");
 
   const current = await deps.readStatus(reportId);
   if (!current) throw new Error("Validation: that report was not found.");
