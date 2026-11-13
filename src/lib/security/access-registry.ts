@@ -268,6 +268,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/invite-inbox", reason: "Robot service side of the invite-inbox adoption; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
   tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/app-password-controls", reason: "Robot service side of the App Passwords page capture; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
   tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/app-password-rehearsal", reason: "Robot service side of the app-password mint-and-remove rehearsal; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
+  tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/edit-form-controls", reason: "Robot service side of the read-only look at one leaver's mailbox Edit form; called only by the website after its own session, CSRF, role, register and rate-limit checks; re-checks the register; guarded by CRON_SECRET and the robot process role." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-probation", reason: "Daily 90-day probation sweep: promotes pharmacies with a footprint, reports phantoms (spec A3), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/cron/direct-orders-rotate-sheet-token", reason: "Rotates the live Google Sheet's feed token so the bootstrap token committed in docs/direct-orders-live-sheet.gs is revoked and worthless; revokes the old link only after the sheet confirms the new one; guarded by CRON_SECRET." }),
@@ -2045,6 +2046,12 @@ export const accessRegistry = [
   // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
   // the entry named only half of what the route enforces.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
+  // Reading ONE leaver's mailbox Edit form in the Turbify console (13 Nov 2026). It changes nothing —
+  // it opens Edit, reads the controls and leaves without keeping anything — but it SIGNS IN as the
+  // console administrator, so the gate is the same `canReadInitialPassword` audience as the
+  // app-password capture, and the address must be a leaver on the register before a browser opens.
+  // Audited as a mutation for the same reason as its sibling: a console sign-in is worth a record.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding/edit-form-controls", permission: null, guard: "domain-helper", csrfRequired: true }),
   // The other end of the same job: a JOINER's mailbox. The POST connects a new hire's Turbify mailbox
   // to their My email with the app password made while creating it, or rules they need none. It
   // carries a mailbox credential in its body (sealed by the personal-mailbox service, never stored,
