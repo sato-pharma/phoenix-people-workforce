@@ -123,9 +123,12 @@ import { refreshSharedTradeCounterparties } from "@/lib/crm/shared-windows";
 import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
 import {
   canRecordDirectOrderCollection,
+  collectionMatchesExpected,
   deriveDirectOrderCollection,
+  DIRECT_ORDER_COLLECTION_CONFLICT_MESSAGE,
   directOrderCollectionDbError,
   DIRECT_ORDER_FINANCE_HR_ID,
+  type ExpectedDirectOrderCollection,
   todayInCairo,
 } from "@/lib/direct-orders/collection-rules";
 import {
@@ -7972,7 +7975,16 @@ export async function setDirectOrderSalesMonth(
  */
 export async function recordDirectOrderCollection(
   access: AccessContext,
-  input: { requestId: string; paidAmount: number | null; paymentDate: string | null },
+  input: {
+    requestId: string;
+    paidAmount: number | null;
+    paymentDate: string | null;
+    /**
+     * The collection the screen showed when Finance pressed Save (parseExpectedDirectOrderCollection).
+     * Absent or null — an older open tab that never sent it — falls back to the read below.
+     */
+    expected?: ExpectedDirectOrderCollection | null;
+  },
 ): Promise<DirectOrderRequest> {
   await assertPermission(access, "direct_orders", "read");
   if (!canRecordDirectOrderCollection(access)) {
@@ -7989,12 +8001,23 @@ export async function recordDirectOrderCollection(
   if (!current) badRequest("Direct order request not found.");
   const before = mapRequestRow(current as Record<string, unknown>);
 
+  // What this save is compared against. The screen's own figures when it sent them: a save made on a
+  // page opened minutes ago must lose to a save made since, not silently replace it, and only the
+  // figures the person SAW can tell. The server read stands in only for a caller that sent none.
+  const expected: ExpectedDirectOrderCollection = input.expected ?? {
+    paidAmount: before.paidAmount,
+    paymentDate: before.paymentDate,
+  };
+  if (!collectionMatchesExpected({ paidAmount: before.paidAmount, paymentDate: before.paymentDate }, expected)) {
+    throw conflictError(DIRECT_ORDER_COLLECTION_CONFLICT_MESSAGE, "direct_order_collection_conflict");
+  }
+
   // Clearing: one explicit "nothing collected" state, so a mistake is undoable. All three columns
   // reset together — a payment date left behind with no amount is what makes the phantom-pharmacy
   // check (pharmacy-probation.ts) treat an unpaid order as proof the pharmacy is real.
   const clearing = input.paidAmount == null;
 
-  // What the database function is asked to write. It is a compare-and-set against `before`, under
+  // What the database function is asked to write. It is a compare-and-set against `expected`, under
   // the order's row lock (below), so these are a request, not the outcome.
   let rpcArgs: { p_paid_amount: number | null; p_payment_date: string | null };
 
@@ -8024,15 +8047,15 @@ export async function recordDirectOrderCollection(
 
   // ONE locked write (F-MKT-005). phx_record_direct_order_collection locks the order row FOR UPDATE —
   // the lock the marketing-offset functions take before they rewrite remaining_amount — refuses if
-  // paid_amount / payment_date are no longer what `before` read, sums the offsets under that lock,
+  // paid_amount / payment_date are no longer `expected` (what the screen showed), sums the offsets under that lock,
   // re-checks the money arithmetic and writes the amount, the date and the remainder together. The
   // unlocked read-then-update it replaces let an offset and a collection overwrite each other's
   // remainder, and let a second Finance save silently win over the first.
   const { data: rpcData, error: rpcError } = await supabase.rpc("phx_record_direct_order_collection", {
     p_order_id: input.requestId,
     ...rpcArgs,
-    p_expected_paid_amount: before.paidAmount,
-    p_expected_payment_date: before.paymentDate,
+    p_expected_paid_amount: expected.paidAmount,
+    p_expected_payment_date: expected.paymentDate,
   });
   if (rpcError) {
     const mapped = directOrderCollectionDbError(rpcError);

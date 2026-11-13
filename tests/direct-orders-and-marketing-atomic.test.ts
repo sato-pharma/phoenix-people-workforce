@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
-import { directOrderCollectionDbError } from "../src/lib/direct-orders/collection-rules.ts";
+import {
+  collectionMatchesExpected,
+  directOrderCollectionDbError,
+  parseExpectedDirectOrderCollection,
+} from "../src/lib/direct-orders/collection-rules.ts";
 import { recordDirectOrderCollection } from "../src/lib/direct-orders/service.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
@@ -188,8 +192,11 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
     "and never with its own unlocked update of the order",
   );
   assert.ok(!recordBody.includes(".update("), "no direct update of any table inside recordDirectOrderCollection");
-  assert.ok(recordBody.includes("p_expected_paid_amount: before.paidAmount"), "the before-values it read are the expected values");
-  assert.ok(recordBody.includes("p_expected_payment_date: before.paymentDate"), "both of them");
+  assert.ok(
+    recordBody.includes("p_expected_paid_amount: expected.paidAmount") &&
+      recordBody.includes("p_expected_payment_date: expected.paymentDate"),
+    "the function is compared against the EXPECTED collection",
+  );
   assert.ok(
     recordBody.indexOf("deriveDirectOrderCollection(") < recordBody.indexOf('supabase.rpc("phx_record_direct_order_collection"'),
     "the TypeScript rules (the Cairo future-date check included) still run first",
@@ -211,6 +218,58 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
   );
   assert.equal(directOrderCollectionDbError(new Error("direct_order_collection_exceeds_value"))?.code, "direct_order_collection_exceeds_value");
   assert.equal(directOrderCollectionDbError({ message: "connection reset" }), null, "an error that is not ours is left alone");
+
+  // ── 3b. What the screen showed travels with the save ───────────────────────────────────────────
+  // A compare-and-set against a value the server read in the same request only closes a gap of
+  // milliseconds: two Finance saves minutes apart each read the other's result and both "won". Only
+  // the figures on the screen the person was looking at can tell that the order moved under them.
+  assert.deepEqual(
+    parseExpectedDirectOrderCollection({ paidAmount: 5 }),
+    { ok: true, expected: null },
+    "an older open tab sends no expectation: the service falls back to its own read",
+  );
+  assert.deepEqual(
+    parseExpectedDirectOrderCollection({ expectedPaidAmount: 200, expectedPaymentDate: "2026-11-01" }),
+    { ok: true, expected: { paidAmount: 200, paymentDate: "2026-11-01" } },
+  );
+  assert.deepEqual(
+    parseExpectedDirectOrderCollection({ expectedPaidAmount: null, expectedPaymentDate: null }),
+    { ok: true, expected: { paidAmount: null, paymentDate: null } },
+    "\"nothing collected yet\" is a real expectation, not an absent one",
+  );
+  for (const bad of [
+    { expectedPaidAmount: 200 },
+    { expectedPaymentDate: "2026-11-01" },
+    { expectedPaidAmount: "200", expectedPaymentDate: "2026-11-01" },
+    { expectedPaidAmount: -1, expectedPaymentDate: "2026-11-01" },
+    { expectedPaidAmount: 200, expectedPaymentDate: "01/11/2026" },
+  ]) {
+    assert.equal(parseExpectedDirectOrderCollection(bad).ok, false, `refused, never guessed at: ${JSON.stringify(bad)}`);
+  }
+  assert.equal(
+    collectionMatchesExpected({ paidAmount: 200, paymentDate: "2026-11-01" }, { paidAmount: 200.001, paymentDate: "2026-11-01" }),
+    true,
+    "money is compared to the piastre",
+  );
+  assert.equal(
+    collectionMatchesExpected({ paidAmount: 300, paymentDate: "2026-11-05" }, { paidAmount: 200, paymentDate: "2026-11-01" }),
+    false,
+  );
+  assert.equal(
+    collectionMatchesExpected({ paidAmount: null, paymentDate: null }, { paidAmount: 0, paymentDate: null }),
+    false,
+    "nothing recorded is not zero recorded",
+  );
+
+  const route = stripComments(read("../app/api/direct-orders/[id]/collection/route.ts"));
+  assert.ok(route.includes("parseExpectedDirectOrderCollection(body)"), "the route reads the screen's expectation");
+  assert.ok(route.includes("throw validationError(expected.message)"), "and refuses a malformed one");
+  assert.ok(route.includes("expected: expected.expected,"), "and hands it to the service unchanged");
+  const control = stripComments(read("../src/components/direct-orders/direct-order-collection-control.tsx"));
+  assert.ok(
+    control.includes("JSON.stringify({ ...next, expectedPaidAmount: paidAmount, expectedPaymentDate: paymentDate })"),
+    "the screen sends the collection it LOADED with every save",
+  );
 
   // ── 4. Through the real client: a lost compare-and-set writes nothing else ─────────────────────
   let thrown: unknown = null;
@@ -258,7 +317,110 @@ export async function runDirectOrdersAndMarketingAtomicTests() {
       p_paid_amount: 500,
       p_payment_date: "2026-11-02",
     },
-    "the function is asked for the new figures, compared against the ones that were read",
+    "an older tab (no expectation sent): the function is compared against the server's own read",
+  );
+
+  // ── 4b. A save from a screen opened before someone else's save: 409, and nothing is written ────
+  // Finance opened the order at 200 / 1 November. Meanwhile a colleague recorded 300 / 5 November.
+  // Finance now saves 500 from the old screen: it must lose, not replace the 300 with 500.
+  // The stand-in function behaves as the real one does: it refuses when the stored collection is not
+  // the one it is told to expect, and writes otherwise.
+  let staleThrown: unknown = null;
+  const stale = await withFakeSupabase(
+    (request) => {
+      if (request.path === RPC_PATH) {
+        const args = request.body as Record<string, unknown>;
+        if (args.p_expected_paid_amount !== 300 || args.p_expected_payment_date !== "2026-11-05") {
+          return {
+            status: 400,
+            json: { code: "P0001", details: null, hint: null, message: "direct_order_collection_conflict: stale" },
+          };
+        }
+        return {
+          status: 200,
+          json: {
+            paidAmount: 500,
+            paymentDate: "2026-11-06",
+            previousPaidAmount: 300,
+            previousPaymentDate: "2026-11-05",
+            remainingAmount: 500,
+          },
+        };
+      }
+      if (request.method === "GET" && request.path.endsWith("/direct_order_requests")) {
+        return { status: 200, json: [{ ...ORDER_ROW, paid_amount: 300, payment_date: "2026-11-05", remaining_amount: 700 }] };
+      }
+      if (request.method === "GET") return { status: 200, json: [] };
+      return { status: 201, json: undefined };
+    },
+    async () => {
+      try {
+        await recordDirectOrderCollection(FINANCE, {
+          expected: { paidAmount: 200, paymentDate: "2026-11-01" },
+          paidAmount: 500,
+          paymentDate: "2026-11-06",
+          requestId: ORDER_ID,
+        });
+      } catch (error) {
+        staleThrown = error;
+      }
+    },
+  );
+  assert.ok(staleThrown, "THE STALE SCREEN: a save from a page that showed 200 must not replace the 300 recorded since");
+  assert.equal((staleThrown as { status?: number }).status, 409, "it is the 409 conflict");
+  assert.equal(
+    (staleThrown as Error).message,
+    "Conflict: this order's collection was changed by someone else a moment ago; refresh and try again.",
+  );
+  assert.deepEqual(
+    stale.filter((r) => r.method !== "GET" && r.path !== RPC_PATH),
+    [],
+    "nothing is written: no audit row, no event",
+  );
+  const staleRpc = stale.find((r) => r.path === RPC_PATH)?.body as Record<string, unknown> | undefined;
+  assert.ok(
+    staleRpc === undefined || staleRpc.p_expected_paid_amount === 200,
+    "if the function is asked at all, it is asked to expect what the screen showed",
+  );
+  assert.ok(
+    squash(recordBody).includes(
+      "const expected: ExpectedDirectOrderCollection = input.expected ?? { paidAmount: before.paidAmount, paymentDate: before.paymentDate, };",
+    ),
+    "the expectation is what the screen showed when it sent one, and the server's own read only when it did not",
+  );
+
+  // A fresh screen's figures are the values the locked function is compared against.
+  const fresh = await withFakeSupabase(
+    (request) => {
+      if (request.path === RPC_PATH) {
+        return {
+          status: 400,
+          json: { code: "P0001", details: null, hint: null, message: "direct_order_collection_conflict: changed under the lock" },
+        };
+      }
+      if (request.method === "GET" && request.path.endsWith("/direct_order_requests")) return { status: 200, json: [ORDER_ROW] };
+      if (request.method === "GET") return { status: 200, json: [] };
+      return { status: 201, json: undefined };
+    },
+    async () => {
+      await assert.rejects(
+        recordDirectOrderCollection(FINANCE, {
+          expected: { paidAmount: 200, paymentDate: "2026-11-01" },
+          paidAmount: 500,
+          paymentDate: "2026-11-02",
+          requestId: ORDER_ID,
+        }),
+        (error: unknown) => (error as { status?: number }).status === 409,
+      );
+    },
+  );
+  const freshRpc = fresh.find((r) => r.path === RPC_PATH)?.body as Record<string, unknown>;
+  assert.equal(freshRpc.p_expected_paid_amount, 200, "the screen's paid amount is passed through as the expected value");
+  assert.equal(freshRpc.p_expected_payment_date, "2026-11-01", "and its payment date");
+  assert.deepEqual(
+    fresh.filter((r) => r.method !== "GET" && r.path !== RPC_PATH),
+    [],
+    "a loss under the lock writes nothing else",
   );
 
   // ── 5. And a win records what the FUNCTION wrote, not what TypeScript guessed ──────────────────
