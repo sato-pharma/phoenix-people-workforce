@@ -20,7 +20,9 @@ import {
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
   withoutCorrectedDayFindings,
+  withoutCrmCoveredCorrections,
 } from "../src/lib/private-calendar/logic.ts";
+import { wrapPdfCellText } from "../src/lib/private-calendar/export.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
@@ -376,6 +378,73 @@ export async function runPrivateCalendarTests() {
       repDay.length,
       "a pending request clears nothing",
     );
+
+    // THE CRM ALREADY SAYS IT — THE ACCEPTED ENTRY IS NOT PRINTED TWICE (owner, 2026-11-13: "Hide the accepted-request
+    // Training entry when a CRM Training record already covers the day"). Aya's accepted "Training" requests put a
+    // second Training entry beside her CRM's "Other CRM activity: Training" on each of 7 to 12 November.
+    const training = buildAcceptedCorrectionItems([dispute("d-9", "Training", "accepted")]);
+    const crmTraining = (overrides: Partial<PrivateCalendarItem> = {}) => ({
+      chipLines: ["Other CRM activity: Training 1"],
+      employeeHrId: "PD-0026",
+      source: "field_visit" as const,
+      startDate: "2026-10-11",
+      title: "Other CRM activity: Training 1",
+      ...overrides,
+    });
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining()]).length,
+      0,
+      "a CRM Training record on the same day hides the accepted Training entry (HR id compared without case)",
+    );
+    assert.equal(withoutCrmCoveredCorrections(training, []).length, 1, "with nothing from the CRM the accepted entry IS the day's record");
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ startDate: "2026-10-12" })]).length,
+      1,
+      "another day's CRM record never hides it",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ employeeHrId: "PD-0027" })]).length,
+      1,
+      "another person's CRM record never hides it",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ chipLines: ["Single visit: AM 2"], source: "attendance", title: "Training" })]).length,
+      1,
+      "only a CRM field-work entry covers it, never an attendance punch",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ chipLines: ["Single visit: AM 2 - PM 5"], title: "Single visit: AM 2 - PM 5" })]).length,
+      1,
+      "a CRM day that shows visits, not training, leaves the accepted Training entry",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(corrections, [crmTraining()]).length,
+      1,
+      "an entry claiming more than the CRM shows (\"Training · Training in Cairo\") stays",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(buildAcceptedCorrectionItems([dispute("d-10", "Retraining", "accepted")]), [crmTraining()]).length,
+      1,
+      "a claim is matched as a whole word, never inside another word",
+    );
+  }
+
+  // THE PDF NEVER CUTS A CELL OFF (owner, 2026-11-13). The export kept the first maxW/4.5 characters of every cell, so each
+  // accepted training day printed "Admin-verified cor" and "Verified | perfo". A cell now wraps onto as many lines as it needs.
+  {
+    const measure = (text: string) => text.length * 4;
+    const kind = wrapPdfCellText("Admin-verified correction", 84, measure);
+    assert.ok(kind.length > 1, "a cell wider than its column wraps onto a second line");
+    assert.equal(kind.join(" "), "Admin-verified correction", "joined back together the lines hold every word");
+    assert.ok(kind.every((line) => measure(line) <= 84), "every line fits its column");
+    const longWord = wrapPdfCellText("Pharmacovigilance", 20, measure);
+    assert.equal(longWord.join(""), "Pharmacovigilance", "a word wider than the column is broken inside it, never dropped");
+    assert.ok(longWord.every((line) => measure(line) <= 20));
+    assert.deepEqual(wrapPdfCellText("  Verified   |  performed ", 400, measure), ["Verified | performed"], "a cell that fits stays one line");
+    assert.deepEqual(wrapPdfCellText("", 84, measure), [], "an empty cell draws nothing");
+    const exportSource = readFileSync("src/lib/private-calendar/export.ts", "utf8");
+    assert.doesNotMatch(exportSource, /text\.slice\(0, Math\.floor\(maxW \/ 4\.5\)\)/, "the PDF must never cut a cell to a character count");
+    assert.match(exportSource, /wrapPdfCellText\(asciiSafe\(val\)/, "every PDF cell goes through the wrap");
   }
 
   {
