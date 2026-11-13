@@ -533,6 +533,19 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
     credential: { kind: "none", why: "An open feed with no key." },
     health: { kind: "heartbeat", slugs: ["phoenix-production-planning-fx"] },
   },
+  {
+    id: "leaked-passwords",
+    name: "Leaked password check",
+    provider: "Have I Been Pwned range service",
+    category: "Open data and assets",
+    usedFor: "When someone chooses a password, checks that it is not already in a published data leak.",
+    credential: { kind: "none", why: "An open service with no key." },
+    health: { kind: "none", why: NOT_LOGGED_PER_CALL },
+    notes: [
+      "Only the first five characters of the password's fingerprint are sent. The password itself never leaves Phoenix.",
+      "If the service cannot be reached in three seconds the password is accepted on the other rules, and the audit row says the check was skipped.",
+    ],
+  },
   // Google Fonts left this list on 13 Nov 2026 (ISS-043): the joining form's Arabic typeface is served from
   // the app's own /fonts, and tests/integrations-registry.test.ts refuses a page that loads one from outside.
 ];

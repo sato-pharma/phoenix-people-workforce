@@ -43,7 +43,7 @@ function namesOf(entry: IntegrationEntry): string[] {
 function registryIsWellFormed() {
   const ids = INTEGRATIONS.map((entry) => entry.id);
   assert.deepEqual(ids.filter((id, index) => ids.indexOf(id) !== index), [], "every integration has its own id");
-  assert.ok(INTEGRATIONS.length >= 37, `the registry lists every outside service (37 since Google Fonts and the OpenStreetMap tiles left on 13 Nov 2026), found ${INTEGRATIONS.length}`);
+  assert.ok(INTEGRATIONS.length >= 38, `the registry lists every outside service (38: Google Fonts and the OpenStreetMap tiles left and the leaked-password check joined, 13 Nov 2026), found ${INTEGRATIONS.length}`);
 
   const declared = new Set(declaredJobSlugs());
   for (const entry of INTEGRATIONS) {

@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   Fingerprint,
+  KeyRound,
   Lock,
   ShieldCheck,
   User,
@@ -36,9 +37,47 @@ const loginErrorMessages: Record<string, string> = {
   rate_limited: "Too many failed login attempts. Please try again later.",
   temporary_password_expired: "Your temporary password has expired. Ask HR to send you a new one.",
   sign_in_unavailable: "Sign-in is temporarily unavailable. Please try again in a few minutes.",
+  second_step_invalid: "That code is not right. Sign in again and enter the next code.",
+  second_step_required: "This account also needs a code from your authenticator app. Sign in again to enter it.",
+  second_step_setup_required: "This account needs a second sign-in step. Sign in again to set it up.",
 };
 
-type LoginErrorField = "form" | "loginId" | "password";
+type LoginErrorField = "form" | "loginId" | "password" | "secondStepCode";
+
+const secondStepCodeRequiredMessage = "Enter the 6-digit code from your authenticator app.";
+// A 6-digit code, or a recovery code typed with its dash and stray spaces.
+const maxSecondStepCodeLength = 40;
+
+/** What the server hands over to set an authenticator app up (src/lib/auth/second-step-store.ts). */
+type SecondStepSetup = {
+  account: string;
+  otpauthUri: string;
+  secret: string;
+  secretForTyping: string;
+};
+
+/**
+ * Which part of the sign-in the card is showing. The second sign-in step (src/lib/auth/second-step.ts)
+ * is asked of a Super Admin after the password: "code" for an account that is set up, "setup" for one
+ * that is not, and "codes" once, right after a set-up, to show the ten recovery codes.
+ */
+type LoginView =
+  | { kind: "password" }
+  | { kind: "code" }
+  | { kind: "setup"; setup: SecondStepSetup }
+  | { kind: "codes"; codes: string[]; destination: string };
+
+function isSecondStepSetup(value: unknown): value is SecondStepSetup {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.account === "string" &&
+    typeof record.secret === "string" &&
+    typeof record.secretForTyping === "string" &&
+    typeof record.otpauthUri === "string" &&
+    record.otpauthUri.startsWith("otpauth://totp/")
+  );
+}
 
 const embers = Array.from({ length: 42 }, (_, index) => ({
   delay: `${(index % 12) * 0.42}s`,
@@ -58,8 +97,11 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [secondStepCode, setSecondStepCode] = useState("");
   const [shakeError, setShakeError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [trustDevice, setTrustDevice] = useState(true);
+  const [view, setView] = useState<LoginView>({ kind: "password" });
 
   const greeting = useMemo(() => {
     // The Cairo hour, never the runtime's own local hour: /login is server-rendered, the server runs in
@@ -99,6 +141,21 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       setError(null);
       setErrorField(null);
     }
+  }
+
+  function updateSecondStepCode(value: string) {
+    setSecondStepCode(value);
+    if (errorField === "secondStepCode") {
+      setError(null);
+      setErrorField(null);
+    }
+  }
+
+  function backToPassword() {
+    setSecondStepCode("");
+    setError(null);
+    setErrorField(null);
+    setView({ kind: "password" });
   }
 
   useEffect(() => {
@@ -224,6 +281,10 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The recovery codes are on screen: the session is already open, and the only way on is the
+    // "I saved them" button. Enter must not sign in a second time.
+    if (view.kind === "codes") return;
+
     const trimmedLoginId = loginId.trim();
     setError(null);
     setErrorField(null);
@@ -239,19 +300,63 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       return;
     }
 
+    const askingForCode = view.kind === "code" || view.kind === "setup";
+    const typedCode = secondStepCode.trim();
+    if (askingForCode && !typedCode) {
+      showLoginError(secondStepCodeRequiredMessage, "secondStepCode");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const response = await fetch("/api/auth/login", {
-        body: JSON.stringify({ loginId: trimmedLoginId, password, remember }),
+        body: JSON.stringify({
+          loginId: trimmedLoginId,
+          password,
+          remember,
+          ...(askingForCode ? { secondStepCode: typedCode, trustDevice } : {}),
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as
-          | { error?: string; message?: string; redirectTo?: string }
+          | { error?: string; message?: string; redirectTo?: string; setup?: unknown }
           | null;
+
+        // THE SECOND SIGN-IN STEP. The password was right and no session is open yet: the same form
+        // is sent again with a code. The password stays in this page's memory only until then.
+        if (payload?.error === "second_step_required") {
+          setSecondStepCode("");
+          setView({ kind: "code" });
+          return;
+        }
+        if (payload?.error === "second_step_setup_required" && isSecondStepSetup(payload.setup)) {
+          // A key waits 15 minutes for its code. A code typed after that is answered with a NEW key.
+          const keyReplaced = view.kind === "setup";
+          setSecondStepCode("");
+          setView({ kind: "setup", setup: payload.setup });
+          if (keyReplaced) {
+            showLoginError(
+              "That key was more than 15 minutes old, so this is a new one. Remove the old entry from your app and add this key.",
+              "secondStepCode",
+            );
+          }
+          return;
+        }
+        if (payload?.error === "second_step_invalid") {
+          // During a set-up the key on this screen stays as it is: a refusal never carries a key.
+          setSecondStepCode("");
+          showLoginError(payload.message ?? "That code is not right. Try the next one.", "secondStepCode");
+          return;
+        }
+        // Anything else (the password changed meanwhile, too many attempts) starts again from the top.
+        if (askingForCode) {
+          setSecondStepCode("");
+          setView({ kind: "password" });
+        }
 
         // The emailed TEMPORARY password was right (owner, 12 Nov 2026): no session yet — the person
         // chooses their own password first. Only ever the server's own /password-setup path.
@@ -268,6 +373,7 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       }
 
       const payload = (await response.json()) as {
+        secondStep?: { recoveryCodes?: unknown };
         user?: { role?: string | null };
       };
 
@@ -281,6 +387,19 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       const urlReturnUrl = new URLSearchParams(window.location.search).get("returnUrl");
       const destination =
         safeReturnUrl(returnUrl) ?? safeReturnUrl(urlReturnUrl) ?? resolveLandingPathForRole(payload.user?.role);
+
+      // A set-up was just finished: the ten recovery codes are shown now and can never be read again,
+      // so the page stays here until the person says they saved them.
+      const sentCodes = payload.secondStep?.recoveryCodes;
+      const recoveryCodes = Array.isArray(sentCodes)
+        ? sentCodes.filter((code): code is string => typeof code === "string")
+        : [];
+      if (recoveryCodes.length > 0) {
+        setPassword("");
+        setSecondStepCode("");
+        setView({ kind: "codes", codes: recoveryCodes, destination });
+        return;
+      }
       window.location.assign(destination);
     } catch {
       showLoginError("Unable to sign in. Check your connection and try again.");
@@ -295,7 +414,8 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       <div className="login-noise pointer-events-none fixed inset-0 opacity-[0.08]" />
       <section className="relative mx-auto grid min-h-[calc(100vh-16px)] w-full max-w-[1740px] overflow-hidden border border-white/10 bg-black shadow-[0_28px_90px_rgba(0,0,0,0.72)] sm:min-h-[calc(100vh-32px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.06fr_0.94fr]">
         <AccessPanel
-          biometricAvailable={biometricAvailable}
+          // The passkey button belongs to the first screen only: once a code is being asked, it is gone.
+          biometricAvailable={biometricAvailable && view.kind === "password"}
           error={error}
           errorField={errorField}
           greeting={greeting}
@@ -303,15 +423,22 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
           isSubmitting={isSubmitting}
           loginId={loginId}
           onBiometricSignIn={handleBiometricSignIn}
+          onBackToPassword={backToPassword}
           onLoginIdChange={updateLoginId}
           onPasswordChange={updatePassword}
+          onRecoveryCodesSaved={(destination) => window.location.assign(destination)}
           onRememberChange={setRemember}
+          onSecondStepCodeChange={updateSecondStepCode}
           onSubmit={handleSubmit}
           onTogglePassword={() => setShowPassword((current) => !current)}
+          onTrustDeviceChange={setTrustDevice}
           password={password}
           remember={remember}
+          secondStepCode={secondStepCode}
           shakeError={shakeError}
           showPassword={showPassword}
+          trustDevice={trustDevice}
+          view={view}
         />
         <BrandPanel />
       </section>
@@ -432,16 +559,23 @@ function AccessPanel({
   isBiometricSubmitting,
   isSubmitting,
   loginId,
+  onBackToPassword,
   onBiometricSignIn,
   onLoginIdChange,
   onPasswordChange,
+  onRecoveryCodesSaved,
   onRememberChange,
+  onSecondStepCodeChange,
   onSubmit,
   onTogglePassword,
+  onTrustDeviceChange,
   password,
   remember,
+  secondStepCode,
   shakeError,
   showPassword,
+  trustDevice,
+  view,
 }: {
   biometricAvailable: boolean;
   error: string | null;
@@ -450,19 +584,43 @@ function AccessPanel({
   isBiometricSubmitting: boolean;
   isSubmitting: boolean;
   loginId: string;
+  onBackToPassword: () => void;
   onBiometricSignIn: () => void;
   onLoginIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
+  onRecoveryCodesSaved: (destination: string) => void;
   onRememberChange: (value: boolean) => void;
+  onSecondStepCodeChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onTogglePassword: () => void;
+  onTrustDeviceChange: (value: boolean) => void;
   password: string;
   remember: boolean;
+  secondStepCode: string;
   shakeError: boolean;
   showPassword: boolean;
+  trustDevice: boolean;
+  view: LoginView;
 }) {
   const loginInvalid = errorField === "form" || errorField === "loginId";
   const passwordInvalid = errorField === "form" || errorField === "password";
+  const onPasswordStep = view.kind === "password";
+  const heading =
+    view.kind === "codes"
+      ? "Save your recovery codes"
+      : view.kind === "setup"
+        ? "Set up your second sign-in step"
+        : view.kind === "code"
+          ? "One more step"
+          : "Sign in to your account";
+  const subheading =
+    view.kind === "codes"
+      ? "Each code signs you in once when you do not have your phone"
+      : view.kind === "setup"
+        ? "Your account needs an authenticator app as well as your password"
+        : view.kind === "code"
+          ? "Enter the code from your authenticator app"
+          : "Enter your credentials to continue";
 
   return (
     <section className="relative order-1 flex min-h-[610px] items-center justify-center px-4 py-6 sm:px-8 lg:order-2 lg:px-9 xl:px-14">
@@ -483,11 +641,30 @@ function AccessPanel({
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff7900] sm:text-sm">SECURE ACCESS</p>
             <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[#ff6a00]" />
           </div>
-          <h2 className="mt-5 text-2xl font-bold text-white sm:text-3xl">Sign in to your account</h2>
-          <p className="mt-2 text-base text-white/52">Enter your credentials to continue</p>
-          <p className="mt-1.5 text-sm font-medium text-[#ff9a2f]/85">{greeting}</p>
+          <h2 className="mt-5 text-2xl font-bold text-white sm:text-3xl">{heading}</h2>
+          <p className="mt-2 text-base text-white/52">{subheading}</p>
+          {onPasswordStep ? <p className="mt-1.5 text-sm font-medium text-[#ff9a2f]/85">{greeting}</p> : null}
         </div>
 
+        {view.kind === "codes" ? (
+          <RecoveryCodesStep codes={view.codes} onSaved={() => onRecoveryCodesSaved(view.destination)} />
+        ) : null}
+
+        {view.kind === "code" || view.kind === "setup" ? (
+          <SecondStepFields
+            code={secondStepCode}
+            error={error}
+            invalid={errorField === "form" || errorField === "secondStepCode"}
+            onBackToPassword={onBackToPassword}
+            onCodeChange={onSecondStepCodeChange}
+            onTrustDeviceChange={onTrustDeviceChange}
+            setup={view.kind === "setup" ? view.setup : null}
+            trustDevice={trustDevice}
+          />
+        ) : null}
+
+        {onPasswordStep ? (
+        <>
         <div className="mt-5 space-y-4">
           <label className="block" htmlFor="login-id">
             <span className="mb-2 block text-base font-semibold text-white">HR ID, Login ID or Sato email</span>
@@ -566,6 +743,8 @@ function AccessPanel({
             Set or reset my password
           </a>
         </div>
+        </>
+        ) : null}
 
         {error && (
           <div
@@ -577,6 +756,7 @@ function AccessPanel({
           </div>
         )}
 
+        {view.kind === "codes" ? null : (
         <button
           className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] hover:shadow-[0_18px_48px_rgba(255,106,0,0.48),inset_0_1px_0_rgba(255,255,255,0.35)] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30 disabled:cursor-not-allowed disabled:opacity-70"
           disabled={isSubmitting}
@@ -587,8 +767,9 @@ function AccessPanel({
           ) : (
             <Lock className="h-6 w-6" />
           )}
-          {isSubmitting ? "Signing in..." : "Sign in"}
+          {isSubmitting ? "Signing in..." : onPasswordStep ? "Sign in" : "Check the code and sign in"}
         </button>
+        )}
 
         {biometricAvailable && (
           <>
@@ -620,6 +801,184 @@ function AccessPanel({
         </p>
       </form>
     </section>
+  );
+}
+
+const secondStepInputClass =
+  "h-12 w-full border border-white/14 bg-white/[0.045] px-5 text-base text-white outline-none shadow-[inset_0_1px_18px_rgba(255,255,255,0.035)] transition placeholder:text-white/36 focus:border-[#ff7900] focus:bg-white/[0.065] focus:ring-4 focus:ring-[#ff6a00]/16";
+
+const secondStepQuietButtonClass =
+  "flex h-11 items-center justify-center gap-2 border border-white/16 bg-white/[0.045] px-4 text-sm font-bold text-white transition hover:border-[#ff7900]/60 hover:bg-white/[0.075] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/24";
+
+/** Copies text, and says so on the button for two seconds. A browser that refuses is left as it was. */
+function useCopied(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+
+  function copy(text: string) {
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => undefined);
+  }
+
+  return [copied, copy];
+}
+
+/**
+ * The second sign-in step: the code field and, above it, for an account that is not set up yet, the key
+ * to put into an authenticator app. No QR picture is drawn here; the key is typed, copied, or opened
+ * straight in the app by its own link, which is what a phone does best.
+ */
+function SecondStepFields({
+  code,
+  error,
+  invalid,
+  onBackToPassword,
+  onCodeChange,
+  onTrustDeviceChange,
+  setup,
+  trustDevice,
+}: {
+  code: string;
+  error: string | null;
+  invalid: boolean;
+  onBackToPassword: () => void;
+  onCodeChange: (value: string) => void;
+  onTrustDeviceChange: (value: boolean) => void;
+  setup: SecondStepSetup | null;
+  trustDevice: boolean;
+}) {
+  const [copied, copy] = useCopied();
+
+  return (
+    <div className="mt-5 space-y-4">
+      {setup ? (
+        <ol className="space-y-4 text-sm leading-6 text-white/82">
+          <li>
+            <span className="font-bold text-white">1. Open an authenticator app on your phone.</span>{" "}
+            Google Authenticator and Microsoft Authenticator both work. Choose to add an account.
+          </li>
+          <li>
+            <span className="font-bold text-white">2. Give it this key.</span> Type it in, or open it in the app
+            if you are reading this on the phone itself.
+            <span
+              className="mt-2 block break-words border border-white/14 bg-black/40 px-4 py-3 font-mono text-base font-bold tracking-[0.08em] text-[#ffb366]"
+              data-second-step-key
+            >
+              {setup.secretForTyping}
+            </span>
+            <span className="mt-1 block text-white/52">Account name, if the app asks: {setup.account}</span>
+            <span className="mt-2 flex flex-wrap gap-2">
+              <button className={secondStepQuietButtonClass} onClick={() => copy(setup.secret)} type="button">
+                {copied ? "Key copied" : "Copy the key"}
+              </button>
+              <a className={secondStepQuietButtonClass} href={setup.otpauthUri}>
+                Open in the app
+              </a>
+            </span>
+          </li>
+          <li>
+            <span className="font-bold text-white">3. Type the 6-digit code the app now shows.</span>
+          </li>
+        </ol>
+      ) : null}
+
+      <label className="block" htmlFor="login-second-step-code">
+        <span className="mb-2 block text-base font-semibold text-white">
+          {setup ? "Code from the app" : "Authenticator code"}
+        </span>
+        <span className="relative block">
+          <input
+            aria-describedby={error ? "login-error" : undefined}
+            aria-invalid={invalid}
+            autoCapitalize="characters"
+            autoComplete="one-time-code"
+            autoCorrect="off"
+            autoFocus
+            className={`${secondStepInputClass} pr-12 tracking-[0.18em]`}
+            id="login-second-step-code"
+            maxLength={maxSecondStepCodeLength}
+            name="secondStepCode"
+            onChange={(event) => onCodeChange(event.target.value)}
+            placeholder="123456"
+            spellCheck={false}
+            type="text"
+            value={code}
+          />
+          <KeyRound className="pointer-events-none absolute right-5 top-1/2 h-5 w-5 -translate-y-1/2 text-white/48" />
+        </span>
+      </label>
+
+      {setup ? null : (
+        <p className="text-sm leading-6 text-white/52">
+          No phone with you? Type one of your recovery codes here instead. Each one works once.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <label className="flex cursor-pointer items-center gap-3 text-white/82" htmlFor="login-trust-device">
+          <input
+            checked={trustDevice}
+            className="peer sr-only"
+            id="login-trust-device"
+            name="trustDevice"
+            onChange={(event) => onTrustDeviceChange(event.target.checked)}
+            type="checkbox"
+            value="true"
+          />
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center border bg-white/[0.035] transition peer-focus-visible:ring-4 peer-focus-visible:ring-[#ff6a00]/30 ${
+              trustDevice ? "border-[#ff7900] bg-[#ff7900]" : "border-white/22"
+            }`}
+          >
+            {trustDevice ? <span className="h-2.5 w-2.5 bg-white" /> : null}
+          </span>
+          Do not ask on this browser for 30 days
+        </label>
+        <button
+          className="font-semibold text-[#ff9a2f] underline-offset-4 transition hover:text-[#ffb366] hover:underline"
+          onClick={onBackToPassword}
+          type="button"
+        >
+          Use a different account
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The ten recovery codes, shown once. The way on is the button; nothing here signs in again. */
+function RecoveryCodesStep({ codes, onSaved }: { codes: string[]; onSaved: () => void }) {
+  const [copied, copy] = useCopied();
+
+  return (
+    <div className="mt-5 space-y-4">
+      <p className="text-sm leading-6 text-white/82">
+        You are signed in. Keep these ten codes somewhere safe that is not this phone or laptop: on paper, or in
+        a password manager. They are shown only now.
+      </p>
+      <ul className="grid grid-cols-2 gap-2 border border-white/14 bg-black/40 p-4" data-recovery-codes>
+        {codes.map((code) => (
+          <li className="break-all font-mono text-base font-bold tracking-[0.06em] text-[#ffb366]" key={code}>
+            {code}
+          </li>
+        ))}
+      </ul>
+      <button className={`${secondStepQuietButtonClass} w-full`} onClick={() => copy(codes.join("\n"))} type="button">
+        {copied ? "Codes copied" : "Copy the codes"}
+      </button>
+      <button
+        className="flex h-[52px] w-full items-center justify-center gap-3 bg-gradient-to-b from-[#ff8a00] to-[#ff4d00] text-lg font-black text-white shadow-[0_14px_38px_rgba(255,106,0,0.34),inset_0_1px_0_rgba(255,255,255,0.3)] transition hover:translate-y-[-1px] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/30"
+        onClick={onSaved}
+        type="button"
+      >
+        <ShieldCheck className="h-6 w-6" />
+        I saved them. Continue
+      </button>
+    </div>
   );
 }
 

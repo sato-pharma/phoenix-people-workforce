@@ -3,7 +3,9 @@ import bcrypt from "bcryptjs";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSupabaseBridgeRequiredForRole, updateAppSessionVersion } from "@/lib/auth/app-sessions";
 import { normalizeRole } from "@/lib/auth/permissions";
+import { LEAKED_PASSWORD_MESSAGE, checkLeakedPassword, leakedPasswordAuditValue } from "@/lib/auth/leaked-password";
 import { passwordWeakness } from "@/lib/auth/password-strength";
+import { forgetTrustedDevices } from "@/lib/auth/second-step-store";
 import { errorMessageOf } from "@/lib/http/api-errors";
 import {
   createSupabaseAuthSession,
@@ -105,6 +107,11 @@ export async function changeUserPassword(input: {
   // And not a password every guessing list tries first (password-strength.ts).
   const weakness = passwordWeakness(input.newPassword, [row.login_id, row.hr_id]);
   if (weakness) throw new WeakPasswordError(weakness);
+  // And not one that already sits in a published breach (leaked-password.ts). Asked before anything is
+  // written; an unreachable service accepts the password and is named on the audit row below.
+  const leakVerdict = await checkLeakedPassword(input.newPassword);
+  if (leakVerdict.leaked === true) throw new WeakPasswordError(LEAKED_PASSWORD_MESSAGE);
+  const leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
 
   const newPasswordHash = await bcrypt.hash(input.newPassword, 12);
   const currentVersion = Number.isFinite(row.session_version) ? Number(row.session_version) : 1;
@@ -122,6 +129,14 @@ export async function changeUserPassword(input: {
     .eq("login_id", input.loginId);
 
   if (updateError) throw updateError;
+
+  // A new password ends every "do not ask on this browser" of the second sign-in step (second-step.ts):
+  // whoever made the person change it may have been sitting at one of those browsers. Best effort, and
+  // named on the audit row: the password is already changed, and a failed delete must not undo that.
+  const trustedDevicesForgotten = await forgetTrustedDevices(input.loginId).then(
+    () => true,
+    () => false,
+  );
 
   // Update the caller's own app_sessions row to the new version so their
   // current session stays alive. If this fails (row was revoked or missing),
@@ -203,8 +218,10 @@ export async function changeUserPassword(input: {
       action: "self_service_password_change",
       bridgeRequired,
       ip: input.ip ?? null,
+      leakedPasswordCheck,
       sessionId: input.sessionId,
       sessionRefreshRequired,
+      trustedDevicesForgotten,
       supabaseBridgeError,
       supabaseBridgeSynced: bridgeRequired ? supabaseSession !== null : null,
       supabaseWeakPasswordReplaced,
