@@ -43,8 +43,8 @@ export default async function SharedInterviewCalendarPage({
   const access = await resolveAccessContextFromPage();
   // Limited per address and per link before the token is looked up, as every API call the screen
   // makes is (assertInterviewCalendarLinkRate). A refused or failed open shows the same page as a dead link.
-  const asked = new Request("https://share.invalid/", { headers: await headers() });
-  const opened = await assertInterviewCalendarLinkRate(asked, token)
+  const incoming = new Request("https://share.invalid/", { headers: await headers() });
+  const opened = await assertInterviewCalendarLinkRate(incoming, token)
     .then(() => openInterviewCalendarLink(token, access))
     .catch(() => null);
 

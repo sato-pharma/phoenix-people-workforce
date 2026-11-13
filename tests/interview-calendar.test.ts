@@ -1199,7 +1199,7 @@ function runWiringTests() {
   assert.ok(metered > 0 && metered < callerBody.indexOf("loadInterviewCalendarLinkByToken(token)"), "every API lookup is metered before the link is looked up");
   assert.ok(domain.includes('scope: "interview_calendar_link_ip"') && domain.includes('scope: "interview_calendar_link_token"'), "metered per address and per link");
   const sharedPage = stripComments(read("app/share/interview-calendar/[token]/page.tsx"));
-  const pageMeter = sharedPage.indexOf("assertInterviewCalendarLinkRate(asked, token)");
+  const pageMeter = sharedPage.indexOf("assertInterviewCalendarLinkRate(incoming, token)");
   assert.ok(pageMeter > 0 && pageMeter < sharedPage.indexOf("openInterviewCalendarLink(token, access)"), "the shared page is metered before it opens the link");
   assert.ok(sharedPage.includes("more than 90 days old"), "the dead-link page names expiry as a reason");
   const copySection = stripComments(read("src/components/recruitment/interview-calendar/copy-link-section.tsx"));
