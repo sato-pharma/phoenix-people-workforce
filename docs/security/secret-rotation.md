@@ -35,6 +35,12 @@ The value lives in **two** places. Rotating one alone guarantees an outage.
      that still ends in `?token=…` is refused with 401 even when its Bearer token is right, and the
      old `x-brevo-token` header is ignored. The refusal is logged as `webhook_token_invalid` with
      `reason` = `secret_in_url`, `bearer_missing` or `bearer_mismatch` (never the token itself).
+     Since 2026-11-13 (S01, F-COM-017) a bounce, block, invalid address, spam report or unsubscribe
+     from this webhook changes the bounce list only once Brevo's own event log, read with
+     `BREVO_API_KEY` / `BREVO_API_KEY_2`, holds that event for that address and message; otherwise
+     the event is recorded and `brevo_webhook_suppression_unconfirmed` is logged with its `outcome`
+     (`not_found` or `unavailable`). A rotated Brevo API key therefore also has to be live for the
+     bounce list to keep learning from Brevo.
 
 ## Sequence (Railway)
 

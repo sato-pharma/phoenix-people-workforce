@@ -1322,6 +1322,7 @@ import { runAdminTelegramMirrorTests } from "./admin-telegram-mirror.test.ts";
 import { runEmailProviderFailoverTests } from "./email-provider-failover.test.ts";
 import { runOfferReplyMailboxTests } from "./offer-reply-mailbox.test.ts";
 import { runBrevoWebhookEventsTests } from "./brevo-webhook-events.test.ts";
+import { runBrevoWebhookConfirmationTests } from "./brevo-webhook-confirmation.test.ts";
 import { runEmailActivityTests } from "./email-activity.test.ts";
 import { runEmailTemplatesTriggersTests } from "./email-templates-triggers.test.ts";
 import { runEmailTemplateKeyResolutionTests } from "./email-template-key-resolution.test.ts";
@@ -5880,6 +5881,7 @@ await runTest("admin telegram mirror (every email fires a Telegram twin of the a
 await runTest("email provider failover (Resend → Brevo, dedup-safe)", runEmailProviderFailoverTests);
 await runTest("offer reply mailbox (an offer's From and Reply-To never name the sending-only subdomain)", runOfferReplyMailboxTests);
 await runTest("brevo webhook events (auth + event mapping + dedup)", runBrevoWebhookEventsTests);
+await runTest("a Brevo event changes the bounce list only once Brevo's own event log confirms it", runBrevoWebhookConfirmationTests);
 await runTest("email activity (provider/recipient inference)", runEmailActivityTests);
 await runTest("email templates triggers", runEmailTemplatesTriggersTests);
 await runTest("email template key resolution (retired alias must not shadow)", runEmailTemplateKeyResolutionTests);
