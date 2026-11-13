@@ -54,9 +54,13 @@ using the table-of-contents comment pg_dump writes above every object (`-- Name:
 | What it finds | Verdict |
 | --- | --- |
 | No difference | green |
-| Differences, every one named by a migration added to `main` since the baseline was last written | green, with a `::warning::` saying the baseline is behind. Refresh it. |
+| Differences, every one named by a migration added to `main` since 24 hours before the baseline was last committed | green, with a `::warning::` saying the baseline is behind. Refresh it. |
 | A difference that no such migration names | **red**: a change made by hand, or a migration applied to production whose pull request has not merged |
 | The dump could not run (no URL, wrong pg_dump, a timeout) | **red**: nothing measured is never a pass |
+
+The 24-hour lookback exists because a migration is applied to production before its pull request merges:
+one merged shortly before the baseline commit can still have been applied after the dump it holds. It only
+turns red into a named warning; every difference is still listed.
 
 "Named" is a plain text match: the object's own name (a function without its argument list, a constraint
 without its table) must appear in one of those migration files. A name of two letters or fewer never

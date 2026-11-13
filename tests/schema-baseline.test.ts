@@ -178,6 +178,12 @@ export function runSchemaBaselineTests() {
   assert.ok(reds.length >= 3, `a red baseline leg reaches the report, the Telegram alarm and the verdict (found ${reds.length})`);
   assert.match(wf, /SCHEMA_BASELINE_PRODUCTION: \$\{\{ steps\.schema_baseline_production\.outcome \}\}/, "the report shows the leg");
 
+  // A migration is applied before its PR merges, so one merged just before the baseline commit can be
+  // newer than the dump: the explanation window opens 24 hours before that commit, not at it.
+  const cli = readFileSync("scripts/schema-baseline.mjs", "utf8");
+  assert.match(cli, /const LOOKBACK_HOURS = 24;/, "the explanation window looks back 24 hours");
+  assert.match(cli, /`--since=\$\{since\}`/, "migrations are chosen by date, not by commits after the baseline's");
+
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
   assert.equal(pkg.scripts["check:schema-baseline"], "node scripts/schema-baseline.mjs --check", "the package script the leg runs");
 }

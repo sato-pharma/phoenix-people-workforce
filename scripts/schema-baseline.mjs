@@ -93,11 +93,21 @@ function git(argv) {
   return execFileSync("git", argv, { encoding: "utf8" }).trim();
 }
 
-/** Migration files this branch added after the commit that last wrote the baseline. */
+/**
+ * Migration files added since LOOKBACK_HOURS before the commit that last wrote the baseline.
+ *
+ * Not strictly "after it": migrations are applied to production BEFORE their PR merges, so one merged
+ * shortly before the baseline commit can still have been applied after the dump it holds. Measured
+ * 2026-11-13: #334 merged after this branch was cut and its column change read as a hand change, and
+ * #337's two tables were applied 20 minutes after the dump. The lookback only ever turns red into a
+ * named ::warning::, never hides a difference: every one is still listed.
+ */
+const LOOKBACK_HOURS = 24;
 function migrationsSinceBaseline() {
-  const since = git(["log", "-1", "--format=%H", "--", BASELINE]);
-  if (!since) return [];
-  const names = git(["log", "--diff-filter=A", "--name-only", "--format=", `${since}..HEAD`, "--", "supabase/migrations"])
+  const written = git(["log", "-1", "--format=%ct", "--", BASELINE]);
+  if (!written) return [];
+  const since = new Date((Number(written) - LOOKBACK_HOURS * 3600) * 1000).toISOString();
+  const names = git(["log", "--diff-filter=A", "--name-only", "--format=", `--since=${since}`, "HEAD", "--", "supabase/migrations"])
     .split("\n")
     .filter((f) => f.endsWith(".sql") && existsSync(f));
   return names.map((f) => readFileSync(f, "utf8"));
