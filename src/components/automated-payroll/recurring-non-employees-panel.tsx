@@ -204,163 +204,212 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
 
       {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
 
-      <div className="hidden overflow-x-auto border border-slate-200 md:block">
-        <div>
-          <div className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.7fr_0.6fr_auto] items-center gap-x-3 bg-slate-900 px-3 py-2.5">
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (EN)</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (AR)</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Name</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Account</div>
-            <div className="text-right text-phx-xs font-bold uppercase tracking-wide text-slate-300">Total Salary</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Paid With</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Status</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Actions</div>
-          </div>
-
-          {rows.map((row, index) => {
-            const draft = edits[row.id] ?? emptyDraft;
-            return (
-              <div
-                key={row.id}
-                className={cn(
-                  "grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.7fr_0.6fr_auto] items-center gap-x-3 border-b border-slate-200 px-3 py-2",
-                  !row.active ? "bg-slate-100/80" : index % 2 ? "bg-slate-50/60" : "bg-white",
-                )}
-              >
-                <Input
-                  value={draft.fullNameEn}
-                  onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.fullNameAr}
-                  dir="rtl"
-                  onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.bankName ?? ""}
-                  onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.bankAccount ?? ""}
-                  onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  type="number"
-                  value={String(draft.totalSalary)}
-                  onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
-                  className={cn(fieldClassName, "text-right")}
-                />
-                <select
-                  value={draft.part ?? "first"}
-                  onChange={(event) => setEditField(row.id, "part", event.target.value)}
-                  className={cn(fieldClassName, "w-full px-2")}
+      {/* Desktop: a real table, so the admin shell's own black header and orange grid draw it (it was a grid of
+          divs with a hand-painted header). Eight facts in five columns — the English name over the Arabic, the
+          bank over the account, the part over on/off — merged rather than squeezed, never a sideways scroll. */}
+      <div className="hidden border border-slate-200 md:block">
+        <table className="w-full table-fixed border-collapse text-left text-sm">
+          <colgroup>
+            <col className="w-[28%]" />
+            <col className="w-[25%]" />
+            <col className="w-[15%]" />
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+          </colgroup>
+          <thead>
+            <tr className="text-phx-xs font-bold uppercase tracking-wide">
+              <th className="px-3 py-2.5" scope="col">Full Name (EN · AR)</th>
+              <th className="px-3 py-2.5" scope="col">Bank Name · Account</th>
+              <th className="px-3 py-2.5 text-right" scope="col">Total Salary</th>
+              <th className="px-3 py-2.5" scope="col">Paid With · Status</th>
+              <th className="px-3 py-2.5" scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const draft = edits[row.id] ?? emptyDraft;
+              return (
+                <tr
+                  key={row.id}
+                  className={cn("align-top", !row.active ? "bg-slate-100/80" : index % 2 ? "bg-slate-50/60" : "bg-white")}
                 >
-                  <option value="first">Part 1</option>
-                  <option value="second">Part 2</option>
-                </select>
-                <label className="flex items-center gap-1.5 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={draft.active !== false}
-                    onChange={(event) => setEditField(row.id, "active", event.target.checked)}
-                    className="size-4 accent-orange-600"
-                  />
-                  <span className="whitespace-nowrap">{draft.active !== false ? "On" : "Off"}</span>
-                </label>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busyId === row.id}
-                    onClick={() => void saveExisting(row.id)}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busyId === row.id}
-                    onClick={() => void deleteExisting(row.id)}
-                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Full name (English)"
+                        value={draft.fullNameEn}
+                        onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Full name (Arabic)"
+                        value={draft.fullNameAr}
+                        dir="rtl"
+                        onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Bank name"
+                        value={draft.bankName ?? ""}
+                        onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Bank account"
+                        value={draft.bankAccount ?? ""}
+                        onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      aria-label="Total salary"
+                      type="number"
+                      value={String(draft.totalSalary)}
+                      onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
+                      className={cn(fieldClassName, "text-right")}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <select
+                        aria-label="Paid with"
+                        value={draft.part ?? "first"}
+                        onChange={(event) => setEditField(row.id, "part", event.target.value)}
+                        className={cn(fieldClassName, "w-full px-2")}
+                      >
+                        <option value="first">Part 1</option>
+                        <option value="second">Part 2</option>
+                      </select>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={draft.active !== false}
+                          onChange={(event) => setEditField(row.id, "active", event.target.checked)}
+                          className="size-4 accent-orange-600"
+                        />
+                        <span>{draft.active !== false ? "On" : "Off"}</span>
+                      </label>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyId === row.id}
+                        onClick={() => void saveExisting(row.id)}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        aria-label="Delete this entry"
+                        size="sm"
+                        variant="ghost"
+                        disabled={busyId === row.id}
+                        onClick={() => void deleteExisting(row.id)}
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
 
-          {newRows.map((row) => (
-            <div
-              key={row.tempId}
-              className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.7fr_0.6fr_auto] items-center gap-x-3 border-b border-slate-200 bg-orange-50/40 px-3 py-2"
-            >
-              <Input
-                value={row.fullNameEn}
-                placeholder="Full name (English)"
-                onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.fullNameAr}
-                placeholder="الاسم بالعربية"
-                dir="rtl"
-                onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.bankName ?? ""}
-                placeholder="Bank Name"
-                onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.bankAccount ?? ""}
-                placeholder="Bank Account"
-                onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                type="number"
-                value={String(row.totalSalary)}
-                onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
-                className={cn(fieldClassName, "text-right")}
-              />
-              <select
-                value={row.part ?? "first"}
-                onChange={(event) => setNewRowField(row.tempId, "part", event.target.value)}
-                className={cn(fieldClassName, "w-full px-2")}
-              >
-                <option value="first">Part 1</option>
-                <option value="second">Part 2</option>
-              </select>
-              <span className="whitespace-nowrap text-xs text-slate-500">On</span>
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  disabled={busyId === row.tempId}
-                  onClick={() => void saveNewRow(row.tempId)}
-                  className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
-                >
-                  Add
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
+            {newRows.map((row) => (
+              <tr key={row.tempId} className="bg-orange-50/40 align-top">
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Full name (English)"
+                        value={row.fullNameEn}
+                      placeholder="Full name (English)"
+                        onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Full name (Arabic)"
+                        value={row.fullNameAr}
+                      placeholder="الاسم بالعربية"
+                        dir="rtl"
+                        onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Bank name"
+                        value={row.bankName ?? ""}
+                      placeholder="Bank Name"
+                        onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Bank account"
+                        value={row.bankAccount ?? ""}
+                      placeholder="Bank Account"
+                        onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      aria-label="Total salary"
+                      type="number"
+                      value={String(row.totalSalary)}
+                      onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
+                      className={cn(fieldClassName, "text-right")}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <select
+                        aria-label="Paid with"
+                        value={row.part ?? "first"}
+                        onChange={(event) => setNewRowField(row.tempId, "part", event.target.value)}
+                        className={cn(fieldClassName, "w-full px-2")}
+                      >
+                        <option value="first">Part 1</option>
+                        <option value="second">Part 2</option>
+                      </select>
+                      <span className="text-xs text-slate-500">On</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        size="sm"
+                        disabled={busyId === row.tempId}
+                        onClick={() => void saveNewRow(row.tempId)}
+                        className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+                      >
+                        Add
+                      </Button>
+                      <Button aria-label="Discard this entry" size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  </td>
+              </tr>
+            ))}
 
-          {rows.length === 0 && newRows.length === 0 ? (
-            <div className="border-b border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-              Nobody on the standing list yet — anyone added here joins every future month automatically.
-            </div>
-          ) : null}
-        </div>
+          </tbody>
+        </table>
+        {rows.length === 0 && newRows.length === 0 ? (
+          <p className="border-t border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+            Nobody on the standing list yet — anyone added here joins every future month automatically.
+          </p>
+        ) : null}
       </div>
 
       {/* Mobile: the admin shell never shows a table on small screens. */}

@@ -270,153 +270,189 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         </div>
       ) : null}
 
-      <div className="hidden overflow-x-auto border border-slate-200 md:block">
-        <div>
-          <div className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.9fr_auto] items-center gap-x-3 bg-slate-900 px-3 py-2.5">
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (EN)</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (AR)</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Name</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Account</div>
-            <div className="text-right text-phx-xs font-bold uppercase tracking-wide text-slate-300">Total Salary</div>
-            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Actions</div>
-          </div>
+      {/* Desktop: a real table, so the admin shell's own black header and orange grid draw it (it was a grid of
+          divs with a hand-painted header). Fits by MERGING — the English name over the Arabic, the bank over the
+          account — never by a sideways scroll. */}
+      <div className="hidden border border-slate-200 md:block">
+        <table className="w-full table-fixed border-collapse text-left text-sm">
+          <colgroup>
+            <col className="w-[34%]" />
+            <col className="w-[30%]" />
+            <col className="w-[16%]" />
+            <col className="w-[20%]" />
+          </colgroup>
+          <thead>
+            <tr className="text-phx-xs font-bold uppercase tracking-wide">
+              <th className="px-3 py-2.5" scope="col">Full Name (EN · AR)</th>
+              <th className="px-3 py-2.5" scope="col">Bank Name · Account</th>
+              <th className="px-3 py-2.5 text-right" scope="col">Total Salary</th>
+              <th className="px-3 py-2.5" scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const draft = edits[row.id] ?? emptyDraft;
+              return (
+                <tr key={row.id} className={cn("align-top", index % 2 ? "bg-slate-50/60" : "bg-white")}>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Full name (English)"
+                        value={draft.fullNameEn}
+                        disabled={locked}
+                        onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Full name (Arabic)"
+                        value={draft.fullNameAr}
+                        disabled={locked}
+                        dir="rtl"
+                        onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        aria-label="Bank name"
+                        value={draft.bankName ?? ""}
+                        disabled={locked}
+                        onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <Input
+                        aria-label="Bank account"
+                        value={draft.bankAccount ?? ""}
+                        disabled={locked}
+                        onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      aria-label="Total salary"
+                      type="number"
+                      value={String(draft.totalSalary)}
+                      disabled={locked}
+                      onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
+                      className={cn(fieldClassName, "text-right")}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {row.recurringId ? (
+                        <span
+                          title="From the standing list — added automatically every month"
+                          className="flex items-center gap-1 border border-slate-300 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
+                        >
+                          <Repeat className="size-3" />
+                          Monthly
+                        </span>
+                      ) : null}
+                      {!locked ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busyId === row.id}
+                            onClick={() => void saveExisting(row.id)}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            aria-label="Delete this entry"
+                            size="sm"
+                            variant="ghost"
+                            disabled={busyId === row.id}
+                            onClick={() => void deleteExisting(row.id)}
+                            className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
 
-          {rows.map((row, index) => {
-            const draft = edits[row.id] ?? emptyDraft;
-            return (
-              <div
-                key={row.id}
-                className={cn(
-                  "grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.9fr_auto] items-center gap-x-3 border-b border-slate-200 px-3 py-2",
-                  index % 2 ? "bg-slate-50/60" : "bg-white",
-                )}
-              >
-                <Input
-                  value={draft.fullNameEn}
-                  disabled={locked}
-                  onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.fullNameAr}
-                  disabled={locked}
-                  dir="rtl"
-                  onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.bankName ?? ""}
-                  disabled={locked}
-                  onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  value={draft.bankAccount ?? ""}
-                  disabled={locked}
-                  onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
-                  className={fieldClassName}
-                />
-                <Input
-                  type="number"
-                  value={String(draft.totalSalary)}
-                  disabled={locked}
-                  onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
-                  className={cn(fieldClassName, "text-right")}
-                />
-                <div className="flex items-center gap-1.5">
-                  {row.recurringId ? (
-                    <span
-                      title="From the standing list — added automatically every month"
-                      className="flex items-center gap-1 whitespace-nowrap border border-slate-300 bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
+            {newRows.map((row) => (
+              <tr key={row.tempId} className="bg-orange-50/40 align-top">
+                <td className="px-3 py-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Input
+                      aria-label="Full name (English)"
+                      value={row.fullNameEn}
+                      placeholder="Full name (English)"
+                      onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
+                      className={fieldClassName}
+                    />
+                    <Input
+                      aria-label="Full name (Arabic)"
+                      value={row.fullNameAr}
+                      placeholder="الاسم بالعربية"
+                      dir="rtl"
+                      onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
+                      className={fieldClassName}
+                    />
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Input
+                      aria-label="Bank name"
+                      value={row.bankName ?? ""}
+                      placeholder="Bank Name"
+                      onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
+                      className={fieldClassName}
+                    />
+                    <Input
+                      aria-label="Bank account"
+                      value={row.bankAccount ?? ""}
+                      placeholder="Bank Account"
+                      onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
+                      className={fieldClassName}
+                    />
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <Input
+                    aria-label="Total salary"
+                    type="number"
+                    value={String(row.totalSalary)}
+                    onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
+                    className={cn(fieldClassName, "text-right")}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      disabled={busyId === row.tempId}
+                      onClick={() => void saveNewRow(row.tempId)}
+                      className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                     >
-                      <Repeat className="size-3" />
-                      Monthly
-                    </span>
-                  ) : null}
-                  {!locked ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busyId === row.id}
-                        onClick={() => void saveExisting(row.id)}
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busyId === row.id}
-                        onClick={() => void deleteExisting(row.id)}
-                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+                      Add
+                    </Button>
+                    <Button aria-label="Discard this entry" size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
 
-          {newRows.map((row) => (
-            <div
-              key={row.tempId}
-              className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.9fr_auto] items-center gap-x-3 border-b border-slate-200 bg-orange-50/40 px-3 py-2"
-            >
-              <Input
-                value={row.fullNameEn}
-                placeholder="Full name (English)"
-                onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.fullNameAr}
-                placeholder="الاسم بالعربية"
-                dir="rtl"
-                onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.bankName ?? ""}
-                placeholder="Bank Name"
-                onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                value={row.bankAccount ?? ""}
-                placeholder="Bank Account"
-                onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
-                className={fieldClassName}
-              />
-              <Input
-                type="number"
-                value={String(row.totalSalary)}
-                onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
-                className={cn(fieldClassName, "text-right")}
-              />
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  disabled={busyId === row.tempId}
-                  onClick={() => void saveNewRow(row.tempId)}
-                  className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
-                >
-                  Add
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-
-          {rows.length === 0 && newRows.length === 0 ? (
-            <div className="border-b border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-              No {partLabel} non-employees this month.
-            </div>
-          ) : null}
-        </div>
+          </tbody>
+        </table>
+        {rows.length === 0 && newRows.length === 0 ? (
+          <p className="border-t border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+            No {partLabel} non-employees this month.
+          </p>
+        ) : null}
       </div>
 
       {/* Mobile: the admin shell never shows a table on small screens — same rule

@@ -522,9 +522,13 @@ export function weeklySheetExportHref(weekStart: string): string {
   return `${WEEKLY_SHEET_EXPORT_PATH}?week=${encodeURIComponent(weekStart)}`;
 }
 
-/** The anchor of a rep's row, so "Reps to look at" can open it. */
-export function weeklySheetRepAnchor(rep: Pick<WeeklySheetRep, "seatId">): string {
-  return `rep-${rep.seatId.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+/**
+ * The anchor of a rep's row, so "Reps to look at" can open it. A rep is drawn twice — a table row from `md`,
+ * a card below it — and one id cannot sit on both, so the card's anchor carries `-card`.
+ */
+export function weeklySheetRepAnchor(rep: Pick<WeeklySheetRep, "seatId">, surface: "card" | "row" = "row"): string {
+  const base = `rep-${rep.seatId.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+  return surface === "card" ? `${base}-card` : base;
 }
 
 /** The seats the page lists under a filter — a "Reps to look at" name links only when its row is on the page. */
