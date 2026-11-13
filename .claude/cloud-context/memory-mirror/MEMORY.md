@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [npm cache behind a C:→D: junction breaks every npm ci](npm-cache-junction-breaks-deep-mkdir.md) - "tarball corrupted" then ENOENT `_cacache\tmp`; ~/.npmrc now points the cache straight at D:.
 
 
 
