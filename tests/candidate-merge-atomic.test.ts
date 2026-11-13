@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
+import { recruitmentApiError } from "../app/api/recruitment/_lib/http.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { ApiError } from "../src/lib/http/api-errors.ts";
 import { describeCopiedHistoryLine, mergeableFields } from "../src/lib/recruitment/candidate-merge.ts";
 import {
   appendOnlyChildTables,
@@ -9,6 +11,8 @@ import {
   dedupedChildTables,
   linkedByOwnColumn,
   MERGE_CANDIDATES_RPC,
+  MERGE_RACE_MESSAGE,
+  MERGE_RACE_SQLSTATE,
   mergeCandidates,
 } from "../src/lib/recruitment/candidate-merge-service.ts";
 import { normalizeEmail } from "../src/lib/recruitment/candidate-matching.ts";
@@ -114,6 +118,15 @@ export async function runCandidateMergeAtomicTests() {
   );
   assert.ok(lockSecondAt < firstWriteAt, "both rows must be locked before the function writes anything");
   assert.match(sql, /if p_survivor_id = p_duplicate_id then\s*raise exception/, "merging a record into itself would delete the survivor");
+  // A row missing UNDER THE LOCK was read by TypeScript a moment earlier, so it is a lost race, not
+  // an unknown id — it raises its own SQLSTATE so the caller can answer 409 instead of 404.
+  const lockBlock = sql.slice(lockFirstAt, sql.indexOf("end if;", lockSecondAt) + "end if;".length);
+  assert.equal(
+    lockBlock.split(`using errcode = '${MERGE_RACE_SQLSTATE.toLowerCase()}'`).length - 1,
+    2,
+    "both lock refusals raise the race SQLSTATE the service maps to 409",
+  );
+  assert.ok(!lockBlock.includes("p0002"), "a lost race must not wear the not-found code — that answers 404 with the generic text");
 
   // ── 2. EVERY TABLE THE TYPESCRIPT USED TO TOUCH ───────────────────────────────────────────────
   for (const table of childTables) {
@@ -267,7 +280,7 @@ export async function runCandidateMergeAtomicTests() {
   {
     const calls: Call[] = [];
     let mirrored = 0;
-    const refusal = { code: "P0002", message: "Candidate not found." };
+    const refusal = { code: "23505", message: "duplicate key value violates unique constraint" };
     await assert.rejects(
       mergeCandidates(access, { duplicateId, survivorId }, {
         client: fakeClient(calls, { data: null, error: refusal }) as never,
@@ -282,6 +295,61 @@ export async function runCandidateMergeAtomicTests() {
     assert.equal(mirrored, 0, "a merge the database refused must never re-file the cabinet");
     assert.equal(calls.filter((call) => call.kind === "rpc").length, 1);
     assert.equal(calls.filter((call) => call.kind === "insert").length, 0, "no history line for a merge that did not happen");
+  }
+
+  // (a2) A LOST RACE — a row read a moment ago is gone under the lock — answers 409 in plain words.
+  {
+    const calls: Call[] = [];
+    let mirrored = 0;
+    const race = {
+      code: MERGE_RACE_SQLSTATE,
+      message: `phx_merge_ats_candidates: candidate ${duplicateId} was merged or deleted by a concurrent change`,
+    };
+    let thrown: unknown = null;
+    await assert.rejects(
+      mergeCandidates(access, { duplicateId, survivorId }, {
+        client: fakeClient(calls, { data: null, error: race }) as never,
+        loadCandidate,
+        mirrorCvs: async () => {
+          mirrored += 1;
+        },
+      }).catch((error: unknown) => {
+        thrown = error;
+        throw error;
+      }),
+    );
+    assert.ok(thrown instanceof ApiError, "a lost race must become an ApiError the route can map");
+    assert.equal((thrown as ApiError).status, 409, "a lost race is a conflict, never a 404");
+    assert.equal((thrown as ApiError).message, MERGE_RACE_MESSAGE);
+    assert.equal(
+      MERGE_RACE_MESSAGE,
+      "This candidate was merged or changed by someone else a moment ago; refresh and try again.",
+    );
+    assert.equal(mirrored, 0, "a merge that lost the race must never re-file the cabinet");
+    assert.equal(calls.filter((call) => call.kind === "insert").length, 0);
+    const response = recruitmentApiError(thrown, "Failed to merge the candidate records.");
+    assert.equal(response.status, 409, "the merge route answers the lost race with 409");
+    assert.equal(((await response.json()) as { message: string }).message, MERGE_RACE_MESSAGE);
+  }
+
+  // (a3) An id that is not there BEFORE the merge starts stays a 404, and never reaches the database.
+  {
+    const calls: Call[] = [];
+    let thrown: unknown = null;
+    await assert.rejects(
+      mergeCandidates(access, { duplicateId: "33333333-3333-4333-8333-333333333333", survivorId }, {
+        client: fakeClient(calls, { data: {}, error: null }) as never,
+        loadCandidate,
+        mirrorCvs: async () => undefined,
+      }).catch((error: unknown) => {
+        thrown = error;
+        throw error;
+      }),
+    );
+    assert.ok(thrown instanceof ApiError && thrown.status === 404, "an unknown id is a 404, not the race's 409");
+    assert.equal((thrown as ApiError).message, "The duplicate candidate no longer exists.");
+    assert.equal(calls.filter((call) => call.kind === "rpc").length, 0, "an unknown id never reaches the merge function");
+    assert.equal(recruitmentApiError(thrown, "Failed to merge the candidate records.").status, 404);
   }
 
   // (b) A refusal decided in TypeScript never reaches the database at all.

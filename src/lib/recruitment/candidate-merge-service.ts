@@ -30,6 +30,7 @@ import {
 import { getCandidate } from "@/lib/recruitment/candidates";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
+import { conflictError, notFoundError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -336,6 +337,17 @@ async function loadApplicationFacts(
 /** The one SQL function that performs every write of a merge, in one transaction. */
 export const MERGE_CANDIDATES_RPC = "phx_merge_ats_candidates";
 
+/** The SQLSTATE the merge function raises when a row read a moment earlier is gone under the lock. */
+export const MERGE_RACE_SQLSTATE = "PX409";
+
+/** What the recruiter reads when another merge or delete got there first. */
+export const MERGE_RACE_MESSAGE =
+  "This candidate was merged or changed by someone else a moment ago; refresh and try again.";
+
+function isMergeRaceError(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === MERGE_RACE_SQLSTATE;
+}
+
 /** What `phx_merge_ats_candidates` answers: counts per table, and the survivor row when it changed. */
 type MergeOutcome = {
   candidate: CandidateDbRow | null;
@@ -428,8 +440,10 @@ export async function mergeCandidates(
     survivor,
     survivorApplications: applications.get(survivorId) ?? [],
   });
+  // An id that is not there BEFORE the merge starts is a 404 in mergeBlockReason's own words — never
+  // the 409 below, which is kept for a row that vanished between this read and the lock.
+  if (!survivor || !duplicate) throw notFoundError(blocked ?? "Candidate not found.");
   if (blocked) throw new Error(blocked);
-  if (!survivor || !duplicate) throw new Error("Candidate not found.");
 
   // Captured BEFORE the duplicate is deleted — after the function runs there is nothing left to read.
   const borrowed = borrowableFields(survivor, duplicate);
@@ -466,7 +480,13 @@ export async function mergeCandidates(
     p_status_event_provenance: provenance("ats_candidate_status_events"),
     p_survivor_id: survivorId,
   });
-  if (error) throw error;
+  if (error) {
+    // A LOST RACE IS A 409, NEVER A 404. Both rows were read a moment ago, so a row the function
+    // cannot lock is one a concurrent merge or delete just took — the recruiter refreshes and sees
+    // what happened. An id that never existed is refused above, before the function is called.
+    if (isMergeRaceError(error)) throw conflictError(MERGE_RACE_MESSAGE, "merge_race");
+    throw error;
+  }
   const outcome = readMergeOutcome(data);
 
   // Step 2's counts. A blocked row is one the survivor already held its own of, so it was dropped.

@@ -96,17 +96,21 @@ begin
   end if;
 
   -- ── THE LOCK — both rows, lowest id first, so two merges touching the same pair queue rather
-  -- than deadlock. A row that is gone by now (a concurrent merge already deleted it) refuses the
-  -- whole merge before anything is written.
+  -- than deadlock. A row that is gone by now refuses the whole merge before anything is written.
+  -- TypeScript read BOTH rows a moment before calling this, so a row missing HERE is a lost race
+  -- (a concurrent merge or delete), never an unknown id: it raises its own SQLSTATE, PX409, which
+  -- mergeCandidates turns into a 409 the recruiter can act on (refresh and try again).
   v_first := least(p_survivor_id, p_duplicate_id);
   v_second := greatest(p_survivor_id, p_duplicate_id);
   perform 1 from public.ats_candidates where id = v_first for update;
   if not found then
-    raise exception 'Candidate not found.' using errcode = 'P0002';
+    raise exception 'phx_merge_ats_candidates: candidate % was merged or deleted by a concurrent change', v_first
+      using errcode = 'PX409';
   end if;
   perform 1 from public.ats_candidates where id = v_second for update;
   if not found then
-    raise exception 'Candidate not found.' using errcode = 'P0002';
+    raise exception 'phx_merge_ats_candidates: candidate % was merged or deleted by a concurrent change', v_second
+      using errcode = 'PX409';
   end if;
 
   -- ── STEP 2 — the five tables UNIQUE on (candidate_id, key). A duplicate row whose key the
