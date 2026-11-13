@@ -1278,6 +1278,58 @@ and `--apply` would create a second copy on the website. To move another job, ch
 cron-job.org (one job at a time; the account allows 100 API requests a day), wait for its next run
 to answer 200 on the worker, then add `base: WORKER` to its declaration if it has one, and a row here.
 
+## The robot service
+
+**What it is (audit REC-075, the owner's choice: "own small Railway service").** A third Railway service,
+`phoenix-workforce-robot`, built from the same repository and image as the website, with
+`PHOENIX_PROCESS_ROLE=robot`. It runs ONLY the two Turbify mailbox robots (the leaver revocation robot
+and the joiner provisioning robot), so a Chromium never opens beside the pages employees are using. It
+runs no in-process scheduler and no database sampler. PDF rendering is not part of it and stays where
+it is.
+
+**What runs there once it is switched on:**
+
+| Work | Where it ran before | Where it runs once switched on |
+|---|---|---|
+| The two daily robot passes | Inside the 08:15 `mailbox-offboarding-sweep` on the website | `/api/cron/mailbox-robots` on the robot service, its own cron-job.org job at 08:20 Cairo, under a `job_leases` lease |
+| The four live buttons on New-hire mailboxes (adopt, invite inbox, App Passwords capture, rehearsal) | The website's own routes | The website still checks the session, CSRF, role and rate limit, then POSTs to `/api/internal/mailbox-robot/<action>` with the CRON_SECRET bearer and returns the answer unchanged. A dry run never leaves the website |
+
+The robot routes answer **503 `wrong_process`** anywhere but the robot service. Both driver factories
+also refuse there (`RobotDriverRefusedError`), whatever calls them.
+
+**The switch is one variable on the WEBSITE: `PHOENIX_ROBOT_SERVICE_URL`** (`src/lib/platform/robot-service.ts`).
+Unset, everything runs exactly as before. Set, the sweep skips both robot passes, the four buttons forward,
+and neither the website nor the worker will build a robot driver. 🔴 It is never in `.railway/railway.ts`
+and never on the robot service itself.
+
+**The order — each step only after the one before is proven:**
+
+1. **Create the service by hand**, as the worker was: Railway dashboard → New → GitHub repo → this
+   repository, named `phoenix-workforce-robot`. Move it to `europe-west4-drams3a` (a new service in
+   this account starts in `sfo`). Turn "Wait for CI" off, set the healthcheck to `/api/readyz` with
+   900 s, and generate a domain. The block in `.railway/railway.ts` was written to match. No apply
+   is needed to create it, and `scripts/railway-iac-preapply-check.mjs` refuses any apply that
+   includes it until it exists.
+2. **Set its variables**: `PHOENIX_PROCESS_ROLE=robot` as a plain value, and every other name in its
+   `.railway/railway.ts` block as a reference to the website's own (`${{phoenix-people-workforce.NAME}}`).
+3. **Wait for it to be healthy**: `/api/readyz` 200 and `/api/healthz` on the same revision as the website.
+4. **Set `PHOENIX_ROBOT_SERVICE_URL` on the website** to the robot service's `https://` address.
+   This redeploys the website. From its next sweep, the website stops running the robots, and the four
+   buttons forward.
+5. **Then arm the robot service's cron job, the same day, before the next 08:20.** Check the generated
+   domain against `ROBOT` in `scripts/cronjob-sync.mjs` and fix it if it differs. Then, in one change:
+   - switch `mailbox-robots` to enabled;
+   - declare `phoenix-mailbox-robots` in `JOB_SCHEDULES` and the `docs/observability.md` table;
+   - run `node scripts/cronjob-sync.mjs --job mailbox-robots --apply`.
+
+   Until then the job is declared OFF, so the auto-arm on merge creates it switched off, and its
+   heartbeat is undeclared, so it never pages as stranded. This order means the robots never run twice
+   in one day: the website stops first, then the robot service starts.
+
+**Rollback: unset `PHOENIX_ROBOT_SERVICE_URL` on the website.** The sweep runs both robots again on the
+next 08:15 run and the buttons run locally. Then switch the `mailbox-robots` job off, because the robot
+service would otherwise run the passes a second time.
+
 ## Cron Jobs (cron-job.org)
 
 🔴 **The production scheduler is a free-tier third-party account at cron-job.org, outside this

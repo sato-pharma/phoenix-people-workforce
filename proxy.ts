@@ -325,6 +325,11 @@ function securityProxy(request: NextRequest): NextResponse | null {
       // authorised by a dedicated bearer secret inside the route (which is also disabled unless
       // PHOENIX_MCP_SOURCE_ENABLED is "true"), so it is CSRF-exempt like the other shared-secret routes.
       request.nextUrl.pathname === "/api/mcp-source/authorize" ||
+      // The robot service's four internal routes (audit REC-075): the WEBSITE POSTs them server to
+      // server with no Origin header, after it has checked the Super Admin's session, CSRF, role and
+      // rate limit itself. Each route checks the CRON_SECRET bearer and that it is running on the robot
+      // service before it reads the body, so it is CSRF-exempt by the same shared-secret pattern.
+      request.nextUrl.pathname.startsWith("/api/internal/mailbox-robot/") ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/") ||

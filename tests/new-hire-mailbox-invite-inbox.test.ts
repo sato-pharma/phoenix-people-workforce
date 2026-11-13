@@ -412,6 +412,7 @@ function runWiringCases(): void {
   const root = new URL("../", import.meta.url);
   const scheduled = [
     "app/api/cron/mailbox-offboarding-sweep/route.ts",
+    "app/api/cron/mailbox-robots/route.ts",
     "src/lib/new-hire-mailbox/robot/sweep-hook.ts",
     "src/lib/new-hire-mailbox/robot/sweep-deps.ts",
     "src/lib/new-hire-mailbox/robot/runner.ts",
@@ -470,9 +471,11 @@ function runWiringCases(): void {
  */
 function runAuditCases(): void {
   const root = new URL("../", import.meta.url);
+  // The audit rows are written by the ONE shared action each route runs, on the website while the robot
+  // service is off and on the robot service once it is on (audit REC-075).
   const routes = [
-    "app/api/new-hire-mailboxes/invite-inbox/route.ts",
-    "app/api/new-hire-mailboxes/adopt/route.ts",
+    "src/lib/new-hire-mailbox/robot/actions/invite-inbox-action.ts",
+    "src/lib/new-hire-mailbox/robot/actions/adopt-action.ts",
   ];
 
   for (const path of routes) {

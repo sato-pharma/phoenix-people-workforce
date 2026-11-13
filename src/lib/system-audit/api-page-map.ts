@@ -325,6 +325,7 @@ export const API_NO_UI: Readonly<Record<string, string>> = {
   "/api/cron": "Scheduled job",
   "/api/webhooks": "Webhook from an outside service",
   "/api/integrations": "Outside integration callback",
+  "/api/internal/mailbox-robot": "Robot service (called by the website, never by a page)",
   "/api/mcp-source": "Outside connector",
   "/api/public": "Public page (no sign-in)",
   "/api/share": "Share link",

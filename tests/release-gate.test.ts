@@ -266,7 +266,7 @@ export async function runReleaseGateTests(): Promise<void> {
   // ── 5. The window ────────────────────────────────────────────────────────────────────────────────
   const iac = readFileSync(".railway/railway.ts", "utf8");
   const iacWindows = [...iac.matchAll(/healthcheckTimeout:\s*(\d+)/g)].map((match) => Number(match[1]));
-  assert.equal(iacWindows.length, 2, "the authoring file carries the window for the app and the worker");
+  assert.equal(iacWindows.length, 3, "the authoring file carries the window for the app, the worker and the robot service");
   for (const seconds of iacWindows) {
     assert.ok(seconds >= 600, `🔴 .railway/railway.ts healthcheckTimeout is ${seconds}s — the release gate needs the window to outlast a slow day of CI`);
   }

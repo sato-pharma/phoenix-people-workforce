@@ -126,14 +126,17 @@ function runSetupScreenIsAnAnswerCases(): void {
 
 function runAddressIsTheConstantCases(): void {
   const route = readable("../app/api/new-hire-mailboxes/app-password-controls/route.ts");
+  // The live body lives in ONE shared action since the robot service (audit REC-075): the website runs
+  // it while the service is off, and /api/internal/mailbox-robot/app-password-controls runs it once on.
+  const action = readable("../src/lib/new-hire-mailbox/robot/actions/app-password-controls-action.ts");
 
   assert.match(
-    route, /describeAppPasswords\(\{ address: INVITE_INBOX_ADDRESS, password: companyPassword \}\)/,
+    action, /describeAppPasswords\(\{ address: INVITE_INBOX_ADDRESS, password: companyPassword \}\)/,
     "the route must pass INVITE_INBOX_ADDRESS, never an address from the request — the same chain "
     + "pointed at an employee signs into their mail",
   );
   assert.equal(
-    /body\?\.address|body\.address/.test(route), false,
+    /body\?\.address|body\.address/.test(route + action), false,
     "and it must not read an address out of the body at all, so no future edit can route it to one",
   );
   assert.match(
@@ -145,13 +148,17 @@ function runAddressIsTheConstantCases(): void {
     "the gate is the same audience as adoption: this signs in as a mailbox with the company password",
   );
   assert.match(
-    route, /driver\.close\(\)/,
+    action, /driver\.close\(\)/,
     "the browser must be closed whatever happened — a leaked Chromium holds a signed-in mailbox "
     + "session for longer than the request",
   );
   assert.equal(
     /\bappPassword\b/.test(route), false,
     "and no credential may reach the response or the audit row: the route never names one",
+  );
+  assert.equal(
+    /\bappPassword\b/.test(action), false,
+    "nor does the shared action that does the live run, on the website or on the robot service",
   );
 }
 
@@ -168,7 +175,8 @@ function runAddressIsTheConstantCases(): void {
  * diagnostic; without it a failure is just "it did not work".
  */
 function runAFailedRunIsRecordedCases(): void {
-  const route = readable("../app/api/new-hire-mailboxes/app-password-controls/route.ts");
+  // The run, its audits and its rethrow live in the one shared action (audit REC-075).
+  const route = readable("../src/lib/new-hire-mailbox/robot/actions/app-password-controls-action.ts");
 
   const start = route.indexOf("const driver = await createJoinerDriverFromEnv()");
   assert.notEqual(start, -1, "the route must still create the driver, or this slice means nothing");

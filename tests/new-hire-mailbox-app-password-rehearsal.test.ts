@@ -171,15 +171,19 @@ async function runDryRunCases(): Promise<void> {
 
 function runRouteCases(): void {
   const route = readable("../app/api/new-hire-mailboxes/app-password-rehearsal/route.ts");
+  // The live run, its audits and its summary live in ONE shared action since the robot service (audit
+  // REC-075): the website runs it while the service is off, the robot service once it is on.
+  const action = readable("../src/lib/new-hire-mailbox/robot/actions/app-password-rehearsal-action.ts");
+  assert.equal(/body/.test(action), false, "the shared action never sees the request body at all");
 
   // 🔴 THE ADDRESS ARGUMENT ITSELF, NOT A BAN ON TWO SPELLINGS OF READING IT. Banning
   // `body.address` and `body?.address` left `(body as { address?: string }).address` sailing
   // through — a break that passed, found by running it. What matters is what the call is HANDED,
   // so the assertion reads the call: the argument must be the constant and nothing else, and the
   // request body must not appear anywhere inside it.
-  const callAt = route.indexOf("rehearseAppPasswordRemoval({");
-  assert.notEqual(callAt, -1, "the route must call the rehearsal");
-  const call = route.slice(callAt, callAt + 200);
+  const callAt = action.indexOf("rehearseAppPasswordRemoval({");
+  assert.notEqual(callAt, -1, "the shared action must call the rehearsal");
+  const call = action.slice(callAt, callAt + 200);
   assert.match(call, /address: INVITE_INBOX_ADDRESS\s*,/,
     "the mailbox must be the constant, never an expression a caller can steer");
   assert.doesNotMatch(call, /body/,
@@ -194,13 +198,13 @@ function runRouteCases(): void {
 
   // 🔴 A THROW MUST NOT RECORD `outstanding: false`. If the run threw after minting, claiming
   // nothing is outstanding is a claim the route cannot support — it records null and says so.
-  const threw = route.indexOf("failed: true");
+  const threw = action.indexOf("failed: true");
   assert.notEqual(threw, -1, "a throw must still write an audit row");
-  assert.match(route.slice(threw, threw + 200), /outstanding: null/,
+  assert.match(action.slice(threw, threw + 200), /outstanding: null/,
     "a throw must record outstanding as unknown, never as false");
 
   // And the loud summary exists for the case that matters.
-  assert.match(route, /LEFT A LIVE APP PASSWORD/);
+  assert.match(action, /LEFT A LIVE APP PASSWORD/);
 }
 
 export async function runNewHireMailboxAppPasswordRehearsalTests(): Promise<void> {
