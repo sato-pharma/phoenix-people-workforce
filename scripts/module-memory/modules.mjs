@@ -1551,11 +1551,11 @@ export const MODULES = [
     title: "Platform — passwords and access control",
     scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.",
     globs: [
-      "src/lib/auth/{permissions,password-strength,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
+      "src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
       "app/api/auth/{change-password,password-reset,password-setup}/**",
-      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,seat-fence,signed-out}*",
+      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,leaked-password,seat-fence,signed-out}*",
     ],
-    keywords: ["password", "password reset", "reset code", "weak password", "permission matrix", "seat fence", "signed out", "retired seat"],
+    keywords: ["password", "password reset", "reset code", "weak password", "leaked password", "permission matrix", "seat fence", "signed out", "retired seat"],
     tables: ["role_permission_overrides", "app_auth_users"],
   },
   // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
@@ -1575,13 +1575,18 @@ export const MODULES = [
       // routed here rather than to `platform`, whose pointer was at its margin.
       "src/lib/auth/{credentials,staging-test-sign-in}.ts",
       "tests/staging-test-sign-in*",
+      // The second sign-in step (2026-11-13): asked by the login route, so it loads with it.
+      "src/lib/auth/{second-step,second-step-store,second-step-management}.ts",
+      "src/components/auth/second-step-card.tsx",
+      "app/api/auth/second-step/**",
+      "tests/second-sign-in-step*",
       "src/lib/session-pulse-store.ts",
       "src/components/auth/session-security-guard.tsx",
       "app/api/auth/{pulse,heartbeat,login,logout}/**",
       "tests/*{session,pulse}*",
     ],
-    keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out"],
-    tables: ["app_sessions"],
+    keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out", "second sign-in step", "authenticator", "recovery code", "trusted device"],
+    tables: ["app_sessions", "app_auth_second_step", "app_auth_second_step_recovery_codes", "app_auth_trusted_devices"],
   },
   // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 30
   // rules and its injected pointer measured 3,973 bytes; the rule that an AI address is written out in

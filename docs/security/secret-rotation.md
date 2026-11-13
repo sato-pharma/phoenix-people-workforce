@@ -93,6 +93,13 @@ It signs session cookies, so rotating it **signs out every user at once** — it
 secret whose mismatch merely degrades a cron. Rotate it only when you intend a global sign-out, and
 tell the owner first.
 
+🔴 **It also seals the second sign-in step** (13 Nov 2026). Each Super Admin's authenticator key is
+sealed with it and the recovery-code fingerprints are keyed with it, so after a rotation neither can be
+read and a Super Admin's password sign-in answers 500 (a passkey sign-in still works). A rotation of
+this secret therefore includes deleting every row of `app_auth_second_step`; each Super Admin sets the
+step up again at their next password sign-in. Account: `docs/security/second-sign-in-step.md`,
+"Rotating `PHOENIX_AUTH_SECRET`".
+
 ## History — the 2026-07-31 Cloud Run / Secret Manager incident (retired mechanics)
 
 > Kept for the lesson, not the commands — this all ran under the retired GCP setup and no part of it
