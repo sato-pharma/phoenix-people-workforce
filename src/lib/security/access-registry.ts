@@ -826,8 +826,8 @@ export const accessRegistry = [
   // would change who can call it, so that is deliberately NOT done here. The file also exports a
   // POST (asserting imports:import + user_admin:update) that this GET-only entry does not declare.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "read" } }),
-  sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing/roi-refresh", permission: { resource: "marketing_roi_refresh", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
@@ -1618,6 +1618,7 @@ export const accessRegistry = [
   // domain-helper gate as the wizard itself, not the wider finance read role.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/held-settlements", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/held-settlements", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/downloads", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Non-Employees Payroll — free-form list, no employee/HR_ID record; same domain-helper gate.
@@ -1636,9 +1637,9 @@ export const accessRegistry = [
   // Employee Day-by-Day Report deduction decisions — replaced the standalone Fingerprint
   // Deductions page (retired 2026-07-24); this is now the one place a fingerprint deduction
   // gets confirmed/rejected. Super Admin gate enforced in-route (matches the page itself).
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/decisions", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/attendance/employee-day-report/decisions", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/all-summary", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/decisions", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/attendance/employee-day-report/decisions", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/attendance/employee-day-report/all-summary", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper" }),
   // Probation Decision Intelligence routes are gated at probation:read at the middleware; each
   // route enforces its exact permission / row-level ownership / decision-role check in-handler
   // (findAccessRegistryEntry picks the longest matching pattern, so these override the blanket

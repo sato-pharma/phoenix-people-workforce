@@ -11,6 +11,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { afterResponse } from "@/lib/http/after-response";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
+import { assertCanEditEmployeeRecord } from "@/lib/employees/edit-scope";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { recordHireFromCandidate, recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
@@ -155,6 +156,9 @@ export async function POST(request: Request) {
     // employee), so this check refuses nobody who could create before.
     if (!payload.employee.originalHrId?.trim()) {
       await assertPermission(access, "employees", "create");
+    } else {
+      // An edit reaches only someone the editor can see in the directory (edit-scope.ts).
+      await assertCanEditEmployeeRecord(access, payload.employee.originalHrId);
     }
 
     // THE SALARY-BLIND SEAT SENDS NO MONEY, AND WHATEVER IT SENDS IS DROPPED. Every money key is

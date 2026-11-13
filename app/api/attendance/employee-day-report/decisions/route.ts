@@ -5,6 +5,7 @@ import {
   upsertAndDecideEmployeeDayDeduction,
   type EmployeeDayDecisionInfo,
 } from "@/lib/attendance/employee-day-report";
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -16,7 +17,9 @@ export const dynamic = "force-dynamic";
  * Decide (confirm/reject) a fingerprint deduction directly from the Employee
  * Day-by-Day Report — the standalone Fingerprint Deductions page was retired,
  * this is now the one place that happens (owner direction, 2026-07-24).
- * Same Super Admin gate as the page itself (app/(admin)/attendance/employee-day-report/page.tsx).
+ * Same Super Admin gate as the page itself (app/(admin)/attendance/employee-day-report/page.tsx),
+ * and the permission matrix's `deductions:approve` asserted beside it — both must pass, for the read
+ * as well as the decision, because the read shows the money a decision would apply.
  */
 function errorResponse(error: unknown) {
   const message = clientSafeErrorMessage(error, "Unexpected error.");
@@ -32,6 +35,7 @@ async function assertSuperAdmin(request: Request) {
   if (access.role !== "Super Admin") {
     throw new Error("Forbidden: only Super Admin can review fingerprint deductions here.");
   }
+  await assertPermission(access, "deductions", "approve");
   return access;
 }
 

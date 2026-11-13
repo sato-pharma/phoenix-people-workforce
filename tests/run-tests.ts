@@ -1327,6 +1327,7 @@ import { runEmailZebraSurvivesSanitizerTests } from "./email-zebra-survives-sani
 import { runEmailGreetingNamesTheAudienceTests } from "./email-greeting-names-the-audience.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
+import { runPayrollDownloadLogTests } from "./payroll-download-log.test.ts";
 import { runReportItReadLogTests } from "./report-it-read-log.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
@@ -1336,6 +1337,7 @@ import { runExpenseAccessScopeTests } from "./expense-access-scope.test.ts";
 import { runRlsFallbackDoorTests } from "./rls-fallback-door.test.ts";
 import { runSalesPayrollHierarchyScopeTests } from "./sales-payroll-hierarchy-scope.test.ts";
 import { runInternalMessagesTests } from "./internal-messages.test.ts";
+import { runPermissionChecksS01Tests } from "./permission-checks-s01.test.ts";
 import { runOriginConfigSingleSourceTests } from "./origin-config-single-source.test.ts";
 import { runGcloudMigrationHardeningTests } from "./gcloud-migration-hardening.test.ts";
 import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-fingerprint-visibility.test.ts";
@@ -5873,6 +5875,10 @@ await runTest("email greetings name the audience (never Dear Team)", runEmailGre
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
 await runTest(
+  "every payroll sheet and bank file download writes one row on its run, a person is limited per hour, and the run lists them",
+  runPayrollDownloadLogTests,
+);
+await runTest(
   "report-it: every report read is logged or refused, the read-all list changes only through its audited function, and a report is shape-checked before it is stored",
   runReportItReadLogTests,
 );
@@ -5884,6 +5890,7 @@ await runTest("expense access scope (PM/GPM/TM self+reports)", runExpenseAccessS
 await runTest("payroll and outstation reads go through one logged row-security door and re-narrow their rows (audit L10)", runRlsFallbackDoorTests);
 await runTest("sales + payroll TEAM/HIERARCHY seat-continuity scope (resolver adoption)", runSalesPayrollHierarchyScopeTests);
 await runTest("internal messages", runInternalMessagesTests);
+await runTest("four routes assert their permission key on the server and refuse with no write (fingerprint decisions, ROI refresh, employee edits)", runPermissionChecksS01Tests);
 await runTest("origin config single source", runOriginConfigSingleSourceTests);
 await runTest("gcloud migration hardening", runGcloudMigrationHardeningTests);
 await runTest("employee portal fingerprint visibility", runEmployeePortalFingerprintVisibilityTests);
