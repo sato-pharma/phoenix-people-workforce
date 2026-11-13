@@ -29,9 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Healthchecks moved to a new free account](healthchecks-moved-to-a-new-free-account-2026-11-12.md) - old account dead 9 Nov 18:00; 20 checks; sample check takes a slot; a check outside the 20 is a leftover to delete; API key shown once
-- [The Terminal panel cannot see npm tools](the-terminal-panel-cannot-see-npm-tools.md) - its AppData has no npm folder, so railway is "not recognized"; copy railway.exe to the scratchpad
-- [Sessions run at medium effort for speed](sessions-run-at-medium-effort-for-speed.md) - his pick 2026-11-12; model thinking was ~75% of request-to-PR time, CI only 3 min; never flip back to high unasked
 
 
 
