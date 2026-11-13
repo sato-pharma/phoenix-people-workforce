@@ -2295,6 +2295,7 @@ import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.te
 import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-health.test.ts";
 import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runForeignKeyIndexesTests } from "./foreign-key-indexes.test.ts";
+import { runSchemaBaselineTests } from "./schema-baseline.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
@@ -8774,6 +8775,10 @@ await runTest(
 await runTest(
   "every foreign key in public has an index that leads with its columns (F-DB-006: the advisor's 59, the 21 employee keys among them, names within 63 bytes, inside the migration's transaction)",
   runForeignKeyIndexesTests,
+);
+await runTest(
+  "the production schema baseline is normalised, committed and checked every night (REC-041: noise stripped, objects compared by name, unexplained drift is red)",
+  runSchemaBaselineTests,
 );
 await runTest(
   "schema-shape snapshot in public (the five real pre-images are caught, live *_snapshots tables are not, and the SQL matches the TypeScript)",

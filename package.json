@@ -144,7 +144,8 @@
     "ci": "pnpm run check:routes && pnpm run check:migrations && pnpm run check:sql-backups && pnpm run check:deductions-write-contract && pnpm run check:no-stale-domains && pnpm run check:dockerfile && pnpm run lint && pnpm exec next typegen && pnpm run typecheck && pnpm run test && pnpm run build",
     "recruitment:cv-rule-report": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/cv-rule-extraction-report.ts",
     "recruitment:merge-cv-duplicates": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/merge-duplicate-cv-candidates.ts",
-    "check:advisor-baseline": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-advisor-baseline.ts"
+    "check:advisor-baseline": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-advisor-baseline.ts",
+    "check:schema-baseline": "node scripts/schema-baseline.mjs --check"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
