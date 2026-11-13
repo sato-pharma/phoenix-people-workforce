@@ -29,6 +29,7 @@ import {
   buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
   buildAcceptedCorrectionItems,
+  withoutCrmCoveredCorrections,
   privateCalendarAcceptedRequestIsShown,
   privateCalendarRequestMatchesItem,
   buildPrivateCalendarTeamSummary,
@@ -579,7 +580,9 @@ export async function getPrivateCalendarWorkspace(input: {
     }))
     .sort((left, right) => `${left.date}-${left.createdAt}`.localeCompare(`${right.date}-${right.createdAt}`));
 
-  const displayItems = [...itemsWithCorrections, ...correctionItems]
+  // A correction the CRM already shows for that day (a CRM "Training" beside an accepted "Training" request) is
+  // not printed a second time; it still cleared the day's findings above.
+  const displayItems = [...itemsWithCorrections, ...withoutCrmCoveredCorrections(correctionItems, itemsWithCorrections)]
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
   return {

@@ -20,7 +20,17 @@ import {
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
   withoutCorrectedDayFindings,
+  withoutCrmCoveredCorrections,
 } from "../src/lib/private-calendar/logic.ts";
+import { wrapPdfCellText } from "../src/lib/private-calendar/export.ts";
+import {
+  buildPrivateCalendarPremiumHtml,
+  PRIVATE_CALENDAR_PDF_KIND_TONES,
+  privateCalendarCellEntry,
+  privateCalendarDetailLines,
+  privateCalendarOtherActivityText,
+} from "../src/lib/private-calendar/premium-pdf.ts";
+import type { PrivateCalendarWorkspace } from "../src/lib/private-calendar/logic.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
@@ -375,6 +385,168 @@ export async function runPrivateCalendarTests() {
       withoutCorrectedDayFindings(repDay, buildAcceptedCorrectionItems([dispute("d-3", "Field day", "pending_review")])).length,
       repDay.length,
       "a pending request clears nothing",
+    );
+
+    // THE CRM ALREADY SAYS IT — THE ACCEPTED ENTRY IS NOT PRINTED TWICE (owner, 2026-11-13: "Hide the accepted-request
+    // Training entry when a CRM Training record already covers the day"). Aya's accepted "Training" requests put a
+    // second Training entry beside her CRM's "Other CRM activity: Training" on each of 7 to 12 November.
+    const training = buildAcceptedCorrectionItems([dispute("d-9", "Training", "accepted")]);
+    const crmTraining = (overrides: Partial<PrivateCalendarItem> = {}) => ({
+      chipLines: ["Other CRM activity: Training 1"],
+      employeeHrId: "PD-0026",
+      source: "field_visit" as const,
+      startDate: "2026-10-11",
+      title: "Other CRM activity: Training 1",
+      ...overrides,
+    });
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining()]).length,
+      0,
+      "a CRM Training record on the same day hides the accepted Training entry (HR id compared without case)",
+    );
+    assert.equal(withoutCrmCoveredCorrections(training, []).length, 1, "with nothing from the CRM the accepted entry IS the day's record");
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ startDate: "2026-10-12" })]).length,
+      1,
+      "another day's CRM record never hides it",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ employeeHrId: "PD-0027" })]).length,
+      1,
+      "another person's CRM record never hides it",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ chipLines: ["Single visit: AM 2"], source: "attendance", title: "Training" })]).length,
+      1,
+      "only a CRM field-work entry covers it, never an attendance punch",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(training, [crmTraining({ chipLines: ["Single visit: AM 2 - PM 5"], title: "Single visit: AM 2 - PM 5" })]).length,
+      1,
+      "a CRM day that shows visits, not training, leaves the accepted Training entry",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(corrections, [crmTraining()]).length,
+      1,
+      "an entry claiming more than the CRM shows (\"Training · Training in Cairo\") stays",
+    );
+    assert.equal(
+      withoutCrmCoveredCorrections(buildAcceptedCorrectionItems([dispute("d-10", "Retraining", "accepted")]), [crmTraining()]).length,
+      1,
+      "a claim is matched as a whole word, never inside another word",
+    );
+  }
+
+  // THE PDF NEVER CUTS A CELL OFF (owner, 2026-11-13). The export kept the first maxW/4.5 characters of every cell, so each
+  // accepted training day printed "Admin-verified cor" and "Verified | perfo". A cell now wraps onto as many lines as it needs.
+  {
+    const measure = (text: string) => text.length * 4;
+    const kind = wrapPdfCellText("Admin-verified correction", 84, measure);
+    assert.ok(kind.length > 1, "a cell wider than its column wraps onto a second line");
+    assert.equal(kind.join(" "), "Admin-verified correction", "joined back together the lines hold every word");
+    assert.ok(kind.every((line) => measure(line) <= 84), "every line fits its column");
+    const longWord = wrapPdfCellText("Pharmacovigilance", 20, measure);
+    assert.equal(longWord.join(""), "Pharmacovigilance", "a word wider than the column is broken inside it, never dropped");
+    assert.ok(longWord.every((line) => measure(line) <= 20));
+    assert.deepEqual(wrapPdfCellText("  Verified   |  performed ", 400, measure), ["Verified | performed"], "a cell that fits stays one line");
+    assert.deepEqual(wrapPdfCellText("", 84, measure), [], "an empty cell draws nothing");
+    const exportSource = readFileSync("src/lib/private-calendar/export.ts", "utf8");
+    assert.doesNotMatch(exportSource, /text\.slice\(0, Math\.floor\(maxW \/ 4\.5\)\)/, "the PDF must never cut a cell to a character count");
+    assert.match(exportSource, /wrapPdfCellText\(asciiSafe\(val\)/, "every PDF cell goes through the wrap");
+  }
+
+  // THE PDF IS A REAL CALENDAR (owner, 2026-11-13: "premium polish the sheet, I want it to be exported as a real
+  // calendar" and "take the same colors rule"). The month as a grid of weeks in the HR premium identity, each kind in
+  // the screen's own colour, then every day written out in full.
+  {
+    const uiSource = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
+    const tonesBody = uiSource.slice(uiSource.indexOf("const kindTones: Record<PrivateCalendarActivityKind"), uiSource.indexOf("function kindAccentColor"));
+    for (const [kind, tone] of Object.entries(PRIVATE_CALENDAR_PDF_KIND_TONES)) {
+      // The leading edge's colour: the plan's swatch is a hatched gradient, but its edge is stone-500 like any other.
+      const block = new RegExp(`\\b${kind}: \\{\\s*accent: "[^"]*?border-l-([a-z]+-\\d+)"`).exec(tonesBody);
+      assert.ok(block, `the screen gives ${kind} a colour`);
+      assert.equal(tone.tailwind, block?.[1], `the PDF paints ${kind} in the screen's own colour, never one of its own`);
+    }
+    assert.equal(Object.keys(PRIVATE_CALENDAR_PDF_KIND_TONES).length, 12, "every kind of day has its colour on paper too");
+
+    assert.equal(privateCalendarOtherActivityText("Other CRM activity: Training 1"), "Training", "one activity is named, never counted as 1");
+    assert.equal(privateCalendarOtherActivityText("Other CRM activity: Training 1 · Meeting 2"), "Training · Meeting × 2");
+
+    const visitDay: PrivateCalendarItem = {
+      ...buildAcceptedCorrectionItems([{
+        adminDecisionNote: null,
+        claimSourceText: "Manager Confirmation",
+        claimText: "Field day",
+        disputeDate: "2026-11-03",
+        employeeHrId: "PD-0026",
+        employeeName: "Rep Twenty-Six",
+        id: "d-base",
+        itemSource: null,
+        status: "accepted",
+      }])[0]!,
+      activityKind: "single_regular",
+      chipLines: ["Single visit", "AM 1 · PM 1 · PH 0", "10:00 AM · AM list · Dr One", "7:00 PM · PM list · Dr Two"],
+      description: "Logged field visits from Phoenix CRM.",
+      detailLines: ["10:00 AM · AM list · Single visit, alone · Planned — Dr One · Chest", "7:00 PM · PM list · Single visit, alone · Planned — Dr Two · ENT"],
+      employeeHrId: "PD-0026",
+      source: "field_visit",
+      startDate: "2026-11-03",
+      endDate: "2026-11-03",
+      title: "Single visit: AM 1 · PM 1 · PH 0",
+      visitCounts: { am: 1, pharmacies: 0, pm: 1, phoenix: 2 },
+    };
+    assert.deepEqual(
+      privateCalendarDetailLines(visitDay),
+      visitDay.detailLines,
+      "a visit day lists each visit ONCE, in full — never the short tile line and the full line both",
+    );
+    assert.deepEqual(privateCalendarCellEntry(visitDay).lines, ["Single visit", "AM 1 · PM 1 · PH 0"], "a day's cell names who went and the AM · PM · PH split");
+
+    const flag = {
+      code: "no_activity_recorded",
+      date: "2026-11-04",
+      description: "No source recorded any work.",
+      employeeHrId: "PD-0026",
+      employeeName: "Rep Twenty-Six",
+      id: "x-1",
+      relatedItemIds: [],
+      severity: "danger" as const,
+      title: "No Activity Recorded",
+    };
+    const week = (from: number) => Array.from({ length: 7 }, (_, i) => {
+      const day = from + i;
+      return day >= 1 && day <= 30 ? { date: `2026-11-${String(day).padStart(2, "0")}`, inMonth: true } : { date: null, inMonth: false };
+    });
+    const workspace = {
+      exceptions: [flag],
+      items: [visitDay],
+      month: 11,
+      selectedEmployee: { departmentName: "Sales", fullName: "Rep Twenty-Six", hrId: "PD-0026", jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "M-1", managerName: "Manager One" },
+      teamSummary: [],
+      viewMode: "employee",
+      weeks: [week(1), week(8), week(15), week(22), week(29), week(36)],
+      year: 2026,
+    } as unknown as PrivateCalendarWorkspace;
+    const html = buildPrivateCalendarPremiumHtml(workspace, new Date("2026-11-13T10:00:00Z"));
+    assert.match(html, /class="pm-chrome pm-chrome--landscape"/, "it wears the HR premium identity's frame and foot, turned landscape");
+    assert.match(html, /<h1 class="pm-mast__t pm-mast__t--en"[^>]*>Private Calendar<\/h1>/, "the premium masthead names the paper");
+    assert.match(html, /<table class="grid grid--w5">/, "the month is a grid of its five weeks — a sixth empty week is dropped");
+    assert.equal((html.match(/<th>(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)<\/th>/g) ?? []).length, 7, "seven weekday columns");
+    assert.match(html, /class="en en--single_regular"><b>Single visit<\/b><span class="en__s">AM 1 · PM 1 · PH 0<\/span>/, "a visit sits in its day in its kind's colour");
+    assert.match(html, /\.en--single_regular \{ border-inline-start: \.9mm solid #1D4ED8; background: #EFF6FF; \}/, "single visit wears the screen's blue-700 over blue-50");
+    assert.match(html, /class="flag flag--danger"><i><\/i>No Activity Recorded/, "a finding is marked on its day, in the screen's No Activity red");
+    assert.match(html, /<span class="dn">12<\/span><span class="none">Nothing recorded<\/span>/, "a past empty day says so");
+    assert.match(html, /<span class="dn">20<\/span><\/td>/, "a day still to come says nothing");
+    assert.match(html, /<h2 class="pm-shead">Day by day<\/h2>/, "every day is written out in full after the grid");
+    assert.ok(!html.includes("PD-0026"), "the paper names people, never their HR id");
+    assert.ok(!/…|\.\.\.<\//.test(html), "nothing is cut off with an ellipsis");
+
+    const routeSource = readFileSync("app/api/private-calendar/export/route.ts", "utf8");
+    assert.match(routeSource, /renderPrivateCalendarPremiumPdf\(workspace, generatedAt\)/, "the PDF export prints the premium calendar");
+    assert.match(
+      routeSource,
+      /error instanceof ChromiumUnavailableError\) return buildPrivateCalendarPdf\(workspace, generatedAt\)/,
+      "with no browser to render it, the plain table still downloads — the export never fails for want of one",
     );
   }
 
