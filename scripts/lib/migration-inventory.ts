@@ -2363,6 +2363,29 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // move, and retiring the source retired the copy and sent the row back to waiting. Re-applying is a no-op (`create or
   // replace`, `if not exists`, drop-and-add of the same CHECKs and trigger).
   "20261112221819_phoenix_crm_line_twin_validation.sql",
+  // Applied 13 Nov 2026 at 15:28 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler),
+  // the standing route, after supabase-staging's apply_migration answered {"status":"declined"}. It writes NO ledger
+  // row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf: public.employee_change_log (row security
+  // on, no anon or authenticated SELECT), its three ENABLE ALWAYS refusal triggers, the view, and the trigger
+  // phx_employees_change_log on employees. md5(prosrc) equals this file's own bodies as LF text:
+  // phx_log_employee_change dcb0f2ded787f63fbc37061d66ba1f71 (SECURITY DEFINER), phx_refuse_history_change
+  // bc8bd95c7f2ba46e0f31461ba27af1d0; neither executable by anon or authenticated. Rehearsed on staging in a
+  // rolled-back transaction: one update of a hire date, a manager and a bank account wrote ONE row naming all three,
+  // with bank_account in masked_fields and no value for it, actor B-10 from the header; an UPDATE of the log raised
+  // "append-only". Re-applying is a no-op (`if not exists`, `create or replace`, drop-and-create of the triggers).
+  "20261113151738_employee_change_log.sql",
+  // Applied 13 Nov 2026 at 15:28 Cairo by scripts/apply-sql-file.mjs, the same route and the same reason as the line
+  // above; no ledger row. Read back on BOTH projects: the trigger phx_deductions_decisions_history on
+  // deductions_decisions, and md5(prosrc) of phx_log_deduction_decision_change 7d3a85bb97b29fae8bcb82b0bf86d041
+  // (SECURITY DEFINER, not executable by anon or authenticated), equal to this file's body as LF text. Rehearsed on
+  // staging in a rolled-back transaction: a changed hr_note wrote one deductions_audit row 'decision_changed' with
+  // before and after; a re-save that moved only decided_at wrote none. Re-applying is a no-op.
+  "20261113151739_deduction_decision_history.sql",
+  // Applied 13 Nov 2026 at 15:28 Cairo by scripts/apply-sql-file.mjs, the same route; no ledger row. It inserts 43
+  // rows into recovery.protected_tables (`on conflict do nothing`) and checks each registered key against the table's
+  // real primary key; it creates no function, so there is no prosrc to digest. Read back on BOTH projects: 50 enabled
+  // registry rows (7 before), the script reporting count 43 on each. Re-applying is a no-op.
+  "20261113151741_recovery_protects_money_and_people_tables.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
