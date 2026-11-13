@@ -14,6 +14,8 @@ import type { DisputeCaseKind } from "./types.ts";
 //   - calendar   the employee who raised it, and the Super Admin (assertDisputeDecisionActor).
 //   - deduction  the employee the deduction belongs to; the Super Admin replies and decides; the CEO,
 //                the Finance Manager and HR Operations READ (isDeductionsReadActor) and cannot write.
+//   - daily      the employee the released daily line belongs to; the Super Admin answers and decides
+//                (the daily module's own release actor); the deductions read actors READ.
 //   - digest     the employee whose week it is; the Super Admin and the named dispute reviewers
 //                (canReviewDisputes) answer and decide — never on their own pay (assertNotOwnPay).
 // A manager holding attendance:read is in none of these, on purpose: a colleague's pay-affecting
@@ -57,6 +59,18 @@ export async function loadCaseOwnerHrId(kind: DisputeCaseKind, ref: string): Pro
     if (!owner) throw notFoundError("That deduction no longer exists.");
     return owner;
   }
+  if (kind === "daily") {
+    const { data, error } = await supabase
+      .from("daily_deductions_disputes")
+      .select("employee_hr_id, employee_hr_id_compact")
+      .eq("id", ref)
+      .maybeSingle();
+    if (error) throw error;
+    const row = data as { employee_hr_id?: string | null; employee_hr_id_compact?: string | null } | null;
+    const owner = row?.employee_hr_id || row?.employee_hr_id_compact;
+    if (!owner) throw notFoundError("That dispute no longer exists.");
+    return owner;
+  }
   const lineId = Number(ref);
   if (!Number.isInteger(lineId) || lineId <= 0) throw notFoundError("That day was not found.");
   const { data, error } = await supabase
@@ -88,7 +102,7 @@ export function resolveParticipant(input: {
   digestReviewer?: boolean;
 }): DisputeParticipant {
   const isOwner =
-    input.kind === "deduction"
+    input.kind === "deduction" || input.kind === "daily"
       ? Boolean(input.viewerHrId) && compactDeductionsHrId(input.viewerHrId) === compactDeductionsHrId(input.ownerHrId)
       : hrIdsMatch(input.viewerHrId, input.ownerHrId);
   const role = { role: (input.role ?? "") as AccessContext["role"] };
@@ -97,6 +111,11 @@ export function resolveParticipant(input: {
   if (input.kind === "calendar") isReviewer = input.role === "Super Admin";
   if (input.kind === "deduction") {
     isReviewer = isDeductionsDecisionActor(role);
+    companyReader = isDeductionsReadActor(role);
+  }
+  if (input.kind === "daily") {
+    // Only the Super Admin releases or withdraws a daily line, so only he decides its dispute.
+    isReviewer = input.role === "Super Admin";
     companyReader = isDeductionsReadActor(role);
   }
   if (input.kind === "digest") {

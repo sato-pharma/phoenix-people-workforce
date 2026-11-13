@@ -32,6 +32,13 @@ function outcomesFor(dispute: DisputeCase): Outcome[] {
       { danger: true, label: "Reject — the calendar stands", value: "reject" },
     ];
   }
+  if (dispute.kind === "daily") {
+    // A released daily line has no Reduce: it is withdrawn whole, or it stands (owner, 2026-11-13).
+    return [
+      { label: "Accept — withdraw it and never charge these days", value: "accept" },
+      { danger: true, label: "Reject — it stands", value: "reject" },
+    ];
+  }
   if (dispute.kind === "digest") {
     return [
       { label: "Uphold — do not deduct the day", value: "uphold" },

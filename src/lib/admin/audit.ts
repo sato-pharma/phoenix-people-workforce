@@ -270,6 +270,8 @@ export type AuditEntityType =
   // The Daily Deductions module's running-tally snapshot (published or superseded), a separate
   // surface from the month-final "deductions_publication" above and audited on its own.
   | "daily_deductions_publication"
+  // An employee's dispute of a released daily line, decided in the Dispute Center (2026-11-13).
+  | "daily_deductions_dispute"
   | "direct_order_request"
   | "doctor_coverage_config"
   | "double_visit_import"

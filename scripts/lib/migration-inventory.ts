@@ -2410,6 +2410,12 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Proven on staging: a lower-case id with spaces is stored as B-148; an id naming nobody is cleared and the
   // name kept. Re-applying is a no-op.
   "20261113161558_medical_trip_ids_name_a_real_employee.sql",
+  // Applied 13 Nov 2026 at about 17:05 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler) after the Supabase MCP declined it three times; no ledger row. Read back on BOTH projects:
+  // daily_deductions_disputes and daily_deductions_dispute_messages exist with RLS on, one service-role policy
+  // each, no select for anon or authenticated, and dispute_case_events / dispute_attachments /
+  // dispute_assist_entries kind checks all accept 'daily'. Additive only; re-applying is a no-op.
+  "20261113181500_daily_deductions_disputes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

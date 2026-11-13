@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { decideDailyDispute } from "@/lib/dispute-center/daily.ts";
 import { decideDeductionDispute, type DeductionDisputeOutcome } from "@/lib/dispute-center/deduction.ts";
 import { decideDigestDispute } from "@/lib/dispute-center/digest.ts";
 import { disputeCenterError } from "@/lib/dispute-center/http.ts";
@@ -35,6 +36,14 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
       }
       const dispute = await decidePrivateCalendarDataDispute(access, { decision, disputeId: caseRef, note });
       return NextResponse.json({ dispute, success: true });
+    }
+
+    if (kind === "daily") {
+      // A released daily line is accepted (withdrawn, and its days never charged) or rejected (it stands).
+      const outcome = String(body.outcome ?? "");
+      if (outcome !== "accept" && outcome !== "reject") throw validationError("Choose accept or reject.");
+      const result = await decideDailyDispute(access, { disputeId: caseRef, note, outcome });
+      return NextResponse.json({ result, success: true });
     }
 
     if (kind === "deduction") {

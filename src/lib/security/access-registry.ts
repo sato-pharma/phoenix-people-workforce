@@ -569,6 +569,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/supersede", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/withdraw", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/deductions/comments", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The employee disputes one of HIS released daily deductions; openDailyDeductionDispute checks the line is his and still released.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/daily-deductions/disputes", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // One picture from a dispute reply. The employee it belongs to or an admin reader of the Deductions module
   // — readDisputeAttachmentForViewer decides before any byte is read. Not audited: it is an image behind the
   // conversation the portal already shows, fetched once per thumbnail.

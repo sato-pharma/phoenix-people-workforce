@@ -14,6 +14,7 @@ import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductionLedger } from "@/lib/deductions/portal.ts";
 import { getPortalDailyDeductions } from "@/lib/daily-deductions/portal.ts";
+import { listOwnDailyLineDisputes } from "@/lib/dispute-center/daily.ts";
 import type { DailyDeductionsPortalLine } from "@/lib/daily-deductions/types";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -51,6 +52,19 @@ export default async function DeductionsPortalPage() {
     },
   );
 
+  // The dispute already raised on each released line (owner, 2026-11-13: the daily lines had no Dispute
+  // button). A failed read is null, and the boxes are then left off rather than offering a second dispute.
+  const disputesRead = listOwnDailyLineDisputes(access).then(
+    (map) => Object.fromEntries([...map].map(([lineId, dispute]) => [lineId, { id: dispute.id, status: dispute.status }])),
+    (error: unknown) => {
+      logPortalFailure(
+        { route: "/employee-portals/deductions", module: "daily-deduction-disputes", role: access.role, hrId: access.hrId },
+        error,
+      );
+      return null;
+    },
+  );
+
   let data: Awaited<ReturnType<typeof getPortalDeductionLedger>>;
   try {
     data = await getPortalDeductionLedger({ access });
@@ -71,12 +85,12 @@ export default async function DeductionsPortalPage() {
     );
   }
 
-  const daily = await dailyRead;
+  const [daily, dailyDisputes] = await Promise.all([dailyRead, disputesRead]);
 
   return (
     <EmployeePortalPageShell badge={PAGE_BADGE} description={PAGE_DESCRIPTION} title={PAGE_TITLE}>
       <div className="space-y-4">
-        <DailyDeductionsPortalSection lines={daily.lines} unavailable={daily.unavailable} />
+        <DailyDeductionsPortalSection disputes={dailyDisputes} lines={daily.lines} unavailable={daily.unavailable} />
         <DeductionsPortalWorkspace
           comments={data.comments}
           firstMonthKey={data.firstMonthKey}

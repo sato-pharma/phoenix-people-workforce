@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { addDeductionsComment, addDeductionsReply } from "@/lib/deductions/comments.ts";
+import { addDailyDisputeMessage } from "@/lib/dispute-center/daily.ts";
 import { addDigestDisputeMessage } from "@/lib/dispute-center/digest.ts";
 import { disputeCenterError, readDisputeMessageRequest } from "@/lib/dispute-center/http.ts";
 import { resolveCaseParticipant } from "@/lib/dispute-center/participants.ts";
@@ -29,6 +30,10 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
 
     if (kind === "calendar") {
       const message = await addPrivateCalendarDisputeMessage(access, { body, disputeId: caseRef, images });
+      return NextResponse.json({ message, success: true });
+    }
+    if (kind === "daily") {
+      const message = await addDailyDisputeMessage(access, { body, disputeId: caseRef, images });
       return NextResponse.json({ message, success: true });
     }
     if (kind === "digest") {
