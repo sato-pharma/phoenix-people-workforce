@@ -22,6 +22,7 @@ This file is loaded because this session opened a file of this module (or the mo
 
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
+- 🔒 **A SENT EMAIL KEEPS NO FIGURES IN THE OUTBOX** (owner, 13 Nov 2026: "email figures cleared at send"). `markNotificationOutboxSent` writes `sentRowPayload` — the credential redaction first, then `sentFiguresClearedPayload` (`src/lib/notifications/sent-figures.ts`) deletes `metrics` (except the "Employee" name), `templateContext` and the plan table, and stamps `figuresCleared`. A failed or skipped row keeps them until the 90-day clean-up. Pinned by `tests/retention-sent-figures-and-recordings.test.ts`.
 
 ### Owner rules (moved from AGENTS.md §4)
 

@@ -3,6 +3,7 @@ import { logError, logInfo } from "@/lib/observability/log";
 import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 
 import { purgeOldActivityEvents } from "@/lib/activity/service";
+import { purgeExpiredTabletRecordings } from "@/lib/devices/headwind/recordings";
 import { cleanupOldNotificationData } from "@/lib/notifications/email";
 import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/route";
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
@@ -162,6 +163,8 @@ async function runDailyNotifications(request: Request) {
     probationMilestoneEmails,
     // Position 31, added 2026-10-22. Appended for the same reason as 26-30.
     outstationWorkloadRestamp,
+    // Position 32, added 2026-11-13. Appended for the same reason as 26-31.
+    tabletRecordingRetention,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -366,6 +369,17 @@ async function runDailyNotifications(request: Request) {
         error: message,
       })),
     ),
+    // Tablet screen recordings are kept 90 days (owner, 2026-11-13): the file, then its row, and the
+    // count of each comes back in this run's answer. A failed file removal keeps the row for tomorrow.
+    purgeExpiredTabletRecordings().catch(
+      onJobFailure("tablet-recording-retention", (message) => ({
+        cutoffIso: "",
+        expired: 0,
+        filesRemoved: 0,
+        rowsDeleted: 0,
+        error: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -377,7 +391,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (29 since the iReports360 account-setup reminder retired 2026-11-07; 30 since the
+  // under-reports (30 since the tablet-recording retention joined 2026-11-13; 29 since the
+  // iReports360 account-setup reminder retired 2026-11-07; 30 since the
   // weekly system health digest retired 2026-10-23; 31 since the
   // outstation workload refresh was added 2026-10-22; 30 since the
   // probation Day 30/60/75 milestone emails were added 2026-09-29;
@@ -388,7 +403,7 @@ async function runDailyNotifications(request: Request) {
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 29;
+  const totalJobs = 30;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -449,6 +464,7 @@ async function runDailyNotifications(request: Request) {
     recruitment,
     resignationSla,
     sosMonthlyReportCheck,
+    tabletRecordingRetention,
     // Truthful: false when ANY sub-job failed. Previously hardcoded true, which is what made a
     // broken run indistinguishable from a healthy one.
     success: failures.length === 0,
