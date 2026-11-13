@@ -45,7 +45,9 @@ export function runCloudMirrorRefreshTests() {
     ["an OpenAI-style key", "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123"],
     ["a JWT (Supabase anon or service key)", "anon key eyJhbGciOiJIUzI1NiIsInR5cCI6.eyJyb2xlIjoiYW5vbiIsImlhdCI6MH0"],
     ["a GitHub token", "token ghp_0123456789abcdefghijklmnopqrstuvwxyz"],
-    ["a Supabase access token", "sbp_0123456789abcdef0123456789abcdef01234567"], // gitleaks:allow — an invented vector the redactor must catch, never a real token
+    // Built at run time on purpose: written as one literal, this placeholder is token-shaped enough for
+    // GitHub's own secret scanning to raise an alert on the repository (alert 9, 7 Nov 2026).
+    ["a Supabase access token", `sbp_${"0123456789abcdef".repeat(3).slice(0, 40)}`], // gitleaks:allow — an invented vector the redactor must catch, never a real token
     ["a private key block", "-----BEGIN OPENSSH PRIVATE KEY-----"],
     ["an AWS access key id", "AKIAIOSFODNN7EXAMPLE"],
   ];

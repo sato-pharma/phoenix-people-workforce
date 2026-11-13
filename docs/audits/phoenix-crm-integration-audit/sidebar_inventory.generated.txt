@@ -1,0 +1,528 @@
+## admin — 251 rows
+### Overview
+- **Dashboards**
+  - Needs You — `/admin/needs-you` (roles: Super Admin)
+  - CEO Command Center — `/admin/ceo-command-center` (roles: CEO; perm: admin | overview)
+  - SFE Manager Overview — `/admin/sfe-command-center` (roles: SFE Manager; not: Super Admin | CEO; perm: admin | overview)
+  - Finance Overview — `/admin/finance-command-center` (roles: Finance Manager; not: Super Admin | CEO)
+  - Business Review — `/business-review` (roles: CEO | SFE Manager | Super Admin; perm: admin | overview)
+  - Command Center — `/admin` (not: CEO | SFE Manager | Finance Manager | HR Operations | HR Resourcing | HR Administration; perm: admin | overview)
+- **Explore**
+  - Organogram — `/organogram` (not: Marketing Manager; perm: organogram)
+### People
+- **Probation Tools**
+  - Probation — `/admin/ceo-probation` (roles: CEO | HR Resourcing; perm: probation:read)
+### Time & Leave
+- **Calendars**
+  - Planning Calendar — `/admin/weekly-plans/calendar` (roles: CEO | SFE Manager | Finance Manager; perm: weekly_plans:read)
+### Hiring
+- **Hiring Managers**
+  - My Candidates — `/recruitment/candidates` (roles: CEO | HR Resourcing; perm: hiring_interviews:read)
+  - Manager CV Engagement — `/recruitment/manager-engagement` (roles: CEO | HR Resourcing; perm: hiring_interviews:read)
+  - Medical Rep Hiring — `/recruitment/mr-hiring` (roles: CEO; not: Super Admin; perm: hiring_interviews:read)
+  - Hiring Analytics — `/recruitment/hiring-analytics` (perm: candidates:read)
+### Overview
+- **Explore**
+  - Employee 360 — `/employee-360` (not: Finance Manager; perm: employee_profile:read)
+  - Customer 360 — `/customer-360` (perm: sales:read)
+### Sales
+- **Targets & Closing**
+  - PM Product Master — `/admin/pm-products` (roles: Super Admin | CEO; not: SFE Manager; perm: employee_profile:read)
+### Requests
+- **My Requests**
+  - Request Vacation — `/workspace/leave-management/vacation-request` (roles: SFE Manager | Finance Manager | Financial Advisor | HR Operations | HR Resourcing | HR Administration; not: Finance Manager; perm: leave:create)
+  - Submit Excuse — `/workspace/excuses` (roles: SFE Manager | Finance Manager | Financial Advisor | HR Operations | HR Resourcing | HR Administration; not: Finance Manager)
+  - My Workspace — `/workspace` (roles: SFE Manager | Finance Manager | Financial Advisor; perm: employee_profile)
+### Approvals Hub
+- **Inboxes**
+  - Leave Approvals — `/admin/approvals/vacation` (roles: Super Admin | CEO | Finance Manager | Financial Advisor; not: Finance Manager; perm: leave:read)
+  - Excuse Approvals — `/admin/approvals/excuse` (roles: Super Admin | CEO | Finance Manager | Financial Advisor; not: Finance Manager; perm: leave:read)
+  - Plan Approvals — `/admin/approvals/plan` (roles: Super Admin | CEO; perm: weekly_plans:read)
+  - Expense Approvals — `/admin/outstation/expense-approvals` (roles: Super Admin; perm: expenses)
+  - D.Orders Approvals — `/admin/direct-orders?view=needs-action` (perm: direct_orders:read)
+  - Marketing Inbox — `/admin/marketing-requests/inbox` (roles: CEO | District Manager | Super Admin | SFE Manager | Finance Manager)
+  - Awareness Inbox — `/admin/market-awareness/inbox` (roles: CEO | Super Admin; perm: market_awareness:read)
+  - Other Approvals — `/admin/approvals-hub` (not: SFE Manager | Finance Manager; perm: leave:read)
+  - Dispute Center — `/admin/disputes` (perm: attendance:read)
+  - Calendar Disputes — `/admin/private-calendar-disputes` (roles: Super Admin)
+  - Deduction Disputes — `/admin/deductions?tab=disputes` (roles: Super Admin | CEO | HR Operations; perm: deductions:read)
+### Time & Leave
+- **Leave**
+  - Leave Management — `/admin/finance-leave-management` (roles: Finance Manager; not: Super Admin | CEO)
+### People
+- **Employee Records**
+  - Resignations — `/resignations` (roles: Finance Manager; not: Super Admin | CEO; perm: resignations:read)
+### Payroll
+- **Payroll Management**
+  - Payslips Center — `/admin/payslips-center` (roles: Finance Manager; not: Super Admin | CEO; perm: payslips:read)
+### Time & Leave
+- **Attendance Reports**
+  - Fingerprint Report — `/workspace/fingerprint-report` (roles: Finance Manager; not: Super Admin | CEO; perm: attendance:read)
+### Platform
+- **Platform Health**
+  - System Audit — `/admin/system-audit` (roles: Super Admin)
+  - Synthetic Journeys — `/admin/synthetic-journeys` (roles: Super Admin; perm: synthetic_journeys)
+  - Sentry Check — `/admin/sentry-check` (roles: Super Admin)
+  - Activity Control — `/admin/activity-control` (roles: Super Admin; perm: user_activity:read)
+- **Email & Notifications**
+  - Email Control Center — `/admin/email-control-center` (roles: Super Admin | CEO)
+  - Notification Recipients — `/admin/notification-recipients` (roles: Super Admin)
+  - Distribution Lists — `/admin/distribution-lists` (roles: Super Admin)
+  - Sato Email Composer — `/admin/sato-email` (roles: Super Admin)
+  - CEO Email Composer — `/admin/ceo-email` (roles: Super Admin | CEO)
+  - Notification Confidence — `/admin/notification-confidence` (roles: Super Admin; perm: communication)
+  - Email Delivery — `/admin/notifications/email` (perm: communication)
+  - Email Activity — `/admin/notifications/email-tracking` (roles: Super Admin; perm: communication)
+  - Mailbox Compliance — `/admin/mailbox-monitor` (roles: Super Admin; perm: mailbox_monitor:read)
+- **Data & Maintenance**
+  - Audit Logs — `/admin/logs` (not: CEO; perm: admin)
+  - Data Backup — `/admin/data-backup` (roles: Super Admin)
+  - System Cleanup — `/admin/system-cleanup` (roles: Super Admin)
+  - Workflow Control — `/admin/workflow-control` (roles: Super Admin; perm: workflow_registry)
+- **My Tools**
+  - Navigation Layout — `/admin/sidebar-layout` (roles: Super Admin)
+  - View as Seat — `/admin/view-as-seat` (roles: Super Admin)
+  - Dev Preview (Real Data) — `/admin/dev-preview` (roles: Super Admin)
+### Marketing
+- **Requests & Inbox**
+  - Requests Workspace — `/workspace/marketing-requests` (roles: Super Admin | CEO | SFE Manager | Finance Manager | Financial Advisor)
+- **ROI**
+  - ROI Tracker — `/admin/marketing-roi-tracker` (roles: Super Admin | CEO | SFE Manager | Marketing Manager | Product Manager | Group Product Manager | Financial Advisor)
+  - ROI Dashboard — `/admin/sales-marketing-intelligence` (roles: Super Admin | CEO | SFE Manager)
+  - ROI Tracking — `/admin/marketing-requests/roi-tracking` (roles: Super Admin)
+  - Manager Scorecard — `/admin/marketing-requests/manager-scorecard` (roles: Super Admin | CEO | SFE Manager)
+  - Marketing ROI Report — `/admin/marketing-roi-report` (roles: Super Admin | CEO)
+  - PM Product Master — `/admin/pm-products` (roles: Super Admin | CEO | SFE Manager; perm: employee_profile:read)
+- **Requests & Inbox**
+  - Marketing Requests — `/admin/marketing-requests` (roles: District Manager | Super Admin | SFE Manager)
+  - All Marketing Requests — `/admin/marketing-requests/all` (roles: Super Admin | SFE Manager)
+  - Bulk Upload — `/admin/marketing-requests/bulk-upload` (roles: Super Admin)
+  - Finance Ageing — `/admin/marketing-requests/finance-ageing` (roles: Super Admin | CEO | Finance Manager)
+  - CEO Approvals — `/admin/marketing-requests/ceo-approvals` (roles: Super Admin | CEO | Marketing Manager)
+  - Doctor-List Check — `/admin/marketing-requests/list-check` (roles: Super Admin | CEO | SFE Manager | Marketing Manager)
+  - Market Awareness — `/admin/market-awareness` (roles: Super Admin | CEO | Marketing Manager | Group Product Manager | Finance Manager; perm: market_awareness:read)
+  - Marketing Functions — `/admin/marketing-functions` (roles: Super Admin | CEO; perm: marketing_functions:read)
+  - Field Visit Feedback — `/admin/marketing-feedback` (roles: Super Admin | CEO; perm: marketing_field_feedback:read)
+  - Visual Aids — `/admin/visual-aids` (roles: Super Admin | Marketing Manager | Group Product Manager; perm: visual_aids:update)
+- **Validation & Control**
+  - Coverage Report — `/admin/marketing-requests/coverage-report` (roles: Super Admin | CEO | SFE Manager)
+  - Customer Validation — `/admin/marketing-requests/validation` (roles: District Manager | Super Admin | SFE Manager)
+  - Marketing Control — `/admin/marketing-requests/control` (roles: Super Admin)
+### People
+- **HR Reports**
+  - Field Compliance — `/admin/field-workforce-compliance` (not: SFE Manager; perm: hr_calendar)
+- **Employee Records**
+  - Employees — `/employees` (roles: Super Admin | HR Operations; perm: employees)
+  - Record Gaps — `/employees/record-gaps` (perm: employees:read)
+  - Contract Renewal — `/contracts` (perm: contracts)
+  - Resignations — `/resignations` (not: Finance Manager; perm: resignations)
+  - Retention Register — `/retention` (perm: retention)
+  - Mailbox Revocation — `/mailbox-offboarding` (perm: mailbox_offboarding)
+  - New Hire Mailboxes — `/new-hire-mailboxes` (perm: mailbox_offboarding)
+  - Device Custody — `/devices` (perm: company_devices)
+  - Managed Google Play — `/devices/managed-play` (perm: company_devices:approve)
+  - Rep Tablets — `/devices/tablets` (perm: company_devices:approve)
+  - Tablet Dashboard — `/devices/tablets/dashboard` (perm: company_devices:approve)
+- **HR Reports**
+  - Vacancies Report — `/reports/vacancies` (not: Marketing Manager; perm: vacancies)
+  - Company Vacations — `/admin/vacation-report` (roles: Super Admin | HR Operations; perm: leave)
+  - Company Activity Report — `/admin/company-activity-report` (roles: Super Admin | HR Operations; perm: leave)
+- **Plans & Support**
+  - Weekly / Monthly Plans — `/admin/weekly-plans` (roles: Super Admin; perm: weekly_plans)
+  - HR Support Requests — `/admin/support-requests` (roles: Super Admin | HR Operations | HR Resourcing; perm: support_requests)
+  - Business Card Requests — `/admin/business-card-requests` (roles: Super Admin | HR Operations | HR Resourcing; perm: business_card_requests)
+- **Candidate CVs**
+  - CV Lookup — `/cv-lookup` (roles: Super Admin | HR Operations; perm: cv_lookup)
+- **Probation Tools**
+  - Probation Cases — `/probation` (not: Marketing Manager | CEO; perm: probation)
+  - Probation Dashboard — `/probation/dashboard` (roles: Super Admin | Training Manager | Marketing Manager | SFE Manager | HR Operations; perm: probation:read)
+  - Probation Analytics — `/probation/analytics` (roles: Super Admin | Training Manager | Marketing Manager | SFE Manager | HR Resourcing; perm: probation:read)
+  - Probation Settings — `/admin/probation-settings` (roles: Super Admin; perm: probation:update)
+### Hiring
+- **CV Pipeline**
+  - Screening Queue — `/recruitment/screening` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment:read)
+  - Returned CVs — `/recruitment/returned-cvs` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment:read)
+  - WhatsApp Applicants — `/recruitment/whatsapp-applicants` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment:read)
+  - Interview Calendar — `/recruitment/interview-calendar` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment:read)
+  - Medical Rep Hiring — `/recruitment/mr-hiring` (roles: Super Admin | HR Resourcing; perm: recruitment:read)
+  - CV Sheet Links — `/recruitment/cv-lifecycle-sheet` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment:export)
+  - WhatsApp Templates — `/recruitment/whatsapp-templates` (roles: Super Admin | HR Resourcing; perm: recruitment:update)
+  - WhatsApp Inbox — `/recruitment/whatsapp-inbox` (roles: Super Admin | HR Resourcing; perm: recruitment:update)
+  - Job Posts — `/recruitment/job-posts` (roles: Super Admin | HR Resourcing; perm: recruitment:update)
+- **Recruitment & Hiring**
+  - Recruitment — `/recruitment` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment)
+  - CV Database — `/cv-database` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment)
+  - Job Offers — `/offers` (roles: Super Admin | HR Operations | HR Resourcing; perm: offers)
+  - Hiring Documents — `/hiring-documents` (roles: Super Admin | HR Operations | HR Resourcing; perm: employee_documents)
+  - HR Forms — `/hiring-pack` (roles: Super Admin | HR Operations | HR Resourcing; perm: employee_documents)
+  - Business Cards — `/business-cards` (roles: Super Admin | HR Operations | HR Resourcing; perm: employee_documents)
+- **CV Pipeline**
+  - Inbound Intake Health — `/recruitment/intake-health` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment)
+  - Missing Contact Details — `/recruitment/contact-review` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment)
+  - WhatsApp Replies — `/recruitment/whatsapp-replies` (roles: Super Admin | HR Operations | HR Resourcing; perm: recruitment)
+### Time & Leave
+- **Attendance Reports**
+  - Fingerprint Report — `/attendance/fingerprint-report` (roles: CEO | Super Admin | HR Operations; perm: employees | attendance:read)
+  - Day-by-Day Report — `/attendance/employee-day-report` (roles: Super Admin; perm: attendance:read)
+  - Monthly Summary — `/attendance/monthly-summary` (roles: Super Admin | HR Operations; perm: employees)
+  - Attendance Analytics — `/attendance/analytics` (roles: Super Admin; perm: attendance:read)
+  - Attendance Exceptions — `/attendance/exceptions` (roles: Super Admin; perm: attendance:read)
+  - Attendance Review — `/attendance/weekly-review` (roles: Super Admin; perm: attendance:read)
+  - Attendance Disputes — `/attendance/disputes` (roles: Super Admin; perm: attendance:read)
+  - Daily & Weekly Reports — `/hr-reports` (roles: Super Admin | HR Administration; perm: hr_ops_reports:read)
+- **Calendars**
+  - HR Calendar — `/hr-calendar` (perm: hr_calendar)
+  - HR Reminders — `/hr-reminders` (perm: hr_reminders)
+  - Company Calendar — `/admin/company-calendar` (roles: Super Admin | HR Resourcing; perm: attendance:read)
+  - Private Calendars — `/admin/private-calendars` (roles: CEO | Super Admin | HR Resourcing; perm: attendance:read)
+  - Holiday Calendar — `/attendance/holiday-calendar` (roles: Super Admin | HR Operations; perm: employees:read)
+  - Planning Calendar — `/admin/weekly-plans/calendar` (roles: CEO | Super Admin | HR Operations; perm: weekly_plans:read)
+- **Attendance Setup**
+  - Device User Mapping — `/attendance/device-user-mapping` (perm: employees:update)
+  - Attendance Policies — `/attendance/policies` (perm: employees:update)
+- **Leave**
+  - Vacation Request — `/leave-management/vacation-request` (roles: Super Admin | CEO; perm: leave:create)
+  - Vacation Report — `/leave-management/vacation-report` (roles: Super Admin | CEO | HR Operations; perm: leave)
+  - Vacation Control — `/leave-management/vacation-control` (roles: Super Admin | HR Operations | HR Resourcing; perm: leave:update)
+  - Vacation Sources — `/admin/vacation-report` (roles: SFE Manager; not: Super Admin | CEO; perm: leave:read)
+### Overview
+- **Explore**
+  - Activity Report — `/admin/company-activity-report` (roles: SFE Manager; not: Super Admin | CEO; perm: leave:read; renamed: SFE Manager → Company Activity Report)
+### Payroll
+- **Payroll Management**
+  - Payroll Report — `/payroll` (roles: Super Admin | HR Operations; not: CEO; perm: payroll)
+  - CEO Payroll View — `/admin/m-payroll` (roles: CEO | Super Admin; perm: payroll)
+  - Payroll Copilot — `/admin/payroll-copilot` (roles: CEO | Super Admin; not: CEO; perm: payroll)
+  - Insurance Wages — `/admin/payroll-copilot/insurance-wages` (roles: CEO | Super Admin; not: CEO; perm: payroll)
+  - Payslips Center — `/admin/payslips-center` (roles: Super Admin | CEO | HR Operations; perm: payslips)
+  - Deductions — `/admin/deductions` (not: Finance Manager; perm: deductions:read)
+  - Daily Deductions — `/admin/daily-deductions` (perm: deductions:read)
+- **Automation**
+  - Automated Payroll — `/admin/automated-payroll` (roles: Super Admin)
+  - Payroll — Finance — `/admin/automated-payroll/finance` (roles: CEO | Financial Advisor | Finance Manager | Super Admin; renamed: Finance Manager → Payroll)
+- **Expense Desk**
+  - Expense Center — `/admin/outstation/expense-command` (roles: Super Admin | CEO; perm: outstation:read)
+  - Expense Requests — `/admin/outstation/expense-command?tab=queue` (roles: Super Admin; perm: outstation:approve)
+  - Add Manual Expense — `/admin/outstation/expense-command?tab=queue&action=create-manager-expense` (roles: Super Admin; perm: outstation:approve)
+- **Expense Records**
+  - Expenses Dashboard — `/admin/outstation/expenses/dashboard` (roles: Super Admin; perm: expenses)
+  - Historical Upload — `/admin/outstation/expenses` (roles: Super Admin; perm: expenses)
+  - Outstation Policy — `/admin/outstation/policy` (roles: Super Admin; perm: outstation:update)
+### Time & Leave
+- **Field Coaching**
+  - Coaching Skills Survey — `/coaching/skills-survey` (perm: coaching_skills_survey:read)
+  - Coaching Evaluations — `/coaching` (perm: coaching)
+  - Coaching Analytics — `/coaching/analytics` (not: Marketing Manager; perm: coaching)
+  - Resigned Evaluations — `/coaching/archived` (perm: coaching:create)
+  - Early Birds — `/admin/early-birds` (roles: Super Admin | CEO | SFE Manager | HR Resourcing; perm: early_birds:read)
+  - Phoenix Ranks — `/admin/ranks` (roles: Super Admin | CEO | SFE Manager | HR Resourcing; perm: early_birds:read)
+### Orders & CRM
+- **CRM Boards**
+  - CRM Workspace — `/admin/crm` (roles: Super Admin | SFE Manager)
+  - Reps List — `/admin/reps-list` (roles: Super Admin | CEO | National Sales Manager | SFE Manager | Regional Manager | District Manager)
+  - KPIs — `/admin/kpis` (roles: Super Admin | SFE Manager | CEO | HR Resourcing)
+  - Plan Verification — `/admin/plan-verification` (roles: Super Admin | CEO | Regional Manager | District Manager)
+  - Doctor List Changes — `/admin/doctor-list-changes` (roles: Super Admin | SFE Manager; perm: crm_contact_lists:update)
+  - Phoenix CRM — `/admin/field-crm` (roles: Super Admin | CEO | SFE Manager | Training Manager; perm: phoenix_crm:read)
+  - Visit Report — `/admin/phoenix-crm/visit-report` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Double Visit Requests — `/admin/phoenix-crm/double-visit-requests` (roles: Super Admin | CEO | SFE Manager; perm: phoenix_crm:read)
+  - My Map — `/admin/phoenix-crm/my-map` (roles: Super Admin | CEO | SFE Manager; perm: phoenix_crm:read)
+- **CRM Data Quality**
+  - Double Visit Analytics — `/admin/double-visit-analytics` (perm: double_visit_analytics:read)
+  - Double Visit Integrity — `/admin/double-visit-data-integrity` (roles: Super Admin | SFE Manager)
+  - Brick Coverage — `/admin/brick-coverage` (roles: Super Admin | SFE Manager | CEO)
+  - Field Compliance — `/admin/field-workforce-compliance` (perm: hr_calendar)
+  - Field Activity — `/admin/field-activity` (perm: double_visit_analytics:read)
+  - Location Integrity — `/admin/phoenix-crm/integrity` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Duplicate Customers — `/admin/phoenix-crm/duplicates` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Master List — `/admin/phoenix-crm/master-list` (roles: Super Admin | CEO; perm: phoenix_crm:read)
+  - Refused Readings — `/admin/phoenix-crm/refused-readings` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Visits Held for SFE — `/admin/phoenix-crm/far-visit-holds` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Visits archive — `/admin/phoenix-crm/visits-archive` (roles: Super Admin | SFE Manager; perm: phoenix_crm:read)
+  - Place Checks — `/admin/field-crm/validation-reviews` (roles: Super Admin | SFE Manager; perm: phoenix_crm:approve)
+  - Visit Recording — `/admin/field-crm/visit-recording` (roles: Super Admin; perm: phoenix_crm:update)
+  - Polyclinic Caps — `/admin/field-crm/venue-caps` (roles: Super Admin | SFE Manager; perm: phoenix_crm:approve)
+  - Rep Exceptions — `/admin/field-crm/rep-exceptions` (roles: Super Admin | SFE Manager; perm: phoenix_crm:approve)
+  - New Hire Accounts — `/admin/field-crm/new-hire-accounts` (roles: Super Admin | SFE Manager; perm: phoenix_crm:approve)
+  - Load a Customer List — `/admin/phoenix-crm/list-template` (roles: Super Admin | SFE Manager; perm: phoenix_crm:approve)
+  - Customer Links — `/admin/customer-links` (perm: customer_identity:read)
+### Sales
+- **Closing & Achievement**
+  - Source of Sales Dash — `/sales` (not: Marketing Manager; perm: sales)
+  - Achievement Dash — `/sales/monthly-dashboard` (not: CEO | Marketing Manager | Finance Manager; perm: sales)
+  - Monthly Closing — `/sales/monthly-closing` (perm: sales:import)
+  - Performance Review — `/sales/monthly-closing/performance-review` (perm: sales:import)
+  - Closing Corrections — `/sales/closing-corrections` (not: SFE Manager; perm: sales:import)
+- **Sales Imports**
+  - Sales Upload — `/sales/upload` (perm: sales:import)
+  - Sales Import (Advanced) — `/sales/import` (perm: sales:import)
+  - SoS Magic — `/sales/normalizer` (not: SFE Manager; perm: sales:import)
+  - Missing Data — `/sales/missing-data` (not: SFE Manager; perm: sales:import)
+- **Sales Mapping**
+  - SoS Mapping — `/sales/mapping-database` (not: SFE Manager; perm: sales:import)
+  - Master Database — `/sales/database-mapping` (not: SFE Manager; perm: sales:import)
+  - Territory Management — `/sales/territory-management` (roles: CEO | SFE Manager | Super Admin; perm: territory)
+  - Distributor Profiles — `/sales/distributor-profiles` (not: SFE Manager; perm: sales:import)
+- **Sales Integrity**
+  - Sales Diagnostics — `/sales/diagnostics` (not: SFE Manager; perm: sales:import)
+  - Sales Truth Check — `/sales/truth-check` (not: SFE Manager; perm: sales:read)
+- **Targets & Closing**
+  - Sales vs Target — `/sales/vs-target` (roles: Super Admin | SFE Manager | CEO; perm: sales:read)
+  - Rankings — `/sales/rankings` (roles: Super Admin | SFE Manager | CEO; perm: sales:read)
+  - Make It Happen — `/sales/make-it-happen` (roles: Super Admin | SFE Manager; perm: sales:read)
+  - Daily Forecast — `/admin/field-crm?tab=forecast` (roles: Super Admin | CEO | SFE Manager; perm: phoenix_crm:read)
+  - Field Absence Calendar — `/admin/field-absence` (roles: Super Admin | CEO | SFE Manager; perm: field_absence:read)
+### Orders & CRM
+- **Order Desk**
+  - Direct Orders — `/admin/direct-orders` (perm: direct_orders:read)
+  - Direct Orders Report — `/admin/direct-orders/report` (perm: direct_orders:read)
+  - Held Desk — `/admin/direct-orders/held` (roles: Super Admin; perm: direct_orders:read)
+  - Returned Ageing — `/admin/direct-orders/returned` (roles: Super Admin; perm: direct_orders:read)
+  - Approval Exceptions — `/admin/direct-orders/approval-exceptions` (roles: Super Admin; perm: direct_orders:read)
+  - Per-rep Counters — `/admin/direct-orders/rep-counters` (roles: Super Admin | CEO | SFE Manager | National Sales Manager | Regional Manager | District Manager; perm: direct_orders:read)
+- **Direct Order Pharmacies**
+  - Pharmacy Registry — `/admin/direct-orders/pharmacies` (roles: Super Admin | SFE Manager; perm: direct_orders:read)
+  - Pharmacy Validation — `/admin/direct-orders/validations` (roles: Super Admin | SFE Manager; perm: direct_orders:read)
+  - Pharmacy Variances — `/admin/direct-orders/pharmacy-variances` (roles: Super Admin | SFE Manager | CEO; perm: direct_orders:read)
+  - Duplicate Cleanup — `/admin/direct-orders/cleanup` (roles: Super Admin | SFE Manager; perm: direct_orders:read)
+- **Direct Order Setup**
+  - Bonus & Discount Caps — `/admin/direct-orders/caps` (roles: Super Admin | SFE Manager | CEO; perm: direct_orders:read)
+  - Direct Reconciliation — `/admin/direct-orders/reconciliation` (roles: Super Admin | SFE Manager | CEO; perm: direct_orders:read)
+### Sales
+- **Weekly Sales**
+  - Weekly Dashboard — `/sales/weekly/dashboard` (not: Marketing Manager; perm: weekly_sales)
+  - Weekly Stock — `/sales/weekly/stock` (not: Marketing Manager; perm: weekly_sales)
+  - Weekly Sales Upload — `/sales/weekly` (perm: weekly_sales:import)
+  - Weekly Mapping — `/sales/weekly/mapping` (not: SFE Manager; perm: weekly_sales:update)
+  - Distributor Columns — `/sales/weekly/distributor-editor` (not: SFE Manager; perm: weekly_sales:import)
+  - Weekly Product Access — `/sales/weekly/assignments` (perm: weekly_sales:update)
+- **Targets & Closing**
+  - Targets — `/sales/targets` (roles: Super Admin | SFE Manager | CEO; perm: sales:read)
+  - Spotlight — `/spotlight` (roles: Super Admin | CEO | HR Resourcing; perm: spotlight:read)
+  - Award cheques — `/spotlight/cheques` (roles: Super Admin | CEO; perm: spotlight:export)
+### People
+- **Recognition**
+  - Milestones — `/milestones` (roles: Super Admin | HR Resourcing; perm: milestones:read)
+### Sales
+- **Targets & Closing**
+  - Monthly Closing — `/sales/monthly-closing` (roles: Super Admin | CEO; perm: sales:read)
+  - Monthly Closing — `/admin/analytics/monthly-closing/details` (roles: Finance Manager; not: Super Admin | CEO; perm: sales:read)
+### Master Data
+- **Master Data**
+  - Pharmacy Mapping — `/admin/customer-pharmacy-mapping` (roles: Super Admin | CEO)
+  - Area Consolidation — `/admin/master-data/area-consolidation` (roles: Super Admin)
+- **Customers Database**
+  - Pharmacy Search — `/admin/pharmacy-search` (perm: sales:import)
+  - Customer Directory — `/sales/customer-directory` (perm: sales:import)
+  - Customer Mapping — `/sales/customer-mapping` (not: SFE Manager; perm: sales:import)
+  - Pharmacy Master — `/admin/pharmacy-master` (roles: Super Admin | CEO)
+  - Customer Database — `/admin/marketing-requests/customer-database` (roles: SFE Manager | Super Admin)
+  - Validated Customers — `/admin/marketing-requests/validated-customers` (roles: SFE Manager | Super Admin)
+### Orders & CRM
+- **Toll Manufacturing**
+  - Production Planner — `/admin/production-planning` (roles: Super Admin | CEO | Finance Manager; perm: production_planning:read)
+- **Field Evidence**
+  - Verified Captures — `/admin/verified-captures` (roles: Super Admin | SFE Manager)
+### Platform
+- **Access Control**
+  - Users & Access — `/admin/access` (not: CEO; perm: admin_access)
+  - Scope & Visibility — `/admin/scope-visibility` (roles: Super Admin)
+  - Temporary Module Locks — `/admin/module-locks` (roles: Super Admin)
+  - Test Accounts — `/admin/test-accounts` (roles: Super Admin)
+  - Screening Questions — `/admin/screening-questions` (roles: Super Admin | HR Resourcing)
+- **Comms Templates**
+  - Email Composer — `/admin/email-reply-composer` (perm: communication)
+  - Email Templates — `/admin/email-templates` (perm: communication)
+  - Telegram — `/admin/notifications/telegram` (perm: communication)
+  - Telegram Templates — `/admin/notifications/telegram/templates` (perm: communication)
+  - Notification Confidence — `/admin/notification-confidence` (roles: Super Admin; perm: communication)
+### Marketing
+- **Pharmacovigilance**
+  - Report It — `/admin/report-it/new` (roles: Finance Manager; not: Super Admin)
+  - Reports Dashboard — `/admin/report-it` (roles: Super Admin)
+  - Report It — `/admin/report-it/new`
+## hr — 72 rows
+### (HR shell — no domain layer)
+- **Overview**
+  - Overview — `/hr/admin/hr-command-center`
+- **People**
+  - Employee Directory — `/hr/employees` (perm: employees:read)
+  - Record Gaps — `/hr/employees/record-gaps` (perm: employees:read)
+  - Employee 360 — `/hr/employee-360` (perm: employee_profile:read)
+  - Organogram — `/hr/organogram` (perm: organogram)
+  - Vacancies Report — `/hr/reports/vacancies` (perm: vacancies)
+  - Hiring Documents — `/hr/hiring-documents` (roles: HR Operations | HR Administration; not: Super Admin; perm: employee_documents)
+  - HR Forms — `/hr/hiring-pack` (roles: HR Operations | HR Administration; not: Super Admin; perm: employee_documents)
+  - Business Cards — `/hr/business-cards` (roles: HR Operations | HR Administration; not: Super Admin; perm: employee_documents)
+  - Interview Calendar — `/hr/recruitment/interview-calendar` (roles: HR Operations; not: Super Admin)
+  - CV Lookup — `/hr/cv-lookup` (perm: cv_lookup)
+  - Contract Renewal — `/hr/contracts` (perm: contracts)
+  - Resignations — `/hr/resignations` (perm: resignations)
+  - Mailbox Revocation — `/hr/mailbox-offboarding` (perm: mailbox_offboarding)
+  - New Hire Mailboxes — `/hr/new-hire-mailboxes` (perm: mailbox_offboarding)
+  - Device Custody — `/hr/devices` (perm: company_devices)
+- **Recruitment**
+  - Recruitment — `/hr/recruitment` (perm: recruitment)
+  - Screening Queue — `/hr/recruitment/screening` (roles: HR Resourcing; not: Super Admin; perm: recruitment:read)
+  - My Candidates — `/hr/recruitment/candidates` (roles: HR Resourcing; not: Super Admin; perm: hiring_interviews:read)
+  - Interview Calendar — `/hr/recruitment/interview-calendar` (perm: recruitment)
+  - Medical Rep Hiring — `/hr/recruitment/mr-hiring` (roles: HR Resourcing; not: Super Admin; perm: recruitment:read)
+  - CV Database — `/hr/cv-database` (perm: recruitment)
+  - Job Offers — `/hr/offers` (perm: offers)
+  - Hiring Analytics — `/hr/recruitment/hiring-analytics` (roles: HR Resourcing; not: Super Admin; perm: candidates:read)
+  - Manager CV Engagement — `/hr/recruitment/manager-engagement` (roles: HR Resourcing; perm: recruitment)
+  - Hiring Documents — `/hr/hiring-documents` (not: HR Administration; perm: employee_documents)
+  - HR Forms — `/hr/hiring-pack` (not: HR Administration; perm: employee_documents)
+  - Business Cards — `/hr/business-cards` (not: HR Administration; perm: employee_documents)
+- **WhatsApp & Posts**
+  - WhatsApp Applicants — `/hr/recruitment/whatsapp-applicants` (perm: recruitment)
+  - WhatsApp Replies — `/hr/recruitment/whatsapp-replies` (perm: recruitment)
+  - WhatsApp Inbox — `/hr/recruitment/whatsapp-inbox` (roles: HR Resourcing; not: Super Admin; perm: recruitment:update)
+  - WhatsApp Templates — `/hr/recruitment/whatsapp-templates` (roles: HR Resourcing; perm: recruitment:update)
+  - Job Posts — `/hr/recruitment/job-posts` (roles: HR Resourcing; not: Super Admin; perm: recruitment:update)
+  - Screening Questions — `/hr/admin/screening-questions` (perm: recruitment:update)
+- **Employee Requests**
+  - HR Support Requests — `/hr/admin/support-requests` (perm: support_requests)
+  - Business Card Requests — `/hr/admin/business-card-requests` (perm: business_card_requests)
+  - Business Cards — `/hr/business-cards` (roles: HR Resourcing; not: Super Admin; perm: business_card_requests:update)
+- **Attendance & Calendars**
+  - Daily & Weekly Reports — `/hr/hr-reports` (roles: HR Administration; not: Super Admin; perm: hr_ops_reports:read)
+  - Monthly Summary — `/hr/attendance/monthly-summary` (perm: employees)
+  - Fingerprint Report — `/hr/attendance/fingerprint-report` (roles: HR Operations; perm: employees)
+  - Holiday Calendar — `/hr/attendance/holiday-calendar` (roles: HR Operations; perm: employees:read)
+  - Activity Report — `/hr/admin/company-activity-report` (roles: HR Operations; perm: leave:read)
+  - Device User Mapping — `/hr/attendance/device-user-mapping` (perm: employees:update)
+  - Attendance Policies — `/hr/attendance/policies` (perm: employees:update)
+  - Company Calendar — `/hr/hr-calendar` (perm: hr_calendar)
+  - HR Reminders — `/hr/hr-reminders` (perm: hr_reminders)
+  - Events Calendar — `/hr/admin/company-calendar` (roles: HR Resourcing | HR Administration; not: Super Admin; perm: attendance:read)
+  - Interview Calendar — `/hr/recruitment/interview-calendar` (roles: HR Administration; not: Super Admin)
+  - Private Calendars — `/hr/admin/private-calendars` (roles: HR Resourcing | HR Administration; not: Super Admin; perm: attendance:read)
+  - Planning Calendar — `/hr/admin/weekly-plans/calendar` (perm: weekly_plans:read)
+- **Leave Management**
+  - Vacation Report — `/hr/leave-management/vacation-report` (roles: HR Operations; perm: leave)
+  - Vacation Control — `/hr/leave-management/vacation-control` (perm: leave:update)
+  - Company Vacations — `/hr/admin/vacation-report` (roles: HR Operations | HR Administration; perm: leave:read; renamed: HR Administration → Vacation Report)
+- **Payroll**
+  - Payroll Report — `/hr/payroll` (perm: payroll)
+  - Payslips Center — `/hr/admin/payslips-center` (perm: payslips:read)
+  - Deductions — `/hr/admin/deductions` (perm: deductions:read)
+  - Payslips Center — `/hr/admin/payslips-center` (perm: payslips:read)
+- **Probation**
+  - Probation — `/hr/probation` (perm: probation)
+  - Probation Dashboard — `/hr/probation/dashboard` (perm: probation)
+  - Probation Analytics — `/hr/probation/analytics` (roles: HR Resourcing; not: Super Admin; perm: probation:read)
+- **Performance**
+  - Field Coaching — `/hr/coaching` (perm: coaching)
+  - Coaching Analytics — `/hr/coaching/analytics` (perm: coaching)
+  - KPIs — `/hr/admin/kpis` (roles: HR Resourcing; not: Super Admin; perm: crm_visits:read)
+  - Early Birds — `/hr/admin/early-birds` (roles: HR Resourcing; not: Super Admin; perm: early_birds:read)
+  - Phoenix Ranks — `/hr/admin/ranks` (roles: HR Resourcing; not: Super Admin; perm: early_birds:read)
+  - Spotlight — `/hr/spotlight` (roles: HR Resourcing; not: Super Admin; perm: spotlight:read)
+  - Milestones — `/hr/milestones` (roles: HR Resourcing; not: Super Admin; perm: milestones:read)
+- **My Requests**
+  - My Workspace — `/hr/workspace` (roles: HR Resourcing; not: Super Admin; perm: employee_profile)
+  - Request Vacation — `/hr/workspace/leave-management/vacation-request` (perm: leave:create)
+  - Submit Excuse — `/hr/workspace/excuses`
+  - Fingerprint Report — `/hr/workspace/fingerprint-report` (roles: HR Resourcing | HR Administration; not: Super Admin; perm: attendance:read)
+  - Report It — `/hr/admin/report-it/new`
+## employee-portal — 87 rows
+### (Portal — no domain layer)
+- **Medical Rep Portal**
+  - Overview — `/employee-portals` (not: Training Manager; perm: employee_profile)
+  - Employee 360 — `/employee-portals/employee-360` (perm: employee_profile)
+  - Private Calendar — `/employee-portals/private-calendar` (perm: employee_profile)
+  - My Milestones — `/employee-portals/milestones` (roles: Medical Rep; perm: employee_profile)
+  - Weekly / Monthly Plans — `/employee-portals/plans` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Manager; perm: weekly_plans)
+  - Organogram — `/employee-portals/organogram` (roles: District Manager | National Sales Manager | Regional Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: organogram:read)
+  - Vacancies Report — `/employee-portals/vacancies` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: vacancies:read)
+  - My Candidates — `/employee-portals/recruitment-candidates` (roles: District Manager | Regional Manager | National Sales Manager | Manager | Product Manager | Group Product Manager | Marketing Manager; perm: hiring_interviews:read)
+  - Manager CV Engagement — `/employee-portals/recruitment-engagement` (roles: National Sales Manager; perm: hiring_interviews:read)
+  - Probation — `/employee-portals/probation` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager | Manager; perm: probation:read)
+  - Coaching Dashboard — `/employee-portals/training-manager` (roles: Training Manager; perm: coaching)
+  - Coaching Skills Survey — `/employee-portals/coaching-skills-survey` (roles: District Manager | Regional Manager | National Sales Manager | Training Manager; perm: coaching_skills_survey:read)
+  - Field Coaching — `/employee-portals/training-manager/field-coaching` (roles: Training Manager; perm: coaching)
+  - Rep Achievement — `/employee-portals/training-manager/rep-achievement` (roles: Training Manager; perm: rep_product_achievement:read)
+  - Weekly Plan — `/employee-portals/field-crm/plan` (roles: Training Manager; perm: phoenix_crm:read)
+  - My Coaching Reports — `/employee-portals/coaching` (roles: Medical Rep; perm: coaching)
+  - Team Coaching Reports — `/employee-portals/coaching` (roles: District Manager | National Sales Manager; perm: coaching)
+  - HR Support — `/employee-portals/contact-hr-support` (perm: support_requests:create)
+  - My Outstation Expenses — `/employee-portals/expenses` (roles: Medical Rep; perm: expenses)
+  - Expense Dashboard — `/employee-portals/expense-dashboard` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager | Manager; perm: expenses)
+  - Expense Submissions — `/employee-portals/expense-submissions` (roles: Finance Manager | CEO; perm: expenses)
+  - Submit Expense — `/employee-portals/submit-expense` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: outstation:create)
+  - Team Expenses — `/employee-portals/team-expenses` (roles: National Sales Manager; perm: expenses)
+  - Early Birds — `/employee-portals/early-birds` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: early_birds:read)
+  - Phoenix Ranks — `/employee-portals/ranks` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: early_birds:read)
+- **Approvals Hub**
+  - Leave Approvals — `/employee-portals/approvals/vacation` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Manager; perm: leave:read)
+  - Excuse Approvals — `/employee-portals/approvals/excuse` (roles: Product Manager | Group Product Manager | Marketing Manager | Manager; perm: leave:read)
+  - Plan Approvals — `/employee-portals/approvals/plan` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Manager; perm: weekly_plans:read)
+  - Other Approvals — `/employee-portals/approvals-hub` (perm: leave:read)
+- **Payroll**
+  - Payslips — `/payslips` (perm: payroll | payslips)
+  - Deductions — `/employee-portals/deductions` (perm: employee_profile)
+- **Sales Operations**
+  - Source of Sales — `/employee-portals/source-of-sales` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Medical Rep; perm: sales)
+  - Direct Orders — `/employee-portals/direct-orders` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager; perm: direct_orders:read)
+  - Area Direct Orders — `/employee-portals/direct-orders-in-my-area` (roles: Medical Rep; perm: sales:read)
+  - Weekly Sales — `/employee-portals/weekly-sales` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Medical Rep; perm: sales)
+  - Weekly Stock — `/employee-portals/weekly-stock` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+  - Monthly Closing — `/employee-portals/monthly-closing` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+  - Performance Review — `/employee-portals/monthly-closing/performance-review` (roles: District Manager | Regional Manager | National Sales Manager; perm: sales)
+  - Sales vs Target — `/employee-portals/sales-vs-target` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+  - Make It Happen — `/employee-portals/make-it-happen` (roles: Medical Rep | District Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+  - Business Review — `/employee-portals/business-review` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+  - Sales Drilldown — `/employee-portals/territory-drilldown` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Super Admin | CEO; perm: sales)
+  - Territory Management — `/employee-portals/territory-management` (roles: District Manager | Regional Manager | National Sales Manager; perm: territory)
+  - Targets — `/employee-portals/targets` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager; perm: sales:read)
+  - Spotlight — `/employee-portals/spotlight` (roles: Medical Rep | District Manager; perm: spotlight_self:read)
+  - CRM — `/employee-portals/crm` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager; perm: crm_visits:read)
+  - Reps List — `/employee-portals/reps-list` (roles: National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager | Regional Manager | District Manager; perm: crm_visits:read)
+  - KPIs — `/employee-portals/kpis` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: crm_visits:read)
+  - Frequency — `/employee-portals/kpis/frequency` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: crm_visits:read)
+  - Coverage — `/employee-portals/kpis/coverage` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: crm_visits:read)
+  - Call Rate — `/employee-portals/kpis/call-rate` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | Training Manager; perm: crm_visits:read)
+- **Coaching**
+  - Double-Visit Analytics — `/employee-portals/double-visit-analytics` (roles: Product Manager | Group Product Manager | Marketing Manager; perm: double_visit_analytics:read)
+  - DV Planner — `/employee-portals/dv-planner` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Training Manager; perm: double_visit_analytics:read)
+  - Double Visit Report — `/employee-portals/double-visit-report` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Training Manager; perm: double_visit_analytics:read)
+  - Field Activity — `/employee-portals/field-activity` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager; perm: double_visit_analytics:read)
+  - Field Absence Calendar — `/employee-portals/field-absence` (roles: National Sales Manager; perm: field_absence:read)
+  - Coaching Analytics — `/employee-portals/coaching-analytics` (roles: Product Manager | Group Product Manager | Marketing Manager; perm: coaching)
+- **Market Awareness**
+  - Market Awareness — `/employee-portals/market-awareness` (roles: Product Manager | Group Product Manager | Marketing Manager | National Sales Manager | SFE Manager | Finance Manager | CEO | Super Admin; perm: market_awareness:read)
+  - Awareness Inbox — `/employee-portals/market-awareness/inbox` (roles: Group Product Manager | Marketing Manager | National Sales Manager | CEO | Super Admin; perm: market_awareness:read)
+- **Marketing Functions**
+  - Marketing Functions — `/employee-portals/marketing-functions` (roles: Product Manager | Group Product Manager | Marketing Manager | CEO | Super Admin; perm: marketing_functions:read)
+  - Field Visit Feedback — `/employee-portals/marketing-feedback` (roles: Product Manager | Group Product Manager | Marketing Manager | National Sales Manager | CEO | Super Admin; perm: marketing_field_feedback:read)
+- **Visual Aids**
+  - Visual Aids — `/employee-portals/visual-aids` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Group Product Manager | Marketing Manager; perm: visual_aids:read)
+- **Marketing Requests**
+  - Customer Validation — `/employee-portals/marketing-requests/validation` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | SFE Manager | CEO | Super Admin)
+  - Marketing Requests — `/employee-portals/marketing-requests` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | SFE Manager | CEO | Super Admin)
+  - Approval Inbox — `/employee-portals/marketing-requests/inbox` (roles: District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | SFE Manager | CEO | Super Admin)
+  - All Marketing Requests — `/employee-portals/marketing-requests/all` (roles: Marketing Manager | SFE Manager | Super Admin)
+  - Doctor-List Check — `/employee-portals/marketing-requests/list-check` (roles: Marketing Manager | SFE Manager | Super Admin)
+  - CEO Approvals — `/employee-portals/marketing-requests/ceo-approvals` (roles: Marketing Manager | CEO | Super Admin)
+  - Marketing Control — `/employee-portals/marketing-requests/control` (roles: SFE Manager | Super Admin)
+  - Customer Database — `/employee-portals/marketing-requests/customer-database` (roles: SFE Manager | Super Admin)
+  - Coverage Report — `/employee-portals/marketing-requests/coverage-report` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | SFE Manager | Finance Manager | Financial Advisor | CEO | Super Admin)
+  - ROI Tracker — `/employee-portals/roi-tracker` (roles: Medical Rep | District Manager | Regional Manager | National Sales Manager | Product Manager | Group Product Manager | Marketing Manager | SFE Manager | CEO | Super Admin)
+  - ROI Dashboard — `/employee-portals/roi` (roles: Product Manager | Group Product Manager | Marketing Manager; perm: sales)
+- **Leave Management**
+  - Vacation Request — `/leave-management/vacation-request` (perm: leave:create)
+  - Vacation Report — `/leave-management/vacation-report` (perm: leave)
+  - Vacation Control — `/leave-management/vacation-control` (roles: Super Admin | HR Operations | HR Resourcing; perm: leave:update)
+  - Fingerprint Report — `/employee-portals/attendance` (perm: attendance:read)
+  - Weekly Attendance — `/employee-portals/attendance/digests` (perm: attendance:read)
+  - My Disputes — `/employee-portals/disputes` (perm: attendance:read)
+  - My Visits — `/employee-portals/visits` (perm: crm_visits:read)
+  - Phoenix CRM — `/employee-portals/field-crm` (perm: phoenix_crm:read)
+  - Place checks — `/employee-portals/place-checks` (perm: phoenix_crm:read)
+  - Visit report — `/employee-portals/visit-report` (perm: phoenix_crm:read)
+  - Double visit requests — `/employee-portals/double-visit-requests` (perm: phoenix_crm:read)
+  - My map — `/employee-portals/my-map` (perm: phoenix_crm:read)
+- **Pharmacovigilance**
+  - Reports Dashboard — `/employee-portals/report-it` (roles: Manager)
+  - Report It — `/employee-portals/report-it` (not: Manager)
