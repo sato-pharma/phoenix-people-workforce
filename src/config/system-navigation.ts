@@ -72,6 +72,7 @@ import {
   Network,
   PenLine,
   PhoneCall,
+  PlugZap,
   PlusCircle,
   Presentation,
   Radar,
@@ -3134,6 +3135,15 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "System errors, data integrity checks, login security, salary flags and role coverage — one evidence-based audit.",
     roles: ["Super Admin"],
   },
+  // Integrations (integration audit, ISS-039 · INT-063): every outside service Phoenix depends on, in one
+  // place. Super Admin only, matching the page's own gate (assertSystemAdministratorWorkspaceAccess).
+  {
+    href: "/admin/integrations",
+    icon: PlugZap,
+    label: "Integrations",
+    description: "Every outside service Phoenix depends on: whether it is configured, and when it last worked and last failed.",
+    roles: ["Super Admin"],
+  },
   {
     href: "/admin/logs",
     icon: ScrollText,
@@ -5643,6 +5653,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         sectionId: "admin-tools",
         hrefs: [
           "/admin/system-audit",
+          "/admin/integrations",
           "/admin/synthetic-journeys",
           "/admin/sentry-check",
           "/admin/activity-control",
