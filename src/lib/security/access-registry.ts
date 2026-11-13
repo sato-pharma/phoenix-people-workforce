@@ -260,6 +260,15 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-cv-digest", reason: "6-hourly email digest to each hiring manager who received candidate pushes, with their manager CC chain; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/mailbox-offboarding-sweep", reason: "Daily sweep of the Turbify mailbox revocation register: opens a task for any leaver still holding a mailbox and alerts on the ones nobody has shut. Turbify publishes no email API, so this sweep and the register it drives are the only way the company learns that a leaver is still reachable; guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/mailbox-robots", reason: "The two Turbify mailbox robots (leaver revocation and joiner provisioning) on the robot service phoenix-workforce-robot, audit REC-075. Answers 503 wrong_process on any other process, so a scheduler pointed at the website can never open a robot browser there; guarded by CRON_SECRET." }),
+  // The robot service's four internal routes (audit REC-075). Their only caller is the website, server to
+  // server, AFTER it has checked the Super Admin's session, CSRF, role and rate limit on the matching
+  // /api/new-hire-mailboxes/* route. Each checks the CRON_SECRET bearer, then that it runs on the robot
+  // service (503 wrong_process anywhere else), before it reads the body.
+  tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/adopt", reason: "Robot service side of the new-hire mailbox adoption; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
+  tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/invite-inbox", reason: "Robot service side of the invite-inbox adoption; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
+  tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/app-password-controls", reason: "Robot service side of the App Passwords page capture; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
+  tokenApi({ authMode: "cron-secret", methods: ["POST"], pattern: "/api/internal/mailbox-robot/app-password-rehearsal", reason: "Robot service side of the app-password mint-and-remove rehearsal; called only by the website after its own session, CSRF, role and rate-limit checks; guarded by CRON_SECRET and the robot process role." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-probation", reason: "Daily 90-day probation sweep: promotes pharmacies with a footprint, reports phantoms (spec A3), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/cron/direct-orders-rotate-sheet-token", reason: "Rotates the live Google Sheet's feed token so the bootstrap token committed in docs/direct-orders-live-sheet.gs is revoked and worthless; revokes the old link only after the sheet confirms the new one; guarded by CRON_SECRET." }),
@@ -1060,6 +1069,11 @@ export const accessRegistry = [
   // own loader underneath: the same audience, the same narrowing and the same 404 as the board page. A
   // read that changes nothing, so no audit row and no CSRF.
   sessionApi({ methods: ["GET"], pattern: "/api/admin/phoenix-crm/integrity/cases", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The streets behind a Location Integrity map: one Google picture, fetched with the server key (owner,
+  // 13 Nov 2026). `read` at the route, then the boards' own predicates (the Super Admin and the SFE Manager)
+  // and a per-person hourly limit, because every picture is counted against the company's account. A read
+  // that changes nothing, so no audit row and no CSRF.
+  sessionApi({ methods: ["GET"], pattern: "/api/admin/phoenix-crm/case-map-basemap", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // A polyclinic, medical centre, medical tower or hospital outpatient suite — captured ONCE at its
   // door, with customers seated inside it (owner, 2026-10-09). GET is the picker, for a reader of the
   // territory; POST captures one, and the service gates it to the territory's own rep or a manager.
@@ -1549,6 +1563,10 @@ export const accessRegistry = [
   // PATCH /api/notifications/settings, which this is: a notification preference write through
   // its own tiny endpoint. See dismissPushOptInNudge in src/lib/notifications/settings.ts.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/nudge", permission: { resource: "employee_profile", action: "update" } }),
+  // Records that the caller answered the home page's "Connect Telegram" card, so it is never drawn for them
+  // again (owner, 13 Nov 2026). `read`, like the connect route beside it and the settings read that draws
+  // the card: whoever is shown the card can answer it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/telegram/home-card", permission: { resource: "employee_profile", action: "read" } }),
   // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
   // outbox is a write, and reading it as a read-gated route understated who may trigger one.
   // TWO DOORS, TWO ROWS (integration audit, 13 Nov 2026, ISS-028). Until then this was one session row

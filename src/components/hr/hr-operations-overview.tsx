@@ -63,6 +63,7 @@ import { TaDatedPeople } from "@/components/hr/talent-acquisition/joiners-arrivi
 import { TaCaption, TA_CAPS_CLASS } from "@/components/hr/talent-acquisition/panel";
 import { TaTodayInterviews } from "@/components/hr/talent-acquisition/today-interviews";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { TelegramHomeCard } from "@/components/notifications/telegram-home-card";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import type { HrOperationsOverviewData } from "@/lib/hr/hr-operations-overview";
 import { HIRING_DOCUMENTS_HREF, RESIGNATIONS_HREF } from "@/lib/hr/hr-operations-overview-logic";
@@ -159,6 +160,7 @@ export function HrOperationsOverview({
       />
 
       <PushOptInNudge />
+      <TelegramHomeCard />
 
       <TaCommandRail
         hiredWindow={null}

@@ -4,7 +4,9 @@
  * Two owner rules read a distance (2026-09-16):
  *   - A visit saved far from the customer's validated place still saves, flagged for the manager.
  *   - Customers far apart on one plan day are never blocked; the day is highlighted to the reviewer.
- * No map service is called (owner: never buy a map API); straight-line distance only.
+ * No map service is called for a distance (owner: never buy a map API for one); straight-line distance
+ * only. The streets drawn behind the Location Integrity maps are a separate thing: a Google picture since
+ * 13 Nov 2026, his own choice (`src/lib/crm-integrity/integrity-case-map.ts`).
  */
 
 import { EGYPT_CHECKIN_BOUNDS } from "@/lib/crm/checkin-coords";

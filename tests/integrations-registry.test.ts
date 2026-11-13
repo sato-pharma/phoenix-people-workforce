@@ -24,6 +24,7 @@ import { stripComments } from "./support/comment-strip.ts";
  *   5  the messaging API version is written in seven files; they agree with the registry, and there is no eighth
  *   6  the voice-transcription entry carries its data note
  *   7  the page is on the Admin Tools hub, for the Super Admin alone
+ *   8  no page loads a typeface from a font service: the joining form's Arabic face is served from the app (ISS-043)
  */
 
 const ROOT = process.cwd();
@@ -42,7 +43,7 @@ function namesOf(entry: IntegrationEntry): string[] {
 function registryIsWellFormed() {
   const ids = INTEGRATIONS.map((entry) => entry.id);
   assert.deepEqual(ids.filter((id, index) => ids.indexOf(id) !== index), [], "every integration has its own id");
-  assert.ok(INTEGRATIONS.length >= 39, `the registry lists every outside service (39 on 13 Nov 2026), found ${INTEGRATIONS.length}`);
+  assert.ok(INTEGRATIONS.length >= 37, `the registry lists every outside service (37 since Google Fonts and the OpenStreetMap tiles left on 13 Nov 2026), found ${INTEGRATIONS.length}`);
 
   const declared = new Set(declaredJobSlugs());
   for (const entry of INTEGRATIONS) {
@@ -231,6 +232,34 @@ function pageIsOnTheAdminToolsHub() {
   assert.ok(band.includes('"/admin/integrations"'), "the card sits in the Platform Health band of Admin Tools");
 }
 
+// ISS-043: the joining form collects a new hire's personal data, and its Arabic typeface used to come from
+// Google Fonts, so the new hire's address reached a third party. The face is served from the app now.
+function noPageLoadsATypefaceFromAFontService() {
+  const FONT_SERVICE = /fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net|fonts\.bunny\.net/;
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(rel);
+      // The content-security policy names the hosts it allows; that is a rule, not a load.
+      else if (/\.(ts|tsx|css)$/.test(entry.name) && rel !== "src/lib/security/content-security-policy.ts" && FONT_SERVICE.test(stripComments(read(rel)))) offenders.push(rel);
+    }
+  };
+  for (const dir of ["app", "src"]) walk(dir);
+  assert.deepEqual(offenders, [], "🔴 a page loads a typeface from a font service: serve it from public/fonts, as the joining form does (ISS-043)");
+
+  const form = stripComments(read("src/components/offers/joining-form-page.tsx"));
+  for (const file of ["cairo-arabic.woff2", "cairo-latin-ext.woff2", "cairo-latin.woff2"]) {
+    assert.ok(form.includes(`url("/fonts/${file}")`), `the joining form declares ${file} from the app's own /fonts`);
+    const bytes = readFileSync(path.join(ROOT, "public/fonts", file));
+    assert.equal(bytes.subarray(0, 4).toString("latin1"), "wOF2", `public/fonts/${file} is a real woff2 file`);
+  }
+  assert.match(form, /font-family:"Cairo";[^}]*font-weight:400 700/, "the bundled Cairo answers the regular, semibold and bold the form asks for");
+  assert.match(read("public/fonts/cairo-OFL.txt"), /SIL OPEN FONT LICENSE/, "the typeface's licence ships beside it");
+  assert.equal(findIntegration("openstreetmap-tiles") ?? null, null, "the OpenStreetMap tiles are no longer an outside service: the integrity maps' streets are a Google picture (ISS-012)");
+  assert.equal(findIntegration("google-fonts") ?? null, null, "Google Fonts is no longer an outside service Phoenix depends on");
+}
+
 export async function runIntegrationsRegistryTests() {
   registryIsWellFormed();
   configurationNeverReturnsAValue();
@@ -239,4 +268,5 @@ export async function runIntegrationsRegistryTests() {
   messagingVersionAgreesEverywhere();
   voiceTranscriptionCarriesItsDataNote();
   pageIsOnTheAdminToolsHub();
+  noPageLoadsATypefaceFromAFontService();
 }
