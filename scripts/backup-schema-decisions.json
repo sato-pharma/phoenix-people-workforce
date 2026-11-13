@@ -63,6 +63,650 @@
       "decidedBy": "owner",
       "why": "product rows before the Lacto Advanced / Lacto Basic split, which stands",
       "sheet": "November 2026 review, group 3"
+    },
+    "whatsapp_backfill_20260902": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "31 candidates before a WhatsApp back-fill, 2 Sep.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "ats_dupe_merge_backup_20260904": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The 4 Sep duplicate-candidate merge: 45 candidates with their files, CV readings and intake events (17 tables).",
+      "sheet": "December 2026 review, group 3"
+    },
+    "fuwwah_backup_20260904": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Fuwwah customers before a 4 Sep re-mapping: 751 import rows, 477 rollup rows, 292 customer-map rows.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "payroll_backup_20260904": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "All 122 rows of one payroll draft run, copied before the 4 Sep fix to their field-force figures.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "product_price_backup_20260904": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "One product row before a 4 Sep price change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_backup_20260904": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "August achievement (889 rows) and the customer-map and import rows before your 28 area rulings were applied on 4 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "ats_backup_20260905": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "5 Sep: 240 candidate e-mails and 12 phones back-filled, 41 duplicate CVs merged, 623 rows before HR ids were stored in one form.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "hr_id_casing_backup_20260905": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Who-did-it columns across payroll, outstation and direct orders before HR ids were stored in one form on 5 Sep (about 3,500 rows).",
+      "sheet": "December 2026 review, group 2"
+    },
+    "plan_audit_backup_20260905": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The 42 plan approvals wrongly recorded as the CEO's, removed on 5 Sep, with 16 related rows. The only way back for that removal.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "sales_backup_20260905": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "30 August target rows for one region before a 5 Sep correction.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "direct_order_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Three direct orders with their approvals, events and notifications, and 8 decision times before a 6 Sep fix.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "hr_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "11 hiring profiles before a job-title back-fill, and 3 employees before a salary restore, 6 Sep. Holds salary figures.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "marketing_code_apply_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "79 distributor codes added, and the 8 that were there before, 6 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "marketing_merge_revert_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "A reverted customer merge: 2 customers, 1 pharmacy link, 1 request, 6 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "marketing_reopen_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "2 marketing requests and their 10 approval steps before they were reopened, 6 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "sos_coverage_backup_20260906": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "91 coverage rows whose units sat in the money column, before the 6 Sep fix.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "ats_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "4 candidate merges and 50 status mismatches, 7 Sep.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "attribution_split_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The monthly attribution rollup (6,911 rows, two copies) and its metadata before a 7 Sep back-fill.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "closing_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "31 direct orders moved from August to September in the closing, with 33 rollup rows, 7 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "customer_map_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "4 pinned customer-map rows before a 7 Sep change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "discount_factor_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "10 database function definitions before the 7 Sep discount-factor change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "hossam_revert_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "13 rows and 3 removed trigger definitions from undoing one rep's area-cover change on 7 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "market_awareness_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "2 market-awareness activities with their bricks, lines and products, 7 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "qema_discount_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "64 El Qema import rows and 41 sales lines before the 7 Sep discount correction.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "qema_rollup_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "24 El Qema distributor-product rollup rows before a 7 Sep rebuild.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "3 rows for one Alexandria pharmacy before a 7 Sep fix.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_map_backup_20260907": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "5 customer-map rows before a 7 Sep fix.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "marketing_link_backfill_20260908": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "81 links added in an 8 Sep back-fill.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "outstation_backup_20260908": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "240 outstation expenses before they were cleared, and the 93 rows of a re-import, 8 Sep.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "qema_split_backup_20260908": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The El Qema store split before the 8 Sep re-split: attribution rollups (about 7,000 rows, three copies) and store net figures for Cairo and the other regions.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "email_backup_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "12 e-mail template rows before the 9 Sep changes, including the 2 old ones deleted.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "market_awareness_backup_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "2 activities and 2 decisions before a 9 Sep change.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "qema_backup_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The attribution rollup (6,980 rows) and 400 store net rows before a 9 Sep El Qema change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "recruitment_backup_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "1,175 rows of the CV mirror on Google Drive, which you retired on 11 Sep.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "sos_backup_20260909": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "893 customer-map area rows before each customer's area was pinned to its brick on 8 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "aug_cns_restamp_20260910": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The August CNS re-stamp, two passes: 926 attribution rows each, with the import rows and targets.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "dop81_brick_fix_20260910": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "A few rows (2 per table) before one direct-order pharmacy's brick was fixed on 10 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "ruling_protect_20260910": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The 10 Sep check of your customer-map rulings: a 22,821-row control check, 2,479 rows before, and the new-sheet checks including Manfalut.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_backup_20260910": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Customer-map corrections region by region on 10 Sep (Delta 614, regions 845, Gharbia 270 and smaller sets; 23 tables).",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_contradiction_sweep_20260910": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "286 customer-map rows and the 67-row plan of the 10 Sep contradiction sweep, plus 2 stale direct-order codes.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "bab_elsheria_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "18 customer-map rows and 6 territory aliases before Bab El Sheria was put back on 11 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "is_twin_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The customer-map twin rulings of 11–13 Sep: answers, holds and releases (12 tables, about 2,700 rows).",
+      "sheet": "December 2026 review, group 1"
+    },
+    "july_attribution_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The July attribution rollup (926 rows) and its old metadata row before an 11 Sep rebuild.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "keep_bricks_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "57 customer-map rows before the 11 Sep keep-the-brick rulings.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "kes_alias_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "8 territory aliases before a brick retirement on 11 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "manfalut_align_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "926 attribution rows and the Manfalut map and import rows before the 11 Sep alignment.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "map_audit_baseline": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "A full copy of the customer map at 01:10 on 11 Sep (68,146 rows), the baseline of the map audit. The largest in this batch.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_backup_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "111 customer-map rows before an 11 Sep territory change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "tahrir_split_20260911": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "19 customer-map rows before the Tahrir split on 11 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "ats_backup_20260912": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Candidates before three clean-up runs on 12 Sep (42, 301 and 202 rows) and four single fixes.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "ats_merge_backup_20260912": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "2 candidates merged on 12 Sep, with their files and CV readings.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "dist_backup_20260912": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "65 distribution-list rows before a 12 Sep change.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "ats_backup_20260913": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "1,249 CV cabinet rows before the 13 Sep re-filing.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "crm_backup_20260913": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "40,237 plan entries before they were stamped on 13 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "outstation_backup_20260913": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "73 outstation notification events before a 13 Sep change.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "plan_backup_20260913": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "One week-36 plan with its 6 items and 2 decisions, 13 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "sos_backup_20260913": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The 13 Sep sweep: the closing before and after (about 4,800 rows each), 5,858 import rows, 3,742 customer-map rows (19 tables). Your note said keep it until July and August are relocked and settled; both were relocked on 16 Oct.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "direct_aug_hand_backup_20260914": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "August direct orders handled by hand on 14 Sep: 928 attribution rows, 17 batches, 21 closing rows.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "marketing_rollback": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The 19 Aug marketing pharmacy merge (4 duplicates; 50,935 code-reference rows) and small fixes up to 14 Sep. Your rule: that merge is never undone.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "crm_backup_20260916": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "3,635 customer-brick and 106 region-brick resolutions, and a 251-customer pull-back list, before a 16 Sep change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "attendance_backup_20260917": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The first weekly attendance review rounds: 27 trial digests and the week-3 release (6 digests, 12 lines, 12 settlements), 17 Sep.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "attendance_wording_backup_20260917": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "388 deduction-candidate reasons and 55 digest lines before their wording changed, 17 Sep.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "ops_backup": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Mixed: the 24 Aug candidate merge (about 6,600 rows), two e-mail templates, and one employee's 17 Sep vacation correction (4 rows). Its newest copy is from 17 Sep.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "tahrir_sadat_backup_20260917": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "14 customer-map rows before the 17 Sep Tahrir / Sadat change.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "customer_map_backup_20260918": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "6,824 customer names before a fill, and about 1,800 map rows taken back from weak automatic matches, 18 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "tahrir_sadat_backup_20260918": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "17 customer-map rows from the second Tahrir / Sadat round, 18 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "outstation_backup_20260919": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Empty. It was made to hold any values a 19 Sep clean-up removed; there were none.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "plan_audit_backup_20260920": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "3 plan headers, 9 decisions and 3 acknowledgements, 20 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "activity_events_dev_preview_backup_20260921": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "7,738 activity-feed events from a preview build, and a smaller 433-row copy, 21 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "ats_backup_20260921": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "A two-pass candidate clean-up on 21 Sep (28 tables, mostly CV readings).",
+      "sheet": "December 2026 review, group 3"
+    },
+    "crm_backup_20260921": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Before the 21 Sep fixes: 2,473 visits of 14 resigned reps, 261 contact assignments, and about 4,000 visit-slot rows.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "expense_backup_20260921": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Expense claims and requests before the 21 Sep name and id fixes (451 claims, 127 requests and smaller sets).",
+      "sheet": "December 2026 review, group 2"
+    },
+    "wa_backup_20260921": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "3 WhatsApp screening prompts and 9 screening rows, 21 Sep.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "attendance_map_backup_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "29 attendance device rows before a 23 Sep fix.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "bk_qershaya_backup_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "The Qershaya brick with its 5 import rows and 4 map rows, 23 Sep.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "marketing_reopen_backup_20260923": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "1 marketing request and its 5 steps before it was reopened, 23 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "mkt_backup_20260924": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "150 marketing customers with their contacts and pharmacies, 4 requests, and 82 statuses before the 24 Sep re-derive.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "expenses_backup_20260925": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "479 expense claims and their events before the 25 Sep refresh.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "direct_order_hrid_backup_20260926": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "152 direct-order requester ids before they were stored in one form, 26 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "phx_plan_delete_backup_20260926": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "11 deleted plan rows, 26 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "ats_backup_20260927": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "One candidate's records before a 27 Sep fix.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "ats_backup_20260928_hiredfix": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "5 candidates, 27 offers and 3 status events before the 28 Sep hired-status fix.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "preimage_backup_20260928": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "2 outstation starting points, and one rep's 8 distance and home-location rows, before a 28 Sep fix.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "preimage_backup_20260929": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "1 direct order before it was re-pointed, 29 Sep.",
+      "sheet": "December 2026 review, group 4"
+    },
+    "hiring_backup_20260930": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "17 hiring document definitions before a 30 Sep change.",
+      "sheet": "December 2026 review, group 3"
+    },
+    "crm_backup_20261001": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Leave records before a 1 Oct correction: 43 for August, 102 for September, and 1 settlement.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "hr_backup_20261001": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "3 employees' mobile numbers before a 1 Oct change.",
+      "sheet": "December 2026 review, group 2"
+    },
+    "phoenix_crm_backup_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "Phoenix CRM before the 2 Oct fix: 229 wrongly created reference customers, 122 customers, plans and notifications (25 tables).",
+      "sheet": "December 2026 review, group 4"
+    },
+    "sos_august_split_restate_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "August as it stood before the 2 Oct re-statement: 953 achievement rows, 937 attribution rows, its locks and publications.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_backup_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "41 El Qema directory unit rows before Territory Management was made to match the closing, 2 Oct.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "sos_july_split_restate_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "July as it stood before the 2 Oct re-statement: 958 achievement rows, 926 attribution rows, its publications.",
+      "sheet": "December 2026 review, group 1"
+    },
+    "weekly_plan_backup_20261002": {
+      "decision": "export-then-drop",
+      "decidedOn": "2026-11-13",
+      "decidedBy": "owner",
+      "why": "One weekly plan for 8 Oct with its 64 items.",
+      "sheet": "December 2026 review, group 4"
     }
   }
 }

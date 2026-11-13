@@ -41,7 +41,8 @@ before its 90 days (a decision on a young schema only adds a note).
 
 **How he is asked.** A review sheet per month lists the schemas that reach 90 days in it, grouped by
 what they hold, with a recommendation each — the first was "Snapshot review — November 2026" (nine
-schemas, all decided export-then-drop on 2026-11-13). Each answer is written into the decisions
+schemas), the second "Snapshot review — December 2026" (92 schemas in four groups); all 101 were
+decided export-then-drop on 2026-11-13. Each answer is written into the decisions
 file by schema name, in a pull request.
 
 **Export, then drop.** `node scripts/export-backup-schema.mjs <schema>` reads production only, and
