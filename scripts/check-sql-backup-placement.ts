@@ -38,7 +38,7 @@ const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 /**
  * Already-shipped history. These ran once against a database that no longer takes them, and
  * they must not be edited — flagging them forever would only teach people to ignore the check.
- * New work goes in `supabase/migrations/` or a loose `supabase/*.sql` script, both of which
+ * New work goes in `supabase/migrations/` or a one-off script in `supabase/scripts/`, both of which
  * ARE scanned.
  */
 const NOT_SCANNED = [

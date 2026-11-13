@@ -850,7 +850,7 @@ Assessed from component source; **not runtime-verified** (see §26).
 | `rejected_by_system` | **Unreachable from the live submit path** since 2026-08-09; the pure engine still classifies it | High |
 | `/admin/outstation/requests`, `/admin/outstation/heatmaps`, `/employee/outstation/new` | Redirects kept for bookmarks and email links | High — **do not delete**, the first carries live email deep links |
 | `/workspace/expense-dashboard`, `/workspace/submit-expense` | Duplicate routes, admin shell | Medium — reachable, gated by `expenses:read` |
-| `supabase/20260509_outstation_expenses.sql`, `phoenix-payroll-expenses.sql` | Pre-baseline setup scripts still referenced in UI error text ("Run supabase/phoenix-payroll-expenses.sql first") | High |
+| `supabase/scripts/20260509_outstation_expenses.sql`, `phoenix-payroll-expenses.sql` | Pre-baseline setup scripts still referenced in UI error text ("Run supabase/scripts/phoenix-payroll-expenses.sql first") | High |
 
 ---
 

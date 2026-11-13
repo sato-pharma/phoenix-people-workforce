@@ -53348,6 +53348,24 @@ ALTER TABLE public.automated_payroll_audit OWNER TO postgres;
 COMMENT ON TABLE public.automated_payroll_audit IS 'Append-only. Every payroll decision, and the source held settlements are reconstructed from. UPDATE, DELETE and TRUNCATE are refused by trigger.';
 
 --
+-- Name: automated_payroll_carried_expenses; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.automated_payroll_carried_expenses (
+    expense_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    reserved_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.automated_payroll_carried_expenses OWNER TO postgres;
+
+--
+-- Name: TABLE automated_payroll_carried_expenses; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.automated_payroll_carried_expenses IS 'Late-approved outstation trips a payroll run''s Part 2 confirm recorded as carried, one row per trip (expense_id is the primary key, so two runs can never record the same trip). Released when that run reopens Part 1 or Part 2 or is cancelled; kept once it is published. Server-only.';
+
+--
 -- Name: automated_payroll_carry_forward; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -53784,6 +53802,32 @@ ALTER TABLE public.automated_payroll_resync_outbox OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.automated_payroll_resync_outbox IS 'Payroll resyncs (Deductions / outstation expense decisions) refused by the run''s hold. Drained opportunistically by src/lib/automated-payroll/resync-outbox.ts, always under the hold; a row is deleted once its resync runs or is skipped.';
+
+--
+-- Name: automated_payroll_settings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.automated_payroll_settings (
+    id smallint NOT NULL,
+    carry_late_expenses boolean DEFAULT false NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_hr_id text,
+    CONSTRAINT automated_payroll_settings_id_check CHECK ((id = 1))
+);
+
+ALTER TABLE public.automated_payroll_settings OWNER TO postgres;
+
+--
+-- Name: TABLE automated_payroll_settings; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.automated_payroll_settings IS 'Automated Payroll switches, one row (id = 1). carry_late_expenses: whether outstation trips approved after their payout month was published are added to the next open run''s Expenses step (true) or only listed (false, the default). Server-only.';
+
+--
+-- Name: COLUMN automated_payroll_settings.carry_late_expenses; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.automated_payroll_settings.carry_late_expenses IS 'OFF lists late-approved trips only; ON adds them to the next open run''s Expenses step. Changed only while no run is in Part 2 or ready.';
 
 --
 -- Name: automated_payroll_standing_additions; Type: TABLE; Schema: public; Owner: postgres
@@ -57552,7 +57596,7 @@ COMMENT ON COLUMN public.direct_order_pharmacy_validations.photo_accuracy_meters
 
 CREATE TABLE public.direct_order_report_share_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    token text NOT NULL,
+    token text,
     surface text DEFAULT 'live'::text NOT NULL,
     label text,
     created_by_hr_id text NOT NULL,
@@ -57570,6 +57614,8 @@ CREATE TABLE public.direct_order_report_share_links (
     file_access_count integer DEFAULT 0 NOT NULL,
     refused_count integer DEFAULT 0 NOT NULL,
     last_refused_at timestamp with time zone,
+    token_hash text,
+    token_preview text,
     CONSTRAINT direct_order_report_share_links_surface_check CHECK ((surface = ANY (ARRAY['live'::text, 'feed'::text])))
 );
 
@@ -62254,7 +62300,7 @@ ALTER TABLE public.marketing_request_products OWNER TO postgres;
 
 CREATE TABLE public.marketing_request_report_share_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    token text NOT NULL,
+    token text,
     surface text DEFAULT 'live'::text NOT NULL,
     label text,
     created_by_hr_id text NOT NULL,
@@ -62272,6 +62318,8 @@ CREATE TABLE public.marketing_request_report_share_links (
     file_access_count integer DEFAULT 0 NOT NULL,
     refused_count integer DEFAULT 0 NOT NULL,
     last_refused_at timestamp with time zone,
+    token_hash text,
+    token_preview text,
     CONSTRAINT marketing_request_report_share_links_surface_check CHECK ((surface = ANY (ARRAY['live'::text, 'feed'::text])))
 );
 
@@ -70286,7 +70334,7 @@ ALTER TABLE public.telegram_connections OWNER TO postgres;
 
 CREATE TABLE public.territory_preview_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    token text NOT NULL,
+    token text,
     label text,
     created_by_hr_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -70296,7 +70344,9 @@ CREATE TABLE public.territory_preview_links (
     revoked_at timestamp with time zone,
     revoked_by_hr_id text,
     last_accessed_at timestamp with time zone,
-    access_count integer DEFAULT 0 NOT NULL
+    access_count integer DEFAULT 0 NOT NULL,
+    token_hash text,
+    token_preview text
 );
 
 ALTER TABLE public.territory_preview_links OWNER TO postgres;
@@ -71840,22 +71890,6 @@ CREATE TABLE public.workflow_registry_modules (
 ALTER TABLE public.workflow_registry_modules OWNER TO postgres;
 
 --
--- Name: zz_backup_reader_probe; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.zz_backup_reader_probe (
-    id integer
-);
-
-ALTER TABLE public.zz_backup_reader_probe OWNER TO postgres;
-
---
--- Name: TABLE zz_backup_reader_probe; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON TABLE public.zz_backup_reader_probe IS 'Created by mistake on 13 Nov 2026 during the backup rehearsal: empty, no grants, row security on. Safe to drop.';
-
---
 -- Name: protected_tables; Type: TABLE; Schema: recovery; Owner: postgres
 --
 
@@ -72995,6 +73029,13 @@ ALTER TABLE ONLY public.automated_payroll_audit
     ADD CONSTRAINT automated_payroll_audit_pkey PRIMARY KEY (id);
 
 --
+-- Name: automated_payroll_carried_expenses automated_payroll_carried_expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_carried_expenses
+    ADD CONSTRAINT automated_payroll_carried_expenses_pkey PRIMARY KEY (expense_id);
+
+--
 -- Name: automated_payroll_carry_forward automated_payroll_carry_forward_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -73077,6 +73118,13 @@ ALTER TABLE ONLY public.automated_payroll_resync_outbox
 
 ALTER TABLE ONLY public.automated_payroll_runs
     ADD CONSTRAINT automated_payroll_runs_pkey PRIMARY KEY (id);
+
+--
+-- Name: automated_payroll_settings automated_payroll_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_settings
+    ADD CONSTRAINT automated_payroll_settings_pkey PRIMARY KEY (id);
 
 --
 -- Name: automated_payroll_standing_additions automated_payroll_standing_additions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -77880,12 +77928,6 @@ CREATE INDEX area_consolidation_target_idx ON public.area_consolidations USING b
 CREATE INDEX areas_line_id_idx ON public.areas USING btree (line_id);
 
 --
--- Name: ats_candidate_call_actions_claim_lookup_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX ats_candidate_call_actions_claim_lookup_idx ON public.ats_candidate_call_actions USING btree (candidate_id) WHERE (action = 'will_call'::text);
-
---
 -- Name: ats_candidate_call_actions_manager_candidate_unique; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -78702,6 +78744,12 @@ CREATE INDEX auth_login_attempts_login_ip_idx ON public.auth_login_attempts USIN
 CREATE INDEX automated_payroll_audit_run_idx ON public.automated_payroll_audit USING btree (run_id);
 
 --
+-- Name: automated_payroll_carried_expenses_run_id_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX automated_payroll_carried_expenses_run_id_idx ON public.automated_payroll_carried_expenses USING btree (run_id);
+
+--
 -- Name: automated_payroll_carry_forward_applied_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -79512,12 +79560,6 @@ CREATE INDEX device_screen_recordings_requested_idx ON public.device_screen_reco
 CREATE INDEX direct_order_approval_steps_approver_idx ON public.direct_order_approval_steps USING btree (approver_hr_id, status) WHERE (approver_hr_id IS NOT NULL);
 
 --
--- Name: direct_order_approval_steps_request_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX direct_order_approval_steps_request_idx ON public.direct_order_approval_steps USING btree (request_id, step_order);
-
---
 -- Name: direct_order_events_request_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -79618,6 +79660,12 @@ CREATE INDEX direct_order_report_share_links_active_idx ON public.direct_order_r
 --
 
 CREATE INDEX direct_order_report_share_links_last_refused_idx ON public.direct_order_report_share_links USING btree (last_refused_at DESC) WHERE (last_refused_at IS NOT NULL);
+
+--
+-- Name: direct_order_report_share_links_token_hash_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX direct_order_report_share_links_token_hash_key ON public.direct_order_report_share_links USING btree (token_hash);
 
 --
 -- Name: direct_order_request_items_product_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -80020,12 +80068,6 @@ CREATE INDEX employee_history_team_id_idx ON public.employee_history USING btree
 --
 
 CREATE INDEX employee_history_type_idx ON public.employee_history USING btree (change_type);
-
---
--- Name: employee_locations_employee_hr_id_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX employee_locations_employee_hr_id_idx ON public.employee_locations USING btree (employee_hr_id);
 
 --
 -- Name: employee_locations_employee_hr_id_uidx; Type: INDEX; Schema: public; Owner: postgres
@@ -82168,6 +82210,12 @@ CREATE INDEX marketing_request_report_share_links_creator_idx ON public.marketin
 --
 
 CREATE INDEX marketing_request_report_share_links_last_refused_idx ON public.marketing_request_report_share_links USING btree (last_refused_at DESC) WHERE (last_refused_at IS NOT NULL);
+
+--
+-- Name: marketing_request_report_share_links_token_hash_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX marketing_request_report_share_links_token_hash_key ON public.marketing_request_report_share_links USING btree (token_hash);
 
 --
 -- Name: marketing_requests_line_area_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -85194,6 +85242,12 @@ CREATE UNIQUE INDEX telegram_connections_user_active_idx ON public.telegram_conn
 CREATE INDEX territory_preview_links_creator_idx ON public.territory_preview_links USING btree (created_by_hr_id, created_at DESC);
 
 --
+-- Name: territory_preview_links_token_hash_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX territory_preview_links_token_hash_key ON public.territory_preview_links USING btree (token_hash);
+
+--
 -- Name: uq_company_devices_asset_tag; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -85438,12 +85492,6 @@ CREATE INDEX v2_vacation_requests_status_idx ON public.v2_vacation_requests USIN
 --
 
 CREATE INDEX v2_vacation_retention_purge_runs_started_idx ON public.v2_vacation_retention_purge_runs USING btree (started_at DESC);
-
---
--- Name: v2_vacation_sla_runs_run_date_idx; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX v2_vacation_sla_runs_run_date_idx ON public.v2_vacation_sla_runs USING btree (run_date DESC);
 
 --
 -- Name: visual_aids_active_line_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -87201,6 +87249,13 @@ ALTER TABLE ONLY public.attendance_weekly_digests
 
 ALTER TABLE ONLY public.automated_payroll_audit
     ADD CONSTRAINT automated_payroll_audit_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.automated_payroll_runs(id) ON DELETE RESTRICT;
+
+--
+-- Name: automated_payroll_carried_expenses automated_payroll_carried_expenses_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.automated_payroll_carried_expenses
+    ADD CONSTRAINT automated_payroll_carried_expenses_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.automated_payroll_runs(id) ON DELETE CASCADE;
 
 --
 -- Name: automated_payroll_carry_forward automated_payroll_carry_forward_applied_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -91193,6 +91248,12 @@ CREATE POLICY automated_payroll_audit_admin_insert ON public.automated_payroll_a
 CREATE POLICY automated_payroll_audit_admin_select ON public.automated_payroll_audit FOR SELECT TO authenticated USING (public.current_access_can_manage_employees());
 
 --
+-- Name: automated_payroll_carried_expenses; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.automated_payroll_carried_expenses ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: automated_payroll_carry_forward; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -91473,6 +91534,12 @@ CREATE POLICY automated_payroll_runs_admin_select ON public.automated_payroll_ru
 --
 
 CREATE POLICY automated_payroll_runs_admin_update ON public.automated_payroll_runs FOR UPDATE TO authenticated USING (public.current_access_can_manage_employees()) WITH CHECK (public.current_access_can_manage_employees());
+
+--
+-- Name: automated_payroll_settings; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.automated_payroll_settings ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: automated_payroll_standing_additions; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -97085,12 +97152,6 @@ ALTER TABLE public.workflow_registry_modules ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY workflow_registry_modules_service_role_all ON public.workflow_registry_modules TO service_role USING (true) WITH CHECK (true);
-
---
--- Name: zz_backup_reader_probe; Type: ROW SECURITY; Schema: public; Owner: postgres
---
-
-ALTER TABLE public.zz_backup_reader_probe ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: SCHEMA analytics; Type: ACL; Schema: -; Owner: postgres
@@ -102739,6 +102800,12 @@ GRANT SELECT,INSERT,MAINTAIN ON TABLE public.automated_payroll_audit TO authenti
 GRANT SELECT,INSERT,REFERENCES,TRIGGER,MAINTAIN ON TABLE public.automated_payroll_audit TO service_role;
 
 --
+-- Name: TABLE automated_payroll_carried_expenses; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.automated_payroll_carried_expenses TO service_role;
+
+--
 -- Name: TABLE automated_payroll_carry_forward; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -102810,6 +102877,12 @@ GRANT ALL ON TABLE public.automated_payroll_non_employees TO service_role;
 --
 
 GRANT ALL ON TABLE public.automated_payroll_resync_outbox TO service_role;
+
+--
+-- Name: TABLE automated_payroll_settings; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.automated_payroll_settings TO service_role;
 
 --
 -- Name: TABLE automated_payroll_standing_additions; Type: ACL; Schema: public; Owner: postgres
@@ -106311,12 +106384,6 @@ GRANT ALL ON TABLE public.whatsapp_inbox_messages TO service_role;
 --
 
 GRANT ALL ON TABLE public.workflow_registry_modules TO service_role;
-
---
--- Name: TABLE zz_backup_reader_probe; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT ALL ON TABLE public.zz_backup_reader_probe TO service_role;
 
 --
 -- Name: TABLE protected_tables; Type: ACL; Schema: recovery; Owner: postgres

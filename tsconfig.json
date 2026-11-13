@@ -57,6 +57,9 @@
     "mobile",
     "scripts/tmp",
     "supabase/.temp",
+    // Deno code for Supabase Edge Functions (`npm:` imports, the `Deno` global) — not this program
+    // (supabase/functions/README.md).
+    "supabase/functions",
     // Gitignored scratch space (.gitignore: "outputs/"). Files rescued out of
     // orphan worktrees land here with their original relative imports, which no
     // longer resolve from this depth — so tsc failed on a file that is not in

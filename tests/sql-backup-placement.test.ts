@@ -13,7 +13,7 @@ import { findMisplacedBackupTables, stripSqlComments } from "../scripts/check-sq
 const F = "supabase/example.sql";
 const tables = (sql: string) => findMisplacedBackupTables(sql, F).map((v) => v.table);
 
-/** The real statement from supabase/crm_restamp_reused_agent_slots.sql, 2026-08-01. */
+/** The real statement from supabase/scripts/crm_restamp_reused_agent_slots.sql, 2026-08-01. */
 const REAL_OFFENDER = `
 begin;
 create table if not exists public.crm_restamp_backup_20260801 as

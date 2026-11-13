@@ -24,7 +24,7 @@ database unreachable by every application role.
 No migration in this repo performs that revoke; production has the identical
 migration set and stayed healthy. It was an out-of-band change against staging.
 
-`supabase/staging_public_grants_restore_20260731.sql` remains in the repo as the
+`supabase/scripts/staging_public_grants_restore_20260731.sql` remains in the repo as the
 record of what production's matrix looked like, and it worked exactly as
 designed. **Do not re-run it against the current staging project** — see below.
 

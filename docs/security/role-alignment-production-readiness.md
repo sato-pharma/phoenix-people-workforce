@@ -245,7 +245,7 @@ Rollback should be prepared before migration:
 
 Recommended production path:
 
-- Use the sandbox-passed `supabase/20260511_phoenix_role_alignment.sql` as the forward migration candidate.
+- Use the sandbox-passed `supabase/scripts/20260511_phoenix_role_alignment.sql` as the forward migration candidate.
 - Apply only after backup and final preflight.
 - Do not manually edit production policies in the dashboard.
 - Do not apply partial SQL snippets.

@@ -6,7 +6,7 @@
  * holds the HR Generalist seat by in-app + email + Telegram, and serves the
  * consolidated HR queue at /business-card-requests.
  *
- * Schema is in supabase/2026_business_card_requests.sql. If the table is missing
+ * Schema is in supabase/scripts/2026_business_card_requests.sql. If the table is missing
  * (migration not yet applied) the service degrades to a no-op empty list rather
  * than crashing the page.
  *

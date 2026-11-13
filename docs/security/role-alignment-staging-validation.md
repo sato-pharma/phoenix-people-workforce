@@ -7,7 +7,7 @@
 > **cannot be run as written** until a fresh free/staging RLS target is provisioned. Do
 > **not** substitute the production project.
 
-This runbook validates `supabase/20260511_phoenix_role_alignment.sql` against a staging or branch Supabase database only.
+This runbook validates `supabase/scripts/20260511_phoenix_role_alignment.sql` against a staging or branch Supabase database only.
 
 Do not run this against production. The runner applies the migration to the target database after safety checks pass.
 
@@ -106,7 +106,7 @@ The automated runner:
 1. Verifies staging-only environment variables.
 2. Refuses production-looking environment names and Supabase URLs.
 3. Creates backup tables for role/profile state, RLS policies, and helper functions.
-4. Applies `supabase/20260511_phoenix_role_alignment.sql`.
+4. Applies `supabase/scripts/20260511_phoenix_role_alignment.sql`.
 5. Validates schema, helper functions, grants, role mappings, and dangerous policy patterns.
 6. Runs `tests/scripts/phoenix-staging-rls-harness.ts` with real authenticated staging users.
 7. Prints a PASS/FAIL report.
@@ -246,7 +246,7 @@ Dry-run mode validates:
 - Critical 9-role smoke matrix presence.
 - Optional full 15-role enterprise matrix presence.
 - Migration file path, file size, and SHA-256 checksum.
-- Required SQL sections in `supabase/20260511_phoenix_role_alignment.sql`.
+- Required SQL sections in `supabase/scripts/20260511_phoenix_role_alignment.sql`.
 - Backup SQL sections in the runner.
 - Dangerous policy detector SQL sections in the runner.
 - Authenticated harness file location.
@@ -310,7 +310,7 @@ Login failure:
 
 RLS helper grant failure:
 
-- Re-check that `supabase/20260511_phoenix_role_alignment.sql` ran completely.
+- Re-check that `supabase/scripts/20260511_phoenix_role_alignment.sql` ran completely.
 - Verify `authenticated` has `EXECUTE` and `anon` does not for the `current_access_*` helpers.
 
 Dangerous policy detector failure:

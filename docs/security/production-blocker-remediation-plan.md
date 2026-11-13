@@ -444,7 +444,7 @@ commit;
 1. Admin-HR identity remediation. **Complete.**
 2. Re-run production preflight. **Complete for admin-HR identity; probation remains tracked separately.**
 3. Take production backup for role-alignment change window.
-4. Apply `supabase/20260511_phoenix_role_alignment.sql`.
+4. Apply `supabase/scripts/20260511_phoenix_role_alignment.sql`.
 5. Run read-only production validation.
 6. Monitor auth, RLS-denied requests, payroll, employees, and admin access.
 7. Schedule reviewed `employee_probation` remediation as a separate security workstream.

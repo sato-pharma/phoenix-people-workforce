@@ -4,7 +4,7 @@
  * Persists tickets opened from /employee-portals/contact-hr-support to the
  * `public.employee_support_requests` table. Returns viewer-scoped lists.
  *
- * Schema is in supabase/2026_employee_support_requests.sql. If the table
+ * Schema is in supabase/scripts/2026_employee_support_requests.sql. If the table
  * is missing (migration not yet applied) the service degrades to a no-op
  * empty list rather than crashing the page.
  */

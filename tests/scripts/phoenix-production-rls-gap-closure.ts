@@ -14,7 +14,7 @@ type Finding = {
 const productionRef = "ozucdzovmcqvepbozvqf";
 const sandboxRef = "oaifhavixhdtwmseshff";
 const localEnvPath = ".env.production.rls.local";
-const migrationPath = "supabase/20260511_rls_gap_closure.sql";
+const migrationPath = "supabase/scripts/20260511_rls_gap_closure.sql";
 
 const targetTables = [
   "employee_probation",

@@ -36,7 +36,7 @@ function probationPageError(error: unknown) {
   }
 
   if (isProbationSchemaMissing(error)) {
-    return "Probation review schema is not ready. Run supabase/20260510_probation_workflow.sql in Supabase SQL editor.";
+    return "Probation review schema is not ready. Run supabase/scripts/20260510_probation_workflow.sql in Supabase SQL editor.";
   }
 
   return probationErrorMessage(error) || employeeDirectoryErrorMessage(error);

@@ -127,7 +127,7 @@ did not take, or if `service_role` lost EXECUTE, *"because every server-side rea
 role"*. No live policy references any of the three, so nothing broke.
 
 🔴 **CORRECTED 2026-10-08, the same day.** The first version of this section credited the
-hand-run script `supabase/phoenix-security-definer-execute-lockdown.sql`, which revokes the
+hand-run script `supabase/scripts/phoenix-security-definer-execute-lockdown.sql`, which revokes the
 same three from `public, anon, authenticated` and was the only thing in the repository that
 appeared to explain the fall — and, being a script rather than a migration, it carried the
 tidy conclusion that *"the database cannot date the revoke"*. That conclusion was wrong, and

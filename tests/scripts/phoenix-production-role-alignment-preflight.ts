@@ -11,7 +11,7 @@ type Finding = {
 
 const productionRef = "ozucdzovmcqvepbozvqf";
 const sandboxRef = "oaifhavixhdtwmseshff";
-const migrationPath = "supabase/20260511_phoenix_role_alignment.sql";
+const migrationPath = "supabase/scripts/20260511_phoenix_role_alignment.sql";
 const readinessReportPath = "docs/security/role-alignment-production-readiness.md";
 const localEnvPath = ".env.production.rls.local";
 

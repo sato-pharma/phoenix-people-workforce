@@ -855,7 +855,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
   // The backup snapshot must not live in `public` — a backup table there is anon-reachable.
   {
     const backup = readFileSync(
-      new URL("../supabase/direct-orders-pharmacy-price-backfill-backup.sql", import.meta.url),
+      new URL("../supabase/scripts/direct-orders-pharmacy-price-backfill-backup.sql", import.meta.url),
       "utf8",
     );
     assert.match(backup, /create schema if not exists direct_orders_backup_/, "the snapshot must live in a dated schema");
