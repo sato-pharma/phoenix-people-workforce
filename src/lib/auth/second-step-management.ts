@@ -30,6 +30,31 @@ export async function accountPasswordMatches(loginId: string, password: string):
   return bcrypt.compare(password, row.password_hash);
 }
 
+/**
+ * ADDING A PASSKEY TO AN ACCOUNT THE SECOND STEP IS ASKED OF NEEDS THE ACCOUNT'S PASSWORD.
+ *
+ * A passkey signs in as both steps, so without this a session somebody else is using (a copied cookie)
+ * could add their own passkey, and it would outlive a reset of the second step and a password change.
+ * Asked before a challenge is issued (app/api/auth/biometric/register/options/route.ts); the verify
+ * route needs none, because it only accepts the single-use challenge that route handed out. The role is
+ * read the way sign-in reads it. Every other role adds a passkey as before, with a live session only.
+ */
+export function passkeyAddAsksPassword(role: string | null | undefined): boolean {
+  return secondStepRequiredForRole(normalizeRole(role));
+}
+
+export type PasskeyAddCheck = { ok: true } | { ok: false; reason: "password_required" | "wrong_password" };
+
+export async function checkPasskeyAddPassword(
+  input: { loginId: string; password: unknown; role: string | null | undefined },
+  passwordMatches: (loginId: string, password: string) => Promise<boolean> = accountPasswordMatches,
+): Promise<PasskeyAddCheck> {
+  if (!passkeyAddAsksPassword(input.role)) return { ok: true };
+  const password = typeof input.password === "string" ? input.password : "";
+  if (!password) return { ok: false, reason: "password_required" };
+  return (await passwordMatches(input.loginId, password)) ? { ok: true } : { ok: false, reason: "wrong_password" };
+}
+
 export type OtherSecondStepAccount = {
   loginId: string;
   name: string;

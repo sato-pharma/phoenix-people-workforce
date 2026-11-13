@@ -389,13 +389,15 @@ export function SecondStepCard() {
           {passwordAsk.action === "reset" && (
             <p className="text-sm text-slate-600">
               The key in your old phone stops working, and so do your recovery codes and remembered browsers.
-              You set up the new phone on the next screen.
+              You set up the new phone on the next screen. Your passkeys stay: check the devices under
+              Biometric sign-in and remove any you do not recognise.
             </p>
           )}
           {passwordAsk.action === "reset_other" && (
             <p className="text-sm text-slate-600">
               Their authenticator key, recovery codes and remembered browsers are removed. Their next password
-              sign-in asks them to set up again.
+              sign-in asks them to set up again. Their passkeys stay, and only they can see and remove them,
+              from their own profile.
             </p>
           )}
           <FormField htmlFor="second-step-card-password" label="Your password" required>
