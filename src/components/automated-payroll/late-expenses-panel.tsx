@@ -106,8 +106,9 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
           <h3 className="text-base font-black tracking-tight text-slate-900">Approved, not yet in a run</h3>
           <p className="mt-0.5 text-sm text-slate-500">
             Outstation trips approved after their payout month was already paid. No run reads that month again, so
-            they are listed here until they are paid. Changing the switch clears the saved Expenses figures of every
-            open run and reopens its Expenses step.
+            they are listed here. Being listed does not prove a trip was never paid: one marked for a check by hand
+            may have been paid by a typed amount, and is never added to a run. Changing the switch clears the saved
+            Expenses figures of every open run and reopens its Expenses step.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

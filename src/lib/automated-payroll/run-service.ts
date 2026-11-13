@@ -20,7 +20,7 @@ import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
 import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
 import {
-  assertCancelAllowedAfterDownloads,
+  assertUndoAllowedAfterDownloads,
   listBankFileDownloads,
   recordBankFileDownloaded,
 } from "./bank-file-downloads.ts";
@@ -48,6 +48,7 @@ import {
   LATE_EXPENSES_SHOWN_KEY,
   LateExpenseRefusal,
   lateExpensesAtPublish,
+  refusalKeepingConfirmedFigures,
   lateExpensesShownFrom,
   parseLateExpensesCarried,
   parseLateExpensesShown,
@@ -719,7 +720,7 @@ export async function cancelRun(
   const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
     // A file that has left for the bank is not undone by cancelling the run — refuse first, before
     // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too.
-    const override = assertCancelAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded);
+    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "cancel");
     // Undo this run's effect on the carry-forward ledger BEFORE marking it
     // cancelled. A run whose Part 2 was confirmed has already marked previous
     // months' overpayments as recovered — but a cancelled run pays nobody, so
@@ -1841,7 +1842,14 @@ function frozenFirstPartsDiffer(
  * intact: re-confirming recomputes straight from current source data, and
  * HR does not need to re-click through every tab to get there.
  */
-export async function unconfirmPart1(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function unconfirmPart1(
+  access: AccessContext,
+  runId: string,
+  options: {
+    /** Reopen though finance downloaded a bank file (REC-035): needs a reason, kept on the audit row. */
+    overrideDownloaded?: { reason?: string | null } | null;
+  } = {},
+): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "reopen Part 1 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
@@ -1892,23 +1900,32 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
   }));
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
-  const updated = await whileClaimed(runId, transition, async () => {
+  const { updated, override } = await whileClaimed(runId, transition, async () => {
+    // Refused after a bank-file download unless he says why; a failed read refuses (REC-035).
+    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "reopen_part1");
+    // The carried trips go back on the list FIRST, as cancel and Reopen Part 2 do: a failed release
+    // then refuses before any figure is unfrozen (late-expenses.ts).
+    await releaseLateExpenseReservations(runId);
     await upsertDraftRows(runId, patches);
     // What confirming Part 1 (and any Part 2 confirm since) reserved of earlier months' held salary is
     // withdrawn with the freeze: re-confirming records it again from the figures as they then stand.
     await recordHeldReleases({ runId, actorHrId: actorId(access), stage: "part1_reopened", releases: [] });
-    await releaseLateExpenseReservations(runId);
-    return updateRun(
+    const reopened = await updateRun(
       runId,
       { phase: "part1", part1ConfirmedAt: null, part1ConfirmedBy: null },
       { transitionToken: transition },
     );
+    return { updated: reopened, override };
   });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
     action: "part1_unconfirmed",
-    detail: { unfrozenEmployees: patches.length, stampedBasisCleared: stampedCleared },
+    detail: {
+      unfrozenEmployees: patches.length,
+      stampedBasisCleared: stampedCleared,
+      ...(override.overridden ? { reopenedAfterBankFileDownload: true, overrideReason: override.reason } : {}),
+    },
   });
   return updated;
 }
@@ -1931,7 +1948,14 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
  * recompute from current data on the next confirm, and HR should not have to click through every
  * tab again to correct one figure.
  */
-export async function unconfirmPart2(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function unconfirmPart2(
+  access: AccessContext,
+  runId: string,
+  options: {
+    /** Reopen though finance downloaded a bank file (REC-035): needs a reason, kept on the audit row. */
+    overrideDownloaded?: { reason?: string | null } | null;
+  } = {},
+): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "reopen Part 2 of a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
@@ -1944,7 +1968,10 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
 
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["ready"], "Reopening Part 2");
-  const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+  const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
+    // `ready` is the state finance takes the files in: a reopen after a recorded download is refused
+    // exactly like a cancel, unless he says why, and a failed read refuses too (REC-035).
+    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "reopen_part2");
     // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
     // reopen before the ledger is touched (late-expenses.ts).
     await releaseLateExpenseReservations(runId);
@@ -1954,13 +1981,17 @@ export async function unconfirmPart2(access: AccessContext, runId: string): Prom
       { phase: "part2", part2ConfirmedAt: null, part2ConfirmedBy: null },
       { transitionToken: transition },
     );
-    return { ledger: released, updated: reopened };
+    return { ledger: released, updated: reopened, override };
   });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
     action: "part2_unconfirmed",
-    detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
+    detail: {
+      carryForwardReleased: ledger.released,
+      carryForwardDiscarded: ledger.discarded,
+      ...(override.overridden ? { reopenedAfterBankFileDownload: true, overrideReason: override.reason } : {}),
+    },
   });
   // A decision parked after Part 2 was confirmed was waiting for exactly this (resync-outbox.ts).
   await landParkedResyncs(updated);
@@ -2800,8 +2831,9 @@ async function expensesCoveredForPublish(
 }
 
 /**
- * After a carried-trip refusal at Part 2 confirm or publish: clears the saved Expenses figure of the people
- * it names in this run, reopens the Expenses step, and rejects with a message saying so (late-expenses.ts).
+ * After a carried-trip refusal at Part 2 confirm: clears the saved Expenses figure of the people it names in
+ * this run, reopens the Expenses step, and rejects with a message saying so (late-expenses.ts). Never at
+ * publish, where the run is Part 2-confirmed: see refusalKeepingConfirmedFigures.
  */
 async function refuseAfterClearing(
   runId: string,
@@ -3136,8 +3168,9 @@ export async function publishToPayslips(access: AccessContext, runId: string): P
     );
     return { batchId, carryForwardRecovered, heldReleased, updated };
   }).catch((publishError: unknown) => {
-    // A carried-trip refusal comes before anything is written: the figure built on the trip is cleared.
-    if (publishError instanceof LateExpenseRefusal) return refuseAfterClearing(runId, publishError, ["ready"], rows);
+    // A carried-trip refusal comes before anything is written, and clears nothing: the run is Part 2-confirmed,
+    // so its files may already be at the bank (REC-035, refusalKeepingConfirmedFigures).
+    if (publishError instanceof LateExpenseRefusal) throw refusalKeepingConfirmedFigures(publishError);
     // A lost claim HERE is not "nothing happened": the payslips are live and the run is not marked.
     // Saying otherwise invites the two moves that make it worse — re-publishing, or reopening Part 2 and
     // releasing a carry-forward that was genuinely collected.

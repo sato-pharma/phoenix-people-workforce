@@ -207,8 +207,8 @@ export function expenseDecisionsThatChanged(
  * The runs carrying a moved trip from an earlier, published payout month (late-expenses.ts). Every open
  * run in Part 1 or Part 2 that lists or reserves the trip — its Expenses step confirmed or not — has that
  * person's figure cleared and the step reopened, exactly as for the month's own trips; a run already
- * confirmed at Part 2 is reported as the same skip (its publish re-reads the trip, refuses, and clears the
- * figure). A run that cannot be reached is PARKED for retry like a month's own trips, unless this is that
+ * confirmed at Part 2 is reported as the same skip (its publish re-reads the trip and refuses, clearing
+ * nothing — the figure is corrected by reopening Part 2). A run that cannot be reached is PARKED for retry like a month's own trips, unless this is that
  * retry. Never throws, like the rest of the resync.
  */
 export async function resyncCarriedLateTrips(
