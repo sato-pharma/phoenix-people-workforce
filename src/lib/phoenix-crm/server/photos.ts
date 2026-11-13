@@ -18,6 +18,7 @@
 import crypto from "node:crypto";
 
 import { ApiError, validationError } from "@/lib/http/api-errors";
+import { fetchWithTimeout } from "@/lib/http/fetch-with-timeout";
 import { readTestFlag, territoryForValidation, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -169,10 +170,14 @@ export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown):
 
   let response: Response;
   try {
-    response = await fetch(slot.signedUrl, {
+    // A deadline (REC-050): a stalled storage answer held the phone's save open with no end. A PUT,
+    // so it is sent ONCE — never retried here; a lost answer is the 409 below. Thirty seconds for at
+    // most 2 MB; a run-out lands in the catch, the same "take it again" the person already sees.
+    response = await fetchWithTimeout(slot.signedUrl, {
       body: new Uint8Array(bytes),
       headers: { "content-type": "image/jpeg", "x-upsert": "false" },
       method: "PUT",
+      timeoutMs: 30_000,
     });
   } catch {
     throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");

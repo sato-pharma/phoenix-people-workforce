@@ -26,6 +26,7 @@
 
 import crypto from "node:crypto";
 
+import { fetchWithTimeout, isOutboundTimeoutError } from "@/lib/http/fetch-with-timeout";
 import type {
   DownloadedFile,
   RecruitmentFileStorageAdapter,
@@ -242,6 +243,13 @@ export async function driveMultipartUpload(input: {
   return data.id;
 }
 
+/** A Drive read that ran out of time fails with the message of a refused read; anything else is unchanged. */
+function asDriveFailure(message: string) {
+  return (error: unknown): never => {
+    throw isOutboundTimeoutError(error) ? new Error(message, { cause: error }) : error;
+  };
+}
+
 export const googleDriveFileStorage: RecruitmentFileStorageAdapter = {
   id: "google-drive",
   supportsUpload: true,
@@ -261,15 +269,22 @@ export const googleDriveFileStorage: RecruitmentFileStorageAdapter = {
     const token = await getDriveAccessToken();
     const id = encodeURIComponent(driveFileId);
 
-    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?fields=name,mimeType`, {
+    // Deadlines (REC-050): neither read had one, so a Drive that stalled held the CV download open
+    // until the platform cut the request. A run-out throws the SAME error as Drive refusing the read,
+    // so the person sees the failure they already see for a refusal, never a new one.
+    // The name and type are one small answer; the file itself (a CV is ~1 MB at the 95th
+    // percentile) is given a minute, half the upload's two.
+    const metaRes = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${id}?fields=name,mimeType`, {
       headers: { Authorization: `Bearer ${token}` },
-    });
+      timeoutMs: 15_000,
+    }).catch(asDriveFailure("Google Drive metadata fetch failed."));
     if (!metaRes.ok) throw new Error("Google Drive metadata fetch failed.");
     const meta = (await metaRes.json()) as { name?: string; mimeType?: string };
 
-    const mediaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+    const mediaRes = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
       headers: { Authorization: `Bearer ${token}` },
-    });
+      timeoutMs: 60_000,
+    }).catch(asDriveFailure("Google Drive download failed."));
     if (!mediaRes.ok) throw new Error("Google Drive download failed.");
     const bytes = Buffer.from(await mediaRes.arrayBuffer());
     return { bytes, mimeType: meta.mimeType ?? "application/octet-stream", fileName: meta.name ?? "download" };
