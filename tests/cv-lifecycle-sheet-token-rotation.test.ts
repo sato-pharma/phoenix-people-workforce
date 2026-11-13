@@ -248,7 +248,7 @@ export function runCvLifecycleSheetTokenRotationTests() {
     "the old token may be revoked only AFTER the confirmation gate — reversing these strands the owner with a sheet that cannot read anything",
   );
   assert.ok(
-    rotation.includes('.delete().eq("token", newToken)'),
+    rotation.includes('.delete().eq("token_hash", hashShareToken(newToken))'),
     "an unconfirmed rotation must delete the link it minted, or the next run refuses on 'more than one live link'",
   );
 

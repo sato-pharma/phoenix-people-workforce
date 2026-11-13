@@ -12,16 +12,16 @@ import {
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Direct Orders report, Marketing Requests report and Territory preview share links are stored
-// only as a hash, and their public routes are metered (REC-055, 13 Nov 2026).
+// The Direct Orders report, Marketing Requests report, Territory preview and CV Lifecycle share links
+// are stored only as a hash, and their public routes are metered (REC-055, 13 Nov 2026).
 //
 //   1. The hash is SHA-256 hex — the same expression the migrations use to fill in the existing rows,
 //      so a link already in a sheet keeps opening.
 //   2. A token that could not have been minted is not looked up at all.
-//   3. The three services and the two sheet rotations write `token_hash` and `token_preview`, find a
+//   3. The four services and the three sheet rotations write `token_hash` and `token_preview`, find a
 //      link by `token_hash`, and never read, write or look up the plain `token` column.
 //   4. Every public route meters the caller BEFORE the link is looked up, and a refusal serves nothing.
-//   5. The migration that clears the plain tokens clears all three tables and makes the hash required.
+//   5. The migrations that clear the plain tokens clear all four tables and make the hash required.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function read(relative: string): string {
@@ -32,11 +32,13 @@ const SERVICES = [
   "../src/lib/direct-orders/report-share-links.ts",
   "../src/lib/marketing-requests/report-share-links.ts",
   "../src/lib/territory-management/preview-links.ts",
+  "../src/lib/recruitment/cv-lifecycle-share-links.ts",
 ] as const;
 
 const ROTATIONS = [
   "../src/lib/direct-orders/sheet-token-rotation.ts",
   "../src/lib/marketing-requests/sheet-token-rotation.ts",
+  "../src/lib/recruitment/cv-lifecycle-sheet-token-rotation.ts",
 ] as const;
 
 /** Each public route, and the call that looks its link up — the meter must come first. */
@@ -47,6 +49,7 @@ const PUBLIC_ROUTES = [
   { file: "../app/api/share/marketing-requests/[token]/file/route.ts", lookup: "assertMarketingShareToken(" },
   { file: "../app/api/share/territory/[token]/filters/route.ts", lookup: "loadTerritoryPreviewFilters(" },
   { file: "../app/api/share/territory/[token]/map/route.ts", lookup: "loadTerritoryPreviewArea(" },
+  { file: "../app/api/share/cv-lifecycle/[token]/feed/route.ts", lookup: "resolveCvLifecycleShareLink(" },
 ] as const;
 
 export async function runShareLinkTokenHashTests(): Promise<void> {
@@ -119,4 +122,17 @@ export async function runShareLinkTokenHashTests(): Promise<void> {
     assert.ok(clear.includes(`update public.${table} set token = null where token is not null and token_hash is not null;`), `${table}: the plain tokens must be cleared`);
     assert.match(clear, new RegExp(`alter table public\\.${table}\\s+alter column token_hash set not null`), `${table}: the hash must become required`);
   }
+
+  // The CV Lifecycle links have their own pair, written once the other three were already live.
+  const cvFill = read("../supabase/migrations/20261113195226_cv_lifecycle_share_link_token_hash.sql").replace(/\r\n/g, "\n");
+  const cvClear = read("../supabase/migrations/20261113195228_cv_lifecycle_share_link_clear_tokens.sql").replace(/\r\n/g, "\n");
+  const cvTable = "ats_cv_lifecycle_share_links";
+  const cvFillIn = `update public.${cvTable}\nset token_hash = encode(sha256(convert_to(token, 'UTF8')), 'hex'), token_preview = left(token, 8)`;
+  assert.ok(cvFill.includes(cvFillIn), `${cvTable}: the existing rows must be filled in with the same hash the app computes`);
+  assert.ok(cvFill.includes(`create unique index if not exists ${cvTable}_token_hash_key`), `${cvTable}: the hash must be unique`);
+  assert.ok(!/drop column token\b/.test(cvFill.replace(/^--.*$/gm, "")), `${cvTable}: the first migration keeps every token, so the live sheet reads on while the old code serves`);
+  assert.ok(cvClear.indexOf(cvFillIn) > -1, `${cvTable}: a link the old code made in between is filled in before the tokens are cleared`);
+  const cleared = cvClear.indexOf(`update public.${cvTable} set token = null where token is not null and token_hash is not null;`);
+  assert.ok(cleared > cvClear.indexOf(cvFillIn), `${cvTable}: the plain tokens are cleared, and only after the fill-in`);
+  assert.match(cvClear, new RegExp(`alter table public\\.${cvTable}\\s+alter column token_hash set not null`), `${cvTable}: the hash must become required`);
 }

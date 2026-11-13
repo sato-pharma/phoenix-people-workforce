@@ -4048,7 +4048,7 @@ await runTest(
   runShareLinkListsOmitTokenTests,
 );
 await runTest(
-  "the Direct Orders, Marketing Requests and Territory preview share links are stored only as a SHA-256 hash and an 8-character preview, found by the hash of a well-formed token, rotated and revoked by hash and id, and every public share route meters the caller per address and per link before the lookup",
+  "the Direct Orders, Marketing Requests, Territory preview and CV Lifecycle share links are stored only as a SHA-256 hash and an 8-character preview, found by the hash of a well-formed token, rotated and revoked by hash and id, and every public share route meters the caller per address and per link before the lookup",
   runShareLinkTokenHashTests,
 );
 await runTest(
