@@ -1,9 +1,16 @@
+import {
+  DAILY_JOB_GRACE_SECONDS,
+  DAILY_JOBS,
+  dailyJobCronExpression,
+  dailyJobHeartbeatSlug,
+} from "@/lib/scheduled-jobs/daily-jobs";
+
 /**
  * Every scheduled job this system expects to hear from, and how late it may be before that
  * silence means something.
  *
  * WHY THIS IS DUPLICATED FROM THE DOC TABLE, AND WHY THAT IS SAFE.
- * `docs/observability.md` holds the same 53 rows and is the source of truth for
+ * `docs/observability.md` holds the same rows and is the source of truth for
  * `scripts/healthchecks-sync.mjs`, which pushes schedules to Healthchecks.io. That table cannot be
  * the runtime source as well: this module runs inside the deployed Next.js server, and a Next
  * standalone build traces imported FILES — it does not copy `docs/`. Reading the markdown at
@@ -71,7 +78,23 @@ const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 
 export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
-  { slug: "phoenix-notify-daily", kind: "cron", schedule: "36 6 * * *", graceSeconds: 1 * HOUR },
+  // THE MORNING JOBS, ONE HEARTBEAT EACH (owner, 13 Nov 2026 — enterprise audit F-HR-012 / REC-049).
+  // Until then one slug, `phoenix-notify-daily`, stood for the Needs You digest and about thirty other
+  // jobs run at once at 06:36; that route now runs nothing, and its declaration left with it. Each job
+  // is declared here from the one list of them (src/lib/scheduled-jobs/daily-jobs.ts): its own slug
+  // `phoenix-daily-<job>`, its own Cairo minute between 06:36 and 07:32, and the hour of grace the
+  // bundle had. 🔴 Each must match its scripts/cronjob-sync.mjs entry and its docs/observability.md
+  // row exactly, and lands in the SAME sitting as its cron job (see the digest note below) —
+  // tests/daily-jobs-split.test.ts and tests/job-heartbeat-register.test.ts hold the three together.
+  // NO watchingSince: every one is a new declaration, never a restored one.
+  ...DAILY_JOBS.map(
+    (job): JobScheduleDeclaration => ({
+      slug: dailyJobHeartbeatSlug(job.key),
+      kind: "cron",
+      schedule: dailyJobCronExpression(job),
+      graceSeconds: DAILY_JOB_GRACE_SECONDS,
+    }),
+  ),
   // The production planner's two sweeps, on minutes nothing else in the account uses (06:07 and
   // 06:11), so a missed heartbeat names one job. Both are gated by their own pair of settings
   // switches and do nothing until the owner arms them — but the SWEEP still has to run, which is
@@ -300,7 +323,10 @@ export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
  * are NOT marked `in-house only` - `tests/job-heartbeat-register.test.ts` holds the two together.
  */
 export const HEALTHCHECKS_CHECKED_SLUGS: ReadonlySet<string> = new Set([
-  "phoenix-notify-daily",
+  // The 06:36 Needs You digest holds the check `phoenix-notify-daily` held: the same minute and the
+  // same hour of grace, so the check is handed over by renaming it, not created (docs/observability.md,
+  // "To free a check, hand it over"). The other morning jobs are in-house only.
+  dailyJobHeartbeatSlug("needs-you-daily-digest"),
   "phoenix-marketing-field-capture-nudge",
   "phoenix-marketing-list-check",
   "phoenix-marketing-invoice-overdue-nudge",

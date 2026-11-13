@@ -26,9 +26,11 @@ const read = (path: string) => stripComments(readFileSync(new URL(path, import.m
 
 const ROUTES: Array<{ file: string; job: string; reportsThrough: RegExp }> = [
   {
-    file: "../app/api/notifications/daily/route.ts",
-    job: '"phoenix-notify-daily"',
-    reportsThrough: /pingDeadMansSwitch\(\s*"phoenix-notify-daily"/,
+    // The morning jobs, one per request since 13 Nov 2026 (what the old /api/notifications/daily
+    // fan-out ran as `phoenix-notify-daily`). Its heartbeat slug is computed from the job's name.
+    file: "../app/api/cron/daily/[job]/route.ts",
+    job: "slug",
+    reportsThrough: /pingDeadMansSwitch\(\s*slug/,
   },
   {
     file: "../app/api/cron/reconciliation-check/route.ts",
@@ -205,11 +207,11 @@ export async function runCronAnswerNowTests() {
       return new Response("{}", { status });
     }) as typeof fetch;
     try {
-      await fireCronRouteOnLoopback("/api/notifications/daily");
+      await fireCronRouteOnLoopback("/api/cron/daily/birthday");
       assert.equal(called.length, 1);
       assert.equal(
         called[0].url,
-        "http://127.0.0.1:8080/api/notifications/daily?wait=1",
+        "http://127.0.0.1:8080/api/cron/daily/birthday?wait=1",
         "the re-fire waits for the run, so the status it reads is the run's and not a 202",
       );
       assert.equal(called[0].authorization, "Bearer unit-suite-placeholder", "and still carries the cron secret");

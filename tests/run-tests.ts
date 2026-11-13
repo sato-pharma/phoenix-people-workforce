@@ -3110,6 +3110,7 @@ import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomi
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
+import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11440,11 +11441,11 @@ await runTest(
   runNeedsYouTier2SummaryTests,
 );
 await runTest(
-  "the needs-you weekly email is the COMPLETE channel and reaches exactly one person: it rides the same 06:36 route and self-gates to one weekday in seven (the gate IS its schedule, so a gate that never matches sends nothing for ever and one that always matches emails him every morning), its body carries every item in every lane AND all sixteen source verdicts because completeness is the only thing it has that the 900-character daily digest does not, the could-not-be-read section still leads even though email never truncates, it never also requests telegram since every Phoenix email already mirrors a preview there, the recipient is resolved by the owner's own hr id and fails CLOSED rather than falling back to everyone holding a role, the subject states the week's verdict instead of a fixed phrase nobody opens, and it sets title rather than subjectHrId - which is a different field naming the person a notification is ABOUT and would change who may receive it",
+  "the needs-you weekly email is the COMPLETE channel and reaches exactly one person: it runs every morning as its own job (07:25 Cairo) and self-gates to one weekday in seven (the gate IS its schedule, so a gate that never matches sends nothing for ever and one that always matches emails him every morning), its body carries every item in every lane AND all sixteen source verdicts because completeness is the only thing it has that the 900-character daily digest does not, the could-not-be-read section still leads even though email never truncates, it never also requests telegram since every Phoenix email already mirrors a preview there, the recipient is resolved by the owner's own hr id and fails CLOSED rather than falling back to everyone holding a role, the subject states the week's verdict instead of a fixed phrase nobody opens, and it sets title rather than subjectHrId - which is a different field naming the person a notification is ABOUT and would change who may receive it",
   runNeedsYouWeeklyEmailTests,
 );
 await runTest(
-  "the needs-you daily digest rides the 06:36 route without under-reporting or bending its host: the could-not-be-read section renders FIRST in a channel that truncates from the END mid-word with no marker, the all-clear sentence is gated on the board's own allClearProvable and never on an empty list, a tier-2 summary can only PREFIX the deterministic render so no model can reassure over a board that did not prove itself, the daily route's destructure names and Promise.all entries and hand-maintained totalJobs all agree (a job added without its name captures every later result one position off, which this route's own comments record happening), a CRASHED job reports skipped with its reason rather than a zero indistinguishable from a quiet morning, the DAILY digest never requests email because one email to him is already three deliveries, the recipient is resolved by his own hr id and fails CLOSED rather than falling back to everyone holding a role, and a board with every lane full still fits Telegram's real budget with no ellipsis",
+  "the needs-you daily digest runs as its own 06:36 morning job without under-reporting: the could-not-be-read section renders FIRST in a channel that truncates from the END mid-word with no marker, the all-clear sentence is gated on the board's own allClearProvable and never on an empty list, a tier-2 summary can only PREFIX the deterministic render so no model can reassure over a board that did not prove itself, it is its own morning job, first, alone on 06:36, and its answer names its result (the old fan-out's positional destructure once put every later result one position off), a CRASHED job reports skipped with its reason rather than a zero indistinguishable from a quiet morning, the DAILY digest never requests email because one email to him is already three deliveries, the recipient is resolved by his own hr id and fails CLOSED rather than falling back to everyone holding a role, and a board with every lane full still fits Telegram's real budget with no ellipsis",
   runNeedsYouDailyDigestTests,
 );
 await runTest(
@@ -12149,7 +12150,7 @@ await runTest(
   runCsvFormulaNeutraliserTests,
 );
 await runTest(
-  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  "the Needs You digest is its own morning job, first, at 06:36, alone on its minute and called exactly once, and the morning jobs' route runs one job per request with no Promise.all — a passenger in the old 31-way fan-out lost 1-5 board sources every morning for 15 days",
   runNeedsYouDigestRunsOutsideTheFanoutTests,
 );
 await runTest(
@@ -12331,6 +12332,10 @@ await runTest("a dispute decision is all or nothing, one at a time, and a deduct
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 await runTest("the Integrations page: no credential value ever comes back out, the Super Admin gate runs before any read, a failed read says unavailable, and the messaging API version agrees in all seven files", runIntegrationsRegistryTests);
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
+await runTest(
+  "the morning jobs run one schedule each: every job has exactly one cron-job.org entry on /api/cron/daily/<job> and one heartbeat at the same minute, no two share a minute, the retired /api/notifications/daily runs none of them (anything it ran would run twice a morning), the job route runs one job per request with no fan-out, and the jobs run are exactly the thirty the old fan-out ran",
+  runDailyJobsSplitTests,
+);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

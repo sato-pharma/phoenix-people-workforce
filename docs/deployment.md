@@ -577,7 +577,8 @@ Two things `pull` confirmed that are worth knowing on their own:
   configuration rather than inferred from behaviour.
 - 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires five production routes on a
   time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
-  `cron/recruitment-email-intake`, `notifications/daily`, `cron/background-jobs` — with
+  `cron/recruitment-email-intake`, `notifications/daily` (retired 13 Nov 2026 — it now answers 200 and
+  runs nothing; each morning job has its own `/api/cron/daily/<job>`), `cron/background-jobs` — with
   `restartPolicyType: NEVER`, i.e. a one-shot container. (It fired the three iReports360 syncs too,
   until they were removed from `.railway/railway.ts` with the vendor on 6 November 2026; the live
   service keeps the old command until the next `railway config apply`.) An audit on
@@ -1302,7 +1303,8 @@ table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 
 | Job | Schedule (Cairo) | Endpoint | Purpose |
 |---|---|---|---|
-| `phoenix-notify-daily` | 6:36 AM daily | `/api/notifications/daily` | Birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift, Telegram HR digest |
+| `phoenix-notify-daily` (job `8200909`) | 6:36 AM daily | `/api/notifications/daily` | **Retired 13 Nov 2026 — the route runs nothing and answers 200.** Disable this job once the morning jobs below are armed |
+| `daily-<job>` × 30 (`scripts/cronjob-sync.mjs`) | 6:36–7:32 AM daily, one minute each | `/api/cron/daily/<job>` | The morning jobs, one schedule and one heartbeat (`phoenix-daily-<job>`) each: the Needs You digest at 6:36, then birthdays, contract renewals, the SLA reminders, recruitment, the Telegram HR digest, the drift checks and the retention clean-ups. Times: `src/lib/scheduled-jobs/daily-jobs.ts` |
 | `phoenix-marketing-list-check` | Hourly at :37 | `/api/cron/marketing-list-check` | Re-checks every validated marketing customer against the reps' Phoenix CRM doctor lists; sends nothing (**new 2026-11-03**, armed only after the first `scripts/marketing-list-check.ts --apply`) |
 | `phoenix-marketing-field-capture-nudge` | 6:50 AM daily | `/api/cron/marketing-field-capture-nudge` | Tells each rep which of their marketing customers still show a validated status with no field capture behind them (**new 2026-08-29** — split off `phoenix-notify-daily`, which it had pushed past the 30 s cap) |
 | `phoenix-marketing-invoice-overdue-nudge` | 7:05 AM daily | `/api/cron/marketing-invoice-overdue-nudge` | Tells the requester, and finance, that an approved marketing request's invoice has passed its deadline (**new 2026-08-29**, owner: "the requester and finance"). In-app/Telegram/push only, never email. cron-job.org job `8350529`, created 2026-08-29 |
@@ -1346,8 +1348,8 @@ cron since.
 🔴 **cron-job.org caps request timeout at 30 s and refuses a higher value.** A route that runs
 longer is logged `Failed (timeout)` even though the request *was* delivered and the server finishes
 the work (routes carry `maxDuration = 300`, and `withDeadMansSwitch` pings at the end, so
-Healthchecks.io still sees success). `phoenix-notify-daily` logs a 30 s timeout every morning and is
-**not** failing. Never diagnose a cron from the cron-job.org status alone — check
+Healthchecks.io still sees success). `phoenix-notify-daily` logged a 30 s timeout every morning and was
+**not** failing (since 13 Nov 2026 it runs nothing, and each morning job answers 202 at once). Never diagnose a cron from the cron-job.org status alone — check
 `ireports360_visits_sync_runs` or the outbox instead.
 
 **Why `phoenix-notify-daily` crossed that cap, and what was done about it (2026-08-29).** It had
@@ -1360,7 +1362,8 @@ job is one nobody reads — which is exactly how the outbox drain hid for 13 day
 HTTP 200. The nudge now has its own route and its own clock
 (`/api/cron/marketing-field-capture-nudge`), putting the daily run back under the cap. **Prefer
 this to tolerating the red:** "the status lies" is true, and still a worse place to be than a job
-whose red means something.
+whose red means something. (On 13 Nov 2026 the bundle itself was split: every morning job now has its
+own route segment, clock and heartbeat, `/api/cron/daily/<job>`.)
 
 ### Arming a new cron on deploy (`cron-autoarm.yml`)
 

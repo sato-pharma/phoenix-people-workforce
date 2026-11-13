@@ -1,4 +1,4 @@
-// Daily drift detector for weekly/monthly plans — wired into /api/notifications/daily.
+// Daily drift detector for weekly/monthly plans — the morning job `weekly-plans-drift` (/api/cron/daily/weekly-plans-drift).
 // Runs phx_weekly_plans_drift_check() (read-only RPC) and alerts the admin-configured recipient
 // roles (see notification_role_policies, key "weekly_plans_drift_alert") when any of the 6
 // impossible-state queries returns a non-zero count.

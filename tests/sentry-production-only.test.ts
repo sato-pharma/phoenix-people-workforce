@@ -248,7 +248,7 @@ function beyondErrorsTests() {
 
 function cronMonitorTests() {
   // A declared cron job becomes a crontab monitor in Africa/Cairo, with the register's own grace as the margin.
-  const daily = sentryMonitorConfigFor("phoenix-notify-daily");
+  const daily = sentryMonitorConfigFor("phoenix-daily-needs-you-daily-digest");
   assert.deepEqual(daily?.schedule, { type: "crontab", value: "36 6 * * *" });
   assert.equal(daily?.checkinMargin, 60, "a one-hour grace is a sixty-minute margin");
   assert.equal(daily?.timezone, "Africa/Cairo", "the register is Cairo local; UTC would put every window hours off");

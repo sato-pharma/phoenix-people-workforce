@@ -61,7 +61,7 @@ export async function GET(request: Request) {
     // while the outbox was frozen and delivering nothing — so the monitor stayed green through
     // the entire incident. Ping the QUEUE'S VERDICT instead: a run that completes but strands
     // work that was already due takes the check DOWN. Same pattern, and the same reason, as
-    // app/api/notifications/daily/route.ts — a partial failure that must not read as success.
+    // app/api/cron/daily/[job]/route.ts — a partial failure that must not read as success.
     const processing = await runScheduledNotificationProcessing(limit);
 
     if (processing.skipped) {

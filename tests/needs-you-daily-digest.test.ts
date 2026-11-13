@@ -10,6 +10,7 @@ import {
 } from "../src/lib/needs-you/deliver/daily.ts";
 import { SAFE_BUDGET } from "../src/lib/needs-you/render/telegram.ts";
 import { needsYouSourceIds, type NeedsYouBoard, type NeedsYouItem } from "../src/lib/needs-you/types.ts";
+import { DAILY_JOBS } from "../src/lib/scheduled-jobs/daily-jobs.ts";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -20,12 +21,11 @@ import { stripComments } from "./support/comment-strip.ts";
  * not answer, costs the decision more surely than no message would — because the looking has been
  * delegated. Every assertion here is that rule in one of the shapes that could break it.
  *
- * 🔴 AND THE ROUTE IT RIDES ON CARRIES A DOCUMENTED OFF-BY-ONE. `/api/notifications/daily`
- * destructures its `Promise.all` positionally, and its own comments record the day a job was added
- * without its name: every later result was captured one position off, so the diagnostic JSON
- * reported one job's result under another's name for weeks. `totalJobs` is hand-maintained beside
- * it and feeds both the run summary and the dead man's switch. Three hand-kept lists that must
- * agree, with nothing checking them — until this file.
+ * THE ROUTE IT RODE ON CARRIED A DOCUMENTED OFF-BY-ONE. `/api/notifications/daily` destructured
+ * its `Promise.all` positionally, and a job once added without its name put every later result one
+ * position off for weeks; `totalJobs` was hand-kept beside it. Since 13 Nov 2026 every morning job
+ * has its own schedule and request (`/api/cron/daily/<job>`), each result carries its own name, and
+ * the digest is the job `needs-you-daily-digest` at 06:36 — so §4 now pins that instead.
  *
  * WHAT EACH ASSERTION CATCHES, in the words of the change that would break it:
  *
@@ -34,8 +34,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *  2. The all-clear sentence reached from an empty list rather than from `allClearProvable` —
  *     "no items" and "no source answered" collapsed into one reading.
  *  3. A tier-2 summary that can do more than prefix a sentence.
- *  4. A sub-job added to the daily route without its destructure name, or without bumping
- *     `totalJobs` — the off-by-one, and the silently under-reporting run summary.
+ *  4. The digest losing its own morning job: its key, its 06:36 minute, its place first in the
+ *     morning, or the job label its failures are logged under.
  *  5. A job failure whose fallback reports a ZERO rather than `skipped` with a reason. A zero from
  *     a crashed job is indistinguishable from a quiet morning.
  *  6. Email added to the DAILY digest. One email to him is already two deliveries (the email plus
@@ -46,7 +46,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(repoRoot, rel), "utf8");
-const DAILY_ROUTE = "app/api/notifications/daily/route.ts";
+const DAILY_ROUTE = "app/api/cron/daily/_lib/daily-job-runners.ts";
 const DELIVER = "src/lib/needs-you/deliver/daily.ts";
 
 function item(over: Partial<NeedsYouItem> & { key: string }): NeedsYouItem {
@@ -78,80 +78,6 @@ function board(over: Partial<NeedsYouBoard> = {}): NeedsYouBoard {
     yours: [],
     ...over,
   };
-}
-
-/** The daily route's two hand-kept lists, read the way the off-by-one actually happens. */
-function readDailyRouteShape() {
-  const src = read(DAILY_ROUTE);
-  const dStart = src.indexOf("  const [\n");
-  const dEnd = src.indexOf("] = await Promise.all([", dStart);
-  assert.ok(dStart >= 0 && dEnd > dStart, `${DAILY_ROUTE}: the destructure block could not be located.`);
-  const names = src
-    .slice(dStart + "  const [\n".length, dEnd)
-    .split("\n")
-    .map((line) => line.replace(/\/\/.*$/, "").trim())
-    .filter(Boolean)
-    .flatMap((line) => line.split(","))
-    .map((token) => token.trim())
-    .filter((token) => /^[A-Za-z_$][\w$]*$/.test(token));
-
-  // Balanced scan of the Promise.all array, counting commas at depth 1 only — a nested call's
-  // arguments and an object literal's fields are not sub-jobs.
-  const aStart = src.indexOf("await Promise.all([", dStart) + "await Promise.all([".length;
-  let depth = 1;
-  let quote: string | null = null;
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
-  let commas = 0;
-  let i = aStart;
-  for (; i < src.length && depth > 0; i += 1) {
-    const c = src[i];
-    const n = src[i + 1];
-    if (lineComment) {
-      if (c === "\n") lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (c === "*" && n === "/") {
-        blockComment = false;
-        i += 1;
-      }
-      continue;
-    }
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (quote) {
-      if (c === "\\") escaped = true;
-      else if (c === quote) quote = null;
-      continue;
-    }
-    if (c === "/" && n === "/") {
-      lineComment = true;
-      i += 1;
-      continue;
-    }
-    if (c === "/" && n === "*") {
-      blockComment = true;
-      i += 1;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      continue;
-    }
-    if (c === "(" || c === "[" || c === "{") depth += 1;
-    else if (c === ")" || c === "]" || c === "}") {
-      depth -= 1;
-      if (depth === 0) break;
-    } else if (c === "," && depth === 1) commas += 1;
-  }
-  const body = src.slice(aStart, i);
-  const entries = /,\s*$/.test(body) ? commas : commas + 1;
-  const totalJobs = Number((src.match(/const totalJobs = (\d+);/) ?? [])[1]);
-  return { entries, names, src, totalJobs };
 }
 
 export function runNeedsYouDailyDigestTests() {
@@ -219,24 +145,22 @@ export function runNeedsYouDailyDigestTests() {
     );
   }
 
-  // 4 — the route's three hand-kept lists agree.
+  // 4 — the digest is its own morning job, first, at its old 06:36, under its own job label.
   {
-    const { entries, names, totalJobs } = readDailyRouteShape();
-    assert.equal(
-      names.length,
-      entries,
-      `${DAILY_ROUTE}: ${names.length} destructure names against ${entries} Promise.all entries. A job ` +
-        "added without its name captures every LATER result one position off — the route's own comments " +
-        "record that happening, and only the diagnostic JSON ever showed it.",
+    const job = DAILY_JOBS.find((entry) => entry.key === NEEDS_YOU_DAILY_JOB);
+    assert.ok(job, `the Needs You digest must be a morning job of its own, keyed "${NEEDS_YOU_DAILY_JOB}"`);
+    assert.equal(DAILY_JOBS[0]?.key, NEEDS_YOU_DAILY_JOB, "it runs FIRST of the morning — he reads it first thing");
+    assert.deepEqual([job.hour, job.minute], [6, 36], "at 06:36 Cairo, the minute it has always arrived");
+    assert.ok(
+      DAILY_JOBS.every((entry) => entry === job || entry.hour !== 6 || entry.minute !== 36),
+      "no other morning job shares its minute — company on its minute is what starved its sources",
     );
-    assert.equal(
-      totalJobs,
-      entries,
-      `${DAILY_ROUTE}: totalJobs is ${totalJobs} against ${entries} sub-jobs. It feeds the run summary ` +
-        "and the dead man's switch, so a stale value under-reports a partial failure to the one monitor " +
-        "that would catch it.",
+    const runners = stripComments(read(DAILY_ROUTE));
+    assert.match(
+      runners,
+      /"needs-you-daily-digest": \{\s*resultName: "needsYouDailyDigest",/,
+      `${DAILY_ROUTE}: its answer names the result needsYouDailyDigest, as the old route's answer did`,
     );
-    assert.ok(names.includes("needsYouDailyDigest"), "the Needs You digest must be named in the destructure");
   }
 
   // 5 — a crashed job reports SKIPPED with a reason, never a zero that reads as a quiet morning.

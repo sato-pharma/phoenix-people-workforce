@@ -383,8 +383,9 @@ const JOBS = {
     title: "Phoenix — distributor upload overdue nudge",
     path: "/api/cron/distributor-upload-overdue-nudge",
     // 07:20 Cairo, matching docs/observability.md and JOB_SCHEDULES. Offset from its neighbours in
-    // the morning block: 06:36 is the daily notification bundle, 06:50 the marketing field-capture
-    // nudge, 07:05 the marketing invoice-overdue nudge, 08:15 the mailbox offboarding sweep.
+    // the morning block: 06:36-07:32 the morning jobs (one entry each, below), 06:50 the marketing
+    // field-capture nudge, 07:05 the marketing invoice-overdue nudge, 08:15 the mailbox offboarding
+    // sweep.
     // Nothing else runs at :20 in this hour, so a red execution here is unambiguous about which job
     // produced it.
     schedule: { hours: [7], minutes: [20], mdays: [-1], months: [-1], wdays: [-1] },
@@ -451,8 +452,8 @@ const JOBS = {
     path: "/api/cron/retention-risk-sweep",
     // 07:40 Cairo, matching docs/observability.md and JOB_SCHEDULES. It has to sit AFTER the
     // morning CRM sync, because it reads the absence of visit rows and a stale mirror reads as a
-    // rep who has vanished. Offset from its neighbours in the morning block: 06:36 is the daily
-    // notification bundle, 06:50 the marketing field-capture nudge, 07:05 marketing
+    // rep who has vanished. Offset from its neighbours in the morning block: 06:36-07:32 the morning
+    // jobs (one entry each, below), 06:50 the marketing field-capture nudge, 07:05 marketing
     // invoice-overdue, 07:20 the distributor upload nudge, 08:15 the mailbox offboarding sweep.
     // Nothing else runs at :40 in this hour, so a red execution here is unambiguous.
     schedule: { hours: [7], minutes: [40], mdays: [-1], months: [-1], wdays: [-1] },
@@ -501,6 +502,231 @@ const JOBS = {
     // The planner's own engine over one product's materials, then at most one email. SILENT until
     // the owner arms it: `alarm_enabled`, `alarm_dry_run`, the template's `is_active` and
     // EMAIL_NOTIFICATIONS_ENABLED are four independent switches and none of them is a default.
+    requestTimeout: 300,
+  },
+  // ── THE MORNING JOBS, ONE ENTRY EACH (owner, 13 Nov 2026 — enterprise audit F-HR-012 / REC-049). ──────
+  // Until then one entry (job `8200909`, made by hand, not in this map) called /api/notifications/daily
+  // at 06:36 and that one request ran the Needs You digest and about thirty other jobs at once. That
+  // route now runs nothing; each job has its own address, minute and heartbeat. The list, the order and
+  // the times are src/lib/scheduled-jobs/daily-jobs.ts; these entries, JOB_SCHEDULES and the
+  // docs/observability.md rows must match it exactly (tests/daily-jobs-split.test.ts).
+  //
+  // The Needs You digest keeps 06:36 (he reads it first thing); the rest follow in the fan-out's old
+  // order, one to four minutes apart, on minutes no other entry in this map holds at that hour except
+  // the every-2, every-5 and every-10 minute drains (adopted below), which hold most minutes of every
+  // hour. Each is a single job's work behind answerNowThenFinish: the scheduler is answered 202 at once
+  // and the heartbeat is the verdict, so the 30 s platform cut (see header) logs no false timeout.
+  //
+  // 🔴 ARMING. cron-autoarm.yml arms each NEW key on the merge that adds it, at about four API requests
+  // a key, against the account's 100 a day. Thirty keys in one push is about 120: read the arming run.
+  "daily-needs-you-daily-digest": {
+    title: "Phoenix — morning job: Needs You daily digest",
+    path: "/api/cron/daily/needs-you-daily-digest",
+    // 06:36 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [36], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-birthday": {
+    title: "Phoenix — morning job: Birthday notices",
+    path: "/api/cron/daily/birthday",
+    // 06:38 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [38], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-contract-renewals": {
+    title: "Phoenix — morning job: Contract renewal notices",
+    path: "/api/cron/daily/contract-renewals",
+    // 06:40 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [40], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-holiday-confirmation": {
+    title: "Phoenix — morning job: Holiday confirmation reminder",
+    path: "/api/cron/daily/holiday-confirmation",
+    // 06:42 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [42], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-vacation-sla": {
+    title: "Phoenix — morning job: Vacation approval reminders",
+    path: "/api/cron/daily/vacation-sla",
+    // 06:44 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [44], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-marketing-sla": {
+    title: "Phoenix — morning job: Marketing request approval reminders",
+    path: "/api/cron/daily/marketing-sla",
+    // 06:46 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [46], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-marketing-assignment-backfill": {
+    title: "Phoenix — morning job: Marketing request approver backfill",
+    path: "/api/cron/daily/marketing-assignment-backfill",
+    // 06:48 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [48], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-recruitment-notifications": {
+    title: "Phoenix — morning job: Recruitment daily notices",
+    path: "/api/cron/daily/recruitment-notifications",
+    // 06:52 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [52], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-telegram-digest": {
+    title: "Phoenix — morning job: Telegram daily HR digest",
+    path: "/api/cron/daily/telegram-digest",
+    // 06:54 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [54], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-outstation-geocode-warmup": {
+    title: "Phoenix — morning job: Outstation address look-up warm-up",
+    path: "/api/cron/daily/outstation-geocode-warmup",
+    // 06:56 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [56], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-excuse-sla": {
+    title: "Phoenix — morning job: Excuse approval reminders",
+    path: "/api/cron/daily/excuse-sla",
+    // 06:57 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-outstation-sla": {
+    title: "Phoenix — morning job: Outstation approval reminders",
+    path: "/api/cron/daily/outstation-sla",
+    // 06:58 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [6], minutes: [58], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-outstation-departure-photo": {
+    title: "Phoenix — morning job: Outstation departure photo reminders",
+    path: "/api/cron/daily/outstation-departure-photo",
+    // 07:02 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [2], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-resignation-sla": {
+    title: "Phoenix — morning job: Resignation approval reminders",
+    path: "/api/cron/daily/resignation-sla",
+    // 07:04 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [4], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-weekly-plans-drift": {
+    title: "Phoenix — morning job: Weekly plans drift check",
+    path: "/api/cron/daily/weekly-plans-drift",
+    // 07:06 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [6], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-excuse-drift": {
+    title: "Phoenix — morning job: Excuse drift check",
+    path: "/api/cron/daily/excuse-drift",
+    // 07:08 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [8], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-rate-limit-prune": {
+    title: "Phoenix — morning job: Rate-limit bucket clean-up",
+    path: "/api/cron/daily/rate-limit-prune",
+    // 07:09 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [9], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-error-events-prune": {
+    title: "Phoenix — morning job: Error log clean-up",
+    path: "/api/cron/daily/error-events-prune",
+    // 07:10 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [10], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-notification-retention": {
+    title: "Phoenix — morning job: Notification retention clean-up",
+    path: "/api/cron/daily/notification-retention",
+    // 07:12 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [12], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-activity-retention": {
+    title: "Phoenix — morning job: Activity log retention clean-up",
+    path: "/api/cron/daily/activity-retention",
+    // 07:14 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [14], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-sos-monthly-report-check": {
+    title: "Phoenix — morning job: Monthly sales report delivery check",
+    path: "/api/cron/daily/sos-monthly-report-check",
+    // 07:16 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [16], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-held-notification-reminder": {
+    title: "Phoenix — morning job: Held notification reminder",
+    path: "/api/cron/daily/held-notification-reminder",
+    // 07:17 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [17], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-held-notification-expiry": {
+    title: "Phoenix — morning job: Held notification expiry",
+    path: "/api/cron/daily/held-notification-expiry",
+    // 07:18 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [18], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-milestone-due": {
+    title: "Phoenix — morning job: Service milestone and birthday card notices",
+    path: "/api/cron/daily/milestone-due",
+    // 07:22 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [22], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-inactive-user-digest": {
+    title: "Phoenix — morning job: Inactive colleagues digest",
+    path: "/api/cron/daily/inactive-user-digest",
+    // 07:24 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [24], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-needs-you-weekly-email": {
+    title: "Phoenix — morning job: Needs You weekly email (Sundays)",
+    path: "/api/cron/daily/needs-you-weekly-email",
+    // 07:25 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [25], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-dead-telegram-link-alert": {
+    title: "Phoenix — morning job: Dead Telegram link alert",
+    path: "/api/cron/daily/dead-telegram-link-alert",
+    // 07:26 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [26], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-probation-milestone-emails": {
+    title: "Phoenix — morning job: Probation Day 30, 60 and 75 emails",
+    path: "/api/cron/daily/probation-milestone-emails",
+    // 07:28 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [28], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-outstation-workload-restamp": {
+    title: "Phoenix — morning job: Outstation workload refresh",
+    path: "/api/cron/daily/outstation-workload-restamp",
+    // 07:29 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [29], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
+  "daily-tablet-recording-retention": {
+    title: "Phoenix — morning job: Tablet recording retention",
+    path: "/api/cron/daily/tablet-recording-retention",
+    // 07:32 Cairo, daily. Matches DAILY_JOBS and JOB_SCHEDULES exactly.
+    schedule: { hours: [7], minutes: [32], mdays: [-1], months: [-1], wdays: [-1] },
     requestTimeout: 300,
   },
   // ── ADOPTED: live jobs made by hand, declared so the repository shows them. Report-only. ──────────

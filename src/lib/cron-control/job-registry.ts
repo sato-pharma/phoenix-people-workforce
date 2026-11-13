@@ -43,8 +43,8 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
   },
   {
     gcpJobName: "phoenix-notify-daily",
-    label: "Daily Notifications",
-    description: "Birthdays, contract renewals, holiday reminders, vacation/marketing/outstation SLA digests, and daily notification/activity-log retention cleanup.",
+    label: "Daily Notifications (retired)",
+    description: "Retired 13 Nov 2026 and runs nothing: the morning jobs it ran together (birthdays, contract renewals, SLA reminders, retention clean-ups and the rest) each run on their own /api/cron/daily/<job>. Kept so its cron-secret gate stays checked while two old schedulers still call it.",
     route: "/api/notifications/daily",
   },
   {

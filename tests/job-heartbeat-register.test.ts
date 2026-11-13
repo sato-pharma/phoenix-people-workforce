@@ -11,6 +11,7 @@ import {
 } from "@/lib/observability/job-heartbeat-assess";
 import { HEALTHCHECKS_CHECKED_SLUGS, JOB_SCHEDULES, type JobScheduleDeclaration } from "@/lib/observability/job-schedule";
 import { decideJobRefires, JOB_REFIRE_POLICIES, refireStrandedJobs } from "@/lib/observability/job-refire";
+import { DAILY_JOBS, dailyJobHeartbeatSlug, dailyJobPath } from "@/lib/scheduled-jobs/daily-jobs";
 
 /**
  * The in-house dead-man's switch (`public.job_heartbeats`).
@@ -542,17 +543,18 @@ export async function runJobHeartbeatRegisterTests() {
 
   // ── Re-firing a stranded morning job (job-refire.ts) ─────────────────────────────────────────
   // 2026-10-16: a deploy killed phoenix-notify-daily at 06:37 and the day's notifications stayed
-  // half-sent. The sweep saw it from 07:36 and did nothing. The decision is pure, so it is pinned
+  // half-sent. Since 13 Nov 2026 those are thirty morning jobs, each with its own policy and address. The sweep saw it from 07:36 and did nothing. The decision is pure, so it is pinned
   // here; the claim and the trigger are injected, so the "once" and "fail closed" rules are too.
   {
-    const NOTIFY = "phoenix-notify-daily";
+    const NOTIFY = dailyJobHeartbeatSlug("needs-you-daily-digest");
+    const NOTIFY_PATH = dailyJobPath("needs-you-daily-digest");
     const overdue = "2026-10-16T04:36:00.000Z"; // 07:36 Cairo
     const at = (iso: string) => new Date(iso);
 
-    assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "notify-daily is the first job with a re-fire policy");
+    assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "the morning jobs are the first with a re-fire policy");
     assert.deepEqual(
       Object.keys(JOB_REFIRE_POLICIES),
-      [NOTIFY, "phoenix-reconciliation-check"],
+      [...DAILY_JOBS.map((job) => dailyJobHeartbeatSlug(job.key)), "phoenix-reconciliation-check"],
       "a job joins this list only after its sub-jobs were read for a same-day repeat (docs/observability.md)",
     );
     // 2026-11-03: a merge at 04:40 removed the container 42 seconds into the nightly integrity checks.
@@ -568,8 +570,8 @@ export async function runJobHeartbeatRegisterTests() {
     const due = decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z"));
     assert.deepEqual(
       due.due,
-      [{ day: "2026-10-16", path: "/api/notifications/daily", slug: NOTIFY }],
-      "a stranded notify-daily at 07:51 Cairo on the day it was missed is due",
+      [{ day: "2026-10-16", path: NOTIFY_PATH, slug: NOTIFY }],
+      "a stranded morning job at 07:51 Cairo on the day it was missed is due, on its own address",
     );
     assert.deepEqual(
       decideJobRefires([{ overdueSince: overdue, slug: "phoenix-retention-risk-pre-payroll" }], at("2026-10-16T04:51:00.000Z")).due,
@@ -602,7 +604,7 @@ export async function runJobHeartbeatRegisterTests() {
       now,
     );
     assert.deepEqual(first.results, [{ outcome: "started", slug: NOTIFY }]);
-    assert.deepEqual(triggered, ["/api/notifications/daily"], "the route is started exactly once");
+    assert.deepEqual(triggered, [NOTIFY_PATH], "the job's own route is started exactly once");
     assert.deepEqual(claimed, [`${NOTIFY}:2026-10-16`], "the claim is per job per Cairo day");
 
     triggered.length = 0;

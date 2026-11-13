@@ -124,7 +124,7 @@ export async function runHealthchecksScheduleSyncTests() {
   // The negative control. Without it, a marker regex that matched every row would pass the two
   // assertions above while silently switching the whole project off.
   assert.equal(
-    bySlug.get("phoenix-notify-daily")?.externalSync,
+    bySlug.get("phoenix-daily-needs-you-daily-digest")?.externalSync,
     true,
     "a row carrying no marker must still be pushed to Healthchecks",
   );
