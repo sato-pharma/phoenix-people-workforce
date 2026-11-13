@@ -15,7 +15,7 @@ export {
 export const DISPUTE_CENTER_BUCKET = "dispute-attachments";
 
 /** The kinds whose pictures live in the shared table; deductions keep their own (built 2026-10-08). */
-export type SharedAttachmentKind = "calendar" | "digest";
+export type SharedAttachmentKind = "calendar" | "digest" | "daily";
 
 const EXTENSION_BY_TYPE: Record<DisputeAttachmentContentType, string> = {
   "image/jpeg": "jpg",
@@ -36,7 +36,7 @@ export function buildDisputeCenterAttachmentPath(input: {
   const safe = (value: string) => value.trim().replace(/[^a-zA-Z0-9-]+/g, "");
   const caseRef = safe(input.caseRef);
   const attachmentId = safe(input.attachmentId);
-  if (input.caseKind !== "calendar" && input.caseKind !== "digest") {
+  if (input.caseKind !== "calendar" && input.caseKind !== "digest" && input.caseKind !== "daily") {
     throw new Error("Cannot store a picture for an unknown kind of dispute.");
   }
   if (!caseRef || !attachmentId) throw new Error("Cannot store a picture without the dispute it belongs to.");
