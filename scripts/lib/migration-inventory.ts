@@ -2445,6 +2445,12 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // the 11th are two rows (1,400), a repeat of the 9th adds none, a one-day row is filed under its own day, and
   // a whole range over a released day, a day inside an old whole-range row, and a second whole row are refused.
   "20261113181600_daily_deductions_one_row_per_day.sql",
+  // Applied 13 Nov 2026 at about 18:55 Cairo: staging through the MCP (ledger row), production by
+  // scripts/apply-sql-file.mjs with the aws-1 pooler after the Supabase MCP declined it; no ledger row there.
+  // Read back on production: ats_candidate_call_actions_claim_lookup_idx, direct_order_approval_steps_request_idx,
+  // employee_locations_employee_hr_id_idx and v2_vacation_sla_runs_run_date_idx are gone, and the four indexes
+  // that answer the same reads are present and valid. Indexes only, no row changed; re-applying is a no-op.
+  "20261113190101_drop_four_duplicate_indexes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

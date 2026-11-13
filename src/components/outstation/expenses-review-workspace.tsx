@@ -245,7 +245,7 @@ export function ExpensesReviewWorkspace() {
         }
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            ? "Outstation expenses table is not ready. Run supabase/scripts/phoenix-payroll-expenses.sql first."
             : expensesPayloadMessage(payload, "Outstation expenses upload failed."),
         );
         return;
@@ -298,7 +298,7 @@ export function ExpensesReviewWorkspace() {
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            ? "Outstation expenses table is not ready. Run supabase/scripts/phoenix-payroll-expenses.sql first."
             : expensesPayloadMessage(payload, "Unable to save outstation expense approvals."),
         );
         return;
@@ -340,7 +340,7 @@ export function ExpensesReviewWorkspace() {
       if (!response.ok) {
         setExpenseAnalysisError(
           payload.error === "payroll_expenses_schema_not_ready"
-            ? "Outstation expenses table is not ready. Run supabase/phoenix-payroll-expenses.sql first."
+            ? "Outstation expenses table is not ready. Run supabase/scripts/phoenix-payroll-expenses.sql first."
             : expensesPayloadMessage(payload, "Unable to import outstation expenses to payroll."),
         );
         return;

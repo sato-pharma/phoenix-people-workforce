@@ -39,16 +39,16 @@ const requiredTables = [
 ];
 
 const baseMigrations = [
-  "supabase/phoenix-sales-manager-hr-id.sql",
-  "supabase/phoenix-core-employee-payroll-schema.sql",
-  "supabase/phoenix-payroll-expenses.sql",
-  "supabase/phoenix-rbac-access-control.sql",
-  "supabase/phoenix-app-auth-admin-user.sql",
-  "supabase/phoenix-dynamic-permissions-rls.sql",
-  "supabase/security-hardening-phase-1.sql",
-  "supabase/phoenix-user-scoped-auth-rls-reconciliation.sql",
-  "supabase/20260509_employee_password_setup_links.sql",
-  "supabase/20260509_live_admin_auth_security_repair.sql",
+  "supabase/scripts/phoenix-sales-manager-hr-id.sql",
+  "supabase/scripts/phoenix-core-employee-payroll-schema.sql",
+  "supabase/scripts/phoenix-payroll-expenses.sql",
+  "supabase/scripts/phoenix-rbac-access-control.sql",
+  "supabase/scripts/phoenix-app-auth-admin-user.sql",
+  "supabase/scripts/phoenix-dynamic-permissions-rls.sql",
+  "supabase/scripts/security-hardening-phase-1.sql",
+  "supabase/scripts/phoenix-user-scoped-auth-rls-reconciliation.sql",
+  "supabase/scripts/20260509_employee_password_setup_links.sql",
+  "supabase/scripts/20260509_live_admin_auth_security_repair.sql",
 ];
 
 function unquoteEnvValue(value: string) {

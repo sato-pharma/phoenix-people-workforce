@@ -407,7 +407,7 @@ Ranked by how much of the current state they carry.
 3. **`src/lib/outstation/payroll-expense-mapping.ts`** — 215 lines and the whole of the amount
    lifecycle. Hardcodes `status:"Approved"`, `hr:"Approved"`, `hrApproved:true` (102-119);
    `nextPayrollPeriod` UTC bug (33); the `report_hr_status → employee name` fallback (166).
-4. **`supabase/20260512_payroll_engine_hardening.sql`** — `phx_import_approved_expenses_to_payroll`.
+4. **`supabase/scripts/20260512_payroll_engine_hardening.sql`** — `phx_import_approved_expenses_to_payroll`.
    The status precondition that makes it unrunnable, and the `SET expenses = coalesce(…, 0)` that
    would zero everyone else (F-01, F-03).
 5. **`src/lib/automated-payroll/recommend.ts`** — `payoutExpenseRowIsPayable` (403). Why **pending**

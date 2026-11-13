@@ -62,6 +62,8 @@ const eslintConfig = defineConfig([
     // Gitignored local snapshot/export directory (e.g. audit-tool code dumps). Not part of the
     // project source — same rationale as the worktree ignores above.
     "artifacts/**",
+    // Deno code for Supabase Edge Functions, not part of the Next.js app (supabase/functions/README.md).
+    "supabase/functions/**",
   ]),
 ]);
 

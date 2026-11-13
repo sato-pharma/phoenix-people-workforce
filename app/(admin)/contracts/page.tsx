@@ -32,7 +32,7 @@ function contractsPageError(error: unknown) {
   }
 
   if (isContractRenewalSchemaMissing(error)) {
-    return "Contract renewal workflow schema is not ready. Run supabase/20260509_contract_renewal_workflow.sql in Supabase SQL editor.";
+    return "Contract renewal workflow schema is not ready. Run supabase/scripts/20260509_contract_renewal_workflow.sql in Supabase SQL editor.";
   }
 
   return contractRenewalErrorMessage(error) || employeeDirectoryErrorMessage(error);

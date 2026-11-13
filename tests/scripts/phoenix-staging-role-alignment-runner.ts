@@ -27,7 +27,7 @@ type LocalEnvLoadInfo = {
   status: "found" | "not_found";
 };
 
-const migrationPath = "supabase/20260511_phoenix_role_alignment.sql";
+const migrationPath = "supabase/scripts/20260511_phoenix_role_alignment.sql";
 const harnessPath = "tests/scripts/phoenix-staging-rls-harness.ts";
 const runnerPath = "tests/scripts/phoenix-staging-role-alignment-runner.ts";
 const localEnvPath = ".env.staging.rls.local";
