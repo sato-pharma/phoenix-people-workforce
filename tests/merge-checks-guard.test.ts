@@ -43,17 +43,28 @@ const run = (name: string, status: string, conclusion: string | null, id = 1, ap
  * it; `null` (or no match) exits 1, which is what a 403 or an unreachable API looks like to the hook.
  * One node script behind an sh and a cmd launcher, so the table is the same on every platform.
  */
-function ghShim(dir: string, answers: Array<[string, string | null]>): string {
+function ghShim(dir: string, answers: Array<[string, string | null]>, slow?: { delayMs: number; log: string }): string {
   const binDir = mkdtempSync(join(dir, "bin-"));
   writeFileSync(join(binDir, "answers.json"), JSON.stringify(answers), "utf8");
+  // `slow`: every call holds for delayMs and records when it started and ended, so a case can see
+  // which reads ran at the same time and whether any question was asked twice.
+  const timing = slow
+    ? [
+        `const log = ${JSON.stringify(slow.log)};`,
+        "const started = Date.now();",
+        `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${slow.delayMs});`,
+        'appendFileSync(log, JSON.stringify({ args: process.argv.slice(2).join(" "), started, ended: Date.now() }) + "\\n");',
+      ]
+    : [];
   writeFileSync(
     join(binDir, "gh.mjs"),
     [
-      'import { readFileSync } from "node:fs";',
+      'import { appendFileSync, readFileSync } from "node:fs";',
       'import { dirname, join } from "node:path";',
       'import { fileURLToPath } from "node:url";',
       'const table = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answers.json"), "utf8"));',
       'const args = process.argv.slice(2).join(" ");',
+      ...timing,
       "const hit = table.find(([key]) => args.includes(key));",
       "if (!hit || hit[1] === null) process.exit(1);",
       "process.stdout.write(hit[1]);",
@@ -82,14 +93,14 @@ function phoenixAnswers(runs: Run[], statuses: unknown[] = []): Array<[string, s
   ];
 }
 
-function runGuard(cwd: string, command: string, ghDir: string | null, tool = "Bash"): Decision {
+function runGuard(cwd: string, command: string, ghDir: string | null, tool = "Bash", minFiles = "0"): Decision {
   const env = envWithPathFirst(process.env, ghDir ?? mkdtempSync(join(cwd, "empty-")));
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
   delete env.PHX_RED_MERGE_OK;
   // C10 and C13 come after C21 and ask their own questions; a large file count keeps C10 quiet so
   // every answer below is C21's.
-  env.PHX_MERGE_MIN_FILES = "0";
+  env.PHX_MERGE_MIN_FILES = minFiles;
   const raw = execFileSync(process.execPath, [guardPath], {
     cwd,
     input: JSON.stringify({ tool_name: tool, cwd, tool_input: { command } }),
@@ -223,8 +234,49 @@ function hookCases(): void {
   }
 }
 
+/**
+ * 🔴 THE MERGE CHECK ASKS GITHUB ITS QUESTIONS TOGETHER, AND EACH ONE ONCE (2026-11-13). C21, C13 and C10
+ * asked about nine questions one after another, 1.3–2 s each: one merge profiled at 17.0 s in this hook,
+ * and twice that day one read in the chain stalled past its 20 s timeout and C21 refused a green merge.
+ * Every call here holds for 700 ms and records when it ran. All three clauses judge this merge (the
+ * default size threshold, not the 0 the cases above use), and the answers keep every one of them quiet:
+ * green checks, no roll-ups, ten changed files.
+ */
+function parallelReadCases(): void {
+  const dir = mkdtempSync(join(tmpdir(), "phx-merge-parallel-"));
+  try {
+    const log = join(dir, "gh-calls.jsonl");
+    const green = [run("validate", "completed", "success"), run("checks", "completed", "success")];
+    const answers: Array<[string, string | null]> = [
+      ["pr list", "[]"],
+      ["changedFiles", "10"],
+      ["state,mergeStateStatus", JSON.stringify({ state: "OPEN", mergeStateStatus: "CLEAN" })],
+      ...phoenixAnswers(green),
+    ];
+    const merged = runGuard(dir, `gh pr merge 17 --squash --repo ${REPO}`, ghShim(dir, answers, { delayMs: 700, log }), "Bash", "4");
+    assert.equal(merged.decision, "allow", `a green ten-file PR must merge: ${merged.reason}`);
+
+    const calls = readFileSync(log, "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as { args: string; started: number; ended: number });
+    for (const asked of ["pr list", "changedFiles", "headRefOid,baseRefName", "check-runs", `commits/${SHA}/status`]) {
+      assert.ok(calls.some((c) => c.args.includes(asked)), `the merge check must still ask ${asked}`);
+    }
+    const repeated = calls.map((c) => c.args).filter((a, i, all) => all.indexOf(a) !== i);
+    assert.deepEqual(repeated, [], "no question goes to GitHub twice in one merge — the clauses share each answer");
+    // The most reads in flight at one moment. One after another this is 1; the PR, protection, roll-up,
+    // size and merge-state reads all start together, so at least three overlap even on a loaded runner.
+    const inFlight = Math.max(...calls.map((c) => calls.filter((o) => o.started < c.ended && c.started < o.ended).length));
+    assert.ok(inFlight >= 3, `the merge check must ask GitHub in parallel, not one read after another (at most ${inFlight} at once)`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export function runMergeChecksGuardTests(): void {
   verdictCases();
   declarationCases();
   hookCases();
+  parallelReadCases();
 }
