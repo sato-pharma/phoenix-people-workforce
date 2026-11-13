@@ -58,6 +58,8 @@ import {
   findTransition,
   statusAfterResubmit,
 } from "@/lib/market-awareness/workflow";
+import { assertMarketAwarenessRegistryTransition } from "@/lib/market-awareness/workflow-registry";
+import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { logError } from "@/lib/observability/log";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
@@ -1487,6 +1489,18 @@ export async function decideActivity(
     const transition = findTransition(existing.status, input.action);
     if (!transition) {
       throw new MarketAwarenessError(`Cannot ${input.action} an activity that is ${existing.status}.`);
+    }
+
+    // The workflow registry's `market_awareness` row is the second gate (REC-005), asked before any
+    // write: an exact copy of the code table, so it refuses nothing the table allows until a Super
+    // Admin edits it, and with no row or no answer the table above is the whole rule.
+    try {
+      await assertMarketAwarenessRegistryTransition({ transition });
+    } catch (error) {
+      if (isWorkflowRegistryTransitionError(error)) {
+        throw new MarketAwarenessError(error instanceof Error ? error.message : String(error));
+      }
+      throw error;
     }
 
     // An amended amount is the CEO's alone. Accepting one at the group step would let the people
