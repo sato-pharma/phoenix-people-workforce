@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { answerNowThenFinish } from "@/lib/http/answer-now";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
@@ -28,10 +29,18 @@ export const maxDuration = 60;
  * Safe to fire twice: the idempotency key is per employee per WEEK, so a retry or double fire reaches
  * nobody a second time. A week with no unexplained day sends nothing at all, and the dead-man's switch
  * is what proves it ran.
+ *
+ * It answers 202 at once and finishes after the response (13 Nov 2026): the scheduler hangs up at 30
+ * seconds and this run took 28,987 ms, one slow week from being recorded as a failure. `?wait=1`
+ * waits for the report as before. See answer-now.ts.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/private-calendar-gap-notice");
   if (denied) return denied;
+  return answerNowThenFinish(request, GAP_NOTICE_JOB_SLUG, () => runGapNotice());
+}
+
+async function runGapNotice(): Promise<Response> {
   try {
     const result = await withDeadMansSwitch(GAP_NOTICE_JOB_SLUG, () => runPrivateCalendarGapNotice());
     return NextResponse.json({ success: true, ...result });

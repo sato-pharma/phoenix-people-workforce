@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import { conflictError } from "@/lib/http/api-errors";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
@@ -2128,8 +2129,8 @@ async function getPendingVacationApprovalStepForActor(input: {
       step: candidate,
     }));
   // HR authority (Super Admin / system) may act on the pending HR step for ANY request — HR is one
-  // conceptual authority (see closeSiblingPendingHrApprovalSteps), so it must not be gated to the
-  // specific approver_hr_id on the row. evaluateStepAction still enforces the sequencing:
+  // conceptual authority (phx_apply_vacation_step_decision closes the sibling HR rows), so it must
+  // not be gated to the specific approver_hr_id on the row. evaluateStepAction still enforces the sequencing:
   // acknowledgement waits for management approvals; reject is allowed at any time.
   if (!step && input.access && isAllVacationVisibility(input.access)) {
     step = pendingSteps.find((candidate) => candidate.stepKey === "hr");
@@ -2150,64 +2151,20 @@ function toOverrideStep(
   };
 }
 
-async function recordVacationApprovalStepDecision(input: {
-  decision: VacationDecision;
-  decisionComment?: string | null;
-  /** Set ONLY on the stalled-approver override — the Super Admin who decided in their place. */
-  overriddenByHrId?: string | null;
-  stepId: string;
-}) {
-  const now = new Date().toISOString();
-  const status = input.decision === "approve" ? "approved" : "rejected";
-  // The row keeps approver_hr_id pointing at the assigned approver, because that IS who the step
-  // belonged to. Without these two columns the decided row would read as if that person answered
-  // it — the one thing an override must never be able to look like.
-  const overriddenByHrId = hrIdForStorage(input.overriddenByHrId) || null;
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationApprovalStepsTable)
-    .update({
-      decided_at: now,
-      decision_comment: nullableText(input.decisionComment),
-      overridden_at: overriddenByHrId ? now : null,
-      overridden_by_hr_id: overriddenByHrId,
-      status,
-      updated_at: now,
-    })
-    .eq("id", input.stepId)
-    .eq("status", "pending")
-    .select("id,request_id,step_key,step_order,approver_hr_id,approver_user_id,status,decision_comment,decided_at,created_at,overridden_by_hr_id,overridden_at")
-    .maybeSingle();
-  if (error) throwVacationDatabaseError(error);
-  if (!data) throw new Error("This vacation approval step was already decided.");
-  return mapVacationApprovalStep(data as VacationApprovalStepRow);
-}
-
-// The "hr" step fans out to every active Super Admin account (so each is notified/can act via
-// their own magic-link email), which previously meant a request could be left waiting on a
-// second HR/Super Admin to also decide, or a decided request left a phantom "pending" item in
-// the other account's queue forever. HR is one conceptual authority: the first Super Admin to
-// decide closes the step for everyone else on this request.
-async function closeSiblingPendingHrApprovalSteps(input: {
-  actorHrId?: string | null;
-  decidedStepId: string;
-  decisionValue: "approved" | "rejected";
-  requestId: string;
-}) {
-  const now = new Date().toISOString();
-  const { error } = await getSupabaseAdmin()
-    .from(vacationApprovalStepsTable)
-    .update({
-      decided_at: now,
-      decision_comment: `Auto-completed: HR step already decided by ${input.actorHrId ?? "another HR/Super Admin account"}.`,
-      status: input.decisionValue,
-      updated_at: now,
-    })
-    .eq("request_id", input.requestId)
-    .eq("step_key", "hr")
-    .eq("status", "pending")
-    .neq("id", input.decidedStepId);
-  if (error) throwVacationDatabaseError(error);
-}
+// Deciding an approver's step lives in the database now (F-HR-010, enterprise audit 13 Nov 2026):
+// phx_apply_vacation_step_decision (supabase/migrations/20261113161725_vacation_step_and_request_atomic.sql)
+// decides the step and moves the request in ONE transaction, for the sequential flow, the paid
+// approval (through phx_apply_vacation_paid_approval_with_step) and Sick leave alike. It replaced
+// recordVacationApprovalStepDecision and closeSiblingPendingHrApprovalSteps, whose writes it
+// reproduces exactly:
+//  - the step: pending -> approved/rejected, decided_at, decision_comment, updated_at, and on the
+//    stalled-approver override overridden_by_hr_id (through hrIdForStorage) and overridden_at. The
+//    row keeps approver_hr_id pointing at the assigned approver, because that IS who the step
+//    belonged to; without the two override columns it would read as if that person answered it.
+//  - the HR siblings: the "hr" step fans out to every active Super Admin account, but HR is one
+//    conceptual authority, so the first Super Admin to decide closes the step for everyone else on
+//    the request ("Auto-completed: HR step already decided by ...").
+// Never write a step row on its own again: a step decided before its request moves is the half-write.
 
 async function markVacationDecisionAccess<T extends VacationRequestRecord>(access: AccessContext, rows: T[]) {
   const stepsByRequestId = await fetchVacationApprovalStepsForRequests(rows.map((row) => row.id));
@@ -2225,6 +2182,19 @@ function isDuplicateActiveVacationError(error: unknown) {
     record?.code === "23505" ||
     message.includes("duplicate key")
   ) && message.includes("v2_vacation_requests_no_duplicate_active");
+}
+
+/**
+ * The error a failed atomic decision write throws (phx_apply_vacation_step_decision and
+ * phx_apply_vacation_paid_approval_with_step). Losing a race is a 409, never a 500 or a 400: 40001
+ * is the request's status moving since the approver read it, 55000 the approver's step already
+ * decided. Both keep the function's own sentence; anything else is a plain error, as before.
+ */
+export function vacationDecisionWriteError(error: unknown): Error {
+  const record = error as { code?: unknown; message?: unknown } | null;
+  const message = typeof record?.message === "string" ? record.message : String(error);
+  if (record?.code === "40001" || record?.code === "55000") return conflictError(message, "vacation_decision_conflict");
+  return new Error(message);
 }
 
 function throwVacationDatabaseError(error: unknown) {
@@ -4633,20 +4603,12 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     ? `This request was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator. ${input.decision === "approve" ? "Approved" : "Rejected"} by ${adminName}, System Administrator.${text(input.decisionComment) ? ` ${text(input.decisionComment)}` : ""}`
     : input.decisionComment ?? null;
 
-  await recordVacationApprovalStepDecision({
-    decision: input.decision,
-    decisionComment: effectiveDecisionComment,
-    overriddenByHrId: overrideContext ? input.actorHrId : null,
-    stepId: step.id,
-  });
-  if (step.stepKey === "hr") {
-    await closeSiblingPendingHrApprovalSteps({
-      actorHrId: input.actorHrId,
-      decidedStepId: step.id,
-      decisionValue,
-      requestId: input.request.id,
-    });
-  }
+  // The step row is NOT written here any more (F-HR-010). It used to be decided - and its HR
+  // siblings closed - with their own calls before the request moved, so a missed request
+  // compare-and-set left the step decided and the request standing still. Both branches below now
+  // decide the step and move the request in ONE database transaction: phx_apply_vacation_step_decision
+  // reproduces recordVacationApprovalStepDecision and closeSiblingPendingHrApprovalSteps exactly.
+  const stepOverriddenByHrId = overrideContext ? hrIdForStorage(input.actorHrId) || null : null;
 
   const nextStatus = evaluation.nextStatus;
   const isFinal = evaluation.isFinal;
@@ -4685,12 +4647,18 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     // under a per-employee advisory lock + status CAS, applies the split, and writes the
     // decision in one transaction. The request-local period/entitlement (computed above by
     // calculatePaymentForRequest) is passed in; the contended values are recomputed inside.
-    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_paid_approval", {
+    //
+    // phx_apply_vacation_paid_approval_with_step decides the step (and closes the HR siblings) and
+    // then calls that unchanged RPC, in the same transaction - the step and the request commit
+    // together or not at all.
+    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_paid_approval_with_step", {
       p_request_id: input.request.id,
       p_expected_status: input.request.status,
+      p_step_id: step.id,
+      p_overridden_by_hr_id: stepOverriddenByHrId,
       p_next_status: nextStatus,
       p_step: step.stepKey === "hr" ? "hr" : "manager",
-      p_decision_by_hr_id: input.actorHrId,
+      p_decision_by_hr_id: input.actorHrId ?? null,
       p_decision_comment: nullableText(effectiveDecisionComment),
       p_now: now,
       p_entitlement_days: balance.entitlementDays,
@@ -4699,8 +4667,8 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       p_duration_days: input.request.durationDays,
       p_vacation_type: input.request.vacationType,
     });
-    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-    if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
+    if (error) throw vacationDecisionWriteError(error);
+    if (!data) throw conflictError("Vacation request was updated by another user. Refresh and try again.", "vacation_decision_conflict");
     decidedRow = data as VacationRequestDbRow;
   } else {
     const updatePayload: Record<string, unknown> = {
@@ -4733,14 +4701,22 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       });
     }
 
-    const { data, error } = await getSupabaseAdmin()
-      .from(vacationRequestsTable)
-      .update(updatePayload)
-      .eq("id", input.request.id)
-      .eq("status", input.request.status)
-      .select("*")
-      .single();
-    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+    // One transaction: lock the request, check its status is still input.request.status, decide the
+    // step (pending -> approved/rejected), close the HR siblings, apply updatePayload. The function
+    // accepts only the columns built above; it refuses anything else.
+    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_step_decision", {
+      p_request_id: input.request.id,
+      p_expected_status: input.request.status,
+      p_step_id: step.id,
+      p_step_status: decisionValue,
+      p_decision_comment: nullableText(effectiveDecisionComment),
+      p_overridden_by_hr_id: stepOverriddenByHrId,
+      p_actor_hr_id: input.actorHrId ?? null,
+      p_now: now,
+      p_request_patch: updatePayload,
+    });
+    if (error) throw vacationDecisionWriteError(error);
+    if (!data) throw conflictError("Vacation request was updated by another user. Refresh and try again.", "vacation_decision_conflict");
     decidedRow = data as VacationRequestDbRow;
   }
   const updated = await mapVacationRowForDisplay(decidedRow);
@@ -4947,21 +4923,12 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
   }
 
   const decisionValue = input.decision === "approve" ? "approved" : "rejected";
-  const decidedStep = await recordVacationApprovalStepDecision({
-    decision: input.decision,
-    decisionComment: input.decisionComment,
-    stepId: step.id,
-  });
-  if (step.stepKey === "hr") {
-    await closeSiblingPendingHrApprovalSteps({
-      actorHrId: input.actorHrId,
-      decidedStepId: step.id,
-      decisionValue,
-      requestId: input.request.id,
-    });
-  }
+  // The step is NOT written here (F-HR-010, Sick leave too): it is decided in the same transaction
+  // as the request update below, by phx_apply_vacation_step_decision. The finality rules only read
+  // each step's status, so they are computed on the step as it WILL be once that call commits —
+  // exactly what reading back the decided row used to give them.
   const stepsAfterDecision = steps.map((candidate) =>
-    candidate.id === decidedStep.id ? decidedStep : candidate
+    candidate.id === step.id ? { ...candidate, status: decisionValue } : candidate
   );
   const rejected = input.decision === "reject" || stepsAfterDecision.some((candidate) => candidate.status === "rejected");
   // HR fans out to every active Super Admin account as its own parallel "hr" row, but HR is one
@@ -5015,15 +4982,23 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     });
   }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(vacationRequestsTable)
-    .update(updatePayload)
-    .eq("id", input.request.id)
-    .eq("status", input.request.status)
-    .select("*")
-    .single();
+  // One transaction: lock the request, check its status is still input.request.status, decide the
+  // step (pending -> approved/rejected, the comment through nullableText as
+  // recordVacationApprovalStepDecision stores it), close the HR siblings, apply updatePayload.
+  const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_step_decision", {
+    p_request_id: input.request.id,
+    p_expected_status: input.request.status,
+    p_step_id: step.id,
+    p_step_status: decisionValue,
+    p_decision_comment: nullableText(input.decisionComment),
+    p_overridden_by_hr_id: null,
+    p_actor_hr_id: input.actorHrId ?? null,
+    p_now: now,
+    p_request_patch: updatePayload,
+  });
 
-  if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  if (error) throw vacationDecisionWriteError(error);
+  if (!data) throw conflictError("Vacation request was updated by another user. Refresh and try again.", "vacation_decision_conflict");
   const updated = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   await insertVacationEvent({

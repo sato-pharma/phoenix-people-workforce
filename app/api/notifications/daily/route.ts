@@ -32,6 +32,7 @@ import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
 import { runMilestoneDueNotices } from "@/lib/milestones/notices";
 import { notifyInactiveUsers } from "@/lib/notifications/inactive-user-digest";
+import { answerNowThenFinish } from "@/lib/http/answer-now";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -465,22 +466,27 @@ export async function GET(request: Request) {
     message: "Daily notification run is not authorized.",
   });
   if (denied) return denied;
-  // The start signal comes BEFORE the run so a container swap that kills it mid-way (06:37 on
-  // 2026-10-16) reads "started, never finished" at Healthchecks instead of an unexplained silence.
-  // Every path out of runDailyNotifications ends in a success or fail ping, so a start is never orphaned.
-  await signalDeadMansSwitchStart("phoenix-notify-daily");
-  try {
-    return await runDailyNotifications(request);
-  } catch (error) {
-    logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
-    // A total dispatcher crash never reaches the per-run ping inside runDailyNotifications above,
-    // so it needs its own — this is the single most important case for the external monitor to
-    // catch (nothing about this run's outcome would otherwise leave the app at all).
-    // The external monitor gets the same redacted text as the response; the real error is in the log above.
-    const message = clientSafeErrorMessage(error, "Daily notification run failed.");
-    await pingDeadMansSwitch("phoenix-notify-daily", "fail", message);
-    return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
-  }
+  // The scheduler hangs up at 30 seconds and this run takes longer (cut at 30,141 ms on 13 Nov 2026),
+  // so it is answered 202 at once and finished after the response; `?wait=1` waits for the report as
+  // before. The verdict is the ping below, never this route's status. See answer-now.ts.
+  return answerNowThenFinish(request, "phoenix-notify-daily", async () => {
+    // The start signal comes BEFORE the run so a container swap that kills it mid-way (06:37 on
+    // 2026-10-16) reads "started, never finished" at Healthchecks instead of an unexplained silence.
+    // Every path out of runDailyNotifications ends in a success or fail ping, so a start is never orphaned.
+    await signalDeadMansSwitchStart("phoenix-notify-daily");
+    try {
+      return await runDailyNotifications(request);
+    } catch (error) {
+      logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
+      // A total dispatcher crash never reaches the per-run ping inside runDailyNotifications above,
+      // so it needs its own — this is the single most important case for the external monitor to
+      // catch (nothing about this run's outcome would otherwise leave the app at all).
+      // The external monitor gets the same redacted text as the response; the real error is in the log above.
+      const message = clientSafeErrorMessage(error, "Daily notification run failed.");
+      await pingDeadMansSwitch("phoenix-notify-daily", "fail", message);
+      return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
+    }
+  });
 }
 
 export async function POST(request: Request) {

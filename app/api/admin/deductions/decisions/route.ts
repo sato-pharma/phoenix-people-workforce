@@ -16,6 +16,8 @@ type DecisionBody = {
   hrNote?: unknown;
   appliedValue?: unknown;
   appliedDates?: unknown;
+  /** The decision's updated_at the screen read; the save is refused if the row moved since (F-PAY-004). */
+  expectedUpdatedAt?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -42,6 +44,9 @@ export async function POST(request: Request) {
     // would let the plain Decide action — which carries no day information —
     // blank out a day selection the reviewer saved a moment earlier.
     const has = (key: keyof DecisionBody) => Object.prototype.hasOwnProperty.call(body, key);
+    if (has("expectedUpdatedAt") && body.expectedUpdatedAt !== null && typeof body.expectedUpdatedAt !== "string") {
+      throw new Error("Validation: expectedUpdatedAt must be the decision's updated_at, or null.");
+    }
 
     const decision = await recordDecision({
       actor: access,
@@ -54,6 +59,8 @@ export async function POST(request: Request) {
       // re-derives it from the candidate the database holds, so a crafted request
       // body cannot set what an employee is charged.
       appliedDates: has("appliedDates") ? (Array.isArray(body.appliedDates) ? body.appliedDates : null) : undefined,
+      // Absent: the plain save. Present: a compare-and-set against the revision the screen read.
+      expectedUpdatedAt: has("expectedUpdatedAt") ? (body.expectedUpdatedAt as string | null) : undefined,
     });
 
     return NextResponse.json({ success: true, decision });

@@ -28,12 +28,13 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request);
     const body = await readJsonObject(request);
-    const links = await createInterviewCalendarLink(caller, {
+    // The new link comes back whole this once (`created`) — only its hash is kept after this.
+    const { created, links } = await createInterviewCalendarLink(caller, {
       accessLevel: body.accessLevel,
       guestCvs: body.guestCvs,
       weekStart: body.weekStart,
     });
-    return NextResponse.json({ links, success: true }, { status: 201 });
+    return NextResponse.json({ created, links, success: true }, { headers: { "Cache-Control": "no-store" }, status: 201 });
   } catch (error) {
     return recruitmentApiError(error, "Could not make the link.");
   }

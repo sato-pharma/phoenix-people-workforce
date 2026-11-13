@@ -8,6 +8,7 @@ import {
   WeeklySheetTiles,
   WeeklySheetToolbar,
 } from "@/components/crm/regional/weekly-sheet-panels";
+import { WeeklySheetRepRow } from "@/components/crm/regional/weekly-sheet-rep-row";
 import { DOCTOR_FAMILY_LABEL } from "@/lib/crm/account-doctor-notes";
 import type { WeeklySheet, WeeklySheetAccount, WeeklySheetRep } from "@/lib/crm/weekly-sheet";
 import {
@@ -46,8 +47,9 @@ import { regionGroupCaption, regionManagerTitle } from "@/lib/phoenix-crm/region
 /**
  * The Weekly Sheet, the Regional Sales Manager's screen (owner, 2026-11-08; the premium pass, 9 Nov 2026).
  * Server-rendered. The panels on top read the whole team; then one section per region and district manager, a row
- * per rep, and each rep's AM accounts opening under the row (a plain disclosure, no client state). Desktop shows
- * tables, a phone shows cards.
+ * per rep, and each rep's AM accounts opening under the row. Desktop shows a real table (owner, 2026-11-13: the div
+ * grid that stood in for one is gone), the accounts opening as the row's own joined panel through the one client
+ * piece, `WeeklySheetRepRow`; a phone shows cards, the accounts behind a plain disclosure.
  *
  * Every figure and every word of a grade comes from `weekly-sheet-summary.ts`. "Met" and "Below" are words, never a
  * colour alone; a week still running says "So far", never "Below"; a comment naming no doctor says so instead of a
@@ -176,22 +178,96 @@ function Accounts({ rep }: { rep: WeeklySheetRep }) {
   );
 }
 
-const REP_GRID = "md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)]";
-
 function MobileLabel({ children }: { children: ReactNode }) {
-  return <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:hidden">{children}</p>;
+  return <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">{children}</p>;
 }
 
-/** The five cells of a rep's row — the same on a row that opens and on one with nothing to open. */
-function RepCells({ position, rep, toggle }: { position: WeeklySheetPosition; rep: WeeklySheetRep; toggle: ReactNode }) {
+/** Who sits on the seat and the week they had — the first fact of a rep's row and card. */
+function RepPerson({ position, rep }: { position: WeeklySheetPosition; rep: WeeklySheetRep }) {
   const verdicts = weeklySheetRepVerdicts(rep, position);
+  return (
+    <>
+      <p className={`break-words text-phx-md font-black ${rep.vacant ? "text-slate-500" : "text-slate-900"}`}>{rep.person}</p>
+      <p className="break-words text-phx-sm text-slate-500">{weeklySheetRepDaysLine(rep)}</p>
+      {!rep.vacant && verdicts.pm === "No working day" ? <p className="text-phx-sm font-semibold text-slate-500">No working day this week, so nothing is graded</p> : null}
+    </>
+  );
+}
+
+function RepPharmacies({ rep }: { rep: WeeklySheetRep }) {
   const waiting = weeklySheetWaitingLine(rep.waiting);
   return (
     <>
+      <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
+      {waiting ? <p className="text-phx-xs font-semibold text-amber-700">{waiting}</p> : null}
+    </>
+  );
+}
+
+function RepAccountsMet({ rep }: { rep: WeeklySheetRep }) {
+  return (
+    <p className="text-phx-md font-black tabular-nums text-slate-900">
+      {rep.accountsMet} of {rep.accounts.length}
+    </p>
+  );
+}
+
+const NO_ACCOUNT_LINE = "No AM account this week";
+const REP_COLUMNS = 5;
+
+/**
+ * A rep's row on the desktop table. A rep with AM accounts opens them as the row's own joined panel
+ * (`WeeklySheetRepRow`, the one client piece); a rep with none offers nothing to open.
+ */
+function RepRow({ position, rep }: { position: WeeklySheetPosition; rep: WeeklySheetRep }) {
+  const anchor = weeklySheetRepAnchor(rep);
+  const cells = (
+    <>
+      <td className="break-words px-4 py-3">
+        <RepPerson position={position} rep={rep} />
+      </td>
+      <td className="px-4 py-3">
+        <Figure position={position} target={rep.pmTarget} vacant={rep.vacant} value={rep.pm} />
+      </td>
+      <td className="px-4 py-3">
+        <Figure position={position} target={rep.amTarget} vacant={rep.vacant} value={rep.am} />
+      </td>
+      <td className="px-4 py-3">
+        <RepPharmacies rep={rep} />
+      </td>
+    </>
+  );
+  if (rep.accounts.length === 0) {
+    return (
+      <tr className={`scroll-mt-4 border-b border-slate-100 align-top ${rep.vacant ? "bg-slate-50" : ""}`} id={anchor}>
+        {cells}
+        <td className="break-words px-4 py-3">
+          <RepAccountsMet rep={rep} />
+          <p className="text-phx-xs font-semibold text-slate-500">{NO_ACCOUNT_LINE}</p>
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <WeeklySheetRepRow
+      anchor={anchor}
+      cells={cells}
+      colSpan={REP_COLUMNS}
+      lastCell={<RepAccountsMet rep={rep} />}
+      showLabel={`Show ${weeklySheetAccountsWord(rep.accounts.length)}`}
+    >
+      <Accounts rep={rep} />
+    </WeeklySheetRepRow>
+  );
+}
+
+/** A rep's card below `md`: every column's fact, labelled, and the accounts behind a plain disclosure. */
+function RepCard({ position, rep }: { position: WeeklySheetPosition; rep: WeeklySheetRep }) {
+  const anchor = weeklySheetRepAnchor(rep, "card");
+  const facts = (
+    <>
       <div className="min-w-0">
-        <p className={`break-words text-phx-md font-black ${rep.vacant ? "text-slate-500" : "text-slate-900"}`}>{rep.person}</p>
-        <p className="break-words text-phx-sm text-slate-500">{weeklySheetRepDaysLine(rep)}</p>
-        {!rep.vacant && verdicts.pm === "No working day" ? <p className="text-phx-sm font-semibold text-slate-500">No working day this week, so nothing is graded</p> : null}
+        <RepPerson position={position} rep={rep} />
       </div>
       <div className="min-w-0">
         <MobileLabel>PM</MobileLabel>
@@ -203,42 +279,28 @@ function RepCells({ position, rep, toggle }: { position: WeeklySheetPosition; re
       </div>
       <div className="min-w-0">
         <MobileLabel>Pharmacies</MobileLabel>
-        <p className="text-phx-md font-black tabular-nums text-slate-900">{rep.pharmacies}</p>
-        {waiting ? <p className="text-phx-xs font-semibold text-amber-700">{waiting}</p> : null}
+        <RepPharmacies rep={rep} />
       </div>
       <div className="min-w-0">
         <MobileLabel>Accounts with 3 of each</MobileLabel>
-        <p className="text-phx-md font-black tabular-nums text-slate-900">
-          {rep.accountsMet} of {rep.accounts.length}
-        </p>
-        {toggle}
+        <RepAccountsMet rep={rep} />
       </div>
     </>
   );
-}
-
-function RepBlock({ position, rep }: { position: WeeklySheetPosition; rep: WeeklySheetRep }) {
-  const anchor = weeklySheetRepAnchor(rep);
   if (rep.accounts.length === 0) {
     return (
-      <div className={`grid scroll-mt-4 gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0 md:items-start md:gap-3 ${REP_GRID} ${rep.vacant ? "bg-slate-50" : ""}`} id={anchor}>
-        <RepCells position={position} rep={rep} toggle={<p className="text-phx-xs font-semibold text-slate-500">No AM account this week</p>} />
+      <div className={`grid scroll-mt-4 gap-2 px-4 py-3 ${rep.vacant ? "bg-slate-50" : ""}`} id={anchor}>
+        {facts}
+        <p className="text-phx-xs font-semibold text-slate-500">{NO_ACCOUNT_LINE}</p>
       </div>
     );
   }
   return (
-    <details className="group scroll-mt-4 border-b border-slate-100 last:border-b-0" id={anchor}>
-      <summary className={`grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50 md:items-start md:gap-3 ${REP_GRID}`}>
-        <RepCells
-          position={position}
-          rep={rep}
-          toggle={
-            <>
-              <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show {weeklySheetAccountsWord(rep.accounts.length)}</p>
-              <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
-            </>
-          }
-        />
+    <details className="group scroll-mt-4" id={anchor}>
+      <summary className="grid cursor-pointer list-none gap-2 px-4 py-3 hover:bg-slate-50">
+        {facts}
+        <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:hidden">Show {weeklySheetAccountsWord(rep.accounts.length)}</p>
+        <p className="hidden text-phx-xs font-black uppercase tracking-[0.1em] text-orange-700 group-open:block">Hide accounts</p>
       </summary>
       <Accounts rep={rep} />
     </details>
@@ -287,16 +349,34 @@ export function WeeklySheetView({
               description={`${regionGroupCaption(whole.reps.length, whole.vacantSeats)} · ${weeklySheetDistrictLine(totals, position)}`}
               title={regionManagerTitle(district.regionName, district.managerName)}
             >
-              <div className={`hidden gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500 md:grid ${REP_GRID}`}>
-                <span>Rep</span>
-                <span>PM</span>
-                <span>AM</span>
-                <span>Pharmacies</span>
-                <span>Accounts with 3 of each</span>
+              <table className="hidden w-full table-fixed text-left md:table">
+                <colgroup>
+                  <col className="w-[26%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[22%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    <th className="px-4 py-2" scope="col">Rep</th>
+                    <th className="px-4 py-2" scope="col">PM</th>
+                    <th className="px-4 py-2" scope="col">AM</th>
+                    <th className="px-4 py-2" scope="col">Pharmacies</th>
+                    <th className="px-4 py-2" scope="col">Accounts with 3 of each</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {district.reps.map((rep) => (
+                    <RepRow key={rep.seatId} position={position} rep={rep} />
+                  ))}
+                </tbody>
+              </table>
+              <div className="grid divide-y divide-slate-100 md:hidden">
+                {district.reps.map((rep) => (
+                  <RepCard key={rep.seatId} position={position} rep={rep} />
+                ))}
               </div>
-              {district.reps.map((rep) => (
-                <RepBlock key={rep.seatId} position={position} rep={rep} />
-              ))}
             </KpiSection>
           </div>
         );

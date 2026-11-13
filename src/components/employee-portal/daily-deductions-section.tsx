@@ -1,5 +1,6 @@
 import { CalendarClock } from "lucide-react";
 
+import { DailyDeductionDisputeBox, type DailyLineDisputeState } from "@/components/employee-portal/daily-deduction-dispute-box";
 import { Card } from "@/components/ui/card";
 import { deductionsCategoryNames } from "@/lib/deductions/types";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
@@ -30,11 +31,17 @@ function formatDays(value: number): string {
  * no salary run — payroll charges from the month module, which the ledger below shows — so a day
  * that appears in both places is charged once. `unavailable` renders a plain sentence instead of an
  * empty list, so a failed read never reads as "nothing released".
+ *
+ * Every line carries its own Dispute box (owner, 2026-11-13 — the page showed these with no way to
+ * argue with them). `disputes` is keyed by line id; null when the disputes could not be read, and then
+ * the box is left off rather than offering a second dispute on a line that may already have one.
  */
 export function DailyDeductionsPortalSection({
+  disputes,
   lines,
   unavailable,
 }: {
+  disputes: Record<string, NonNullable<DailyLineDisputeState>> | null;
   lines: DailyDeductionsPortalLine[];
   unavailable: boolean;
 }) {
@@ -69,20 +76,23 @@ export function DailyDeductionsPortalSection({
       ) : (
         <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
           {lines.map((line) => (
-            <li className="flex flex-col gap-1.5 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4" key={line.id}>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900">{deductionsCategoryNames[line.category]}</p>
-                <p className="mt-0.5 break-words text-xs text-slate-600">
-                  {line.dates.length > 0 ? line.dates.map((date) => utcDate(date)).join(" · ") : "No days listed"}
-                </p>
-                <p className="mt-0.5 text-phx-xs font-semibold text-slate-400">Released {cairoDateTime(line.createdAt)} (Cairo)</p>
+            <li className="py-3" key={line.id}>
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900">{deductionsCategoryNames[line.category]}</p>
+                  <p className="mt-0.5 break-words text-xs text-slate-600">
+                    {line.dates.length > 0 ? line.dates.map((date) => utcDate(date)).join(" · ") : "No days listed"}
+                  </p>
+                  <p className="mt-0.5 text-phx-xs font-semibold text-slate-400">Released {cairoDateTime(line.createdAt)} (Cairo)</p>
+                </div>
+                <div className="shrink-0 sm:text-right">
+                  <p className="font-mono text-sm font-black text-slate-950">{formatMoney(Number(line.amount) || 0)}</p>
+                  {line.deductionUnit === "days" ? (
+                    <p className="text-xs font-semibold text-slate-500">{formatDays(line.daysCount)}</p>
+                  ) : null}
+                </div>
               </div>
-              <div className="shrink-0 sm:text-right">
-                <p className="font-mono text-sm font-black text-slate-950">{formatMoney(Number(line.amount) || 0)}</p>
-                {line.deductionUnit === "days" ? (
-                  <p className="text-xs font-semibold text-slate-500">{formatDays(line.daysCount)}</p>
-                ) : null}
-              </div>
+              {disputes ? <DailyDeductionDisputeBox dispute={disputes[line.id] ?? null} lineId={line.id} /> : null}
             </li>
           ))}
         </ul>

@@ -101,6 +101,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/automated-payroll/finance": { admin: "/admin/automated-payroll/finance" },
   "/api/payroll": { admin: "/payroll", hr: "/hr/payroll" },
   "/api/payroll/copilot": { admin: "/admin/payroll-copilot" },
+  "/api/daily-deductions": { portal: "/employee-portals/deductions" },
   "/api/deductions": { admin: "/admin/deductions", hr: "/hr/admin/deductions", portal: "/employee-portals/deductions" },
   "/api/dispute-center": { admin: "/admin/disputes", portal: "/employee-portals/disputes" },
 

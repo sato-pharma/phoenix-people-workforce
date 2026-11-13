@@ -27,6 +27,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
+  MailboxAppPasswordReportRow,
   MailboxAwaitingLeaver,
   MailboxBulkOutcome,
   MailboxBulkStep,
@@ -117,6 +118,66 @@ function daysSince(dateIso: string | null, todayIso: string): number {
 }
 
 /**
+ * Whether a leaver's app passwords may still work — the app-password report's one rule.
+ *
+ * An app password survives every password change, so the ONLY things that end it are the
+ * app passwords being cleared or the mailbox being deleted. Whether the password was reset is
+ * irrelevant here: a pending row whose password nobody touched is just as reachable from the
+ * leaver's phone as a half-revoked one. `not_applicable` means there never was a mailbox.
+ *
+ * Counted only once the person has left: a pending row before the last working day is a
+ * colleague still at work, not a leaver. An unknown last working day counts — "have they left?"
+ * cannot be answered, and a report that hid them would read as clean when it is not.
+ */
+export function leaverAppPasswordsMayBeLive(
+  input: {
+    status: MailboxTaskStatus;
+    appPasswordsClearedAt: string | null;
+    disposition: MailboxDisposition | null;
+    lastWorkingDate: string | null;
+  },
+  todayIso: string,
+): boolean {
+  if (input.status === "not_applicable") return false;
+  if (input.disposition === "deleted") return false;
+  if (input.appPasswordsClearedAt !== null) return false;
+  return input.lastWorkingDate === null || input.lastWorkingDate < todayIso;
+}
+
+/** The app-password report: every leaver whose app passwords may still work, tasked or not. */
+export function buildAppPasswordReport(
+  tasks: MailboxOffboardingTask[],
+  awaiting: MailboxAwaitingLeaver[],
+  todayIso: string,
+): MailboxAppPasswordReportRow[] {
+  const rows: MailboxAppPasswordReportRow[] = [];
+  for (const task of tasks) {
+    if (!task.appPasswordsMayBeLive) continue;
+    rows.push({
+      employeeHrId: task.employeeHrId,
+      employeeName: task.employeeName,
+      workEmail: task.workEmail,
+      lastWorkingDate: task.lastWorkingDate,
+      passwordReset: task.passwordResetAt !== null,
+      hasRecord: true,
+    });
+  }
+  // A leaver with a mailbox and no record has had nothing done at all — the same exposure.
+  for (const leaver of awaiting) {
+    if (leaver.lastWorkingDate !== null && leaver.lastWorkingDate >= todayIso) continue;
+    rows.push({
+      employeeHrId: leaver.employeeHrId,
+      employeeName: leaver.employeeName,
+      workEmail: leaver.workEmail,
+      lastWorkingDate: leaver.lastWorkingDate,
+      passwordReset: false,
+      hasRecord: false,
+    });
+  }
+  return rows.sort((left, right) => String(left.lastWorkingDate ?? "").localeCompare(String(right.lastWorkingDate ?? "")));
+}
+
+/**
  * The derived flags, as a pure function.
  *
  * Extracted from `mapTask` so a test can reach them without a database — `isHalfRevoked` is the
@@ -138,6 +199,7 @@ export function computeMailboxFlags(
   isOverdue: boolean;
   daysOverdue: number;
   isHalfRevoked: boolean;
+  appPasswordsMayBeLive: boolean;
   isForwardingExpired: boolean;
   canRecordDisposition: boolean;
 } {
@@ -146,6 +208,7 @@ export function computeMailboxFlags(
   return {
     isOverdue: open && daysOverdue > 0,
     daysOverdue,
+    appPasswordsMayBeLive: leaverAppPasswordsMayBeLive(input, todayIso),
     // The dangerous middle state: webmail is shut, IMAP is not. A reset with the app passwords
     // still live is the one state that looks finished in the Turbify control panel.
     isHalfRevoked: open && input.passwordResetAt !== null && input.appPasswordsClearedAt === null,
@@ -222,7 +285,7 @@ function mapTask(row: TaskRow, names: Map<string, string>, todayIso: string): Ma
   };
 }
 
-function buildStats(tasks: MailboxOffboardingTask[]): MailboxOffboardingStats {
+function buildStats(tasks: MailboxOffboardingTask[]): Omit<MailboxOffboardingStats, "appPasswordsMayBeLive"> {
   return {
     total: tasks.length,
     pending: tasks.filter((task) => task.status === "pending").length,
@@ -347,10 +410,13 @@ export async function getMailboxOffboardingDashboardData(): Promise<MailboxOffbo
   // reappear in "awaiting" and invite a second task.
   const taskedHrIds = new Set(rows.map((row) => String(row.employee_hr_id).toLowerCase()));
 
+  const awaiting = await loadAwaitingLeavers(taskedHrIds);
+  const appPasswordReport = buildAppPasswordReport(tasks, awaiting, todayIso);
   return {
     tasks,
-    awaiting: await loadAwaitingLeavers(taskedHrIds),
-    stats: buildStats(tasks),
+    awaiting,
+    appPasswordReport,
+    stats: { ...buildStats(tasks), appPasswordsMayBeLive: appPasswordReport.length },
     controlPanelUrl: TURBIFY_CONTROL_PANEL_URL,
   };
 }

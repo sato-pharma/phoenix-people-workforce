@@ -232,6 +232,73 @@ export async function runRecruitmentInboundMasteryTests() {
     const offList = await fetchCvFromUrl("https://drive.google.com/file/d/ID6/view", 15_000_000);
     assert.equal(offList.ok, false, "an off-allowlist redirect is still refused — the SSRF guard is intact");
     assert.equal(offList.ok ? "" : offList.reason.includes("evil.com"), true, "the reason names the host it refused, so the next provider change is diagnosable");
+
+    // --- every redirect hop is checked BEFORE it is requested (integration audit, 13 Nov 2026) ----
+    // Until then the fetch followed redirects by itself and the host was checked once, on the final
+    // response: the wrong answer was refused, but the request to the wrong host had already been sent.
+    const stubHops = (hops: Record<string, { location?: string; body?: string; status: number }>) => {
+      globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        requested.push(url);
+        assert.equal(init?.redirect, "manual", "redirects are never followed blindly");
+        const hop = hops[url];
+        if (!hop) throw new Error(`the downloader requested ${url}, which this test never offered`);
+        return new Response(hop.body === undefined ? null : new Uint8Array(Buffer.from(hop.body)), {
+          headers: hop.location ? { location: hop.location } : { "content-type": "application/pdf" },
+          status: hop.status,
+        });
+      }) as typeof globalThis.fetch;
+    };
+    const START = "https://drive.google.com/uc?export=download&id=HOP";
+    const DOWNLOAD = "https://drive.usercontent.google.com/download?id=HOP";
+
+    requested.length = 0;
+    stubHops({ [START]: { location: DOWNLOAD, status: 302 }, [DOWNLOAD]: { body: "%PDF-1.4 two hops", status: 200 } });
+    const twoHops = await fetchCvFromUrl("https://drive.google.com/file/d/HOP/view", 15_000_000);
+    assert.equal(twoHops.ok, true, "Drive's real hand-off to its download host is followed");
+    assert.deepEqual(requested, [START, DOWNLOAD], "one request per hop, each to a known file host");
+
+    for (const inside of ["http://10.0.0.5/admin", "https://10.0.0.5/admin", "https://tablets.railway.internal/", "https://evil.com/cv.pdf", "http://drive.usercontent.google.com/download?id=HOP"]) {
+      requested.length = 0;
+      stubHops({ [START]: { location: inside, status: 302 } });
+      const refused = await fetchCvFromUrl("https://drive.google.com/file/d/HOP/view", 15_000_000);
+      assert.equal(refused.ok, false, `a redirect to ${inside} is refused`);
+      assert.deepEqual(requested, [START], `and ${inside} is NEVER requested: refusing the answer is too late, the request is the harm`);
+      assert.match(refused.ok ? "" : refused.reason, /redirected to /, "the reason says it was a redirect");
+    }
+
+    requested.length = 0;
+    stubHops({ [START]: { location: START, status: 302 } });
+    const loop = await fetchCvFromUrl("https://drive.google.com/file/d/HOP/view", 15_000_000);
+    assert.equal(loop.ok, false, "a link that only ever redirects is given up on");
+    assert.match(loop.ok ? "" : loop.reason, /too many times/);
+    assert.equal(requested.length, 6, "after the first request and five hops");
+
+    requested.length = 0;
+    // A Dropbox link, because its address is kept as pasted (a Drive link is rewritten to https anyway).
+    const DROPBOX = "https://www.dropbox.com/s/abc/cv.pdf?dl=1";
+    stubHops({ [DROPBOX]: { body: "%PDF-1.4 asked over https", status: 200 } });
+    const plainHttp = await fetchCvFromUrl("http://www.dropbox.com/s/abc/cv.pdf", 15_000_000);
+    assert.equal(plainHttp.ok, true, "a link pasted as http is asked for over https");
+    assert.deepEqual(requested, [DROPBOX], "and never over http");
+
+    // --- the body is read no further than the cap, whatever the host declares -----------------
+    let chunksPulled = 0;
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            chunksPulled += 1;
+            if (chunksPulled > 1_000) controller.close();
+            else controller.enqueue(new Uint8Array(1_000).fill(37));
+          },
+        }),
+        { headers: { "content-type": "application/pdf" }, status: 200 },
+      )) as typeof globalThis.fetch;
+    const endless = await fetchCvFromUrl("https://drive.google.com/file/d/BIG/view", 10_000);
+    assert.equal(endless.ok, false, "a body past the cap is refused even when no length was declared");
+    assert.match(endless.ok ? "" : endless.reason, /larger than the maximum/);
+    assert.ok(chunksPulled < 50, `and the download stops at the cap instead of being read whole first (pulled ${chunksPulled} of 1,000 chunks)`);
   } finally {
     globalThis.fetch = realFetch;
   }

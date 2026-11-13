@@ -569,6 +569,8 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/supersede", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/withdraw", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/deductions/comments", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The employee disputes one of HIS released daily deductions; openDailyDeductionDispute checks the line is his and still released.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/daily-deductions/disputes", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // One picture from a dispute reply. The employee it belongs to or an admin reader of the Deductions module
   // — readDisputeAttachmentForViewer decides before any byte is read. Not audited: it is an image behind the
   // conversation the portal already shows, fetched once per thumbnail.
@@ -1498,6 +1500,12 @@ export const accessRegistry = [
   // monitoring this feature promises not to do.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST", "DELETE"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Internal messages from the top bar: every active role reads its own and sends (owner,
+  // 2026-11-13, "Everyone, as today"), each send capped per sender and written to the audit log.
+  sessionApi({ methods: ["GET"], pattern: "/api/messages", permission: { resource: "internal_messages", action: "read" }, guard: "assert-permission" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/messages", permission: { resource: "internal_messages", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/messages/recipients", permission: { resource: "internal_messages", action: "create" }, guard: "assert-permission" }),
+  sessionApi({ methods: ["PATCH"], pattern: "/api/messages/:id/read", permission: { resource: "internal_messages", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
   // there is no resource to gate on, because the route can only ever read or write the CALLER'S
@@ -1541,7 +1549,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/nudge", permission: { resource: "employee_profile", action: "update" } }),
   // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
   // outbox is a write, and reading it as a read-gated route understated who may trigger one.
-  sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
+  // TWO DOORS, TWO ROWS (integration audit, 13 Nov 2026, ISS-028). Until then this was one session row
+  // for every method, while the scheduler's GET was — and is — let in by the cron secret alone. The row
+  // told a reviewer the five-minute drain needed an admin session, and tests/cron-control-registry.test.ts
+  // carried a named exception to step around it. POST is the admin's own "drain now" button.
+  sessionApi({ methods: ["POST"], pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/notifications/process", reason: "The scheduler's five-minute outbox drain, guarded by the cron secret (assertCronAuthorized)." }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
   // The native app's "which of my trips still owe a departure photo" list. It declares
@@ -2641,6 +2654,7 @@ export const accessRegistry = [
   // names every customer's address nationally; the route itself is Super Admin only, like its page.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/sales/mapping-database/address-findings", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super Admin JSON-only: one ruling on one customer mapping, re-checked server-side against the row the person read." }),
   sessionApi({ methods: allMethods, pattern: "/api/sales/**", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/report-it/access", permission: { resource: "report_it", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/:id", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
