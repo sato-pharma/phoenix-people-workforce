@@ -47,7 +47,16 @@ import {
 } from "./expiry";
 import { type DisplayWeightSource, shownBatchWeight, shownTotalWeight, shownUnitWeights } from "./display-weights";
 import { formatExactRuns, resolveRunGeometry, type RunGeometry } from "./geometry";
-import { formatOveragePct, learnFromRuns, resolveOverage, type MaterialLearning, type RunObservation } from "./learning";
+import {
+  formatOveragePct,
+  learnFromRuns,
+  measuredConsumptionByProduct,
+  measuredConsumptionKey,
+  resolveOverage,
+  type MaterialLearning,
+  type MeasuredConsumption,
+  type ProductRunObservation,
+} from "./learning";
 import type { WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
 import {
   resolveMaterialRequirement,
@@ -55,6 +64,7 @@ import {
   summariseRequirements,
   type MaterialRequirement,
   type MaterialRequirementInput,
+  type AmountSource,
   type OverageSource,
 } from "./requirements";
 import {
@@ -352,6 +362,12 @@ export type ProductionPlanningData = {
   readonly settings: LoadedSettings;
   readonly fx: EffectiveFxRate;
   readonly learning: Map<string, MaterialLearning>;
+  /**
+   * What one batch of each product really consumed of each material, keyed by
+   * `measuredConsumptionKey` — the amount for a Sato material with NO formula line. Optional so a
+   * hand-built fixture need not carry it.
+   */
+  readonly measuredConsumption?: Map<string, MeasuredConsumption>;
 };
 
 const DEFAULT_SETTINGS: LoadedSettings = {
@@ -628,33 +644,42 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     prices,
     settings,
     fx,
-    learning: await loadLearning(),
+    ...(await loadRunActuals()),
   };
 }
 
-/** Every recorded run's actuals, folded into one measured overage per material. */
-async function loadLearning(): Promise<Map<string, MaterialLearning>> {
+/**
+ * Every recorded run's actuals, read once and folded two ways: one measured overage per material
+ * (`learning`), and what one batch of each PRODUCT consumed of each material
+ * (`measuredConsumption`) — the amount for a Sato material that has no formula line.
+ */
+async function loadRunActuals(): Promise<{
+  learning: Map<string, MaterialLearning>;
+  measuredConsumption: Map<string, MeasuredConsumption>;
+}> {
   const db = getSupabaseAdmin();
   const [runsRes, runMaterialsRes] = await Promise.all([
-    db.from(T.runs).select("id, runs_count, is_excluded_from_learning"),
+    db.from(T.runs).select("id, product_id, runs_count, is_excluded_from_learning"),
     db.from(T.runMaterials).select("run_id, material_id, consumed_qty::text, theoretical_qty::text"),
   ]);
-  if (runsRes.error || runMaterialsRes.error) return new Map();
+  if (runsRes.error || runMaterialsRes.error) return { learning: new Map(), measuredConsumption: new Map() };
 
-  const runsById = new Map<string, { runsCount: bigint; excluded: boolean }>();
+  const runsById = new Map<string, { productId: string; runsCount: bigint; excluded: boolean }>();
   for (const row of runsRes.data ?? []) {
     runsById.set(String(row.id), {
+      productId: String(row.product_id),
       runsCount: BigInt(row.runs_count ?? 1),
       excluded: row.is_excluded_from_learning === true,
     });
   }
 
-  const observations: RunObservation[] = [];
+  const observations: ProductRunObservation[] = [];
   for (const row of runMaterialsRes.data ?? []) {
     const run = runsById.get(String(row.run_id));
     if (!run) continue;
     observations.push({
       runId: String(row.run_id),
+      productId: run.productId,
       materialId: String(row.material_id),
       consumedQty: parseQty(String(row.consumed_qty ?? "0"), "consumed_qty"),
       theoreticalQty: optionalQty(row.theoretical_qty, "theoretical_qty"),
@@ -662,7 +687,12 @@ async function loadLearning(): Promise<Map<string, MaterialLearning>> {
       isExcludedFromLearning: run.excluded,
     });
   }
-  return learnFromRuns(observations);
+  return { learning: learnFromRuns(observations), measuredConsumption: measuredConsumptionByProduct(observations) };
+}
+
+/** What one batch of this product really consumed of this material, or null when nothing is recorded. */
+function measuredFor(data: ProductionPlanningData, productId: string, materialId: string): MeasuredConsumption | null {
+  return data.measuredConsumption?.get(measuredConsumptionKey(productId, materialId)) ?? null;
 }
 
 // ── Reading the loaded data, per product ───────────────────────────────────────────────────────────
@@ -924,6 +954,13 @@ export type PlanResultRow = {
   /** Display units — kilograms, pieces — because that is what he reads and types. */
   readonly rawNeeded: string;
   readonly needed: string;
+  /** `needed − rawNeeded`: the loss on its own, so net + loss = total reads to the digit. */
+  readonly loss: string;
+  /** `measured` when the amount is read from recorded runs because there is no formula line. */
+  readonly amountSource: AmountSource | null;
+  readonly measuredRuns: string | null;
+  /** BASE units one batch consumed, when measured — the figure a committed plan snapshots. */
+  readonly measuredPerRun: string | null;
   readonly neededPerRun: string;
   readonly heldAtFactory: string;
   readonly heldElsewhere: string;
@@ -1025,6 +1062,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   for (const material of materials) {
     const composition = compositionByMaterialId.get(material.id) ?? null;
     const learned = data.learning.get(material.id);
+    const measured = measuredFor(data, product.id, material.id);
     const overage =
       overridePct !== null
         ? { pctScaled: overridePct, source: "material" as OverageSource }
@@ -1047,6 +1085,8 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
       supplier: effectiveSupplier(data, product.id, material.id, composition),
       overagePctScaled: overage.pctScaled,
       overageSource: overage.source,
+      measuredPerRunQty: measured?.perRunQty ?? null,
+      measuredRuns: measured?.runsCounted ?? null,
       heldByLocationId: stockByMaterialId.get(material.id) ?? new Map(),
       factoryLocationId,
       willSendQty: willSendByMaterialId.get(material.id) ?? null,
@@ -1094,6 +1134,10 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
       basisCount: row.basisCount.toString(),
       rawNeeded: display(row.rawNeededQty, material.basePerDisplay),
       needed: display(row.neededQty, material.basePerDisplay),
+      loss: display(row.lossQty, material.basePerDisplay),
+      amountSource: row.amountSource,
+      measuredRuns: row.measuredRuns === null ? null : row.measuredRuns.toString(),
+      measuredPerRun: row.measuredPerRunQty === null ? null : formatQty(row.measuredPerRunQty),
       neededPerRun: display(row.neededPerRunQty, material.basePerDisplay),
       heldAtFactory: display(row.heldAtFactoryQty, material.basePerDisplay),
       heldElsewhere: display(row.heldElsewhereQty, material.basePerDisplay),
@@ -1508,6 +1552,16 @@ export async function getProductionPlanningWorkspace(
               supplierName: price.supplierName,
             }
           : null,
+        // The per-batch amount read from recorded runs, for a material with no formula line.
+        measured: (() => {
+          const measured = composition || !productId ? null : measuredFor(data, productId, material.id);
+          return measured
+            ? {
+                perRun: display(measured.perRunQty, material.basePerDisplay),
+                runsCounted: measured.runsCounted.toString(),
+              }
+            : null;
+        })(),
         learning: learned
           ? {
               runsCounted: learned.runsCounted.toString(),
@@ -2601,8 +2655,14 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
   if (commit) {
     const lineRows = result.rows
       // A material with no line in force has no basis to snapshot — the link's supplier now names
-      // who brings Royanoxicam's foil, so the supplier alone no longer means a line exists.
-      .filter((row) => (row.supplier === "sato" || row.supplier === "factory") && row.basis !== null)
+      // who brings Royanoxicam's foil, so the supplier alone no longer means a line exists. One whose
+      // amount is MEASURED from recorded runs is snapshotted as `per_run_measured`, with the
+      // measured per-batch figure as its quantity, so a committed plan keeps the foil it bought.
+      .filter(
+        (row) =>
+          (row.supplier === "sato" || row.supplier === "factory") &&
+          (row.basis !== null || row.amountSource === "measured"),
+      )
       .map((row) => {
         const material = materialsForProduct(data, result.productId).find(
           (candidate) => candidate.id === row.materialId,
@@ -2613,11 +2673,14 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
           material_id: row.materialId,
           unit_kind: row.unitKind,
           snap_supplier: row.supplier,
-          snap_basis: row.basis,
-          snap_qty_per_basis: formatQty(
-            data.compositionsByProductId.get(result.productId)?.find((c) => c.materialId === row.materialId)
-              ?.qtyPerBasis ?? BigInt(0),
-          ),
+          snap_basis: row.basis ?? (row.amountSource === "measured" ? "per_run_measured" : null),
+          snap_qty_per_basis:
+            row.basis === null && row.measuredPerRun
+              ? row.measuredPerRun
+              : formatQty(
+                  data.compositionsByProductId.get(result.productId)?.find((c) => c.materialId === row.materialId)
+                    ?.qtyPerBasis ?? BigInt(0),
+                ),
           snap_overage_pct: row.overagePct,
           needed_qty: toBase(row.needed),
           held_qty: toBase(row.heldTotal),
@@ -2807,6 +2870,8 @@ function computePlanInternal(data: ProductionPlanningData, productId: string) {
         supplier: effectiveSupplier(data, productId, material.id, composition),
         overagePctScaled: overage.pctScaled,
         overageSource: overage.source,
+        measuredPerRunQty: measuredFor(data, productId, material.id)?.perRunQty ?? null,
+        measuredRuns: measuredFor(data, productId, material.id)?.runsCounted ?? null,
         heldByLocationId: stockByMaterialId.get(material.id) ?? new Map(),
         factoryLocationId,
         willSendQty: null,

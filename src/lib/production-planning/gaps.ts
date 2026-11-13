@@ -35,7 +35,9 @@ export function dataGapsFor(materials: readonly WireMaterial[]): DataGap[] {
   for (const material of materials) {
     if (!isBoughtBySato(material.supplier)) continue;
     const missing: DataGapKind[] = [];
-    if (material.composition === null) missing.push("amount");
+    // An amount read from recorded runs IS an amount: a material left blank on purpose (Royafloxacin's
+    // foil, review of 2026-11-13) stops being a gap the moment its first batch is recorded.
+    if (material.composition === null && !material.measured) missing.push("amount");
     if (!material.heldByLocation.some((row) => holdsSomething(row.qty))) missing.push("stock");
     if (missing.length > 0) {
       gaps.push({ materialId: material.id, missing, nameAr: material.nameAr, nameEn: material.nameEn });

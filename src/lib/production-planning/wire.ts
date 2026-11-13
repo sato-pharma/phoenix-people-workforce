@@ -23,7 +23,9 @@ export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "pe
 export type WireMeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
 export type WireRequestMode = "total_boxes" | "good_units" | "runs";
 export type WireCurrency = "USD" | "EGP";
-export type WireOverageSource = "measured" | "material" | "default";
+/** `actual`: the amount itself is read from recorded runs, so no loss is added on top of it. */
+export type WireOverageSource = "measured" | "material" | "default" | "actual";
+export type WireAmountSource = "formula" | "measured";
 export type WireFxSource = "manual" | "fetched" | "fallback" | "none";
 
 export type WireProduct = {
@@ -159,6 +161,11 @@ export type WireMaterial = {
     effectiveFrom: string;
     supplierName: string | null;
   } | null;
+  /**
+   * One batch of THIS product's real consumption, read from its recorded runs — present only for a
+   * material with no formula line, whose amount it then IS. Optional so a saved fixture may predate it.
+   */
+  measured?: { perRun: string; runsCounted: string } | null;
   learning: {
     runsCounted: string;
     consumedTotal: string;
@@ -185,6 +192,17 @@ export type WirePlanRow = {
   basisCount: string;
   rawNeeded: string;
   needed: string;
+  /**
+   * The loss on its own — `needed − rawNeeded`, computed server-side in BigInt so net + loss =
+   * total to the digit. Optional so a saved fixture may predate it.
+   */
+  loss?: string;
+  /** `measured` when the amount comes from recorded runs; null when there is none at all. */
+  amountSource?: WireAmountSource | null;
+  /** Batches that measured amount covers. */
+  measuredRuns?: string | null;
+  /** BASE units one batch consumed, when measured. */
+  measuredPerRun?: string | null;
   neededPerRun: string;
   heldAtFactory: string;
   heldElsewhere: string;

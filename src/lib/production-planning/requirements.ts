@@ -31,8 +31,20 @@ import {
   type UnitKind,
 } from "./rules";
 
-/** Where a resolved overage came from, so the screen can say "measured" rather than imply it. */
-export type OverageSource = "measured" | "material" | "default";
+/**
+ * Where a resolved overage came from, so the screen can say "measured" rather than imply it.
+ * `actual` is a line with no formula, read from recorded runs: what the factory really consumed
+ * already holds its loss, so nothing is added on top of it.
+ */
+export type OverageSource = "measured" | "material" | "default" | "actual";
+
+/**
+ * Where the AMOUNT came from. `measured` is a Sato material with no formula line whose per-batch
+ * figure is the product's own recorded runs (opening + delivered − closing ÷ batches) — the
+ * Royafloxacin review of 2026-11-13: "leave the aluminum consumption field blank and calculate it
+ * based on the actual consumption after production is completed". A line in force always wins.
+ */
+export type AmountSource = "formula" | "measured";
 
 /** One material as the planner needs it: its identity, its line in the formula, its stock. */
 export type MaterialRequirementInput = {
@@ -55,6 +67,13 @@ export type MaterialRequirementInput = {
   /** Already resolved by the caller: material override, else measured, else the settings default. */
   readonly overagePctScaled: bigint;
   readonly overageSource: OverageSource;
+  /**
+   * Micro base units ONE batch of THIS product really consumed, averaged over its recorded runs and
+   * rounded up. Read only when there is no formula line. Null or absent: nothing measured yet.
+   */
+  readonly measuredPerRunQty?: bigint | null;
+  /** How many batches that average covers, so the screen can say "from 3 recorded batches". */
+  readonly measuredRuns?: bigint | null;
   /** Stock by location id, in micro base units. Missing means nothing held there. */
   readonly heldByLocationId: ReadonlyMap<string, bigint>;
   /** Id of the location that IS the factory, so "send to the factory" has a meaning. */
@@ -77,12 +96,23 @@ export type MaterialRequirement = {
   readonly basis: CompositionBasis | null;
   readonly overagePctScaled: bigint;
   readonly overageSource: OverageSource;
+  /** Null for a material with no amount at all — no line and nothing measured. */
+  readonly amountSource: AmountSource | null;
+  /** Micro base units a batch, when `amountSource` is `measured`. */
+  readonly measuredPerRunQty: bigint | null;
+  readonly measuredRuns: bigint | null;
   /** How many doses / sets / bottles / samples this material is counted against. */
   readonly basisCount: bigint;
   /** Before overage — the formula's own figure. Shown so the overage is never invisible. */
   readonly rawNeededQty: bigint;
   /** With overage applied and rounded up to something the material can exist in. */
   readonly neededQty: bigint;
+  /**
+   * The loss on its own: `neededQty − rawNeededQty`, so the screen shows net + loss = total
+   * (review of 2026-11-13: "calculate the loss percentage separately for better clarity"). Taken
+   * from the two figures the engine already rounded, so the three always add up to the digit.
+   */
+  readonly lossQty: bigint;
   /** Needed for ONE run at this sample rate, which is what cover is measured in. */
   readonly neededPerRunQty: bigint;
   readonly heldAtFactoryQty: bigint;
@@ -186,14 +216,22 @@ export function resolveMaterialRequirement(
     heldTotalQty,
   } as const;
 
-  // No composition entered is a gap, not a zero. The screen says so rather than printing a 0 that
-  // reads as "none needed".
-  if (input.basis === null || input.qtyPerBasis === null || input.qtyPerBasis <= BigInt(0)) {
+  const hasLine = input.basis !== null && input.qtyPerBasis !== null && input.qtyPerBasis > BigInt(0);
+  const measuredPerRunQty =
+    !hasLine && input.measuredPerRunQty != null && input.measuredPerRunQty > BigInt(0) ? input.measuredPerRunQty : null;
+
+  // No composition entered and nothing measured is a gap, not a zero. The screen says so rather than
+  // printing a 0 that reads as "none needed".
+  if (!hasLine && measuredPerRunQty === null) {
     return {
       ...shared,
+      amountSource: null,
+      measuredPerRunQty: null,
+      measuredRuns: null,
       basisCount: BigInt(0),
       rawNeededQty: BigInt(0),
       neededQty: BigInt(0),
+      lossQty: BigInt(0),
       neededPerRunQty: BigInt(0),
       toBuyQty: BigInt(0),
       minToDeliverQty: BigInt(0),
@@ -208,15 +246,23 @@ export function resolveMaterialRequirement(
     };
   }
 
-  const basisCount = basisCountFor(input.basis, run);
+  // A measured amount is counted per BATCH and carries no overage: the factory's real consumption
+  // already includes its loss, and adding the default 3% on top would count the loss twice.
+  const measured = measuredPerRunQty !== null;
+  const qtyPerBasis = measured ? measuredPerRunQty : input.qtyPerBasis!;
+  const overagePctScaled = measured ? BigInt(0) : input.overagePctScaled;
+  const overageSource: OverageSource = measured ? "actual" : input.overageSource;
+
+  const basisCount = measured ? run.runs : basisCountFor(input.basis!, run);
   // qtyPerBasis is already in MICRO base units, so multiplying it by a plain basis count gives the
   // total in micro base units directly. Dividing by QTY_SCALE here would drop a factor of a million.
-  const rawNeededMicro = input.qtyPerBasis * basisCount;
+  const rawNeededMicro = qtyPerBasis * basisCount;
   const rawNeededQty = roundQtyUpForUnit(rawNeededMicro, input.unitKind);
-  const neededQty = applyOverage(rawNeededMicro, input.overagePctScaled, input.unitKind);
+  const neededQty = applyOverage(rawNeededMicro, overagePctScaled, input.unitKind);
+  const lossQty = neededQty > rawNeededQty ? neededQty - rawNeededQty : BigInt(0);
 
-  const perRunBasis = basisCountForOneRun(input.basis, run);
-  const neededPerRunQty = applyOverage(input.qtyPerBasis * perRunBasis, input.overagePctScaled, input.unitKind);
+  const perRunBasis = measured ? (run.runs > BigInt(0) ? BigInt(1) : BigInt(0)) : basisCountForOneRun(input.basis!, run);
+  const neededPerRunQty = applyOverage(qtyPerBasis * perRunBasis, overagePctScaled, input.unitKind);
 
   const coverRunsMicro = neededPerRunQty > BigInt(0) ? (heldTotalQty * QTY_SCALE) / neededPerRunQty : null;
 
@@ -244,9 +290,15 @@ export function resolveMaterialRequirement(
 
   return {
     ...shared,
+    overagePctScaled,
+    overageSource,
+    amountSource: measured ? "measured" : "formula",
+    measuredPerRunQty,
+    measuredRuns: measured ? (input.measuredRuns ?? null) : null,
     basisCount,
     rawNeededQty,
     neededQty,
+    lossQty,
     neededPerRunQty,
     toBuyQty,
     minToDeliverQty,
