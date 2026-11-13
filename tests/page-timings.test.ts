@@ -234,7 +234,7 @@ export function runPageTimingsTests() {
     // ── The server side ────────────────────────────────────────────────────────────────────────────
     const route = code("app/api/telemetry/page-timing/route.ts");
     assert.ok(route.includes("sanitizePageTimings(") && route.includes("recordPageTiming(report)"), "the route records every report of a beacon into the hour's store");
-    assert.ok(!/supabase|getSupabaseAdmin|cookies\(|hrId/.test(route), "the route itself touches no database and no session");
+    assert.ok(!/supabase|getSupabaseAdmin|cookies\(|hrId/.test(route), "the route reads no session, and reaches the database only through the shared per-address rate count");
     const health = code("src/lib/observability/process-health.ts");
     assert.ok(health.includes('import("@/lib/observability/page-timing-flush")') && health.includes(".flushPageTimings()"), "the process-health tick flushes the ended hours, through a dynamic import");
     const flush = code("src/lib/observability/page-timing-flush.ts");

@@ -20,7 +20,7 @@ import { employeeRegionFields, resolveRegionByIds } from "@/lib/employees/region
 import { quotedInList } from "@/lib/supabase/search-filter";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
-import { logError } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 import { forgetReferenceEmployees } from "@/lib/reference/reference-lists";
 import { generateNextHrIdForLine } from "./hr-id-helper";
 import { isMissingRequiredManager } from "./hierarchy-governance";
@@ -537,6 +537,7 @@ function isClassifiedActiveEmployee(employee: DirectoryMembershipFields) {
 export function invalidateEmployeeDirectoryCache() {
   directoryGeneration += 1;
   directoryCache = null;
+  cachedCopiesLoadStartedAt = null;
   directoryRowsCache.clear();
   invalidateReferenceLists();
   // The minute-old employee reference list (src/lib/reference/reference-lists.ts) answers the same
@@ -546,6 +547,151 @@ export function invalidateEmployeeDirectoryCache() {
   // resignation path and this module's own writes. One line covers all of them, and the next one
   // someone adds.
   forgetReferenceEmployees("employee directory invalidated");
+}
+
+// ─── EVERY INSTANCE SEES A WRITE (REC-083) ────────────────────────────────────────────────────────────
+//
+// invalidateEmployeeDirectoryCache() drops the copy in the process that made the write — and only there.
+// A second instance (or the old container during a deploy) kept serving its own copy until the TTL ran
+// out, so a manager moved or a salary changed on one instance read as unchanged on the other for up to
+// CACHE_TTL + DIRECTORY_REFRESH_BEHIND_MS.
+//
+// So a copy that has been held for DIRECTORY_SHARED_VERSION_CHECK_MS asks the database, at most that
+// often per process, for a cheap shared version: the newest updated_at of the three tables the directory
+// is built from (employees, employee_compensation, employee_locations — the write paths stamp it, and the
+// column defaults to now()). When it moved since the last look, the copy is dropped exactly as a local
+// write drops it, and the next caller re-reads. No new table: the version is the data's own stamp.
+//
+// It only ever makes a copy FRESHER. The TTL above is still the upper bound; a version that cannot be
+// read (database down, an answer slower than DIRECTORY_SHARED_VERSION_TIMEOUT_MS) changes nothing, and a
+// copy younger than the check interval is served without asking, so a page that reads the directory
+// twice in a request never pays for it.
+
+/** How often one process may ask the shared version, and how old a copy must be before it asks. */
+export const DIRECTORY_SHARED_VERSION_CHECK_MS = 10_000;
+/** Clock slack between the instance that stamped a row and this one, for the first look only. */
+const DIRECTORY_SHARED_VERSION_SKEW_MS = 5_000;
+/** A version read slower than this is not waited for — the copy is served and the TTL still bounds it. */
+const DIRECTORY_SHARED_VERSION_TIMEOUT_MS = 2_000;
+const DIRECTORY_VERSION_TABLES = ["employees", "employee_compensation", "employee_locations"] as const;
+
+export type DirectorySharedVersion = {
+  /** The three newest stamps, joined — a change to any of them is a change. */
+  fingerprint: string;
+  /** The newest of them, in ms; null when none could be parsed. */
+  latestChangeMs: number | null;
+};
+
+type DirectorySharedVersionReader = () => Promise<DirectorySharedVersion | null>;
+
+let readDirectorySharedVersion: DirectorySharedVersionReader = readDirectorySharedVersionFromDatabase;
+let directorySharedVersionCheckEveryMs = DIRECTORY_SHARED_VERSION_CHECK_MS;
+let lastSharedVersionCheckAt = 0;
+let lastSharedVersionFingerprint: string | null = null;
+let sharedVersionCheckInFlight: Promise<void> | null = null;
+// When the oldest copy saved since the last invalidation STARTED loading. A change stamped after that may
+// be missing from it. Null when nothing is cached, so an empty cache never asks.
+let cachedCopiesLoadStartedAt: number | null = null;
+
+function noteCachedCopyLoadStartedAt(loadStartedAt: number) {
+  cachedCopiesLoadStartedAt =
+    cachedCopiesLoadStartedAt === null ? loadStartedAt : Math.min(cachedCopiesLoadStartedAt, loadStartedAt);
+}
+
+/**
+ * Pure: has the shared version moved past the copies this process holds?
+ *
+ * After the first look it is a plain comparison with the version seen last. On the FIRST look in this
+ * process there is nothing to compare with, so the newest stamp is compared with when the copies began
+ * loading (less the clock slack): a change stamped after that may not be in them. A stamp in the future
+ * says nothing usable and is ignored — the TTL still bounds that copy.
+ */
+export function sharedDirectoryVersionMoved(input: {
+  copiesLoadStartedAt: number;
+  current: DirectorySharedVersion;
+  now: number;
+  previousFingerprint: string | null;
+}): boolean {
+  if (input.previousFingerprint !== null) return input.current.fingerprint !== input.previousFingerprint;
+  const latest = input.current.latestChangeMs;
+  if (latest === null || latest > input.now + DIRECTORY_SHARED_VERSION_SKEW_MS) return false;
+  return latest >= input.copiesLoadStartedAt - DIRECTORY_SHARED_VERSION_SKEW_MS;
+}
+
+async function readDirectorySharedVersionFromDatabase(): Promise<DirectorySharedVersion | null> {
+  const stamps = await Promise.all(
+    DIRECTORY_VERSION_TABLES.map(async (table) => {
+      const rows = await supabaseRest<unknown>(`${table}?select=updated_at&order=updated_at.desc.nullslast&limit=1`);
+      if (!Array.isArray(rows)) return null;
+      const stamp = (rows[0] as { updated_at?: unknown } | undefined)?.updated_at;
+      return typeof stamp === "string" ? stamp : "";
+    }),
+  );
+  if (stamps.some((stamp) => stamp === null)) return null;
+  const times = stamps.map((stamp) => Date.parse(stamp ?? "")).filter((ms) => Number.isFinite(ms));
+  return { fingerprint: stamps.join("|"), latestChangeMs: times.length ? Math.max(...times) : null };
+}
+
+function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    (timer as { unref?: () => void }).unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
+ * Drops this process's copies when another instance has written since they were loaded. Cheap when it
+ * does nothing (a few comparisons); asks the database at most once per DIRECTORY_SHARED_VERSION_CHECK_MS,
+ * and callers arriving meanwhile share that one ask. Never throws.
+ */
+async function reconcileSharedDirectoryVersion(): Promise<void> {
+  const now = Date.now();
+  const since = cachedCopiesLoadStartedAt;
+  if (since === null || now - since < directorySharedVersionCheckEveryMs) return;
+  if (!sharedVersionCheckInFlight) {
+    if (now - lastSharedVersionCheckAt < directorySharedVersionCheckEveryMs) return;
+    lastSharedVersionCheckAt = now;
+    const generation = directoryGeneration;
+    sharedVersionCheckInFlight = (async () => {
+      const current = await settleWithin(readDirectorySharedVersion(), DIRECTORY_SHARED_VERSION_TIMEOUT_MS);
+      if (!current) return;
+      const previousFingerprint = lastSharedVersionFingerprint;
+      lastSharedVersionFingerprint = current.fingerprint;
+      // A local write already dropped the copies while this was asked: nothing left to drop.
+      if (generation !== directoryGeneration) return;
+      if (!sharedDirectoryVersionMoved({ copiesLoadStartedAt: since, current, now, previousFingerprint })) return;
+      logInfo("Employee directory changed on another instance; dropping this instance's copy", {
+        labels: { component: "employee-directory", event: "employee_directory_shared_version_moved" },
+      });
+      invalidateEmployeeDirectoryCache();
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        sharedVersionCheckInFlight = null;
+      });
+  }
+  await sharedVersionCheckInFlight;
+}
+
+/** Test seam: replace the shared-version read (null restores the database) and the check interval. */
+export function __setDirectorySharedVersionReaderForTests(
+  reader: DirectorySharedVersionReader | null,
+  options: { checkEveryMs?: number } = {},
+) {
+  readDirectorySharedVersion = reader ?? readDirectorySharedVersionFromDatabase;
+  directorySharedVersionCheckEveryMs = options.checkEveryMs ?? DIRECTORY_SHARED_VERSION_CHECK_MS;
+  lastSharedVersionCheckAt = 0;
+  lastSharedVersionFingerprint = null;
 }
 
 function normalizeHrId(value: string | null | undefined) {
@@ -778,6 +924,7 @@ async function fetchEmployeeNameRoster(): Promise<EmployeeNameRosterRow[]> {
  * directory's generation counter.
  */
 export async function getEmployeeNameRoster(): Promise<EmployeeNameRosterRow[]> {
+  await reconcileSharedDirectoryVersion();
   // A directory somebody else already paid for answers this for free, and answers it identically.
   if (directoryCache && directoryCacheDisposition(Date.now() - directoryCache.timestamp) === "fresh") {
     return directoryNameRoster(directoryCache.data);
@@ -791,11 +938,13 @@ export async function getEmployeeNameRoster(): Promise<EmployeeNameRosterRow[]> 
   }
   if (!inFlightNameRoster) {
     const generation = directoryGeneration;
+    const loadStartedAt = Date.now();
     inFlightNameRoster = fetchEmployeeNameRoster()
       .then((data) => {
         // A load that started before an invalidation must not put its older answer back.
         if (generation === directoryGeneration) {
           nameRosterCache = { data, timestamp: Date.now(), generation };
+          noteCachedCopyLoadStartedAt(loadStartedAt);
         }
         return data;
       })
@@ -1418,6 +1567,7 @@ async function loadResidenceByHrId(hrIds: string[]) {
 function loadDirectoryShared(): Promise<EmployeeDirectoryData> {
   if (!inFlightDirectory) {
     const generation = directoryGeneration;
+    const loadStartedAt = Date.now();
     inFlightDirectory = fetchEmployeeDirectoryWithTotalExperience()
       .then((result) => {
         // A write that invalidated the cache while this load was running must not be undone by it.
@@ -1426,6 +1576,7 @@ function loadDirectoryShared(): Promise<EmployeeDirectoryData> {
             data: result,
             timestamp: Date.now(),
           };
+          noteCachedCopyLoadStartedAt(loadStartedAt);
         }
         return result;
       })
@@ -1437,6 +1588,7 @@ function loadDirectoryShared(): Promise<EmployeeDirectoryData> {
 }
 
 export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
+  await reconcileSharedDirectoryVersion();
   const now = Date.now();
   if (directoryCache) {
     const disposition = directoryCacheDisposition(now - directoryCache.timestamp);
@@ -2239,6 +2391,7 @@ export async function getEmployeeDirectoryRows(
   options: { includeInactive?: boolean } = {},
 ): Promise<EmployeeDirectoryRow[]> {
   const includeInactive = options.includeInactive ?? false;
+  await reconcileSharedDirectoryVersion();
   const now = Date.now();
   const cached = directoryRowsCache.get(includeInactive);
 
@@ -2249,10 +2402,12 @@ export async function getEmployeeDirectoryRows(
     let inFlight = inFlightDirectoryRows.get(includeInactive);
     if (!inFlight) {
       const generation = directoryGeneration;
+      const loadStartedAt = Date.now();
       inFlight = fetchEmployeeDirectoryRows(includeInactive)
         .then((result) => {
           if (generation === directoryGeneration) {
             directoryRowsCache.set(includeInactive, { data: result, timestamp: Date.now() });
+            noteCachedCopyLoadStartedAt(loadStartedAt);
           }
           return result;
         })

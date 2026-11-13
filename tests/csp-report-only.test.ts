@@ -46,6 +46,25 @@ function directives(policy: string): Map<string, string[]> {
   return out;
 }
 
+/**
+ * The route now counts each address in the shared rate-limit store (REC-083). Its calls here run with the
+ * Supabase settings taken out, so the store "fails" before any client is built and the limiter counts in
+ * its bounded in-process fallback — no database is reached, in CI (which carries credentials) as locally.
+ */
+async function withoutSupabase<T>(run: () => Promise<T>): Promise<T> {
+  const names = ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
+  const saved = names.map((name) => [name, process.env[name]] as const);
+  for (const name of names) delete process.env[name];
+  try {
+    return await run();
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
 function report(body: unknown, address = "203.0.113.7", extra: Record<string, string> = {}): Request {
   return new Request(`${ORIGIN}${CSP_REPORT_PATH}`, {
     body: typeof body === "string" ? body : JSON.stringify(body),
@@ -141,20 +160,22 @@ export async function runCspReportOnlyTests(): Promise<void> {
   assert.equal(full.size, CSP_REPORT_MAX_SHAPES, "rotating page shapes can never grow the map past its cap");
 
   // ── 4. The route ───────────────────────────────────────────────────────────────────────────
-  const ok = await cspReportPost(report({ "csp-report": { "blocked-uri": "inline", "document-uri": `${ORIGIN}/login`, "effective-directive": "style-src-elem" } }));
-  assert.equal(ok.status, 204);
-  assert.equal((await cspReportPost(report("{not json"))).status, 204, "a malformed report is dropped quietly");
-  assert.equal(
-    (await cspReportPost(report("x", "203.0.113.8", { "content-length": String(CSP_REPORT_MAX_BODY_BYTES + 1) }))).status,
-    413,
-  );
-  assert.equal((await cspReportPost(report("x".repeat(CSP_REPORT_MAX_BODY_BYTES + 1), "203.0.113.9"))).status, 413);
-  const flooder = "198.51.100.23";
-  for (let index = 0; index < CSP_REPORT_RATE_LIMIT; index += 1) {
-    assert.equal((await cspReportPost(report([], flooder))).status, 204);
-  }
-  assert.equal((await cspReportPost(report([], flooder))).status, 429, "one address is capped a minute");
-  assert.equal((await cspReportPost(report([], "198.51.100.24"))).status, 204, "another address is not");
+  await withoutSupabase(async () => {
+    const ok = await cspReportPost(report({ "csp-report": { "blocked-uri": "inline", "document-uri": `${ORIGIN}/login`, "effective-directive": "style-src-elem" } }));
+    assert.equal(ok.status, 204);
+    assert.equal((await cspReportPost(report("{not json"))).status, 204, "a malformed report is dropped quietly");
+    assert.equal(
+      (await cspReportPost(report("x", "203.0.113.8", { "content-length": String(CSP_REPORT_MAX_BODY_BYTES + 1) }))).status,
+      413,
+    );
+    assert.equal((await cspReportPost(report("x".repeat(CSP_REPORT_MAX_BODY_BYTES + 1), "203.0.113.9"))).status, 413);
+    const flooder = "198.51.100.23";
+    for (let index = 0; index < CSP_REPORT_RATE_LIMIT; index += 1) {
+      assert.equal((await cspReportPost(report([], flooder))).status, 204);
+    }
+    assert.equal((await cspReportPost(report([], flooder))).status, 429, "one address is capped a minute");
+    assert.equal((await cspReportPost(report([], "198.51.100.24"))).status, 204, "another address is not");
+  });
 
   // A browser's own report often carries no Origin, and a sandboxed frame's carries `null`: the proxy
   // must let it reach the route, which reads no session and writes nothing.
@@ -168,7 +189,8 @@ export async function runCspReportOnlyTests(): Promise<void> {
   assert.equal(forged.status, 403, "only the report route is exempt — every other POST keeps its origin check");
 
   const route = readFileSync(new URL("../app/api/security/csp-report/route.ts", import.meta.url), "utf8");
-  assert.ok(!/supabase|getSession|cookies\(/i.test(route), "🔴 the report route reads no session and touches no database");
+  assert.ok(!/supabase|getSession|cookies\(/i.test(route), "🔴 the report route reads no session, and reaches the database only through the shared per-address rate count");
+  assert.ok(route.includes("createSharedAddressLimit(") && route.includes("await addressLimit.allow(address)"), "🔴 the per-address limit is counted across every instance, not per process (REC-083)");
   const registry = readFileSync(new URL("../src/lib/security/access-registry.ts", import.meta.url), "utf8");
   assert.ok(registry.includes('authMode: "public-token", methods: ["POST"], pattern: "/api/security/csp-report"'), "the report route is registered as a public POST");
 }

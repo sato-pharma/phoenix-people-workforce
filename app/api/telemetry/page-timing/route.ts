@@ -10,7 +10,7 @@ import {
 import { recordPageTiming } from "@/lib/observability/page-timing-store";
 import { recordTiming } from "@/lib/observability/timings";
 import { clientAddress } from "@/lib/security/client-address";
-import { createMemoryRateBuckets } from "@/lib/security/memory-rate-buckets";
+import { createSharedAddressLimit } from "@/lib/security/shared-address-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,22 +20,30 @@ export const dynamic = "force-dynamic";
 // first /api/ answer), and each tap inside the app how long it took to reach its page. The numbers go
 // into the per-minute process_health log line (p50 / p95 / max per page shape) AND into the hour's
 // in-process summary, which the process-health tick writes to the page_timings table once the hour has
-// ended. This route itself touches no database, reads no session and records no identity: what is kept
-// is a page SHAPE (ids replaced by :id), a kind, a device class and durations — see page-timing-intake.ts.
+// ended. This route reads no session and records no identity: what is kept is a page SHAPE (ids replaced
+// by :id), a kind, a device class and durations — see page-timing-intake.ts.
 //
-// Abuse is bounded in process, so a beacon never costs a query: a body over 1 KB is refused, one address
-// gets PAGE_TIMING_RATE_LIMIT beacons a minute, and at most PAGE_TIMING_MAX_NAMES distinct page shapes
-// are ever recorded. The answer is an empty 204 — the page does not wait on it.
+// Abuse is bounded: a body over 1 KB is refused, one address gets PAGE_TIMING_RATE_LIMIT beacons a minute
+// ACROSS EVERY INSTANCE (the shared bucket store, keyed by the hashed address — REC-083; it used to count
+// per instance and reset at every deploy), and at most PAGE_TIMING_MAX_NAMES distinct page shapes are
+// ever recorded. The rate count is the route's only database touch; an address already over its limit in
+// this process is refused without one. The answer is an empty 204 — the page does not wait on it.
 const knownNames = new Set<string>();
 
-// At most this many addresses are counted at once. A FULL map makes room by dropping the oldest
-// window (memory-rate-buckets.ts) — it used to refuse every caller instead, so 5,000 rotating
+// The in-process flood shield holds at most this many addresses. A FULL map makes room by dropping the
+// oldest window (memory-rate-buckets.ts) — it used to refuse every caller instead, so 5,000 rotating
 // addresses switched the beacon off for everybody until the next restart (audit, 2026-10-26, point 23).
 const PAGE_TIMING_MAX_ADDRESSES = 5_000;
-const addressBuckets = createMemoryRateBuckets(PAGE_TIMING_MAX_ADDRESSES);
+const PAGE_TIMING_RATE_SCOPE = "page-timing-beacon";
+const addressLimit = createSharedAddressLimit({
+  limit: PAGE_TIMING_RATE_LIMIT,
+  maxAddresses: PAGE_TIMING_MAX_ADDRESSES,
+  scope: PAGE_TIMING_RATE_SCOPE,
+  windowMs: PAGE_TIMING_RATE_WINDOW_MS,
+});
 
-function withinRateLimit(address: string): boolean {
-  return addressBuckets.consume(address, PAGE_TIMING_RATE_LIMIT, PAGE_TIMING_RATE_WINDOW_MS) === 0;
+function withinRateLimit(address: string): Promise<boolean> {
+  return addressLimit.allow(address);
 }
 
 export async function POST(request: Request) {
@@ -43,7 +51,7 @@ export async function POST(request: Request) {
   if (Number.isFinite(length) && length > PAGE_TIMING_MAX_BODY_BYTES) {
     return new NextResponse(null, { status: 413 });
   }
-  if (!withinRateLimit(clientAddress(request) || "unknown-ip")) {
+  if (!(await withinRateLimit(clientAddress(request) || "unknown-ip"))) {
     return new NextResponse(null, { status: 429 });
   }
   try {

@@ -160,6 +160,9 @@ export async function runMemoryRateBucketsTests() {
 
   // Exactly the two routes opt in. Anyone else adding it is a decision to fail open on purpose.
   const OPTED_IN = ["app/api/errors/client/route.ts", "app/api/whatsapp/embedded-signup/exchange/route.ts"];
+  // And the one shared per-address limit the two public beacons count through (REC-083): the page-timing
+  // beacon and the CSP report must keep answering through a database outage, counted in memory while it lasts.
+  const OPTED_IN_HELPERS = ["src/lib/security/shared-address-limit.ts"];
   for (const file of OPTED_IN) {
     const code = stripComments(readFileSync(file, "utf8"));
     const call = code.indexOf("await assertApiRateLimit({");
@@ -181,19 +184,23 @@ export async function runMemoryRateBucketsTests() {
     if (file === "src/lib/security/api-rate-limit.ts") continue;
     if (stripComments(readFileSync(file, "utf8")).includes("onStoreError")) optInFiles.push(file);
   }
-  assert.deepEqual(optInFiles.sort(), [...OPTED_IN].sort(), "only the crash report and the WhatsApp connection may opt in to the memory fallback");
+  assert.deepEqual(optInFiles.sort(), [...OPTED_IN, ...OPTED_IN_HELPERS].sort(), "only the crash report, the WhatsApp connection and the beacons' shared address limit may opt in to the memory fallback");
 
   // ── 3. the page-timing beacon: a full map no longer refuses everybody ─────────────────────────
-  // Fill well past the cap with one beacon per rotating address…
-  for (let index = 0; index < 5_050; index += 1) {
-    const response = await pageTimingPost(beacon(publicAddress(index)));
-    assert.equal(response.status, 204, `rotating address ${index} must be answered, not refused`);
-  }
-  // …then a genuine newcomer is still answered. Before the fix this was a 429 for everyone.
-  const newcomer = await pageTimingPost(beacon("9.9.9.9"));
-  assert.equal(newcomer.status, 204, "after 5,000+ rotating addresses, a new address must still be answered (the full map used to refuse everybody)");
-  // And the per-address limit still holds.
-  let lastStatus = 0;
-  for (let hit = 0; hit < PAGE_TIMING_RATE_LIMIT + 1; hit += 1) lastStatus = (await pageTimingPost(beacon("9.9.9.10"))).status;
-  assert.equal(lastStatus, 429, "one address over PAGE_TIMING_RATE_LIMIT a minute is still refused");
+  // The beacon counts in the shared store now (REC-083); with the Supabase settings out, the store
+  // "fails" before any client is built and it counts in memory — no database is reached.
+  await withNoSupabase(async () => {
+    // Fill well past the cap with one beacon per rotating address…
+    for (let index = 0; index < 5_050; index += 1) {
+      const response = await pageTimingPost(beacon(publicAddress(index)));
+      assert.equal(response.status, 204, `rotating address ${index} must be answered, not refused`);
+    }
+    // …then a genuine newcomer is still answered. Before the fix this was a 429 for everyone.
+    const newcomer = await pageTimingPost(beacon("9.9.9.9"));
+    assert.equal(newcomer.status, 204, "after 5,000+ rotating addresses, a new address must still be answered (the full map used to refuse everybody)");
+    // And the per-address limit still holds.
+    let lastStatus = 0;
+    for (let hit = 0; hit < PAGE_TIMING_RATE_LIMIT + 1; hit += 1) lastStatus = (await pageTimingPost(beacon("9.9.9.10"))).status;
+    assert.equal(lastStatus, 429, "one address over PAGE_TIMING_RATE_LIMIT a minute is still refused");
+  });
 }
