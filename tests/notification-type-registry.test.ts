@@ -34,6 +34,9 @@ const ACKNOWLEDGED: ReadonlyArray<{ file: string; text: string } & ({ forwards: 
   { file: "src/lib/conversations/notify.ts", text: "input.module", forwards: true },
   { file: "src/lib/conversations/notify.ts", text: "input.eventType", forwards: true },
   { file: "src/lib/direct-orders/service.ts", text: "input.eventType", forwards: true },
+  // The durable email outbox (REC-048) copies the original send's origin onto the stored payload.
+  { file: "src/lib/notifications/direct-email-payload.ts", text: "origin?.module ?? null", forwards: true },
+  { file: "src/lib/notifications/direct-email-payload.ts", text: "origin?.eventType ?? (message.sender === \"templated\" ? String(message.input.templateKey) : null)", forwards: true },
   { file: "src/lib/direct-orders/service.ts", text: "opts.eventType", forwards: true },
   // decideDirectOrder announces the decision itself: DirectOrderDecision.
   { file: "src/lib/direct-orders/service.ts", text: "input.decision", values: ["approve", "reject", "return"] },

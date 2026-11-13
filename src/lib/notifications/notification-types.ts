@@ -415,7 +415,6 @@ export const UNTYPED_SENDS: ReadonlyArray<{ channel: "email" | "telegram"; file:
   { channel: "email", file: "src/lib/email-templates/service.ts", label: "A test send of an email template" },
   { channel: "email", file: "src/lib/recruitment/interview-invitations.ts", label: "An interview invitation to a candidate" },
   { channel: "email", file: "src/lib/recruitment/interview-notifications.ts", label: "An interview email to the candidate, built from its email template" },
-  { channel: "email", file: "src/lib/vacation/email.ts", label: "A leave email built from its email template (the typed leave emails above are its fallback)" },
   { channel: "telegram", file: "app/api/integrations/telegram/webhook/route.ts", label: "The Telegram bot's reply to a person who messages it" },
   { channel: "telegram", file: "src/lib/auth/password-setup.ts", label: "A temporary password sent to the person's own Telegram" },
   { channel: "telegram", file: "src/lib/email/admin-telegram-mirror.ts", label: "The Super Admin's Telegram copy of every automated email" },
