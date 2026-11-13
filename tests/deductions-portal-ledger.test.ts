@@ -153,8 +153,9 @@ export function runDeductionsPortalLedgerTests() {
     assert.equal(undecided.hrResponse, null);
   }
 
-  // 2c. THE REPLY GATE (his ruling: payslip rows only). Only a RELEASED row can be commented on,
-  // which is the same condition addDeductionsComment enforces server-side.
+  // 2c. THE DISPUTE GATE (owner, 2026-11-13: "make the employee able to dispute in the deduction
+  // module"). Every row but a cleared one can be disputed — approved-but-unpushed (charged all the
+  // same) and undecided included — the same condition addDeductionsComment enforces server-side.
   {
     const notReleased = mapPortalLedgerRow({
       candidate: candidate(),
@@ -162,7 +163,21 @@ export function runDeductionsPortalLedgerTests() {
       releasedLine: null,
       decidedByName: null,
     });
-    assert.equal(notReleased.canComment, false, "an unreleased row offers no reply box");
+    assert.equal(notReleased.canComment, true, "an approved row is charged, pushed or not, so it can be disputed");
+    const undecided = mapPortalLedgerRow({
+      candidate: candidate(),
+      decision: null,
+      releasedLine: null,
+      decidedByName: null,
+    });
+    assert.equal(undecided.canComment, true, "an undecided row can be disputed before the money is taken");
+    const cleared = mapPortalLedgerRow({
+      candidate: candidate(),
+      decision: { decision_status: "Do Not Take Action" } as DecisionArg,
+      releasedLine: null,
+      decidedByName: null,
+    });
+    assert.equal(cleared.canComment, false, "a cleared row takes nothing, so there is nothing to dispute");
     const released = mapPortalLedgerRow({
       candidate: candidate(),
       decision: { decision_status: "Approved for Payroll" } as DecisionArg,
@@ -255,8 +270,9 @@ export function runDeductionsPortalLedgerTests() {
       !/\.in\("employee_hr_id_compact", \[\.\.\.scope\.compactHrIds\]\)[\s\S]{0,40}return \{ rows/.test(body),
       "the SQL narrowing must never be the only scope check",
     );
-    // Only a released row is asked for a conversation, so a cleared row cannot pull one in.
-    assert.match(body, /rows\.filter\(\(row\) => row\.canComment\)\.map\(\(row\) => row\.candidateId\)/);
+    // Every own row's conversation is read, so an accepted dispute's thread stays readable on its
+    // cleared row (owner, 2026-11-13) — the rows are already self-scoped above.
+    assert.match(body, /listDeductionsComments\(\{ candidateIds: rows\.map\(\(row\) => row\.candidateId\) \}\)/);
   }
 
   // 4c. BOTH SURFACES read the ledger — the portal page and the admin shell's own copy. If one

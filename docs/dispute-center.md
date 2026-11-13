@@ -73,6 +73,36 @@ row has been overwritten.
   always re-derived server-side from what the database holds; the browser never does payroll
   arithmetic.
 
+## Disputing before the money is taken (13 November 2026)
+
+> "make the employee able to dispute in the deduction module and if approved the dispute fix his
+> deduction and calendar and deduct if reject then detect"
+
+Until this date an employee could only reply on a deduction already pushed to the payslip (his
+ruling of 9 October). Two things had moved under that rule: the push gate was retired on 7 October,
+so an "Approved for Payroll" deduction is charged whether or not it was pushed — and could not be
+argued with — and his new words put the dispute before the money. Now:
+
+- **Who may dispute** — any deduction the employee sees except a cleared one ("Do Not Take Action").
+  One rule, `deductionOpenForDispute` (`src/lib/deductions/dispute-open.ts`), asked by the server
+  gate (`addDeductionsComment`, `addDeductionsReply`), the portal row and the HR inbox. The portal box
+  reads "Dispute this deduction" and tells him what each outcome does.
+- **The HR inbox** lists a disputed deduction with no pushed line too, with a line built from the
+  candidate (`unpublishedDisputeLine`); an undecided one reads "Not decided yet — rejecting the
+  dispute deducts it".
+- **Reject on an undecided deduction** records "Approved for Payroll" at what was detected and pushes
+  it (`decideDeductionDispute`). Leaving it Pending would charge nothing, so "the deduction stands"
+  would have been a sentence, not a figure. **Reduce** on one is capped by the detected figure.
+- **Accept fixes the calendar** — every day of a deduction whose dispute stands accepted (newest
+  `decided` event is an accept, no reopen since) AND whose decision still reads Do Not Take Action
+  becomes the same ✓ Verified entry an accepted whole-day review request makes, which clears the
+  day's "No Activity Recorded" finding (`src/lib/dispute-center/accepted-deduction-days.ts`, fed into
+  `buildAcceptedCorrectionItems`). It is display only and read best-effort; it is NOT a deduction
+  source — the accepted candidate itself is what stops the charge. A reduce verifies no day (it names
+  none), a reject verifies nothing.
+
+Pinned by `tests/deduction-dispute-outcome.test.ts`.
+
 ## Money owed back after a paid month
 
 A published, paid month is a record of what was paid. It is never rewritten to agree with a later

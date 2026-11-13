@@ -175,7 +175,7 @@ export function DeductionsPortalWorkspace({
   const submitComment = useCallback(async (candidateId: string) => {
     const body = String(commentDrafts[candidateId] ?? "").trim();
     if (!body) {
-      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Write a comment first." }));
+      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Write why you dispute it first." }));
       return;
     }
     setSavingCandidateId(candidateId);
@@ -200,7 +200,7 @@ export function DeductionsPortalWorkspace({
       }
       setLocalComments((current) => [payload.comment as DeductionsComment, ...current]);
       setCommentDrafts((current) => ({ ...current, [candidateId]: "" }));
-      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Comment saved." }));
+      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Dispute sent to HR." }));
     } catch (error) {
       setMessageByCandidate((current) => ({
         ...current,
@@ -320,7 +320,9 @@ export function DeductionsPortalWorkspace({
         {pageRows.map((row) => {
           const ownRow = Boolean(ownCompactHrId && row.employeeHrIdCompact === ownCompactHrId);
           const canComment = ownRow && row.canComment;
-          const candidateComments = canComment ? commentsByCandidate.get(row.candidateId) ?? [] : [];
+          // The conversation shows on every own row that has one — a cleared row whose dispute was
+          // accepted keeps it, read-only — and the box to write in only where a dispute is open.
+          const candidateComments = ownRow ? commentsByCandidate.get(row.candidateId) ?? [] : [];
           const message = messageByCandidate[row.candidateId];
           return (
             <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm" key={row.candidateId}>
@@ -393,12 +395,18 @@ export function DeductionsPortalWorkspace({
                 ) : null}
               </div>
 
-              {canComment ? (
+              {canComment || candidateComments.length > 0 ? (
                 <div className="mt-4 border-t border-slate-100 pt-4">
                   <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
                     <MessageSquare className="h-4 w-4" />
-                    Your response
+                    {candidateComments.length > 0 ? "Your dispute" : "Dispute this deduction"}
                   </div>
+                  {candidateComments.length === 0 ? (
+                    <p className="mt-1.5 text-xs text-slate-600">
+                      If this is wrong, say why. If the dispute is accepted, the deduction is cancelled and the
+                      day is corrected on your calendar; if it is rejected, the deduction is taken.
+                    </p>
+                  ) : null}
                   {candidateComments.length > 0 ? (
                     <div className="mt-3 space-y-2">
                       {candidateComments.map((comment) => {
@@ -431,11 +439,12 @@ export function DeductionsPortalWorkspace({
                       })}
                     </div>
                   ) : null}
+                  {canComment ? (
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input
                       className={`${phxFieldClassName} flex-1`}
                       maxLength={2000}
-                      placeholder="Add a comment for HR"
+                      placeholder={candidateComments.length > 0 ? "Add to your dispute" : "Why is this deduction wrong?"}
                       value={commentDrafts[row.candidateId] ?? ""}
                       onChange={(event) =>
                         setCommentDrafts((current) => ({
@@ -457,14 +466,15 @@ export function DeductionsPortalWorkspace({
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      Comment
+                      {candidateComments.length > 0 ? "Send" : "Dispute"}
                     </Button>
                   </div>
+                  ) : null}
                   {message ? (
                     <p
                       className={cn(
                         "mt-2 text-xs font-semibold",
-                        message === "Comment saved." ? "text-emerald-600" : "text-rose-600",
+                        message === "Dispute sent to HR." ? "text-emerald-600" : "text-rose-600",
                       )}
                     >
                       {message}

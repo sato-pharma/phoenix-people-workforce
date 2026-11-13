@@ -41,16 +41,17 @@ export const PORTAL_LEDGER_OUTCOME_EXPLANATION: Record<DeductionsPortalLedgerRow
 };
 
 /**
- * What an employee's own row says where the reply box would be, when it offers none. The box is
- * only on a released line (portal.ts, `canComment`), and the old single sentence promised every
- * other row a reply "once it is released" — a cleared row never is: nothing was deducted, so
- * there is nothing to dispute (Pedia NSM page audit, 2026-10-26).
+ * What an employee's own row says where the dispute box would be, when it offers none. Since the
+ * owner's 2026-11-13 "make the employee able to dispute" the box is on every row but a cleared one
+ * (`deductionOpenForDispute`), so in practice only `cleared` is ever shown; the others stay for a row
+ * that is open but somehow not the viewer's to write on. A cleared row never promises a release:
+ * nothing was deducted, so there is nothing to dispute (Pedia NSM page audit, 2026-10-26).
  */
 export const PORTAL_LEDGER_NO_REPLY_NOTE: Record<DeductionsPortalLedgerRow["outcome"], string> = {
-  on_payslip: "You can reply to HR on this one once it is released with the month's deductions.",
+  on_payslip: "This deduction can be disputed from your own account.",
   cleared: "Nothing was deducted, so there is nothing to dispute.",
-  under_review: "Nothing is deducted while HR decides. If it is approved, you can reply here once it is released.",
-  needs_follow_up: "Nothing is deducted while HR decides. If it is approved, you can reply here once it is released.",
+  under_review: "Nothing is deducted while HR decides.",
+  needs_follow_up: "Nothing is deducted while HR decides.",
   disputed: "Nothing is settled yet. HR's answer will show here.",
 };
 

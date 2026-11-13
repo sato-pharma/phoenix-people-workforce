@@ -328,8 +328,12 @@ export async function runDisputeCenterRefundsTests() {
     !/chargedBefore\s*=\s*.*applied_amount/.test(decide) && !/ceiling\s*=\s*activeLine/.test(decide),
     "neither the refund basis nor the reduce ceiling may read the publication line again",
   );
+  // The detected figure is the ceiling ONLY for a deduction nobody has decided (owner, 2026-11-13: an
+  // employee may dispute before the money is taken) — it has no decided figure to stay under. A
+  // DECIDED one, approved or narrowed, is still capped at what it charges now.
   assert.ok(
-    decide.includes("const ceiling = before.value;"),
+    decide.includes("const ceiling = undecided ? num(candidate.raw_value) : before.value;") &&
+      decide.includes("const undecided = isUndecidedDeductionStatus(decisionBefore?.decision_status);"),
     "REDUCE is measured against what the deduction charges NOW, so it can only ever lower it — the " +
       "old ceiling was the DETECTED figure whenever no line was live, which let a deduction already " +
       "cut to 1 day be 'reduced' to 3 of its 4 detected days",
