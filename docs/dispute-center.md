@@ -103,6 +103,42 @@ argued with — and his new words put the dispute before the money. Now:
 
 Pinned by `tests/deduction-dispute-outcome.test.ts`.
 
+## Disputing a released daily deduction (13 November 2026)
+
+> "IN DEDUCTION MODULE IN EMPLOYEE PORTAL NO DISPUTE OR COMMENT BUTTON"
+
+The employee's Deductions page lists the daily deductions the Super Admin released during the month
+above the monthly ledger, and those lines had no Dispute box. On 13 November seven employees held a
+released line and four of them had nothing on the monthly ledger, so the release email sent them to
+a page where they could not argue with the amount. Asked what accepting such a dispute should do, he
+chose **"Withdraw + never charge"**.
+
+- **The box** sits under every released line ("Dispute this deduction"). One dispute per line
+  (unique on `line_id`); a decided one is reopened through the Dispute Center, never opened twice.
+  `POST /api/daily-deductions/disputes` checks the line is in the ACTIVE released snapshot and is the
+  caller's own.
+- **The case** is kind `daily` in the Dispute Center. `daily_deductions_disputes` keeps its own copy
+  of the line (days, amount, dates, reason), because withdrawing a line deletes it and a superseded
+  snapshot cascades its lines away. Messages live in `daily_deductions_dispute_messages`. The owner
+  is the employee, matched on the compact HR id; the Super Admin decides (he alone releases a daily
+  line); the Deductions module's readers may read.
+- **Accept** withdraws the line (`withdrawDailyLine`) and the days are never charged again for that
+  employee and that category. Both month-end collection doors in `src/lib/deductions/collect.ts` and
+  the daily tally (`runConnectorForRange`) pass their drafts through `applyAcceptedDailyDisputes`
+  (`src/lib/daily-deductions/accepted-dispute-days.ts`): a draft wholly on won days is dropped, an
+  exact one-day-per-date draft is narrowed and re-priced through `scaleDeductionAmountToKeptDates`
+  (a CRM Thursday keeps its half-day weight), and a draft whose day count differs from its dates (a
+  vacation request) is kept and named in a note for a hand narrowing. The read **fails closed**: if
+  the disputes cannot be read, collection stops rather than charge a won day.
+- **Reject** keeps the line; it is charged at month end like any other.
+- **No reduce** — a released line is withdrawn whole or it stands.
+- **The calendar** — every day of an accepted daily dispute is a ✓ Verified entry on the Private
+  Calendar (`selectAcceptedDailyDisputeCorrections` in `accepted-deduction-days.ts`), display only.
+- **Reopen** puts the status back to `open`, which lifts the spare and the ✓ with it.
+
+Pinned by `tests/daily-deductions-disputes.test.ts`. Migration:
+`supabase/migrations/20261113181500_daily_deductions_disputes.sql`.
+
 ## Money owed back after a paid month
 
 A published, paid month is a record of what was paid. It is never rewritten to agree with a later
@@ -181,6 +217,82 @@ reason the re-confirm that block asks for was refused outright by `assertAdditio
 money with no explanation. A zero explains nothing and needs no explanation of its own; a figure HR
 actually typed still suppresses it.
 
+## One decision at a time, all or nothing (13 November 2026)
+
+Enterprise audit finding F-PAY-005. A deduction dispute's decision is several writes: the payslip
+line comes off, the decision is written, the smaller figure goes back on, and a refund is recommended
+or cancelled. The "decided" event is written last. Before this change, the "already decided" gate was
+a plain read in front of all of them. Two decides could both pass it, and a failure part-way left the
+case reading open while payroll already charged the new figure.
+
+`decideDeductionDispute` (`src/lib/dispute-center/deduction.ts`, helpers in `decision-claim.ts`,
+migration `20261113162318`) now works like this:
+
+1. **Claim.** `phx_claim_dispute_case_decision` claims the case in one statement before anything is
+   written. A second decide meets the live claim and gets a Conflict. A claim left by a request that
+   died lapses after 5 minutes (`DISPUTE_DECISION_CLAIM_LAPSE_MINUTES`; the SQL carries the same
+   figure).
+2. **Re-check.** "Already decided" is asked again under the claim.
+3. **Before-state.** The before-state of everything the decision may touch is captured and stamped on
+   the claim.
+4. **What each write left.** After every write, the state is read again. The decision is pinned to the
+   `updated_at` its own write returned, for every later read too. So a write somebody else makes in
+   between is never taken as this decision's own.
+5. **Claim still held.** Just before the last write, `phx_renew_dispute_case_decision` proves the claim
+   is still held by this token and renews it. Stamp, renew and release by token all throw the
+   claim-lost Conflict when they touch no row, never a silent success.
+6. **Last write.** The refund events and the "decided" event go in one insert, as the last write.
+
+**On a failure after the first write** (a lost claim included),
+`phx_restore_deduction_dispute_state(before, left, actor)` runs in one transaction. A row is put back
+only while it still equals what this attempt left.
+
+The claim stops other dispute decisions. It does **not** stop the Deductions workspace or a month
+push. So if anybody changed a row in between, the undo puts back nothing: it names the rows, and writes
+a `dispute_decision_undo_refused` audit row.
+
+All or nothing, because a half-undo is another half-state, and the one-active-line and
+one-live-refund indexes would refuse most mixes anyway. Every line and refund statement is scoped to
+this candidate and this case.
+
+**Where the undo fails or refuses**, a `decision_interrupted` event marks the case **Needs attention**,
+with the contested rows in its details. A lapsed claim that still carries a before-state is marked the
+same way.
+
+**The decision history.** The history trigger `phx_deductions_decisions_history`
+(`20261113151739_deduction_decision_history.sql`) records inserts and updates only. So when the undo
+deletes a decision row that did not exist before, it writes that history row itself, in the trigger's
+own detail shape: action `decision_removed`. The trigger is never changed or disabled.
+
+**A step whose outcome is unknown.** A step can throw after it has already committed, because the
+reply was lost. Its re-read can also fail. Either way nothing can tell whether the step changed
+anything. The undo still puts back what is known, but the reviewer is never told "put back": the case
+is marked "needs attention" and the event names the step.
+
+The earlier refund is cancelled as its own step, before the new one is recommended. So a failed insert
+can no longer leave the earlier refund cancelled behind a "nothing changed".
+
+When the last insert (the `decided` event) fails, the timeline is read first. If a `decided` event new
+since the claim is there, the decision was recorded and is answered as made, with nothing undone. If the
+timeline cannot be read, the outcome is unknown.
+
+The marker's details (HR ids, notes, refund rows, error text) are stripped from the employee's case
+payload (`eventsForViewer`).
+
+**A payroll step re-opened by the failed attempt is not undone.** HR re-confirms that step in the
+month's Automated Payroll run, and its figures recompute from the restored decision and lines.
+
+**What cannot be put back:**
+
+- `updated_at` is stamped again on any restoring write.
+- A publication row created by the failed attempt stays, with zero lines. `deductions_audit` refers to
+  it and is append-only.
+- The audit trails stay.
+- Publication lines and refunds carry no revision column. So a change somebody else makes in the
+  instant between this attempt's write and its re-read is taken as this attempt's own.
+
+Pinned by `tests/dispute-and-deduction-atomic.test.ts`.
+
 ## The case briefing
 
 Super Admin only (`assertAssistActor`). It reads the case's own records — the day's calendar
@@ -223,6 +335,7 @@ holding `attendance:read` opens the page and sees nothing of a rep's pay-affecti
 
 | Test | What it refuses |
 | --- | --- |
+| `tests/daily-deductions-disputes.test.ts` | a released daily line with no Dispute box, a won day charged again by either month-end door or the daily tally, an open or rejected dispute sparing a day, a reduce on a daily case |
 | `tests/dispute-center-state.test.ts` | a stored state, a case that expires, an employee reopening their own case |
 | `tests/dispute-center-participants.test.ts` | a case readable on `attendance:read` alone; a decide or reopen that does not assert the participant inside the domain helper |
 | `tests/dispute-center-assist-accuracy.test.ts` | a statement with no citation, or with a figure the cited records do not hold; a stale briefing read as current |

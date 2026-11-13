@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { createDrawnPictureCache } from "@/lib/email-signature/drawn-cache";
 import {
   printableLine,
   signatureAltText,
@@ -134,6 +135,33 @@ export async function runEmailSignatureTests() {
     }
     assert.ok(!route.includes("searchParams") && !route.includes("request.url"), "the route reads nothing from the request but the sealed address");
     assert.ok(route.includes("openSignatureToken(token)"), "the route opens the sealed address before it reads anybody");
+
+    // METERED (REC-055): one bucket per network address, counted BEFORE the address is opened, and a
+    // flood answers 429 with Retry-After — never a 500 and never a drawing.
+    const metered = route.indexOf('scope: "email_signature_image_ip"');
+    assert.ok(metered > 0 && route.includes("rateLimitIdentity({ request })"), "the picture is metered per network address");
+    assert.ok(metered < route.indexOf("openSignatureToken(token)"), "the meter runs before the sealed address is opened");
+    assert.ok(route.includes("error instanceof ApiRateLimitError") && route.includes('"Retry-After"') && route.includes("status: 429"), "a flood answers 429 with Retry-After");
+    assert.ok(route.includes("return await signatureImageResponse("), "a failed drawing is caught by the route, not thrown past it");
+    const image = read("src/lib/email-signature/signature-image.ts");
+    assert.ok(image.includes("drawn.get(JSON.stringify(lines)"), "the picture is kept under the exact lines it shows");
+    assert.ok(image.includes('"Cache-Control": "public, max-age=3600"'), "a mail app is told to keep the picture for the hour");
+
+    // THE DRAWN-PICTURE CACHE: drawn once, kept for its lifetime, a new key drawn at once, never over its cap.
+    const cache = createDrawnPictureCache(2, 1000);
+    let draws = 0;
+    const draw = async () => { draws += 1; return new ArrayBuffer(draws); };
+    await cache.get("ahmed", draw, 0);
+    await cache.get("ahmed", draw, 999);
+    assert.equal(draws, 1, "a picture drawn within its lifetime is not drawn again");
+    await cache.get("ahmed", draw, 1000);
+    assert.equal(draws, 2, "a picture past its lifetime is drawn again");
+    await cache.get("ahmed with a new number", draw, 1000);
+    assert.equal(draws, 3, "changed lines are a new key, drawn at once — never the old picture");
+    await cache.get("third", draw, 1000);
+    assert.equal(cache.size, 2, "a full cache drops its oldest picture instead of growing");
+    await cache.get("ahmed", draw, 1001);
+    assert.equal(draws, 5, "the dropped picture is the oldest one, and is drawn again when asked for");
 
     assert.ok(
       read("src/lib/security/access-registry.ts").includes('pattern: "/api/email-signature/:token/signature.png"'),

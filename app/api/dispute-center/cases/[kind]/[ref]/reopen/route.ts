@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { decideCalendarReopen, requestCalendarReopen } from "@/lib/dispute-center/calendar.ts";
+import { decideDailyReopen, requestDailyReopen } from "@/lib/dispute-center/daily.ts";
 import { decideDeductionReopen, requestDeductionReopen } from "@/lib/dispute-center/deduction.ts";
 import { decideDigestReopen, requestDigestReopen } from "@/lib/dispute-center/digest.ts";
 import { disputeCenterError } from "@/lib/dispute-center/http.ts";
@@ -33,6 +34,7 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
     if (action === "request") {
       if (kind === "calendar") await requestCalendarReopen(access, { disputeId: caseRef, reason: note });
       else if (kind === "deduction") await requestDeductionReopen(access, { candidateId: caseRef, reason: note });
+      else if (kind === "daily") await requestDailyReopen(access, { disputeId: caseRef, reason: note });
       else await requestDigestReopen(access, { lineId: Number(caseRef), reason: note });
       return NextResponse.json({ success: true });
     }
@@ -40,6 +42,7 @@ export async function POST(request: Request, context: { params: Promise<{ kind: 
     const grant = action === "grant";
     if (kind === "calendar") await decideCalendarReopen(access, { disputeId: caseRef, grant, note });
     else if (kind === "deduction") await decideDeductionReopen(access, { candidateId: caseRef, grant, note });
+    else if (kind === "daily") await decideDailyReopen(access, { disputeId: caseRef, grant, note });
     else await decideDigestReopen(access, { grant, lineId: Number(caseRef), note });
     return NextResponse.json({ success: true });
   } catch (error) {

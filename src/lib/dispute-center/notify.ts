@@ -18,6 +18,7 @@ const MODULE_BY_KIND: Record<DisputeCaseKind, string> = {
   calendar: "private_calendar",
   deduction: "deductions",
   digest: "attendance_digest",
+  daily: "deductions",
 };
 
 /** Where each side opens a case. */

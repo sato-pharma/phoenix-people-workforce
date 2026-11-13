@@ -1,11 +1,13 @@
+import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { ilikeContainsValue, ilikeExactValue, quotedOrClause, searchableTerm } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertApiRateLimit } from "@/lib/security/api-rate-limit";
 
 type AuthUserRow = {
   auth_email?: string | null;
@@ -386,6 +388,7 @@ function mapMessage(row: InternalMessageRow, viewer: { hrId: string | null; logi
 
 export async function searchInternalMessageRecipients(query: string, access: AccessContext, limit = 8) {
   if (!access.loginId && !access.hrId) return [];
+  await assertPermission(access, "internal_messages", "create");
 
   const search = cleanText(query);
   if (search.length < 2) return [];
@@ -520,15 +523,41 @@ export async function listInternalMessagesForViewer(access: AccessContext, limit
   }
 }
 
+/** Messages one person may send in a minute — a conversation never needs more (owner, 2026-11-13). */
+export const INTERNAL_MESSAGE_SENDS_PER_MINUTE = 10;
+/** Messages one person may ALSO send by company email in a day (owner, 2026-11-13). */
+export const INTERNAL_MESSAGE_EMAILS_PER_DAY = 20;
+
 export async function sendInternalMessage(access: AccessContext, input: SendInternalMessageInput) {
+  await assertPermission(access, "internal_messages", "create");
   const sender = await resolveSender(access);
-  const recipient = await resolveRecipient(input.recipient);
   const subject = cleanText(input.subject);
   const body = cleanText(input.body);
 
   if (!subject) throw new Error("Subject is required.");
   if (!body) throw new Error("Message is required.");
   if (body.length > 5000) throw new Error("Message is too long. Keep it under 5000 characters.");
+
+  // Counted per sender before anything is stored, so a refused message leaves no row and no email.
+  // The email limit is its own bucket: it caps what goes out under the company's sender, and a
+  // refused email refuses the message, rather than quietly sending it without the email it asked for.
+  const senderKey = sender.hrId || sender.loginId || "";
+  await assertApiRateLimit({
+    identifier: senderKey,
+    limit: INTERNAL_MESSAGE_SENDS_PER_MINUTE,
+    scope: "internal-message-send",
+    windowMs: 60_000,
+  });
+  if (input.sendEmail) {
+    await assertApiRateLimit({
+      identifier: senderKey,
+      limit: INTERNAL_MESSAGE_EMAILS_PER_DAY,
+      scope: "internal-message-email",
+      windowMs: 24 * 60 * 60_000,
+    });
+  }
+
+  const recipient = await resolveRecipient(input.recipient);
 
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
@@ -553,6 +582,20 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
   if (error) throw error;
 
   const row = data as InternalMessageRow;
+
+  // One audit row per send: who, to whom, and whether email was asked for — never the words.
+  await writeAuditLog({
+    actorLoginId: sender.loginId,
+    entityId: row.id,
+    entityType: "internal_message",
+    newValues: {
+      emailRequested: input.sendEmail === true,
+      recipientHrId: recipient.hrId,
+      recipientLoginId: recipient.loginId,
+      senderHrId: sender.hrId,
+    },
+    summary: input.sendEmail ? "Internal message sent, with an email copy" : "Internal message sent",
+  });
 
   if (recipient.hrId) {
     await createSystemNotification({
@@ -649,6 +692,7 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
 }
 
 export async function markInternalMessageRead(access: AccessContext, messageId: string) {
+  await assertPermission(access, "internal_messages", "read");
   const sender = await resolveSender(access);
   // QUOTED, and here the filter guards an UPDATE: it is the only thing stopping "mark read" from
   // settling a message addressed to somebody else (AGENTS.md MR-B04).

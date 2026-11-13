@@ -43,6 +43,7 @@ function line(overrides: Partial<ReleasedLineForNotice> = {}): ReleasedLineForNo
     category: "no_records_activity",
     dates: ["2026-10-11"],
     daysCount: 1,
+    deductionDate: null,
     employeeHrId: "A-10",
     employeeHrIdCompact: "a10",
     employeeName: "Nahed Tarek",

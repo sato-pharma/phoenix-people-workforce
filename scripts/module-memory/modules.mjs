@@ -67,6 +67,28 @@ export const MODULES = [
     keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
     tables: ["deduction_disputes", "dispute_"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `payroll` reached 33
+  // rules and its injected pointer measured 4,118 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the late-expense carry rule (REC-029) landed. The
+  // AUTOMATED PAYROLL RUN is the clean cut: the wizard has its own folders, and its rules — Part 1 and
+  // Part 2, the held record, publish and the Part 2 stamp, the run sheets and bank files, the drift
+  // check, the expense carry — are read while editing the run, not a deduction connector. 18 rules and
+  // 16 notes move; `payroll` keeps 15 rules. `payroll` KEEPS EVERY GLOB IT HAD, so an automated-payroll
+  // file loads the PAIR and nothing that used to arrive stops arriving. The file itself was nowhere near
+  // its 72,000-byte cap — two different limits, and this is the small one.
+  {
+    id: "payroll-automated",
+    title: "Payroll — the automated payroll run",
+    scope: "The Automated Payroll wizard: Part 1 and Part 2, the held record and its release, publish and the Part 2 stamp, the run sheets and bank files, the module-drift check, the expense reconciliation and the late-expense carry.",
+    globs: [
+      "src/lib/automated-payroll/**",
+      "src/components/automated-payroll/**",
+      "app/**/automated-payroll/**",
+      "tests/*automated-payroll*",
+    ],
+    keywords: ["automated payroll", "payroll wizard", "part 1 confirm", "part 2 confirm", "part 2 stamp", "held salary release", "bank file", "bank transfer file", "module drift", "late expense", "carry forward"],
+    tables: ["automated_payroll"],
+  },
   // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
   //
   // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap
@@ -998,6 +1020,22 @@ export const MODULES = [
     keywords: ["doctor list check", "doctor-list check", "list check", "on the rep's list", "two photos", "finance ageing"],
     tables: ["marketing_customer_list_checks"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the decide-and-cancel
+  // locking rule (enterprise audit F-MKT-006) took `marketing`'s pointer to 4,128 bytes, over the
+  // 4,000-byte margin. The approval chain's database functions — decide, cancel, reopen, resubmit — are
+  // the clean cut. `marketing` KEEPS EVERY GLOB IT HAD, so a file here loads the PAIR.
+  {
+    id: "marketing-approval-chain",
+    title: "Marketing approval chain — deciding, cancelling, reopening and resubmitting a request",
+    scope: "The database functions that move a marketing request through its approval rungs (phx_decide_marketing_request_step, phx_cancel_marketing_request, the reopen and the resubmit) and the locks and status guards that keep two of them from overwriting each other.",
+    globs: [
+      "src/lib/marketing-requests/{cancel,reopen-rule}*",
+      "tests/*{marketing-cancel-request,marketing-reject-terminalises,marketing-reopen-rejected-request,marketing-finance-requirement-on-approval,direct-orders-and-marketing-atomic}*",
+      "supabase/migrations/*{marketing_decide,marketing_reject_terminalises,marketing_reopen_rejected,marketing_resubmit_atomic,marketing_refuse_self_approval,marketing_finance_requirement_on_approval}*",
+    ],
+    keywords: ["approval step", "approval rung", "decide marketing", "cancel marketing request", "reopen marketing request", "resubmit marketing request", "phx_decide_marketing_request_step"],
+    tables: ["marketing_request_approval_steps"],
+  },
   // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the careers-page rules took
   // `recruitment` to 4,295 bytes of pointer, over the 4,000-byte margin. The Job Posts page and the careers
   // page are the clean cut: none of it is read while working a candidate, a CV or an offer. `recruitment`
@@ -1486,6 +1524,28 @@ export const MODULES = [
     ],
     keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out"],
     tables: ["app_sessions"],
+  },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 30
+  // rules and its injected pointer measured 3,973 bytes; the rule that an AI address is written out in
+  // the code (integration audit, ISS-041) took it to 4,046 against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds. The one door every AI call goes through, the second provider
+  // behind it, what a failed-over leg is called, which account the out-of-credit alarm names and where
+  // an AI address may come from are one family — how Phoenix reaches an AI provider — so their five
+  // rules moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so a file under `src/lib/ai/` loads the
+  // PAIR and nothing that used to arrive stops arriving. `sales-imports` keeps `src/lib/sales/ai/**`
+  // too: its own pointer measured 3,950 that day, so the address rule could not go there either.
+  {
+    id: "platform-ai",
+    title: "Platform — the one door to an AI provider, the second provider and where an AI address comes from",
+    scope: "How Phoenix reaches an AI provider: the one shared call every module uses, Anthropic as the second provider behind it, what a leg the next account covers is called, which account the out-of-credit alarm names, and the rule that a provider's address is written out in the code and never read from a variable.",
+    globs: [
+      "src/lib/ai/**",
+      "src/lib/sales/ai/**",
+      "tests/ai-{one-door,provider-failover,failure-visibility}*",
+      "tests/sales-ai-failover*",
+    ],
+    keywords: ["ai provider", "one door", "createOpenAiResponseText", "runWithSalesAiFailover", "resolveAiProvider", "failed_over", "out of credit", "AI_BASE_URL"],
+    tables: [],
   },
   // 🔴 SPLIT 2026-10-18, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 29
   // rules and its injected pointer measured 4,141 bytes against the 4,000-byte margin

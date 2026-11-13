@@ -2410,6 +2410,41 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Proven on staging: a lower-case id with spaces is stored as B-148; an id naming nobody is cleared and the
   // name kept. Re-applying is a no-op.
   "20261113161558_medical_trip_ids_name_a_real_employee.sql",
+  // Applied 13 Nov 2026 at about 17:05 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler) after the Supabase MCP declined it three times; no ledger row. Read back on BOTH projects:
+  // daily_deductions_disputes and daily_deductions_dispute_messages exist with RLS on, one service-role policy
+  // each, no select for anon or authenticated, and dispute_case_events / dispute_attachments /
+  // dispute_assist_entries kind checks all accept 'daily'. Additive only; re-applying is a no-op.
+  "20261113181500_daily_deductions_disputes.sql",
+  // REC-038 (PR 333). Applied 13 Nov 2026 between about 17:42 and 17:46 Cairo by scripts/apply-sql-file.mjs
+  // (staging, then production with the aws-1 pooler) after the Supabase MCP declined the second file twice;
+  // no ledger row, except staging's MCP row for the first file (version 20261113154218). Read back on BOTH
+  // projects: md5(pg_get_functiondef) identical for all 14 functions — phx_record_direct_order_collection
+  // dba699c73ac1, phx_decide_marketing_request_step 5537d0b89388, phx_cancel_marketing_request fb8ad5be0749,
+  // phx_create_retention_conversation 55bcf404c4d4, phx_update_retention_conversation 4718dca5e88f,
+  // phx_replace_retention_conversation_themes aca2f407d38a, phx_apply_vacation_step_decision da8c2efbd4b5,
+  // phx_apply_vacation_paid_approval_with_step 60cd22542ead, phx_merge_ats_candidates c63ddb1967bc,
+  // phx_claim_dispute_case_decision 2128fdb01efc, phx_renew_dispute_case_decision 7be0fac5dc7a,
+  // phx_capture_deduction_dispute_state 34817c685634, phx_restore_deduction_dispute_state c26ee68b7e3d,
+  // phx_deductions_decisions_refuse_locked e5c21e0b0456 — none executable by anon or authenticated, all by
+  // service_role; dispute_case_decision_claims has RLS on and no anon/authenticated select; triggers
+  // phx_deductions_decisions_refuse_locked and phx_deductions_decisions_history both enabled. Functions,
+  // one table and one trigger only, no row changed; re-applying is a no-op.
+  "20261113161617_direct_order_collection_atomic.sql",
+  "20261113161619_marketing_decide_requires_pending_request.sql",
+  "20261113161724_retention_themes_replace_atomic.sql",
+  "20261113161725_vacation_step_and_request_atomic.sql",
+  "20261113161727_ats_candidate_merge_atomic.sql",
+  "20261113162318_dispute_decision_claim_and_undo.sql",
+  "20261113162321_deduction_decision_refuses_locked_candidate.sql",
+  // Applied 13 Nov 2026 at about 17:35 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler) after the Supabase MCP declined it; no ledger row. Read back on production: still 7 rows, 0
+  // with a deduction_date, daily_deductions_lines_pub_employee_category_day_idx in place of the old key,
+  // phx_release_daily_deduction_lines' body reads deductionDate (md5(prosrc) 62bceeb51fa7797233f68c68c3af23a7),
+  // execute held by postgres and service_role only. Proven on staging inside a rolled-back block: the 9th then
+  // the 11th are two rows (1,400), a repeat of the 9th adds none, a one-day row is filed under its own day, and
+  // a whole range over a released day, a day inside an old whole-range row, and a second whole row are refused.
+  "20261113181600_daily_deductions_one_row_per_day.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

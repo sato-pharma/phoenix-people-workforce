@@ -28,8 +28,8 @@ export function runDailyDeductionsPortalAndReadersTests(): void {
     );
     assert.match(
       page,
-      /<DailyDeductionsPortalSection lines=\{daily\.lines\} unavailable=\{daily\.unavailable\} \/>/,
-      "the page must render the daily section with both the lines and the unavailable flag",
+      /<DailyDeductionsPortalSection disputes=\{dailyDisputes\} lines=\{daily\.lines\} unavailable=\{daily\.unavailable\} \/>/,
+      "the page must render the daily section with the lines, the unavailable flag and each line's dispute",
     );
 
     const section = readFileSync("src/components/employee-portal/daily-deductions-section.tsx", "utf8");
