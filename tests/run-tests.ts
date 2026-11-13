@@ -3082,6 +3082,7 @@ import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test
 import { runDirectOrdersAndMarketingAtomicTests } from "./direct-orders-and-marketing-atomic.test.ts";
 import { runHrAtomicWritesTests } from "./hr-atomic-writes.test.ts";
 import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
+import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12240,6 +12241,7 @@ await runTest("a pay, deduction, leave or attendance row must name a real employ
 await runTest("direct-order collection and marketing decision are atomic (the collection is one locked compare-and-set write with offsets summed under the lock; a marketing decision refuses a request that is no longer pending approval; cancel closes the open rungs in the same transaction)", runDirectOrdersAndMarketingAtomicTests);
 await runTest("two HR writes that could half-land are each one transaction now (enterprise audit, 13 Nov 2026): a retention conversation and its confidential themes are replaced together under a row lock and a compare-and-set, never a delete then an insert; a leave approver's step is decided and the request moved together under the request's row lock, paid approvals included, never the step first", runHrAtomicWritesTests);
 await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): every write runs in phx_merge_ats_candidates, which locks both rows lowest id first and refuses if one is gone; each table keeps its dedupe key, orphan clean-up and copy rule; the survivor columns are whitelisted; an RPC error throws before the Drive re-file; and the summary words are unchanged", runCandidateMergeAtomicTests);
+await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

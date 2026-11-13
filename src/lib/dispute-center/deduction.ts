@@ -15,7 +15,15 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { payrollCharge } from "./charge.ts";
 import { loadDayFacts, loadEmployeeProfileFacts } from "./day-evidence.ts";
 import { compareCasesForReviewer, deriveDisputeCaseState, isDecidedByEvents, lastActivityAt } from "./state.ts";
-import { listCaseEvents, nameFor, recordCaseEvent, resolvePeopleNames } from "./events.ts";
+import {
+  claimDisputeDecision,
+  captureDeductionDisputeState,
+  releaseDisputeDecision,
+  restoreDeductionDisputeState,
+  stampDisputeDecisionSnapshot,
+  type DeductionDisputeSnapshot,
+} from "./decision-claim.ts";
+import { listCaseEvents, nameFor, recordCaseEvent, recordCaseEvents, resolvePeopleNames, type CaseEventInput } from "./events.ts";
 import { notifyDisputeCase, reviewerHrIdsFor } from "./notify.ts";
 import { resolveCaseParticipant, viewerHrIdOf } from "./participants.ts";
 import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
@@ -509,6 +517,62 @@ function messageOf(error: unknown): string {
 }
 
 /**
+ * Everything decideDeductionDispute reads and writes. The default is the real database; a test hands in
+ * stand-ins so the claim and the undo are exercised without one (tests/dispute-and-deduction-atomic.test.ts).
+ */
+export type DecideDeductionDisputeDeps = {
+  resolveParticipant: typeof resolveCaseParticipant;
+  listEvents: typeof listCaseEvents;
+  loadParts: (candidateIds: string[]) => Promise<{
+    candidates: Map<string, CandidateRow>;
+    decisions: Map<string, DecisionRow>;
+    lines: Map<string, LineRow>;
+  }>;
+  payrollMonthState: typeof payrollMonthState;
+  withdrawDeduction: typeof withdrawDeduction;
+  recordDecision: typeof recordDecision;
+  pushDeduction: typeof pushDeduction;
+  recommendDisputeRefund: typeof recommendDisputeRefund;
+  cancelLiveRefund: typeof cancelLiveRefund;
+  recordEvents: typeof recordCaseEvents;
+  notify: typeof notifyDisputeCase;
+  claim: typeof claimDisputeDecision;
+  stampSnapshot: typeof stampDisputeDecisionSnapshot;
+  release: typeof releaseDisputeDecision;
+  capture: typeof captureDeductionDisputeState;
+  restore: typeof restoreDeductionDisputeState;
+};
+
+const DATABASE_DEPS: DecideDeductionDisputeDeps = {
+  cancelLiveRefund,
+  capture: captureDeductionDisputeState,
+  claim: claimDisputeDecision,
+  listEvents: listCaseEvents,
+  loadParts,
+  notify: notifyDisputeCase,
+  payrollMonthState,
+  pushDeduction,
+  recommendDisputeRefund,
+  recordDecision,
+  recordEvents: recordCaseEvents,
+  release: releaseDisputeDecision,
+  resolveParticipant: resolveCaseParticipant,
+  restore: restoreDeductionDisputeState,
+  stampSnapshot: stampDisputeDecisionSnapshot,
+  withdrawDeduction,
+};
+
+const ALREADY_DECIDED = "This dispute is already decided. Reopen it first, then decide it again.";
+
+/** Did a decision complete on this case after `since`? A lapsed claim whose decision finished only lost its release. */
+function decidedSince(events: DisputeCaseEvent[], since: string | null): boolean {
+  const from = Date.parse(String(since ?? ""));
+  return events.some(
+    (event) => event.eventType === "decided" && (!Number.isFinite(from) || Date.parse(event.createdAt) >= from),
+  );
+}
+
+/**
  * Decide a deduction dispute: Accept (cancel it), Reject (it stands), or Reduce to a smaller figure.
  *
  * A deduction LOCKED by a publication cannot be re-decided while its line is live — that is the
@@ -525,27 +589,95 @@ function messageOf(error: unknown): string {
  * Money already paid is never un-paid here: when the month's payroll is published or its Part 2 is
  * confirmed, the difference is recommended into the next open month's Additions → Other additions
  * (owner, 2026-10-09). Nothing in this file pays anybody.
+ *
+ * 🔴 ONE DECISION AT A TIME, ALL OF IT OR NONE OF IT (F-PAY-005, 2026-11-13). The decision claims the
+ * case before its first write (decision-claim.ts) — a second decide of the same case is refused with a
+ * Conflict before it writes anything — and re-checks "already decided" under the claim. It captures the
+ * before-state of the line, the decision, the lock and the refunds, and if anything fails after its
+ * first write, all of that is put back in one transaction before the error is shown. Its refund events
+ * and its "decided" event are written together as its LAST write, so a failure leaves no event behind.
+ * If even the undo fails, the case is marked "needs attention" rather than reading open.
  */
 export async function decideDeductionDispute(
   access: AccessContext,
   input: { candidateId: string; outcome: DeductionDisputeOutcome; reducedValue?: number | null; note: string },
+  deps: DecideDeductionDisputeDeps = DATABASE_DEPS,
 ): Promise<DeductionDecisionResult> {
-  const participant = await resolveCaseParticipant(access, "deduction", input.candidateId);
+  const participant = await deps.resolveParticipant(access, "deduction", input.candidateId);
   if (!participant.isReviewer) throw new Error("Forbidden: only the Super Admin can decide a deduction dispute.");
+
+  // ONE DECISION PER REOPEN. Without this a decided case could be decided again behind the
+  // employee's back, and worse for the money: each decision measures what it owes against whatever
+  // the previous one left, so deciding twice recommended a second refund on top of the first.
+  // This read is the cheap refusal; it is asked again under the claim, where it is binding.
+  const eventsBefore = (await deps.listEvents("deduction", [input.candidateId])).get(input.candidateId) ?? [];
+  if (isDecidedByEvents(eventsBefore)) throw conflictError(ALREADY_DECIDED);
+
+  const claim = await deps.claim({
+    claimedBy: participant.viewerHrId ?? access.loginId ?? null,
+    kind: "deduction",
+    ref: input.candidateId,
+  });
+  if (!claim.held) {
+    throw conflictError(
+      "This dispute is being decided right now — in another window or by another reviewer. Wait a moment, reload it, and read what was decided before deciding again.",
+    );
+  }
+
+  let outcome: Awaited<ReturnType<typeof decideUnderClaim>>;
+  try {
+    outcome = await decideUnderClaim(access, input, deps, participant, claim);
+  } finally {
+    // Only this decision's own claim, by its token. A release that fails leaves a claim that lapses by
+    // itself; the next decision sees the "decided" event this one wrote and is not misled by it.
+    await deps.release({ kind: "deduction", ref: input.candidateId, token: claim.token }).catch(() => undefined);
+  }
+
+  await deps.notify(outcome.notice);
+  return outcome.result;
+}
+
+async function decideUnderClaim(
+  access: AccessContext,
+  input: { candidateId: string; outcome: DeductionDisputeOutcome; reducedValue?: number | null; note: string },
+  deps: DecideDeductionDisputeDeps,
+  participant: Awaited<ReturnType<typeof resolveCaseParticipant>>,
+  claim: Extract<Awaited<ReturnType<typeof claimDisputeDecision>>, { held: true }>,
+): Promise<{ result: DeductionDecisionResult; notice: Parameters<typeof notifyDisputeCase>[0] }> {
   // The note is OPTIONAL (owner, 2026-10-18): the Super Admin may accept, reduce or reject with or
   // without words. Everything below that quotes the note does so only when there is one.
   const note = tidyDisputeText(input.note);
   const noteSuffix = note ? `: ${note}` : "";
 
-  // ONE DECISION PER REOPEN. Without this a decided case could be decided again behind the
-  // employee's back, and worse for the money: each decision measures what it owes against whatever
-  // the previous one left, so deciding twice recommended a second refund on top of the first.
-  const events = (await listCaseEvents("deduction", [input.candidateId])).get(input.candidateId) ?? [];
-  if (isDecidedByEvents(events)) {
-    throw conflictError("This dispute is already decided. Reopen it first, then decide it again.");
+  // Asked again UNDER the claim: a decision that finished between the first read and the claim is seen here.
+  const events = (await deps.listEvents("deduction", [input.candidateId])).get(input.candidateId) ?? [];
+  if (isDecidedByEvents(events)) throw conflictError(ALREADY_DECIDED);
+
+  // A decision that died after capturing its before-state, and never wrote its "decided" event, may
+  // have changed the money part-way. Its before-state may be stale by now (the month's workspace can
+  // have moved since), so it is not replayed blindly: the case is marked and the reviewer looks first.
+  if (claim.interrupted && !decidedSince(events, claim.interrupted.claimedAt)) {
+    await deps.recordEvents([
+      {
+        actorHrId: participant.viewerHrId,
+        actorRole: access.role,
+        details: {
+          claimedAt: claim.interrupted.claimedAt,
+          reason: "An earlier decision stopped before it finished.",
+          snapshot: claim.interrupted.snapshot,
+        },
+        eventType: "decision_interrupted",
+        kind: "deduction",
+        note: null,
+        ref: input.candidateId,
+      },
+    ]);
+    throw conflictError(
+      "An earlier decision on this dispute stopped before it finished and may have changed the deduction part-way. The dispute is marked \"needs attention\": check its decision, payslip line and any money back in that month's Deductions workspace, then decide it again.",
+    );
   }
 
-  const { candidates, decisions, lines } = await loadParts([input.candidateId]);
+  const { candidates, decisions, lines } = await deps.loadParts([input.candidateId]);
   const candidate = candidates.get(input.candidateId);
   if (!candidate) throw notFoundError("That deduction no longer exists.");
   const decisionBefore = decisions.get(input.candidateId) ?? null;
@@ -592,197 +724,211 @@ export async function decideDeductionDispute(
   }
 
   const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null, role: access.role };
-  const monthState = await payrollMonthState(monthKey);
+  const monthState = await deps.payrollMonthState(monthKey);
   const payrollNotices: string[] = [];
   let chargedValue = before.value;
   let chargedAmount = chargedBefore;
 
-  if (input.outcome !== "reject") {
-    // The line comes off first: it is what makes the candidate re-decidable, and for Accept it is
-    // the change itself.
-    if (activeLine) {
-      const withdrawn = await withdrawDeduction({ actor, lineId: activeLine.id });
-      if (!withdrawn.ok) throw conflictError(`This deduction could not be taken off the payslip: ${withdrawn.reason}`);
-    }
-    let decision: Awaited<ReturnType<typeof recordDecision>>;
-    try {
-      decision = await recordDecision({
-        actor,
-        candidateId: input.candidateId,
-        decisionReason:
-          input.outcome === "accept"
-            ? `Dispute accepted${noteSuffix}`
-            : `Dispute accepted in part — charged ${inUnit(reduced as number)}${noteSuffix}`,
-        decisionStatus: input.outcome === "accept" ? "Do Not Take Action" : "Approved for Payroll",
-        hrNote: note,
-        ...(input.outcome === "reduce" ? { appliedValue: reduced as number } : {}),
-      });
-    } catch (error) {
-      // HALF A DECISION LANDED: the line is off the payslip and the decision is untouched. Payroll
-      // charges the DECISION, so the money is still the old figure while the employee's portal shows
-      // no line at all — and nothing says so. Put the line back, and if even that fails, say exactly
-      // which state this deduction is in rather than reporting a plain failure.
-      if (activeLine) {
-        const restored = await pushDeduction({
-          actor,
-          candidateId: input.candidateId,
-          deps: SILENT_PUSH,
-          monthKey,
-        }).catch(() => null);
-        throw conflictError(
-          `The deduction was taken off the payslip but the decision did not save (${messageOf(error)}). ` +
-            (restored
-              ? "It has been put back exactly as it was — nothing changed, decide again."
-              : "It could NOT be put back: push it again from the month's Deductions workspace, then decide again."),
-        );
-      }
-      throw error;
-    }
-    payrollNotices.push(...decision.payrollNotices);
-    chargedValue = input.outcome === "accept" ? 0 : num(decision.appliedValue);
-    chargedAmount = input.outcome === "accept" ? 0 : roundCurrency(num(decision.appliedAmount));
+  // THE BEFORE-STATE, captured and kept on the claim before the first write — so a failure below can
+  // put it all back, and a decision that dies outright is known to have died.
+  const snapshot = await deps.capture(input.candidateId);
+  await deps.stampSnapshot({ kind: "deduction", ref: input.candidateId, snapshot, token: claim.token });
 
-    if (input.outcome === "reduce") {
-      // Back on the payslip at the smaller figure.
-      const pushed = await pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey });
-      chargedAmount = roundCurrency(num(pushed.appliedAmount));
-    }
-  } else if (undecided) {
-    // REJECT ON A DEDUCTION NOBODY HAS DECIDED — owner, 2026-11-13: "if reject then deduct". Leaving it
-    // Pending would charge nothing, so "the deduction stands" would be a sentence and not a figure: the
-    // rejection approves it for payroll at what was detected, and puts it on the employee's payslip view.
-    const approved = await recordDecision({
-      actor,
-      candidateId: input.candidateId,
-      decisionReason: `Dispute rejected — the deduction is taken${noteSuffix}`,
-      decisionStatus: "Approved for Payroll",
-      hrNote: note,
-    });
-    payrollNotices.push(...approved.payrollNotices);
-    chargedValue = num(approved.appliedValue);
-    chargedAmount = roundCurrency(num(approved.appliedAmount));
-    const pushed = await pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }).catch(
-      () => null,
-    );
-    if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
-    else {
-      payrollNotices.push(
-        `The ${monthKeyLabel(monthKey)} deduction is approved for payroll at ${moneyLabel(
-          chargedAmount,
-        )}, but its line could not be put on the employee's payslip view — push it from that month's Deductions workspace.`,
-      );
-    }
-  } else {
-    // REJECT — "the deduction stands". Where an earlier decision on THIS dispute lowered it, that
-    // sentence is only true if the charge goes back: the first decision's own event recorded what
-    // was charged before the dispute touched it, which is the one honest basis for restoring it.
-    const firstDecision = events.find((event) => event.eventType === "decided");
-    const details = (firstDecision?.details ?? {}) as Record<string, unknown>;
-    const rawAmount = Number(details.chargedBefore ?? Number.NaN);
-    const amountBefore = Number.isFinite(rawAmount) ? roundCurrency(rawAmount) : Number.NaN;
-    const valueBefore = Number(details.chargedValueBefore ?? Number.NaN);
-    if (Number.isFinite(amountBefore) && amountBefore > chargedBefore) {
-      if (Number.isFinite(valueBefore) && valueBefore > 0) {
-        const restored = await recordDecision({
+  // Every write goes through here, so the undo knows whether there is anything to undo.
+  let wrote = false;
+  const write = <T>(step: () => Promise<T>): Promise<T> => {
+    wrote = true;
+    return step();
+  };
+  // The refund events go out WITH the "decided" event, as one insert, as the last write.
+  const deferredEvents: CaseEventInput[] = [];
+  let refundSentence: string | null = null;
+
+  try {
+    if (input.outcome !== "reject") {
+      // The line comes off first: it is what makes the candidate re-decidable, and for Accept it is
+      // the change itself.
+      if (activeLine) {
+        const withdrawn = await write(() => deps.withdrawDeduction({ actor, lineId: activeLine.id }));
+        if (!withdrawn.ok) throw conflictError(`This deduction could not be taken off the payslip: ${withdrawn.reason}`);
+      }
+      const decision = await write(() =>
+        deps.recordDecision({
           actor,
-          appliedValue: valueBefore,
           candidateId: input.candidateId,
-          decisionReason: `Dispute rejected — the deduction stands as it was charged${noteSuffix}`,
+          decisionReason:
+            input.outcome === "accept"
+              ? `Dispute accepted${noteSuffix}`
+              : `Dispute accepted in part — charged ${inUnit(reduced as number)}${noteSuffix}`,
+          decisionStatus: input.outcome === "accept" ? "Do Not Take Action" : "Approved for Payroll",
+          hrNote: note,
+          ...(input.outcome === "reduce" ? { appliedValue: reduced as number } : {}),
+        }),
+      );
+      payrollNotices.push(...decision.payrollNotices);
+      chargedValue = input.outcome === "accept" ? 0 : num(decision.appliedValue);
+      chargedAmount = input.outcome === "accept" ? 0 : roundCurrency(num(decision.appliedAmount));
+
+      if (input.outcome === "reduce") {
+        // Back on the payslip at the smaller figure.
+        const pushed = await write(() =>
+          deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
+        );
+        chargedAmount = roundCurrency(num(pushed.appliedAmount));
+      }
+    } else if (undecided) {
+      // REJECT ON A DEDUCTION NOBODY HAS DECIDED — owner, 2026-11-13: "if reject then deduct". Leaving it
+      // Pending would charge nothing, so "the deduction stands" would be a sentence and not a figure: the
+      // rejection approves it for payroll at what was detected, and puts it on the employee's payslip view.
+      const approved = await write(() =>
+        deps.recordDecision({
+          actor,
+          candidateId: input.candidateId,
+          decisionReason: `Dispute rejected — the deduction is taken${noteSuffix}`,
           decisionStatus: "Approved for Payroll",
           hrNote: note,
-        });
-        payrollNotices.push(...restored.payrollNotices);
-        chargedValue = num(restored.appliedValue);
-        chargedAmount = roundCurrency(num(restored.appliedAmount));
-        if (!activeLine) {
-          // The earlier decision took the line off; the money is charged again either way, but the
-          // employee's portal has to show it again too.
-          const pushed = await pushDeduction({
-            actor,
-            candidateId: input.candidateId,
-            deps: SILENT_PUSH,
-            monthKey,
-          }).catch(() => null);
-          if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
-          else {
-            payrollNotices.push(
-              `The ${monthKeyLabel(monthKey)} deduction is charged again at ${moneyLabel(
-                chargedAmount,
-              )}, but its line could not be put back on the employee's payslip view — push it from that month's Deductions workspace.`,
-            );
-          }
-        }
-      } else {
-        // An event written before this path recorded the day count: the amount is known and the days
-        // are not, and charging a day count nobody decided is exactly what must not happen here.
+        }),
+      );
+      payrollNotices.push(...approved.payrollNotices);
+      chargedValue = num(approved.appliedValue);
+      chargedAmount = roundCurrency(num(approved.appliedAmount));
+      const pushed = await write(() =>
+        deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
+      ).catch(() => null);
+      if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
+      else {
         payrollNotices.push(
-          `This dispute's first decision lowered the deduction from ${moneyLabel(amountBefore)} to ${moneyLabel(
-            chargedBefore,
-          )}. Rejecting does not put that back by itself — restore it in the ${monthKeyLabel(
-            monthKey,
-          )} Deductions workspace.`,
+          `The ${monthKeyLabel(monthKey)} deduction is approved for payroll at ${moneyLabel(
+            chargedAmount,
+          )}, but its line could not be put on the employee's payslip view — push it from that month's Deductions workspace.`,
+        );
+      }
+    } else {
+      // REJECT — "the deduction stands". Where an earlier decision on THIS dispute lowered it, that
+      // sentence is only true if the charge goes back: the first decision's own event recorded what
+      // was charged before the dispute touched it, which is the one honest basis for restoring it.
+      const firstDecision = events.find((event) => event.eventType === "decided");
+      const details = (firstDecision?.details ?? {}) as Record<string, unknown>;
+      const rawAmount = Number(details.chargedBefore ?? Number.NaN);
+      const amountBefore = Number.isFinite(rawAmount) ? roundCurrency(rawAmount) : Number.NaN;
+      const valueBefore = Number(details.chargedValueBefore ?? Number.NaN);
+      if (Number.isFinite(amountBefore) && amountBefore > chargedBefore) {
+        if (Number.isFinite(valueBefore) && valueBefore > 0) {
+          const restored = await write(() =>
+            deps.recordDecision({
+              actor,
+              appliedValue: valueBefore,
+              candidateId: input.candidateId,
+              decisionReason: `Dispute rejected — the deduction stands as it was charged${noteSuffix}`,
+              decisionStatus: "Approved for Payroll",
+              hrNote: note,
+            }),
+          );
+          payrollNotices.push(...restored.payrollNotices);
+          chargedValue = num(restored.appliedValue);
+          chargedAmount = roundCurrency(num(restored.appliedAmount));
+          if (!activeLine) {
+            // The earlier decision took the line off; the money is charged again either way, but the
+            // employee's portal has to show it again too.
+            const pushed = await write(() =>
+              deps.pushDeduction({ actor, candidateId: input.candidateId, deps: SILENT_PUSH, monthKey }),
+            ).catch(() => null);
+            if (pushed) chargedAmount = roundCurrency(num(pushed.appliedAmount));
+            else {
+              payrollNotices.push(
+                `The ${monthKeyLabel(monthKey)} deduction is charged again at ${moneyLabel(
+                  chargedAmount,
+                )}, but its line could not be put back on the employee's payslip view — push it from that month's Deductions workspace.`,
+              );
+            }
+          }
+        } else {
+          // An event written before this path recorded the day count: the amount is known and the days
+          // are not, and charging a day count nobody decided is exactly what must not happen here.
+          payrollNotices.push(
+            `This dispute's first decision lowered the deduction from ${moneyLabel(amountBefore)} to ${moneyLabel(
+              chargedBefore,
+            )}. Rejecting does not put that back by itself — restore it in the ${monthKeyLabel(
+              monthKey,
+            )} Deductions workspace.`,
+          );
+        }
+      }
+    }
+
+    // What the employee is owed, if the month's money is already final.
+    const owed = roundCurrency(chargedBefore - chargedAmount);
+    if (monthState === "paid" && owed > 0) {
+      const recommended = await write(() =>
+        deps.recommendDisputeRefund({
+          actorHrId: participant.viewerHrId,
+          actorRole: access.role,
+          amount: owed,
+          candidateId: input.candidateId,
+          deferEvents: deferredEvents,
+          employeeHrId,
+          kind: "deduction",
+          reason: `Refund of a ${monthKeyLabel(monthKey)} deduction${noteSuffix}`,
+          ref: input.candidateId,
+          sourceMonthKey: monthKey,
+        }),
+      );
+      // A refund this case ALREADY had, whose own month has since been paid, cannot be replaced — one
+      // live refund per case is a database rule, so nothing new is recommended and HR is told, rather
+      // than this throwing a unique violation after the decision has already moved the money.
+      if (recommended.refund) refundSentence = recommended.sentence;
+      else payrollNotices.push(recommended.sentence);
+    } else if (owed <= 0) {
+      // A live refund from an earlier, more generous decision is cancelled rather than left to pay out.
+      const cancelled = await write(() =>
+        deps.cancelLiveRefund({
+          actorHrId: participant.viewerHrId,
+          actorRole: access.role,
+          deferEvents: deferredEvents,
+          kind: "deduction",
+          reason: `Replaced by a newer decision on the same dispute${noteSuffix}`,
+          ref: input.candidateId,
+        }),
+      );
+      if (cancelled.alreadyPaid) {
+        payrollNotices.push(
+          `${moneyLabel(cancelled.alreadyPaid.amount)} was already refunded in ${monthKeyLabel(cancelled.alreadyPaid.targetMonthKey)} payroll, which is now paid. Settle the difference by hand.`,
         );
       }
     }
-  }
 
-  // What the employee is owed, if the month's money is already final.
-  let refundSentence: string | null = null;
-  const owed = roundCurrency(chargedBefore - chargedAmount);
-  if (monthState === "paid" && owed > 0) {
-    const recommended = await recommendDisputeRefund({
-      actorHrId: participant.viewerHrId,
-      actorRole: access.role,
-      amount: owed,
-      candidateId: input.candidateId,
-      employeeHrId,
-      kind: "deduction",
-      reason: `Refund of a ${monthKeyLabel(monthKey)} deduction${noteSuffix}`,
-      ref: input.candidateId,
-      sourceMonthKey: monthKey,
-    });
-    // A refund this case ALREADY had, whose own month has since been paid, cannot be replaced — one
-    // live refund per case is a database rule, so nothing new is recommended and HR is told, rather
-    // than this throwing a unique violation after the decision has already moved the money.
-    if (recommended.refund) refundSentence = recommended.sentence;
-    else payrollNotices.push(recommended.sentence);
-  } else if (owed <= 0) {
-    // A live refund from an earlier, more generous decision is cancelled rather than left to pay out.
-    const cancelled = await cancelLiveRefund({
-      actorHrId: participant.viewerHrId,
-      actorRole: access.role,
-      kind: "deduction",
-      reason: `Replaced by a newer decision on the same dispute${noteSuffix}`,
-      ref: input.candidateId,
-    });
-    if (cancelled.alreadyPaid) {
-      payrollNotices.push(
-        `${moneyLabel(cancelled.alreadyPaid.amount)} was already refunded in ${monthKeyLabel(cancelled.alreadyPaid.targetMonthKey)} payroll, which is now paid. Settle the difference by hand.`,
-      );
-    }
+    // THE LAST WRITE: the refund events and the decision's own event, in one insert.
+    await write(() =>
+      deps.recordEvents([
+        ...deferredEvents,
+        {
+          actorHrId: participant.viewerHrId,
+          actorRole: access.role,
+          details: {
+            chargedAfter: chargedAmount,
+            chargedBefore,
+            // The FIGURE behind each amount, in the candidate's own unit. `chargedValueBefore` is what a
+            // later REJECT restores the deduction to, and an amount alone cannot be restored: a day count
+            // is what `recordDecision` takes, and it scales the money from the candidate's own estimate.
+            chargedValueAfter: chargedValue,
+            chargedValueBefore: before.value,
+            monthKey,
+            outcome: input.outcome,
+            payrollMonthState: monthState,
+            ...(reduced == null ? {} : { reducedTo: reduced }),
+          },
+          eventType: "decided",
+          kind: "deduction",
+          note,
+          ref: input.candidateId,
+        },
+      ]),
+    );
+  } catch (error) {
+    // Nothing written yet: a plain refusal, exactly as it was raised.
+    if (!wrote) throw error;
+    throw await undoHalfDecision({ access, deps, error, input, monthKey, participant, snapshot });
   }
-
-  await recordCaseEvent({
-    actorHrId: participant.viewerHrId,
-    actorRole: access.role,
-    details: {
-      chargedAfter: chargedAmount,
-      chargedBefore,
-      // The FIGURE behind each amount, in the candidate's own unit. `chargedValueBefore` is what a
-      // later REJECT restores the deduction to, and an amount alone cannot be restored: a day count
-      // is what `recordDecision` takes, and it scales the money from the candidate's own estimate.
-      chargedValueAfter: chargedValue,
-      chargedValueBefore: before.value,
-      monthKey,
-      outcome: input.outcome,
-      payrollMonthState: monthState,
-      ...(reduced == null ? {} : { reducedTo: reduced }),
-    },
-    eventType: "decided",
-    kind: "deduction",
-    note,
-    ref: input.candidateId,
-  });
 
   const headline =
     input.outcome === "accept"
@@ -796,19 +942,75 @@ export async function decideDeductionDispute(
               chargedAmount,
             )}).`
           : `Your dispute was reviewed and the ${monthKeyLabel(monthKey)} deduction stands.`;
-  await notifyDisputeCase({
-    actorHrId: participant.viewerHrId,
-    audience: "employee",
-    employeeHrId,
-    eventKey: `decided:${new Date().toISOString()}`,
-    kind: "deduction",
-    message: [headline, note, refundSentence].filter(Boolean).join("\n\n"),
-    recipientHrIds: [employeeHrId],
-    ref: input.candidateId,
-    title: `Deduction dispute decided — ${monthKeyLabel(monthKey)}`,
-  });
 
-  return { chargedAmount, chargedValue, outcome: input.outcome, payrollNotices, refundSentence };
+  return {
+    notice: {
+      actorHrId: participant.viewerHrId,
+      audience: "employee",
+      employeeHrId,
+      eventKey: `decided:${new Date().toISOString()}`,
+      kind: "deduction",
+      message: [headline, note, refundSentence].filter(Boolean).join("\n\n"),
+      recipientHrIds: [employeeHrId],
+      ref: input.candidateId,
+      title: `Deduction dispute decided — ${monthKeyLabel(monthKey)}`,
+    },
+    result: { chargedAmount, chargedValue, outcome: input.outcome, payrollNotices, refundSentence },
+  };
+}
+
+/**
+ * A decision failed after its first write. Put the before-state back in one transaction and say that
+ * nothing changed; if that fails too, mark the case "needs attention" in its own timeline — never leave
+ * it reading open while the money says otherwise. Returns the error to throw.
+ */
+async function undoHalfDecision(input: {
+  access: AccessContext;
+  deps: DecideDeductionDisputeDeps;
+  error: unknown;
+  input: { candidateId: string; outcome: DeductionDisputeOutcome };
+  monthKey: string;
+  participant: Awaited<ReturnType<typeof resolveCaseParticipant>>;
+  snapshot: DeductionDisputeSnapshot;
+}): Promise<Error> {
+  const reason = messageOf(input.error);
+  let restoreFailure: unknown = null;
+  try {
+    await input.deps.restore({ actor: input.participant.viewerHrId ?? input.access.loginId ?? null, snapshot: input.snapshot });
+  } catch (restoreError) {
+    restoreFailure = restoreError;
+  }
+  if (restoreFailure == null) {
+    return conflictError(
+      `The decision did not save (${reason}). Everything it had started to change was put back — the deduction, its payslip line and any money back are exactly as they were, and the dispute is still open. Decide again.`,
+    );
+  }
+  await input.deps
+    .recordEvents([
+      {
+        actorHrId: input.participant.viewerHrId,
+        actorRole: input.access.role,
+        details: {
+          error: reason,
+          monthKey: input.monthKey,
+          outcome: input.input.outcome,
+          restoreError: messageOf(restoreFailure),
+          snapshot: input.snapshot,
+        },
+        eventType: "decision_interrupted",
+        kind: "deduction",
+        note: null,
+        ref: input.input.candidateId,
+      },
+    ])
+    .catch(() => undefined);
+  return conflictError(
+    `The decision stopped half-way (${reason}) and what it had already changed could NOT be put back (${messageOf(
+      restoreFailure,
+    )}). The dispute is marked "needs attention": check this deduction's decision, payslip line and any money back in the ${monthKeyLabel(
+      input.monthKey,
+    )} Deductions workspace, then decide it again.`,
+  );
 }
 
 /** The employee asks for a decided deduction dispute to be looked at again. */

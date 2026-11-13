@@ -37,6 +37,7 @@ const TABS: { key: "waiting_me" | "waiting_them" | "reopen_requested" | "decided
 
 const STATE_CHIP: Record<DisputeCaseState, string> = {
   decided: "border-slate-300 bg-slate-100 text-slate-600",
+  needs_attention: "border-rose-300 bg-rose-50 text-rose-800",
   reopen_requested: "border-amber-300 bg-amber-50 text-amber-800",
   waiting_employee: "border-sky-300 bg-sky-50 text-sky-800",
   waiting_reviewer: "border-orange-300 bg-orange-50 text-orange-800",
@@ -44,6 +45,7 @@ const STATE_CHIP: Record<DisputeCaseState, string> = {
 
 const EVENT_WORDS: Record<DisputeCaseEvent["eventType"], string> = {
   decided: "Decided",
+  decision_interrupted: "Decision stopped half-way — needs attention",
   refund_cancelled: "Money back cancelled",
   refund_recommended: "Money back recommended",
   reopen_declined: "Reopen declined — the decision stands",
@@ -55,7 +57,7 @@ function tabOf(dispute: DisputeCase, audience: "employee" | "reviewer"): string[
   const keys = ["all"];
   if (dispute.state === "reopen_requested") keys.push("reopen_requested");
   else if (dispute.state === "decided") keys.push("decided");
-  else if (dispute.state === "waiting_reviewer") keys.push(audience === "reviewer" ? "waiting_me" : "waiting_them");
+  else if (dispute.state === "waiting_reviewer" || dispute.state === "needs_attention") keys.push(audience === "reviewer" ? "waiting_me" : "waiting_them");
   else keys.push(audience === "reviewer" ? "waiting_them" : "waiting_me");
   return keys;
 }
