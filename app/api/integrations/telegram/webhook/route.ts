@@ -33,16 +33,15 @@ export async function POST(request: Request) {
   // Must match the token registered with Telegram in provisionTelegramBot's setWebhook —
   // both derive from NOTIFICATION_WEBHOOK_SECRET via telegramWebhookSecretToken().
   const expectedSecret = telegramWebhookSecretToken();
-  // Fail-closed in production: no secret configured ⇒ refuse to accept webhooks.
-  // In development the secret may be unset for local testing (documented exception).
-  if (!expectedSecret && process.env.NODE_ENV !== "development") {
+  // Fail-closed everywhere: no secret configured ⇒ refuse to accept webhooks, development included,
+  // because a local server reads the production database (S01, F-COM-014). Telegram only ever
+  // calls the address registered by setWebhook, so a local server needs no unsigned path.
+  if (!expectedSecret) {
     return NextResponse.json({ error: "telegram_webhook_secret_missing" }, { status: 500 });
   }
-  if (expectedSecret) {
-    const received = request.headers.get("x-telegram-bot-api-secret-token");
-    if (!secretMatches(received, expectedSecret)) {
-      return NextResponse.json({ error: "telegram_webhook_forbidden" }, { status: 403 });
-    }
+  const received = request.headers.get("x-telegram-bot-api-secret-token");
+  if (!secretMatches(received, expectedSecret)) {
+    return NextResponse.json({ error: "telegram_webhook_forbidden" }, { status: 403 });
   }
 
   // Held outside the try so a refusal can still answer in the chat the update came from.

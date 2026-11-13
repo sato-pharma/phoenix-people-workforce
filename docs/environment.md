@@ -562,7 +562,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | BREVO_EMAIL_FROM | Sender verified on the Brevo account. A job offer is never re-branded onto it — the offer waits for Resend |
 | RESEND_API_KEY_2/_3/_4, RESEND_EMAIL_FROM_2/_3/_4 · RESEND_API_KEY_SALES/_PEOPLE, RESEND_EMAIL_FROM_SALES/_PEOPLE · BREVO_API_KEY_2, BREVO_EMAIL_FROM_2 | 🔴 **RETIRED 2026-11-06 — the code never reads them.** They were the extra Resend accounts (`send2`/`send3`/`send4.satopharma.com`, added 2026-10-08 and 2026-10-11), the per-module Sales and People accounts (`sales.`/`people.satopharma.com`, 2026-10-13) and a second Brevo account. Spreading ~245 emails a day over seven sending addresses was the cause found for company mail landing in junk. Leaving a value set on Railway does nothing; never wire one back without the owner's word |
 | RESEND_WEBHOOK_SECRET_2/_3/_4 · RESEND_WEBHOOK_SECRET_SALES/_PEOPLE | Still read by `/api/webhooks/resend`, so the late bounces and complaints of mail the retired accounts sent before the cut are recorded instead of rejected with a 401 |
-| NOTIFICATION_WEBHOOK_SECRET | Verifies inbound Telegram webhook calls (`secret_token`) |
+| NOTIFICATION_WEBHOOK_SECRET | Verifies inbound Telegram webhook calls (`secret_token`). Unset means the webhook refuses every update, development included |
 | TELEGRAM_BOT_TOKEN | Telegram Bot API token |
 | NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
 | ONESIGNAL_REST_API_KEY | OneSignal REST API key (server-side push) |
