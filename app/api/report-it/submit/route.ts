@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
   EMPLOYEE_ORG_SELECT,
@@ -9,36 +10,37 @@ import {
 } from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrIdLookupKeys } from "@/lib/hr-id";
-import { submitReport } from "@/lib/report-it/service";
+import { reportItJsonError, reportItSignedOut } from "@/lib/report-it/http";
+import { REPORT_IT_MAX_PAYLOAD_BYTES, reportPayloadRefusal, submitReport } from "@/lib/report-it/service";
 import type { ReportItPayload } from "@/lib/report-it/types";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { assertApiRateLimit } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isForbidden(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith("Forbidden:");
-}
-
-function jsonError(error: unknown, fallback: string) {
-  const message = clientSafeErrorMessage(error, fallback);
-  if (isForbidden(error)) return NextResponse.json({ error: message }, { status: 403 });
-  if (message.toLowerCase().includes("authentication")) return NextResponse.json({ error: message }, { status: 401 });
-  return NextResponse.json({ error: message }, { status: 400 });
-}
 
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
 
-    if (access.source === "guest" || !access.hrId) {
-      return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
-    }
+    if (access.source === "guest" || !access.hrId) return reportItSignedOut();
+    // The boundary: the role must hold report_it:create, checked here before anything is stored.
+    await assertPermission(access, "report_it", "create");
+    // A person files a handful of reports a day at most; this stops a script, never a reporter.
+    await assertApiRateLimit({ identifier: access.hrId, limit: 10, scope: "report-it-submit", windowMs: 10 * 60_000 });
 
-    const body = (await request.json()) as { payload?: unknown };
-    if (!body?.payload || typeof body.payload !== "object") {
-      return NextResponse.json({ error: "Missing report payload." }, { status: 400 });
+    const raw = await request.text();
+    if (raw.length > REPORT_IT_MAX_PAYLOAD_BYTES + 1_000) {
+      return NextResponse.json({ error: "The report is too large." }, { status: 413 });
     }
+    let body: { payload?: unknown } | null = null;
+    try {
+      body = JSON.parse(raw) as { payload?: unknown };
+    } catch {
+      body = null;
+    }
+    const refusal = reportPayloadRefusal(body?.payload);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 400 });
+    const payload = body?.payload as ReportItPayload;
 
     // Fetch employee record for submitter metadata. Match on canonical hr_id
     // keys (case-insensitive + alias variants) so the name/department/line
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
     const emp = empRows?.[0] ?? null;
 
     const result = await submitReport({
-      payload: body.payload as ReportItPayload,
+      payload,
       submitterHrId: access.hrId,
       submitterName: emp?.full_name ?? null,
       submitterRole: access.role,
@@ -81,6 +83,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ reportNumber: result.reportNumber, id: result.id }, { status: 201 });
   } catch (error) {
-    return jsonError(error, "Failed to submit report.");
+    return reportItJsonError(error, "Failed to submit report.");
   }
 }

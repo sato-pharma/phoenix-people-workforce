@@ -1,27 +1,19 @@
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { reportItJsonError, reportItSignedOut } from "@/lib/report-it/http";
 import { listReports } from "@/lib/report-it/service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function jsonError(error: unknown, fallback: string) {
-  const message = clientSafeErrorMessage(error, fallback);
-  const isForbidden = message.startsWith("Forbidden:");
-  if (isForbidden) return NextResponse.json({ error: message }, { status: 403 });
-  if (message.toLowerCase().includes("authentication")) return NextResponse.json({ error: message }, { status: 401 });
-  return NextResponse.json({ error: message }, { status: 400 });
-}
 
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
 
-    if (access.source === "guest" || !access.hrId) {
-      return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
-    }
+    if (access.source === "guest" || !access.hrId) return reportItSignedOut();
+    await assertPermission(access, "report_it", "read");
 
     const url = new URL(request.url);
     const p = url.searchParams;
@@ -43,6 +35,6 @@ export async function GET(request: Request) {
     const result = await listReports(access, opts);
     return NextResponse.json(result);
   } catch (error) {
-    return jsonError(error, "Failed to list reports.");
+    return reportItJsonError(error, "Failed to list reports.");
   }
 }
