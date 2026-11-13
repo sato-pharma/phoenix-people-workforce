@@ -2351,6 +2351,7 @@ async function recommendStepRows(
     part1Corrections?: Map<string, number>;
     addedInRun?: Map<string, number>;
     carryForwardByCompact?: Map<string, number>;
+    expenseTrips?: ExpenseStepTrips;
   },
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
