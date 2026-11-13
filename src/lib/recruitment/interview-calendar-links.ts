@@ -12,6 +12,11 @@
 //
 // A link is a bearer secret: 32 random bytes, 43 characters. Only the owner lists, copies or changes
 // links, and a switched-off or deleted link opens nothing from the moment it is switched.
+//
+// STORED AS A HASH, SHOWN ONCE, KEPT 90 DAYS (owner, 13 Nov 2026, REC-055). Only the SHA-256 of a link
+// and its first 8 characters are kept; the whole link is handed back once, when it is made, to copy or
+// send then. Every link — the ones already sent included — opens nothing 90 days after it was made,
+// as the CV sheet's links do. The links already sent keep working until then.
 
 import { randomBytes } from "node:crypto";
 
@@ -22,6 +27,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import {
   LINK_COLUMNS,
   grantFromLinkRow,
+  hashInterviewCalendarLinkToken,
   isSignedInCaller,
   loadInterviewCalendarLinkByToken,
   loadPeople,
@@ -42,6 +48,9 @@ import { isDateKey, weekStartFor } from "@/lib/recruitment/interview-calendar-we
 
 const LINKS = "ats_interview_calendar_links";
 
+/** Every link opens nothing this long after it was made. */
+export const INTERVIEW_CALENDAR_LINK_LIFETIME_DAYS = 90;
+
 /** A new link's secret: 32 random bytes, URL-safe. */
 export function newInterviewCalendarLinkToken(): string {
   return randomBytes(32).toString("base64url");
@@ -58,8 +67,9 @@ async function mapLinks(rows: readonly InterviewCalendarLinkRow[]): Promise<Inte
       guestCvs: row.guest_cvs !== false,
       id: row.id,
       isActive: row.is_active !== false,
+      expiresAt: row.expires_at,
       lastUsedAt: row.last_used_at,
-      token: row.token,
+      tokenPreview: row.token_preview ?? "",
       useCount: Number(row.use_count ?? 0),
       weekStart: row.week_start ? String(row.week_start).slice(0, 10) : null,
     }));
@@ -78,25 +88,35 @@ function readWeek(value: unknown): string | null {
   return weekStartFor(value);
 }
 
+/**
+ * Makes a link and returns it WHOLE this once (`created.token`), beside the refreshed list — after
+ * this only its hash and its first 8 characters are kept, so it cannot be shown again.
+ */
 export async function createInterviewCalendarLink(
   caller: InterviewCalendarCaller,
   input: { accessLevel?: unknown; weekStart?: unknown; guestCvs?: unknown },
-): Promise<InterviewCalendarLink[]> {
+  now: Date = new Date(),
+): Promise<{ created: { id: string; token: string }; links: InterviewCalendarLink[] }> {
   requireCalendarAccess(caller, "share", null);
   if (!isInterviewCalendarAccessLevel(input.accessLevel)) throw new Error("Choose Viewer, Commenter or Editor.");
   const actor = hrIdForStorage(caller.access.hrId);
-  const { error } = await recruitmentDb()
+  const token = newInterviewCalendarLinkToken();
+  const { data, error } = await recruitmentDb()
     .from(LINKS)
     .insert({
       access_level: input.accessLevel,
       created_by_hr_id: actor,
+      expires_at: new Date(now.getTime() + INTERVIEW_CALENDAR_LINK_LIFETIME_DAYS * 24 * 60 * 60 * 1000).toISOString(),
       guest_cvs: input.guestCvs !== false,
-      token: newInterviewCalendarLinkToken(),
+      token_hash: hashInterviewCalendarLinkToken(token),
+      token_preview: token.slice(0, 8),
       updated_by_hr_id: actor,
       week_start: readWeek(input.weekStart),
-    });
+    })
+    .select("id")
+    .single();
   if (error) throw error;
-  return listInterviewCalendarLinks(caller);
+  return { created: { id: String((data as { id: string }).id), token }, links: await listInterviewCalendarLinks(caller) };
 }
 
 export async function updateInterviewCalendarLink(

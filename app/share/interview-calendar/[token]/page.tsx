@@ -1,5 +1,6 @@
 import { CalendarDays, Link2Off } from "lucide-react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 
 import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -7,7 +8,7 @@ import { InterviewCalendarView } from "@/components/recruitment/interview-calend
 import { RecruitmentEmptyState, RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isUuid } from "@/lib/http/uuid";
-import { interviewCalendarAbilities } from "@/lib/recruitment/interview-calendar";
+import { assertInterviewCalendarLinkRate, interviewCalendarAbilities } from "@/lib/recruitment/interview-calendar";
 import { openInterviewCalendarLink } from "@/lib/recruitment/interview-calendar-links";
 import { interviewCalendarLinkPath } from "@/lib/recruitment/interview-calendar-types";
 import { cairoDateKey, isDateKey, upcomingWeekStart, weekStartFor } from "@/lib/recruitment/interview-calendar-week";
@@ -40,7 +41,12 @@ export default async function SharedInterviewCalendarPage({
   const { token } = await params;
   const query = await searchParams;
   const access = await resolveAccessContextFromPage();
-  const opened = await openInterviewCalendarLink(token, access).catch(() => null);
+  // Limited per address and per link before the token is looked up, as every API call the screen
+  // makes is (assertInterviewCalendarLinkRate). A refused or failed open shows the same page as a dead link.
+  const incoming = new Request("https://share.invalid/", { headers: await headers() });
+  const opened = await assertInterviewCalendarLinkRate(incoming, token)
+    .then(() => openInterviewCalendarLink(token, access))
+    .catch(() => null);
 
   if (!opened) {
     return (
@@ -54,7 +60,7 @@ export default async function SharedInterviewCalendarPage({
           <div className={`border border-slate-200 bg-white ${adminPanelDepthClassName}`}>
             <RecruitmentEmptyState
               icon={<Link2Off aria-hidden="true" className="h-5 w-5" />}
-              message="It was switched off or deleted by the person who shared it. Ask them for a new link."
+              message="It was switched off or deleted by the person who shared it, or it is more than 90 days old. Ask them for a new link."
               title="This link does not open anything"
             />
           </div>
