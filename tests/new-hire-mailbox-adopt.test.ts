@@ -284,6 +284,7 @@ function runRouteWiringCases(): void {
   // 🔴 THE HEADLINE. No cron route, and no sweep hook, may import the adoption runner or its ports.
   const scheduled = [
     "app/api/cron/mailbox-offboarding-sweep/route.ts",
+    "app/api/cron/mailbox-robots/route.ts",
     "src/lib/new-hire-mailbox/robot/sweep-hook.ts",
     "src/lib/new-hire-mailbox/robot/sweep-deps.ts",
     "src/lib/new-hire-mailbox/robot/runner.ts",

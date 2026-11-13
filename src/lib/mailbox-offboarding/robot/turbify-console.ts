@@ -31,6 +31,7 @@
  */
 
 import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf/chromium";
+import { assertRobotDriverAllowedHere } from "@/lib/platform/robot-service";
 import { CONSOLE_VIEWPORT } from "@/lib/turbify/click-delivery";
 // The exactly-one-row rule is stated ONCE for the whole Turbify console, in the shared resolver,
 // so the revocation driver and the provisioning driver cannot drift into two different ideas of
@@ -247,6 +248,9 @@ export function readTurbifyCredentials(
  * missing — both are configuration failures, and failing early costs nothing.
  */
 export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver> {
+  // FIRST, before anything else is read or launched (audit REC-075): once PHOENIX_ROBOT_SERVICE_URL is
+  // set, a robot browser opens on the robot service and nowhere else. src/lib/platform/robot-service.ts.
+  assertRobotDriverAllowedHere();
   if (!TURBIFY_RESET_CALIBRATED) throw new TurbifyConsoleNotCalibratedError();
 
   // Belt and suspenders: never let a flip to true stand while a reset-flow selector is still a

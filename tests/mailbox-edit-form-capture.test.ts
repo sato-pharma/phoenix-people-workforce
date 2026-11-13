@@ -37,6 +37,7 @@ function readable(path: string): string {
 }
 
 const ROUTE = "../app/api/mailbox-offboarding/edit-form-controls/route.ts";
+const ACTION = "../src/lib/new-hire-mailbox/robot/actions/edit-form-controls-action.ts";
 const JOINER = "../src/lib/new-hire-mailbox/robot/turbify-joiner.ts";
 
 function slice(source: string, start: string, end: string): string {
@@ -73,25 +74,41 @@ function runGateBeforeBodyCases(): void {
 
 // ── 2. The register comes before the driver ────────────────────────────────────────────────────
 function runRegisterBeforeDriverCases(): void {
+  // The website route: register, then the rate limit, then the run — forwarded or local — and the
+  // run is handed the REGISTER's address on both paths.
   const route = readable(ROUTE);
   const lookup = route.indexOf("findLeaverOnRegister(asked)");
   const refusal = route.indexOf("if (!leaver)");
   const limit = route.indexOf("assertApiRateLimit(");
-  const driver = route.indexOf("createJoinerDriverFromEnv()");
-  assert.ok(lookup > -1 && refusal > -1 && limit > -1 && driver > -1, "every step of the route must be present");
+  const forward = route.indexOf('forwardToRobotService({ action: "edit-form-controls"');
+  const local = route.indexOf("runEditFormControlsAction({ actor, address: leaver.workEmail })");
+  assert.ok(lookup > -1 && refusal > -1 && limit > -1 && forward > -1 && local > -1, "every step of the route must be present");
+  const run = Math.min(forward, local);
   assert.ok(
-    lookup < refusal && refusal < driver,
-    "an address that is not a leaver on the register must be refused BEFORE a driver is built — a "
-    + "browser signed in as the console administrator is the thing this gate exists to withhold",
+    lookup < refusal && refusal < run,
+    "an address that is not a leaver on the register must be refused BEFORE the run — a browser "
+    + "signed in as the console administrator is the thing this gate exists to withhold",
   );
-  assert.match(route.slice(refusal, driver), /status: 404/, "and the refusal must return before the driver");
-  assert.ok(limit > refusal && limit < driver, "the rate limit sits between the register and the driver");
+  assert.match(route.slice(refusal, run), /status: 404/, "and the refusal must return before the run");
+  assert.ok(limit > refusal && limit < run, "the rate limit sits between the register and the run");
+  assert.match(route, /request: \{ address: leaver\.workEmail \}/, "the robot service is sent the REGISTER's address");
+  assert.doesNotMatch(route, /createJoinerDriverFromEnv/, "the website route builds no driver of its own");
+  assert.doesNotMatch(route, /sendEmail|sendMail|queueEmail|notify/i, "the capture sends no email");
+
+  // The ONE implementation asks the register AGAIN before a driver is built: on the robot service
+  // the address arrives in a forwarded body.
+  const action = readable(ACTION);
+  const again = action.indexOf("findLeaverOnRegister(asked)");
+  const againRefusal = action.indexOf("if (!leaver)");
+  const driver = action.indexOf("createJoinerDriverFromEnv()");
+  assert.ok(again > -1 && againRefusal > again && driver > againRefusal, "the action: register, refusal, then the driver");
+  assert.match(action.slice(againRefusal, driver), /status: 404/, "and its refusal returns before the driver");
   assert.match(
-    route, /captureMailboxEditForm\(\{ address: leaver\.workEmail \}\)/,
+    action, /captureMailboxEditForm\(\{ address: leaver\.workEmail \}\)/,
     "the driver is handed the REGISTER's address, never the body's string",
   );
-  assert.match(route, /driver\.close\(\)/, "the browser must be closed whatever happened");
-  assert.doesNotMatch(route, /sendEmail|sendMail|queueEmail|notify/i, "the capture sends no email");
+  assert.match(action, /driver\.close\(\)/, "the browser must be closed whatever happened");
+  assert.doesNotMatch(action, /sendEmail|sendMail|queueEmail|notify/i, "the capture sends no email");
 
   // The match itself: exact and lowered, never a substring.
   const rows = [

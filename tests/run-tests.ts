@@ -2587,6 +2587,7 @@ import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-caller
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
+import { runTelegramHomeCardTests } from "./telegram-home-card.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
@@ -3026,6 +3027,7 @@ import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.
 import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runSharedInstanceStateTests } from "./shared-instance-state.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
+import { runMailboxRobotServiceTests } from "./mailbox-robot-service.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
 import { runErrorScreenPictureFilterTests } from "./error-screenshot-picture-filter.test.ts";
@@ -9937,8 +9939,12 @@ await runTest(
   runMarketingCustomerMergeTombstoneTests,
 );
 await runTest(
-  "push opt-in nudge (never shown with an active subscription, dismissal is permanent and additive)",
+  "push opt-in nudge (never shown with a device receiving, an answer stands until a device drops, additive)",
   runPushOptInNudgeTests,
+);
+await runTest(
+  "the home page Telegram card (everybody not connected, never a test account, once, decided by the server)",
+  runTelegramHomeCardTests,
 );
 await runTest(
   "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
@@ -12091,6 +12097,10 @@ await runTest(
 await runTest(
   "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",
   runWorkerOnlyCronRoutesTests,
+);
+await runTest(
+  "the Turbify mailbox robots run on their own Railway service once PHOENIX_ROBOT_SERVICE_URL is set: both driver factories refuse anywhere but the robot service, the robot cron and the four internal routes refuse off it (the internal ones after the CRON_SECRET bearer), the website keeps its session, CSRF, role and rate-limit checks and forwards only a live run after them, the answer comes back unchanged or a 502 with no credential in it, the daily sweep skips both robot passes, and the Railway block is Europe, robot role and none of the website's variables",
+  runMailboxRobotServiceTests,
 );
 await runTest(
   "every outside call in the background jobs has a deadline: the careers IMAP clients cut a silent host after 30 seconds and carry an error listener, a Headwind call that times out answers 504 saying it may have acted (never that it never reached a server), uploads get a longer deadline, and free OCR stops and terminates its worker at its whole-read deadline",

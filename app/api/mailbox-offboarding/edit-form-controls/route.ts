@@ -19,18 +19,18 @@
  * 🔴 THE ORDER OF THE REFUSALS IS THE SAFETY PROPERTY:
  *   1. the System Administrator gate, BEFORE the body is read;
  *   2. the address must be a leaver on the register (exact, lowered) — BEFORE a browser exists;
- *   3. the rate limit, then the driver.
+ *   3. the rate limit, then the run — forwarded to the robot service when it is switched on.
  * Every run that reaches the driver is audited, a failed one included; no email is sent.
  */
 import { NextResponse } from "next/server";
 
-import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { findLeaverOnRegister } from "@/lib/mailbox-offboarding/service";
 import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
-import type { MailboxEditFormReading } from "@/lib/new-hire-mailbox/robot/driver";
-import { createJoinerDriverFromEnv } from "@/lib/new-hire-mailbox/robot/sweep-deps";
+import { runEditFormControlsAction } from "@/lib/new-hire-mailbox/robot/actions/edit-form-controls-action";
+import { forwardToRobotService } from "@/lib/new-hire-mailbox/robot/actions/forward";
+import { robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -88,53 +88,15 @@ export async function POST(request: Request) {
       windowMs: 60 * 60_000,
     });
 
-    const driver = await createJoinerDriverFromEnv();
-    let reading: MailboxEditFormReading;
-    try {
-      try {
-        reading = await driver.captureMailboxEditForm({ address: leaver.workEmail });
-      } finally {
-        // Closed whatever happened, and BEFORE the audit: a leaked Chromium holds a signed-in
-        // administrator session for longer than the request.
-        await driver.close().catch(() => {});
-      }
-    } catch (error) {
-      // A run that threw is recorded too — the app-password capture's first live run left no row at
-      // all because its throw sailed past the audit, and the card's text was the only account.
-      await writeAuditLog({
-        actorLoginId: access.loginId ?? null,
-        entityId: leaver.taskId,
-        entityType: "mailbox_offboarding",
-        newValues: {
-          address: leaver.workEmail,
-          failed: true,
-          reached: false,
-          why: clientSafeErrorMessage(error, "The Edit form could not be read."),
-        },
-        summary: `The Edit-form capture for ${leaver.employeeName || leaver.workEmail} failed before it could read the form`,
-      });
-      throw error;
+    // AFTER every check above (audit REC-075). The live run opens a robot browser, so once
+    // PHOENIX_ROBOT_SERVICE_URL is set it runs on the robot service and its answer comes back
+    // unchanged; otherwise it runs here. Either way it is the ONE implementation in
+    // runEditFormControlsAction, its own register check and both audit rows included.
+    const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
+    if (robotServiceConfigured()) {
+      return await forwardToRobotService({ action: "edit-form-controls", actor, request: { address: leaver.workEmail } });
     }
-
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: leaver.taskId,
-      entityType: "mailbox_offboarding",
-      newValues: {
-        // The reading carries labels, states and LENGTHS only — never a field's value — so storing
-        // it is exactly as safe as showing it, and it answers the question without another run.
-        ...reading,
-        failed: false,
-      },
-      summary: reading.reached
-        ? `Read ${reading.fields.length} control(s) on the Edit form of ${leaver.employeeName || leaver.workEmail}, left with ${reading.leftWith ?? "nothing"}`
-        : `Could not read the Edit form of ${leaver.employeeName || leaver.workEmail}`,
-    });
-
-    return NextResponse.json({
-      result: { ...reading, employeeName: leaver.employeeName },
-      success: true,
-    });
+    return await runEditFormControlsAction({ actor, address: leaver.workEmail });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "You do not have access to this.", success: false }, { status: 403 });
