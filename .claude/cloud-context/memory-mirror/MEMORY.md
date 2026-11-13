@@ -29,8 +29,8 @@
 
 
 ## Inbox — new notes land here
-- [home network drops ~1/3 of connections to production](home-network-drops-a-third-of-connections-to-production.md) - both laptops, Railway 153.52.255.32 only; retry 3x before calling production down.
-- [`*.csv` is gitignored - a report folder's CSVs never reach `main`](csv-files-are-gitignored-and-never-reach-main.md) - `git add` skips them silently; owner 2026-11-13: "keep the audit CSVs local". Never `git add -f`.
+- [four employees are never company-insured](four-employees-are-never-company-insured.md) - Ahmed Farag, Rasha Sabry, Reham Mahmoud, Samaa Mosaad (owner 2026-11-13); correct record = status no, wage empty, SI 0.
+- [S04/S05 owner decisions](s05-owner-decisions-safety-owner-and-field-probation.md) - Report It owner = Samaa Mosaad (in-app + email, her Report It desk); probation = field roles only; daily-jobs split behind a safe switch (13 Nov 2026).
 
 
 
