@@ -1,0 +1,90 @@
+{
+  "sidebarRows": 410,
+  "admin": 251,
+  "hr": 72,
+  "portal": 87,
+  "existing": 56,
+  "healthClasses": {
+    "NOT VERIFIED": 24,
+    "HEALTHY": 14,
+    "HEALTHY WITH WARNINGS": 12,
+    "NOT APPLICABLE": 5,
+    "DEGRADED": 1
+  },
+  "tests": 89,
+  "testResults": {
+    "WARNING": 33,
+    "PASS": 32,
+    "NOT APPLICABLE": 9,
+    "FAIL": 3,
+    "NOT VERIFIED": 12
+  },
+  "issues": 57,
+  "issueSeverity": {
+    "HIGH": 9,
+    "MEDIUM": 21,
+    "LOW": 27
+  },
+  "recs": 117,
+  "recByRec": {
+    "RECOMMENDED": 44,
+    "CONDITIONAL": 31,
+    "HIGHLY RECOMMENDED": 23,
+    "NOT RECOMMENDED CURRENTLY": 11,
+    "EXPERIMENTAL": 8
+  },
+  "recByCls": {
+    "F3": 45,
+    "F1": 25,
+    "F4": 20,
+    "F5": 13,
+    "F2": 13,
+    "EXCLUDED": 1
+  },
+  "recByPri": {
+    "P3": 57,
+    "P2": 31,
+    "P1": 22,
+    "P0": 7
+  },
+  "expansions": 24,
+  "verifiedRecs": 106,
+  "warnings": 6,
+  "top25": [
+    "INT-070 Alarm when fingerprint punches stop arriving (89)",
+    "INT-037 One-tap approve or reject from Telegram (87)",
+    "INT-003 Leave and calendar subscription feed (iCalendar) (87)",
+    "INT-006 Breached-password check when a password is set (86)",
+    "INT-012 IBAN validation for employee bank details (86)",
+    "INT-033 Job posts in Google's job search (85)",
+    "INT-096 Nightly encrypted database dump off-site (84)",
+    "INT-061 Long jobs scheduled from the database (84)",
+    "INT-066 Outside-in uptime monitor (84)",
+    "INT-005 Authenticator-app second factor (TOTP) for privileged roles (83)",
+    "INT-013 Phone number normalisation and validation (83)",
+    "INT-064 One outbound client: deadlines, retries, key redaction, provider metrics (82)",
+    "INT-002 vCard contact cards from the employee directory (82)",
+    "INT-068 Database-side freshness alarm for every job (80)",
+    "INT-075 Tripwire tokens beside real credentials (80)",
+    "INT-089 Automatic security-fix pull requests (80)",
+    "INT-042 Persistent storage for offline drafts (80)",
+    "INT-043 Resumable uploads for evidence photos and videos (79)",
+    "INT-081 Workflow lint and security audit (79)",
+    "INT-097 Quarterly restore drill into staging (78)",
+    "INT-016 Maps Embed for read-only location views (78)",
+    "INT-045 DMARC report reading (78)",
+    "INT-052 Core Web Vitals into the existing page-timing table (78)",
+    "INT-001 WhatsApp utility templates for employees with no Telegram (77)",
+    "INT-063 Integration registry fed by provider status feeds (77)"
+  ],
+  "sources": 151,
+  "sourcesVerified": 147,
+  "verdicts": {
+    "KEEP": 32,
+    "CONSOLIDATE": 1,
+    "OPTIMIZE": 11,
+    "INVESTIGATE FURTHER": 4,
+    "REMOVE": 6,
+    "REPLACE": 2
+  }
+}
