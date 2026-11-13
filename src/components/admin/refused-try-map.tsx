@@ -55,9 +55,11 @@ export function TryLocationsMap({
     <div className="flex flex-wrap items-start gap-4">
       <div className="relative max-w-full shrink-0 overflow-hidden border border-slate-200 bg-slate-100" style={{ height: map.height, width: map.width }}>
         {/* The streets: one picture from this app's own route, which asks Google with the server key (13 Nov 2026).
-            `lazy`, so a row nobody scrolls to asks for nothing. */}
+            `lazy`, so a row nobody scrolls to asks for nothing.
+            🔴 Its size is pinned in pixels and `max-w-none` stays: the markers are placed in the frame's own pixels,
+            so a picture that shrank to fit a narrow box would put them on the wrong streets. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" aria-hidden className="absolute inset-0 select-none" height={map.height} loading="lazy" src={map.basemapUrl} width={map.width} />
+        <img alt="" aria-hidden className="absolute left-0 top-0 max-w-none select-none" height={map.height} loading="lazy" src={map.basemapUrl} style={{ height: map.height, maxWidth: "none", width: map.width }} width={map.width} />
         <svg aria-hidden className="pointer-events-none absolute inset-0" height={map.height} width={map.width}>
           {phone && place ? (
             <line stroke="#e11d48" strokeDasharray="4 3" strokeWidth={2} x1={phone.left} x2={place.left} y1={phone.top} y2={place.top} />

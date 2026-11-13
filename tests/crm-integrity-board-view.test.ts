@@ -807,6 +807,16 @@ function runScreenTests() {
   assert.ok(view.includes("src={map.basemapUrl}"), "the panel draws the one picture the map names");
   for (const [surface, path] of [["the board's panel", VIEW_PATH], ["the refused try's map", "../src/components/admin/refused-try-map.tsx"]] as const) {
     assert.ok(!/openstreetmap|map\.tiles|https?:\/\/[^"'`\s]*tile/i.test(stripComments(read(path))), `${surface} asks no tile host for anything`);
+    // 🔴 The markers and lines are placed in the frame's own pixels. Every image on the platform is given
+    // `max-width: 100%`, so in a box narrower than the frame (a phone) the picture would shrink while the
+    // markers stayed put: at 375 pixels wide a 320-pixel map drew at about 275, and a marker sat some 40
+    // pixels off its street. The picture's size is pinned, and the box clips it.
+    const picture = /<img\b[^>]*src=\{map\.basemapUrl\}[^>]*>/.exec(stripComments(read(path)))?.[0] ?? "";
+    assert.ok(picture.includes("max-w-none"), `${surface}: the street picture never shrinks to fit its box`);
+    assert.ok(
+      picture.includes('style={{ height: map.height, maxWidth: "none", width: map.width }}'),
+      `${surface}: the street picture is drawn at exactly the frame's size, the size the markers are placed in`,
+    );
   }
 
   // 🔴 THE ROUTE THAT ASKS GOOGLE: the boards' own readers, a frame this module builds, a ceiling per person,
