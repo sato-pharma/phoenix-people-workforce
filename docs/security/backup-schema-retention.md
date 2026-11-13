@@ -3,8 +3,10 @@
 `backup-table-placement.md` says a snapshot goes in its own dated schema, and that "dropping the
 snapshot is the real end state". It never said **when**, so nothing ever did.
 
-**Rule: a snapshot schema is kept 90 days from the date in its name, then it is proposed for
-dropping. Nothing is ever dropped automatically.**
+**Rule: a snapshot schema is kept 90 days from the date in its name, then it is put to the owner,
+and it is proposed for dropping only once his decision for THAT schema is recorded. Nothing is ever
+dropped automatically, and nothing is dropped on age alone** (since 2026-11-13; see
+"The owner decides each one" below).
 
 ```bash
 node scripts/audit-backup-schemas.mjs                     # production
@@ -12,8 +14,44 @@ node scripts/audit-backup-schemas.mjs --database staging
 node scripts/audit-backup-schemas.mjs --retention-days 60
 ```
 
-Exit `0` = nothing has expired, `2` = expired schemas found, `1` = error. The script prints the
-`drop schema` statements for the expired ones; a human runs them.
+Exit `0` = nothing has expired, `2` = expired or undecided schemas found, `1` = error. The script
+prints the `drop schema` statements only for the schemas the owner decided should go; a human runs
+them.
+
+## The owner decides each one
+
+Enterprise audit 2026-11-13, REC-040: *every snapshot schema past 90 days has a recorded decision
+before anything is dropped.* Until then this script printed a drop statement for any schema past
+the window. Now the verdict past 90 days comes from
+[`scripts/backup-schema-decisions.json`](../../scripts/backup-schema-decisions.json), one entry per
+schema, never a pattern:
+
+| His decision | Verdict past 90 days | What the script prints |
+| --- | --- | --- |
+| none recorded | `UNDECIDED` | no drop statement; "NEEDS THE OWNER" — put it to him |
+| `keep` (no `until`) | `PROTECTED` | nothing, for good |
+| `keep` with `until` | `PROTECTED` until that date, then `UNDECIDED` again | a keep that runs out goes back to him, never straight to a drop |
+| `drop` | `EXPIRED` | the drop statement |
+| `export-then-drop` | `EXPIRED` | `NOT YET: export it first` until the export's `manifest.json` exists, then the drop statement |
+
+Every entry carries `decidedOn`, `decidedBy`, `why` and the review sheet that put it to him
+(`sheet`); `readDecisions()` refuses an entry without them. A decision never beats a live
+dependency (a foreign key into the schema still makes it `PINNED`), and never drops a schema
+before its 90 days (a decision on a young schema only adds a note).
+
+**How he is asked.** A review sheet per month lists the schemas that reach 90 days in it, grouped by
+what they hold, with a recommendation each — the first was "Snapshot review — November 2026" (nine
+schemas), the second "Snapshot review — December 2026" (92 schemas in four groups); all 101 were
+decided export-then-drop on 2026-11-13. Each answer is written into the decisions
+file by schema name, in a pull request.
+
+**Export, then drop.** `node scripts/export-backup-schema.mjs <schema>` reads production only, and
+only a schema decided `export-then-drop`. It writes one CSV per table and a `manifest.json` (rows,
+columns, bytes, SHA-256, the production ref, the export time, the decision) to
+`PHOENIX_SNAPSHOT_EXPORT_DIR`, else `snapshot-exports` beside the repository. That folder is
+outside every checkout on purpose: the repository is public and these files hold real business
+data, so an export is never committed. The drop itself is still a dated migration, announced on
+the day (AGENTS.md §8), with the manifest's table list in its header.
 
 ## What it looked like without a rule
 

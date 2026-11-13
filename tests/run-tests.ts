@@ -473,6 +473,7 @@ import { runDeductionsModulePublishTests } from "./deductions-module-publish.tes
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
 import { runDailyDeductionsReleaseNoticeTests } from "./daily-deductions-release-notice.test.ts";
 import { runDailyDeductionsPortalAndReadersTests } from "./daily-deductions-portal-and-readers.test.ts";
+import { runDailyDeductionsDisputesTests } from "./daily-deductions-disputes.test.ts";
 import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
 import { runDeductionsAcceptedReviewDaysTests } from "./deductions-accepted-review-days.test.ts";
 import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
@@ -1764,6 +1765,7 @@ import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expen
 import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
 import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
 import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-run-transition-claim.test.ts";
+import { runAutomatedPayrollBankFileDownloadGuardTests } from "./automated-payroll-bank-file-download-guard.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
@@ -4242,6 +4244,7 @@ await runTest("deductions outstation trip days (any trip not rejected spares the
 await runTest("deductions accepted review days (a day the Super Admin accepted a review request for is never charged)", runDeductionsAcceptedReviewDaysTests);
 await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
 await runTest("daily deductions on the employee portal and for readers (released lines show on his Deductions page and a failed read says so; the Finance Manager reads the page and only the Super Admin computes)", runDailyDeductionsPortalAndReadersTests);
+await runTest("daily deduction disputes (every released daily line can be disputed; an accepted dispute withdraws it and month-end collection never charges those days again; the Super Admin decides, the module readers read)", runDailyDeductionsDisputesTests);
 await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
@@ -6554,6 +6557,10 @@ await runTest(
 await runTest(
   "automated payroll: one transition at a time, and a Part 2 that asks about people who vanished",
   runAutomatedPayrollRunTransitionClaimTests,
+);
+await runTest(
+  "automated payroll: a run whose bank files were downloaded is not cancelled without a reason, and an unchanged outstation re-approve changes nothing",
+  runAutomatedPayrollBankFileDownloadGuardTests,
 );
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
