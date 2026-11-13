@@ -11,6 +11,7 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { reportItJsonError, reportItSignedOut } from "@/lib/report-it/http";
+import { notifyOwnersOfNewReport } from "@/lib/report-it/notify";
 import { REPORT_IT_MAX_PAYLOAD_BYTES, reportPayloadRefusal, submitReport } from "@/lib/report-it/service";
 import type { ReportItPayload } from "@/lib/report-it/types";
 import { assertApiRateLimit } from "@/lib/security/api-rate-limit";
@@ -80,6 +81,10 @@ export async function POST(request: Request) {
       line: resolveEmployeeLineName(emp),
       area: resolveEmployeeAreaName(emp),
     });
+
+    // The report's owner (whoever holds read-all access — the QPPV today) is told AFTER the reply: an
+    // in-app notice and an email carrying the reference, the time and the link, never patient data.
+    await notifyOwnersOfNewReport({ reportId: result.id, reportNumber: result.reportNumber, submittedAt: result.createdAt });
 
     return NextResponse.json({ reportNumber: result.reportNumber, id: result.id }, { status: 201 });
   } catch (error) {

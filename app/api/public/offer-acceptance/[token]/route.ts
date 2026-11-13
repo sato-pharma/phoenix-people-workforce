@@ -4,6 +4,7 @@ import { logError } from "@/lib/observability/log";
 import type { JoiningFormUploadField } from "@/lib/offers/joining-form";
 import { submitJoiningForm, type JoiningFormPhoto } from "@/lib/offers/joining-form-service";
 import { recordHireFromOfferLetter } from "@/lib/recruitment/offer-outcome-sync";
+import { runHandoffStep, syncOutcomeFailure } from "@/lib/employees/hire-handoff";
 import { ApiRateLimitError, assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { clientAddress } from "@/lib/security/client-address";
 import { errorMessageOf } from "@/lib/http/api-errors";
@@ -82,8 +83,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       // from HERE and not from the service because the offers module never imports recruitment
       // (tests/candidate-offer-pointer.test.ts). Best effort: the employee is already written. The
       // offer id stays on the server; the candidate is shown only what the form always returned.
+      // Recorded in the hire hand-off ledger (REC-027), so a link that fails is retried hourly.
       const { offerId, ...visible } = result;
-      await recordHireFromOfferLetter({ actorHrId: null, hrId: result.hrId, offerId });
+      await runHandoffStep(result.hrId, "joining_form", "offer_link", { offerId }, () =>
+        recordHireFromOfferLetter({ actorHrId: null, hrId: result.hrId, offerId }), { failureOf: syncOutcomeFailure });
       return json(visible);
     }
     if ("errors" in result) {

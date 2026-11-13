@@ -1224,6 +1224,27 @@ export const MODULES = [
     keywords: ["employee master", "employee 360", "resignation", "resignations", "leaver", "leavers", "new hire", "hire date", "last working date", "retention", "hr command", "test account", "موظف"],
     tables: ["employees", "employee_", "exit_record", "resignation", "retention", "app_auth_users"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` RECORDS: `employees` measured a 4,071-byte
+  // pointer against the 4,000 margin the moment the hire hand-off ledger (REC-027) taught its rule. HIRING
+  // A PERSON — the two doors (Add Employee and the offer joining form), the follow-up chain they share and
+  // the ledger that retries it — is one family, so its rules move together. `employees` KEEPS EVERY GLOB
+  // IT HAD, so a hiring file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "employees-hiring",
+    title: "Employees — hiring a person: the two doors and the hand-off",
+    scope: "HR's Add Employee and the candidate's offer joining form, the follow-up chain both run (offer link, candidate hired, login, CV, mailbox task, offer stamp, audit row), the hire hand-off ledger and its hourly retry.",
+    globs: [
+      "src/lib/employees/{hire-handoff,hire-handoff-reconciler,access-provisioning}.ts",
+      "src/lib/offers/joining-form-service.ts",
+      "app/api/employees/route.ts",
+      "app/api/employees/hire-handoff/**",
+      "app/api/cron/hire-handoff-reconcile/**",
+      "app/api/public/offer-acceptance/**",
+      "tests/{hire-handoff-steps,offer-joining-form,employee-access-provisioning}*",
+    ],
+    keywords: ["hire hand-off", "hire handoff", "add employee", "joining form", "new hire login", "hand-off ledger"],
+    tables: ["hire_handoff_steps"],
+  },
   // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `employees` measured a
   // 3,984-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, and the rule that
   // completing a resignation ends the employee first (REC-028) took it to 4,065. The resignation

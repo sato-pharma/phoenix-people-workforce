@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
+import { loginProvisioningFailure, mailboxTaskFailure, startHireHandoff } from "@/lib/employees/hire-handoff";
 import {
   getEmployeeDirectoryRows,
   isActiveLifecycleStatus,
@@ -719,15 +720,22 @@ export async function submitJoiningForm(
   // file the ID photos (so the acceptance alert can say whether they landed), stamp the offer, so a
   // refresh shows "already completed", then the follow-ups — each swallows its own failures exactly
   // as it does on HR's own Add Employee. Until the stamp, the claim turns a second Submit away.
+  //
+  // THE HAND-OFF LEDGER (REC-027): each step below leaves a row in `hire_handoff_steps`, so one that
+  // fails is retried by the hourly `hire-handoff-reconcile` job and, if it keeps failing, reaches the
+  // Needs You board by his name. It changes nothing he is shown: every step still swallows and logs
+  // its own failure exactly as before (src/lib/employees/hire-handoff.ts).
   const idPhotosFiled = await fileJoiningIdPhotos(hrId, idPhotos);
   const facePhotoOutcome = facePhoto ? await fileJoiningFacePhoto(hrId, facePhoto) : null;
+  const handoff = startHireHandoff(hrId, "joining_form");
   try {
-    await stampOfferAcceptedByJoiningForm(offer.id, {
+    const hire = {
       hrId,
       idPhotosFiled,
       seated: Boolean(seat?.lineId || seat?.departmentId),
       workEmail: satoEmail,
-    });
+    };
+    await handoff.run("offer_stamp", { ...hire, offerId: offer.id }, () => stampOfferAcceptedByJoiningForm(offer.id, hire));
   } catch (error) {
     logError("The joining form created an employee but could not stamp the offer", {
       error: error instanceof Error ? error : new Error(String(error)),
@@ -736,18 +744,23 @@ export async function submitJoiningForm(
   }
 
   try {
-    await db.from("offer_acceptances").insert({
-      employee_hr_id: hrId,
-      ip_hash: ipHash(meta.ip),
-      offer_id: offer.id,
-      payload: {
-        ...value,
-        idPhotosFiled,
-        photo: facePhotoOutcome,
-        satoEmail,
-        satoEmailReason,
-        userAgent: String(meta.userAgent ?? "").slice(0, 300),
-      },
+    // The insert's own error used to be dropped unread; it is thrown here so the ledger sees it, and
+    // the catch below still only logs it.
+    await handoff.run("acceptance_audit", { idPhotosFiled, offerId: offer.id }, async () => {
+      const { error: auditError } = await db.from("offer_acceptances").insert({
+        employee_hr_id: hrId,
+        ip_hash: ipHash(meta.ip),
+        offer_id: offer.id,
+        payload: {
+          ...value,
+          idPhotosFiled,
+          photo: facePhotoOutcome,
+          satoEmail,
+          satoEmailReason,
+          userAgent: String(meta.userAgent ?? "").slice(0, 300),
+        },
+      });
+      if (auditError) throw new Error(auditError.message);
     });
   } catch (error) {
     logError("The joining form could not write its audit row", {
@@ -760,18 +773,21 @@ export async function submitJoiningForm(
   // portal login goes through the create-only, rank-bounded HR Operations door: it can only ever
   // create a NEW default-rank login for the hr id just written, never change an existing account.
   try {
-    await provisionNewHireAccess({
+    await handoff.run("login", { actorRole: "HR Operations" }, async () => await provisionNewHireAccess({
       actor: { loginId: "joining-form", role: "HR Operations" },
       hrIds: [hrId],
       source: "offer joining form",
-    });
+    }), { failureOf: loginProvisioningFailure });
   } catch (error) {
     logError("The joining form could not provision the new hire's login", {
       error: error instanceof Error ? error : new Error(String(error)),
       labels: { event: "offer_joining_form_access_failed" },
     });
   }
-  await openAndAnnounceNewHireMailboxes({ actorId: "joining-form", hrIds: [hrId], source: "manual_add" });
+  await handoff.run("mailbox_task", { mailboxSource: "manual_add" }, async () =>
+    await openAndAnnounceNewHireMailboxes({ actorId: "joining-form", hrIds: [hrId], source: "manual_add" }), { failureOf: mailboxTaskFailure });
+  // Every ledger row of this hire has landed (or was logged as not landing) before he is answered.
+  await handoff.flush();
 
   logInfo("Offer accepted through the joining form", {
     context: { hrId, offerId: offer.id },

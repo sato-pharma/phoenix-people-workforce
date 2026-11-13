@@ -341,6 +341,11 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "recruitment", eventType: "mr_candidate_for_your_area", label: "HR passed a medical rep candidate for your area", sentFrom: ["src/lib/recruitment/mr-hiring/notify.ts"] },
   { module: "recruitment.website-apply", eventType: "careers_application_confirmation", label: "We received your application (to the applicant)", sentFrom: ["src/lib/recruitment/inbound/website-apply-confirmation-email.ts"], delivery: "direct_email" },
 
+  // ── Report It (safety reports) ──────────────────────────────────────────────────────────────
+  // To the report's owner (whoever holds report_it_dashboard_access) only: an in-app notice and one
+  // durable email, neither carrying patient data (REC-033).
+  { module: "report_it", eventType: "report_it_new_report", label: "A new safety report is waiting on your Report It desk", sentFrom: ["src/lib/report-it/notify.ts"], delivery: "both" },
+
   // ── Sales ───────────────────────────────────────────────────────────────────────────────────
   { module: "sales", eventType: "closing_published", label: "A monthly closing was published", sentFrom: ["src/lib/sales/closing-publish-notification.ts"], delivery: "both" },
   { module: "sales", eventType: "distributor_upload_overdue", label: "A distributor's sales file is late", sentFrom: ["src/lib/sales/distributor-upload-nudge.ts"] },
@@ -457,6 +462,7 @@ export const NOTIFICATION_MODULE_LABELS: Readonly<Record<string, string>> = {
   production_planning: "Production planning",
   recruitment: "Recruitment",
   "recruitment.website-apply": "Careers website",
+  report_it: "Report It (safety reports)",
   resignation: "Resignation reminders",
   resignations: "Resignations",
   retention_risk: "Retention risk",

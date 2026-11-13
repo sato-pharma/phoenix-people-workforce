@@ -136,3 +136,47 @@ Pre-image of this second round: `offers_pre_round2` and `candidates_pre_round2` 
   one: it is shared on this data (one number matched three different candidates).
 
 Pinned by `tests/offer-hire-sync.test.ts`, `tests/hired-tile-period.test.ts` and `tests/hr-command-center.test.ts`.
+
+## The hire hand-off ledger (REC-027, 2026-11-13)
+
+**The goal: a step that fails at any point in a hire leaves a visible item that can be retried, never a
+silent gap.** Both hiring doors write the employee and then run a chain of follow-up steps. Before
+this change, each step only logged its failure (`offer_hire_sync_failed`,
+`offer_joining_form_stamp_failed`, `offer_joining_form_audit_failed`,
+`offer_joining_form_access_failed`). Nothing retried a failed step and nothing showed it.
+
+| Step | Add Employee (`app/api/employees/route.ts`) | Joining form (`src/lib/offers/joining-form-service.ts` + `app/api/public/offer-acceptance/[token]`) | The retry, and why running it twice is safe |
+| --- | --- | --- | --- |
+| `offer_link` | when filled from a letter | in the route, after the form | `recordHireFromOfferLetter`: it links only an accepted, unlinked letter, and a candidate already hired is left alone |
+| `candidate_hired` | when opened for a candidate | — | `recordHireFromCandidate`: a hired candidate is reported as "already" |
+| `login` | always (a throw still fails the save) | always | done when any login exists for the HR id. Otherwise the same authority the door used, never more. "Already exists" counts as done |
+| `cv` | only when a CV was given | — | done when the record has a CV, which is never overwritten. A staged file cleared after a day gives up and says so |
+| `mailbox_task` | after the reply | always | the task's unique key on the HR id; the notice is in-app and Telegram, never email, and keyed per hire |
+| `offer_stamp` | — | always | done when the letter names this hire. A letter that names someone else, or is no longer sent or accepted, is never overwritten and the step gives up. The link is re-run after the stamp |
+| `acceptance_audit` | — | always (the insert's error is now read) | done when a row exists for this letter and hire. Otherwise one minimal row says the retry wrote it; his answers stay on his record |
+
+- **Ledger:** `public.hire_handoff_steps` holds one row per employee and step, with `pending`, `done`,
+  `failed` or `gave_up`, the number of attempts, the last error as a short sentence, and a
+  whitelisted `context` of ids. It never stores a password, token, salary or national id.
+  Migration `20261113201756_hire_handoff_steps.sql`. Only the service role can read or write it.
+- 🔴 **The ledger never changes a door's reply.** Each wrapped step returns or throws exactly what it
+  did before. Ledger writes are queued, run outside the step, and are caught and logged
+  (`hire_handoff_ledger_write_failed`). Add Employee flushes the queue after its reply; the joining
+  form flushes before it answers.
+- **The retry:** `hire-handoff-reconcile` runs hourly on :09. It covers failed rows, and pending rows
+  older than 30 minutes, which a door that crashed mid-way leaves behind. It holds a job lease, runs
+  at most 25 steps per run within a 40-second budget, and waits 15 minutes, then 30, 1 hour, 2 hours,
+  and at most 6 hours between attempts. After five attempts, or when a step can never succeed, the
+  row is marked `gave_up`. Logic: `src/lib/employees/hire-handoff-reconciler.ts`.
+- **Seen:** the Needs You source `hire-handoff-gaps` shows failed and given-up steps, one row per
+  person by name, linked to the record ([needs-you.md](needs-you.md)). `POST
+  /api/employees/hire-handoff/retry`, checked against `employees:create`, runs one step now
+  through the same retry.
+- **Caught even with no ledger row:** the reconciliation check `new-hires-without-login` flags any
+  active employee hired in the last 60 days who has no login and no pending or failed login step. A
+  hire made before the ledger existed, or a ledger write that was lost, still surfaces.
+- 🔴 **The offers module still never imports recruitment.** `hire-handoff.ts` imports nothing from
+  recruitment; the reconciler is the only part that reaches recruitment, and the offers module never
+  imports the reconciler.
+
+Pinned by `tests/hire-handoff-steps.test.ts`.

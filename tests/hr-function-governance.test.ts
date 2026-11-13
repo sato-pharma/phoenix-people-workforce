@@ -295,6 +295,11 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // companyVacationReportReaderRoles: the SFE Manager holds no `employees` grant at all, and a
   // permission-shaped gate would refuse the one person the notice is addressed to.
   "src/lib/employees/employee-cv.ts",
+  // Names HR Operations as the authority a failed hire hand-off's login step REPLAYS (REC-027,
+  // 2026-11-13): the joining form already runs as HR Operations through the create-only,
+  // rank-bounded door, and the retry keeps that door's own seat — never a wider one. A Super Admin
+  // add replays as the system flow; any other seat keeps its own role and is refused again.
+  "src/lib/employees/hire-handoff-reconciler.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
   // Names HR Operations and HR Resourcing in REMINDER_TEAM_ROLES, added 2026-10-17, and HR

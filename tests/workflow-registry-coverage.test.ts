@@ -6,6 +6,8 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { parseRoleStrict } from "../src/lib/auth/permissions.ts";
 import { AUTOMATED_PAYROLL_RUN_TRANSITIONS } from "../src/lib/automated-payroll/run-transitions.ts";
 import { MARKET_AWARENESS_STATUSES } from "../src/lib/market-awareness/types.ts";
+import { REPORT_IT_TRANSITIONS } from "../src/lib/report-it/lifecycle.ts";
+import { REPORT_IT_STATUSES } from "../src/lib/report-it/types.ts";
 import { MARKET_AWARENESS_TRANSITIONS } from "../src/lib/market-awareness/workflow.ts";
 import { assertMarketAwarenessRegistryTransition } from "../src/lib/market-awareness/workflow-registry.ts";
 import { EMPLOYEE_PLAN_TRANSITIONS, EmployeePlanWorkflowError, employeePlanStatuses } from "../src/lib/weekly-planning/plan-v1.ts";
@@ -46,7 +48,12 @@ const CODE_TABLES: Record<string, CodeTable> = {
   MARKET_AWARENESS_TRANSITIONS: { file: "src/lib/market-awareness/workflow.ts", moduleKey: "market_awareness" },
   AUTOMATED_PAYROLL_RUN_TRANSITIONS: { file: "src/lib/automated-payroll/run-transitions.ts", moduleKey: "automated_payroll_runs" },
   payrollTransitions: { file: "src/lib/payroll/workflow.ts", moduleKey: "payroll_batches" },
+  REPORT_IT_TRANSITIONS: { file: "src/lib/report-it/lifecycle.ts", moduleKey: "report_it" },
 };
+
+const REPORT_IT_MIGRATION = "supabase/migrations/20261113211605_register_report_it_workflow.sql";
+/** REPORT_IT_TRANSITIONS is keyed by status, not action: the registry names each move by where it lands. */
+const REPORT_IT_ACTION_BY_DESTINATION: Record<string, string> = { under_assessment: "start_assessment", closed: "close" };
 
 /** Files that move a row with claimTransition(...) → the registry module that records the machine. */
 const CLAIM_SITES: Record<string, string> = {
@@ -386,6 +393,26 @@ export async function runWorkflowRegistryCoverageTests() {
     new Map(AUTOMATED_PAYROLL_RUN_TRANSITIONS.map((t) => [t.action, { from: t.from, to: t.to }])),
     ["part1", "part2", "ready", "published", "cancelled"],
   );
+
+  // The safety-report lifecycle (REC-033) is seeded as an exact copy of its code table, in its own migration.
+  const reportItRows = seeds.filter((seed) => seed.moduleKey === "report_it");
+  assert.equal(reportItRows.length, 1, "report_it must be seeded exactly once");
+  assert.equal(reportItRows[0].file, REPORT_IT_MIGRATION, `report_it is seeded by ${REPORT_IT_MIGRATION}`);
+  const reportItCode = new Map<string, { from: string[]; to: string }>();
+  for (const [from, to] of Object.entries(REPORT_IT_TRANSITIONS)) {
+    if (!to) continue;
+    const key = REPORT_IT_ACTION_BY_DESTINATION[to];
+    assert.ok(key, `report_it: the move ${from} -> ${to} has no registry action name`);
+    reportItCode.set(key, { from: [from], to });
+  }
+  assertSeedEqualsCode("report_it", reportItRows[0], reportItCode, REPORT_IT_STATUSES);
+  for (const status of reportItRows[0].statuses!) {
+    assert.equal(status.terminal, REPORT_IT_TRANSITIONS[status.key as keyof typeof REPORT_IT_TRANSITIONS] === null, `report_it: "${status.key}" is terminal exactly when the code table has no exit from it`);
+  }
+  for (const action of reportItRows[0].actions!) {
+    for (const role of action.allowedRoles) assert.doesNotThrow(() => parseRoleStrict(role), `report_it.${action.key}: unknown role ${role}`);
+    assert.ok(action.tests?.includes(THIS_TEST), `report_it.${action.key}: names ${THIS_TEST} in tests`);
+  }
 
   // Seed structure: statuses declared, terminal statuses have no exit, roles parse, tests named.
   for (const moduleKey of ["weekly_plans", "employee_plans", "market_awareness", "automated_payroll_runs"]) {

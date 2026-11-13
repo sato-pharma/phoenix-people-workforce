@@ -141,11 +141,12 @@ export function runRecruitmentHireFromCandidateTests(): void {
   assert.ok(!/ilike\(|\.like\(|full_name|national_id/.test(door), "no fuzzy lookup of a person");
 
   const employees = flat("app/api/employees/route.ts");
-  const recordAt = employees.indexOf("await recordHireFromCandidate(");
+  const recordAt = employees.indexOf("recordHireFromCandidate({");
   assert.ok(recordAt > 0, "RED the employee create route calls the fifth door");
   assert.match(
     employees,
-    /if \(isNewEmployee && payload\.fromCandidateId\?\.trim\(\)\) \{ await recordHireFromCandidate\(\{ actorHrId: access\.hrId \?\? null, candidateId: payload\.fromCandidateId, hrId: newEmployeeHrId, \}\);/,
+    // Wrapped in the hire hand-off ledger since 2026-11-13 (REC-027) — still awaited, the same arguments.
+    /if \(isNewEmployee && payload\.fromCandidateId\?\.trim\(\)\) \{ await handoff\.run\( "candidate_hired", [^;]*?\(\) => recordHireFromCandidate\(\{ actorHrId: access\.hrId \?\? null, candidateId: payload\.fromCandidateId \?\? "", hrId: newEmployeeHrId, \}\)/,
     "only on a NEW employee, with the new HR id",
   );
   assert.ok(
