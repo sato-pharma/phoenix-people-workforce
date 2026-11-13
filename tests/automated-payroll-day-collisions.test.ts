@@ -202,7 +202,7 @@ export function runAutomatedPayrollDayCollisionTests() {
   const part2End = runService.indexOf("async function assembleForRun", part2Start);
   assert.ok(part2Start > 0 && part2End > part2Start, "confirmPart2 and its end marker must both be found");
   const part2Body = runService.slice(part2Start, part2End);
-  assert.ok(part2Body.length < 16000, "the slice must stay bounded to confirmPart2");
+  assert.ok(part2Body.length < 17000, "the slice must stay bounded to confirmPart2");
   // The check must be CALLED and its result must STOP the confirm. Asserting only that the name
   // appears would pass on a body that merely mentions it, which is what a half-hearted revert
   // leaves behind — measured: that weaker form stayed green while the gate was gone.

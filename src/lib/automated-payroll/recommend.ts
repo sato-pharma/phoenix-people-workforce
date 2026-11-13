@@ -68,6 +68,11 @@ import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
 import { notYetDue, type HeldBalance } from "./held-settlements.ts";
+import {
+  getCarryLateExpensesSetting,
+  loadLateApprovedExpenses,
+  type LateApprovedExpense,
+} from "./late-expenses.ts";
 import type {
   DraftRow,
   PayrollPeriod,
@@ -389,9 +394,21 @@ export type PayoutExpenseTrip = {
    */
   hrId?: string;
   specialist?: string;
+  /**
+   * Set only on a trip approved after its own payout month was published and added to this run by the
+   * carry switch (late-expenses.ts): that month, and the outstation row id Part 2 confirm records.
+   */
+  carriedFrom?: { month: number; year: number; rowId: string };
+  /**
+   * The outstation row id. Kept so the confirmed Expenses step can record WHICH own-month trips its
+   * figure counted (late-expenses.ts) — publish writes them as paid. Optional so fixtures stay valid.
+   */
+  rowId?: string;
 };
 
 export type PayoutExpenseRow = {
+  /** The outstation row id; absent on a hand-built fixture. */
+  id?: string | null;
   hr_id: string | null;
   trip_id: string | null;
   expense_date: string | null;
@@ -463,36 +480,42 @@ export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string,
     const compact = compactHrKey(row.hr_id ?? "");
     if (!compact) continue;
     const trips = byCompact.get(compact) ?? [];
-    trips.push({
-      allowance: Number(row.allowance ?? 0),
-      approvedAmount:
-        row.approved_amount === null || row.approved_amount === undefined
-          ? null
-          : Number(row.approved_amount),
-      description: text(row.description),
-      expenseDate: text(row.expense_date).slice(0, 10),
-      fromLocation: text(row.from_location),
-      hrApproved: row.hr_approved === true,
-      hrStatus: text(row.hr_status),
-      km: Number(row.km ?? 0),
-      meetingAmount: Number(row.meeting_amount ?? 0),
-      otherAmount: Number(row.other_amount ?? 0),
-      toDate: text(row.to_date).slice(0, 10),
-      // `location` is the legacy single-field fallback used when the upload
-      // didn't split from/to (11 of 97 live rows) — same precedence as
-      // outstation/geocode-warmup.ts.
-      toLocation: text(row.to_location) || text(row.location),
-      total: Number(row.total ?? 0),
-      transportationType: text(row.transportation_type),
-      travelCost: Number(row.travel_cost ?? 0),
-      tripId: text(row.trip_id),
-      tripType: text(row.trip_type),
-      hrId: text(row.hr_id),
-      specialist: text(row.specialist),
-    });
+    trips.push(payoutExpenseTripFromRow(row));
     byCompact.set(compact, trips);
   }
   return byCompact;
+}
+
+/** One expense row as a trip. Shared by the month's own trips and the carried ones, so both read alike. */
+function payoutExpenseTripFromRow(row: PayoutExpenseRow): PayoutExpenseTrip {
+  return {
+    allowance: Number(row.allowance ?? 0),
+    approvedAmount:
+      row.approved_amount === null || row.approved_amount === undefined
+        ? null
+        : Number(row.approved_amount),
+    description: text(row.description),
+    expenseDate: text(row.expense_date).slice(0, 10),
+    fromLocation: text(row.from_location),
+    hrApproved: row.hr_approved === true,
+    hrStatus: text(row.hr_status),
+    km: Number(row.km ?? 0),
+    meetingAmount: Number(row.meeting_amount ?? 0),
+    otherAmount: Number(row.other_amount ?? 0),
+    toDate: text(row.to_date).slice(0, 10),
+    // `location` is the legacy single-field fallback used when the upload
+    // didn't split from/to (11 of 97 live rows) — same precedence as
+    // outstation/geocode-warmup.ts.
+    toLocation: text(row.to_location) || text(row.location),
+    total: Number(row.total ?? 0),
+    transportationType: text(row.transportation_type),
+    travelCost: Number(row.travel_cost ?? 0),
+    tripId: text(row.trip_id),
+    tripType: text(row.trip_type),
+    hrId: text(row.hr_id),
+    specialist: text(row.specialist),
+    ...(row.id ? { rowId: String(row.id) } : {}),
+  };
 }
 
 /**
@@ -529,7 +552,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
       const { data, error } = await getSupabaseAdmin()
         .from("outstation_expenses")
         .select(
-          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description,specialist",
+          "id,hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description,specialist",
         )
         .eq("payout_month", period.month)
         .eq("payout_year", period.year)
@@ -932,8 +955,60 @@ async function recommendExpenses(
   members: PopulationMember[],
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
+  expenseTrips?: ExpenseStepTrips,
 ): Promise<StepRow[]> {
-  return buildExpenseStepRows(members, await loadPayoutExpenseTrips(period), drafts);
+  const memberCompacts = new Set(members.map((member) => member.compact));
+  const trips = expenseTrips ?? (await loadExpenseStepTrips(period, memberCompacts));
+  return buildExpenseStepRows(members, trips.tripsByCompact, drafts);
+}
+
+/** The trips one Expenses step load is built from — shared by its figure and its confirm's snapshot. */
+export type ExpenseStepTrips = { carryOn: boolean; tripsByCompact: Map<string, PayoutExpenseTrip[]> };
+
+/**
+ * The trips the Expenses step is built from: this payout month's own, plus, ONLY while the carry switch
+ * is ON, the late-approved trips of earlier published months for people in this run (late-expenses.ts,
+ * REC-029). Shared by the step and by Part 2 confirm, so what is recorded as carried is what was shown.
+ * With the switch OFF the map is exactly the month's own trips, as before.
+ */
+export async function loadExpenseStepTrips(
+  period: PayrollPeriod,
+  memberCompacts: ReadonlySet<string>,
+): Promise<ExpenseStepTrips> {
+  const own = await loadPayoutExpenseTrips(period);
+  const carryOn = await getCarryLateExpensesSetting();
+  if (!carryOn) return { carryOn, tripsByCompact: own };
+  const late = await loadLateApprovedExpenses(period);
+  return {
+    carryOn,
+    tripsByCompact: mergeCarriedLateTrips(own, late, memberCompacts),
+  };
+}
+
+/**
+ * Adds the late-approved trips of people IN this run to the month's own trips, each marked with the
+ * payout month it is carried from. A late trip of someone outside the run is not proposed here: it
+ * stays on the "Approved, not yet in a run" list, and so does one flagged as a likely duplicate of a trip
+ * already paid, and one that needs checking by hand (nothing on record says whether it was paid). Pure;
+ * returns a new map and leaves `own` untouched.
+ */
+export function mergeCarriedLateTrips(
+  own: ReadonlyMap<string, PayoutExpenseTrip[]>,
+  late: ReadonlyArray<Pick<LateApprovedExpense, "id" | "compact" | "payoutMonth" | "payoutYear" | "duplicateOf" | "row"> & { needsChecking?: string | null }>,
+  memberCompacts: ReadonlySet<string>,
+): Map<string, PayoutExpenseTrip[]> {
+  const merged = new Map<string, PayoutExpenseTrip[]>();
+  for (const [compact, trips] of own) merged.set(compact, [...trips]);
+  for (const trip of late) {
+    if (!memberCompacts.has(trip.compact) || trip.duplicateOf || trip.needsChecking) continue;
+    const list = merged.get(trip.compact) ?? [];
+    list.push({
+      ...payoutExpenseTripFromRow(trip.row),
+      carriedFrom: { month: trip.payoutMonth, year: trip.payoutYear, rowId: trip.id },
+    });
+    merged.set(trip.compact, list);
+  }
+  return merged;
 }
 
 /**
@@ -1087,7 +1162,11 @@ function tripDetailRows(
   duplicateHolds: Map<string, DuplicateExpenseHold> = new Map(),
 ): NonNullable<StepRow["details"]> {
   return trips.map((trip) => ({
-    Dates: formatDateRange(trip.expenseDate, trip.toDate),
+    // A trip the carry switch added from an earlier, already published payout month says so beside its
+    // dates (late-expenses.ts). Only that trip's line changes; with the switch OFF nothing here differs.
+    Dates: trip.carriedFrom
+      ? `${formatDateRange(trip.expenseDate, trip.toDate)} · carried from ${monthNameAndYear(trip.carriedFrom.month, trip.carriedFrom.year)}, approved after that month was paid`
+      : formatDateRange(trip.expenseDate, trip.toDate),
     From: trip.fromLocation || "—",
     To: trip.toLocation || "—",
     "Trip Type": trip.tripType || "—",
@@ -2240,6 +2319,11 @@ export async function recommendStep(input: {
   part1Corrections?: Map<string, number>;
   /** Held Salary Release only: held amounts HR entered while working in this run (enteredHeldAddedInRun). */
   addedInRun?: Map<string, number>;
+  /**
+   * Expenses only: the trips already read for this load. Confirming the step passes the list it also
+   * snapshots (late-expenses.ts), so the figure and the record of what it counted come from ONE read.
+   */
+  expenseTrips?: ExpenseStepTrips;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
   const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
@@ -2267,6 +2351,7 @@ async function recommendStepRows(
     part1Corrections?: Map<string, number>;
     addedInRun?: Map<string, number>;
     carryForwardByCompact?: Map<string, number>;
+    expenseTrips?: ExpenseStepTrips;
   },
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
@@ -2317,7 +2402,7 @@ async function recommendStepRows(
     case "p1_special_situations":
       return recommendSpecialSituations(input.members, input.sources, drafts);
     case "p2_expenses":
-      return recommendExpenses(input.members, input.period, drafts);
+      return recommendExpenses(input.members, input.period, drafts, input.expenseTrips);
     case "p2_vacation":
       return recommendVacation(
         input.members,

@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 
 import { DownloadHistoryPanel } from "./download-history-panel";
 import { HeldEnteredPanel } from "./held-entered-panel";
+import { LateExpensesPanel } from "./late-expenses-panel";
 import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
 import { SectionHeading } from "./section-shell";
@@ -1539,6 +1540,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                     key={`${run.id}-held-entered-${heldEnteredVersion}`}
                     runId={run.id}
                     locked={stepLocked(activeStep)}
+                    stepDirty={activeStepDirty}
+                    onChanged={() => setHeldEnteredVersion((version) => version + 1)}
+                  />
+                ) : null}
+                {activeStep === "p2_expenses" ? (
+                  <LateExpensesPanel
+                    key={`${run.id}-late-expenses-${heldEnteredVersion}`}
+                    month={run.month}
+                    year={run.year}
                     stepDirty={activeStepDirty}
                     onChanged={() => setHeldEnteredVersion((version) => version + 1)}
                   />
