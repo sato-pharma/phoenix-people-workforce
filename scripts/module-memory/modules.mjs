@@ -1462,6 +1462,24 @@ export const MODULES = [
     keywords: ["system audit", "system-audit", "daily message", "error screenshot", "crash screenshot", "what the person saw", "what the employee saw", "blocked"],
     tables: ["system_audit_", "user_error_screens"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform`'s injected
+  // pointer measured 4,137 bytes against the 4,000-byte margin `tests/module-memory.test.ts` holds once
+  // REC-058 added the cold-start and chosen-password rules. Passwords and access control — who may
+  // sign in with what, and what the permission matrix gives each seat — are one family, so their rules
+  // moved VERBATIM. `platform` KEEPS EVERY GLOB IT HAD, so an auth file loads the PAIR and nothing that
+  // used to arrive stops arriving.
+  {
+    id: "platform-access",
+    title: "Platform — passwords and access control",
+    scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.",
+    globs: [
+      "src/lib/auth/{permissions,password-strength,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
+      "app/api/auth/{change-password,password-reset,password-setup}/**",
+      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,seat-fence,signed-out}*",
+    ],
+    keywords: ["password", "password reset", "reset code", "weak password", "permission matrix", "seat fence", "signed out", "retired seat"],
+    tables: ["role_permission_overrides", "app_auth_users"],
+  },
   // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
   // rules and its injected pointer measured 3,909 bytes; the two session-pulse rules (one live login
   // check shared by requests that arrive together, and the held bare heartbeat) would have taken it to
