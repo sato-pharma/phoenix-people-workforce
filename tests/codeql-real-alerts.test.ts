@@ -58,9 +58,10 @@ async function testSharePasscode(): Promise<void> {
   assert.equal(await passcodeMatches("4821", "another-token", stored), false, "the hash is still bound to its link");
   assert.equal(await passcodeMatches("4821", token, "scrypt$broken"), false, "a damaged hash opens nothing");
 
-  // A link minted before 9 Nov 2026 stored hex SHA-256 of `<token>:<passcode>`; it must still open.
+  // The unsalted SHA-256 format of links minted before 9 Nov 2026 is RETIRED (REC-055, 13 Nov 2026 —
+  // production held none): even the right passcode no longer opens a hash in that format.
   const legacyStored = createHash("sha256").update(`${token}:4821`).digest("hex");
-  assert.equal(await passcodeMatches("4821", token, legacyStored), true, "an old link's passcode still opens it");
+  assert.equal(await passcodeMatches("4821", token, legacyStored), false, "the retired unsalted format opens nothing, even with the right passcode");
   assert.equal(await passcodeMatches("0000", token, legacyStored), false);
   assert.equal(await passcodeMatches("4821", token, null), true, "a link with no passcode needs none");
 }
