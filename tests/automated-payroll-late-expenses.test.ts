@@ -393,6 +393,44 @@ export async function runAutomatedPayrollLateExpensesTests() {
       "an EARLIER month's figure never marks a later trip",
     );
   }
+  // REC-035: a person HELD in a later published month — publish never compared that held figure with their
+  // trips, so a hand-typed amount there cannot show as differing, and the held release would pay it again.
+  {
+    const withOctHeld = (heldCompacts: string[]) =>
+      planLateApprovedExpenses({
+        currentPeriod: NOVEMBER,
+        publishedRuns: publishedRuns.map((run) => (run.runId === "run-oct" ? { ...run, heldCompacts } : run)),
+        rows,
+      });
+    const heldLater = withOctHeld(["b12"]);
+    assert.deepEqual(
+      heldLater.map((entry) => entry.id),
+      listed.map((entry) => entry.id),
+      "the same trips are listed — nothing is hidden",
+    );
+    for (const id of ["sep-ok", "sep-hr-reduced"]) {
+      assert.match(
+        String(heldLater.find((entry) => entry.id === id)?.needsChecking),
+        /This person was held in October 2026, so their October 2026 Expenses figure was never compared with their approved trips, and this September 2026 trip may have been paid by hand in that held figure/,
+        "HEADLINE: a person held in a LATER published month has their earlier listed trips marked for a check by hand",
+      );
+    }
+    assert.deepEqual(
+      mergeCarriedLateTrips(new Map(), heldLater.filter((entry) => entry.compact === "b12"), new Set(["b12"])).get("b12"),
+      undefined,
+      "HEADLINE: and they are never proposed once the switch is ON",
+    );
+    assert.equal(heldLater.find((entry) => entry.id === "oct-ok")?.needsChecking, null, "another person's trips are untouched");
+    assert.equal(
+      withSep({ heldCompacts: ["b50", "b77"] }).find((entry) => entry.id === "oct-ok")?.needsChecking,
+      null,
+      "being held in an EARLIER month never marks a later trip",
+    );
+    assert.ok(
+      !withSep({ heldCompacts: ["b50", "b12"] }).some((entry) => entry.compact === "b12" && entry.payoutMonth === 9),
+      "held in the trip's OWN month is unchanged: not listed at all (paid through the held balance)",
+    );
+  }
 
   // LIKELY DUPLICATES (fix 7): a copy of a trip already paid in its own month, or already in the carrying
   // run, is flagged and never proposed.

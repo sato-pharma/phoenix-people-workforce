@@ -19,11 +19,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
 import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
-import {
-  assertUndoAllowedAfterDownloads,
-  listBankFileDownloads,
-  recordBankFileDownloaded,
-} from "./bank-file-downloads.ts";
+import { guardUndoAfterDownloads, recordBankFileDownloaded } from "./bank-file-downloads.ts";
 import { holdRun } from "./run-hold.ts";
 import {
   landQueuedPayrollResyncsForPeriod,
@@ -719,8 +715,9 @@ export async function cancelRun(
   const transition = await claimTransition(runId, ["part1", "part2", "ready"], "Cancelling this run");
   const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
     // A file that has left for the bank is not undone by cancelling the run — refuse first, before
-    // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too.
-    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "cancel");
+    // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too, and a
+    // used override is recorded here first, or the cancel is refused (REC-035).
+    const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "cancel", override: options.overrideDownloaded });
     // Undo this run's effect on the carry-forward ledger BEFORE marking it
     // cancelled. A run whose Part 2 was confirmed has already marked previous
     // months' overpayments as recovered — but a cancelled run pays nobody, so
@@ -1901,8 +1898,9 @@ export async function unconfirmPart1(
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
   const { updated, override } = await whileClaimed(runId, transition, async () => {
-    // Refused after a bank-file download unless he says why; a failed read refuses (REC-035).
-    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "reopen_part1");
+    // Refused after a bank-file download unless he says why; a failed read refuses, and a used override is
+    // recorded here first, or the reopen is refused (REC-035).
+    const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "reopen_part1", override: options.overrideDownloaded });
     // The carried trips go back on the list FIRST, as cancel and Reopen Part 2 do: a failed release
     // then refuses before any figure is unfrozen (late-expenses.ts).
     await releaseLateExpenseReservations(runId);
@@ -1970,8 +1968,9 @@ export async function unconfirmPart2(
   const transition = await claimTransition(runId, ["ready"], "Reopening Part 2");
   const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
     // `ready` is the state finance takes the files in: a reopen after a recorded download is refused
-    // exactly like a cancel, unless he says why, and a failed read refuses too (REC-035).
-    const override = assertUndoAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded, "reopen_part2");
+    // exactly like a cancel, unless he says why, and a failed read refuses too (REC-035). Only a Part 2 or
+    // full-month file counts, and a used override is recorded here first, or the reopen is refused.
+    const override = await guardUndoAfterDownloads({ runId, actorHrId: actorId(access), action: "reopen_part2", override: options.overrideDownloaded });
     // The carried late trips it set aside go back on the list FIRST: a release that fails then refuses the
     // reopen before the ledger is touched (late-expenses.ts).
     await releaseLateExpenseReservations(runId);
