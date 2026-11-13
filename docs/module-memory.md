@@ -88,6 +88,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | --- | --- |
 | `payroll` — Payroll, salaries and deductions | `src/lib/{payroll,automated-payroll,deductions,daily-deductions,finance,reconciliation,calculator,dispute-center}/**` and 4 more |
 | `payroll-disputes` — Payroll — disputes and the Dispute Center | `src/lib/dispute-center/**` and 3 more |
+| `payroll-files` — Payroll — the files that leave, and their download record | `src/lib/automated-payroll/{download-log,bank-file-downloads}.ts` and 3 more |
 | `payroll-automated` — Payroll — the automated payroll run | `src/lib/automated-payroll/**` and 3 more |
 | `sales-closing` — Monthly Closing, the Office and El Qema money rules, the Business Review | `src/lib/sales/*` and 6 more |
 | `sales-closing-exports` — Monthly Closing — the exports, the premium workbook and the Performance Review pack | `src/lib/sales/{closing-consolidated-premium-export,closing-export-filename,closing-export-payload,closing-matrix-without-office,closing-performance-review,closing-performance-review-access,closing-performance-review-export,closing-performance-review-portal,closing-performance-review-regions,closing-performance-review-scope,closing-ranking-dress,closing-rep-ranking,closing-rep-ranking-export,closing-rep-ranking-filter,closing-rep-ranking-legacy-shape,closing-rep-ranking-line,closing-rep-ranking-workbook,closing-review-sheets,closing-workbook-lock,monthly-closing-consolidated-export,monthly-closing-export,rankings,rankings-page,sales-workbook-kit}.ts` and 5 more |

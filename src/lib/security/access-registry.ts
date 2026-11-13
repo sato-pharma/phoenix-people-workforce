@@ -1618,6 +1618,7 @@ export const accessRegistry = [
   // domain-helper gate as the wizard itself, not the wider finance read role.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/held-settlements", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/held-settlements", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/downloads", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/automated-payroll/runs/:runId/held-entered", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Non-Employees Payroll — free-form list, no employee/HR_ID record; same domain-helper gate.
