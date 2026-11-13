@@ -34,8 +34,8 @@ const MIN_GUARD_IMPORTERS = 20;
  * The ONE route under app/api allowed to import constant-time directly.
  *
  * It is a Telegram webhook, not a cron route: the secret arrives in a Telegram-specific header
- * rather than an Authorization bearer, and its unset-secret rule is deliberately the inverse
- * shape (`!expectedSecret && process.env.NODE_ENV !== "development"`). Folding it into
+ * rather than an Authorization bearer, and an unset secret refuses every update in every
+ * environment (S01, F-COM-014). Folding it into
  * assertCronAuthorized would mean widening that helper to cover a case it was not designed for,
  * which is how the original duplication started. Left alone on purpose, and pinned here so the
  * exception stays a decision rather than an oversight.
