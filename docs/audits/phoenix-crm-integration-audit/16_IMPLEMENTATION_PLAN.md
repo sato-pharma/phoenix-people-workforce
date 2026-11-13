@@ -123,7 +123,7 @@ Not done yet: the first scheduled night run (02:17 Cairo, 14 Nov 2026) has not h
 
 What was built, 13 Nov 2026:
 
-- **The registry**, `src/lib/integrations/registry.ts`: 39 outside services in eleven kinds, each with what it is used for, the names of the variables that hold its credential, and where Phoenix already records that it last worked or failed.
+- **The registry**, `src/lib/integrations/registry.ts`: 39 outside services in eleven kinds when built (38 since Google Fonts left it the same evening, ISS-043), each with what it is used for, the names of the variables that hold its credential, and where Phoenix already records that it last worked or failed.
 - **The page**, `/admin/integrations`, on the Admin Tools hub under Platform Health, for the Super Admin alone. For each service: configured, partly set (with the missing names), not configured, switched on or off, kept outside the app, or no credential needed; then the last success and the last failure in Cairo time. It writes nothing and calls no outside service.
 - **Never a value, never an error's text.** It answers from variable names and shows times only. A source that cannot be read says "Unavailable"; an event Phoenix does not record says "Not recorded".
 - **ISS-042.** WhatsApp messages go through Meta's Graph API v23.0, written in seven files. Meta retires it on 8 October 2027 (Meta's versions table, read 13 Nov 2026); the review date on the page is 8 July 2027. A test fails when the seven files and the registry disagree, or when an eighth appears. The audit counted six files; the seventh is the embedded sign-up exchange route.
@@ -137,7 +137,7 @@ What was built, 13 Nov 2026:
 | ISS-012 · INT-021 | The Location Integrity board moved to a tile source whose terms cover business use |
 | ISS-031 · INT-041 | Standard web push in place of the vendor |
 | ISS-030 | A connect prompt for Telegram at sign-in |
-| ISS-043 | The joining form's font served from the app, not from a third party. It needs the font file fetched and bundled |
+| ISS-043 | **Done, 13 Nov 2026, in the pull request that raised the backup floor.** The joining form's Arabic typeface (Cairo) is three files in `public/fonts` with its licence, declared by the page itself; Google Fonts left the Integrations registry, and a test refuses any page that loads a typeface from a font service. The security policy still names Google Fonts' two hosts as allowed; nothing loads from them, and removing them is a separate change to the policy |
 
 ### Last — the second sign-in factor (INT-005) — PLANNED, on its own
 
