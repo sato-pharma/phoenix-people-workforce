@@ -12,6 +12,7 @@
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { crmCutoverMonthDeductionNote, isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
+import { applyAcceptedDailyDisputes } from "@/lib/daily-deductions/accepted-dispute-days.ts";
 
 import { compactDeductionsHrId, deductionsCandidateIdentityKey } from "./candidate-key.ts";
 import {
@@ -293,8 +294,11 @@ export async function collectOneConnectorForMonth(
       : exemptionFree;
     // From the cutover, a day already on the OTHER cycle's row is never added again.
     const crossCycle = employeeFilter ? await applyCrossCycleHold(unheld, { month, year }) : { drafts: unheld, notes: [] };
-    const drafts = crossCycle.drafts;
-    const notes = [...parts.notes, ...crossCycle.notes];
+    // A day the employee WON a dispute on, on a released daily deduction, is never charged again
+    // (owner, 2026-11-13, "Withdraw + never charge"). Fails closed: a failed read fails the connector.
+    const spared = await applyAcceptedDailyDisputes(crossCycle.drafts);
+    const drafts = spared.drafts;
+    const notes = [...parts.notes, ...crossCycle.notes, ...spared.notes];
     const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
       notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
     if (collector.reconcilesWholeCategory) {
@@ -499,8 +503,10 @@ async function collectOneConnectorForOfficeCycle(
     // A day already on the CALENDAR cycle's row (a payment-mode change between runs, or an older row)
     // is never added again.
     const crossCycle = await applyCrossCycleHold(unheld, period);
-    const drafts = crossCycle.drafts;
-    notes.push(...crossCycle.notes);
+    // A day won on a released daily deduction's dispute is never charged again — as on the calendar path.
+    const spared = await applyAcceptedDailyDisputes(crossCycle.drafts);
+    const drafts = spared.drafts;
+    notes.push(...crossCycle.notes, ...spared.notes);
     const withNotes = (result: CandidateDraftInsertResult): CandidateDraftInsertResult =>
       notes.length === 0 ? result : { ...result, warnings: [...result.warnings, ...notes] };
 
