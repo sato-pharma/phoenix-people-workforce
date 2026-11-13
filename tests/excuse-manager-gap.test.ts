@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
  */
 export function runExcuseManagerGapTests() {
   const driftSrc = readFileSync("src/lib/excuses/drift-check.ts", "utf8");
-  const dailySrc = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailySrc = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
 
   assert.match(
     driftSrc,

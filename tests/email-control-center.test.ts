@@ -7,7 +7,7 @@ import { emailTemplateKeys } from "../src/lib/email-templates/service.ts";
 
 export function runEmailControlCenterTests() {
   const aggregatorSource = readFileSync("src/lib/notifications/email-control-center.ts", "utf8");
-  const dailyRouteSource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailyRouteSource = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
   const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
   const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
 

@@ -652,8 +652,8 @@ The routes are now triggered by **cron-job.org**, not Cloud Scheduler (see
 route — it pings on completion either way — so it kept working across the cutover.
 
 **How it works:** each route calls `pingDeadMansSwitch(jobSlug, "success" | "fail", detail?)` (via
-the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partial-sub-job-failure
-case — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
+the `withDeadMansSwitch` wrapper, or directly for a morning job's partial-failure case in
+`app/api/cron/daily/[job]/route.ts` — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
 **expected ping doesn't arrive**, which is exactly the failure shape a paused/crashed/misconfigured
 job produces. Uses Healthchecks' [Ping Key + slug API](https://healthchecks.io/docs/http_api/) —
 one secret (`HEALTHCHECKS_PING_KEY`) covers every check, addressed by slug instead of a per-check
@@ -744,9 +744,49 @@ policy):
    can take first. A rename without the pause holds a days-old last ping against the new schedule,
    which can raise a false alarm.
 
+   🔴 **The morning jobs have rows for BOTH positions of the `PHOENIX_DAILY_JOBS_SPLIT` switch**
+   (13 Nov 2026). While it is off — what ships — the 06:36 fan-out runs all thirty and
+   `phoenix-notify-daily` is the declared job and holds the Healthchecks check, as before. Once it is
+   `on`, each `phoenix-daily-<job>` row is declared instead and the check is handed to
+   `phoenix-daily-needs-you-daily-digest` by renaming it (docs/deployment.md, "Switching the morning
+   jobs over"). The per-job rows are marked in-house only so the sync never asks for a check of
+   their own; at the switch, delete the marker from the digest's row in the same change that removes
+   the fan-out's. `tests/job-heartbeat-register.test.ts` checks each row against whichever position
+   declares it.
+
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
-   | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
+   | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` — the fan-out, while `PHOENIX_DAILY_JOBS_SPLIT` is off |
+   | `phoenix-daily-needs-you-daily-digest` | `36 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml`; runs once `PHOENIX_DAILY_JOBS_SPLIT` is on, and takes over the check `phoenix-notify-daily` holds, renamed · **in-house only** |
+   | `phoenix-daily-birthday` | `38 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-contract-renewals` | `40 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-holiday-confirmation` | `42 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-vacation-sla` | `44 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-marketing-sla` | `46 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-marketing-assignment-backfill` | `48 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-recruitment-notifications` | `52 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-telegram-digest` | `54 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-outstation-geocode-warmup` | `56 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-excuse-sla` | `57 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-outstation-sla` | `58 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-outstation-departure-photo` | `2 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-resignation-sla` | `4 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-weekly-plans-drift` | `6 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-excuse-drift` | `8 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-rate-limit-prune` | `9 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-error-events-prune` | `10 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-notification-retention` | `12 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-activity-retention` | `14 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-sos-monthly-report-check` | `16 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-held-notification-reminder` | `17 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-held-notification-expiry` | `18 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-milestone-due` | `22 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-inactive-user-digest` | `24 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-needs-you-weekly-email` | `25 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-dead-telegram-link-alert` | `26 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-probation-milestone-emails` | `28 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-outstation-workload-restamp` | `29 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-daily-tablet-recording-retention` | `32 7 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-production-planning-fx` | `7 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-production-planning-reorder` | `11 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
@@ -852,7 +892,37 @@ policy):
 
    | Check slug | Tags | What a red means |
    |---|---|---|
-   | `phoenix-notify-daily` | `hr` | The 06:36 daily bundle — birthdays, contract renewals, holiday reminders, the vacation, marketing and outstation SLA digests, and the notification-retention cleanup. A red means none of those notices went out that morning. |
+   | `phoenix-notify-daily` | `hr` | The 06:36 morning fan-out, which runs all thirty morning jobs below while `PHOENIX_DAILY_JOBS_SPLIT` is off — the Needs You digest, birthdays, contract renewals, holiday reminders, the approval reminders and the clean-ups. A red means some or all of those did not happen that morning; the run summary names which. |
+   | `phoenix-daily-needs-you-daily-digest` | `platform in-house-only` | The 06:36 Needs You digest to the owner, in-app and on Telegram: what is waiting on him and on others, with any source that could not be read named first. A red means his morning decision list did not arrive. |
+   | `phoenix-daily-birthday` | `hr in-house-only` | Today's birthday notices. A red means nobody was told whose birthday it is today. |
+   | `phoenix-daily-contract-renewals` | `hr in-house-only` | The contract renewal notices for contracts nearing their end. A red means a contract can reach its end date with nobody reminded to renew or close it. |
+   | `phoenix-daily-holiday-confirmation` | `hr in-house-only` | The reminder to confirm the coming national holidays on the calendar. A red means an unconfirmed holiday can reach payroll and attendance as a working day. |
+   | `phoenix-daily-vacation-sla` | `hr in-house-only` | Chases the approver of a vacation request that has waited past its time. A red means a leave request can sit on a desk with nobody chasing it. |
+   | `phoenix-daily-marketing-sla` | `marketing silent-when-clean in-house-only` | Chases the approver of a marketing request past its due date, while the marketing_sla_reminder switch is on. A red means late marketing approvals went unchased. |
+   | `phoenix-daily-marketing-assignment-backfill` | `marketing silent-when-clean in-house-only` | Tells the approver holding a marketing request that it is on his desk when the arrival notice was never sent. A red means a request can sit unseen on someone's desk. |
+   | `phoenix-daily-recruitment-notifications` | `recruitment in-house-only` | The recruitment morning notices, including the CV-lifecycle sheet link expiry warning and the interview reminders. A red means Talent Acquisition was not told what is due today. |
+   | `phoenix-daily-telegram-digest` | `hr in-house-only` | The Telegram daily HR digest to its pilot recipients. A red means the morning HR summary did not go out on Telegram. |
+   | `phoenix-daily-outstation-geocode-warmup` | `hr silent-when-clean in-house-only` | Looks up and stores the map position of new outstation addresses ahead of use, sending nothing. A red means trip screens fall back to slower live look-ups. |
+   | `phoenix-daily-excuse-sla` | `hr in-house-only` | Chases the approver of an excuse request that has waited past its time. A red means an excuse can sit undecided with nobody chasing it. |
+   | `phoenix-daily-outstation-sla` | `hr silent-when-clean in-house-only` | Chases the approver of an outstation request past its time, while the outstation_sla_reminder switch is on. A red means late outstation approvals went unchased. |
+   | `phoenix-daily-outstation-departure-photo` | `hr silent-when-clean in-house-only` | Reminds an employee on the last day of a trip, and once more when overdue, that the departure photo is due. A red means a trip can close with no departure photo asked for. |
+   | `phoenix-daily-resignation-sla` | `hr in-house-only` | Chases the approver of a resignation that has waited past its time. A red means a resignation can sit undecided with nobody chasing it. |
+   | `phoenix-daily-weekly-plans-drift` | `hr silent-when-clean in-house-only` | Checks weekly and monthly plans for states that should not exist and alerts when it finds any. A red means a broken plan can sit unnoticed until someone trips over it. |
+   | `phoenix-daily-excuse-drift` | `hr silent-when-clean in-house-only` | Checks excuse requests for a stuck approver or an impossible state and alerts when it finds any. A red means a stuck excuse can sit unnoticed. |
+   | `phoenix-daily-rate-limit-prune` | `platform in-house-only` | Deletes expired rate-limit buckets. A red means the rate-limit table keeps growing and every guarded request reads a larger table. |
+   | `phoenix-daily-error-events-prune` | `platform in-house-only` | Deletes old rows from the application error log. A red means the error table keeps growing and the Error Monitor pages slow down. |
+   | `phoenix-daily-notification-retention` | `platform in-house-only` | Deletes old notification outbox rows and redacts old delivery events. A red means personal data in old notifications is kept past its retention. |
+   | `phoenix-daily-activity-retention` | `platform in-house-only` | Deletes page-view events older than 90 days from the activity log. A red means activity data is kept past its 90 days and the table keeps growing. |
+   | `phoenix-daily-sos-monthly-report-check` | `sales silent-when-clean in-house-only` | Sends the CEO and Super Admin the monthly sales report once, the first morning after every line's closing for a month is published. A red means a published month's report may never be sent. |
+   | `phoenix-daily-held-notification-reminder` | `platform silent-when-clean in-house-only` | Reminds the Super Admin while any email is held for a decision at the notification confidence screen. A red means a held email can wait undecided with nobody reminded. |
+   | `phoenix-daily-held-notification-expiry` | `platform silent-when-clean in-house-only` | Discards every held email that has passed its hold deadline, never sends it, and says so. A red means stale holds pile up undecided. |
+   | `phoenix-daily-milestone-due` | `hr silent-when-clean in-house-only` | Reminds the Super Admin daily of a coming service milestone or birthday card until the Milestones page is opened. A red means a card may not be printed in time. |
+   | `phoenix-daily-inactive-user-digest` | `platform silent-when-clean in-house-only` | Tells the Super Admin, in-app and on Telegram, who has not signed in to Phoenix for a week or more. A red means an inactive colleague went unnoticed. |
+   | `phoenix-daily-needs-you-weekly-email` | `platform silent-when-clean in-house-only` | The complete Needs You board by email on Sundays; on the other six days it does nothing and still reports. A red means the Sunday email did not go out, or the job stopped. |
+   | `phoenix-daily-dead-telegram-link-alert` | `platform silent-when-clean in-house-only` | Alerts in-app when Telegram messages were dropped in the last day because the recipient has no working link. A red means lost Telegram messages go unreported. |
+   | `phoenix-daily-probation-milestone-emails` | `hr silent-when-clean in-house-only` | Sends the probation Day 30, 60 and 75 milestone emails to the owner alone, once per case and milestone. A red means a probation milestone can pass with nobody told. |
+   | `phoenix-daily-outstation-workload-restamp` | `hr silent-when-clean in-house-only` | Re-reads the CRM for undecided trips stamped before the day's visits were typed, and refreshes the workload only when the CRM holds more. A red means a trip is judged on a stale count. |
+   | `phoenix-daily-tablet-recording-retention` | `platform in-house-only` | Removes tablet screen recordings older than 90 days, the file and then its row. A red means recordings are kept past the 90 days the owner set. |
    | `phoenix-production-planning-fx` | `production-planning in-house-only` | The one dollar rate a day that keeps every dollar-typed material price deriving a current pound figure. A red means the planner is costing the buy list on a stale rate. |
    | `phoenix-production-planning-reorder` | `production-planning in-house-only` | The Ivyronc reorder and expiry alarm, naming the materials whose cover has fallen to about one run. A red means nothing warned him, and the imported material takes about six months to arrive. |
    | `phoenix-marketing-list-check` | `marketing` | Re-checks every validated marketing customer against the reps' doctor lists, sending nothing. A red means the approval flags and the list-check board have stopped following the lists. |
@@ -960,7 +1030,8 @@ finished** after a restart, and Healthchecks records each run's duration, so a j
 grace shows before it trips. It is **opt-in** (`withDeadMansSwitch(slug, run, { signalStart: true })`),
 external half only (the in-house register records how a run ENDED), awaited so it can never land after
 the ending ping, and inert outside production exactly like a ping. Wired today into
-`phoenix-notify-daily` and `phoenix-crm-integrity-sweep` (`phoenix-ireports360-sync` carried it too
+the morning jobs — `phoenix-notify-daily` while the `PHOENIX_DAILY_JOBS_SPLIT` switch is off, each
+`phoenix-daily-<job>` heartbeat once it is on — and `phoenix-crm-integrity-sweep` (`phoenix-ireports360-sync` carried it too
 until the vendor was retired on 6 November 2026). Add it only to a job whose
 check has a grace longer than a normal run — Healthchecks measures the grace from the start — and which
 always ends in a success or a fail ping.
@@ -981,6 +1052,30 @@ drain-health probe ignores rows touched inside the same grace (`drain-health.ts`
 not spend the day's single drain alert before the drain closes it. The email outbox is a different
 table and is unchanged. Pinned by `tests/orphaned-delivery-claims.test.ts`.
 
+### The morning jobs' heartbeats follow the split switch
+
+The thirty morning jobs moved to one schedule each on 13 Nov 2026 (`/api/cron/daily/<job>`), behind
+the switch `PHOENIX_DAILY_JOBS_SPLIT` because arming thirty cron-job.org entries takes two days (runbook:
+docs/deployment.md, "Switching the morning jobs over"). The heartbeats follow the same switch
+(`jobSchedulesFor`, `healthchecksCheckedSlugsFor`, `jobRefirePoliciesFor`):
+
+- **Off (what ships):** only `phoenix-notify-daily` is declared, pinged, checked at Healthchecks and
+  re-fired, exactly as before. The per-job routes answer `{ ran: false, reason: "split_not_switched_on" }`
+  and record nothing.
+- **On:** the thirty `phoenix-daily-<job>` slugs are declared and pinged by their own routes, and
+  `phoenix-notify-daily` is not.
+
+🔴 **Why the fan-out does not also report each job's own heartbeat while the switch is off.** The
+sweep counts a job as on time only if it succeeded at or after **its own** fire minute. A fan-out
+report at 06:37 would leave every job due after 06:37 — the tablet recording retention is due at
+07:32 — reading as stranded the moment its declaration went live: an alarm to every Super Admin and
+a re-fire, which is a second run of a morning job. So while the switch is off the per-job slugs
+have no declaration and no row. At the switch each has no row, reads as "awaiting first run" (never
+an alert), and the sweep starts watching it from the moment it creates its row — no grace to tune
+and no `watchingSince`, which is only for a restored declaration (a future value counts as
+misdeclared and alerts). After the switch, `phoenix-notify-daily` shows as an **undeclared** row in
+the sweep's detail line (never an alert); delete that row by hand once the switch is on for good.
+
 ### Re-firing a stranded morning job
 
 The same deploy killed `phoenix-notify-daily` at 06:37 on 2026-10-16. The sweep saw it from 07:36 and
@@ -990,13 +1085,17 @@ calls it in the branch that already found a problem.
 
 What it does, and each limit is deliberate:
 
-- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is `phoenix-notify-daily` and
-  `phoenix-reconciliation-check`. A job joins the list only after its sub-jobs were read for what a second
-  run on the same day does. For the daily route that was done on 2026-10-16: every delivery goes through
+- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is the morning jobs and
+  `phoenix-reconciliation-check`. The morning jobs follow the `PHOENIX_DAILY_JOBS_SPLIT` switch: while
+  it is off the fan-out `phoenix-notify-daily` holds the policy and is re-fired at
+  `/api/notifications/daily`; once it is on, each of the thirty `phoenix-daily-<job>` holds it and is
+  re-fired on its own `/api/cron/daily/<job>` address — never both (`jobRefirePoliciesFor`). A job joins the list only after
+  its sub-jobs were read for what a second run on the same day does. For the morning jobs that was done on
+  2026-10-16, when they still ran together: every delivery goes through
   `claimDelivery`, an insert that does nothing on a duplicate of the unique
   `notification_deliveries.idempotency_key`, and each of the 30 sub-jobs passes an explicit key made of the
-  recipient and a Cairo or UTC day (or a once-ever key), so a repeat completes a half-finished fan-out and
-  sends nobody a second message.
+  recipient and a Cairo or UTC day (or a once-ever key), so a repeat completes a half-finished run and
+  sends nobody a second message. Splitting them changed when each runs, not what it sends.
 - **The nightly integrity checks joined on 2026-11-03**, after the merge at 04:40 Cairo removed the container
   about 42 seconds into a run of about 48 seconds. The audit: `runReconciliationChecks` only reads; the
   route sends no notification (breaches go to System Audit and the one daily message); `nextEpisode`
@@ -1039,7 +1138,8 @@ at 30. The integration audit read the scheduler's own history on 13 Nov 2026 (fi
 No work was lost. The server is long-lived and finishes a request whose caller has gone, and each job's
 heartbeat still arrived. What was wrong is the scheduler's record: a failure every day for work that had
 succeeded, which hides a real failure among the false ones, and its terms switch a job off after more
-than 25 failures in a row. That would have stopped the daily notification run with nothing red anywhere.
+than 25 failures in a row. That would have stopped the daily notification run with nothing red anywhere. (Since 13 Nov 2026 that run
+is thirty separate morning jobs, `/api/cron/daily/<job>`, each answering the same way.)
 
 `answerNowThenFinish` (`src/lib/http/answer-now.ts`) is the change. Each of the four routes checks the
 cron secret, answers **202** at once, and runs the same code as before inside Next's `after()`.
@@ -1290,7 +1390,7 @@ dashboard that red is the normal colour. Checked against the live cron-job.org a
 
 | Route | State |
 |---|---|
-| `/api/cron/marketing-assignment-backfill` | **Unwired on purpose, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by `phoenix-notify-daily`. This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. Leave it alone. |
+| `/api/cron/marketing-assignment-backfill` | **Unwired on purpose, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by its own heartbeat, `phoenix-daily-marketing-assignment-backfill` (one of the morning jobs since 13 Nov 2026; `phoenix-notify-daily` before). This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. Leave it alone. |
 
 `/api/cron/reconciliation-check` left this table on 2026-08-30, and what had to happen first is the
 part worth keeping. It had been wired to `phoenix-reconciliation-check` and called by nothing, so

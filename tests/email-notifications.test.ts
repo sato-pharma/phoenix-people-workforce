@@ -152,8 +152,13 @@ export function runEmailNotificationTests() {
   // The single raw Resend send endpoint now lives in the provider-failover adapter.
   assert.deepEqual(resendSendEndpointFiles(), ["src/lib/email/email-providers.ts"]);
 
-  // Verify daily dispatcher cron hardening
-  const dailyCronRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  // Verify daily dispatcher cron hardening. Since 13 Nov 2026 each morning job runs on its own
+  // request: the route (one job per request, its failure handler, its summary and heartbeat) and the
+  // runners (each job's own call and `.catch`) are read together as what used to be one file.
+  const dailyCronRoute = [
+    readFileSync("app/api/cron/daily/[job]/route.ts", "utf8"),
+    readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8"),
+  ].join("\n");
   assert.match(dailyCronRoute, /export const maxDuration = 300;/, "daily route must declare maxDuration of 300s");
   assert.match(dailyCronRoute, /runBirthdayNotifications\(request\)\.catch\(/, "daily birthday run must have catch boundary");
   assert.match(dailyCronRoute, /runContractRenewalNotifications\(request\)\.catch\(/, "daily contract renewal run must have catch boundary");

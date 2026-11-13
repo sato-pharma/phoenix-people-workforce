@@ -15,7 +15,8 @@ export const maxDuration = 120;
  * capture behind them. In-app/Telegram/push only — bulk email is never fired from this system,
  * and 64 recipients is bulk by any reading.
  *
- * MOVED OFF THE DAILY BUNDLE 2026-08-29, because it was the sub-job that pushed
+ * MOVED OFF THE DAILY BUNDLE 2026-08-29 (a bundle itself split into one job per schedule on
+ * 13 Nov 2026, /api/cron/daily/<job>), because it was the sub-job that pushed
  * `phoenix-notify-daily` past the scheduler's ceiling. cron-job.org cuts every request at 30
  * seconds — a platform cap `requestTimeout` cannot raise — and the daily run had been a 5-9
  * second job all month until this nudge joined it in #2360 on 24 August 00:23 Cairo. The very

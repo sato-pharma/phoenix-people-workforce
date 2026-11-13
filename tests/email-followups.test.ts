@@ -92,6 +92,6 @@ export function runEmailFollowupsTests() {
   assert.match(marketing, /export async function runMarketingSlaDaily/, "daily SLA scan exists");
   assert.match(marketing, /export function classifyMarketingSla/, "SLA classifier is exported");
   assert.match(marketing, /logError/, "marketing notify failures are surfaced (no longer silent)");
-  const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailyRoute = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
   assert.match(dailyRoute, /runMarketingSlaDaily\(\)/, "marketing SLA reminder/escalation is restored behind a real admin toggle (see marketing_sla_reminder in role-recipients.ts), not stubbed out");
 }

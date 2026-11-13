@@ -30,7 +30,7 @@ import { cachedReadFile } from "./support/source-corpus.ts";
 
 const ROOT = process.cwd();
 const SERVICE = "src/lib/outstation/service.ts";
-const DAILY = "app/api/notifications/daily/route.ts";
+const DAILY = "app/api/cron/daily/_lib/daily-job-runners.ts";
 
 function code(relative: string): string {
   return stripComments(cachedReadFile(join(ROOT, relative)));
@@ -196,9 +196,9 @@ export function runOutstationWorkloadRestampTests() {
 
   const daily = code(DAILY);
   assert.match(daily, /runOutstationWorkloadRestamp\(\)\.catch\(\s*onJobFailure\("daily-outstation-workload-restamp"/, "it runs every morning in the daily job, with its own catch");
-  const destructure = daily.slice(daily.indexOf("  const ["), daily.indexOf("] = await Promise.all(["));
-  assert.ok(
-    destructure.indexOf("outstationWorkloadRestamp") > destructure.indexOf("probationMilestoneEmails"),
-    "appended after position 30, so positions 1-30 keep their meaning",
+  assert.match(
+    daily,
+    /"outstation-workload-restamp": \{\s*resultName: "outstationWorkloadRestamp",/,
+    "it is its own morning job, and its answer names the result",
   );
 }

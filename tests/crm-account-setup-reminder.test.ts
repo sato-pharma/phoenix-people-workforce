@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { notificationRoleKeys } from "../src/lib/notifications/role-recipients.ts";
+import { DAILY_JOBS } from "../src/lib/scheduled-jobs/daily-jobs.ts";
 
 /**
  * 🔴 THE iREPORTS360 ACCOUNT-SETUP NOTICE AND ITS DAILY REMINDER ARE RETIRED (2026-11-07).
@@ -40,15 +41,17 @@ export function runCrmAccountSetupReminderTests(): void {
     assert.ok(!/iReports360/i.test(words), "nothing the tab still shows may ask for an iReports360 account");
   }
 
-  // ── 2. The daily job no longer runs it, and its count stays truthful ──────────────────────────
+  // ── 2. No morning job runs it ───────────────────────────────────────────────────────────────
   {
-    const daily = source("app/api/notifications/daily/route.ts");
-    assert.ok(!/account-setup-reminder/.test(daily), "the daily job must not import the retired reminder");
-    assert.ok(!/runCrmAccountSetupReminder|crmAccountSetupReminder|crm-account-setup-reminder/.test(daily), "the daily job must neither run nor name the retired reminder");
-    // The pass COUNT is checked against reality in tests/dead-telegram-link-alert.test.ts; here only
-    // that the retirement took its count with it, so the run summary does not claim a 30th job.
-    // 29 after the retirement; 30 since the tablet-recording retention joined the daily run (2026-11-13).
-    assert.equal(Number(/const totalJobs = (\d+);/.exec(daily)?.[1] ?? "0"), 30, "the reminder's retirement took the daily count from 30 to 29, and the recording retention took it to 30");
+    // Since 13 Nov 2026 each morning job has its own schedule: the runners hold every call, the
+    // registry every job. The hand-kept `totalJobs` this used to pin went with the old fan-out.
+    const daily = source("app/api/cron/daily/_lib/daily-job-runners.ts");
+    assert.ok(!/account-setup-reminder/.test(daily), "the morning jobs must not import the retired reminder");
+    assert.ok(!/runCrmAccountSetupReminder|crmAccountSetupReminder|crm-account-setup-reminder/.test(daily), "the morning jobs must neither run nor name the retired reminder");
+    assert.ok(
+      !DAILY_JOBS.some((job) => /account-setup/.test(job.key)),
+      "the retired reminder must not come back as a morning job of its own",
+    );
   }
 
   // ── 3. No employee-create door announces a new hire for an iReports360 account ───────────────

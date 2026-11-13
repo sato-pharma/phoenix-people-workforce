@@ -577,7 +577,8 @@ Two things `pull` confirmed that are worth knowing on their own:
   configuration rather than inferred from behaviour.
 - 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires five production routes on a
   time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
-  `cron/recruitment-email-intake`, `notifications/daily`, `cron/background-jobs` — with
+  `cron/recruitment-email-intake`, `notifications/daily` (the morning fan-out; once `PHOENIX_DAILY_JOBS_SPLIT`
+  is `on` it answers 200 and runs nothing — see "Switching the morning jobs over"), `cron/background-jobs` — with
   `restartPolicyType: NEVER`, i.e. a one-shot container. (It fired the three iReports360 syncs too,
   until they were removed from `.railway/railway.ts` with the vendor on 6 November 2026; the live
   service keeps the old command until the next `railway config apply`.) An audit on
@@ -1354,7 +1355,8 @@ table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 
 | Job | Schedule (Cairo) | Endpoint | Purpose |
 |---|---|---|---|
-| `phoenix-notify-daily` | 6:36 AM daily | `/api/notifications/daily` | Birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift, Telegram HR digest |
+| `phoenix-notify-daily` (job `8200909`) | 6:36 AM daily | `/api/notifications/daily` | The morning fan-out: runs all thirty morning jobs while `PHOENIX_DAILY_JOBS_SPLIT` is off (what ships). Disabled at the switch-over — "Switching the morning jobs over" below |
+| `daily-<job>` × 30 (`scripts/cronjob-sync.mjs`) | 6:36–7:32 AM daily, one minute each | `/api/cron/daily/<job>` | Armed over two days after the merge; each answers `split_not_switched_on` and runs nothing until `PHOENIX_DAILY_JOBS_SPLIT` is `on`. Then the morning jobs, one schedule and one heartbeat (`phoenix-daily-<job>`) each: the Needs You digest at 6:36, then birthdays, contract renewals, the SLA reminders, recruitment, the Telegram HR digest, the drift checks and the retention clean-ups. Times: `src/lib/scheduled-jobs/daily-jobs.ts` |
 | `phoenix-marketing-list-check` | Hourly at :37 | `/api/cron/marketing-list-check` | Re-checks every validated marketing customer against the reps' Phoenix CRM doctor lists; sends nothing (**new 2026-11-03**, armed only after the first `scripts/marketing-list-check.ts --apply`) |
 | `phoenix-marketing-field-capture-nudge` | 6:50 AM daily | `/api/cron/marketing-field-capture-nudge` | Tells each rep which of their marketing customers still show a validated status with no field capture behind them (**new 2026-08-29** — split off `phoenix-notify-daily`, which it had pushed past the 30 s cap) |
 | `phoenix-marketing-invoice-overdue-nudge` | 7:05 AM daily | `/api/cron/marketing-invoice-overdue-nudge` | Tells the requester, and finance, that an approved marketing request's invoice has passed its deadline (**new 2026-08-29**, owner: "the requester and finance"). In-app/Telegram/push only, never email. cron-job.org job `8350529`, created 2026-08-29 |
@@ -1398,8 +1400,8 @@ cron since.
 🔴 **cron-job.org caps request timeout at 30 s and refuses a higher value.** A route that runs
 longer is logged `Failed (timeout)` even though the request *was* delivered and the server finishes
 the work (routes carry `maxDuration = 300`, and `withDeadMansSwitch` pings at the end, so
-Healthchecks.io still sees success). `phoenix-notify-daily` logs a 30 s timeout every morning and is
-**not** failing. Never diagnose a cron from the cron-job.org status alone — check
+Healthchecks.io still sees success). `phoenix-notify-daily` logged a 30 s timeout every morning and was
+**not** failing (since 13 Nov 2026 it answers 202 at once and finishes after the response, as each per-job route does). Never diagnose a cron from the cron-job.org status alone — check
 `ireports360_visits_sync_runs` or the outbox instead.
 
 **Why `phoenix-notify-daily` crossed that cap, and what was done about it (2026-08-29).** It had
@@ -1412,7 +1414,9 @@ job is one nobody reads — which is exactly how the outbox drain hid for 13 day
 HTTP 200. The nudge now has its own route and its own clock
 (`/api/cron/marketing-field-capture-nudge`), putting the daily run back under the cap. **Prefer
 this to tolerating the red:** "the status lies" is true, and still a worse place to be than a job
-whose red means something.
+whose red means something. (On 13 Nov 2026 the bundle itself was split, behind a switch: every morning job has its own
+route segment, clock and heartbeat, `/api/cron/daily/<job>`, which take over once
+`PHOENIX_DAILY_JOBS_SPLIT` is `on` — see "Switching the morning jobs over".)
 
 ### Arming a new cron on deploy (`cron-autoarm.yml`)
 
@@ -1434,6 +1438,66 @@ It needs two Actions secrets: `CRON_SECRET` (already present, and upstream of Ra
 adds a new job fails this run with that message; a push that adds none stays green. The workflow is
 **not** a required check and never blocks a merge — the route is already shipped; this only winds its
 clock. Scope and the new-key detection are pinned by `tests/cron-autoarm.test.ts`.
+
+### Switching the morning jobs over (`PHOENIX_DAILY_JOBS_SPLIT`)
+
+On 13 Nov 2026 the owner chose that each of the thirty morning jobs (enterprise audit F-HR-012 /
+REC-049) gets its own schedule, minute and heartbeat instead of one 06:36 fan-out. Arming thirty new
+cron-job.org entries costs about 120 API requests and the account allows **100 a day**, so it ships
+behind a switch and is done over two days:
+
+| `PHOENIX_DAILY_JOBS_SPLIT` | `/api/notifications/daily` (job `8200909`, `phoenix-cron`) | `/api/cron/daily/<job>` (the `daily-<job>` entries) | Heartbeat watched |
+|---|---|---|---|
+| unset, or anything but exactly `on` (**what ships**) | runs all thirty jobs, exactly as before | answers 200 `{ ran: false, reason: "split_not_switched_on" }`, runs nothing, records no heartbeat | `phoenix-notify-daily` |
+| `on` | answers 200 and runs nothing | runs its one job | the thirty `phoenix-daily-<job>` |
+
+A job runs from one place or the other, never both (`dailyJobsRunOn` in
+`src/lib/scheduled-jobs/daily-jobs.ts`, pinned by `tests/daily-jobs-split.test.ts`). Why the
+per-job heartbeats are not recorded while the switch is off: docs/observability.md, "The morning
+jobs' heartbeats follow the split switch".
+
+**The runbook, in order:**
+
+1. **Merge.** Nothing changes for anybody: the fan-out still runs every job at 06:36. Read
+   `/api/healthz` `revision` to confirm the deploy, as for any merge.
+2. **Day 1 and day 2 — arm the thirty schedules.** The merge touches `scripts/cronjob-sync.mjs`, so
+   `cron-autoarm.yml` runs and arms the thirty new `daily-<job>` keys one at a time (about 4 requests
+   each). It **stops at cron-job.org's HTTP 429** when the day's 100 requests run out: that run goes red
+   (it is not a required check and blocks nothing) and the remaining keys stay unarmed. On day 2, after
+   the quota resets, re-run the same run: `gh run list --workflow cron-autoarm.yml --limit 1` gives
+   its id, then `gh run rerun <run-id>`. It re-diffs the same push; each key already armed costs one
+   list request and writes nothing, each missing one about 4. Repeat on day 3 only if day 2 also
+   stopped at a 429. An armed entry fires daily from then on and is answered `split_not_switched_on`
+   — harmless, and it shows the entry reaches the app.
+3. **Confirm all thirty are armed:** `node scripts/cronjob-sync.mjs` (no `--apply`, so a dry run). It
+   must list no `daily-*` key as MISSING and no drift on one. One `daily-<job>` armed by hand
+   instead: `node scripts/cronjob-sync.mjs --job daily-<job> --apply`.
+4. **Switch on — in the afternoon, never between 06:30 and 07:40 Cairo**, so a morning is never half
+   run by each side. Set `PHOENIX_DAILY_JOBS_SPLIT=on` on the production app service
+   `phoenix-people-workforce` (`railway variables --set "PHOENIX_DAILY_JOBS_SPLIT=on" -e production -s
+   phoenix-people-workforce`). A variable change redeploys at once and the release gate does not hold
+   it, so first confirm `/api/healthz` `revision` is the commit you mean to serve ("The release gate").
+   Railway restarts the service, and both routes, the
+   heartbeat declarations, the Healthchecks list and the re-fire policies change together. Set it on
+   the worker `phoenix-workforce-worker` too, so the two never disagree — the worker runs none of
+   these routes (the morning entries and the heartbeat sweep all call the app), so it changes nothing
+   there today. Never in `.railway/railway.ts` or an env file: it is a one-off switch, not
+   configuration. Check: `curl` one `/api/cron/daily/<job>` with the cron secret and `?wait=1` no
+   longer answers `split_not_switched_on`, and the next morning every `phoenix-daily-<job>` reports.
+5. **Retire the old watchers, the same afternoon:**
+   - disable cron-job.org job `8200909` (made by hand, not in `cronjob-sync.mjs`) in the dashboard;
+   - Healthchecks: **pause** the check `phoenix-notify-daily`, then rename its name and slug to
+     `phoenix-daily-needs-you-daily-digest` (docs/observability.md, "To free a check, hand it over";
+     a rename without the pause holds a stale last ping against the new job);
+   - Sentry: disable the cron monitor `phoenix-notify-daily` (the per-job slugs get monitors from their
+     own check-ins);
+   - the heartbeat register then shows `phoenix-notify-daily` as an **undeclared** row (never an
+     alert) — delete its `job_heartbeats` row.
+
+A later change removes the switch and the fan-out code, moves the `in-house only` marker off the
+digest's row in docs/observability.md, deletes the `phoenix-notify-daily` rows, and retires the
+`phoenix-cron` call. **To switch back**, unset the variable (afternoon again); the fan-out resumes,
+and job `8200909` and the Healthchecks check must be re-enabled by hand.
 
 ## Environment Variables
 

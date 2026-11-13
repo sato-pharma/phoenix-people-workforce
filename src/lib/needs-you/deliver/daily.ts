@@ -1,13 +1,14 @@
 /**
  * The daily Needs You digest — the board, once a morning, on Telegram.
  *
- * 🔴 NO NEW CRON JOB, AND THAT IS A DESIGN DECISION RATHER THAN A SHORTCUT. `/api/notifications/daily`
- * already fires at 06:36 Cairo (cron-job.org `8200909`) and runs its sub-jobs in one `Promise.all`.
- * This is one more of those. A DEDICATED schedule would have cost a declaration in `JOB_SCHEDULES`,
- * a row in `scripts/cronjob-sync.mjs`, a request against the cron-job.org REST API's 100-per-DAY
- * cap, and — the part that actually bites — the heartbeat-parity contract: a declaration whose job
- * stops reporting pages every Super Admin every 15 minutes, for ever. The 06:55 CRM digest is the
- * standing proof of how expensive that mistake is.
+ * ITS OWN MORNING JOB SINCE 13 NOV 2026. It used to ride `/api/notifications/daily` at 06:36 Cairo,
+ * awaited on its own before about thirty other jobs ran together. The owner then gave every one of
+ * those jobs its own schedule (enterprise audit F-HR-012 / REC-049): this digest is now the job
+ * `needs-you-daily-digest`, at the same 06:36, on `/api/cron/daily/needs-you-daily-digest`, with
+ * its own heartbeat `phoenix-daily-needs-you-daily-digest` (src/lib/scheduled-jobs/daily-jobs.ts).
+ * It runs on a request of its own, so nothing else competes with it for the database. A schedule
+ * still carries the heartbeat-parity contract: a declaration whose job stops reporting pages every
+ * Super Admin every 15 minutes, so its cron-job.org entry must exist (scripts/cronjob-sync.mjs).
  *
  * 🔴 AND THE RULE THE WHOLE MODULE TURNS ON REACHES THE DIGEST TOO: a board that under-reports is
  * worse than no board. A message that says nothing is waiting, on a morning when a source simply
@@ -21,8 +22,8 @@
  *   - the all-clear sentence is gated on `board.allClearProvable` and on nothing else — never on
  *     an empty list, because "no items" and "nothing could be read" are the two readings this
  *     module exists to keep apart.
- *   - the digest reports its OWN degradation inside the message. The route returns 200 on partial
- *     failure by design, so a caller reading the HTTP status learns nothing about this job.
+ *   - the digest reports its OWN degradation inside the message. The route answers the scheduler
+ *     202 before the job runs, so a caller reading the HTTP status learns nothing about this job.
  *
  * 🔴 IT FAILS CLOSED ON THE RECIPIENT. If the owner's account cannot be resolved, the digest is
  * SKIPPED and audited — never broadcast to whoever else happens to hold the role. This board is his

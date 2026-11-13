@@ -21,8 +21,9 @@ export const maxDuration = 120;
  * In-app/Telegram/push only, never email. House rule for lateness reminders since 2026-07-25.
  *
  * A CLOCK OF ITS OWN rather than a seat on `phoenix-notify-daily`, following the field-capture and
- * invoice-overdue splits. That bundle already carries its sub-jobs against cron-job.org's unraisable
- * 30-second cut; adding another is the move that created that problem in the first place.
+ * invoice-overdue splits. That bundle then carried its sub-jobs against cron-job.org's unraisable
+ * 30-second cut; adding another is the move that created that problem in the first place. (On
+ * 13 Nov 2026 the bundle itself was split: every morning job now has its own clock, /api/cron/daily/<job>.)
  *
  * Safe to run more than once a day: the idempotency key carries the Cairo date AND the summed days
  * overdue, so a repeat run re-sends nothing while tomorrow's larger figure still gets through.

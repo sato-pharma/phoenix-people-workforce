@@ -39,8 +39,8 @@ const JOB_SLUG = "phoenix-run-synthetic-journeys";
  * presents the same CRON_SECRET it already holds.
  *
  * Returns promptly and does NOT wait for the run to finish. A synthetic run takes ~60s; waiting
- * would risk the false `Failed (timeout)` that cron-job.org's 30s cap already logs against
- * phoenix-notify-daily every morning. The run's own result is reported by the workflow.
+ * would risk the false `Failed (timeout)` that cron-job.org's 30s cap logged against the old
+ * daily notification run every morning. The run's own result is reported by the workflow.
  *
  * Returns 200 with `{ dispatched: false, reason }` when the token is unset — an unconfigured
  * deployment is a normal outcome, not a failure.
@@ -54,8 +54,8 @@ const JOB_SLUG = "phoenix-run-synthetic-journeys";
  * stops running, `logError` writes a row nothing pages anyone about, and a wrapper-shaped ping
  * would hold the check green while the system's only "is production actually working?" signal is
  * dead. That is the nine-nights-of-401 failure one layer up. So the outcome is derived from the
- * dispatch's own answer, the same way notifications/daily derives its ping from its sub-job
- * failures — a single ping per run, carrying the truth.
+ * dispatch's own answer, the same way the morning jobs' route (cron/daily/[job]) derives its ping from
+ * its job's failures — a single ping per run, carrying the truth.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/run-synthetic-journeys");

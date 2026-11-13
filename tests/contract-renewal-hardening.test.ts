@@ -78,7 +78,7 @@ export function runContractRenewalHardeningTests() {
   assert.doesNotMatch(reminderRoute, /actionUrl = "\/contracts\/renewals"/, "\"/contracts/renewals\" is not a real route and 404s for every recipient");
   assert.doesNotMatch(reminderRoute, /recipientHrId:/);
   assert.match(reminderRoute, /runScheduledNotificationProcessing/);
-  const dailyRoute = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailyRoute = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
   assert.match(dailyRoute, /runContractRenewalNotifications/);
   assert.match(dailyRoute, /runBirthdayNotifications/);
   assert.match(dailyRoute, /runVacationSlaDaily/);

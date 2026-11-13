@@ -73,7 +73,7 @@ export function runProbationEmailsTests() {
   // has to update this test, not an accident.
   const cron = src("src/lib/notifications/scheduled-processing.ts");
   assert.doesNotMatch(cron, /processProbationMilestoneEmails\(/, "probation milestone sweep was retired — it must not be re-wired into the notifications cron");
-  const dailyRoute = src("app/api/notifications/daily/route.ts");
+  const dailyRoute = src("app/api/cron/daily/_lib/daily-job-runners.ts");
   assert.doesNotMatch(dailyRoute, /processProbationWeeklyDigest\(/, "probation weekly digest was retired — it must not be re-wired into the daily cron");
 
   // ── FRESH START (owner directive 2026-07-17): no catch-up emails on re-enable ──

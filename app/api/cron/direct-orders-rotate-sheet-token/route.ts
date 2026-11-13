@@ -45,7 +45,7 @@ const JOB_SLUG = "phoenix-direct-orders-rotate-sheet-token";
  * sheet never read with the new token" means the rotation did not happen. A successful rotation
  * always leaves exactly one live link behind, so the steady state is `rotated: true` every week —
  * there is no benign `false` to tolerate. `withDeadMansSwitch` cannot express that (it reads
- * throw/no-throw), so the outcome is derived here instead, as notifications/daily does. Otherwise
+ * throw/no-throw), so the outcome is derived here instead, as the morning jobs' route (cron/daily/[job]) does. Otherwise
  * this route could no-op every Friday for a year with a green check above it, which is precisely
  * the shape of the 18 silent days that preceded the schedule.
  */

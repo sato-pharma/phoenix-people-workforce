@@ -22,9 +22,11 @@
  * reports. Email is not used either — the owner's standing rule keeps this system off real outbound
  * email, and the Super Admin reads the bell.
  *
- * It rides `/api/notifications/daily` rather than taking a schedule: a `JOB_SCHEDULES` declaration
- * whose cron job does not exist reads to `job-heartbeat-assess` as a job that has STOPPED and
- * Telegrams every Super Admin for ever (AGENTS.md §4).
+ * It runs every morning as its own job, `dead-telegram-link-alert` (07:26 Cairo, on
+ * `/api/cron/daily/dead-telegram-link-alert`, heartbeat `phoenix-daily-dead-telegram-link-alert`),
+ * since the morning jobs were given one schedule each on 13 Nov 2026; before that it rode
+ * `/api/notifications/daily`. Its `JOB_SCHEDULES` declaration needs its cron-job.org entry: one
+ * whose job does not exist reads to `job-heartbeat-assess` as a job that has STOPPED.
  */
 
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";

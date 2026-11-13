@@ -6,7 +6,7 @@ export function runEmailProductionReadinessTests() {
   const sendSource = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
   const emailSource = readFileSync("src/lib/notifications/email.ts", "utf8");
   const scheduledSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
-  const dailySource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailySource = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
   const healthSource = readFileSync("app/api/health/email/route.ts", "utf8");
 
   // P0-1: forceTestingDelivery is env-controlled
