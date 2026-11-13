@@ -312,10 +312,17 @@ function CaseFile({ basis, thread }: { basis: DeductionDisputeBasis | null | und
         ) : (
           <p className="text-sm font-semibold text-slate-500">No decision is recorded against this deduction.</p>
         )}
-        <p className="mt-2 break-words text-xs font-semibold text-slate-500">
-          Published to the employee {cairoDateTime(basis.pushedAt ?? basis.publishedAt)}
-          {basis.pushedByName ? ` by ${basis.pushedByName}` : ""}.
-        </p>
+        {/* A deduction disputed before it was pushed has no publish time to quote (owner, 2026-11-13). */}
+        {basis.pushedAt || line.id ? (
+          <p className="mt-2 break-words text-xs font-semibold text-slate-500">
+            Published to the employee {cairoDateTime(basis.pushedAt ?? basis.publishedAt)}
+            {basis.pushedByName ? ` by ${basis.pushedByName}` : ""}.
+          </p>
+        ) : (
+          <p className="mt-2 break-words text-xs font-semibold text-slate-500">
+            Not pushed to the payslip yet — the employee disputed it before it was released.
+          </p>
+        )}
       </Section>
     </div>
   );
@@ -728,8 +735,15 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
                 <div className="text-left @min-[560px]:text-right">
                   <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">On the payslip</p>
                   <p className="text-xl font-black text-orange-600">
-                    {line && !withdrawn[thread.candidateId] ? formatMoney(line.appliedAmount) : "Not charged"}
+                    {thread.pending
+                      ? "Not decided yet"
+                      : line && !withdrawn[thread.candidateId]
+                        ? formatMoney(line.appliedAmount)
+                        : "Not charged"}
                   </p>
+                  {thread.pending ? (
+                    <p className="text-phx-xs font-semibold text-slate-500">Rejecting the dispute deducts it</p>
+                  ) : null}
                 </div>
                 <button
                   aria-expanded={!detailsHidden}

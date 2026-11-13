@@ -11,6 +11,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
+import { deductionOpenForDispute } from "./dispute-open.ts";
 import type { CheckedDisputeImage } from "./comment-attachment-rules.ts";
 import { attachCommentAttachments, discardDisputeComment, storeDisputeAttachments } from "./comment-attachments.ts";
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
@@ -126,17 +127,37 @@ export async function findDeductionsCandidateOwner(candidateId: string): Promise
   return (data as { employee_hr_id_compact: string } | null)?.employee_hr_id_compact ?? null;
 }
 
-/** A comment — from either side — is allowed only once the deduction is published to the employee. */
-async function assertCandidatePublished(candidateId: string) {
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_publication_lines")
-    .select("id, publication_id, deductions_publications!inner(status)")
-    .eq("candidate_id", candidateId)
-    .eq("deductions_publications.status", "published")
-    .limit(1);
-  if (error) throw error;
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error("Comments are available only after the deduction is finalized.");
+/**
+ * A comment — from either side — is allowed on any deduction the employee can see, EXCEPT one already
+ * cleared (owner, 2026-11-13: "make the employee able to dispute in the deduction module"). Until then
+ * only a line pushed to the payslip could be argued with, so a deduction approved but not yet pushed —
+ * which payroll charges all the same — and one still waiting for HR could not be disputed at all.
+ * A published line always keeps its conversation, whatever its decision says now
+ * (`deductionOpenForDispute`, dispute-open.ts).
+ */
+async function assertCandidateOpenForDispute(candidateId: string) {
+  const supabase = getSupabaseAdmin();
+  const [lineResult, candidateResult, decisionResult] = await Promise.all([
+    supabase
+      .from("deductions_publication_lines")
+      .select("id, publication_id, deductions_publications!inner(status)")
+      .eq("candidate_id", candidateId)
+      .eq("deductions_publications.status", "published")
+      .limit(1),
+    supabase.from("deductions_candidates").select("id, superseded_at").eq("id", candidateId).maybeSingle(),
+    supabase.from("deductions_decisions").select("decision_status").eq("candidate_id", candidateId).maybeSingle(),
+  ]);
+  if (lineResult.error) throw lineResult.error;
+  if (candidateResult.error) throw candidateResult.error;
+  if (decisionResult.error) throw decisionResult.error;
+  const hasPublishedLine = Array.isArray(lineResult.data) && lineResult.data.length > 0;
+  const candidate = candidateResult.data as { id: string; superseded_at: string | null } | null;
+  if (!hasPublishedLine && (!candidate || candidate.superseded_at)) {
+    throw new Error("This deduction was replaced by a newer one, so it cannot be disputed. Dispute the current one.");
+  }
+  const decisionStatus = (decisionResult.data as { decision_status: string | null } | null)?.decision_status ?? null;
+  if (!deductionOpenForDispute({ decisionStatus, hasPublishedLine })) {
+    throw new Error("Nothing is deducted for this one, so there is nothing to dispute.");
   }
 }
 
@@ -145,9 +166,9 @@ async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candid
   if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
   const actorHr = compactDeductionsHrId(access.hrId ?? access.loginId);
   if (!actorHr || actorHr !== ownerCompactHrId) {
-    throw new Error("Forbidden: employees can comment only on their own published deductions.");
+    throw new Error("Forbidden: employees can dispute only their own deductions.");
   }
-  await assertCandidatePublished(candidateId);
+  await assertCandidateOpenForDispute(candidateId);
 }
 
 export async function addDeductionsComment(input: {
@@ -184,7 +205,7 @@ export async function addDeductionsComment(input: {
     entityId: input.candidateId,
     entityType: "deductions_comment",
     newValues: { bodyLength: body.length, pictureCount: images.length },
-    summary: "Employee comment added to published deduction (unified module).",
+    summary: "Employee dispute comment added to a deduction (unified module).",
   });
 
   const row = data as CommentRow;
@@ -234,7 +255,7 @@ export async function addDeductionsReply(input: {
   assertDeductionsDecisionActor(input.access);
   const ownerCompactHrId = await findDeductionsCandidateOwner(input.candidateId);
   if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
-  await assertCandidatePublished(input.candidateId);
+  await assertCandidateOpenForDispute(input.candidateId);
 
   const images = input.images ?? [];
   let body = tidyDisputeText(input.body);

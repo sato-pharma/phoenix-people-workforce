@@ -18,6 +18,9 @@ import { loadPlanPrivateCalendarItems } from "@/lib/private-calendar/plan-items"
 import { loadOutstationTripPrivateCalendarItems } from "@/lib/private-calendar/outstation-trip-items";
 import { loadInterviewPrivateCalendarItems } from "@/lib/private-calendar/interview-items";
 import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
+import { loadAcceptedDeductionCorrections } from "@/lib/dispute-center/accepted-deduction-days";
+import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
+import type { DeductionsCategory } from "@/lib/deductions/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { employeeHolidayList } from "@/lib/vacation/employee-holiday-list";
@@ -540,8 +543,19 @@ export async function getPrivateCalendarWorkspace(input: {
 
   const employeeDisputes = disputesByEmployee.flat();
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
+  // An accepted deduction dispute fixes the calendar too (owner, 2026-11-13): each of its days gets the same
+  // verified entry as an accepted whole-day review request. Best-effort and display-only.
+  const deductionCorrections = await loadAcceptedDeductionCorrections({
+    categoryLabel: (category) => deductionsCategoryLabel(category as DeductionsCategory),
+    end,
+    scopeHrIds,
+    start,
+  });
   // An accepted whole-day request is an entry of its own, and the day it verifies stops reading "No Activity Recorded".
-  const correctionItems = decorateItemsWithEmployeeMetadata(buildAcceptedCorrectionItems(employeeDisputes), employees);
+  const correctionItems = decorateItemsWithEmployeeMetadata(
+    buildAcceptedCorrectionItems([...employeeDisputes, ...deductionCorrections]),
+    employees,
+  );
   const exceptionsWithStatuses = appendDisputeStatusExceptions(withoutCorrectedDayFindings(exceptions, correctionItems), employeeDisputes, items);
 
   // The reply thread under each request. One batched read for the whole month, and best-effort: a

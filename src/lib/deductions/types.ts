@@ -462,6 +462,12 @@ export type DeductionDisputeDelivery = {
 export type AdminDeductionCommentThread = {
   candidateId: string;
   line: DeductionsPortalLine | null;
+  /**
+   * True when nobody has decided the deduction yet (owner, 2026-11-13: an employee may dispute before
+   * the money is taken). Its `line` is built from the candidate and charges 0.00; REJECTING the dispute
+   * is what approves it for payroll (`decideDeductionDispute`).
+   */
+  pending?: boolean;
   /** Why the deduction was made, in words — null only when the candidate row could not be read. */
   basis?: DeductionDisputeBasis | null;
   /** Who a reply reaches, so the sender sees the To and CC before pressing Reply. */
