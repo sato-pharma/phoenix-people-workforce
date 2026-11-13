@@ -8,7 +8,14 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
-import type { ReportItPayload, ReportItReportRow } from "./types";
+import {
+  isReportItOverdue,
+  normalizeReportItStatus,
+  REPORT_IT_OPEN_STATUSES,
+  reportItDueAt,
+  reportItTransitionRefusal,
+} from "./lifecycle";
+import type { ReportItPayload, ReportItReportRow, ReportItStatus } from "./types";
 
 // Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
 //
@@ -60,7 +67,7 @@ export function reportPayloadRefusal(payload: unknown): string | null {
   return null;
 }
 
-export async function submitReport(input: SubmitReportInput): Promise<{ reportNumber: string; id: string }> {
+export async function submitReport(input: SubmitReportInput): Promise<{ reportNumber: string; id: string; createdAt: string }> {
   const refusal = reportPayloadRefusal(input.payload);
   if (refusal) throw new Error(`Validation: ${refusal}`);
   const supabase = getSupabaseAdmin();
@@ -93,18 +100,21 @@ export async function submitReport(input: SubmitReportInput): Promise<{ reportNu
     suspected_medicines: suspectedMedicines,
     reactions_summary: reactionsSummary,
     report_payload: input.payload,
-    status: "submitted",
+    // The lifecycle (REC-033): every report starts received. Its due date (15 calendar days if
+    // serious, 90 if not) is filled by the database's insert trigger, report_it_lifecycle_defaults,
+    // so filing never depends on whether that migration or this code shipped first.
+    status: "received" satisfies ReportItStatus,
   };
 
   const { data, error } = await supabase
     .from("report_it_reports")
     .insert(row)
-    .select("id, report_number")
+    .select("id, report_number, created_at")
     .single();
 
   if (error) throw new Error(`Failed to save report: ${error.message}`);
 
-  return { reportNumber: data.report_number, id: data.id };
+  return { reportNumber: data.report_number, id: data.id, createdAt: data.created_at };
 }
 
 // ─── List reports ──────────────────────────────────────────────────────────
@@ -239,6 +249,7 @@ export async function getReport(
 export type ReportItAuditAction =
   | "report_viewed"
   | "reports_listed"
+  | "status_changed"
   | "dashboard_access_granted"
   | "dashboard_access_revoked";
 
@@ -395,6 +406,155 @@ export async function setDashboardAccess(
   });
   if (error) throw new Error(`Failed to change access: ${error.message}`);
   return { changed: data === true };
+}
+
+// ─── The lifecycle: open reports by due date, and one step forward ────────
+
+/** One open report on the desk's due-date view. No patient field is read for it. */
+export type OpenReportItem = {
+  assessmentStartedAt: string | null;
+  assessorName: string | null;
+  dueAt: string | null;
+  id: string;
+  isSerious: boolean;
+  overdue: boolean;
+  reportNumber: string;
+  status: ReportItStatus;
+  submittedAt: string;
+};
+
+/**
+ * The open reports — received and under assessment — oldest due date first, for the owner's due-date
+ * view on her Report It desk (audit REC-033). Only someone who reads every report may ask, and the
+ * read is logged like every other list read: if the log cannot be written, nothing is shown.
+ */
+export async function listOpenReports(access: AccessContext, now: Date = new Date()): Promise<OpenReportItem[]> {
+  if (!(await canViewAllReports(access))) {
+    throw new Error("Forbidden: only the Report It desk can see the open reports.");
+  }
+  const { data, error } = await getSupabaseAdmin()
+    .from("report_it_reports")
+    .select("id,report_number,created_at,is_serious,status,due_at,assessment_started_at,assessed_by_hr_id")
+    .in("status", [...REPORT_IT_OPEN_STATUSES])
+    .order("due_at", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true })
+    .limit(REPORT_IT_MAX_PAGE);
+  if (error) throw new Error(`Failed to read the open reports: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{
+    assessed_by_hr_id: string | null;
+    assessment_started_at: string | null;
+    created_at: string;
+    due_at: string | null;
+    id: string;
+    is_serious: boolean;
+    report_number: string;
+    status: string;
+  }>;
+  if (rows.length > 0) {
+    await logReportRead(access, {
+      action: "reports_listed",
+      reportId: rows.length === 1 ? rows[0].id : null,
+      metadata: {
+        count: rows.length,
+        offset: 0,
+        reportNumbers: rows.map((row) => row.report_number),
+        scope: "all",
+        view: "open_due",
+      },
+    });
+  }
+
+  const names = await namesByHrId(rows.map((row) => row.assessed_by_hr_id));
+  return rows.map((row) => {
+    const dueAt = row.due_at ?? reportItDueAt(row.created_at, row.is_serious);
+    return {
+      assessmentStartedAt: row.assessment_started_at,
+      assessorName: row.assessed_by_hr_id ? names.get(row.assessed_by_hr_id) ?? null : null,
+      dueAt,
+      id: row.id,
+      isSerious: row.is_serious,
+      overdue: isReportItOverdue(dueAt, now),
+      reportNumber: row.report_number,
+      status: normalizeReportItStatus(row.status) ?? "received",
+      submittedAt: row.created_at,
+    };
+  });
+}
+
+/** The database half of a status change, injectable so the tests never touch one. */
+export type ReportStatusChangeDeps = {
+  canViewAll: (access: AccessContext) => Promise<boolean>;
+  readStatus: (reportId: string) => Promise<{ report_number: string; status: string } | null>;
+  setStatus: (input: {
+    actorHrId: string;
+    from: ReportItStatus;
+    metadata: Record<string, unknown>;
+    reportId: string;
+    to: ReportItStatus;
+  }) => Promise<string | null>;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const defaultStatusChangeDeps: ReportStatusChangeDeps = {
+  canViewAll: (access) => canViewAllReports(access),
+  readStatus: async (reportId) => {
+    const { data, error } = await getSupabaseAdmin()
+      .from("report_it_reports")
+      .select("status,report_number")
+      .eq("id", reportId)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to read the report: ${error.message}`);
+    return (data as { report_number: string; status: string } | null) ?? null;
+  },
+  setStatus: async (input) => {
+    // The move and its report_it_audit_logs row are one transaction (phx_report_it_set_status).
+    const { data, error } = await getSupabaseAdmin().rpc("phx_report_it_set_status", {
+      p_actor_hr_id: input.actorHrId,
+      p_from: input.from,
+      p_metadata: input.metadata,
+      p_report_id: input.reportId,
+      p_to: input.to,
+    });
+    if (error) throw new Error(`Failed to change the status: ${error.message}`);
+    return typeof data === "string" && data ? data : null;
+  },
+};
+
+/**
+ * Moves one report one step: received → under assessment → closed. There is no reopen.
+ *
+ * Only someone who reads every report may move one — a `report_it:export` role or a person on
+ * `report_it_dashboard_access` (`canViewAllReports`) — and that is checked FIRST, before the report
+ * is even read. The change and its `report_it_audit_logs` row are written together by one database
+ * function, compare-and-set on the status read, so two presses move it once.
+ */
+export async function changeReportStatus(
+  access: AccessContext,
+  input: { reportId: string; to: unknown },
+  deps: ReportStatusChangeDeps = defaultStatusChangeDeps,
+): Promise<{ reportNumber: string; status: ReportItStatus }> {
+  if (!(await deps.canViewAll(access))) {
+    throw new Error("Forbidden: only the Report It desk can change a report's status.");
+  }
+  const actorHrId = hrIdForStorage(access.hrId);
+  if (!actorHrId) throw new Error("Authentication is required.");
+  const reportId = String(input.reportId ?? "").trim();
+  if (!UUID_PATTERN.test(reportId)) throw new Error("Validation: choose a report.");
+
+  const current = await deps.readStatus(reportId);
+  if (!current) throw new Error("Validation: that report was not found.");
+  const refusal = reportItTransitionRefusal(current.status, input.to);
+  if (refusal) throw new Error(`Validation: ${refusal}`);
+  const from = normalizeReportItStatus(current.status) as ReportItStatus;
+  const to = input.to as ReportItStatus;
+
+  const reportNumber = await deps.setStatus({ actorHrId, from, metadata: { role: access.role }, reportId, to });
+  if (!reportNumber) {
+    throw new Error("Validation: this report's status was just changed by someone else. Reload the desk.");
+  }
+  return { reportNumber, status: to };
 }
 
 // ─── KPI summary ──────────────────────────────────────────────────────────
