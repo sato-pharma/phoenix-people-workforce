@@ -119,3 +119,98 @@ export function createJobLeaseKeeper(input: {
     },
   };
 }
+
+/**
+ * Hands a lease back early: re-claims it for its own holder with the shortest ttl the claim allows (one
+ * second), so the next run anywhere takes it at once instead of waiting out the full ttl. The claim only
+ * touches a row this holder still owns (or one that has already run out), so it can never cut short a
+ * lease another process has since taken. Never throws — an unreleased lease simply runs out.
+ */
+export async function releaseJobLease(client: JobLeaseRpcClient, input: { holder: string; jobKey: string }): Promise<void> {
+  await claimJobLease(client, { holder: input.holder, jobKey: input.jobKey, ttlSeconds: 1, wasHeld: true });
+}
+
+/** The client factory itself can throw (no service key in this process): that is "lease unavailable" too. */
+function clientOrUnavailable(client: () => JobLeaseRpcClient): JobLeaseRpcClient {
+  try {
+    return client();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { rpc: () => Promise.resolve({ data: null, error: { code: "client_unavailable", message: detail } }) };
+  }
+}
+
+export type ExclusiveRunEntry =
+  | { entered: true; release: () => Promise<void>; via: "lease" | "process" }
+  | { entered: false; heldBy: string | null; inFlightForMs: number | null; via: "lease" | "process" };
+
+/**
+ * ONE RUN AT A TIME ACROSS EVERY INSTANCE, for a job a cron fires on a timer (REC-083).
+ *
+ * A module variable only ever kept a run to one copy PER PROCESS: the deploy overlap, a second instance
+ * or a restarted container each ran their own. `enter()` now claims a database lease (one row in
+ * public.job_leases, a fresh holder per run) before the work starts and `release()` hands it back when
+ * it ends; a run that cannot claim it is skipped as an overlap. A run killed mid-flight is replaced
+ * once its lease runs out (`ttlMs`) — the same self-healing the timestamp guard had.
+ *
+ * THE LEASE CAN NEVER STOP THE JOB BY ITSELF. When the lease cannot be read (database unreachable, the
+ * claim function missing) the run falls back to the in-process guard this replaced — still kept, and
+ * still checked first, so a second run in the SAME process never costs a query. Only a definite "another
+ * live run holds it" skips across instances.
+ */
+export function createExclusiveRunGuard(input: {
+  client: () => JobLeaseRpcClient;
+  jobKey: string;
+  newHolder?: () => string;
+  /** Called once when the lease becomes unreadable and again when it is back (`detail` is null then). */
+  onLeaseAvailability?: (detail: string | null) => void;
+  ttlMs: number;
+}) {
+  const ttlSeconds = Math.min(3600, Math.max(1, Math.ceil(input.ttlMs / 1000)));
+  // This process's own run, as the old guard kept it: the fallback when the lease cannot be read.
+  let inFlightStartedAt: number | null = null;
+  let leaseUnavailable = false;
+
+  return {
+    async enter(enteredAt: number = Date.now()): Promise<ExclusiveRunEntry> {
+      if (inFlightStartedAt !== null && enteredAt - inFlightStartedAt < input.ttlMs) {
+        return { entered: false, heldBy: null, inFlightForMs: enteredAt - inFlightStartedAt, via: "process" };
+      }
+      // Marked BEFORE the claim's await, so a second run in this process cannot slip in while it is asked.
+      const token = enteredAt;
+      inFlightStartedAt = token;
+      const holder = (input.newHolder ?? newJobLeaseHolderId)();
+      const claim = await claimJobLease(clientOrUnavailable(input.client), { holder, jobKey: input.jobKey, ttlSeconds });
+
+      if (!claim.held) {
+        if (inFlightStartedAt === token) inFlightStartedAt = null;
+        const expiresMs = claim.expiresAt ? Date.parse(claim.expiresAt) : Number.NaN;
+        const inFlightForMs = Number.isFinite(expiresMs) ? Math.max(0, enteredAt - (expiresMs - ttlSeconds * 1000)) : null;
+        return { entered: false, heldBy: claim.holder, inFlightForMs, via: "lease" };
+      }
+
+      const unavailableDetail = claim.reason === "lease_unavailable" ? claim.detail : null;
+      const viaLease = unavailableDetail === null;
+      if (unavailableDetail !== null && !leaseUnavailable) {
+        leaseUnavailable = true;
+        input.onLeaseAvailability?.(unavailableDetail);
+      } else if (viaLease && leaseUnavailable) {
+        leaseUnavailable = false;
+        input.onLeaseAvailability?.(null);
+      }
+
+      let released = false;
+      return {
+        entered: true,
+        async release() {
+          if (released) return;
+          released = true;
+          // Only this run's own mark: a run that outlived its ttl must not clear its successor's.
+          if (inFlightStartedAt === token) inFlightStartedAt = null;
+          if (viaLease) await releaseJobLease(clientOrUnavailable(input.client), { holder, jobKey: input.jobKey });
+        },
+        via: viaLease ? "lease" : "process",
+      };
+    },
+  };
+}

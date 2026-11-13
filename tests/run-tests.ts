@@ -3023,6 +3023,7 @@ import { runSalaryBlindSeatTests } from "./salary-blind-seat.test.ts";
 import { runCrmCheckinFlagsCarriesMasterSelectTests } from "./crm-checkin-flags-carries-master-select.test.ts";
 import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.ts";
 import { runJobLeaseTests } from "./job-lease.test.ts";
+import { runSharedInstanceStateTests } from "./shared-instance-state.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
@@ -12074,6 +12075,10 @@ await runTest(
 await runTest(
   "one CRM poller across every process: each tick claims the crm-live-poll lease first and stands by while another live process holds it, a heartbeat renews it through a long run, a dead holder is replaced within three minutes, and a lease that cannot be read (the migration not yet applied, any error) never stops the poller",
   runJobLeaseTests,
+);
+await runTest(
+  "per-process state is shared across instances (REC-083): two instances start the notification drain and exactly one drains — the other is skipped as overlapping-run by the shared job lease, the next run drains once it is released or runs out, and an unreadable lease falls back to the in-process guard; the page-timing beacon and CSP report keep their per-instance address caps on purpose (F-PLT-012), never the shared store; the employee directory drops its copy when the shared version moves",
+  runSharedInstanceStateTests,
 );
 await runTest(
   "the four heavy cron routes refuse the page server with a loud 503 right after the bearer check, the admin's manual drain still runs anywhere, and the five hand-made cron-job.org jobs are declared in cronjob-sync as adopted — reported, never created or patched, even under --apply — with the worker on Railway",

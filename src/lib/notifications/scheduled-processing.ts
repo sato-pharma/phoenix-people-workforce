@@ -12,6 +12,8 @@ import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTele
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { logError, logInfo } from "@/lib/observability/log";
+import { createExclusiveRunGuard, type JobLeaseRpcClient } from "@/lib/platform/job-lease";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // This cron runs many steps serially under the route's `maxDuration = 300`. Each step is
 // bounded by a soft per-step cap and a global deadline (see step-runner.ts) so a single
@@ -22,12 +24,34 @@ import { logError, logInfo } from "@/lib/observability/log";
 const STEP_TIMEOUT_MS = 30_000;
 const TOTAL_BUDGET_MS = 240_000;
 
-// Overlap guard: on a warm instance (concurrency 40), a run that hasn't finished when the
-// next 5-minute tick fires would otherwise pile up and compound CPU pressure. Skip a new
-// invocation while a prior one is still in flight. The timestamp guard self-heals: if the
-// previous run is older than this (i.e. it was killed mid-flight), we proceed anyway.
+// Overlap guard: a run that hasn't finished when the next tick fires would otherwise pile up and
+// compound CPU pressure. Skip a new invocation while a prior one is still in flight. It self-heals: a
+// run older than this (i.e. it was killed mid-flight) no longer blocks the next one.
+//
+// ONE RUN ACROSS EVERY INSTANCE (REC-083). The guard used to be a module variable, which kept the drain
+// to one run PER PROCESS — the deploy overlap or a second instance each drained at the same time. It is
+// now a database lease (public.job_leases, see src/lib/platform/job-lease.ts) claimed for this long and
+// handed back when the run ends. If the lease cannot be read, the run falls back to the in-process
+// guard it replaced: the drain never stops because the lock store is down (and the per-row claims in
+// system.ts and the outbox already stop a double send).
 const OVERLAP_LOCK_MS = 290_000;
-let inFlightStartedAt: number | null = null;
+export const NOTIFICATION_DRAIN_LEASE_KEY = "phoenix-process-notifications";
+const drainOverlapGuard = createExclusiveRunGuard({
+  client: () => getSupabaseAdmin() as unknown as JobLeaseRpcClient,
+  jobKey: NOTIFICATION_DRAIN_LEASE_KEY,
+  onLeaseAvailability: (detail) => {
+    if (detail === null) {
+      logInfo("[cron:process] drain lease readable again — overlap is guarded across instances", {
+        labels: { event: "cron_process_lease_restored", job: "phoenix-process-notifications" },
+      });
+      return;
+    }
+    logError("[cron:process] drain lease could not be read — guarding overlap in this process only", {
+      labels: { detail, event: "cron_process_lease_unavailable", job: "phoenix-process-notifications" },
+    });
+  },
+  ttlMs: OVERLAP_LOCK_MS,
+});
 
 /**
  * Every email the outbox drain resolves reads the same email-policy table, so the whole run shares ONE
@@ -43,17 +67,19 @@ async function runNotificationProcessingSteps(limit: number) {
   // Same instant as `enteredAt`, for the drain-health probe: "due before this run started" is
   // measured against it, which is what keeps a row inserted mid-run from reading as stranded.
   const runStartedAtIso = new Date(enteredAt).toISOString();
-  if (inFlightStartedAt !== null && enteredAt - inFlightStartedAt < OVERLAP_LOCK_MS) {
+  const entry = await drainOverlapGuard.enter(enteredAt);
+  if (!entry.entered) {
     // logInfo, not console.warn. The overlap guard DOING ITS JOB is the healthy outcome on a
     // per-minute cron, and console.warn goes to stderr, which Railway reads as an error — so the
     // one thing proving the lock works read as a fault. `labels.event` keeps it searchable.
+    const where = entry.via === "lease" ? "on another instance" : "in this process";
+    const age = entry.inFlightForMs === null ? "" : ` (${entry.inFlightForMs}ms ago)`;
     logInfo(
-      `[cron:process] previous run still in flight (${enteredAt - inFlightStartedAt}ms ago) — skipping this invocation to avoid overlap`,
-      { labels: { event: "cron_process_overlap_skipped", job: "phoenix-process-notifications" } },
+      `[cron:process] previous run still in flight ${where}${age} — skipping this invocation to avoid overlap`,
+      { labels: { event: "cron_process_overlap_skipped", job: "phoenix-process-notifications", via: entry.via } },
     );
     return { skipped: true as const, reason: "overlapping-run" as const };
   }
-  inFlightStartedAt = enteredAt;
 
   const budget = createStepBudget({ totalBudgetMs: TOTAL_BUDGET_MS, perStepMs: STEP_TIMEOUT_MS });
   try {
@@ -188,6 +214,7 @@ async function runNotificationProcessingSteps(limit: number) {
       totalMs,
     };
   } finally {
-    inFlightStartedAt = null;
+    // Never throws: an unreleased lease simply runs out after OVERLAP_LOCK_MS.
+    await entry.release();
   }
 }
