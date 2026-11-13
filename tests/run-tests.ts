@@ -1324,6 +1324,7 @@ import { runEmailZebraSurvivesSanitizerTests } from "./email-zebra-survives-sani
 import { runEmailGreetingNamesTheAudienceTests } from "./email-greeting-names-the-audience.test.ts";
 import { runEmailFollowupsTests } from "./email-followups.test.ts";
 import { runReportItAccessTests } from "./report-it-access.test.ts";
+import { runPayrollDownloadLogTests } from "./payroll-download-log.test.ts";
 import { runSosInvoiceDateTests } from "./sos-invoice-date.test.ts";
 import { runSystemCleanupCenterTests } from "./system-cleanup-center.test.ts";
 import { runExcusesTests } from "./excuses.test.ts";
@@ -5848,6 +5849,10 @@ await runTest("email zebra striping survives the sanitizer", runEmailZebraSurviv
 await runTest("email greetings name the audience (never Dear Team)", runEmailGreetingNamesTheAudienceTests);
 await runTest("email followups", runEmailFollowupsTests);
 await runTest("report-it access", runReportItAccessTests);
+await runTest(
+  "every payroll sheet and bank file download writes one row on its run, a person is limited per hour, and the run lists them",
+  runPayrollDownloadLogTests,
+);
 await runTest("sos invoice date", runSosInvoiceDateTests);
 await runTest("system cleanup center", runSystemCleanupCenterTests);
 await runTest("excuses", runExcusesTests);

@@ -18,6 +18,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
 import { holdRun } from "./run-hold.ts";
 import {
   landQueuedPayrollResyncsForPeriod,
@@ -3233,6 +3234,7 @@ export async function buildRunSheet(
   variant: "part1" | "full",
 ): Promise<{ buffer: Buffer; fileName: string }> {
   assertAutomatedPayrollHrActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await requireRun(runId);
   const { rows } = await assembleForRun(run);
   const period: PayrollPeriod = { month: run.month, year: run.year };
@@ -3268,7 +3270,9 @@ export async function buildRunSheet(
           priorHeldBalances,
         });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, fileName: `Automated-Payroll-${label}-${variant}.xlsx` };
+  const fileName = `Automated-Payroll-${label}-${variant}.xlsx`;
+  await recordPayrollFileDownload(access, { runId: run.id, file: "run_sheet", scope: variant, fileName, rows: rows.length });
+  return { buffer, fileName };
 }
 
 /** Pre-populated per-step template (xlsx buffer). */
@@ -3377,6 +3381,7 @@ export async function buildFinanceSheet(
   scope: "part1" | "full",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage[]; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3409,7 +3414,9 @@ export async function buildFinanceSheet(
           buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part2" }),
         ];
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
+  const fileName = `Automated-Payroll-${label}-${scope}-finance.xlsx`;
+  await recordPayrollFileDownload(access, { runId: run.id, file: "finance_sheet", scope, fileName, rows: rows.length });
+  return { buffer, coverage, fileName };
 }
 
 /** Which finance scopes are available for a period (drives the finance dropdown). */
@@ -3458,6 +3465,7 @@ export async function buildFabSheet(
   valueDateIso?: string,
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3493,7 +3501,9 @@ export async function buildFabSheet(
     salaryColumnLabel: scope === "part2" ? "Expense" : "Salary",
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `FAB-Salary-Transfer-${label}-${scope}.xlsx`;
+  await recordPayrollFileDownload(access, { runId: run.id, file: "fab_bank_file", scope, fileName, rows: fabRows.length });
+  return { buffer, coverage, fileName };
 }
 
 /**
@@ -3509,6 +3519,7 @@ export async function buildCibSheet(
   scope: "part1" | "part2",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
+  await assertPayrollDownloadAllowed(access);
   const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
@@ -3532,5 +3543,7 @@ export async function buildCibSheet(
 
   const buffer = await buildCibSheetWorkbook({ rows: cibRows });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `CIB-Salary-Transfer-${label}-${scope}.xlsx`;
+  await recordPayrollFileDownload(access, { runId: run.id, file: "cib_bank_file", scope, fileName, rows: cibRows.length });
+  return { buffer, coverage, fileName };
 }
