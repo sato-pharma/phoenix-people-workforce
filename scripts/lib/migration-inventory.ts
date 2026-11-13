@@ -2386,6 +2386,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // real primary key; it creates no function, so there is no prosrc to digest. Read back on BOTH projects: 50 enabled
   // registry rows (7 before), the script reporting count 43 on each. Re-applying is a no-op.
   "20261113151741_recovery_protects_money_and_people_tables.sql",
+  // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
+  // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all
+  // convalidated, all ON UPDATE CASCADE ON DELETE RESTRICT (production then carried 109 keys to employees, 87
+  // before). Staging first refused it, as designed, on two 21 Sep test rows (`ZZZ-SMOKE` in
+  // deductions_publication_lines, staging only), which were deleted; production had none. Proven on staging:
+  // an update naming a missing employee is refused with 23503. Re-applying is a no-op (each key is skipped
+  // when present).
+  "20261113160008_money_leave_attendance_rows_name_a_real_employee.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
