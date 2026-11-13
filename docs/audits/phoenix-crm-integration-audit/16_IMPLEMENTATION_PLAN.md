@@ -80,7 +80,7 @@ Each finding was read against the live database and the code before anything was
 | ISS-055 | Already exists: the System Audit board groups application errors by cause on the existing table |
 | ISS-014 · INT-062 | No change. Every send step claims its row in one atomic statement, so two overlapping drains cannot send the same notice twice; a second lock would add a way to stall and nothing else. Naming one owner per route is a decision, so it moved to the owner's own list |
 
-### 4 — Recovery — IN PROGRESS (pull request 338)
+### 4 — Recovery — ON MAIN (pull request 338, commit `06166dbf5`, 13 Nov 2026 19:02 Cairo)
 
 | Finding | Change |
 |---|---|
@@ -104,12 +104,21 @@ What the rehearsals found, 13 Nov 2026:
 
 Still to do after the merge, each on the owner's word: start one run by hand, read the file on Drive, run the drill on that real file with the owner's key and write its time here, then raise the size floor (64 MB today) to half of that file.
 
-### 5 — The Integrations page — PLANNED
+### 5 — The Integrations page — IN PROGRESS
 
 | Finding | Change |
 |---|---|
 | ISS-039 · INT-063 | A registry of every integration and a Super Admin page showing configured or not, last success and last failure, never a secret value |
 | ISS-040 · ISS-042 | The transcription processor's data note and the messaging API version's review date recorded on that page |
+
+What was built, 13 Nov 2026:
+
+- **The registry**, `src/lib/integrations/registry.ts`: 39 outside services in eleven kinds, each with what it is used for, the names of the variables that hold its credential, and where Phoenix already records that it last worked or failed.
+- **The page**, `/admin/integrations`, on the Admin Tools hub under Platform Health, for the Super Admin alone. For each service: configured, partly set (with the missing names), not configured, switched on or off, kept outside the app, or no credential needed; then the last success and the last failure in Cairo time. It writes nothing and calls no outside service.
+- **Never a value, never an error's text.** It answers from variable names and shows times only. A source that cannot be read says "Unavailable"; an event Phoenix does not record says "Not recorded".
+- **ISS-042.** WhatsApp messages go through Meta's Graph API v23.0, written in seven files. Meta retires it on 8 October 2027 (Meta's versions table, read 13 Nov 2026); the review date on the page is 8 July 2027. A test fails when the seven files and the registry disagree, or when an eighth appears. The audit counted six files; the seventh is the embedded sign-up exchange route.
+- **ISS-040.** The voice transcription row says a clip can hold a person's name, that it goes to Groq in the United States, and what Groq's published terms say (nothing kept by default, up to 30 days of logs for a fault or abuse, no training). Whether Zero Data Retention is switched on for the company's account is **not verified**: it is the owner's click in Groq's console, under Data Controls.
+- **Corrected while building.** The three live sheets (direct orders, marketing requests, the CV lifecycle) do not use the master map's Google key: each has its own address and shared key, six variables in all. They are two rows on the page.
 
 ### 6 — Provider changes — PLANNED, each needs a choice first
 

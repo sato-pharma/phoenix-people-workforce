@@ -1445,6 +1445,50 @@ so they are not on the page — use `railway logs` for those, and Sentry's trace
 availability and latency. The job-heartbeat sweep writes a WARNING line, not an
 `app_error_events` row; a stranded job is read from `job_heartbeats`.
 
+## The Integrations page (`/admin/integrations`, Super Admin only)
+
+Added on 13 Nov 2026 by the integration audit (ISS-039, ISS-040, ISS-042, INT-063). Before it, the list of
+outside services lived in code, variable names and operations notes, and nobody could tell from the app which
+optional ones were switched on in production.
+
+**The registry** is `src/lib/integrations/registry.ts`: one entry per outside service, 39 on the day it was
+written, in eleven kinds (hosting and scheduling, database, email, messages, AI, maps, Google Workspace,
+hiring, devices and attendance, monitoring and backup, open data). An entry says what the service is used
+for, which variables hold its credential, and where Phoenix already records that it last worked or failed.
+A new outside service gets its entry in the pull request that adds it.
+
+**What the page shows for each one**
+
+| Column | Where it comes from |
+|---|---|
+| Configured | The variable NAMES alone. "Configured" when every name of one complete set is present, "Partly set" with the missing names listed, "Not configured", "Switched on" or "Switched off" for a kill switch, "Kept outside the app" for a credential held by GitHub or another Railway service, "No credential needed" for an open feed |
+| Last success, last failure | What Phoenix already records: the job heartbeat register for scheduled jobs, `notification_deliveries` for Telegram and push, `email_delivery_events` for the mail providers, `ats_whatsapp_outbound_messages` for WhatsApp, `ats_interview_bookings.zoom_status` for Zoom, and the AI failure rows in `app_error_events` |
+
+**What it never does**
+
+- It never shows a credential's value. `integrationConfiguration` asks one question of the environment, "is
+  this name set", and returns names and a state.
+- It never shows a stored error's text, only its time. A stored message can quote a request. The text is on
+  the System Audit board.
+- It writes nothing and calls no outside service. It is read on the server for each visit.
+- It never turns a failed read into an empty cell. A source that could not be read says "Unavailable" with the
+  reason; an event Phoenix does not record says "Not recorded" with the reason. A successful AI call, for
+  one, writes no record, so only AI failures have a time.
+
+**Two facts it carries beside their rows**
+
+- **The messaging API version (ISS-042).** WhatsApp messages go through Meta's Graph API at v23.0, written as
+  a default in seven files (listed in `WHATSAPP_GRAPH_API_VERSION_FILES`). Meta's own versions table, read on
+  13 Nov 2026, says v23.0 was released on 29 May 2025 and is retired on 8 October 2027; the review date is
+  8 July 2027. The test fails when the seven files and the registry disagree, and when an eighth file appears.
+- **The voice transcription data note (ISS-040).** A dictated clip may hold a doctor's or an employee's name
+  and is sent to Groq, in the United States. Groq's published terms, read the same day: nothing is kept from
+  a request by default, a request may be logged for up to 30 days to investigate a fault or abuse, and inputs
+  are not used for training. **Not verified:** whether Zero Data Retention is switched on for the company's
+  account. It is a setting in Groq's console, under Data Controls, and it is on the owner's list.
+
+Pinned by `tests/integrations-registry.test.ts`.
+
 ## The crash screenshot — what the employee saw
 
 Owner, 23 October 2026: *"the most important thing, I need a screenshot of the error appear to the
