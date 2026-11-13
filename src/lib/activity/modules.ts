@@ -302,6 +302,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/email-control-center", key: "email", label: "Email" },
   { prefix: "/email-notifications", key: "email", label: "Email" },
   { prefix: "/notification-recipients", key: "email", label: "Email" },
+  { prefix: "/notification-types", key: "email", label: "Email" },
   { prefix: "/sato-email", key: "sato_email", label: "Sato Email Composer" },
   { prefix: "/mailbox-monitor", key: "mailbox_monitor", label: "Mailbox Monitor" },
   { prefix: "/mailbox-offboarding", key: "mailbox_revocation", label: "Mailbox Revocation" },

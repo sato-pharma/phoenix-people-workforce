@@ -3164,6 +3164,13 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/notification-types",
+    icon: BellRing,
+    label: "Notification Types",
+    description: "Every notification the system sends, with its channels, recipients, priority and Telegram rule. Read-only.",
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/distribution-lists",
     icon: Users,
     label: "Distribution Lists",
@@ -5665,6 +5672,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/admin/email-control-center",
           "/admin/notification-recipients",
+          "/admin/notification-types",
           "/admin/distribution-lists",
           // Beside the lists it sends to, deliberately: it is the only surface under this heading
           // that puts mail in somebody's inbox, and it reads the list directly above it.
