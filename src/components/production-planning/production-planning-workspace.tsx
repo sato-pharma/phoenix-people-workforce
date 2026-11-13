@@ -533,7 +533,66 @@ function excludedNote(row: WirePlanRow, t: Record<ProductionPlanningStringKey, s
   return null;
 }
 
+/**
+ * The Needed figure as three lines — net, the loss as its own quantity, and the total — so the loss
+ * is read rather than worked out (Royafloxacin review, 2026-11-13: "calculate the loss percentage
+ * separately for better clarity"). The three figures come from the server, which takes the loss as
+ * `needed − rawNeeded` in BigInt, so they add up to the digit; the screen never subtracts.
+ *
+ * A Sato material with no formula line whose amount is read from recorded runs says so in place of
+ * a basis, and carries no loss of its own: what the factory really consumed already includes it.
+ * A material with no amount at all shows a dash — its note in the Action column says why.
+ */
+function NeedBreakdown({
+  row,
+  t,
+  basisLabels,
+}: {
+  row: WirePlanRow;
+  t: Record<ProductionPlanningStringKey, string>;
+  basisLabels: Record<WireBasis, string>;
+}) {
+  const measured = row.amountSource === "measured";
+  if (row.basis === null && !measured) {
+    return <p className="font-bold text-slate-500">—</p>;
+  }
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-600">
+        {t.netNeed} <Qty unit={row.displayUnit} value={row.rawNeeded} />
+      </p>
+      <p className="mt-0.5 text-[11px] text-slate-600">
+        {t.lossLabel} (<Num>{formatNumberLatin(row.overagePct)}%</Num>)
+        {row.loss !== undefined ? (
+          <>
+            {" "}
+            <Qty unit={row.displayUnit} value={row.loss} />
+          </>
+        ) : null}
+      </p>
+      <p className="mt-0.5 font-bold text-slate-900">
+        {t.totalNeeded} <Qty unit={row.displayUnit} value={row.needed} />
+      </p>
+      <p className="mt-0.5 break-words text-[11px] text-slate-500">{overageHint(row, t)}</p>
+      {measured ? (
+        <p className="mt-0.5 break-words text-[11px] text-slate-500">
+          {t.amountMeasuredRuns}
+          {row.measuredRuns ? (
+            <>
+              {" "}
+              (<Num>{formatNumberLatin(row.measuredRuns)}</Num>)
+            </>
+          ) : null}
+        </p>
+      ) : row.basis ? (
+        <p className="mt-0.5 break-words text-[11px] text-slate-500">{basisLabels[row.basis]}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function overageHint(row: WirePlanRow, t: Record<ProductionPlanningStringKey, string>): string {
+  if (row.overageSource === "actual") return t.overageHintActual;
   if (row.overageSource === "measured") return t.overageHintMeasured;
   if (row.overageSource === "material") return t.overageHintMaterial;
   return t.overageHintDefault;
@@ -1189,19 +1248,7 @@ function PlannerResult({
                   </div>
                 </td>
                 <td className={TD}>
-                  <p className="font-bold text-slate-900">
-                    <Qty unit={row.displayUnit} value={row.needed} />
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {t.beforeOverage} <Qty unit={row.displayUnit} value={row.rawNeeded} /> +{" "}
-                    <Num>{formatNumberLatin(row.overagePct)}%</Num>
-                  </p>
-                  <p className="mt-0.5 break-words text-[11px] text-slate-500">{overageHint(row, t)}</p>
-                  {row.basis ? (
-                    <p className="mt-0.5 break-words text-[11px] text-slate-500">
-                      {basisLabels[row.basis]}
-                    </p>
-                  ) : null}
+                  <NeedBreakdown basisLabels={basisLabels} row={row} t={t} />
                 </td>
                 <td className={TD}>
                   {row.supplier === "factory" ? (
@@ -1251,8 +1298,8 @@ function PlannerResult({
               <dl className="mt-2 space-y-1 text-[12px] text-slate-700">
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="font-bold">{t.colNeeded}</dt>
-                  <dd>
-                    <Qty unit={row.displayUnit} value={row.needed} />
+                  <dd className="min-w-0">
+                    <NeedBreakdown basisLabels={basisLabels} row={row} t={t} />
                   </dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
@@ -2951,6 +2998,12 @@ export function SettingsTab({
                 <td className={TD}>
                   {material.composition ? (
                     <Qty unit={material.baseUnit} value={material.composition.qtyPerBasis} />
+                  ) : material.measured ? (
+                    // No line in force: the amount is what one batch really consumed, from the runs.
+                    <span className="break-words text-[11px] text-slate-700">
+                      <Qty unit={material.displayUnit} value={material.measured.perRun} /> {t.amountMeasuredRuns} (
+                      <Num>{formatNumberLatin(material.measured.runsCounted)}</Num>)
+                    </span>
                   ) : (
                     <span className="text-[11px] text-slate-500">{t.excludedNoComposition}</span>
                   )}
@@ -3009,6 +3062,11 @@ export function SettingsTab({
                     {basisLabels[material.composition.basis]} —{" "}
                     {S.supplierLabels[material.composition.supplier]}
                   </>
+                ) : material.measured ? (
+                  <span className="break-words">
+                    <Qty unit={material.displayUnit} value={material.measured.perRun} /> {t.amountMeasuredRuns} (
+                    <Num>{formatNumberLatin(material.measured.runsCounted)}</Num>)
+                  </span>
                 ) : (
                   <span className="text-slate-500">{t.excludedNoComposition}</span>
                 )}

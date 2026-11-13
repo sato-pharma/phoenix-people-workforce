@@ -526,9 +526,13 @@ export async function buildProductionPlanningWorkbook(
     const material = materialById.get(planRow.materialId);
     const excelRow = materialsFirstRow + index;
     const basePerDisplay = Math.max(1, num(material?.basePerDisplay, 1));
-    const countRef = basisCountRef(planRow, refs);
+    // A Sato material with no formula line whose amount is MEASURED from recorded runs is a per-batch
+    // figure: its quantity is what one batch really consumed, counted against the runs cell, with
+    // no overage on top (the engine's own rule — the actual already holds the loss).
+    const measuredRow = planRow.basis === null && planRow.amountSource === "measured";
+    const countRef = measuredRow ? `$B$${runsRow}` : basisCountRef(planRow, refs);
     const basisCount = num(planRow.basisCount);
-    const qtyPerBasis = num(material?.composition?.qtyPerBasis);
+    const qtyPerBasis = measuredRow ? num(planRow.measuredPerRun) : num(material?.composition?.qtyPerBasis);
     const rawNeeded = num(planRow.rawNeeded);
     const needed = num(planRow.needed);
     const heldFactory = num(planRow.heldAtFactory);
@@ -537,7 +541,9 @@ export async function buildProductionPlanningWorkbook(
 
     const basisText = planRow.basis
       ? `${basisLabels[planRow.basis]} (${S.unitLabel(material?.baseUnit)})`.trim()
-      : PPL.chipNoComposition;
+      : measuredRow
+        ? `${PPL.amountMeasuredRuns} (${S.unitLabel(material?.baseUnit)})`.trim()
+        : PPL.chipNoComposition;
 
     return [
       `${sheetMaterialName(S, planRow)} (${S.unitLabel(planRow.displayUnit)})`,
