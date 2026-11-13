@@ -21,9 +21,10 @@
  * reason*. So the amount and the day count are read back off the stored ROW here and handed to the
  * notifier — the mail must state the figure the line actually froze, not the one a screen showed.
  *
- * Idempotency rides on the LINE ID, which `phx_release_daily_deduction_lines` keeps stable per
- * (publication, employee, category) through its `on conflict … do update`. So re-releasing a line
- * that is already in the snapshot re-sends nothing.
+ * Idempotency rides on the LINE ID PLUS ITS DAYS (`releasedLineNoticeKey`). The id is stable per
+ * (publication, employee, category) through the RPC's `on conflict … do update`, so re-releasing the
+ * same days re-sends nothing — but a line released day by day (owner, 2026-11-13) grows its days, and
+ * each new day released is a new charge the employee is told about.
  *
  * BEST-EFFORT BY CONTRACT, like the monthly path: the money is already committed when this runs, so
  * nothing here may throw back into the release.
@@ -62,6 +63,16 @@ export type ReleaseNoticeOutcome = {
  * The month a released line belongs to — taken from the EARLIEST day it charges, never from the
  * clock. A release run after midnight on the 1st must still say the month the day fell in.
  */
+/**
+ * The line id plus the days it now charges. A line released day by day (owner, 2026-11-13) is ONE
+ * row whose days grow — 9 November, then 9 and 11 — so the id alone would tell the employee about
+ * the 9th and never the 11th. The same days re-sent still say nothing twice.
+ */
+export function releasedLineNoticeKey(line: Pick<ReleasedLineForNotice, "dates" | "id">): string {
+  const days = [...new Set(line.dates)].filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day))).sort();
+  return days.length > 0 ? `${line.id}:${days.join(",")}` : line.id;
+}
+
 export function releasedLineMonthKey(line: Pick<ReleasedLineForNotice, "dates" | "rangeEnd">): string {
   const days = [...line.dates].filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day))).sort();
   const day = days[0] ?? (/^\d{4}-\d{2}-\d{2}$/.test(String(line.rangeEnd ?? "")) ? String(line.rangeEnd) : null);
@@ -174,6 +185,7 @@ export async function notifyDailyDeductionsReleased(input: {
           employeeName: line.employeeName,
           id: line.id,
           monthKey: releasedLineMonthKey(line),
+          noticeKey: releasedLineNoticeKey(line),
         },
       });
       outcomes.push({

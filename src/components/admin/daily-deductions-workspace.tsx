@@ -4,7 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, PlayCircle, RotateCcw, Search, XCircle } from "lucide-react";
 
 import { dailyDeductionConnectorLabels, dailyDeductionConnectors, type DailyDeductionConnector } from "@/lib/daily-deductions/types.ts";
-import { indexReleasedLines, linesToRelease, releaseLineKey, releaseStateOf, type ReleaseState } from "@/lib/daily-deductions/release-state.ts";
+import {
+  indexReleasedLines,
+  linesToRelease,
+  planDayRelease,
+  releasedDaysOf,
+  releaseLineKey,
+  releaseStateOf,
+  summarizeDays,
+  type DaySummary,
+  type ReleaseState,
+} from "@/lib/daily-deductions/release-state.ts";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import {
   adminChipDepthClassName,
@@ -28,6 +38,8 @@ type TallyLine = {
   daysCount: number;
   amount: number;
   dates: string[];
+  /** Each day priced on its own by the server — what lets a single day be released. */
+  days?: Array<{ date: string; daysCount: number; amount: number }>;
   sourceSystem: string;
   reason: string | null;
   /** No computable amount (no base salary on file) — shown as such and never released. */
@@ -103,7 +115,14 @@ type StateFilter = "all" | ReleaseState;
 
 /** A release or withdraw waiting for its confirmation. Nothing is sent while this is set. */
 type PendingAction =
-  | { kind: "release"; lines: TallyLine[]; label: string }
+  | {
+      kind: "release";
+      lines: TallyLine[];
+      label: string;
+      /** A release by DAY: the days ticked, and what they add (the lines carry running totals). */
+      days?: string[];
+      addedAmount?: number;
+    }
   | { kind: "withdraw_line"; line: ReleasedLine }
   | { kind: "withdraw_all" };
 
@@ -236,6 +255,8 @@ export function DailyDeductionsWorkspace({
   const [activeError, setActiveError] = useState<string | null>(null);
   // Which tally lines are ticked. Every line starts UNTICKED, like the weekly attendance review.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Which DAYS are ticked in "Release by day" (owner, 2026-11-13). Every day starts unticked too.
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<PendingAction | null>(null);
   // Tally filters. They narrow what is SHOWN; "Release all" still means every line in the tally.
   const [search, setSearch] = useState("");
@@ -343,6 +364,49 @@ export function DailyDeductionsWorkspace({
   const releasableAll = useMemo(() => linesToRelease(allLines, releasedIndex), [allLines, releasedIndex]);
   const releaseBlocked = publishing || rangeIsStale || !computedRange;
 
+  // One row per day of the tally, and what a "release these days" click would send.
+  const daySummaries = useMemo(() => summarizeDays(allLines, releasedIndex), [allLines, releasedIndex]);
+  const dayWindow = useMemo(
+    () => (computedRange ? { from: computedRange.from, to: computedRange.effectiveTo } : null),
+    [computedRange],
+  );
+  const dayPlan = useMemo(
+    () => (dayWindow ? planDayRelease(allLines, selectedDays, releasedIndex, dayWindow) : null),
+    [allLines, selectedDays, releasedIndex, dayWindow],
+  );
+
+  function toggleDay(date: string) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
+
+  function askReleaseDays(days: ReadonlySet<string>) {
+    if (!dayWindow || days.size === 0) return;
+    const plan = planDayRelease(allLines, days, releasedIndex, dayWindow);
+    const sorted = [...days].sort();
+    if (plan.lines.length === 0) {
+      setMessage({
+        tone: "error",
+        text:
+          plan.skipped.length > 0
+            ? `Nothing on ${sorted.map(dateChip).join(", ")} can be released: ${skipSentence(plan.skipped)}`
+            : `Nothing to release — every deduction on ${sorted.map(dateChip).join(", ")} is already released.`,
+      });
+      return;
+    }
+    setPending({
+      addedAmount: plan.addedAmount,
+      days: sorted,
+      kind: "release",
+      label: sorted.map(dateChip).join(", "),
+      lines: plan.lines,
+    });
+  }
+
   function toggleLine(line: TallyLine) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -386,6 +450,7 @@ export function DailyDeductionsWorkspace({
     setMessage(null);
     setComputedRange(null);
     setSelected(new Set());
+    setSelectedDays(new Set());
     // Reset every connector to pending before the sweep.
     setRuns((prev) => prev.map((run) => ({ ...run, state: "pending", tally: undefined, error: undefined })));
 
@@ -427,12 +492,17 @@ export function DailyDeductionsWorkspace({
   // Release some of the tally's lines (one, an employee's, the ticked ones, or all). The server MERGES
   // them into the active snapshot; everything already released stays exactly as it was. The window
   // sent is the one the tally was COMPUTED over — the inputs may have moved since.
-  async function release(lines: TallyLine[], label: string) {
+  async function release(lines: TallyLine[], label: string, days?: string[]) {
     if (!canPublish || publishing || !computedRange || rangeIsStale) return;
     if (lines.length === 0) {
       setMessage({ tone: "error", text: "Nothing to release — those deductions are already released as shown." });
       return;
     }
+    // A release by day files its lines under the days they actually carry, not the whole window
+    // counted — releasing 9 and 11 November must not read as "1 — 12 November released".
+    const sentDates = days ? lines.flatMap((line) => line.dates).sort() : [];
+    const rangeStart = sentDates[0] ?? computedRange.from;
+    const rangeEnd = sentDates[sentDates.length - 1] ?? computedRange.effectiveTo;
     setPublishing(true);
     setMessage(null);
     try {
@@ -443,7 +513,7 @@ export function DailyDeductionsWorkspace({
       }>("/api/admin/daily-deductions/release", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rangeStart: computedRange.from, rangeEnd: computedRange.effectiveTo, lines }),
+        body: JSON.stringify({ rangeStart, rangeEnd, lines }),
       });
       const notices = payload.notifications ?? [];
       const told = notices.filter((notice) => notice.status === "sent").length;
@@ -463,6 +533,13 @@ export function DailyDeductionsWorkspace({
         for (const line of lines) next.delete(lineKey(line));
         return next;
       });
+      if (days) {
+        setSelectedDays((prev) => {
+          const next = new Set(prev);
+          for (const day of days) next.delete(day);
+          return next;
+        });
+      }
       loadActive();
     } catch (error) {
       setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) });
@@ -518,7 +595,7 @@ export function DailyDeductionsWorkspace({
 
   function confirmPending() {
     if (!pending) return;
-    if (pending.kind === "release") void release(pending.lines, pending.label);
+    if (pending.kind === "release") void release(pending.lines, pending.label, pending.days);
     else if (pending.kind === "withdraw_line") void withdrawLine(pending.line);
     else void withdraw();
   }
@@ -864,6 +941,20 @@ export function DailyDeductionsWorkspace({
             </div>
           ) : null}
 
+          {daySummaries.length > 0 ? (
+            <DayPanel
+              canPublish={canPublish}
+              days={daySummaries}
+              onClear={() => setSelectedDays(new Set())}
+              onRelease={askReleaseDays}
+              onSelectAll={() => setSelectedDays(new Set(daySummaries.map((day) => day.date)))}
+              onToggle={toggleDay}
+              plan={dayPlan}
+              publishing={releaseBlocked}
+              selectedDays={selectedDays}
+            />
+          ) : null}
+
           {allLines.length > 0 ? (
             <div className="space-y-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -876,6 +967,7 @@ export function DailyDeductionsWorkspace({
                 >
                   <option value="all">Every state</option>
                   <option value="not_released">Not released</option>
+                  <option value="partly_released">Some days released</option>
                   <option value="changed">Changed since release</option>
                   <option value="released">Released</option>
                 </select>
@@ -1044,11 +1136,11 @@ export function DailyDeductionsWorkspace({
                                   <StateBadge state={state} />
                                 </div>
                                 {line.reason ? <p className="break-words text-xs text-slate-600">{line.reason}</p> : null}
-                                <DateChips dates={line.dates} />
+                                <DateChips dates={line.dates} released={releasedDaysOf(line, releasedIndex)} />
                                 {canPublish ? (
                                   <ReleaseButton
                                     disabled={releaseBlocked || state === "released" || line.amountUnknown === true}
-                                    label={line.amountUnknown ? "Held: no salary" : state === "changed" ? "Update release" : "Release"}
+                                    label={releaseLabel(line, state)}
                                     onClick={() => askRelease([line], `${group.name} · ${dailyDeductionConnectorLabels[line.category]}`)}
                                   />
                                 ) : null}
@@ -1093,7 +1185,12 @@ export function DailyDeductionsWorkspace({
         }
         tone={pending?.kind === "release" ? "commit" : "danger"}
       >
-        {pending?.kind === "release" ? (
+        {pending?.kind === "release" && pending.days ? (
+          <p>
+            Only the deductions on these days are released. Each employee is emailed the amount, the reason and the
+            days now charged, and their manager is told in the app. Every other day stays exactly as it is.
+          </p>
+        ) : pending?.kind === "release" ? (
           <p>
             Each employee is emailed the amount, the reason and the days, and their manager is told in the app. Every
             deduction already released stays exactly as it is.
@@ -1114,6 +1211,17 @@ function pendingFacts(
   computedRange: ComputedRange | null,
 ): Array<{ label: string; value: string }> {
   if (!pending) return [];
+  if (pending.kind === "release" && pending.days) {
+    // A release by day: the lines carry their running totals (days already out plus the ticked ones),
+    // so the figure that matters is what the ticked days ADD.
+    const employees = new Set(pending.lines.map((line) => line.employeeHrIdCompact));
+    return [
+      { label: "Days", value: pending.days.map(weekdayDate).join(", ") },
+      { label: "Adds", value: `${money(pending.addedAmount ?? 0)} EGP` },
+      { label: "People", value: plural(employees.size, "employee") },
+      { label: "Deductions", value: plural(pending.lines.length, "line") },
+    ];
+  }
   if (pending.kind === "release") {
     const employees = new Set(pending.lines.map((line) => line.employeeHrIdCompact));
     return [
@@ -1228,20 +1336,244 @@ function FilterChip({ active, count, label, onClick }: { active: boolean; count:
   );
 }
 
-function DateChips({ dates }: { dates: string[] }) {
+// A day already out in the snapshot is drawn in the released colour with a tick, so a line released
+// day by day shows at a glance which of its days went and which did not.
+function DateChips({ dates, released }: { dates: string[]; released?: ReadonlySet<string> }) {
   if (dates.length === 0) return <span className="text-xs text-slate-400">—</span>;
   return (
     <div className="flex flex-wrap gap-1">
-      {[...dates].sort().map((date) => (
-        <span key={date} className="whitespace-nowrap border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-sm tabular-nums text-slate-600">
-          {dateChip(date)}
-        </span>
-      ))}
+      {[...dates].sort().map((date) => {
+        const out = released?.has(date) === true;
+        return (
+          <span
+            key={date}
+            className={cn(
+              "inline-flex items-center gap-0.5 whitespace-nowrap border px-1.5 py-0.5 text-phx-sm tabular-nums",
+              out ? "border-emerald-300 bg-emerald-50 font-semibold text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600",
+            )}
+            title={out ? "Released" : undefined}
+          >
+            {out ? <CheckCircle2 aria-label="released" className="h-3 w-3" /> : null}
+            {dateChip(date)}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
+function releaseLabel(line: TallyLine, state: ReleaseState): string {
+  if (line.amountUnknown) return "Held: no salary";
+  if (state === "changed") return "Update release";
+  if (state === "partly_released") return "Release the other days";
+  return "Release";
+}
+
+function skipSentence(skipped: ReadonlyArray<{ line: { employeeName?: string | null }; reason: string }>): string {
+  const names = (reason: string) =>
+    skipped.filter((skip) => skip.reason === reason).map((skip) => skip.line.employeeName ?? "Name unavailable");
+  const parts: string[] = [];
+  const noSalary = names("no_salary");
+  const outside = names("released_outside_range");
+  const noPrice = names("no_day_price");
+  if (noSalary.length > 0) parts.push(`no salary on file for ${noSalary.join(", ")}`);
+  if (outside.length > 0) parts.push(`${outside.join(", ")} already has days released outside this range — count a range that covers them`);
+  if (noPrice.length > 0) parts.push(`${noPrice.join(", ")} cannot be split by day — release the whole line`);
+  return `${parts.join("; ")}.`;
+}
+
+// Release by day (owner, 2026-11-13: "select day 9 and day 11 in November and release only their
+// deductions"). One row per day of the tally with its own tick, total and state; the ticked days are
+// released together, every other day stays exactly as it is.
+function DayPanel({
+  canPublish,
+  days,
+  onClear,
+  onRelease,
+  onSelectAll,
+  onToggle,
+  plan,
+  publishing,
+  selectedDays,
+}: {
+  canPublish: boolean;
+  days: DaySummary[];
+  onClear: () => void;
+  onRelease: (days: ReadonlySet<string>) => void;
+  onSelectAll: () => void;
+  onToggle: (date: string) => void;
+  plan: { lines: unknown[]; addedAmount: number; skipped: Array<{ line: { employeeName?: string | null }; reason: string }> } | null;
+  publishing: boolean;
+  selectedDays: ReadonlySet<string>;
+}) {
+  const ticked = days.filter((day) => selectedDays.has(day.date));
+  const releasable = plan?.lines.length ?? 0;
+  return (
+    <div className="border-b border-slate-200">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5">
+        <h3 className="text-phx-sm font-black uppercase tracking-[0.1em] text-slate-700">Release by day</h3>
+        <span className="text-xs text-slate-500">Tick the days to release; every other day stays as it is.</span>
+        {canPublish ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button className={SMALL_BUTTON_GHOST} disabled={publishing} onClick={onSelectAll} type="button">
+              Select all days
+            </button>
+            <button className={SMALL_BUTTON_GHOST} disabled={publishing || selectedDays.size === 0} onClick={onClear} type="button">
+              Clear
+            </button>
+            <button
+              className={SMALL_BUTTON_DARK}
+              disabled={publishing || releasable === 0}
+              onClick={() => onRelease(selectedDays)}
+              type="button"
+            >
+              {`Release ${plural(ticked.length, "day")} (${money(plan?.addedAmount ?? 0)} EGP)`}
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {canPublish && ticked.length > 0 && plan && plan.skipped.length > 0 ? (
+        <p className="flex items-start gap-1.5 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">Held back from this release: {skipSentence(plan.skipped)}</span>
+        </p>
+      ) : null}
+
+      {/* Desktop: fixed layout, fits without a horizontal scroll. */}
+      <div className="hidden px-4 py-3 md:block">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[5%]" />
+            <col className="w-[22%]" />
+            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[15%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+              <th className="px-3 py-2">&nbsp;</th>
+              <th className="px-3 py-2">Day</th>
+              <th className="px-3 py-2">Deductions · people</th>
+              <th className="px-3 py-2 text-right">EGP</th>
+              <th className="px-3 py-2">State</th>
+              <th className="px-3 py-2">&nbsp;</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((day) => (
+              <tr key={day.date} className={cn("border-b border-slate-100 align-top", selectedDays.has(day.date) ? "bg-orange-50/60" : "odd:bg-slate-50/60")}>
+                <td className="px-3 py-2">
+                  {canPublish ? (
+                    <input
+                      aria-label={`Select ${weekdayDate(day.date)}`}
+                      checked={selectedDays.has(day.date)}
+                      className="h-4 w-4 accent-slate-900"
+                      disabled={publishing}
+                      onChange={() => onToggle(day.date)}
+                      type="checkbox"
+                    />
+                  ) : null}
+                </td>
+                <td className="px-3 py-2 font-semibold text-slate-900">{weekdayDate(day.date)}</td>
+                <td className="px-3 py-2 text-slate-700">
+                  {plural(day.lineCount, "deduction")} · {plural(day.employeeCount, "employee")}
+                  {day.heldLineCount > 0 ? <p className="text-xs font-bold text-amber-700">{day.heldLineCount} held: no salary</p> : null}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <p className="font-bold text-slate-900">{money(day.amount)}</p>
+                  {day.state === "partly_released" ? <p className="text-xs text-emerald-700">{money(day.releasedAmount)} released</p> : null}
+                </td>
+                <td className="px-3 py-2">
+                  <DayStateBadge day={day} />
+                </td>
+                <td className="px-3 py-2">
+                  {canPublish ? (
+                    <ReleaseButton
+                      disabled={publishing || day.state === "released"}
+                      label={day.state === "partly_released" ? "Release the rest" : "Release day"}
+                      onClick={() => onRelease(new Set([day.date]))}
+                    />
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile: one card per day. */}
+      <div className="space-y-2 px-3 py-3 md:hidden">
+        {days.map((day) => (
+          <div key={day.date} className={cn("space-y-1.5 border border-slate-200 p-3", selectedDays.has(day.date) ? "bg-orange-50/60" : "bg-white")}>
+            <div className="flex items-start gap-2">
+              {canPublish ? (
+                <input
+                  aria-label={`Select ${weekdayDate(day.date)}`}
+                  checked={selectedDays.has(day.date)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-slate-900"
+                  disabled={publishing}
+                  onChange={() => onToggle(day.date)}
+                  type="checkbox"
+                />
+              ) : null}
+              <span className="min-w-0 flex-1 break-words font-semibold text-slate-900">{weekdayDate(day.date)}</span>
+              <span className="shrink-0 tabular-nums text-sm font-black text-slate-900">{money(day.amount)} EGP</span>
+            </div>
+            <p className="text-xs font-medium text-slate-500">
+              {plural(day.lineCount, "deduction")} · {plural(day.employeeCount, "employee")}
+              {day.heldLineCount > 0 ? ` · ${day.heldLineCount} held: no salary` : ""}
+            </p>
+            <DayStateBadge day={day} />
+            {canPublish ? (
+              <ReleaseButton
+                disabled={publishing || day.state === "released"}
+                label={day.state === "partly_released" ? "Release the rest" : "Release day"}
+                onClick={() => onRelease(new Set([day.date]))}
+              />
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DayStateBadge({ day }: { day: DaySummary }) {
+  if (day.state === "released") {
+    return (
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-emerald-700">
+        <CheckCircle2 className="h-3.5 w-3.5" />Released
+      </span>
+    );
+  }
+  if (day.state === "partly_released") {
+    return (
+      <span className="text-xs font-semibold text-amber-700">
+        {day.releasedLineCount} of {day.lineCount - day.heldLineCount} released
+      </span>
+    );
+  }
+  return <span className="whitespace-nowrap text-xs font-medium text-slate-400">Not released</span>;
+}
+
+// "Sun 9 Nov" — the weekday matters when the owner picks days (a Thursday weighs half for CRM).
+function weekdayDate(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getUTCDay()];
+  return `${weekday} ${dateChip(iso)}`;
+}
+
 function StateBadge({ state }: { state: ReleaseState }) {
+  if (state === "partly_released") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />Some days released
+      </span>
+    );
+  }
   if (state === "released") {
     return (
       <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-emerald-700">
@@ -1347,7 +1679,7 @@ function GroupRows({
               <p className="text-xs text-slate-500">{plural(line.daysCount, "day")}</p>
             </td>
             <td className="px-3 py-2">
-              <DateChips dates={line.dates} />
+              <DateChips dates={line.dates} released={releasedDaysOf(line, releasedIndex)} />
             </td>
             <td className="px-3 py-2">
               <div className="space-y-1">
@@ -1355,7 +1687,7 @@ function GroupRows({
                 {canPublish ? (
                   <ReleaseButton
                     disabled={publishing || state === "released" || line.amountUnknown === true}
-                    label={line.amountUnknown ? "Held: no salary" : state === "changed" ? "Update release" : "Release"}
+                    label={releaseLabel(line, state)}
                     onClick={() => onRelease([line], `${group.name} · ${dailyDeductionConnectorLabels[line.category]}`)}
                   />
                 ) : null}

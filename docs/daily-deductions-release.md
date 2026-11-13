@@ -97,6 +97,45 @@ Idempotency rides on the line id, which `phx_release_daily_deduction_lines` keep
 already in the snapshot re-sends nothing, and an **Update release** after the tally changes does not
 re-notify.
 
+## Release by day — added 2026-11-13
+
+Owner, 2026-11-13: *"I want you to separate each separate deduction day alone ... if you have 9 and 10
+and 11 days, November ... I want to select day 9 and day 11 in November and release only their
+deductions."* Until then the smallest thing he could release was one employee × one type, which carried
+EVERY day of the range at once.
+
+The running tally now opens with a **Release by day** panel: one row per day in the tally, with its own
+tick, its deductions and people, its total, its state (**Not released**, **N of M released**,
+**Released**) and its own **Release day** button. **Select all days**, **Clear** and **Release N days
+(X EGP)** release the ticked days together; every other day stays exactly as it is. On every tally line a
+day already out is drawn green with a tick, and a line holding some of its days reads **Some days
+released** with **Release the other days**.
+
+How the money is right:
+
+- **Every day is priced by the server, by the connector's own rule.** `clipDraftToRange` prices each kept
+  day alone with the same `scaleDeductionAmountToKeptDates` the line uses, so a CRM Thursday is half a
+  day here too, and `aggregateClippedLines` sums the days across findings into `line.days`. A line with
+  any unpriceable day carries no `days` and can only be released whole — never split on a guess.
+- **All of a line's days = the line's own figure to the piaster** (`figuresForDates`), so releasing a
+  line day by day ends exactly where the whole-line release would.
+- **The snapshot still keeps ONE row per employee × type** — no migration. Releasing the 11th after the
+  9th sends that row with BOTH days and their summed price; the RPC replaces the row. The confirmation
+  shows what the ticked days **add**, not the row's running total.
+- **A row with days already out beyond the counted window is held back and named**
+  (`released_outside_range`): the tally cannot price those days, and re-sending only the in-range ones
+  would silently take them back out of the employee's deductions. Count a range that covers them.
+- **The release is filed under the days it carries** (the hull of the sent days), not the whole window
+  counted — releasing 9 and 11 November never reads as "1 — 12 November released".
+- **A later day tells the employee again.** The notice key is now the line id PLUS its days
+  (`releasedLineNoticeKey`, passed as `noticeKey` to `notifyDeductionPushed`), so the 11th released after
+  the 9th is a new email naming the row's amount and days now charged; the same days never twice. The
+  monthly Deductions module still keys on the line id alone.
+
+Pinned by `tests/daily-deductions-release-by-day.test.ts`. Break check: send the whole line instead of
+the ticked days and "only the ticked days are sent" fires; key the notice on the id alone and "releasing
+the 11th after the 9th is a new notice" fires.
+
 ## What was kept
 
 The replace-everything `POST /api/admin/daily-deductions/publish` route and
