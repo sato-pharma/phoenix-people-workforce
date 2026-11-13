@@ -276,6 +276,52 @@ export async function claimRunTransition(
   return typeof data === "string" && data.length > 0 ? data : null;
 }
 
+/**
+ * PUBLISH'S PHASE WRITE AND ITS HELD-SALARY RECORD ARE ONE DATABASE CALL (enterprise audit 2026-11-13,
+ * F-PAY-002). Who is still owed held salary is rebuilt from the `published` audit row; it used to be
+ * written best-effort after the run was already marked, so one failed insert left a published month
+ * whose held people vanished from every later release. phx_mark_automated_payroll_run_published marks
+ * the run and inserts the row in one transaction, conditioned on this publish's claim, and refuses a
+ * detail with no `held` list — so a run is never published without the record, and a failure leaves
+ * the run in `ready` for the publish to be retried.
+ */
+export async function markRunPublished(
+  id: string,
+  input: {
+    batchId: string;
+    publishedBy: string;
+    action: "published";
+    detail: Record<string, unknown>;
+  },
+  options: { transitionToken: string },
+): Promise<MonthlySalaryRun> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_mark_automated_payroll_run_published", {
+    p_run_id: id,
+    p_transition_token: options.transitionToken,
+    p_batch_id: input.batchId,
+    p_published_by: input.publishedBy,
+    p_actor_hr_id: input.publishedBy,
+    p_detail: input.detail,
+  });
+  if (error) {
+    const message = String(error.message ?? "");
+    if (message.includes("automated_payroll_transition_claim_lost")) {
+      throw new Error(
+        `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before the run could be ` +
+          "marked, and another action has taken the run. Work this action had already saved may still " +
+          "stand — refresh the page and read where the run is before repeating it.",
+      );
+    }
+    throw new Error(
+      "Could not record who was held this month, so the run was NOT marked published. The payslips already " +
+        `written stay as they are; publish again to finish. (${message})`,
+    );
+  }
+  const row = ((Array.isArray(data) ? data : data ? [data] : []) as RunRow[])[0];
+  if (!row) throw new Error("Not found: payroll run does not exist.");
+  return mapRun(row);
+}
+
 /** Let go of a claim a transition could not finish. Matches nothing when the phase write already cleared it. */
 export async function releaseRunTransition(runId: string, token: string): Promise<void> {
   const { error } = await getSupabaseAdmin()
