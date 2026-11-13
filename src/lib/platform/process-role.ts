@@ -12,9 +12,12 @@
 // Import-free on purpose: instrumentation.ts and the scheduler guards read it, and instrumentation is
 // bundled for the edge runtime too.
 
-export type ProcessRole = "all" | "web" | "worker";
+// `robot` (13 Nov 2026, audit REC-075): the Turbify mailbox robots' own service, `phoenix-workforce-robot`.
+// It runs the robot cron and the four robot routes the website forwards to, and NOTHING ELSE: no
+// scheduler, no poller, no worker job (src/lib/platform/robot-service.ts).
+export type ProcessRole = "all" | "web" | "worker" | "robot";
 
-const ROLES: readonly ProcessRole[] = ["all", "web", "worker"];
+const ROLES: readonly ProcessRole[] = ["all", "web", "worker", "robot"];
 
 /**
  * The role named by PHOENIX_PROCESS_ROLE. Unset means "all" — exactly the behaviour before the split, so a
@@ -33,16 +36,21 @@ export function isUnrecognisedProcessRole(value: string | undefined): boolean {
   return role !== "" && !(ROLES as readonly string[]).includes(role);
 }
 
-/** Does a process of this role run the in-process background schedulers? */
+/**
+ * Does a process of this role run the in-process background schedulers? Only the worker, and the single
+ * "all" process before the split. The robot service runs the mailbox robots and nothing else: a scheduler
+ * there would double every job the worker already runs.
+ */
 export function runsBackgroundJobs(role: ProcessRole): boolean {
-  return role !== "web";
+  return role === "all" || role === "worker";
 }
 
 /** Why this process must not start a background scheduler, or null when it may. */
 export function processRoleRefusal(value: string | undefined = process.env.PHOENIX_PROCESS_ROLE): string | null {
-  return runsBackgroundJobs(resolveProcessRole(value))
+  const role = resolveProcessRole(value);
+  return runsBackgroundJobs(role)
     ? null
-    : "PHOENIX_PROCESS_ROLE is 'web' — the worker service runs the background jobs";
+    : `PHOENIX_PROCESS_ROLE is '${role}' — the worker service runs the background jobs`;
 }
 
 /**
@@ -60,12 +68,38 @@ export function workerOnlyRouteRefusal(
   job: string,
   value: string | undefined = process.env.PHOENIX_PROCESS_ROLE,
 ): { body: { error: "wrong_process"; job: string; message: string }; status: 503 } | null {
-  if (runsBackgroundJobs(resolveProcessRole(value))) return null;
+  const role = resolveProcessRole(value);
+  if (runsBackgroundJobs(role)) return null;
   return {
     body: {
       error: "wrong_process",
       job,
-      message: "This job runs on the worker service, not the page server. Point the scheduler at the worker's address.",
+      message: role === "robot"
+        ? "This job runs on the worker service, not the robot service. Point the scheduler at the worker's address."
+        : "This job runs on the worker service, not the page server. Point the scheduler at the worker's address.",
+    },
+    status: 503,
+  };
+}
+
+/**
+ * The answer a ROBOT-ONLY route gives anywhere but the robot service, or null on the robot service
+ * (13 Nov 2026, audit REC-075). The Turbify robots drive a headless Chromium signed in as the console
+ * administrator; once they have their own service no other process may run them, so a scheduler or a
+ * caller pointed at the wrong address goes red (503) instead of opening a robot browser there. Unlike
+ * the worker-only refusal, an unset role ("all") is refused too: a route that exists only for the
+ * robot service has no "as before the split" behaviour to keep.
+ */
+export function robotOnlyRouteRefusal(
+  job: string,
+  value: string | undefined = process.env.PHOENIX_PROCESS_ROLE,
+): { body: { error: "wrong_process"; job: string; message: string }; status: 503 } | null {
+  if (resolveProcessRole(value) === "robot") return null;
+  return {
+    body: {
+      error: "wrong_process",
+      job,
+      message: "This runs on the robot service (phoenix-workforce-robot) only. Point the caller at the robot service's address.",
     },
     status: 503,
   };

@@ -370,6 +370,9 @@ export function dbHostSamplerRefusal(env: DbHostEnv): string | null {
   if (String(env.APP_ENV ?? "").trim().toLowerCase() !== "production") return "APP_ENV is not production";
   const role = String(env.PHOENIX_PROCESS_ROLE ?? "").trim().toLowerCase();
   if (role === "web") return "PHOENIX_PROCESS_ROLE is 'web' — the worker samples the database host";
+  // The robot service (audit REC-075) runs the mailbox robots and nothing else; a second sampler there
+  // would double the reads and the alarms exactly as a page server would.
+  if (role === "robot") return "PHOENIX_PROCESS_ROLE is 'robot' — the worker samples the database host";
   if (!String(env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim()) return "NEXT_PUBLIC_SUPABASE_URL is not set";
   if (!String(env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim()) return "SUPABASE_SERVICE_ROLE_KEY is not set";
   return null;

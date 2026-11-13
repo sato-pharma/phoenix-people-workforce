@@ -34,14 +34,13 @@
  */
 import { NextResponse } from "next/server";
 
-import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
-import type { AppPasswordPageReading } from "@/lib/new-hire-mailbox/robot/driver";
+import { forwardToRobotService } from "@/lib/new-hire-mailbox/robot/actions/forward";
+import { runAppPasswordControlsAction } from "@/lib/new-hire-mailbox/robot/actions/app-password-controls-action";
 import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
-import { readCompanyInitialPassword } from "@/lib/new-hire-mailbox/robot/initial-password";
-import { createJoinerDriverFromEnv } from "@/lib/new-hire-mailbox/robot/sweep-deps";
+import { robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -100,91 +99,15 @@ export async function POST(request: Request) {
       windowMs: 60 * 60_000,
     });
 
-    const companyPassword = String((await readCompanyInitialPassword()) ?? "");
-    if (companyPassword.length === 0) {
-      // Refused before a browser is opened. Without a password there is nothing to sign in with,
-      // and the alternative — reaching the login form and failing there — would look like a wrong
-      // password on a live mailbox.
-      return NextResponse.json(
-        {
-          message:
-            "PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD is not set, so there is no password to sign in "
-            + "with. Nothing was opened.",
-          success: false,
-        },
-        { status: 409 },
-      );
+    // AFTER every check above, in the same order as before the robot service existed (audit
+    // REC-075). The live run opens a robot browser, so once PHOENIX_ROBOT_SERVICE_URL is set it runs
+    // on the robot service and its answer comes back unchanged; otherwise it runs here. Either way it
+    // is the ONE implementation in runAppPasswordControlsAction, the company-password check and audit rows included.
+    const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
+    if (robotServiceConfigured()) {
+      return await forwardToRobotService({ action: "app-password-controls", actor, request: { dryRun: false } });
     }
-
-    const driver = await createJoinerDriverFromEnv();
-    let reading: AppPasswordPageReading;
-    try {
-      try {
-        reading = await driver.describeAppPasswords({ address: INVITE_INBOX_ADDRESS, password: companyPassword });
-      } finally {
-        // The browser is closed whatever happened: a leaked Chromium in the container outlives the
-        // request and holds a signed-in mailbox session. It closes BEFORE the audit below, so a slow
-        // or failing insert never holds a signed-in session open behind it.
-        await driver.close().catch(() => {});
-      }
-    } catch (error) {
-      // 🔴 A RUN THAT THREW IS RECORDED TOO, AND THIS IS THE HALF THAT WAS MISSING. The first live
-      // run (2026-10-04 07:16 Cairo) refused inside `signInAs` — the sign-in never left Turbify's
-      // login page — and the throw sailed past the audit below, so the ONLY account of it was the
-      // text on the card. One reload would have erased the finding, exactly as a `router.refresh()`
-      // did to a failed Turbify run on 2026-10-03.
-      //
-      // The message is what carries the value: it holds the measured page — its url, title,
-      // headings, buttons and controls, with every `filled` already reduced to a LENGTH and every
-      // secret-shaped value dropped. It is the same string the card shows, so storing it is exactly
-      // as safe as rendering it, and it is what makes a failure answerable tomorrow.
-      await writeAuditLog({
-        actorLoginId: access.loginId ?? null,
-        entityId: INVITE_INBOX_ADDRESS,
-        entityType: "new_hire_mailbox_adoption",
-        newValues: {
-          address: INVITE_INBOX_ADDRESS,
-          controls: [],
-          // `failed` is what separates the two shapes of "no controls". A run that reached the page
-          // and found nothing, and a run that never got there, are different diagnoses and must not
-          // read alike in the audit a month later.
-          failed: true,
-          observed: 0,
-          reached: false,
-          redacted: 0,
-          why: clientSafeErrorMessage(error, "The app-passwords page could not be read."),
-        },
-        summary: `The App Passwords capture of ${INVITE_INBOX_ADDRESS} failed before it could read the page`,
-      });
-      // Rethrown so the HTTP answer is unchanged: recording a failure must not turn it into a
-      // success, and the status still comes from the handler's own catch below.
-      throw error;
-    }
-
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: INVITE_INBOX_ADDRESS,
-      entityType: "new_hire_mailbox_adoption",
-      newValues: {
-        address: INVITE_INBOX_ADDRESS,
-        // The controls are the whole point of the run, and they are already redacted. Storing them
-        // is what makes a capture answerable later without re-opening the mailbox.
-        controls: reading.controls,
-        // Written on BOTH paths on purpose. If only the failure row carried it, its absence would
-        // mean two different things — an older row, or a run that did not throw — and a query for
-        // the failures would quietly answer with a mix of the two.
-        failed: false,
-        observed: reading.observed,
-        reached: reading.reached,
-        redacted: reading.redacted,
-        why: reading.why,
-      },
-      summary: reading.reached
-        ? `Read ${reading.controls.length} control(s) off the App Passwords page of ${INVITE_INBOX_ADDRESS}`
-        : `Could not read the App Passwords page of ${INVITE_INBOX_ADDRESS}`,
-    });
-
-    return NextResponse.json({ result: { address: INVITE_INBOX_ADDRESS, dryRun: false, ...reading }, success: true });
+    return await runAppPasswordControlsAction({ actor });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "You do not have access to this.", success: false }, { status: 403 });
