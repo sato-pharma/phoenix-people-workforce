@@ -50,7 +50,8 @@ const PHOTO_BYTE_LIMIT = 8 * 1024 * 1024;
 async function imageDataUri(url: string | null): Promise<{ image: string | null; problem: string | null }> {
   if (!url) return { image: null, problem: null };
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    // Fifteen seconds a photo, then the sentence below stands in for it (integration audit, 13 Nov 2026, ISS-011).
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!response.ok) return { image: null, problem: "The photo is on file but could not be opened for printing." };
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength > PHOTO_BYTE_LIMIT) {

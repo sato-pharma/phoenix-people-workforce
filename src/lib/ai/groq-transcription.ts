@@ -15,8 +15,9 @@
  * Chrome, Edge, Safari and Android majority keep using the browser's own free engine and never call here.
  * A minute is the recording cap, so a rep's whole day of notes is minutes of audio. **This file must
  * never be pointed at OpenAI**, however OpenAI-shaped the request below looks: the endpoint is
- * deliberately written out rather than taken from `AI_BASE_URL`, which the sales AI paths use to swap
- * providers, because swapping THIS one to OpenAI would silently reverse the owner's decision.
+ * deliberately written out rather than taken from `AI_BASE_URL`, which the sales AI paths read until
+ * 13 Nov 2026 (no path reads it now), because swapping THIS one to OpenAI would silently reverse the
+ * owner's decision.
  *
  * WHY IT IS A RAW FETCH. The `openai` SDK is installed and would send this request, and using it here
  * would put the OpenAI client in the call stack of a feature that must not use OpenAI — one env var away

@@ -173,20 +173,36 @@ jobs:
       # alone implies. That is ~27 Chromium downloads and ~27 apt dependency installs a day on a job
       # whose actual work is a handful of page loads.
       #
-      # 🔴 `env.ImageOS` IS IN THE KEY ON PURPOSE AND MUST STAY. An exact cache hit SKIPS the
+      # 🔴 THE RUNNER IMAGE IS IN THE KEY ON PURPOSE AND MUST STAY. An exact cache hit SKIPS the
       # `install-deps` step below, so the cached browser is only usable against the system libraries
       # of the image it was installed on. `ubuntu-latest` migrates to Ubuntu 26 on 2026-10-19; without
       # the image in the key, the first run after that migration would restore a browser built for the
       # old image, skip install-deps because the hit was exact, and fail to launch Chromium — which on
       # this workflow reads as "production is down", because that is what a failed journey means here.
       # A partial hit through `restore-keys` leaves `cache-hit` != 'true', so install-deps still runs.
+      # 🔴 THE IMAGE NAME IS READ IN A SHELL STEP, NEVER AS `env.ImageOS` (integration audit, 13 Nov 2026,
+      # ISS-048). `ImageOS` is a variable of the runner's own PROCESS; the `env` context of an expression
+      # holds only what a workflow declares, so `${{ env.ImageOS }}` was EMPTY and the live keys read
+      # `playwright--X64-…` — the image this key exists to carry was never in it. `runner.os` is no
+      # substitute: it says "Linux" for every Ubuntu, which is the difference the key must tell apart.
+      # A self-hosted runner has no ImageOS at all, so there the name comes from /etc/os-release.
+      - name: Name the runner image for the browser cache key
+        id: runner-image
+        run: |
+          image="${ImageOS:-}"
+          if [ -z "$image" ] && [ -r /etc/os-release ]; then
+            image="$(. /etc/os-release && printf '%s%s' "${ID:-linux}" "${VERSION_ID:-}")"
+          fi
+          echo "name=${image:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "browser cache key image: ${image:-unknown}"
+
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-${{ env.ImageOS }}-${{ runner.arch }}-
+          key: playwright-${{ steps.runner-image.outputs.name }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ steps.runner-image.outputs.name }}-${{ runner.arch }}-
 
       - name: Install Chromium
         run: pnpm exec playwright install chromium

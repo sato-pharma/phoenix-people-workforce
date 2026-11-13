@@ -48,6 +48,14 @@ permissions:
   contents: read
   actions: read # read this workflow own past runs, to count the failure streak
 
+# One at a time, never cancelled: a dispatch beside the daily run queues behind it instead of two
+# runs reading the databases at once (integration audit, 13 Nov 2026, ISS-047). A cancelled suite on
+# main HEAD withholds a deploy exactly as a red one does, so this must stay `false`
+# (tests/scheduled-alarms-never-withhold.test.ts).
+concurrency:
+  group: migration-drift-check
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CI_NODE_VERSION: "24"

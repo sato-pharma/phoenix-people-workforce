@@ -75,7 +75,11 @@ permissions:
 
 # Never cancel: a switch interrupted half way leaves a service on a source nobody chose. Two runs of the same kind queue.
 concurrency:
-  group: fallback-image-${{ github.event_name }}-${{ inputs.deploy || 'build' }}
+  # A pull request's build queues only behind the same pull request's. Until 13 Nov 2026 every pull
+  # request shared ONE group, and GitHub keeps a single waiting run per group: a third pull request's
+  # build replaced the second's while it waited (integration audit, ISS-047). A dispatch and a call
+  # carry no pull request, so their groups are what they were.
+  group: fallback-image-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.deploy || 'build' }}
   cancel-in-progress: false
 
 jobs:

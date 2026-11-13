@@ -61,6 +61,8 @@ export async function mintServiceAccountToken(
     }),
     headers: { "content-type": "application/x-www-form-urlencoded" },
     method: "POST",
+    // The sign-in exchange is one small request; fifteen seconds is generous (integration audit, 13 Nov 2026, ISS-011).
+    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
     throw new Error(`Google token exchange failed (${response.status}): ${await response.text()}`);
@@ -124,6 +126,9 @@ async function callSheets(
       "content-type": "application/json",
     },
     method: init.method,
+    // A sheet write can be large, so a minute a try; without it one stalled connection held the
+    // whole push with the retry ladder below never reached (integration audit, 13 Nov 2026, ISS-011).
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (response.status === 429 || response.status >= 500) {

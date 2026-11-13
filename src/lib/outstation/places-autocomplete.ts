@@ -56,6 +56,9 @@ export async function fetchPlacePredictions(
       "X-Goog-Api-Key": key,
     },
     method: "POST",
+    // A type-ahead that has not answered in eight seconds is no longer useful to the person typing
+    // (integration audit, 13 Nov 2026, ISS-011); the route's own catch turns the throw into its error answer.
+    signal: AbortSignal.timeout(8_000),
   });
 
   if (!response.ok) {

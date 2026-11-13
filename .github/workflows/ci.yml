@@ -448,14 +448,31 @@ jobs:
       # It carries the CPU ARCHITECTURE too (2026-11-05): the self-hosted ARM64 runner and GitHub's x64
       # runners share one cache, and an x64 Chromium restored onto ARM64 counts as installed, so
       # `playwright install` skips it and the browser then cannot launch.
+      # 🔴 THE IMAGE NAME IS READ IN A SHELL STEP, NEVER AS `env.ImageOS` (integration audit, 13 Nov 2026,
+      # ISS-048). `ImageOS` is a variable of the runner's own PROCESS; the `env` context of an expression
+      # holds only what a workflow declares, so `${{ env.ImageOS }}` was EMPTY and the live keys read
+      # `playwright--X64-…` — the image this key exists to carry was never in it. `runner.os` is no
+      # substitute: it says "Linux" for every Ubuntu, which is the difference the key must tell apart.
+      # A self-hosted runner has no ImageOS at all, so there the name comes from /etc/os-release.
+      - name: Name the runner image for the browser cache key
+        if: github.event_name != 'pull_request'
+        id: runner-image
+        run: |
+          image="${ImageOS:-}"
+          if [ -z "$image" ] && [ -r /etc/os-release ]; then
+            image="$(. /etc/os-release && printf '%s%s' "${ID:-linux}" "${VERSION_ID:-}")"
+          fi
+          echo "name=${image:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "browser cache key image: ${image:-unknown}"
+
       - name: Cache Playwright browsers
         if: github.event_name != 'pull_request'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-${{ env.ImageOS }}-${{ runner.arch }}-
+          key: playwright-${{ steps.runner-image.outputs.name }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ steps.runner-image.outputs.name }}-${{ runner.arch }}-
 
       - name: Install Playwright browsers
         if: github.event_name != 'pull_request'

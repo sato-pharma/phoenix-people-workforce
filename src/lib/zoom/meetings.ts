@@ -30,6 +30,15 @@ export type ZoomConfig = {
 
 export type ZoomFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * How long one Zoom call may take (integration audit, 13 Nov 2026, ISS-011). None of the seven calls here had a deadline, so a
+ * Zoom that accepted the connection and then said nothing held the interview-booking request open
+ * until the platform cut it. A call that runs out throws, and every caller already treats a throw as
+ * "Zoom did not answer": the interview is saved without a meeting link and says so.
+ */
+export const ZOOM_CALL_DEADLINE_MS = 15_000;
+const zoomDeadline = () => AbortSignal.timeout(ZOOM_CALL_DEADLINE_MS);
+
 export class ZoomRequestError extends Error {
   // NOT a TypeScript parameter property: the test runner strips types and cannot compile one.
   readonly status: number;
@@ -87,7 +96,7 @@ export async function zoomAccessToken(config: ZoomConfig, fetchImpl: ZoomFetch =
 
   const url = `${TOKEN_URL}?grant_type=account_credentials&account_id=${encodeURIComponent(config.accountId)}`;
   const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
-  const response = await fetchImpl(url, { headers: { Authorization: `Basic ${basic}` }, method: "POST" });
+  const response = await fetchImpl(url, { headers: { Authorization: `Basic ${basic}` }, method: "POST", signal: zoomDeadline() });
   if (!response.ok) throw await zoomError(response, "Zoom refused Phoenix's sign-in");
   const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown };
   if (typeof body.access_token !== "string" || !body.access_token) {
@@ -148,6 +157,7 @@ export async function createZoomMeeting(
     body: JSON.stringify(zoomMeetingBody(input)),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     method: "POST",
+    signal: zoomDeadline(),
   });
   if (!response.ok) throw await zoomError(response, "Zoom did not create the meeting");
   const body = (await response.json()) as { id?: unknown; join_url?: unknown };
@@ -190,6 +200,7 @@ export async function updateZoomMeeting(
     body: JSON.stringify(zoomMeetingBody(input)),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     method: "PATCH",
+    signal: zoomDeadline(),
   });
   if (!response.ok) throw await zoomError(response, "Zoom did not move the meeting");
 }
@@ -200,6 +211,7 @@ export async function deleteZoomMeeting(config: ZoomConfig, meetingId: string, f
   const response = await fetchImpl(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
     headers: { Authorization: `Bearer ${token}` },
     method: "DELETE",
+    signal: zoomDeadline(),
   });
   if (!response.ok && response.status !== 404) throw await zoomError(response, "Zoom did not delete the meeting");
 }
@@ -221,7 +233,7 @@ export async function deleteZoomMeeting(config: ZoomConfig, meetingId: string, f
 
 async function zoomGetJson(config: ZoomConfig, path: string, fallback: string, fetchImpl: ZoomFetch): Promise<Record<string, unknown>> {
   const token = await zoomAccessToken(config, fetchImpl);
-  const response = await fetchImpl(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` }, method: "GET" });
+  const response = await fetchImpl(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` }, method: "GET", signal: zoomDeadline() });
   if (!response.ok) throw await zoomError(response, fallback);
   return ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
 }
@@ -422,6 +434,7 @@ export async function createZoomPoll(
     body: JSON.stringify(zoomPollBody(input)),
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     method: "POST",
+    signal: zoomDeadline(),
   });
   if (!response.ok) throw await zoomError(response, "Zoom did not add the poll");
   const body = (await response.json().catch(() => ({}))) as { id?: unknown };
@@ -436,6 +449,7 @@ export async function deleteZoomPoll(config: ZoomConfig, meetingId: string, poll
   const response = await fetchImpl(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}/polls/${encodeURIComponent(pollId)}`, {
     headers: { Authorization: `Bearer ${token}` },
     method: "DELETE",
+    signal: zoomDeadline(),
   });
   if (!response.ok && response.status !== 404) throw await zoomError(response, "Zoom did not remove the poll");
 }

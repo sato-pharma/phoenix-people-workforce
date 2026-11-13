@@ -117,7 +117,9 @@ export async function fetchRouteStaticMap(
 ): Promise<string | null> {
   if (!plan.url) return null;
   try {
-    const response = await fetchImpl(plan.url, { cache: "no-store" });
+    // Ten seconds, then the PDF prints without its map, as it does for any other map failure
+    // (integration audit, 13 Nov 2026, ISS-011); the call had no deadline and the route's whole budget is 90 seconds.
+    const response = await fetchImpl(plan.url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (!response.ok) {
       console.warn(`[outstation-review-pdf] static map ${response.status}`);
       return null;

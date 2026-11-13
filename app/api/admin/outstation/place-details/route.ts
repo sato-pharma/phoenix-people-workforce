@@ -52,6 +52,8 @@ export async function GET(request: Request) {
 
     const response = await fetch(url.toString(), {
       cache: "no-store",
+      // Eight seconds, then the catch below answers (integration audit, 13 Nov 2026, ISS-011); it had no deadline.
+      signal: AbortSignal.timeout(8_000),
       headers: {
         "X-Goog-Api-Key": key,
         "X-Goog-FieldMask":

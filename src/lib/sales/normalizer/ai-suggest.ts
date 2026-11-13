@@ -7,8 +7,6 @@
 // any of these in the env (no code change) to swap engines:
 //   OPENAI_API_KEY      -> OpenAI         (default model gpt-4o)
 //   GROQ_API_KEY        -> Groq           (default model llama-3.3-70b-versatile)
-//   OPENROUTER_API_KEY  -> OpenRouter     (default model openai/gpt-4o)
-//   AI_API_KEY + AI_BASE_URL              -> any other OpenAI-compatible provider
 //   AI_MODEL            -> override the model for whichever provider is active
 // ANTHROPIC_API_KEY is the second provider: when the account above is out of credit or its key is
 // rejected, the batch is asked of Claude instead (src/lib/sales/ai/provider.ts holds the plan).
