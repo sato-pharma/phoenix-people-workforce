@@ -149,3 +149,54 @@ export function formatOveragePct(scaled: bigint): string {
   const text = fraction ? `${whole}.${fraction}` : whole.toString();
   return negative ? `-${text}` : text;
 }
+
+/** One material's actuals from one recorded run of ONE product. */
+export type ProductRunObservation = RunObservation & { readonly productId: string };
+
+/** What one batch of one product really consumed of one material, from its recorded runs. */
+export type MeasuredConsumption = {
+  /** Micro base units a batch, rounded UP — an average a micro short is a run that stops short. */
+  readonly perRunQty: bigint;
+  /** Batches it covers, after exclusions. */
+  readonly runsCounted: bigint;
+};
+
+/** `${productId}/${materialId}` — the key `measuredConsumptionByProduct` answers under. */
+export function measuredConsumptionKey(productId: string, materialId: string): string {
+  return `${productId}/${materialId}`;
+}
+
+/**
+ * The amount for a material that has NO formula line, read from what the factory actually consumed
+ * (review of 2026-11-13, Royafloxacin's foil: "leave the aluminum consumption field blank and
+ * calculate it based on the actual consumption after production is completed").
+ *
+ * Per PRODUCT, never per material: the one foil serves Royafloxacin at Medizen (8,000 boxes a batch)
+ * and at EGPI (16,000), so a per-material average would give each the other's batch.
+ *
+ * Unlike the overage above, ONE recorded batch is enough: there is no formula to fall back on, and
+ * a material with no amount reaches no buy list at all. A material whose recorded runs consumed
+ * nothing in total is not measured — an untouched line reads as zero, and zero would say "none
+ * needed" for something that was simply not counted.
+ */
+export function measuredConsumptionByProduct(
+  observations: readonly ProductRunObservation[],
+): Map<string, MeasuredConsumption> {
+  const buckets = new Map<string, { runs: bigint; consumed: bigint }>();
+  for (const observation of observations) {
+    if (observation.isExcludedFromLearning) continue;
+    const key = measuredConsumptionKey(observation.productId, observation.materialId);
+    const bucket = buckets.get(key) ?? { runs: BigInt(0), consumed: BigInt(0) };
+    bucket.runs += observation.runsCount > BigInt(0) ? observation.runsCount : BigInt(1);
+    bucket.consumed += observation.consumedQty;
+    buckets.set(key, bucket);
+  }
+
+  const result = new Map<string, MeasuredConsumption>();
+  for (const [key, bucket] of buckets) {
+    if (bucket.consumed <= BigInt(0) || bucket.runs <= BigInt(0)) continue;
+    const perRunQty = (bucket.consumed + bucket.runs - BigInt(1)) / bucket.runs;
+    result.set(key, { perRunQty, runsCounted: bucket.runs });
+  }
+  return result;
+}
