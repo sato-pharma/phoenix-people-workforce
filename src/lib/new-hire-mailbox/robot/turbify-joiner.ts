@@ -233,6 +233,12 @@ type ConsolePage = {
   waitForSelector: (selector: string, options?: Record<string, unknown>) => Promise<unknown>;
   /** Puppeteer's keyboard. Optional so a fake page need not carry one; used only to press Escape. */
   keyboard?: { press: (key: string) => Promise<void> };
+  /**
+   * Puppeteer's page events. Optional so a fake page need not carry them; used only to WATCH the
+   * network answers to the sign-in press (`watchSignInExchanges`), never to change a request.
+   */
+  on?: (event: string, listener: (payload: unknown) => void) => unknown;
+  off?: (event: string, listener: (payload: unknown) => void) => unknown;
 };
 
 export class TurbifyJoinerStepError extends Error {
@@ -615,7 +621,38 @@ export type SignInBlockers = {
   captcha: boolean;
   /** Messages the page showed after the submit, in order — including ones already gone. */
   notices: string[];
+  /**
+   * Hidden bot checks the page LOADS: the host of each script or frame from a known bot-check
+   * provider, never its query (a site key or token can ride there). An invisible check draws no
+   * widget, so `captcha` cannot see it; this can (14 Nov 2026, the second silent stall).
+   */
+  botChecks?: string[];
+  /** What the page itself reads from `navigator.webdriver`: true means it can tell it is automated. */
+  webdriver?: boolean | null;
+  /** The network answers to the press, from `watchSignInExchanges`. Filled outside the page. */
+  exchanges?: SignInExchange[];
 };
+
+/**
+ * The bot-check providers a login page may load invisibly, as `host` or `host/path-prefix`.
+ * `readSignInBlockersInPage` carries its own copy, because it runs INSIDE the page where module
+ * constants do not exist; the test holds the two lists equal.
+ */
+export const BOT_CHECK_SOURCES = [
+  "recaptcha.net",
+  "www.google.com/recaptcha",
+  "www.gstatic.com/recaptcha",
+  "hcaptcha.com",
+  "arkoselabs.com",
+  "funcaptcha.com",
+  "challenges.cloudflare.com",
+  "perimeterx.net",
+  "px-cdn.net",
+  "px-cloud.net",
+  "datadome.co",
+  "captcha-delivery.com",
+  "kasada.io",
+] as const;
 
 export function readSignInBlockersInPage(): SignInBlockers {
   const captcha = Boolean(document.querySelector(
@@ -623,14 +660,128 @@ export function readSignInBlockersInPage(): SignInBlockers {
   ));
   const kept = (window as unknown as { __phoenixSignInNotices?: unknown }).__phoenixSignInNotices;
   const notices = Array.isArray(kept) ? kept.slice(0, 6).map(String) : [];
-  return { captcha, notices };
+  const known = [
+    "recaptcha.net", "www.google.com/recaptcha", "www.gstatic.com/recaptcha", "hcaptcha.com", "arkoselabs.com",
+    "funcaptcha.com", "challenges.cloudflare.com", "perimeterx.net", "px-cdn.net", "px-cloud.net", "datadome.co",
+    "captcha-delivery.com", "kasada.io",
+  ];
+  const botChecks: string[] = [];
+  const sources = typeof document.querySelectorAll === "function"
+    ? Array.from(document.querySelectorAll("script[src],iframe[src]")).map((element) => String(element.getAttribute("src") || ""))
+    : [];
+  for (const source of sources) {
+    let host = "";
+    let where = "";
+    try {
+      const parsed = new URL(source, "https://login.turbify.com/");
+      host = parsed.host.toLowerCase();
+      where = `${host}${parsed.pathname.toLowerCase()}`;
+    } catch {
+      continue;
+    }
+    for (const entry of known) {
+      const matched = entry.includes("/")
+        ? where.startsWith(entry)
+        : host === entry || host.endsWith(`.${entry}`);
+      if (matched && botChecks.indexOf(entry) === -1) botChecks.push(entry);
+    }
+  }
+  const nav = (typeof navigator === "undefined" ? null : navigator) as { webdriver?: unknown } | null;
+  const webdriver = nav && typeof nav.webdriver === "boolean" ? nav.webdriver : null;
+  return { botChecks, captcha, notices, webdriver };
 }
 
 async function readSignInBlockers(page: ConsolePage): Promise<SignInBlockers> {
   const read = await page.evaluate<SignInBlockers>(readSignInBlockersInPage).catch(() => null);
   return {
+    botChecks: Array.isArray(read?.botChecks) ? read.botChecks.map(String).slice(0, 8) : [],
     captcha: Boolean(read?.captcha),
     notices: Array.isArray(read?.notices) ? read.notices.map(String) : [],
+    webdriver: typeof read?.webdriver === "boolean" ? read.webdriver : null,
+  };
+}
+
+/**
+ * One network answer seen after the sign-in press: the method, the HOST and PATH, and the status (or
+ * why the request failed). 🔴 NEVER a query, a fragment, a header or a body: a sign-in's query and
+ * body are exactly where a credential or a token rides. The printed line still passes through
+ * `withoutSecrets` as a second wall.
+ */
+export type SignInExchange = { failed: string | null; method: string; status: number | null; target: string };
+
+/** `host/path` of a request, or null for anything that is not http(s). Query and fragment dropped. */
+export function exchangeTarget(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return `${parsed.host}${parsed.pathname}`.slice(0, 160);
+  } catch {
+    return null;
+  }
+}
+
+/** Static files say nothing about a refusal; documents, calls and anything that is not a GET do. */
+export function isTellingExchange(method: string, resourceType: string): boolean {
+  if (method.toUpperCase() !== "GET") return true;
+  return resourceType === "document" || resourceType === "xhr" || resourceType === "fetch";
+}
+
+type WatchedRequest = {
+  failure?: () => { errorText?: string } | null;
+  method?: () => string;
+  resourceType?: () => string;
+  url?: () => string;
+};
+type WatchedResponse = { request?: () => WatchedRequest; status?: () => number; url?: () => string };
+
+/**
+ * Watch the network answers to the sign-in press, READ-ONLY: it listens, it never intercepts, holds or
+ * changes a request. Installed just before the press and stopped when the wait ends. A page with no
+ * events (a fake) records nothing.
+ *
+ * WHY (14 Nov 2026): the second silent stall in three days. The form was valid, the press delivered,
+ * no message, no captcha widget, the page still on the login form 30 seconds later, and a hand
+ * sign-in did not clear it. What Turbify answered to the press is the one fact that separates slow,
+ * refused and never sent, and nothing recorded it.
+ */
+export function watchSignInExchanges(page: ConsolePage, limit = 12): { stop: () => SignInExchange[] } {
+  const seen: SignInExchange[] = [];
+  const keep = (entry: SignInExchange) => {
+    if (seen.length < limit) seen.push(entry);
+  };
+  const onResponse = (payload: unknown) => {
+    try {
+      const response = payload as WatchedResponse;
+      const request = response.request?.();
+      const method = String(request?.method?.() ?? "GET");
+      if (!isTellingExchange(method, String(request?.resourceType?.() ?? ""))) return;
+      const target = exchangeTarget(String(response.url?.() ?? ""));
+      if (!target) return;
+      keep({ failed: null, method, status: Number(response.status?.() ?? 0) || null, target });
+    } catch {
+      // A reading that cannot be taken costs only that line.
+    }
+  };
+  const onFailed = (payload: unknown) => {
+    try {
+      const request = payload as WatchedRequest;
+      const method = String(request.method?.() ?? "GET");
+      if (!isTellingExchange(method, String(request.resourceType?.() ?? ""))) return;
+      const target = exchangeTarget(String(request.url?.() ?? ""));
+      if (!target) return;
+      keep({ failed: String(request.failure?.()?.errorText ?? "failed").slice(0, 80), method, status: null, target });
+    } catch {
+      // As above.
+    }
+  };
+  page.on?.("response", onResponse);
+  page.on?.("requestfailed", onFailed);
+  return {
+    stop: () => {
+      page.off?.("response", onResponse);
+      page.off?.("requestfailed", onFailed);
+      return seen.slice();
+    },
   };
 }
 
@@ -651,13 +802,35 @@ export function describeSignInStall(
   const seconds = Math.round(waitedMs / 1000);
   const notices = blockers.notices.map((notice) => withoutSecrets(notice, secrets)).filter((notice) => notice.length > 0);
   const said = notices.length > 0 ? ` Turbify showed [${notices.join(" | ")}] after the sign-in was pressed.` : "";
+  const measured = describeSignInMeasurement(blockers, secrets);
   if (blockers.captcha) {
     return `Turbify showed ${who}'s sign-in a captcha ("I'm not a robot"), and the robot never answers one, `
       + `so it stopped.${said} A person signing in to Turbify by hand once with the same login usually makes `
-      + `Turbify trust it again; the next daily sweep then tries by itself. The page it was on — ${page}`;
+      + `Turbify trust it again; the next daily sweep then tries by itself.${measured} The page it was on — ${page}`;
   }
   return `Signed in as ${who} but the expected page never appeared within ${seconds} seconds, so the robot `
-    + `stopped rather than act on an unknown page.${said} The page it was on — ${page}`;
+    + `stopped rather than act on an unknown page.${said}${measured} The page it was on — ${page}`;
+}
+
+/** The measured half of a stall: the network answers to the press and the hidden checks on the page. */
+export function describeSignInMeasurement(blockers: SignInBlockers, secrets: readonly string[]): string {
+  const parts: string[] = [];
+  if (blockers.exchanges !== undefined) {
+    const lines = blockers.exchanges.map((entry) => withoutSecrets(
+      `${entry.method} ${entry.target} -> ${entry.failed ? `failed (${entry.failed})` : String(entry.status ?? "no status")}`,
+      secrets,
+    ));
+    parts.push(lines.length > 0
+      ? ` After the press the page made ${lines.length} request(s): [${lines.join(" | ")}].`
+      : " After the press the page made no request at all, so the press never reached Turbify.");
+  }
+  if (blockers.botChecks !== undefined) {
+    parts.push(blockers.botChecks.length > 0
+      ? ` The login page loads a hidden bot check from [${blockers.botChecks.join(" | ")}].`
+      : " The login page loads no known hidden bot check.");
+  }
+  if (blockers.webdriver === true) parts.push(" The page can tell the browser is automated (navigator.webdriver is true).");
+  return parts.join("");
 }
 
 /**
@@ -1414,10 +1587,20 @@ export async function createTurbifyJoinerDriver(
     // form is simply still there afterwards, which every downstream check reads as "refused".
     // Before the press, so a message that comes and goes during the wait is still on record.
     await target.evaluate(recordSignInNotices).catch(() => {});
-    await submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `sign-in button for ${who}`);
-    // A floor of six seconds, then the proof re-read every second up to thirty — see
-    // `SIGN_IN_MINIMUM_WAIT_MS` for the 2026-11-12 morning a fixed six was not enough.
-    const landing = await waitForSignInLanding(() => target.url(), proof);
+    // Read-only, and installed just before the press so every answer to it is seen: see
+    // `watchSignInExchanges` for the 14 Nov 2026 stall that a hand sign-in did not clear.
+    const exchanges = watchSignInExchanges(target);
+    let answered: SignInExchange[] = [];
+    let landing: SignInLanding;
+    try {
+      await submitOpenForm(target, LOGIN_SUBMIT_WORDINGS, `sign-in button for ${who}`);
+      // A floor of six seconds, then the proof re-read every second up to thirty — see
+      // `SIGN_IN_MINIMUM_WAIT_MS` for the 2026-11-12 morning a fixed six was not enough.
+      landing = await waitForSignInLanding(() => target.url(), proof);
+    } finally {
+      // Stopped on every path, so a listener never outlives the sign-in it was watching.
+      answered = exchanges.stop();
+    }
     // 🔴 Two-step verification must stay OFF on the accounts the robot uses: Turbify only sends the
     // code to a phone or an email, so there is nothing a server can answer. Fail loudly, never stall.
     if (landing === "two_step") {
@@ -1433,7 +1616,7 @@ export async function createTurbifyJoinerDriver(
       // it is described here, so the next click produces a measurement instead of another guess —
       // and since 2026-11-12 it also says whether a captcha stood in the way and what the page
       // flashed after the press, which a description read at the end of the wait cannot see.
-      const blockers = await readSignInBlockers(target);
+      const blockers: SignInBlockers = { ...(await readSignInBlockers(target)), exchanges: answered };
       throw new TurbifyJoinerStepError(
         describeSignInStall(who, SIGN_IN_LANDING_TIMEOUT_MS, blockers, await describePage(target, secrets), secrets),
       );
