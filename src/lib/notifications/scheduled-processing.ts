@@ -140,13 +140,16 @@ async function runNotificationProcessingSteps(limit: number) {
     // days behind a green cron. This is the one check that tells them apart - see drain-health.ts
     // for why it asserts a black-box invariant rather than counting anything inside the loops.
     const backlog = await runStep("drain-health", () => readDrainQueueBacklog(runStartedAtIso), budget, {
-      fallback: { deferred: null, outbox: null, push: null, telegram: null },
+      fallback: { approval_email: null, deferred: null, outbox: null, push: null, telegram: null },
     });
     const drainHealth = assessDrainHealth([
       { attempted: outbox?.attempted ?? 0, queue: "outbox", strandedBefore: backlog?.outbox ?? null },
       { attempted: telegram?.attempted ?? 0, queue: "telegram", strandedBefore: backlog?.telegram ?? null },
       { attempted: push?.attempted ?? 0, queue: "push", strandedBefore: backlog?.push ?? null },
       { attempted: deferred?.attempted ?? 0, queue: "deferred", strandedBefore: backlog?.deferred ?? null },
+      // Approval emails that used every retry (durable-email.ts, REC-048). Nothing attempts them until
+      // someone presses "send again", so any one of them raises this same alarm.
+      { attempted: 0, queue: "approval_email", strandedBefore: backlog?.approval_email ?? null },
     ]);
     if (!drainHealth.healthy) {
       // ERROR, not warning: mail that a user is waiting on is not being delivered, and the last

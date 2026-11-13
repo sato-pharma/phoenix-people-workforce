@@ -3108,6 +3108,7 @@ import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
 import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
+import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12324,6 +12325,7 @@ await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): ev
 await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 await runTest("the Integrations page: no credential value ever comes back out, the Super Admin gate runs before any read, a failed read says unavailable, and the messaging API version agrees in all seven files", runIntegrationsRegistryTests);
+await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
