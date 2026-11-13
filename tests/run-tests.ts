@@ -2887,6 +2887,7 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
 import { runNeedsYouSeatDriftTests } from "./needs-you-seat-drift.test.ts";
+import { runHireHandoffStepsTests } from "./hire-handoff-steps.test.ts";
 import { runNeedsYouVendorAccountsTests } from "./needs-you-vendor-accounts.test.ts";
 import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts";
 import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
@@ -3116,6 +3117,7 @@ import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runSecondSignInStepTests } from "./second-sign-in-step.test.ts";
 import { runLeakedPasswordTests } from "./leaked-password.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
+import { runReportItLifecycleTests } from "./report-it-lifecycle.test.ts";
 import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
 import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
@@ -11501,6 +11503,10 @@ await runTest(
   "the organogram seat-drift board row reports an active person whose employees record disagrees with the seat they occupy — the area, the region or the manager — which au_v_employee_seat_drift had been flagging for two days on 2026-10-15 with nothing reading it as an alarm while a new rep was silently missing from her own area's weekly plan; one row per PERSON however many facts disagree, both values side by side with an absent one reading as \"holds no area\" rather than a blank, the person NAMED and no HR id anywhere a reader sees one, no automatic repair because which side is right is a judgement, a clean view producing no row at all, the Super Admin's lane alone, the light lane (3.228 ms over 97 rows on production), and the read selecting on the three drift booleans only — a person with NO seat is not drift and all 16 Head Office people would be on the board for ever if it were widened to that",
   runNeedsYouSeatDriftTests,
 );
+await runTest(
+  "the hire hand-off is complete or self-repairing (REC-027): both hiring doors record every follow-up step — offer link, candidate hired, login, CV, mailbox task, offer stamp, acceptance audit row — in hire_handoff_steps without changing the reply (a thrown step re-throws the same error, a returned one returns the same object, a dead ledger never fails a hire); each retry is idempotent (an existing login, CV, audit row or linked letter is DONE, a letter naming someone else is never overwritten), the hourly run is leased, bounded and backs off, the fifth failure gives up onto the Needs You board by NAME with a link to the record, and a recent active hire with no login and nothing retrying one breaches a reconciliation check",
+  runHireHandoffStepsTests,
+);
 
 await runTest(
   "Needs You reads three vendor accounts, says a refusal in his lane, never words an outage as a refusal, and prints what it cannot see",
@@ -12363,6 +12369,7 @@ await runTest("the Integrations page: no credential value ever comes back out, t
 await runTest("the second sign-in step (integration audit INT-005, 13 Nov 2026): a Super Admin's password sign-in also needs an authenticator code computed as RFC 6238 publishes it, good once and only near now; a browser is remembered for 30 days, for its own account and only once that account is set up; a recovery code is spent by using it; a reset returns the account to not set up; a read that fails refuses the sign-in; the key, the codes and the cookie token are never stored readable; the route asks after the password and before any session, for every caller; and the three tables are server-only", runSecondSignInStepTests);
 await runTest("a password already in a published leak is refused when it is chosen (integration audit INT-006, 13 Nov 2026): only the first five characters of its fingerprint leave, with no header naming who asks; a padded answer's made-up lines are not leaks; a service that cannot be asked is recorded as not checked, never as a pass or a refusal; both places a password is chosen ask before anything is written and before the link is spent; and sign-in never asks", runLeakedPasswordTests);
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
+await runTest("a safety report is owned by whoever holds Report It read-all access (REC-033, 13 Nov 2026): her new-report notice and email carry no patient data, go to her alone and fire after the reply; a report moves received, under assessment, closed, one step forward, only by a read-all viewer, refused before any write otherwise, with its audit row in the same transaction; and the migration allows exactly the code's statuses", runReportItLifecycleTests);
 await runTest(
   "the morning jobs move to one schedule each behind PHOENIX_DAILY_JOBS_SPLIT: switched off (what ships) /api/notifications/daily runs every job once, through the shared runners, digest first, and /api/cron/daily/<job> runs none and records no heartbeat; switched on, the reverse; never both and never neither, in the routes, the heartbeat declarations, the Healthchecks check and the re-fire policies; every job has exactly one cron-job.org entry and one heartbeat at the same minute, no two share a minute, the job route runs one job per request, and the jobs run are exactly the thirty the fan-out ran",
   runDailyJobsSplitTests,

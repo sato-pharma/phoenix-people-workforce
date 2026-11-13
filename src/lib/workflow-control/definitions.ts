@@ -597,6 +597,51 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
       },
+      {
+        // Registered (report_it, migration 20261113211605) for this map ONLY (REC-005, REC-033). It sits
+        // here because the map holds at most ten domains and all ten are taken; a safety report is
+        // raised by an employee and worked by one named person, the nearest of the ten. The move is
+        // decided by phx_report_it_set_status (compare-and-set) and changeReportStatus never asks the
+        // registry. REPORT_IT_TRANSITIONS (src/lib/report-it/lifecycle.ts) writes the two moves down and
+        // tests/workflow-registry-coverage.test.ts holds the seed equal to it.
+        key: "report-it",
+        name: "Report It (safety reports)",
+        summary: "An employee files a safety report → its owner assesses it → closes it. Forward only, no reopen; due in 15 days if serious, 90 otherwise.",
+        governedByRegistry: false,
+        registryModuleKey: "report_it",
+        steps: [
+          {
+            id: "received",
+            name: "File a safety report",
+            actor: "Any employee",
+            role: "Any role with Report It create",
+            statusProduced: "received",
+            notificationRecipients: n("The Report It owner (report_it_dashboard_access)"),
+            emailRecipients: n("The Report It owner (report_it_dashboard_access)"),
+            sideEffects: "Stamps the due date (15 calendar days if serious, 90 otherwise). The owner's notice and email carry the report number and time only, never patient data.",
+          },
+          {
+            id: "start_assessment",
+            name: "Start assessment",
+            actor: "The Report It desk",
+            role: "Report It owner, Super Admin, CEO or Finance Manager",
+            statusProduced: "under_assessment",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects: "One database call moves the status and writes the report_it_audit_logs row; two presses move it once.",
+          },
+          {
+            id: "close",
+            name: "Close the report",
+            actor: "The Report It desk",
+            role: "Report It owner, Super Admin, CEO or Finance Manager",
+            statusProduced: "closed",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects: "Closed is final; a report that needs more work is filed again as a follow-up.",
+          },
+        ],
+      },
     ],
   },
 

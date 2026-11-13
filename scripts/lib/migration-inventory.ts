@@ -2460,6 +2460,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // the MCP). Evidence, production: public.activity_events keeps exactly activity_events_created_idx,
   // activity_events_hr_created_idx and its primary key, its indexes down to 33 MB. Indexes only; re-applying is a no-op.
   "20261113192416_drop_three_unused_activity_log_indexes.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs with the aws-1 pooler (the production MCP declined it;
+  // staging took it through the MCP). Evidence, production: public.hire_handoff_steps exists with row security on,
+  // only service_role is granted, and hire_handoff_steps_unfinished_idx is present. A new empty table; re-applying
+  // is a no-op (create if not exists, drop policy if exists).
+  "20261113201756_hire_handoff_steps.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs with the aws-1 pooler (the production MCP declined it;
+  // staging took it through the MCP). Evidence, production: report_it_reports carries the five lifecycle columns,
+  // status defaults to 'received', report_it_reports_status_check, idx_report_it_open_due and the trigger
+  // report_it_reports_lifecycle_defaults are present, and phx_report_it_set_status is executable by service_role
+  // only (proacl {postgres=X,service_role=X}, not security definer). 0 reports existed, so no row changed;
+  // re-applying is a no-op.
+  "20261113202407_report_it_lifecycle.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
