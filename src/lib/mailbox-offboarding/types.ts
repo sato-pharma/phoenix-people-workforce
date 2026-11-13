@@ -84,6 +84,11 @@ export type MailboxOffboardingTask = {
    * every phone and Outlook client the leaver set up is still connected.
    */
   isHalfRevoked: boolean;
+  /**
+   * The leaver has gone and nothing has ended their app passwords — neither a recorded clear nor a
+   * deleted mailbox. Wider than `isHalfRevoked`: an untouched mailbox is just as reachable.
+   */
+  appPasswordsMayBeLive: boolean;
   /** Forwarding whose expiry has passed — set at an exit and never torn down. */
   isForwardingExpired: boolean;
   /** Step 3 is still offerable — mirrors the guard in `phx_mailbox_offboarding_record`. */
@@ -100,6 +105,20 @@ export type MailboxOffboardingStats = {
   /** How many rows sit in the reset-but-not-cleared state. Called out on its own for a reason. */
   halfRevoked: number;
   forwardingExpired: number;
+  /** Leavers on the app-password report — the number the removal step exists to bring to zero. */
+  appPasswordsMayBeLive: number;
+};
+
+/** One leaver whose app passwords may still work: a task not cleared, or a leaver with no task. */
+export type MailboxAppPasswordReportRow = {
+  employeeHrId: string;
+  employeeName: string;
+  workEmail: string;
+  lastWorkingDate: string | null;
+  /** Whether the password was reset — which does NOT end an app password. */
+  passwordReset: boolean;
+  /** False for a leaver with a mailbox and no record at all. */
+  hasRecord: boolean;
 };
 
 /** A leaver with a mailbox and no task — the sweep's input, surfaced so the gap is never silent. */
@@ -115,6 +134,8 @@ export type MailboxAwaitingLeaver = {
 export type MailboxOffboardingDashboardData = {
   tasks: MailboxOffboardingTask[];
   awaiting: MailboxAwaitingLeaver[];
+  /** Every leaver whose app passwords may still work. Zero rows is the step's acceptance. */
+  appPasswordReport: MailboxAppPasswordReportRow[];
   stats: MailboxOffboardingStats;
   /** The Turbify control-panel URL the page deep-links to. Surfaced so the UI never hardcodes it. */
   controlPanelUrl: string;
