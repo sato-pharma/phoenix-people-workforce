@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteOneSignalSubscription, onesignalAppId, onesignalRestApiKey } from "@/lib/notifications/push";
 import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { withPushOptInNudgeDismissed } from "@/lib/notifications/push-opt-in-nudge-rules";
+import { withTelegramHomeCardAnswered } from "@/lib/notifications/telegram-home-card-rules";
 import { logError } from "@/lib/observability/log";
 // Re-exported for existing callers/tests — the rules themselves live in push-opt-in-nudge-rules.ts
 // (no server-only imports) so the "use client" nudge card can depend on the RULE without pulling
@@ -34,6 +35,8 @@ export type PushSubscriptionState = {
   deviceCount: number;
   desktopCount: number;
   mobileCount: number;
+  /** When the most recent device that no longer receives push was last seen receiving it; null when none dropped. */
+  lastDroppedSubscribedAt: string | null;
 };
 
 export type TelegramConnectionState = {
@@ -59,7 +62,7 @@ const defaultPreferences: NotificationPreferences = {
   telegramEnabled: false,
 };
 
-const defaultPushState: PushSubscriptionState = { deviceCount: 0, desktopCount: 0, mobileCount: 0 };
+const defaultPushState: PushSubscriptionState = { deviceCount: 0, desktopCount: 0, mobileCount: 0, lastDroppedSubscribedAt: null };
 
 function userIdFromAccess(access: Pick<AccessContext, "hrId" | "loginId">) {
   return access.loginId ?? access.hrId ?? "";
@@ -127,7 +130,14 @@ function mapPreferences(row: Record<string, unknown> | null | undefined): Notifi
 
 function mapPushState(rows: Array<Record<string, unknown>> | null | undefined): PushSubscriptionState {
   const active = (rows ?? []).filter((row) => row.status === "subscribed");
+  // The push card asks again after a drop (owner, 13 Nov 2026), and reads it from `subscribed_at`, which
+  // stops moving when a device stops receiving. Never from `unsubscribed_at`: see push-opt-in-nudge-rules.ts.
+  const droppedLastReceiving = (rows ?? [])
+    .filter((row) => row.status !== "subscribed" && typeof row.subscribed_at === "string" && Number.isFinite(Date.parse(row.subscribed_at)))
+    .map((row) => row.subscribed_at as string)
+    .sort((first, second) => Date.parse(second) - Date.parse(first));
   return {
+    lastDroppedSubscribedAt: droppedLastReceiving[0] ?? null,
     deviceCount: active.length,
     desktopCount: active.filter((row) => row.device_type === "desktop").length,
     mobileCount: active.filter((row) => row.device_type === "mobile").length,
@@ -164,7 +174,7 @@ export async function getNotificationSettings(access: Pick<AccessContext, "hrId"
       // Uppercased to match how upsertPushSubscription stores hr_id — see normalizedPushHrId
       // for why the casing must be kept identical everywhere.
       access.hrId
-        ? supabase.from("push_subscriptions").select("device_type,status").eq("hr_id", access.hrId.trim().toUpperCase())
+        ? supabase.from("push_subscriptions").select("device_type,status,subscribed_at").eq("hr_id", access.hrId.trim().toUpperCase())
         : Promise.resolve({ data: [], error: null }),
     ]);
     if (preferences.error) throw preferences.error;
@@ -244,12 +254,14 @@ export async function saveNotificationPreferences(
 }
 
 /**
- * Records that this person dismissed the push opt-in nudge, so it never asks again on any
- * device. Read-modify-write on `module_preferences` — a plain upsert with only this key would
- * overwrite (not merge into) the stored jsonb and could silently erase another feature's
- * preference living in the same column.
+ * One key merged into this person's `module_preferences`. Read-modify-write — a plain upsert with
+ * only the new key would overwrite (not merge into) the stored jsonb and could silently erase another
+ * feature's preference living in the same column. The two home-page cards' answers are written here.
  */
-export async function dismissPushOptInNudge(access: Pick<AccessContext, "hrId" | "loginId">): Promise<NotificationSettings> {
+async function mergeIntoModulePreferences(
+  access: Pick<AccessContext, "hrId" | "loginId">,
+  merge: (current: Record<string, unknown>, nowIso: string) => Record<string, unknown>,
+): Promise<void> {
   const userId = userIdFromAccess(access);
   if (!userId) throw new Error("Authentication is required.");
 
@@ -262,22 +274,39 @@ export async function dismissPushOptInNudge(access: Pick<AccessContext, "hrId" |
   if (existing.error) throw existing.error;
 
   const currentModule = (existing.data as { module_preferences?: unknown } | null)?.module_preferences;
+  const now = new Date().toISOString();
   const payload = {
     hr_id: access.hrId ?? null,
-    module_preferences: withPushOptInNudgeDismissed(
+    module_preferences: merge(
       currentModule && typeof currentModule === "object" && !Array.isArray(currentModule)
         ? (currentModule as Record<string, unknown>)
         : {},
-      new Date().toISOString(),
+      now,
     ),
-    updated_at: new Date().toISOString(),
+    updated_at: now,
     user_id: userId,
   };
 
   const { error } = await supabase.from("notification_preferences").upsert(payload, { onConflict: "user_id" });
   if (error) throw error;
+}
 
+/**
+ * Records that this person answered the push opt-in nudge — closed it, or turned push on through it.
+ * The card stays away on every device until a device that was receiving push stops
+ * (`pushWasDroppedSinceAnswer`).
+ */
+export async function dismissPushOptInNudge(access: Pick<AccessContext, "hrId" | "loginId">): Promise<NotificationSettings> {
+  await mergeIntoModulePreferences(access, (current, now) => withPushOptInNudgeDismissed(current, now));
   return getNotificationSettings(access);
+}
+
+/**
+ * Records that this person answered the home page's "Connect Telegram" card — closed it, or connected
+ * through it — so it is never drawn for them again (owner, 13 Nov 2026: "Every home page, once").
+ */
+export async function recordTelegramHomeCardAnswered(access: Pick<AccessContext, "hrId" | "loginId">): Promise<void> {
+  await mergeIntoModulePreferences(access, (current, now) => withTelegramHomeCardAnswered(current, now));
 }
 
 export async function createTelegramConnectionToken(access: Pick<AccessContext, "hrId" | "loginId">) {

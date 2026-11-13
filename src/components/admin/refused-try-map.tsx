@@ -6,8 +6,9 @@
  *
  * Marker 1 is the phone, marker 2 the saved place, a dashed line between them and the distance in
  * words; each point opens in Google Maps. A server component with no state: it draws what the board
- * built (`buildCaseMap`) and asks nothing. The tiles are `lazy` because the board lists up to a hundred
- * tries and the hidden copy (desktop or phone) of an eager image still loads.
+ * built (`buildCaseMap`) and asks nothing. The map picture is `lazy` because the board lists up to a hundred
+ * tries and the hidden copy (desktop or phone) of an eager image still loads — and since 13 Nov 2026 each
+ * picture is one request to Google, counted against the company's account.
  *
  * 🔴 It lives under `components/admin`, never `components/phoenix-crm`: that folder is the rep-facing
  * surface the blind half sweeps, and this map is drawn only on the Super Admin's and the SFE Manager's board.
@@ -53,20 +54,10 @@ export function TryLocationsMap({
   return (
     <div className="flex flex-wrap items-start gap-4">
       <div className="relative max-w-full shrink-0 overflow-hidden border border-slate-200 bg-slate-100" style={{ height: map.height, width: map.width }}>
-        {map.tiles.map((tile) => (
-          // A map tile is one fixed-size PNG from a third-party host, positioned by hand; the image
-          // optimiser would proxy every tile through this app for nothing. The directive stays the LAST line.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            alt=""
-            aria-hidden
-            className="absolute select-none"
-            key={tile.key}
-            loading="lazy"
-            src={tile.url}
-            style={{ height: tile.size, left: tile.left, top: tile.top, width: tile.size }}
-          />
-        ))}
+        {/* The streets: one picture from this app's own route, which asks Google with the server key (13 Nov 2026).
+            `lazy`, so a row nobody scrolls to asks for nothing. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt="" aria-hidden className="absolute inset-0 select-none" height={map.height} loading="lazy" src={map.basemapUrl} width={map.width} />
         <svg aria-hidden className="pointer-events-none absolute inset-0" height={map.height} width={map.width}>
           {phone && place ? (
             <line stroke="#e11d48" strokeDasharray="4 3" strokeWidth={2} x1={phone.left} x2={place.left} y1={phone.top} y2={place.top} />

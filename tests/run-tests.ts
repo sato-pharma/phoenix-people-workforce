@@ -2586,6 +2586,7 @@ import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-caller
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
+import { runTelegramHomeCardTests } from "./telegram-home-card.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
@@ -9927,8 +9928,12 @@ await runTest(
   runMarketingCustomerMergeTombstoneTests,
 );
 await runTest(
-  "push opt-in nudge (never shown with an active subscription, dismissal is permanent and additive)",
+  "push opt-in nudge (never shown with a device receiving, an answer stands until a device drops, additive)",
   runPushOptInNudgeTests,
+);
+await runTest(
+  "the home page Telegram card (everybody not connected, never a test account, once, decided by the server)",
+  runTelegramHomeCardTests,
 );
 await runTest(
   "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",

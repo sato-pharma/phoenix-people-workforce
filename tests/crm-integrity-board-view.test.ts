@@ -13,7 +13,13 @@ import {
   type IntegrityFilterable,
   type IntegrityFilters,
 } from "../src/lib/crm-integrity/integrity-board-filters.ts";
-import { buildCaseMap, caseSpreadMeters, OSM_TILE_HOST } from "../src/lib/crm-integrity/integrity-case-map.ts";
+import {
+  buildCaseMap,
+  CASE_MAP_BASEMAP_ROUTE,
+  CASE_MAP_MAX_SIDE,
+  caseSpreadMeters,
+  parseCaseMapBasemapQuery,
+} from "../src/lib/crm-integrity/integrity-case-map.ts";
 import {
   CASE_READING_LABELS,
   caseStory,
@@ -502,8 +508,37 @@ function runMapTests() {
   assert.equal(map.markers.length, 2);
   assert.equal(map.pairs.length, 1, "two readings are one pair");
   assert.ok(map.spreadMeters !== null && Math.round(map.spreadMeters) === 2724, `the spread must be measured, got ${map.spreadMeters}`);
-  assert.ok(map.tiles.length > 0 && map.tiles.every((tile) => tile.url.startsWith(OSM_TILE_HOST)), "the tiles are free OpenStreetMap tiles");
-  assert.ok(map.attribution.includes("OpenStreetMap"), "the tiles must be attributed");
+  // 🔴 THE STREETS ARE ONE GOOGLE PICTURE, ASKED OF THIS APP'S OWN ROUTE (owner, 13 Nov 2026: "Move it to
+  // Google Maps"). No reader's browser asks a map host anything, and the server key never reaches one.
+  assert.ok(map.basemapUrl.startsWith(`${CASE_MAP_BASEMAP_ROUTE}?`), "the streets are asked of the app's own route");
+  assert.ok(!/https?:|key=/i.test(map.basemapUrl), "the address names no outside host and carries no key");
+  assert.ok(!("tiles" in map), "no tile list is handed to the page any more");
+  assert.ok(map.attribution.includes("Google"), "the picture is attributed to Google in words");
+  // The route draws exactly the frame the markers were placed in: the address round-trips through its own reader.
+  const asked = parseCaseMapBasemapQuery(new URL(map.basemapUrl, "https://phoenix.test").searchParams);
+  assert.ok(asked !== null, "the route accepts the address the map builds");
+  assert.deepEqual([asked.zoom, asked.width, asked.height], [map.zoom, map.width, map.height], "the same zoom and frame");
+  assert.ok(Math.abs(asked.centre.lat - map.centre.lat) < 1e-6 && Math.abs(asked.centre.lon - map.centre.lon) < 1e-6, "the same centre, to 11 cm");
+  // Google draws at most 640 pixels a side, so a frame is never built wider than the picture behind it.
+  const wide = buildCaseMap([{ label: "The pin", lat: 30.0444, lon: 31.2357, accuracyMeters: 12 }], { width: 2000, height: 100 });
+  assert.ok(wide !== null && wide.width === CASE_MAP_MAX_SIDE && wide.height === 256, "a frame is held between one tile and Google's limit");
+  // 🔴 EVERY PICTURE IS COUNTED AGAINST THE COMPANY'S ACCOUNT, so the route draws only a frame this module builds.
+  const query = (text: string) => parseCaseMapBasemapQuery(new URLSearchParams(text));
+  assert.ok(query("lat=30.0444&lon=31.2357&zoom=15&w=320&h=256") !== null, "an ordinary frame is drawn");
+  for (const [refused, why] of [
+    ["lat=30.0444&lon=31.2357&zoom=15&w=320", "a missing side"],
+    ["lat=&lon=31.2357&zoom=15&w=320&h=256", "an empty latitude (which reads as zero)"],
+    ["lat=abc&lon=31.2357&zoom=15&w=320&h=256", "a latitude that is not a number"],
+    ["lat=95&lon=31.2357&zoom=15&w=320&h=256", "a latitude off the map"],
+    ["lat=30.0444&lon=231&zoom=15&w=320&h=256", "a longitude off the map"],
+    ["lat=30.0444&lon=31.2357&zoom=19&w=320&h=256", "a zoom past the one this module uses"],
+    ["lat=30.0444&lon=31.2357&zoom=2&w=320&h=256", "a zoom below the one this module uses"],
+    ["lat=30.0444&lon=31.2357&zoom=15.5&w=320&h=256", "a zoom that is not whole"],
+    ["lat=30.0444&lon=31.2357&zoom=15&w=641&h=256", "a side past Google's limit"],
+    ["lat=30.0444&lon=31.2357&zoom=15&w=320&h=100", "a side smaller than one tile"],
+  ] as const) {
+    assert.equal(query(refused), null, `${why} is refused before Google is asked`);
+  }
 
   // 🔴 ONE READING DRAWS NO SPREAD, AND NO SECOND PIN. A replay case has one coordinate by
   // definition, and inventing a second point for it would be inventing evidence.
@@ -760,15 +795,42 @@ function runScreenTests() {
   assert.ok(view.includes("CrmPhotoThumb") && /lazy/.test(view), "the photograph is loaded lazily");
   assert.ok(view.includes("None kept"), "a case with no photograph says so in words");
 
-  // Tiles load only for a case he has actually opened, so a tile host learns an area only for a case
-  // he looked at — and the markers and the metres are ours, so the panel is still true with no
+  // The map picture loads only for a case he has actually opened, so Google is asked about an area only
+  // for a case he looked at — and the markers and the metres are ours, so the panel is still true with no
   // basemap behind it.
   assert.ok(view.includes("CaseMapPanel"), "the map is its own panel, rendered inside an opened case");
-  // The attribution is rendered from the map's own field (its words are `OSM_ATTRIBUTION`, asserted
-  // above) — and beside it, the sentence that keeps the panel honest when the tiles do not load: the
+  // The attribution is rendered from the map's own field (its words are `CASE_MAP_ATTRIBUTION`, asserted
+  // above) — and beside it, the sentence that keeps the panel honest when the picture does not load: the
   // markers and every metre are ours, so the numbers stand with no streets behind them.
   assert.ok(view.includes("{map.attribution}"), "the basemap is attributed on screen");
-  assert.ok(view.includes("the tiles did not load"), "the panel must say when the streets are missing");
+  assert.ok(view.includes("the map picture did not load"), "the panel must say when the streets are missing");
+  assert.ok(view.includes("src={map.basemapUrl}"), "the panel draws the one picture the map names");
+  for (const [surface, path] of [["the board's panel", VIEW_PATH], ["the refused try's map", "../src/components/admin/refused-try-map.tsx"]] as const) {
+    assert.ok(!/openstreetmap|map\.tiles|https?:\/\/[^"'`\s]*tile/i.test(stripComments(read(path))), `${surface} asks no tile host for anything`);
+  }
+
+  // 🔴 THE ROUTE THAT ASKS GOOGLE: the boards' own readers, a frame this module builds, a ceiling per person,
+  // and a picture nobody else's browser keeps. Each of these is what stands between a page and the company's bill.
+  const basemapRoute = stripComments(read("../app/api/admin/phoenix-crm/case-map-basemap/route.ts"));
+  assert.match(basemapRoute, /export async function GET\(/, "the map route reads");
+  assert.doesNotMatch(basemapRoute, /export async function (?:POST|PATCH|PUT|DELETE)\(/, "and only reads");
+  assert.match(basemapRoute, /await assertPermission\(access, "phoenix_crm", "read"\);/, "the permission is asserted on the server");
+  assert.match(
+    basemapRoute,
+    /if \(!canReadIntegrityBoard\(viewer\) && !canReadRefusedReadings\(viewer\) && !canDecideFarVisitHolds\(viewer\)\) \{\s*throw notFoundError\(/,
+    "only a reader of one of the boards is drawn a map, and anybody else gets the boards' own 404",
+  );
+  const order = ["assertPermission(", "notFoundError(", "parseCaseMapBasemapQuery(", "assertApiRateLimit(", "fetchBasemapPng("].map((step) => basemapRoute.indexOf(step, basemapRoute.indexOf("export async function GET(")));
+  assert.ok(order.every((at) => at > 0) && order.every((at, index) => index === 0 || at > order[index - 1]!), "who, then what, then how often, and only then is Google asked");
+  assert.match(basemapRoute, /if \(!frame\) throw validationError\(/, "a frame this module would not build is refused");
+  assert.match(basemapRoute, /"Cache-Control": "private, max-age=86400"/, "the picture is kept by the reader's own browser for a day and by nothing shared");
+  assert.match(basemapRoute, /"Cache-Control": "no-store" \}, status: 503/, "a picture Google would not draw is not kept, so the next look asks again");
+  assert.match(basemapRoute, /process\.env\.GOOGLE_MAPS_SERVER_KEY/, "the key is the server's, read on the server");
+  assert.ok(!/NEXT_PUBLIC/.test(basemapRoute), "and never a key a browser holds");
+  assert.ok(
+    read("../src/lib/security/access-registry.ts").includes('pattern: "/api/admin/phoenix-crm/case-map-basemap"'),
+    "the map route is in the access registry",
+  );
 
   // The URL mirror is `replaceState`, never `router.replace`: the page is ONE server render of about
   // ten chunked reads, and a `router.replace` per keystroke would re-run every one of them.
