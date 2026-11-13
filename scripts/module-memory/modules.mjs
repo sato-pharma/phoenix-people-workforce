@@ -67,6 +67,28 @@ export const MODULES = [
     keywords: ["dispute", "dispute center", "disputed deduction", "case briefing", "accept the dispute", "reject the dispute", "refund the deduction", "اعتراض"],
     tables: ["deduction_disputes", "dispute_"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` BELOW RECORDS: `payroll` reached 33
+  // rules and its injected pointer measured 4,118 bytes against the 4,000-byte margin
+  // `tests/module-memory.test.ts` holds, the moment the late-expense carry rule (REC-029) landed. The
+  // AUTOMATED PAYROLL RUN is the clean cut: the wizard has its own folders, and its rules — Part 1 and
+  // Part 2, the held record, publish and the Part 2 stamp, the run sheets and bank files, the drift
+  // check, the expense carry — are read while editing the run, not a deduction connector. 18 rules and
+  // 16 notes move; `payroll` keeps 15 rules. `payroll` KEEPS EVERY GLOB IT HAD, so an automated-payroll
+  // file loads the PAIR and nothing that used to arrive stops arriving. The file itself was nowhere near
+  // its 72,000-byte cap — two different limits, and this is the small one.
+  {
+    id: "payroll-automated",
+    title: "Payroll — the automated payroll run",
+    scope: "The Automated Payroll wizard: Part 1 and Part 2, the held record and its release, publish and the Part 2 stamp, the run sheets and bank files, the module-drift check, the expense reconciliation and the late-expense carry.",
+    globs: [
+      "src/lib/automated-payroll/**",
+      "src/components/automated-payroll/**",
+      "app/**/automated-payroll/**",
+      "tests/*automated-payroll*",
+    ],
+    keywords: ["automated payroll", "payroll wizard", "part 1 confirm", "part 2 confirm", "part 2 stamp", "held salary release", "bank file", "bank transfer file", "module drift", "late expense", "carry forward"],
+    tables: ["automated_payroll"],
+  },
   // ── The sales area is THREE modules, and the split is deliberately LOPSIDED ──
   //
   // One file held all of it until 2026-10-02, when it reached 87% of MODULE_FILE_MAX_BYTES. The cap
