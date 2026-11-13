@@ -29,7 +29,9 @@ import {
 
 // 🔴 THIS NUMBER MAY ONLY RISE. When a migration adds a key, add it to the baseline and raise this in
 // the same PR. Lowering it is removing a guard on whose money a row is — the owner is told first.
-const MIN_EMPLOYEE_KEYS = 112;
+// 110 since 13 Nov 2026: geo_bricks and probation_feedback_comments, both empty and unused, were dropped on
+// the owner's decision (20261113191017), and their two keys went with them. No other table lost one.
+const MIN_EMPLOYEE_KEYS = 110;
 
 // The money, leave and attendance keys REC-037 is about (its three migrations), as schema.table.column.
 const REQUIRED = [

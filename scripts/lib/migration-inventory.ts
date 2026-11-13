@@ -2451,6 +2451,11 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // employee_locations_employee_hr_id_idx and v2_vacation_sla_runs_run_date_idx are gone, and the four indexes
   // that answer the same reads are present and valid. Indexes only, no row changed; re-applying is a no-op.
   "20261113190101_drop_four_duplicate_indexes.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs (the production MCP declined it; staging took it through
+  // the MCP). Evidence, production: none of the ten tables resolves with to_regclass, and the foreign keys to
+  // public.employees fell from 112 to 110, the two the dropped tables carried. Every table was counted empty
+  // inside the migration's own transaction; re-applying is a no-op.
+  "20261113191017_drop_ten_never_used_empty_tables.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
