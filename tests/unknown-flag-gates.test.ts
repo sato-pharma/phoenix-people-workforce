@@ -185,6 +185,7 @@ const PINNED = [
   "scripts/seed-vlookup-master.mjs",
   "scripts/select-census.mjs",
   "scripts/sentry-setup.mjs",
+  "scripts/set-backup-reader-login.mjs",
   "scripts/setup-telegram-bot.mjs",
   "scripts/slow-audit.mjs",
   "scripts/source-of-sales-direct-import-cleanup.ts",

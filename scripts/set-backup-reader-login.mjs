@@ -21,7 +21,17 @@ import { spawnSync } from "node:child_process";
 import { randomBytes, randomInt } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 import { scramVerifier } from "./lib/scram-verifier.mjs";
+
+// A flag this script does not know is refused, never ignored (scripts/lib/refuse-arguments.mjs). It has no
+// dry run: the only way to see what it would do is to read it.
+refuseUnknownFlags({
+  name: "set-backup-reader-login",
+  entry: import.meta.url,
+  known: ["--confirm-production"],
+  hints: ["there is no dry run: this sets a new password on production and writes one Railway variable"],
+});
 
 const PRODUCTION_REF = "ozucdzovmcqvepbozvqf";
 const ROLE = "phoenix_backup_reader";
