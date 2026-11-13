@@ -150,7 +150,16 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (280 as of 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (284 as of 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 280 to 284 on 2026-11-13 — the employee change log, and three from other work.** Production
+read 284; the four that join are, by oid, the newest four. `public.employee_change_log`
+(`20261113151738`, enterprise audit REC-039) is the append-only history of every change to an employee
+record, written only by its trigger: row security on, no policy, no browser grant, so only the service
+role reaches it. The other three are on the same server-only pattern:
+`public.contract_renewal_manager_recommendations` (696572), `public.phoenix_crm_visit_archive` (649346)
+and `public.phoenix_crm_ireports360_checkin_matches` (649338). Re-proved live the same day: 0 of all 284
+are selectable, insertable, updatable or deletable by `anon` or `authenticated`.
 
 **Raised 277 to 280 on 2026-11-03 — three from other work.** Production read 280; the three that join
 are, by oid, the newest three, all on the same server-only pattern: `public.marketing_customer_merges`

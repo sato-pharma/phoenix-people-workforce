@@ -189,6 +189,43 @@ one version of it is 200× the next largest. It keeps 12 rather than 72, or it a
 global ceiling and evict the cheap, useful history of the other six. Add a heavy table by setting
 `max_versions` in `recovery.protected_tables`, not by editing a function.
 
+### Every money and people table, since 2026-11-13 (enterprise audit REC-036)
+
+The seven above protected payroll's output and the roster, but not the tables payroll is computed
+FROM, so a bad write to a deduction decision or a leave request at 14:00 could only be undone from
+last night's whole-database backup, restored into a separate project. `20261113151741` registers 43
+more, notes prefixed `REC-036`, applied to staging and production on 13 Nov 2026 (50 registry rows on
+each afterwards):
+
+- **Payroll** — `automated_payroll_runs`, `_draft_rows`, `_step_state`, `_carry_forward`,
+  `_held_releases`, `_held_part1_unpaid`, `_held_entered`, `_held_settlements`, `_non_employees`,
+  `_non_employee_recurring`, `_standing_additions`; `payroll_recurring_adjustments`,
+  `payroll_statutory_config`, `salary_flags`, `salary_allowance_defaults`, `employee_compensation`,
+  `employee_salary_structure`, and the five `payroll_copilot_*` tables.
+- **Deductions and disputes** — `deductions_candidates`, `deductions_decisions`,
+  `deductions_publications`, `deductions_publication_lines`, `daily_deductions_publications`,
+  `daily_deductions_lines`, `dispute_refunds`.
+- **Expenses** — `outstation_expense_requests`, `outstation_expenses`, `outstation_expense_reports`,
+  `expense_payroll_links`.
+- **Leave and attendance** — `v2_vacation_requests`, `v2_vacation_approval_steps`,
+  `attendance_settlements`, `attendance_annual_balance_charges`, `attendance_raw_punches`.
+- **People** — `employee_resignations`, `employee_hiring_profile`, `employee_offboarding_profile`,
+  `probation_cases`, `probation_evaluations`.
+
+Measured on production that day (read-only, canonical JSON of each whole table): **14.2 MB per full
+version for all 43 together**. The five largest — `attendance_raw_punches` 3.3 MB,
+`deductions_candidates` 3.0 MB, `outstation_expense_requests` 2.2 MB, `v2_vacation_requests` 2.0 MB,
+`deductions_decisions` 1.0 MB — keep **24** versions, the rest 72, so none of them can drive the
+512 MB ceiling and evict the other tables' history. The migration refuses to finish if a registered
+key is not the table's real primary key.
+
+**Left out on purpose:** the append-only trails (`automated_payroll_audit`, `deductions_audit`,
+`employee_salary_change_log`, `employee_change_log`) refuse UPDATE, DELETE and TRUNCATE by trigger,
+so there is nothing for a restore to undo; and the rebuilt tables (`expense_claims`,
+`expense_claim_events` by `phx_refresh_expense_claims`, the weekly attendance digests) are restored
+by restoring their source and rebuilding. `tests/employee-and-deduction-history.test.ts` pins the 43,
+the 24-version five and these exclusions.
+
 Measured after the first real run: the whole store is **2,336 kB on disk** (17 MB of logical JSON,
 which TOASTs well).
 
