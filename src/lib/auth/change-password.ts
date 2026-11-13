@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSupabaseBridgeRequiredForRole, updateAppSessionVersion } from "@/lib/auth/app-sessions";
 import { normalizeRole } from "@/lib/auth/permissions";
+import { passwordWeakness } from "@/lib/auth/password-strength";
 import { errorMessageOf } from "@/lib/http/api-errors";
 import {
   createSupabaseAuthSession,
@@ -27,6 +28,14 @@ export class SamePasswordError extends Error {
   constructor() {
     super("New password must be different from your current password.");
     this.name = "SamePasswordError";
+  }
+}
+
+/** The new password is one every guessing list tries first (password-strength.ts); the message says why. */
+export class WeakPasswordError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WeakPasswordError";
   }
 }
 
@@ -93,6 +102,9 @@ export async function changeUserPassword(input: {
   if (input.newPassword.length < 8) {
     throw new Error("New password must be at least 8 characters.");
   }
+  // And not a password every guessing list tries first (password-strength.ts).
+  const weakness = passwordWeakness(input.newPassword, [row.login_id, row.hr_id]);
+  if (weakness) throw new WeakPasswordError(weakness);
 
   const newPasswordHash = await bcrypt.hash(input.newPassword, 12);
   const currentVersion = Number.isFinite(row.session_version) ? Number(row.session_version) : 1;

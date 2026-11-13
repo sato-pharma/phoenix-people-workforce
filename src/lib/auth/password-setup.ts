@@ -23,6 +23,7 @@ import {
   passwordSetupWhatsAppUrl,
   temporaryPasswordExpiryLabel,
 } from "@/lib/auth/password-setup-whatsapp";
+import { passwordWeakness } from "@/lib/auth/password-strength";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import {
   createReadableTemporaryPassword,
@@ -832,6 +833,9 @@ export async function completePasswordSetup(input: { password: string; token: st
   if (password.length < 8) {
     throw new Error("Password must be at least 8 characters.");
   }
+  // And not a password every guessing list tries first (password-strength.ts).
+  const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
+  if (weakness) throw new Error(weakness);
 
   const passwordHash = await bcrypt.hash(password, 12);
   const supabase = getSupabaseAdmin();

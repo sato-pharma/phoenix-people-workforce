@@ -8,6 +8,7 @@ import {
   phoenixSupabaseAccessTokenCookieName,
   phoenixSupabaseRefreshTokenCookieName,
   SamePasswordError,
+  WeakPasswordError,
   WrongCurrentPasswordError,
 } from "@/lib/auth/change-password";
 import { getRequestIp } from "@/lib/auth/audit";
@@ -194,6 +195,13 @@ export async function POST(request: Request) {
     if (error instanceof SamePasswordError) {
       return NextResponse.json(
         { error: "same_password", message: error.message },
+        { status: 400 },
+      );
+    }
+
+    if (error instanceof WeakPasswordError) {
+      return NextResponse.json(
+        { error: "weak_password", message: error.message },
         { status: 400 },
       );
     }

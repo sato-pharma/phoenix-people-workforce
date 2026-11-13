@@ -1,4 +1,5 @@
 import { runDisplayScaleTests } from "./display-scale.test.ts";
+import { seedPermissionMatrixWithDefaultsForTests } from "../src/lib/auth/permissions.ts";
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
@@ -3023,6 +3024,7 @@ import { runMemoryRateBucketsTests } from "./memory-rate-buckets.test.ts";
 import { runCvTextIsolationTests } from "./cv-text-isolation.test.ts";
 import { runCredentialEmailMirrorTests } from "./credential-email-mirror.test.ts";
 import { runCredentialOutboxSealTests } from "./credential-outbox-seal.test.ts";
+import { runPermissionMatrixColdStartTests } from "./permission-matrix-cold-start.test.ts";
 import { runCredentialRedactionTests } from "./credential-redaction.test.ts";
 import {
   runApiErrorWrappedDatabaseTextTests,
@@ -3196,6 +3198,9 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
     return;
   }
   ranCount += 1;
+  // CI has no database and the permission matrix fails closed on a cold start: every test starts from
+  // the compiled defaults, as a database with no override rows would load (permissions.ts).
+  seedPermissionMatrixWithDefaultsForTests();
   const watchId = seenCount;
   writeWatchMarker?.(`PHX_TEST_START ${watchId} ${name.replace(/\s+/g, " ")}\n`);
   const startedAt = performance.now();
@@ -12076,6 +12081,10 @@ await runTest(
 await runTest(
   "a reset code or a set-your-password link never sits readable in the email outbox: both are sealed before the row is written, opened only in memory to send, deleted once the row is sent, skipped or out of retries, and keyed out of the dedupe hash; every other email is stored as before",
   runCredentialOutboxSealTests,
+);
+await runTest(
+  "the permission matrix fails closed on a cold start with the override table unreadable — every role holds nothing but the Super Admin, who keeps the defaults to repair it, and the next readable load serves the real matrix; and a chosen password is never a well-known one, a straight run, a word dressed with numbers or the person's own login id",
+  runPermissionMatrixColdStartTests,
 );
 await runTest(
   "no record keeps a usable password code or set-your-password link: the review queue's copy of the email, the notification's own row and the provider's click events are stripped before they are stored, a held credential email is never re-sent from review, and every other email is stored as it was",
