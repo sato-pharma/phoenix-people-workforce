@@ -188,6 +188,7 @@ import { departurePhotoLocationRefusal } from "@/lib/outstation/departure-photo-
 import {
   isOutstationExpenseInPayroll,
   isOutstationRequestHeldForRepair,
+  isUnchangedOutstationReapproval,
   nextEvidenceGateStatus,
   outstationDeparturePhotoReminderDue,
   resolveOutstationGateState,
@@ -3719,8 +3720,36 @@ export async function approveOutstationRequestForPayroll(
   assertOutstationClaimUnchanged({ current: checkedUpdatedAt, expected: options.expectedRevision });
 
   const acceptedStatus = access.scope === "system" ? "accepted_by_system" : "accepted_by_admin";
-  const now = new Date().toISOString();
   const typedComment = cleanText(options.comment);
+
+  // Approving a claim that is already accepted, unchanged, writes nothing, pushes nothing and
+  // audits nothing (F-PAY-015, isUnchangedOutstationReapproval).
+  const existingGate = resolveOutstationGateState({
+    employeeRole: existing.employeeRole,
+    evidenceGateStatus: existing.evidenceGateStatus,
+    hasArrivalPhoto: Boolean(existing.carEvidenceImagePath),
+    hasDeparturePhoto: Boolean(existing.departureEvidenceImagePath),
+    workloadGateStatus: existing.workloadGateStatus,
+  });
+  if (
+    isUnchangedOutstationReapproval({
+      currentStatus: existing.status,
+      acceptedStatus,
+      typedComment,
+      alreadyPushed: linkedPayroll !== null,
+      payrollEligible: existingGate.isPayrollEligible,
+    })
+  ) {
+    return {
+      alreadyApproved: true,
+      expenseTripId: outstationPayrollTripId(existing.id),
+      gate: existingGate,
+      payrollExpenseRows: 0,
+      request: await withLiveRequestName(existing),
+    };
+  }
+
+  const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .update({
@@ -3803,6 +3832,7 @@ export async function approveOutstationRequestForPayroll(
   }
 
   return {
+    alreadyApproved: false,
     expenseTripId: outstationPayrollTripId(request.id),
     gate,
     payrollExpenseRows,

@@ -159,7 +159,10 @@ export async function POST(
 
     return NextResponse.json({
       expenseTripId: result.expenseTripId,
-      message: "Outstation request approved and queued for payroll expense import.",
+      alreadyApproved: result.alreadyApproved,
+      message: result.alreadyApproved
+        ? "This outstation request was already approved — nothing was changed."
+        : "Outstation request approved and queued for payroll expense import.",
       payrollExpenseRows: result.payrollExpenseRows,
       request: result.request,
       success: true,
