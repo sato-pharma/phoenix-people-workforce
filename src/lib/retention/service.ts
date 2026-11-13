@@ -373,23 +373,23 @@ export async function getRetentionDashboardData(
   return { conversations, themes, rollup: buildRollup(conversations, themes), stats, schemaReady: true };
 }
 
-async function replaceThemes(conversationId: string, themes: RetentionThemeInput[]): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  const { error: deleteError } = await supabase
-    .from("hr_retention_conversation_themes")
-    .delete()
-    .eq("conversation_id", conversationId);
-  if (deleteError) throw new Error(retentionErrorMessage(deleteError));
-  if (themes.length === 0) return;
+/** The rows phx_replace_retention_conversation_themes / phx_update_retention_conversation insert. */
+function themeRows(themes: RetentionThemeInput[]) {
+  return themes.map((theme) => ({
+    theme_key: theme.themeKey,
+    sentiment: theme.sentiment,
+    note: theme.note ?? null,
+  }));
+}
 
-  const { error } = await supabase.from("hr_retention_conversation_themes").insert(
-    themes.map((theme) => ({
-      conversation_id: conversationId,
-      theme_key: theme.themeKey,
-      sentiment: theme.sentiment,
-      note: theme.note ?? null,
-    })),
-  );
+// One database call, one transaction: the function locks the conversation row, deletes its themes
+// and inserts the new set, so a failure part-way can never leave a conversation with its themes
+// deleted and not replaced (F-HR-011). It throws on any error - the caller must not carry on.
+async function replaceThemes(conversationId: string, themes: RetentionThemeInput[]): Promise<void> {
+  const { error } = await getSupabaseAdmin().rpc("phx_replace_retention_conversation_themes", {
+    p_conversation_id: conversationId,
+    p_themes: themeRows(themes),
+  });
   if (error) throw new Error(retentionErrorMessage(error));
 }
 
@@ -465,7 +465,7 @@ export async function updateRetentionConversation(
   const supabase = getSupabaseAdmin();
   const { data: before, error: beforeError } = await supabase
     .from("hr_retention_conversations")
-    .select("id,kind,employee_name,retention_risk,is_regrettable,would_rejoin,follow_up_action,follow_up_due,follow_up_done_at")
+    .select("id,kind,employee_name,retention_risk,is_regrettable,would_rejoin,follow_up_action,follow_up_due,follow_up_done_at,updated_at")
     .eq("id", input.id)
     .maybeSingle();
   if (beforeError) throw new Error(retentionErrorMessage(beforeError));
@@ -476,6 +476,7 @@ export async function updateRetentionConversation(
     employee_name: string;
     retention_risk: RetentionRisk | null;
     is_regrettable: boolean | null;
+    updated_at: string | null;
   };
 
   // Re-check the kind rules against the MERGED result, not the patch alone: clearing a stay
@@ -503,10 +504,18 @@ export async function updateRetentionConversation(
     patch.follow_up_done_at = input.followUpDone ? new Date().toISOString() : null;
   }
 
-  const { error } = await supabase.from("hr_retention_conversations").update(patch).eq("id", input.id);
-  if (error) throw new Error(retentionErrorMessage(error));
+  // Themes are normalised BEFORE anything is written, so a bad sentiment refuses the whole edit.
+  const themes = input.themes !== undefined ? normalizeThemes(input.themes) : null;
 
-  if (input.themes !== undefined) await replaceThemes(input.id, normalizeThemes(input.themes));
+  // The conversation patch and the themes commit together or not at all, and only if nobody else
+  // changed the conversation since it was read above (compare-and-set on updated_at) - F-HR-011.
+  const { error } = await supabase.rpc("phx_update_retention_conversation", {
+    p_conversation_id: input.id,
+    p_patch: patch,
+    p_themes: themes === null ? null : themeRows(themes),
+    p_expected_updated_at: current.updated_at ?? null,
+  });
+  if (error) throw new Error(retentionErrorMessage(error));
 
   await writeRequiredAuditLog({
     actorLoginId: actor,

@@ -4633,20 +4633,12 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     ? `This request was not responded to within ${ADMIN_OVERRIDE_STALL_DAYS} days, so its approval was transferred to the System Administrator. ${input.decision === "approve" ? "Approved" : "Rejected"} by ${adminName}, System Administrator.${text(input.decisionComment) ? ` ${text(input.decisionComment)}` : ""}`
     : input.decisionComment ?? null;
 
-  await recordVacationApprovalStepDecision({
-    decision: input.decision,
-    decisionComment: effectiveDecisionComment,
-    overriddenByHrId: overrideContext ? input.actorHrId : null,
-    stepId: step.id,
-  });
-  if (step.stepKey === "hr") {
-    await closeSiblingPendingHrApprovalSteps({
-      actorHrId: input.actorHrId,
-      decidedStepId: step.id,
-      decisionValue,
-      requestId: input.request.id,
-    });
-  }
+  // The step row is NOT written here any more (F-HR-010). It used to be decided - and its HR
+  // siblings closed - with their own calls before the request moved, so a missed request
+  // compare-and-set left the step decided and the request standing still. Both branches below now
+  // decide the step and move the request in ONE database transaction: phx_apply_vacation_step_decision
+  // reproduces recordVacationApprovalStepDecision and closeSiblingPendingHrApprovalSteps exactly.
+  const stepOverriddenByHrId = overrideContext ? hrIdForStorage(input.actorHrId) || null : null;
 
   const nextStatus = evaluation.nextStatus;
   const isFinal = evaluation.isFinal;
@@ -4685,12 +4677,18 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     // under a per-employee advisory lock + status CAS, applies the split, and writes the
     // decision in one transaction. The request-local period/entitlement (computed above by
     // calculatePaymentForRequest) is passed in; the contended values are recomputed inside.
-    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_paid_approval", {
+    //
+    // phx_apply_vacation_paid_approval_with_step decides the step (and closes the HR siblings) and
+    // then calls that unchanged RPC, in the same transaction - the step and the request commit
+    // together or not at all.
+    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_paid_approval_with_step", {
       p_request_id: input.request.id,
       p_expected_status: input.request.status,
+      p_step_id: step.id,
+      p_overridden_by_hr_id: stepOverriddenByHrId,
       p_next_status: nextStatus,
       p_step: step.stepKey === "hr" ? "hr" : "manager",
-      p_decision_by_hr_id: input.actorHrId,
+      p_decision_by_hr_id: input.actorHrId ?? null,
       p_decision_comment: nullableText(effectiveDecisionComment),
       p_now: now,
       p_entitlement_days: balance.entitlementDays,
@@ -4733,14 +4731,22 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
       });
     }
 
-    const { data, error } = await getSupabaseAdmin()
-      .from(vacationRequestsTable)
-      .update(updatePayload)
-      .eq("id", input.request.id)
-      .eq("status", input.request.status)
-      .select("*")
-      .single();
+    // One transaction: lock the request, check its status is still input.request.status, decide the
+    // step (pending -> approved/rejected), close the HR siblings, apply updatePayload. The function
+    // accepts only the columns built above; it refuses anything else.
+    const { data, error } = await getSupabaseAdmin().rpc("phx_apply_vacation_step_decision", {
+      p_request_id: input.request.id,
+      p_expected_status: input.request.status,
+      p_step_id: step.id,
+      p_step_status: decisionValue,
+      p_decision_comment: nullableText(effectiveDecisionComment),
+      p_overridden_by_hr_id: stepOverriddenByHrId,
+      p_actor_hr_id: input.actorHrId ?? null,
+      p_now: now,
+      p_request_patch: updatePayload,
+    });
     if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+    if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
     decidedRow = data as VacationRequestDbRow;
   }
   const updated = await mapVacationRowForDisplay(decidedRow);

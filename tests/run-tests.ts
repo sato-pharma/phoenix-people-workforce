@@ -3080,6 +3080,7 @@ import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archiv
 import { runEmployeeAndDeductionHistoryTests } from "./employee-and-deduction-history.test.ts";
 import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test.ts";
 import { runDirectOrdersAndMarketingAtomicTests } from "./direct-orders-and-marketing-atomic.test.ts";
+import { runHrAtomicWritesTests } from "./hr-atomic-writes.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12236,6 +12237,7 @@ await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page
 await runTest("every change to an employee and to a deduction decision is kept, and the money and people tables are in the hourly undo log (enterprise audit, 13 Nov 2026): salary figures and identifiers are named, never stored; the log refuses update, delete and truncate even in replica mode; no browser role reaches it; 43 tables registered, the five largest capped at 24 versions; and no later migration takes any of it back", runEmployeeAndDeductionHistoryTests);
 await runTest("a pay, deduction, leave or attendance row must name a real employee (enterprise audit, 13 Nov 2026): 22 money, leave and attendance tables carry a key to the employee list, each added only after an orphan count that refuses, ON UPDATE CASCADE ON DELETE RESTRICT, and no later migration takes one off", runEmployeeKeyForeignKeysTests);
 await runTest("direct-order collection and marketing decision are atomic (the collection is one locked compare-and-set write with offsets summed under the lock; a marketing decision refuses a request that is no longer pending approval; cancel closes the open rungs in the same transaction)", runDirectOrdersAndMarketingAtomicTests);
+await runTest("two HR writes that could half-land are each one transaction now (enterprise audit, 13 Nov 2026): a retention conversation and its confidential themes are replaced together under a row lock and a compare-and-set, never a delete then an insert; a leave approver's step is decided and the request moved together under the request's row lock, paid approvals included, never the step first", runHrAtomicWritesTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
