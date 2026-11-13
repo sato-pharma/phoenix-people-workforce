@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runReconciliationChecks } from "@/lib/reconciliation/service";
+import { answerNowThenFinish } from "@/lib/http/answer-now";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { recordReconciliationRun } from "@/lib/system-audit/reconciliation-ledger";
@@ -41,14 +42,19 @@ export async function GET(request: Request) {
     message: "Reconciliation check is not authorized.",
   });
   if (denied) return denied;
-  try {
-    // Slug matches the scheduler job name, which is what the Healthchecks dead-man's switch pings.
-    return await withDeadMansSwitch("phoenix-reconciliation-check", () => runReconciliation());
-  } catch (error) {
-    logError("Reconciliation check failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    const message = clientSafeErrorMessage(error, "Reconciliation check failed.");
-    return NextResponse.json({ error: "reconciliation_check_failed", message }, { status: 500 });
-  }
+  // The scheduler hangs up at 30 seconds whatever the job is set to (cut at 30,155 ms on 13 Nov 2026),
+  // so it is answered 202 at once and finished after the response; `?wait=1` waits for the report as
+  // before. The verdict is the heartbeat, never this route's status. See answer-now.ts.
+  return answerNowThenFinish(request, "phoenix-reconciliation-check", async () => {
+    try {
+      // Slug matches the scheduler job name, which is what the Healthchecks dead-man's switch pings.
+      return await withDeadMansSwitch("phoenix-reconciliation-check", () => runReconciliation());
+    } catch (error) {
+      logError("Reconciliation check failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
+      const message = clientSafeErrorMessage(error, "Reconciliation check failed.");
+      return NextResponse.json({ error: "reconciliation_check_failed", message }, { status: 500 });
+    }
+  });
 }
 
 export async function POST(request: Request) {

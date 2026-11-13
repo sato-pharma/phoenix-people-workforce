@@ -3078,6 +3078,8 @@ import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
 import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
 import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archive-screen.test.ts";
 import { runEmployeeAndDeductionHistoryTests } from "./employee-and-deduction-history.test.ts";
+import { runCronAnswerNowTests } from "./cron-answer-now.test.ts";
+import { runPunchFeedStalledTelegramTests } from "./punch-feed-stalled-telegram.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12232,6 +12234,8 @@ await runTest("the code-scanning alerts that were real (9 Nov 2026): a sign-in r
 await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups its cards by region and district manager through the one shared rule, the meters and share bars add up, and the shared chrome stays flat, square and free of sideways scroll", runRepsListPremiumTests);
 await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page asks the database by uuid, never by the screen's own: id; the same-name check folds as the database does and the approver is told; an outside customer with a grade is filed for approval; a merged duplicate never comes back by a request; a seat's rep who left by the visit day is never credited and a missed day after it is refused; nobody who has left is told anything; and Validate again goes to whoever holds the seat now", runPhoenixCrmSweepTests);
 await runTest("every change to an employee and to a deduction decision is kept, and the money and people tables are in the hourly undo log (enterprise audit, 13 Nov 2026): salary figures and identifiers are named, never stored; the log refuses update, delete and truncate even in replica mode; no browser role reaches it; 43 tables registered, the five largest capped at 24 versions; and no later migration takes any of it back", runEmployeeAndDeductionHistoryTests);
+await runTest("a scheduled route that outlasts its scheduler answers at once (integration audit, 13 Nov 2026): the daily notification run, the reconciliation check, the mailbox sweep and the weekly Private Calendar notice answer 202 before the run starts and finish it after the response; wait=1 hands back the run's own report; the cron secret is checked before the answer; each still reports to its heartbeat; and the stranded-job re-fire waits for the run", runCronAnswerNowTests);
+await runTest("the punch-feed alarm also reaches Telegram (integration audit, 13 Nov 2026): once per person per Cairo day, after the feed is judged and the admin toggle is read, Telegram alone on the system module, the last punch in Cairo time, and a failed send never becomes an email", runPunchFeedStalledTelegramTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
