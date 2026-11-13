@@ -1976,6 +1976,7 @@ import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.te
 import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runResignationCancelRestoreTests } from "./resignation-cancel-restore.test.ts";
+import { runResignationCompleteOrderTests } from "./resignation-complete-order.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
@@ -3114,6 +3115,8 @@ import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
+import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
+import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -7196,6 +7199,11 @@ await runTest(
 await runTest(
   "resignation cancel restores the employee (status, pay, seat, vacancy, login, CRM id) before the row is stamped",
   runResignationCancelRestoreTests,
+);
+
+await runTest(
+  "resignation complete ends the employee FIRST and stamps completed LAST (a failed step leaves it Approved, names the step, and a retry completes cleanly)",
+  runResignationCompleteOrderTests,
 );
 
 await runTest(
@@ -12355,6 +12363,8 @@ await runTest(
   "the morning jobs move to one schedule each behind PHOENIX_DAILY_JOBS_SPLIT: switched off (what ships) /api/notifications/daily runs every job once, through the shared runners, digest first, and /api/cron/daily/<job> runs none and records no heartbeat; switched on, the reverse; never both and never neither, in the routes, the heartbeat declarations, the Healthchecks check and the re-fire policies; every job has exactly one cron-job.org entry and one heartbeat at the same minute, no two share a minute, the job route runs one job per request, and the jobs run are exactly the thirty the fan-out ran",
   runDailyJobsSplitTests,
 );
+await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
+await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
