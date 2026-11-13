@@ -166,7 +166,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `platform-observability` — Platform — structured logging, Sentry and the audit trail's own persistence | `src/lib/observability/**` and 13 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
-| `database-migrations` — Database — migrations, their ledger and the routes that apply them | `supabase/migrations/**` and 7 more |
+| `database-migrations` — Database — migrations, their ledger and the routes that apply them | `supabase/migrations/**` and 11 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
 | `engineering-tests` — Engineering — tests, and what makes a result evidence | `tests/support/**` and 2 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 15 more |

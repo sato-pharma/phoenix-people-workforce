@@ -135,6 +135,15 @@ function in `pg_class` / `pg_proc`.
 If the change is read by the app, also confirm the app sees it — a missing table answers PGRST205
 through PostgREST, not 42P01.
 
+Then refresh the production schema baseline and commit it with the migration:
+
+```bash
+node scripts/schema-baseline.mjs --write
+```
+
+The nightly Migration Drift Check compares production with `supabase/schema/production.sql`; a
+change no migration on `main` names turns it red. Account: `docs/schema-baseline.md`.
+
 ## Phase 8 — commit, push, open the pull request
 
 Automatic, no approval needed: branch first, stage only the migration and the files that belong to

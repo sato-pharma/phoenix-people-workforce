@@ -84,13 +84,14 @@ jobs:
     # cancelled run no longer costs one — but `cancelled` still hides WHICH leg found what, and it
     # can skip the Telegram alert. A STEP that hits its own ceiling fails only that step, and
     # `continue-on-error` turns that into a reported finding, alerted and then failing the job at
-    # its last step. So the sum of the step budgets below (19
+    # its last step. So the sum of the step budgets below (24
     # minutes) staying under this ceiling is what makes `cancelled` unreachable, and that margin —
-    # 7 minutes against a measured setup of ~40s — is the thing to preserve when editing either
+    # 6 minutes against a measured setup of ~40s — is the thing to preserve when editing either
     # number. The four setup steps are deliberately left unbudgeted, for the same reason they are
     # deliberately left able to fail the job: a hung `pnpm install` is a BROKEN check, not a finding,
     # and it must never conclude success. Pinned by tests/github-workflow-validity.test.ts.
-    timeout-minutes: 25
+    # 25 → 30 on 2026-11-13: the schema-baseline leg added a 5-minute budget (REC-041).
+    timeout-minutes: 30
 
     # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
     # "Unrecognized named-value: 'secrets'" and the ENTIRE workflow fails to parse, so every run
@@ -106,6 +107,8 @@ jobs:
     # this value never reaches Railway through that path. Don't rename or consolidate either.
     env:
       HAS_PRODUCTION_SUPABASE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
+      # The schema-baseline leg reads production through a database URL, not the service-role key.
+      HAS_PRODUCTION_DB_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL != '' }}
 
     steps:
       - name: Check out repository
@@ -278,6 +281,29 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
 
+      # SCHEMA BASELINE (added 2026-11-13, REC-041 / F-DB-010). The legs above prove migrations were
+      # recorded and that the structure is sound; none of them can say what production's schema IS.
+      # supabase/schema/production.sql is a schema-only pg_dump of production's application schemas,
+      # committed, and this leg dumps production again and compares, object by object.
+      #
+      # A difference named by a migration merged since the baseline was written is a baseline that is
+      # behind: a ::warning::, the leg stays green. A difference NO migration on main names is red: a
+      # change made by hand, or a migration applied whose pull request has not merged. A dump that
+      # could not run is red too — nothing measured is never a pass. docs/schema-baseline.md.
+      #
+      # PRODUCTION ONLY, like the advisor leg: the baseline describes production. pg_dump runs from the
+      # pinned postgres image so its major version matches the one that wrote the file (a different
+      # major prints a different preamble). The URL reaches the container by environment, never argv.
+      - name: Check schema baseline (production)
+        id: schema_baseline_production
+        continue-on-error: true
+        timeout-minutes: 5
+        if: ${{ always() && env.HAS_PRODUCTION_DB_URL == 'true' }}
+        run: pnpm run check:schema-baseline
+        env:
+          SCHEMA_BASELINE_DOCKER: "1"
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+
       # Without this the production legs would just show as "skipped" — indistinguishable from
       # "ran and passed" at a glance, which is the same class of silent-green this whole
       # workflow exists to prevent.
@@ -285,6 +311,11 @@ jobs:
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY != 'true' }}
         run: |
           echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — production migration drift and schema shape were NOT checked. Only staging was verified. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the production legs."
+
+      - name: Warn when the schema baseline could not be checked
+        if: ${{ always() && env.HAS_PRODUCTION_DB_URL != 'true' }}
+        run: |
+          echo "::warning::PHOENIX_PRODUCTION_DATABASE_URL is not set — production was NOT compared with supabase/schema/production.sql."
 
       # The durable record — a job summary a human can read on the run page, naming the leg.
       #
@@ -298,7 +329,7 @@ jobs:
       #
       # This step always exits 0: failing the job is the last step's work, after the alert is sent.
       - name: Report the database posture finding
-        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure') }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || steps.schema_baseline_production.outcome == 'failure') }}
         env:
           MIGRATIONS_STAGING: ${{ steps.migrations_staging.outcome }}
           MIGRATIONS_STAGING_SWEEP: ${{ steps.migrations_staging_sweep.outcome }}
@@ -306,6 +337,7 @@ jobs:
           SCHEMA_SHAPE_STAGING: ${{ steps.schema_shape_staging.outcome }}
           SCHEMA_SHAPE_PRODUCTION: ${{ steps.schema_shape_production.outcome }}
           ADVISOR_BASELINE_PRODUCTION: ${{ steps.advisor_baseline_production.outcome }}
+          SCHEMA_BASELINE_PRODUCTION: ${{ steps.schema_baseline_production.outcome }}
         run: |
           set -uo pipefail
 
@@ -318,6 +350,7 @@ jobs:
             printf '| schema shape (staging) | `%s` |\n' "$SCHEMA_SHAPE_STAGING"
             printf '| schema shape (production) | `%s` |\n' "$SCHEMA_SHAPE_PRODUCTION"
             printf '| advisor baseline (production) | `%s` |\n' "$ADVISOR_BASELINE_PRODUCTION"
+            printf '| schema baseline (production) | `%s` |\n' "$SCHEMA_BASELINE_PRODUCTION"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "::error::Database posture finding — read the failed check leg above for the diagnosis."
@@ -360,7 +393,7 @@ jobs:
       # turning this workflow back into the thing whose absence cost three days and 412 exposed
       # customer names on 2026-08-06, which is the incident the block above records.
       - name: Notify Telegram on failure
-        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || inputs.test_alert) }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || steps.schema_baseline_production.outcome == 'failure' || inputs.test_alert) }}
         continue-on-error: true
         timeout-minutes: 3
         env:
@@ -456,7 +489,7 @@ jobs:
           else
             HEADER='DATABASE POSTURE CHECK FAILED'
             [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
-            TEXT=$(printf '%s\n\nMigration drift / schema shape is red on staging or production.\n\nThis is the check that found six anon-readable backup tables on 2026-08-06 and went unread for three days.\n\n%s' "$HEADER" "$RUN_URL")
+            TEXT=$(printf '%s\n\nMigration drift / schema shape / schema baseline is red on staging or production.\n\nThis is the check that found six anon-readable backup tables on 2026-08-06 and went unread for three days.\n\n%s' "$HEADER" "$RUN_URL")
           fi
           # Capture the body, not just the status. A silent non-2xx is how this step reported
           # success while delivering nothing on the very first run.
@@ -482,7 +515,7 @@ jobs:
       # Gated on the same step outcomes as the report and the alert (never `inputs.test_alert`: a
       # self-test of the channel is not a finding). The full account is in the header.
       - name: Fail the run when a check found something
-        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure') }}
+        if: ${{ always() && (steps.migrations_staging.outcome == 'failure' || steps.migrations_staging_sweep.outcome == 'failure' || steps.migrations_production.outcome == 'failure' || steps.schema_shape_staging.outcome == 'failure' || steps.schema_shape_production.outcome == 'failure' || steps.advisor_baseline_production.outcome == 'failure' || steps.schema_baseline_production.outcome == 'failure') }}
         timeout-minutes: 1
         run: |
           echo "::error::The database posture check found something — the failed check leg above names it."

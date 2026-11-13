@@ -182,6 +182,7 @@ const PINNED = [
   "scripts/restate-area-month.ts",
   "scripts/restore-source-of-sales.mjs",
   "scripts/run-holiday-bridge-collection.ts",
+  "scripts/schema-baseline.mjs",
   "scripts/seed-vlookup-master.mjs",
   "scripts/select-census.mjs",
   "scripts/sentry-setup.mjs",
