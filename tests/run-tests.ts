@@ -5443,7 +5443,7 @@ await runTest(
   + "body, the setup screen is reported as an ANSWER rather than hunted past, the browser closes "
   + "whatever happened, no credential reaches the response or the audit row, it is absent from the "
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
-  + "clear step — the flag stays false until a live run replaces all four placeholders)",
+  + "clear step — the flag is true only because the live rehearsal of 4 Oct 2026 read all four controls)",
   runNewHireMailboxAppPasswordCaptureTests,
 );
 await runTest(
