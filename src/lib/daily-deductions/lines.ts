@@ -55,6 +55,12 @@ export function normalizeDailyLine(raw: unknown, index: number): DailyDeductions
 
   const unit = line.unit === "amount" ? "amount" : "days";
   const dates = Array.isArray(line.dates) ? line.dates.filter((d): d is string => typeof d === "string") : [];
+  // A single deduction (owner, 2026-11-13: "I want each deduction to be single") charges exactly its
+  // one day. The database refuses anything else too; this is the friendly error before it.
+  const deductionDate = line.deductionDate == null || line.deductionDate === "" ? null : String(line.deductionDate);
+  if (deductionDate !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(deductionDate) || dates.length !== 1 || dates[0] !== deductionDate)) {
+    throw new Error(`Validation: line ${index + 1} is a one-day deduction and must list exactly its own day.`);
+  }
   const employeeName = typeof line.employeeName === "string" && line.employeeName.trim() ? line.employeeName.trim() : null;
 
   return {
@@ -70,12 +76,13 @@ export function normalizeDailyLine(raw: unknown, index: number): DailyDeductions
     sourceSystem: String(line.sourceSystem ?? ""),
     reason: typeof line.reason === "string" ? line.reason : null,
     hrNote: typeof line.hrNote === "string" ? line.hrNote : undefined,
+    ...(deductionDate ? { deductionDate } : {}),
   };
 }
 
-/** The identity of a tally line inside a snapshot: one per employee x category. */
-export function dailyLineKey(line: { category: string; employeeHrIdCompact: string }): string {
-  return `${line.category}|${line.employeeHrIdCompact}`;
+/** The identity of a row inside a snapshot: employee x category x day (no day for a whole-range row). */
+export function dailyLineKey(line: { category: string; employeeHrIdCompact: string; deductionDate?: string | null }): string {
+  return `${line.category}|${line.employeeHrIdCompact}|${line.deductionDate ?? ""}`;
 }
 
 /**
@@ -88,7 +95,7 @@ export function assertNoDuplicateDailyLines(lines: DailyDeductionsPublishLineInp
     const key = dailyLineKey(line);
     if (seen.has(key)) {
       throw new Error(
-        `Validation: ${line.employeeName ?? line.employeeHrId} appears twice for ${line.category}. Each employee×category is one tally line.`,
+        `Validation: ${line.employeeName ?? line.employeeHrId} appears twice for ${line.category}${line.deductionDate ? ` on ${line.deductionDate}` : ""}. Each deduction is sent once.`,
       );
     }
     seen.add(key);

@@ -1,37 +1,38 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import type { DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
 import { aggregateClippedLines, clipDraftToRange } from "../src/lib/daily-deductions/compute.ts";
-import { releasedLineNoticeKey } from "../src/lib/daily-deductions/notify-release.ts";
+import { assertNoDuplicateDailyLines, normalizeDailyLine } from "../src/lib/daily-deductions/lines.ts";
+import { notifyDailyDeductionsReleased, releasedLineNoticeKey, type ReleasedLineForNotice } from "../src/lib/daily-deductions/notify-release.ts";
 import {
-  figuresForDates,
+  heldReasonOf,
   indexReleasedLines,
   linesToRelease,
-  planDayRelease,
-  releasedDaysOf,
   releaseStateOf,
-  summarizeDays,
+  splitIntoSingles,
   type ComparableLine,
 } from "../src/lib/daily-deductions/release-state.ts";
 
 /**
- * RELEASE BY DAY (owner, 2026-11-13): "if you have 9 and 10 and 11 days, November, all deduction, all
- * value, 1,500 ... I want to select day 9 and day 11 in November and release only their deductions".
+ * EVERY DEDUCTION IS SINGLE (owner, 2026-11-13): "never group a group of deductions ... Ahmad Sharaf Din
+ * have a 3 days unpaid vacation, 9, 10, 11 ... I can select day 9 alone and release, or day 10 alone and
+ * release ... Never group them. I want each deduction to be single."
  *
- * The page used to release a whole employee × type line, every day of the range at once. This pins the
- * four things that make releasing single days safe: every day is priced on its own by the connector's
- * own rule (a CRM Thursday is half), a ticked-days release sends exactly those days (plus any already
- * out — the snapshot keeps one row per employee × type), a later day re-tells the employee, and a row
- * with days released outside the counted window is never re-sent short.
+ * This pins what makes that safe: each day is priced on its own by the connector's own rule, and only
+ * where the split is exact; the tally is split into one deduction per employee × type × day; releasing
+ * one day sends that day alone (its own stored row — the database keys rows by day since
+ * 20261113181600), so it can never replace or drop a day released before; a day is never charged twice
+ * against an older whole-range row; and each day is its own notice.
  */
 
 function draft(partial: Partial<DeductionsCandidateDraft> & Pick<DeductionsCandidateDraft, "dates" | "rawValue">): DeductionsCandidateDraft {
   return {
-    category: "fingerprint",
-    sourceSystem: "fingerprint",
+    category: "unpaid_vacation",
+    sourceSystem: "vacation",
     sourceRecordId: "r1",
-    employeeHrId: "M-101",
-    employeeName: "Test Person",
+    employeeHrId: "M-22",
+    employeeName: "Ahmed Sharaf Eldeen",
     monthKey: "2026-11",
     month: 11,
     year: 2026,
@@ -46,137 +47,163 @@ const NINE = "2026-11-09";
 const TEN = "2026-11-10";
 const ELEVEN = "2026-11-11";
 const THURSDAY = "2026-11-12";
+const FROM = "2026-11-01";
+const TO = "2026-11-12";
+const WINDOW = { from: FROM, to: TO };
 
-function tallyLine(partial: Partial<ComparableLine & { employeeName: string }> = {}): ComparableLine & { employeeName: string } {
-  return {
-    amount: 1500,
-    category: "fingerprint",
-    dates: [NINE, TEN, ELEVEN],
-    days: [
-      { amount: 500, date: NINE, daysCount: 1 },
-      { amount: 500, date: TEN, daysCount: 1 },
-      { amount: 500, date: ELEVEN, daysCount: 1 },
-    ],
-    daysCount: 3,
-    employeeHrIdCompact: "M101",
-    employeeName: "Test Person",
-    ...partial,
-  };
+type Line = ComparableLine & { employeeName: string; employeeHrId: string };
+
+function tallyOf(...drafts: DeductionsCandidateDraft[]): Line[] {
+  return aggregateClippedLines(drafts.map((item) => clipDraftToRange(item, FROM, TO)!)).lines as Line[];
 }
 
-const WINDOW = { from: "2026-11-01", to: "2026-11-12" };
-
-export function runDailyDeductionsReleaseByDayTests() {
-  // ── every day is priced on its own, by the connector's own rule ────────────
+export async function runDailyDeductionsReleaseByDayTests() {
+  // ── Ahmed's 9, 10 and 11 November: three single deductions ────────────────
+  const ahmed = tallyOf(draft({ dates: [NINE, TEN, ELEVEN], rawValue: 3, estimatedAmount: 2100 }));
+  const singles = splitIntoSingles(ahmed);
   {
-    const clipped = clipDraftToRange(
-      draft({ category: "crm", sourceSystem: "crm", dates: [NINE, TEN, THURSDAY], rawValue: 3, estimatedAmount: 1250 }),
-      "2026-11-01",
-      "2026-11-12",
-    );
-    assert.ok(clipped, "the finding is in range");
     assert.deepEqual(
-      clipped!.days,
+      singles.map((single) => [single.deductionDate, single.dates, single.amount, single.daysCount]),
       [
-        { amount: 500, date: NINE, daysCount: 1 },
-        { amount: 500, date: TEN, daysCount: 1 },
-        { amount: 250, date: THURSDAY, daysCount: 0.5 },
+        [NINE, [NINE], 700, 1],
+        [TEN, [TEN], 700, 1],
+        [ELEVEN, [ELEVEN], 700, 1],
       ],
-      "a CRM Thursday is priced at half a day, as the whole line prices it",
+      "one deduction per day, each at its own price — never one row for the three",
     );
-    assert.equal(clipped!.amount, 1250, "the whole line is unchanged by the per-day prices");
-
-    const unpriced = clipDraftToRange(draft({ dates: [NINE, TEN], rawValue: 2, estimatedAmount: null }), "2026-11-01", "2026-11-12");
-    assert.deepEqual(unpriced!.days, [], "a line with no salary on file carries no day prices");
-
-    const aggregated = aggregateClippedLines([
-      clipDraftToRange(draft({ dates: [NINE, TEN], rawValue: 2, estimatedAmount: 1000 }), "2026-11-01", "2026-11-12")!,
-      clipDraftToRange(draft({ dates: [ELEVEN], rawValue: 1, estimatedAmount: 500, sourceRecordId: "r2" }), "2026-11-01", "2026-11-12")!,
-    ]);
-    assert.equal(aggregated.lines.length, 1, "two findings for one person and type are one tally line");
-    assert.deepEqual(
-      aggregated.lines[0].days?.map((day) => [day.date, day.amount]),
-      [[NINE, 500], [TEN, 500], [ELEVEN, 500]],
-      "the tally line carries one price per day, across its findings",
-    );
-
-    const mixed = aggregateClippedLines([
-      clipDraftToRange(draft({ dates: [NINE], rawValue: 1, estimatedAmount: 500 }), "2026-11-01", "2026-11-12")!,
-      clipDraftToRange(draft({ dates: [TEN], rawValue: 1, estimatedAmount: null, sourceRecordId: "r2" }), "2026-11-01", "2026-11-12")!,
-    ]);
-    assert.equal(mixed.lines[0].days, undefined, "a line with any unpriced day carries no split — it can only go whole");
+    assert.ok(singles.every((single) => !("days" in single)), "the per-day prices are not sent to the snapshot");
   }
 
-  // ── what some of a line's days are worth ─────────────────────────────────
+  // ── release the 10th alone, then the 9th: each is its own row ─────────────
   {
-    const line = tallyLine({ amount: 1500.01 });
+    const tenth = singles.find((single) => single.deductionDate === TEN)!;
+    assert.deepEqual(linesToRelease([tenth], indexReleasedLines([]), WINDOW), [tenth], "the 10th goes out alone");
+
+    const released = indexReleasedLines([{ ...tenth }]);
     assert.deepEqual(
-      figuresForDates(line, [ELEVEN, NINE]),
-      { amount: 1000, category: "fingerprint", dates: [NINE, ELEVEN], daysCount: 2, employeeHrIdCompact: "M101" },
-      "9 and 11 November are the sum of those two days",
+      singles.map((single) => releaseStateOf(single, released)),
+      ["not_released", "released", "not_released"],
+      "only the 10th reads released — the 9th and 11th are untouched",
     );
+    const next = linesToRelease(singles, released, WINDOW);
+    assert.deepEqual(next.map((single) => single.deductionDate), [NINE, ELEVEN], "the 9th and 11th are still there to release on their own");
+    assert.ok(
+      next.every((single) => single.dates.length === 1 && single.dates[0] === single.deductionDate),
+      "REGRESSION: a later release sends ONLY its own day — it can never resend, replace or drop the 10th",
+    );
+
+    // The server refuses a one-day row that lists any other day, and the same day twice in one release.
+    assert.throws(
+      () => normalizeDailyLine({ ...tenth, dates: [NINE, TEN], employeeHrId: "M-22", rawDaysCount: 1, sourceSystem: "vacation" }, 0),
+      /must list exactly its own day/,
+    );
+    const nine = normalizeDailyLine({ ...singles[0], employeeHrId: "M-22", rawDaysCount: 1, sourceSystem: "vacation" }, 0);
+    const ten = normalizeDailyLine({ ...tenth, employeeHrId: "M-22", rawDaysCount: 1, sourceSystem: "vacation" }, 1);
+    assert.equal(nine.deductionDate, NINE, "the day travels to the database");
+    assert.doesNotThrow(() => assertNoDuplicateDailyLines([nine, ten]), "two days of one person and type are two deductions");
+    assert.throws(() => assertNoDuplicateDailyLines([nine, { ...nine }]), /appears twice/);
+  }
+
+  // ── a day inside an older whole-range row is already out ──────────────────
+  {
+    const oldRow = { ...ahmed[0]!, days: undefined, deductionDate: null };
+    const released = indexReleasedLines([oldRow]);
+    assert.deepEqual(
+      singles.map((single) => releaseStateOf(single, released)),
+      ["released", "released", "released"],
+      "a day an earlier whole-range release already charged is never charged again alone",
+    );
+    assert.deepEqual(linesToRelease(singles, released, WINDOW), []);
+  }
+
+  // ── each day is priced only where the split is exact ──────────────────────
+  {
+    const crm = splitIntoSingles(
+      tallyOf(draft({ category: "crm", sourceSystem: "crm", dates: [NINE, TEN, THURSDAY], rawValue: 3, estimatedAmount: 1250 })),
+    );
+    assert.deepEqual(
+      crm.map((single) => [single.deductionDate, single.amount, single.daysCount]),
+      [
+        [NINE, 500, 1],
+        [TEN, 500, 1],
+        [THURSDAY, 250, 0.5],
+      ],
+      "a CRM Thursday is half a day here too",
+    );
+
+    // A vacation request lists calendar days but charges a TOTAL of unpaid days spread across them
+    // (money review, 2026-11-13): no day of it has a price of its own, so it stays ONE deduction.
+    const spread = splitIntoSingles(tallyOf(draft({ dates: [NINE, TEN, ELEVEN], rawValue: 2, estimatedAmount: 1400 })));
+    assert.equal(spread.length, 1, "never split on a guess");
+    assert.equal(spread[0]!.deductionDate, null);
+    assert.deepEqual(spread[0]!.dates, [NINE, TEN, ELEVEN]);
+    assert.equal(spread[0]!.amount, 1400);
+
+    const held = splitIntoSingles(tallyOf(draft({ dates: [NINE, TEN], rawValue: 2, estimatedAmount: null })));
+    assert.deepEqual(held.map((single) => single.deductionDate), [NINE, TEN], "no salary on file: each day still shows on its own");
+    assert.deepEqual(held.map((single) => heldReasonOf(single, indexReleasedLines([]), WINDOW)), ["no_salary", "no_salary"]);
+    assert.deepEqual(linesToRelease(held, indexReleasedLines([]), WINDOW), [], "and is never released");
+  }
+
+  // ── a whole request is never released over days already out, or short ────
+  {
+    const whole = splitIntoSingles(tallyOf(draft({ dates: [NINE, TEN, ELEVEN], rawValue: 2, estimatedAmount: 1400 })))[0]!;
+    const aloneTen = { ...whole, amount: 700, dates: [TEN], deductionDate: TEN, daysCount: 1 };
+    assert.equal(heldReasonOf(whole, indexReleasedLines([aloneTen]), WINDOW), "days_released_alone");
+    assert.deepEqual(linesToRelease([whole], indexReleasedLines([aloneTen]), WINDOW), [], "it would charge the 10th twice");
+
+    const outside = { ...whole, dates: ["2026-10-30", NINE], deductionDate: null };
     assert.equal(
-      figuresForDates(line, [NINE, TEN, ELEVEN])!.amount,
-      1500.01,
-      "every day is the line's own figure to the piaster, never a re-summed one",
+      heldReasonOf(whole, indexReleasedLines([outside]), WINDOW),
+      "released_outside_range",
+      "re-sending only the in-range days would take 30 October back out",
     );
-    assert.equal(figuresForDates(tallyLine({ days: undefined }), [NINE]), null, "no day prices, no split");
+    assert.equal(heldReasonOf(whole, indexReleasedLines([outside]), { from: "2026-10-30", to: TO }), null, "a range that covers it can");
   }
 
-  // ── releasing 9 and 11, and leaving the 10th ─────────────────────────────
+  // ── each day is its own notice, naming that day ───────────────────────────
   {
-    const line = tallyLine();
-    const first = planDayRelease([line], new Set([NINE, ELEVEN]), indexReleasedLines([]), WINDOW);
-    assert.equal(first.lines.length, 1);
-    assert.deepEqual(first.lines[0].dates, [NINE, ELEVEN], "only the ticked days are sent");
-    assert.equal(first.lines[0].amount, 1000, "at what those days are worth");
-    assert.equal(first.lines[0].daysCount, 2);
-    assert.equal(first.addedAmount, 1000);
-    assert.equal(first.lines[0].days, undefined, "the per-day prices are not sent to the snapshot");
-
-    const released = indexReleasedLines([{ ...line, amount: 1000, dates: [NINE, ELEVEN], days: undefined, daysCount: 2 }]);
-    assert.equal(releaseStateOf(line, released), "partly_released", "two of three days out reads Some days released");
-    assert.deepEqual([...releasedDaysOf(line, released)].sort(), [NINE, ELEVEN], "the 9th and 11th are drawn as released");
-    assert.equal(linesToRelease([line], released).length, 1, "the whole-line Release still offers the rest");
-
-    const again = planDayRelease([line], new Set([NINE]), released, WINDOW);
-    assert.equal(again.lines.length, 0, "a day already out is never sent twice");
-
-    const rest = planDayRelease([line], new Set([TEN]), released, WINDOW);
-    assert.deepEqual(rest.lines[0].dates, [NINE, TEN, ELEVEN], "the 10th joins the row with the days already out");
-    assert.equal(rest.lines[0].amount, 1500, "and the row is then the whole line");
-    assert.equal(rest.addedAmount, 500, "the confirmation says what the 10th adds");
-
-    const days = summarizeDays([line, tallyLine({ employeeHrIdCompact: "M102", employeeName: "Other" })], released);
+    const rows: ReleasedLineForNotice[] = [NINE, ELEVEN].map((date, index) => ({
+      amount: 700,
+      category: "unpaid_vacation",
+      dates: [date],
+      daysCount: 1,
+      deductionDate: date,
+      employeeHrId: "M-22",
+      employeeHrIdCompact: "M22",
+      employeeName: "Ahmed Sharaf Eldeen",
+      id: `line-${index + 1}`,
+      rangeEnd: date,
+    }));
+    // The 10th was released earlier: the per-employee read brings it back too, and it is not re-told.
+    rows.push({ ...rows[0]!, dates: [TEN], deductionDate: TEN, id: "line-earlier" });
+    const told: Array<{ id: string; dates: readonly string[] }> = [];
+    const outcomes = await notifyDailyDeductionsReleased({
+      actorHrId: "B-10",
+      loadLines: async () => rows,
+      notify: async ({ line }) => {
+        told.push({ dates: line.dates ?? [], id: line.id });
+        return { ccHrIds: [], employeeNotified: true, status: "sent" as const };
+      },
+      pairs: [NINE, ELEVEN].map((date) => ({ category: "unpaid_vacation", deductionDate: date, employeeHrId: "M-22", employeeHrIdCompact: "M22" })),
+      publicationId: "pub-1",
+    });
     assert.deepEqual(
-      days.map((day) => [day.date, day.state, day.amount, day.releasedAmount]),
+      told,
       [
-        [NINE, "partly_released", 1000, 500],
-        [TEN, "not_released", 1000, 0],
-        [ELEVEN, "partly_released", 1000, 500],
+        { dates: [NINE], id: "line-1" },
+        { dates: [ELEVEN], id: "line-2" },
       ],
-      "each day reads its own total and what of it is out",
+      "the 9th and the 11th are two notices, each naming its own day — the 10th is not told again",
     );
+    assert.deepEqual(outcomes.map((outcome) => outcome.status), ["sent", "sent"]);
+    assert.notEqual(releasedLineNoticeKey(rows[0]!), releasedLineNoticeKey(rows[1]!));
   }
 
-  // ── a row with days out beyond the counted window is never re-sent short ──
+  // ── the page never groups: no per-day or per-employee bulk button ─────────
   {
-    const line = tallyLine();
-    const released = indexReleasedLines([{ ...line, amount: 500, dates: ["2026-10-30"], days: undefined, daysCount: 1 }]);
-    const plan = planDayRelease([line], new Set([NINE]), released, WINDOW);
-    assert.equal(plan.lines.length, 0, "re-sending only the in-range days would take 30 October back out");
-    assert.deepEqual(plan.skipped.map((skip) => skip.reason), ["released_outside_range"], "and it is named, not silent");
-
-    const held = planDayRelease([tallyLine({ amountUnknown: true })], new Set([NINE]), indexReleasedLines([]), WINDOW);
-    assert.deepEqual(held.skipped.map((skip) => skip.reason), ["no_salary"], "a line with no salary on file is never sent by day either");
-  }
-
-  // ── a later day tells the employee again; the same days never twice ───────
-  {
-    const nine = releasedLineNoticeKey({ dates: [NINE], id: "line-1" });
-    const nineEleven = releasedLineNoticeKey({ dates: [ELEVEN, NINE], id: "line-1" });
-    assert.notEqual(nine, nineEleven, "releasing the 11th after the 9th is a new notice");
-    assert.equal(nineEleven, releasedLineNoticeKey({ dates: [NINE, ELEVEN], id: "line-1" }), "the same days in any order are one notice");
-    assert.equal(releasedLineNoticeKey({ dates: [], id: "line-2" }), "line-2", "a line with no days keeps the plain id");
+    const page = readFileSync(new URL("../src/components/admin/daily-deductions-workspace.tsx", import.meta.url), "utf8");
+    assert.match(page, /splitIntoSingles\(/, "the page lists single deductions");
+    assert.doesNotMatch(page, /Release this employee|Release all \(|Release day|Select all days/, "REGRESSION: no button releases a group");
   }
 }

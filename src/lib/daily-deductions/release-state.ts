@@ -1,37 +1,123 @@
-// Daily Deductions module: what state is each tally line in, against what has been released?
+// Daily Deductions module: every deduction stands ALONE — one employee, one type, one day — and what
+// state is it in, against what has been released?
+//
+// Owner, 2026-11-13: "never group a group of deductions ... Ahmad Sharaf Din have a 3 days unpaid
+// vacation, 9, 10, 11 ... I can select day 9 alone and release, or day 10 alone and release ... Never
+// group them. I want each deduction to be single." So the tally the server returns (one line per
+// employee x type, every day of the range) is split here into SINGLE deductions, one per day, each
+// priced by the server on its own (DailyDeductionTallyLine.days), and each released as its own row
+// (daily_deductions_lines.deduction_date). A line whose days cannot be priced one by one exactly stays
+// ONE deduction for the whole range — never split on a guess.
 //
 // Pure and browser-safe (no database, no server-only import): the workspace uses it to colour and
-// enable each line's Release button, and the unit tests load it directly.
+// enable each Release button, and the unit tests load it directly.
 //
-// A line is identified by employee x category (the snapshot's unique key). It is:
-//   - "not_released" - nothing for that employee x category is in the active snapshot;
-//   - "released"     - the snapshot holds the same figures the tally shows now;
-//   - "partly_released" - the snapshot holds SOME of this line's days, released day by day, at exactly
-//                      what those days are worth in the tally now (owner, 2026-11-13);
-//   - "changed"      - the snapshot holds this line, but the tally now counts differently
-//                      (a day was added or cleared since it was released), so it can be re-released.
+// A single deduction is:
+//   - "not_released" - nothing for it is in the active snapshot;
+//   - "released"     - the snapshot holds it at the figures the tally shows now (or, for a day, an
+//                      older whole-range row of the same employee x type already carries that day);
+//   - "changed"      - the snapshot holds it, but the tally now counts it differently.
 
 import type { DailyDeductionCategory, DailyDeductionDayFigure } from "./types.ts";
 
-export type ReleaseState = "not_released" | "partly_released" | "released" | "changed";
+export type ReleaseState = "not_released" | "released" | "changed";
 
-type KeyedLine = { category: DailyDeductionCategory | string; employeeHrIdCompact: string };
+type KeyedLine = {
+  category: DailyDeductionCategory | string;
+  employeeHrIdCompact: string;
+  /** The one day a single deduction charges; null (or absent) for a whole-range one. */
+  deductionDate?: string | null;
+};
 
 export type ComparableLine = KeyedLine & {
   daysCount: number;
   amount: number;
   dates: string[];
-  /** Each day priced alone (DailyDeductionTallyLine.days); absent on a released row. */
+  /** Each day priced alone (DailyDeductionTallyLine.days); absent on a single or a released row. */
   days?: DailyDeductionDayFigure[];
   /** No computable amount — never sent to release (see DailyDeductionTallyLine.amountUnknown). */
   amountUnknown?: boolean;
 };
 
+/** The identity of a single deduction, and of a released row: employee x type x day. */
 export function releaseLineKey(line: KeyedLine): string {
+  return `${line.category}|${line.employeeHrIdCompact}|${line.deductionDate ?? ""}`;
+}
+
+function pairKey(line: KeyedLine): string {
   return `${line.category}|${line.employeeHrIdCompact}`;
 }
 
-function sameDates(a: string[], b: string[]): boolean {
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Split the tally into single deductions — one per employee x type x DAY. A day's figure is the
+ * server's own price for that day; a line with one day is already single; a line whose days cannot
+ * be priced one by one stays one deduction for the whole range (deductionDate null). A line with no
+ * salary on file is split by day too, so each day shows on its own, held.
+ */
+export function splitIntoSingles<T extends ComparableLine & { rawDaysCount?: number }>(
+  lines: readonly T[],
+): Array<T & { deductionDate: string | null }> {
+  const out: Array<T & { deductionDate: string | null }> = [];
+  for (const line of lines) {
+    const dates = [...new Set(line.dates)].sort();
+    const { days, ...rest } = line;
+    if (dates.length === 1) {
+      out.push({ ...(rest as T), dates, deductionDate: dates[0]! });
+      continue;
+    }
+    if (line.amountUnknown === true && dates.length > 1) {
+      for (const date of dates) out.push({ ...(rest as T), amount: 0, daysCount: 1, dates: [date], deductionDate: date });
+      continue;
+    }
+    const byDate = new Map((days ?? []).map((day) => [day.date, day]));
+    if (dates.length > 1 && dates.every((date) => byDate.has(date))) {
+      for (const date of dates) {
+        const day = byDate.get(date)!;
+        out.push({
+          ...(rest as T),
+          amount: day.amount,
+          daysCount: day.daysCount,
+          ...("rawDaysCount" in rest ? { rawDaysCount: day.daysCount } : {}),
+          dates: [date],
+          deductionDate: date,
+        });
+      }
+      continue;
+    }
+    out.push({ ...(rest as T), dates, deductionDate: null });
+  }
+  return out;
+}
+
+export type ReleasedIndex<T extends ComparableLine = ComparableLine> = {
+  /** Released rows by employee x type x day. */
+  byKey: Map<string, T>;
+  /** Days carried by older whole-range rows (deductionDate null), by employee x type. */
+  wholeRangeDays: Map<string, Set<string>>;
+  /** Days released on their own, by employee x type. */
+  singleDays: Map<string, Set<string>>;
+};
+
+/** Index the released rows. */
+export function indexReleasedLines<T extends ComparableLine>(released: readonly T[]): ReleasedIndex<T> {
+  const byKey = new Map<string, T>();
+  const wholeRangeDays = new Map<string, Set<string>>();
+  const singleDays = new Map<string, Set<string>>();
+  for (const line of released) {
+    byKey.set(releaseLineKey(line), line);
+    const target = line.deductionDate ? singleDays : wholeRangeDays;
+    const set = target.get(pairKey(line)) ?? new Set<string>();
+    for (const date of line.deductionDate ? [line.deductionDate] : line.dates) set.add(date);
+    target.set(pairKey(line), set);
+  }
+  return { byKey, singleDays, wholeRangeDays };
+}
+
+function sameDates(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const left = [...a].sort();
   const right = [...b].sort();
@@ -46,191 +132,58 @@ function sameFigures(a: ComparableLine, b: ComparableLine): boolean {
   );
 }
 
-/** Index the released lines by employee x category. */
-export function indexReleasedLines<T extends KeyedLine>(released: readonly T[]): Map<string, T> {
-  const map = new Map<string, T>();
-  for (const line of released) map.set(releaseLineKey(line), line);
-  return map;
+export function releaseStateOf(single: ComparableLine, released: ReleasedIndex): ReleaseState {
+  const match = released.byKey.get(releaseLineKey(single));
+  if (match) return sameFigures(single, match) ? "released" : "changed";
+  // A day already carried by an older whole-range row is out — releasing it alone would charge it twice.
+  if (single.deductionDate && released.wholeRangeDays.get(pairKey(single))?.has(single.deductionDate)) return "released";
+  return "not_released";
 }
 
-export function releaseStateOf(tally: ComparableLine, released: ReadonlyMap<string, ComparableLine>): ReleaseState {
-  const match = released.get(releaseLineKey(tally));
-  if (!match) return "not_released";
-  if (sameFigures(tally, match)) return "released";
-  // Released day by day: the snapshot holds some of the days, at what those days are worth now.
-  const tallyDates = new Set(tally.dates);
-  if (match.dates.length > 0 && match.dates.every((date) => tallyDates.has(date))) {
-    const expected = figuresForDates(tally, match.dates);
-    if (expected && sameFigures(expected, match)) return "partly_released";
-  }
-  return "changed";
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/** What one day of a line charges, or null when the line carries no per-day price for it. */
-export function dayFigureOf(line: ComparableLine, date: string): DailyDeductionDayFigure | null {
-  if (!line.dates.includes(date)) return null;
-  if (line.dates.length === 1) return { amount: line.amount, date, daysCount: line.daysCount };
-  return line.days?.find((day) => day.date === date) ?? null;
-}
+export type HeldReason = "no_salary" | "released_outside_range" | "days_released_alone";
 
 /**
- * What a line charges for SOME of its days. Every day → the line's own figures to the piaster (so a
- * day-by-day release that ends up covering the whole line equals the whole-line release exactly); a
- * subset → the sum of those days' own prices; null when a day has no price of its own.
+ * Why a single deduction cannot be released from this tally, or null when it can.
+ *   - no_salary: the tally could not price it — the employee would be emailed "EGP 0.00".
+ *   - released_outside_range: a whole-range row already out holds days outside the counted window; a
+ *     release REPLACES that row, so the outside days would silently drop out.
+ *   - days_released_alone: a whole-range deduction over days already released one by one would
+ *     charge those days twice (the database refuses it too).
  */
-export function figuresForDates<T extends ComparableLine>(
-  line: T,
-  dates: readonly string[],
-): (KeyedLine & { amount: number; daysCount: number; dates: string[] }) | null {
-  const lineDates = new Set(line.dates);
-  const kept = [...new Set(dates)].filter((date) => lineDates.has(date)).sort();
-  if (kept.length === 0) return null;
-  if (kept.length === lineDates.size) {
-    return { category: line.category, employeeHrIdCompact: line.employeeHrIdCompact, amount: line.amount, daysCount: line.daysCount, dates: [...line.dates].sort() };
-  }
-  let amount = 0;
-  let daysCount = 0;
-  for (const date of kept) {
-    const day = dayFigureOf(line, date);
-    if (!day) return null;
-    amount += day.amount;
-    daysCount += day.daysCount;
-  }
-  return { category: line.category, employeeHrIdCompact: line.employeeHrIdCompact, amount: round2(amount), daysCount: round2(daysCount), dates: kept };
-}
-
-/** The days of a line that are out in the snapshot as the tally prices them now. */
-export function releasedDaysOf(tally: ComparableLine, released: ReadonlyMap<string, ComparableLine>): Set<string> {
-  const state = releaseStateOf(tally, released);
-  if (state === "released") return new Set(tally.dates);
-  if (state === "partly_released") return new Set(released.get(releaseLineKey(tally))?.dates ?? []);
-  return new Set();
-}
-
-export type DayReleaseSkip = {
-  line: KeyedLine & { employeeName?: string | null };
-  reason: "no_salary" | "released_outside_range" | "no_day_price";
-};
-
-export type DayReleasePlan<T extends ComparableLine> = {
-  /** The lines to send: each carries its already-released days PLUS the ticked days, priced now. */
-  lines: T[];
-  /** How much the snapshot moves by — what the ticked days add, not the lines' running totals. */
-  addedAmount: number;
-  skipped: DayReleaseSkip[];
-};
-
-/**
- * Release only the ticked DAYS (owner, 2026-11-13: "select day 9 and day 11 in November and release
- * only their deductions"). The snapshot keeps one row per employee × type, so a release on the 11th
- * after the 9th is out sends that row with BOTH days — the RPC replaces the row, never adds a second.
- *
- * A row whose released days reach OUTSIDE the counted window is skipped and named, never re-sent:
- * the tally cannot price those days, and re-sending only the in-range ones would silently take the
- * outside days back out of the employee's deductions.
- */
-export function planDayRelease<T extends ComparableLine & { employeeName?: string | null }>(
-  lines: readonly T[],
-  selectedDays: ReadonlySet<string>,
-  released: ReadonlyMap<string, ComparableLine>,
-  window: { from: string; to: string },
-): DayReleasePlan<T> {
-  const out: T[] = [];
-  const skipped: DayReleaseSkip[] = [];
-  let addedAmount = 0;
-  for (const line of lines) {
-    const picked = line.dates.filter((date) => selectedDays.has(date));
-    if (picked.length === 0) continue;
-    if (line.amountUnknown === true) {
-      skipped.push({ line, reason: "no_salary" });
-      continue;
-    }
-    const match = released.get(releaseLineKey(line));
-    if (match && match.dates.some((date) => date < window.from || date > window.to)) {
-      skipped.push({ line, reason: "released_outside_range" });
-      continue;
-    }
-    const target = [...new Set([...(match?.dates ?? []), ...picked])];
-    const figures = figuresForDates(line, target);
-    if (!figures) {
-      skipped.push({ line, reason: "no_day_price" });
-      continue;
-    }
-    if (match && sameFigures(figures, match)) continue;
-    addedAmount += figures.amount - (match?.amount ?? 0);
-    // The per-day prices stay behind: the stored row carries the days and their total, nothing more.
-    const sent: T = { ...line, amount: figures.amount, daysCount: figures.daysCount, dates: figures.dates };
-    delete sent.days;
-    out.push(sent);
-  }
-  return { addedAmount: round2(addedAmount), lines: out, skipped };
-}
-
-export type DaySummary = {
-  date: string;
-  /** Deduction lines touching this day, and the people they belong to. */
-  lineCount: number;
-  employeeCount: number;
-  /** What this day charges across every priced line. */
-  amount: number;
-  /** The part of it already out in the snapshot. */
-  releasedAmount: number;
-  releasedLineCount: number;
-  /** Lines touching this day that cannot be priced (no salary on file), never released. */
-  heldLineCount: number;
-  state: "not_released" | "partly_released" | "released";
-};
-
-/** One row per day of the tally — the "release by day" panel. */
-export function summarizeDays(
-  lines: readonly ComparableLine[],
-  released: ReadonlyMap<string, ComparableLine>,
-): DaySummary[] {
-  const byDate = new Map<string, DaySummary & { _employees: Set<string> }>();
-  for (const line of lines) {
-    const releasedDays = releasedDaysOf(line, released);
-    for (const date of line.dates) {
-      const row =
-        byDate.get(date) ??
-        { _employees: new Set<string>(), amount: 0, date, employeeCount: 0, heldLineCount: 0, lineCount: 0, releasedAmount: 0, releasedLineCount: 0, state: "not_released" as const };
-      byDate.set(date, row);
-      row.lineCount += 1;
-      row._employees.add(line.employeeHrIdCompact);
-      if (line.amountUnknown === true) {
-        row.heldLineCount += 1;
-        continue;
-      }
-      const day = dayFigureOf(line, date);
-      const amount = day?.amount ?? 0;
-      row.amount = round2(row.amount + amount);
-      if (releasedDays.has(date)) {
-        row.releasedLineCount += 1;
-        row.releasedAmount = round2(row.releasedAmount + amount);
-      }
-    }
-  }
-  return [...byDate.values()]
-    .map(({ _employees, ...row }) => {
-      const pricedLines = row.lineCount - row.heldLineCount;
-      const state: DaySummary["state"] =
-        row.releasedLineCount === 0 ? "not_released" : row.releasedLineCount >= pricedLines ? "released" : "partly_released";
-      return { ...row, employeeCount: _employees.size, state };
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
+export function heldReasonOf(
+  single: ComparableLine,
+  released: ReleasedIndex,
+  window: { from: string; to: string } | null,
+): HeldReason | null {
+  if (single.amountUnknown === true) return "no_salary";
+  if (single.deductionDate) return null;
+  const match = released.byKey.get(releaseLineKey(single));
+  if (window && match && match.dates.some((date) => date < window.from || date > window.to)) return "released_outside_range";
+  const alone = released.singleDays.get(pairKey(single));
+  if (alone && single.dates.some((date) => alone.has(date))) return "days_released_alone";
+  return null;
 }
 
 /**
- * The lines a "Release" click should send: everything in the selection that is not already released
- * as-is, and that has an amount. A line with no computable amount stays back until the salary is on
- * file — releasing it would email the employee "EGP 0.00", or a total missing the unpriced part.
+ * The single deductions a Release click should send: those not already out as shown, and not held.
+ * Each one is its own row — releasing the 9th never touches the 10th or the 11th.
  */
 export function linesToRelease<T extends ComparableLine>(
   selected: readonly T[],
-  released: ReadonlyMap<string, ComparableLine>,
+  released: ReleasedIndex,
+  window: { from: string; to: string } | null,
 ): T[] {
-  return selected.filter((line) => line.amountUnknown !== true && releaseStateOf(line, released) !== "released");
+  return selected.filter(
+    (single) => heldReasonOf(single, released, window) === null && releaseStateOf(single, released) !== "released",
+  );
+}
+
+/** The days of a released row, for the per-day dots on a whole-range deduction. */
+export function releasedDaysOf(single: ComparableLine, released: ReleasedIndex): Set<string> {
+  return releaseStateOf(single, released) === "released" ? new Set(single.dates) : new Set();
+}
+
+/** Total of a set of single deductions, to the piaster. */
+export function sumSingles(singles: ReadonlyArray<{ amount: number }>): number {
+  return round2(singles.reduce((sum, single) => sum + single.amount, 0));
 }

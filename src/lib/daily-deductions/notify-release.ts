@@ -21,10 +21,10 @@
  * reason*. So the amount and the day count are read back off the stored ROW here and handed to the
  * notifier — the mail must state the figure the line actually froze, not the one a screen showed.
  *
- * Idempotency rides on the LINE ID PLUS ITS DAYS (`releasedLineNoticeKey`). The id is stable per
- * (publication, employee, category) through the RPC's `on conflict … do update`, so re-releasing the
- * same days re-sends nothing — but a line released day by day (owner, 2026-11-13) grows its days, and
- * each new day released is a new charge the employee is told about.
+ * Idempotency rides on the ROW ID PLUS ITS DAYS (`releasedLineNoticeKey`). The id is stable per
+ * (publication, employee, category, day) through the RPC's `on conflict … do update`, so re-releasing
+ * the same deduction re-sends nothing. Since 2026-11-13 every day released on its own is its OWN row
+ * (owner: "I want each deduction to be single"), so each day is its own notice naming that day alone.
  *
  * BEST-EFFORT BY CONTRACT, like the monthly path: the money is already committed when this runs, so
  * nothing here may throw back into the release.
@@ -42,6 +42,8 @@ export type ReleasedLineForNotice = {
   employeeHrId: string;
   employeeHrIdCompact: string;
   employeeName: string | null;
+  /** The one day a single deduction charges; null for a whole-range row. */
+  deductionDate: string | null;
   /** The days the line charges, so the month label comes from the day and not from today. */
   dates: readonly string[];
   rangeEnd: string | null;
@@ -64,9 +66,8 @@ export type ReleaseNoticeOutcome = {
  * clock. A release run after midnight on the 1st must still say the month the day fell in.
  */
 /**
- * The line id plus the days it now charges. A line released day by day (owner, 2026-11-13) is ONE
- * row whose days grow — 9 November, then 9 and 11 — so the id alone would tell the employee about
- * the 9th and never the 11th. The same days re-sent still say nothing twice.
+ * The row id plus the days it charges. A one-day row never changes its day, so this is the id plus
+ * that day; an older whole-range row re-released with different days is a new notice.
  */
 export function releasedLineNoticeKey(line: Pick<ReleasedLineForNotice, "dates" | "id">): string {
   const days = [...new Set(line.dates)].filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(String(day))).sort();
@@ -79,12 +80,18 @@ export function releasedLineMonthKey(line: Pick<ReleasedLineForNotice, "dates" |
   return day ? day.slice(0, 7) : "";
 }
 
+/** Which released row a release named: employee x type x day (no day for a whole-range row). */
+function noticePairKey(pair: { category: string; employeeHrIdCompact: string; deductionDate?: string | null }): string {
+  return `${pair.employeeHrIdCompact}|${pair.category}|${pair.deductionDate ?? ""}`;
+}
+
 type LineRow = {
   id: string | null;
   amount: number | string | null;
   category: string | null;
   dates: unknown;
   days_count: number | string | null;
+  deduction_date: string | null;
   employee_hr_id: string | null;
   employee_hr_id_compact: string | null;
   employee_name: string | null;
@@ -101,14 +108,14 @@ function numberOrNull(value: number | string | null | undefined): number | null 
 /** Read back the rows the RPC just wrote, so each notice carries that line's real, stable id. */
 export async function loadReleasedLinesForNotice(input: {
   publicationId: string;
-  pairs: readonly { category: string; employeeHrIdCompact: string }[];
+  pairs: readonly { category: string; employeeHrIdCompact: string; deductionDate?: string | null }[];
 }): Promise<ReleasedLineForNotice[]> {
   if (input.pairs.length === 0) return [];
-  const wanted = new Set(input.pairs.map((pair) => `${pair.employeeHrIdCompact}|${pair.category}`));
+  const wanted = new Set(input.pairs.map(noticePairKey));
 
   const { data, error } = await getSupabaseAdmin()
     .from("daily_deductions_lines")
-    .select("id,amount,category,dates,days_count,employee_hr_id,employee_hr_id_compact,employee_name,range_end")
+    .select("id,amount,category,dates,days_count,deduction_date,employee_hr_id,employee_hr_id_compact,employee_name,range_end")
     .eq("publication_id", input.publicationId)
     .in("employee_hr_id_compact", [...new Set(input.pairs.map((pair) => pair.employeeHrIdCompact))]);
   if (error) throw new Error(`Failed to read the released lines for notification: ${error.message}`);
@@ -117,14 +124,16 @@ export async function loadReleasedLinesForNotice(input: {
   for (const row of (data ?? []) as LineRow[]) {
     const compact = String(row.employee_hr_id_compact ?? "");
     const category = String(row.category ?? "");
-    // The `in` filter is per employee, so a person who already had OTHER categories in the snapshot
-    // comes back with those rows too. Only the pairs this release named are notified.
-    if (!wanted.has(`${compact}|${category}`)) continue;
+    const deductionDate = typeof row.deduction_date === "string" ? row.deduction_date.slice(0, 10) : null;
+    // The `in` filter is per employee, so a person who already had OTHER rows in the snapshot — other
+    // types, other days — comes back with those too. Only the rows this release named are notified.
+    if (!wanted.has(noticePairKey({ category, deductionDate, employeeHrIdCompact: compact }))) continue;
     lines.push({
       amount: numberOrNull(row.amount),
       category,
       dates: Array.isArray(row.dates) ? row.dates.filter((day): day is string => typeof day === "string") : [],
       daysCount: numberOrNull(row.days_count),
+      deductionDate,
       employeeHrId: String(row.employee_hr_id ?? ""),
       employeeHrIdCompact: compact,
       employeeName: row.employee_name ?? null,
@@ -142,7 +151,7 @@ export async function loadReleasedLinesForNotice(input: {
  */
 export async function notifyDailyDeductionsReleased(input: {
   publicationId: string;
-  pairs: readonly { category: string; employeeHrIdCompact: string; employeeHrId: string }[];
+  pairs: readonly { category: string; employeeHrIdCompact: string; employeeHrId: string; deductionDate?: string | null }[];
   actorHrId: string | null;
   loadLines?: typeof loadReleasedLinesForNotice;
   notify?: typeof notifyDeductionPushed;
@@ -157,12 +166,11 @@ export async function notifyDailyDeductionsReleased(input: {
     logNotificationSendFailure("dailyDeductions.loadReleasedLines", error);
   }
 
-  const byPair = new Map(lines.map((line) => [`${line.employeeHrIdCompact}|${line.category}`, line]));
+  const byPair = new Map(lines.map((line) => [noticePairKey(line), line]));
   const outcomes: ReleaseNoticeOutcome[] = [];
 
   for (const pair of input.pairs) {
-    const key = `${pair.employeeHrIdCompact}|${pair.category}`;
-    const line = byPair.get(key);
+    const line = byPair.get(noticePairKey(pair));
     if (!line || !line.id) {
       outcomes.push({
         category: pair.category,

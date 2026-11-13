@@ -65,8 +65,13 @@ export function clipDraftToRange(
 
   // Each kept day priced ALONE, by the same rule — so one day can be released without the others
   // (owner, 2026-11-13: "select day 9 and day 11 in November and release only their deductions").
+  // Only where the split is EXACT: one date, or a draft that charges one day per date it lists (a CRM
+  // Thursday still weighs half). A vacation request lists calendar days but charges a TOTAL of unpaid
+  // days spread across them, so a day of it has no price of its own — it stays one deduction.
+  const originalCount = Array.isArray(draft.dates) ? draft.dates.length : 0;
+  const exactPerDay = originalCount === 1 || Number(draft.rawValue) === originalCount;
   const days: DailyDeductionDayFigure[] = [];
-  if (!amountUnknown) {
+  if (!amountUnknown && exactPerDay) {
     for (const date of keptDates) {
       const day = priceKeptDates(draft, [date]);
       if (!day || day.scaled == null) {

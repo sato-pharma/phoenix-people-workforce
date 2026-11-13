@@ -166,6 +166,9 @@ export type DailyDeductionsLine = {
   reason: string | null;
   hrNote: string;
   createdAt: string;
+  /** The ONE day this row charges when it was released on its own (owner, 2026-11-13: "I want each
+   * deduction to be single"); null on a row that carries a whole range. */
+  deductionDate: string | null;
   /** When THIS line was released into the snapshot (a re-release refreshes it). */
   releasedAt: string;
   releasedBy: string | null;
@@ -207,4 +210,6 @@ export type DailyDeductionsPublishLineInput = {
   sourceSystem: string;
   reason: string | null;
   hrNote?: string;
+  /** A single deduction's one day — `dates` is then exactly this day. Absent for a whole-range row. */
+  deductionDate?: string | null;
 };

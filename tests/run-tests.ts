@@ -4288,7 +4288,7 @@ await runTest(
   runDailyDeductionsReleaseTests,
 );
 await runTest(
-  "daily deductions release by day (each day priced alone, ticked days only, a later day re-tells, never re-sent short)",
+  "daily deductions are single (owner, 13 Nov 2026): one deduction per employee x type x day, each released and told on its own, priced only where the split is exact, never charged twice against an older whole-range row",
   runDailyDeductionsReleaseByDayTests,
 );
 await runTest(
