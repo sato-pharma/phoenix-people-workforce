@@ -1763,6 +1763,7 @@ import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expen
 import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
 import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
 import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-run-transition-claim.test.ts";
+import { runAutomatedPayrollBankFileDownloadGuardTests } from "./automated-payroll-bank-file-download-guard.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
@@ -6548,6 +6549,10 @@ await runTest(
 await runTest(
   "automated payroll: one transition at a time, and a Part 2 that asks about people who vanished",
   runAutomatedPayrollRunTransitionClaimTests,
+);
+await runTest(
+  "automated payroll: a run whose bank files were downloaded is not cancelled without a reason, and an unchanged outstation re-approve changes nothing",
+  runAutomatedPayrollBankFileDownloadGuardTests,
 );
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);

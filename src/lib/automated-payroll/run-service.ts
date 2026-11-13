@@ -18,6 +18,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import {
+  assertCancelAllowedAfterDownloads,
+  listBankFileDownloads,
+  recordBankFileDownloaded,
+} from "./bank-file-downloads.ts";
 import { holdRun } from "./run-hold.ts";
 import {
   landQueuedPayrollResyncsForPeriod,
@@ -664,7 +669,17 @@ export async function getRunForPeriod(
   return (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
 }
 
-export async function cancelRun(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function cancelRun(
+  access: AccessContext,
+  runId: string,
+  options: {
+    /**
+     * Cancel even though finance has downloaded a bank file (F-PAY-016). Refused without a reason;
+     * the reason is kept on the cancel's audit row. See bank-file-downloads.ts.
+     */
+    overrideDownloaded?: { reason?: string | null } | null;
+  } = {},
+): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "cancel a payroll run");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
@@ -672,7 +687,10 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
 
   // One transition at a time (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part1", "part2", "ready"], "Cancelling this run");
-  const { ledger, updated } = await whileClaimed(runId, transition, async () => {
+  const { ledger, updated, override } = await whileClaimed(runId, transition, async () => {
+    // A file that has left for the bank is not undone by cancelling the run — refuse first, before
+    // the ledger is touched, unless he says why (bank-file-downloads.ts). A read failure refuses too.
+    const override = assertCancelAllowedAfterDownloads(await listBankFileDownloads(runId), options.overrideDownloaded);
     // Undo this run's effect on the carry-forward ledger BEFORE marking it
     // cancelled. A run whose Part 2 was confirmed has already marked previous
     // months' overpayments as recovered — but a cancelled run pays nobody, so
@@ -680,13 +698,17 @@ export async function cancelRun(access: AccessContext, runId: string): Promise<M
     // exists to prevent). See releaseCarryForwardForCancelledRun.
     const released = await releaseCarryForwardForCancelledRun(runId);
     const cancelled = await updateRun(runId, { phase: "cancelled" }, { transitionToken: transition });
-    return { ledger: released, updated: cancelled };
+    return { ledger: released, updated: cancelled, override };
   });
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
     action: "run_cancelled",
-    detail: { carryForwardReleased: ledger.released, carryForwardDiscarded: ledger.discarded },
+    detail: {
+      carryForwardReleased: ledger.released,
+      carryForwardDiscarded: ledger.discarded,
+      ...(override.overridden ? { cancelledAfterBankFileDownload: true, overrideReason: override.reason } : {}),
+    },
   });
   return updated;
 }
@@ -3409,7 +3431,10 @@ export async function buildFinanceSheet(
           buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part2" }),
         ];
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
+  const fileName = `Automated-Payroll-${label}-${scope}-finance.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "finance", scope, fileName });
+  return { buffer, coverage, fileName };
 }
 
 /** Which finance scopes are available for a period (drives the finance dropdown). */
@@ -3493,7 +3518,10 @@ export async function buildFabSheet(
     salaryColumnLabel: scope === "part2" ? "Expense" : "Salary",
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `FAB-Salary-Transfer-${label}-${scope}.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "fab", scope, fileName });
+  return { buffer, coverage, fileName };
 }
 
 /**
@@ -3532,5 +3560,8 @@ export async function buildCibSheet(
 
   const buffer = await buildCibSheetWorkbook({ rows: cibRows });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
-  return { buffer, coverage, fileName: `CIB-Salary-Transfer-${label}-${scope}.xlsx` };
+  const fileName = `CIB-Salary-Transfer-${label}-${scope}.xlsx`;
+  // Recorded before it is handed out, or not handed out at all (F-PAY-016, bank-file-downloads.ts).
+  await recordBankFileDownloaded({ runId: run.id, actorHrId: actorId(access), file: "cib", scope, fileName });
+  return { buffer, coverage, fileName };
 }
