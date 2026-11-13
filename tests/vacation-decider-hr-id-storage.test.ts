@@ -88,16 +88,17 @@ export function runVacationDeciderHrIdStorageTests() {
     "an admin-recorded decision must store the decider's HR id through the same helper",
   );
 
-  // 3. The override column no longer uses the hyphen-stripping access key.
-  const stepDecision = functionBody(service, "async function recordVacationApprovalStepDecision(");
+  // 3. The override column no longer uses the hyphen-stripping access key. Since 13 Nov 2026 the step
+  // row is written by phx_apply_vacation_step_decision (F-HR-010); the service hands it the stored form.
+  const stepDecision = functionBody(service, "async function applyVacationDecisionSequential(");
   assert.match(
     stepDecision,
-    /const overriddenByHrId = hrIdForStorage\(input\.overriddenByHrId\) \|\| null;/,
+    /const stepOverriddenByHrId = overrideContext \? hrIdForStorage\(input\.actorHrId\) \|\| null : null;/,
     "overridden_by_hr_id must be stored through hrIdForStorage",
   );
   assert.doesNotMatch(
     stepDecision,
-    /overriddenByHrId = canonicalHrId\(/,
+    /OverriddenByHrId = [^;]*canonicalHrId\(/,
     "canonicalHrId strips the hyphen and lower-cases — it is a comparison key, never a stored value",
   );
 

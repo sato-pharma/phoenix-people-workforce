@@ -13,6 +13,7 @@
 --   the sibling HR rows) with their own calls, BEFORE the request update. When the request's status
 --   compare-and-set then missed - or anything between the two failed - the step stayed decided and
 --   the request never moved: an approval recorded against a request still waiting on that approver.
+--   Sick leave (applyVacationDecisionLegacy) had the same shape and goes through the same function.
 --   Here the step and the request commit together or not at all.
 -- ROLLBACK: drop function if exists public.phx_apply_vacation_paid_approval_with_step(uuid, text, uuid, text, text, text, text, text, timestamptz, numeric, date, date, numeric, text);
 --           drop function if exists public.phx_apply_vacation_step_decision(uuid, text, uuid, text, text, text, text, timestamptz, jsonb);
@@ -55,7 +56,8 @@ security definer
 set search_path = public
 as $$
 declare
-  -- The columns applyVacationDecisionSequential writes on a decision, and nothing else.
+  -- The columns a decision writes on the request - applyVacationDecisionSequential and Sick leave's
+  -- applyVacationDecisionLegacy build the same twenty - and nothing else.
   v_allowed constant text[] := array[
     'status',
     'updated_at',

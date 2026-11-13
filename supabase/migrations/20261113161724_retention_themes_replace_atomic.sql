@@ -1,18 +1,23 @@
 -- retention_themes_replace_atomic
 --
--- WHAT THIS CHANGES: two functions, no table and no data.
+-- WHAT THIS CHANGES: three functions, no table and no data.
 --   * phx_replace_retention_conversation_themes(conversation, themes) - locks the conversation row
 --     and replaces its themes (delete, then insert) in ONE transaction.
 --   * phx_update_retention_conversation(conversation, patch, themes, expected updated_at) - locks the
 --     conversation row, refuses if it changed since the caller read it, applies the patch (only the
 --     eight columns the register edits) and, when themes are given, replaces them - all or nothing.
+--   * phx_create_retention_conversation(conversation, themes) - inserts the conversation (only the
+--     fourteen columns the register writes on create) and its themes in ONE transaction.
 -- WHY: src/lib/retention/service.ts replaced a conversation's themes with two separate calls - a
 --   DELETE of every theme row, then an INSERT of the new set - and the update path wrote the
 --   conversation itself with a third call before them, with no compare-and-set. A failure between
 --   the delete and the insert lost the conversation's confidential themes for good, and a failure
 --   after the update left the conversation edited with its old themes. Inside one function the
---   delete, the insert and the update commit together or not at all.
--- ROLLBACK: drop function if exists public.phx_update_retention_conversation(uuid, jsonb, jsonb, timestamptz);
+--   delete, the insert and the update commit together or not at all. Creating a conversation was
+--   two calls as well (insert the conversation, then its themes): a failure between them left a
+--   conversation with no themes, and a retry made a duplicate.
+-- ROLLBACK: drop function if exists public.phx_create_retention_conversation(jsonb, jsonb);
+--           drop function if exists public.phx_update_retention_conversation(uuid, jsonb, jsonb, timestamptz);
 --           drop function if exists public.phx_replace_retention_conversation_themes(uuid, jsonb);
 --   (and revert the service to the separate calls - the service needs these functions once deployed.)
 --
@@ -156,6 +161,100 @@ $$;
 
 revoke execute on function public.phx_update_retention_conversation(uuid, jsonb, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.phx_update_retention_conversation(uuid, jsonb, jsonb, timestamptz) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3. Create a conversation and its themes in one transaction.
+--
+-- p_conversation carries ONLY the columns createRetentionConversation builds (the employee snapshot
+-- the service read, the conversation's own fields and its author); any other key is refused, so the
+-- id, the timestamps and the line snapshot always take their defaults. p_themes is the same jsonb
+-- array the replacement takes; it is written through that function so the two can never disagree.
+-- ---------------------------------------------------------------------------
+create or replace function public.phx_create_retention_conversation(
+  p_conversation jsonb,
+  p_themes jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_allowed constant text[] := array[
+    'kind',
+    'employee_hr_id',
+    'employee_name',
+    'job_title',
+    'conducted_on',
+    'conducted_by',
+    'resignation_id',
+    'retention_risk',
+    'is_regrettable',
+    'would_rejoin',
+    'summary',
+    'follow_up_action',
+    'follow_up_due',
+    'created_by'
+  ];
+  v_unknown text;
+  v_id uuid;
+begin
+  if p_conversation is null or jsonb_typeof(p_conversation) <> 'object' then
+    raise exception 'A retention conversation must be an object.' using errcode = '22023';
+  end if;
+
+  select key into v_unknown
+  from jsonb_object_keys(p_conversation) as key
+  where key <> all (v_allowed)
+  limit 1;
+  if v_unknown is not null then
+    raise exception 'A new retention conversation cannot set "%".', v_unknown using errcode = '22023';
+  end if;
+
+  insert into public.hr_retention_conversations (
+    kind,
+    employee_hr_id,
+    employee_name,
+    job_title,
+    conducted_on,
+    conducted_by,
+    resignation_id,
+    retention_risk,
+    is_regrettable,
+    would_rejoin,
+    summary,
+    follow_up_action,
+    follow_up_due,
+    created_by
+  )
+  select
+    r.kind,
+    r.employee_hr_id,
+    r.employee_name,
+    r.job_title,
+    r.conducted_on,
+    r.conducted_by,
+    r.resignation_id,
+    r.retention_risk,
+    r.is_regrettable,
+    r.would_rejoin,
+    r.summary,
+    r.follow_up_action,
+    r.follow_up_due,
+    r.created_by
+  from jsonb_populate_record(null::public.hr_retention_conversations, p_conversation) as r
+  returning id into v_id;
+
+  -- Same transaction: a theme that fails (a duplicate, a bad sentiment) rolls the conversation
+  -- back with it, so a retry never finds a half-written one to duplicate.
+  perform public.phx_replace_retention_conversation_themes(v_id, coalesce(p_themes, '[]'::jsonb));
+
+  return v_id;
+end;
+$$;
+
+revoke execute on function public.phx_create_retention_conversation(jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.phx_create_retention_conversation(jsonb, jsonb) to service_role;
 
 notify pgrst, 'reload schema';
 

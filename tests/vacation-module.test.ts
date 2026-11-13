@@ -268,7 +268,7 @@ export function runVacationModuleTests() {
   assert.match(submittedBlock, /period/, "vacation submitted metadata must include period");
   assert.match(serviceSource, /\/leave-management\/vacation-report\?requestId=/, "vacation Telegram button must open the Phoenix vacation report page");
   assert.match(serviceSource, /getPendingVacationApprovalStepForActor/, "vacation decisions must be bound to a pending approval-step row");
-  assert.match(serviceSource, /recordVacationApprovalStepDecision/, "vacation decisions must atomically decide one pending approval step");
+  assert.match(serviceSource, /\.rpc\("phx_apply_vacation_step_decision"/, "vacation decisions must atomically decide one pending approval step, with the request (F-HR-010)");
   assert.match(serviceSource, /rejected \|\| allApproved/, "vacation request must finalize only on rejection or all approvals");
   assert.match(serviceSource, /dispatchVacationDecision\(\{ decision: input\.decision, directory, request: updated \}\)/, "final notifications must only send after terminal decision");
   assert.match(serviceSource, /getVacationDecisionConfirmationData/, "Telegram approval URLs must be backed by an authenticated Phoenix confirmation page");
@@ -371,7 +371,11 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /const excludedGroup = sharedIdentityKeys\(excludeHrId\)/, "B-10 and PHX-1 must be treated as one identity for HR separation-of-duties");
   assert.match(serviceSource, /import \{ sharedIdentityKeys \} from "@\/lib\/auth\/identity-aliases"/, "the shared-identity group must come from the one system-wide primitive, not a local list");
   assert.doesNotMatch(serviceSource, /SHARED_HR_IDENTITY_GROUPS/, "the local copy of the identity group must not come back");
-  assert.match(serviceSource, /async function closeSiblingPendingHrApprovalSteps/, "the hr step must close sibling pending rows once any Super Admin decides it");
+  assert.match(
+    readFileSync("supabase/migrations/20261113161725_vacation_step_and_request_atomic.sql", "utf8"),
+    /if v_step_key = 'hr' then\s+update public\.v2_vacation_approval_steps set/,
+    "the hr step must close sibling pending rows once any Super Admin decides it (phx_apply_vacation_step_decision, since 13 Nov 2026)",
+  );
   assert.match(serviceSource, /hrSteps\.length === 0 \|\| hrSteps\.some\(\(candidate\) => candidate\.status === "approved"\)/, "the legacy flow must treat the hr step as OR-satisfied, not requiring every HR/Super Admin row to approve");
   assert.match(serviceSource, /vacationRetentionPolicyDefaults/);
   assert.match(serviceSource, /runVacationRetentionPurge/);

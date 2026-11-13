@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { updateRetentionConversation } from "../src/lib/retention/service.ts";
+import { ApiError } from "../src/lib/http/api-errors.ts";
+import { createRetentionConversation, updateRetentionConversation } from "../src/lib/retention/service.ts";
+import { vacationDecisionWriteError } from "../src/lib/vacation/service.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 // Enterprise audit, 13 Nov 2026 — two HR writes that could half-land.
@@ -15,7 +17,9 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 // stayed decided and the request stood still — an approval recorded against a request still
 // waiting on that approver.
 //
-// Both are now one database function each, one transaction: everything commits or nothing does.
+// Both are now one database function each, one transaction: everything commits or nothing does —
+// creating a retention conversation and deciding a Sick-leave step included (risk review, round 2).
+// A lost compare-and-set answers 409, and the retention screen sends the version it loaded.
 
 const RETENTION_MIGRATION = "supabase/migrations/20261113161724_retention_themes_replace_atomic.sql";
 const VACATION_MIGRATION = "supabase/migrations/20261113161725_vacation_step_and_request_atomic.sql";
@@ -166,57 +170,108 @@ export async function runHrAtomicWritesTests() {
   );
   assertLockedDown(retentionSql, "phx_update_retention_conversation(uuid, jsonb, jsonb, timestamptz)");
 
-  // ── 2. F-HR-011 — the retention service calls them, and no longer deletes+inserts itself ──────
+  // The create function: conversation and themes in ONE transaction (round 2 of the risk review).
+  const createFn = sqlFunction(retentionSql, "phx_create_retention_conversation");
+  assertDefinerWithPath(createFn, "phx_create_retention_conversation");
+  const createInsertAt = createFn.indexOf("insert into public.hr_retention_conversations (");
+  const createThemesAt = createFn.indexOf("perform public.phx_replace_retention_conversation_themes(v_id, coalesce(p_themes, '[]'::jsonb));");
+  assert.ok(
+    createInsertAt !== -1 && createThemesAt > createInsertAt,
+    "creating a conversation inserts it AND its themes inside ONE function — a failure leaves nothing, so a retry never duplicates",
+  );
+  assert.match(createFn, /where key <> all \(v_allowed\)/, "a create key outside the whitelist must be refused");
+  assertLockedDown(retentionSql, "phx_create_retention_conversation(jsonb, jsonb)");
+
+  // ── 2. F-HR-011 — the retention service calls them, and no longer writes piece by piece ───────
   const retentionService = ts("src/lib/retention/service.ts");
-  const replaceThemes = tsFunction(retentionService, "async function replaceThemes(");
-  assert.match(replaceThemes, /\.rpc\("phx_replace_retention_conversation_themes"/, "replaceThemes must go through the atomic function");
-  assert.match(replaceThemes, /if \(error\) throw new Error\(retentionErrorMessage\(error\)\);/, "a failed replacement must throw — never carry on to the audit row");
   assert.doesNotMatch(
     retentionService,
     /\.from\("hr_retention_conversation_themes"\)\s*\.(?:delete|insert)\(/,
     "the service must never again delete or insert themes with its own separate calls",
   );
+  assert.doesNotMatch(
+    retentionService,
+    /\.from\("hr_retention_conversations"\)\s*\.(?:insert|update)\(/,
+    "the service must never again insert or update a conversation with its own separate call",
+  );
+  const createService = tsFunction(retentionService, "export async function createRetentionConversation(");
+  assert.match(createService, /\.rpc\("phx_create_retention_conversation"/, "the create path must go through the atomic function");
+  const createKeys = createService.slice(createService.indexOf("p_conversation: {"), createService.indexOf("p_themes: themeRows(themes)"));
+  assert.deepEqual(
+    allowedColumns(createFn, "phx_create_retention_conversation"),
+    [...createKeys.matchAll(/^\s+([a-z_]+)[:,]/gm)].map((m) => m[1]).sort(),
+    "the create whitelist must equal the columns createRetentionConversation builds — no more, no fewer",
+  );
+  assert.ok(
+    createService.indexOf('rpc("phx_create_retention_conversation"') < createService.indexOf("writeRequiredAuditLog("),
+    "the create audit row is written only after the atomic create succeeded",
+  );
   const updateService = tsFunction(retentionService, "export async function updateRetentionConversation(");
   assert.match(updateService, /\.rpc\("phx_update_retention_conversation"/, "the update path must go through the atomic function");
-  assert.match(updateService, /p_expected_updated_at: current\.updated_at \?\? null/, "the update must pass the updated_at it read, for the compare-and-set");
-  assert.doesNotMatch(
+  assert.match(
     updateService,
-    /\.from\("hr_retention_conversations"\)\.update\(/,
-    "the conversation must not be updated by a separate call outside the function",
+    /p_expected_updated_at: expectedUpdatedAt \?\? current\.updated_at \?\? null/,
+    "the compare-and-set uses the version the editor's SCREEN loaded, and the server's read only when none was sent",
   );
   assert.ok(
     updateService.indexOf('rpc("phx_update_retention_conversation"') < updateService.indexOf("writeRequiredAuditLog("),
     "the audit row is written only after the atomic update succeeded",
   );
 
-  // ── 3. F-HR-011 — the real service against a fake database: the function fails, nothing follows ─
+  // The screen sends the version it loaded; the dashboard read carries it.
+  const workspace = ts("src/components/retention/retention-workspace.tsx");
+  assert.match(
+    workspace,
+    /body: JSON\.stringify\(\{ conversation: \{ id, followUpDone: done, expectedUpdatedAt \} \}\)/,
+    "the retention screen must send the updatedAt it loaded with every edit",
+  );
+  assert.equal(
+    (workspace.match(/[mM]arkFollowUp\(conversation\.id, !conversation\.followUpDoneAt, conversation\.updatedAt\)/g) ?? []).length,
+    2,
+    "both follow-up buttons pass the conversation's loaded version",
+  );
+  const dashboardRead = tsFunction(retentionService, "export async function getRetentionDashboardData(");
+  assert.match(dashboardRead, /follow_up_done_at,created_at,updated_at"/, "the dashboard read carries updated_at to the screen");
+  assert.match(dashboardRead, /updatedAt: row\.updated_at,/);
+
+  // A lost compare-and-set is 409, never 500.
+  const retentionRoute = ts("app/api/retention/route.ts");
+  assert.match(
+    retentionRoute,
+    /if \(error instanceof ApiError && \(error\.status === 409 \|\| error\.status === 400\)\) \{\s+return \{ message: error\.message, status: error\.status \};/,
+    "the retention route answers a lost compare-and-set with 409 (and a malformed version with 400)",
+  );
+
+  // ── 3. F-HR-011 — the real service against a fake database ────────────────────────────────────
   const conversationId = "6f0c5d4e-1111-4222-8333-944455566677";
-  const readUpdatedAt = "2026-11-13T09:15:42.123456+00:00";
-  let refusedMessage = "";
+  const serverReadUpdatedAt = "2026-11-13T09:20:00.000001+00:00";
+  const screenLoadedUpdatedAt = "2026-11-13T09:15:42.123456+00:00";
+  const conflictBody = {
+    code: "40001",
+    message: "This conversation was changed by someone else since you opened it. Reload it and try again.",
+    details: null,
+    hint: null,
+  };
+  const conversationRow = {
+    id: conversationId,
+    kind: "stay",
+    employee_name: "Test Person",
+    retention_risk: "low",
+    is_regrettable: null,
+    would_rejoin: null,
+    follow_up_action: null,
+    follow_up_due: null,
+    follow_up_done_at: null,
+    updated_at: serverReadUpdatedAt,
+  };
+  const route = (request: Captured) => `${request.method} ${request.path.replace(/^\/rest\/v1/, "")}`;
+
+  // 3a. The update is refused (40001): the service throws a 409, and nothing is written after it.
+  let refused: unknown = null;
   const requests = await withFakeSupabase(
     (request) => {
-      if (request.method === "GET" && request.path.endsWith("/hr_retention_conversations")) {
-        return json(200, {
-          id: conversationId,
-          kind: "stay",
-          employee_name: "Test Person",
-          retention_risk: "low",
-          is_regrettable: null,
-          would_rejoin: null,
-          follow_up_action: null,
-          follow_up_due: null,
-          follow_up_done_at: null,
-          updated_at: readUpdatedAt,
-        });
-      }
-      if (request.path.endsWith("/rpc/phx_update_retention_conversation")) {
-        return json(400, {
-          code: "40001",
-          message: "This conversation was changed by someone else since you opened it. Reload it and try again.",
-          details: null,
-          hint: null,
-        });
-      }
+      if (request.method === "GET" && request.path.endsWith("/hr_retention_conversations")) return json(200, conversationRow);
+      if (request.path.endsWith("/rpc/phx_update_retention_conversation")) return json(400, conflictBody);
       return json(201, {});
     },
     async () => {
@@ -226,33 +281,109 @@ export async function runHrAtomicWritesTests() {
             id: conversationId,
             summary: "Talked about the new route.",
             themes: [{ themeKey: "pay", sentiment: "driver", note: "  fair  " }],
+            expectedUpdatedAt: screenLoadedUpdatedAt,
           },
           "test-actor",
         );
       } catch (error) {
-        refusedMessage = error instanceof Error ? error.message : String(error);
+        refused = error;
       }
     },
   );
-  assert.match(
-    refusedMessage,
-    /changed by someone else/,
-    "when the atomic function refuses, updateRetentionConversation must throw its message",
+  assert.ok(
+    refused instanceof ApiError && refused.status === 409,
+    "THE 409: a retention save that lost its compare-and-set must throw a 409 conflict, never a plain error the route answers 500",
   );
+  assert.match((refused as Error).message, /changed by someone else/, "the conflict keeps the function's own sentence");
   assert.deepEqual(
-    requests.map((request) => `${request.method} ${request.path.replace(/^\/rest\/v1/, "")}`),
+    requests.map(route),
     ["GET /hr_retention_conversations", "POST /rpc/phx_update_retention_conversation"],
     "a refused update writes NOTHING after it — no separate theme call and no audit row",
   );
   const rpcBody = requests[1].body as Record<string, unknown>;
   assert.equal(rpcBody.p_conversation_id, conversationId);
-  assert.equal(rpcBody.p_expected_updated_at, readUpdatedAt, "the compare-and-set carries the exact updated_at that was read");
+  assert.equal(
+    rpcBody.p_expected_updated_at,
+    screenLoadedUpdatedAt,
+    "the compare-and-set carries the version the SCREEN loaded, not the server's own fresher read",
+  );
   assert.deepEqual(rpcBody.p_themes, [{ theme_key: "pay", sentiment: "driver", note: "fair" }], "themes travel in the same call, normalised");
   assert.deepEqual(
     Object.keys(rpcBody.p_patch as Record<string, unknown>).sort(),
     ["summary", "updated_at"],
     "the patch carries only the fields the editor changed",
   );
+
+  // 3b. An older client that sends no version falls back to the server's read.
+  const fallbackRequests = await withFakeSupabase(
+    (request) => {
+      if (request.method === "GET" && request.path.endsWith("/hr_retention_conversations")) return json(200, conversationRow);
+      if (request.path.endsWith("/rpc/phx_update_retention_conversation")) return json(400, conflictBody);
+      return json(201, {});
+    },
+    async () => {
+      await updateRetentionConversation({ id: conversationId, followUpDone: true }, "test-actor").catch(() => undefined);
+    },
+  );
+  assert.equal(
+    (fallbackRequests[1]?.body as Record<string, unknown> | undefined)?.p_expected_updated_at,
+    serverReadUpdatedAt,
+    "with no version from the screen, the server's own read is the expected value",
+  );
+
+  // 3c. A malformed version is refused (400) before anything is read or written.
+  let malformed: unknown = null;
+  const malformedRequests = await withFakeSupabase(
+    () => json(201, {}),
+    async () => {
+      try {
+        await updateRetentionConversation({ id: conversationId, followUpDone: true, expectedUpdatedAt: "yesterday-ish" }, "test-actor");
+      } catch (error) {
+        malformed = error;
+      }
+    },
+  );
+  assert.ok(malformed instanceof ApiError && malformed.status === 400, "a version that is not a timestamp is a 400");
+  assert.equal(malformedRequests.length, 0, "a malformed version reaches no table");
+
+  // 3d. Creating: the function fails, the service throws, and no audit row is written.
+  let createFailed: unknown = null;
+  const createRequests = await withFakeSupabase(
+    (request) => {
+      if (request.method === "GET" && request.path.endsWith("/employees")) {
+        return json(200, { hr_id: "B-200", full_name: "Test Person", nickname: null, job_title: "Medical Representative" });
+      }
+      if (request.path.endsWith("/rpc/phx_create_retention_conversation")) {
+        return json(409, { code: "23505", message: "duplicate theme", details: null, hint: null });
+      }
+      return json(201, {});
+    },
+    async () => {
+      try {
+        await createRetentionConversation(
+          {
+            kind: "stay",
+            employeeHrId: "B-200",
+            conductedOn: "2026-11-13",
+            summary: "Talked about the new route.",
+            retentionRisk: "low",
+            themes: [{ themeKey: "pay", sentiment: "driver" }],
+          },
+          "test-actor",
+        );
+      } catch (error) {
+        createFailed = error;
+      }
+    },
+  );
+  assert.ok(createFailed instanceof Error, "a failed create must throw");
+  assert.deepEqual(
+    createRequests.map(route),
+    ["GET /employees", "POST /rpc/phx_create_retention_conversation"],
+    "a failed create writes NOTHING after it — no theme call and no audit row",
+  );
+  const createBody = createRequests[1].body as Record<string, unknown>;
+  assert.deepEqual(createBody.p_themes, [{ theme_key: "pay", sentiment: "driver", note: null }], "the themes travel in the same call as the conversation");
 
   // ── 4. F-HR-010 — the leave function ───────────────────────────────────────────────────────────
   const vacationSql = sql(VACATION_MIGRATION);
@@ -274,31 +405,39 @@ export async function runHrAtomicWritesTests() {
   assert.match(
     stepFn,
     /decided_at = p_now,\s+decision_comment = p_decision_comment,\s+overridden_at = case when v_overridden_by is not null then p_now else null end,\s+overridden_by_hr_id = v_overridden_by,\s+status = p_step_status,\s+updated_at = p_now\s+where id = p_step_id\s+and request_id = p_request_id\s+and status = 'pending'/,
-    "the step write reproduces recordVacationApprovalStepDecision exactly — the same six columns and the pending compare-and-set",
+    "the step write reproduces the old recordVacationApprovalStepDecision exactly — the same six columns and the pending compare-and-set",
   );
   assert.match(stepFn, /'this vacation approval step was already decided\.' using errcode = '55000'/, "a step already decided is its own refusal");
   assert.match(
     stepFn,
     /if v_step_key = 'hr' then\s+update public\.v2_vacation_approval_steps set\s+decided_at = p_now,\s+decision_comment = 'auto-completed: hr step already decided by '\s+\|\| coalesce\(p_actor_hr_id, 'another hr\/super admin account'\) \|\| '\.',\s+status = p_step_status,\s+updated_at = p_now\s+where request_id = p_request_id\s+and step_key = 'hr'\s+and status = 'pending'\s+and id <> p_step_id;/,
-    "the HR siblings close exactly as closeSiblingPendingHrApprovalSteps closes them — same columns, same comment",
+    "the HR siblings close exactly as the old closeSiblingPendingHrApprovalSteps closed them — same columns, same comment",
   );
   assert.match(stepFn, /where key <> all \(v_allowed\)/, "a request patch key outside the whitelist must be refused");
   assertLockedDown(vacationSql, "phx_apply_vacation_step_decision(uuid, text, uuid, text, text, text, text, timestamptz, jsonb)");
 
-  // The SQL whitelist is exactly the set of columns the service builds — read from the service.
+  // The SQL whitelist is exactly the set of columns the two decision paths build — read from them.
   const vacationService = ts("src/lib/vacation/service.ts");
   const sequential = tsFunction(vacationService, "async function applyVacationDecisionSequential(");
-  const payloadStart = sequential.indexOf("const updatePayload: Record<string, unknown> = {");
-  const payloadEnd = sequential.indexOf('rpc("phx_apply_vacation_step_decision"', payloadStart);
-  assert.ok(payloadStart !== -1 && payloadEnd > payloadStart, "the non-paid branch must build updatePayload and then call the atomic function");
-  const payloadSource = sequential.slice(payloadStart, payloadEnd);
-  const builtColumns = new Set<string>();
-  for (const m of payloadSource.matchAll(/updatePayload\.([a-z_]+) =/g)) builtColumns.add(m[1]);
-  for (const m of payloadSource.matchAll(/^\s+([a-z_]+):/gm)) builtColumns.add(m[1]);
+  const sick = tsFunction(vacationService, "async function applyVacationDecisionLegacy(");
+  const payloadColumns = (fn: string, name: string) => {
+    const start = fn.indexOf("const updatePayload: Record<string, unknown> = {");
+    const end = fn.indexOf('rpc("phx_apply_vacation_step_decision"', start);
+    assert.ok(start !== -1 && end > start, `${name} must build updatePayload and then call the atomic function`);
+    const slice = fn.slice(start, end);
+    const columns = new Set<string>();
+    for (const m of slice.matchAll(/updatePayload\.([a-z_]+) =/g)) columns.add(m[1]);
+    for (const m of slice.matchAll(/^\s+([a-z_]+):/gm)) columns.add(m[1]);
+    return columns;
+  };
+  const builtColumns = new Set([
+    ...payloadColumns(sequential, "applyVacationDecisionSequential"),
+    ...payloadColumns(sick, "applyVacationDecisionLegacy (Sick leave)"),
+  ]);
   assert.deepEqual(
     allowedColumns(stepFn, "phx_apply_vacation_step_decision"),
     [...builtColumns].sort(),
-    "the SQL whitelist must equal the columns applyVacationDecisionSequential builds — no more, no fewer",
+    "the SQL whitelist must equal the columns the sequential and Sick-leave decisions build — no more, no fewer",
   );
 
   // The paid branch: the step part runs first, then the UNCHANGED paid RPC, in one transaction.
@@ -318,35 +457,64 @@ export async function runHrAtomicWritesTests() {
     "phx_apply_vacation_paid_approval_with_step(uuid, text, uuid, text, text, text, text, text, timestamptz, numeric, date, date, numeric, text)",
   );
 
-  // ── 5. F-HR-010 — the leave service no longer writes the step on its own ───────────────────────
+  // ── 5. F-HR-010 — no leave path writes a step on its own any more ─────────────────────────────
   assert.doesNotMatch(
-    sequential,
-    /recordVacationApprovalStepDecision\(|closeSiblingPendingHrApprovalSteps\(/,
-    "THE F-HR-010 FIX: applyVacationDecisionSequential must not decide the step with a separate call before the request moves",
+    vacationService,
+    /recordVacationApprovalStepDecision|closeSiblingPendingHrApprovalSteps/,
+    "THE F-HR-010 FIX: the separate step writers are gone — no decision path can decide a step before its request moves",
   );
   assert.doesNotMatch(
-    sequential,
-    /\.from\(vacationRequestsTable\)\s*\.update\(/,
-    "the non-paid branch must not move the request with its own update outside the function",
+    vacationService,
+    /\.from\(vacationApprovalStepsTable\)\s*\.update\(\{\s*decided_at: now/,
+    "no step row is decided by a separate update anywhere in the service (resubmission's reset to pending is not a decision)",
   );
-  assert.match(sequential, /\.rpc\("phx_apply_vacation_step_decision", \{[\s\S]*?p_step_id: step\.id,[\s\S]*?p_request_patch: updatePayload,/, "the non-paid branch decides the step and moves the request in one call");
+  for (const [fn, name] of [[sequential, "applyVacationDecisionSequential"], [sick, "applyVacationDecisionLegacy (Sick leave)"]] as const) {
+    assert.doesNotMatch(fn, /\.from\(vacationRequestsTable\)\s*\.update\(/, `${name} must not move the request with its own update outside the function`);
+    assert.match(
+      fn,
+      /\.rpc\("phx_apply_vacation_step_decision", \{[\s\S]*?p_step_id: step\.id,[\s\S]*?p_request_patch: updatePayload,\s+\}\);\s+if \(error\) throw vacationDecisionWriteError\(error\);/,
+      `${name} decides the step and moves the request in one call, and throws before anything else is written`,
+    );
+    const atomicAt = fn.indexOf('rpc("phx_apply_vacation_step_decision"');
+    const eventAt = fn.indexOf("eventType: `approval_${step.stepKey}_${decisionValue}`");
+    const auditAt = fn.indexOf("await writeRequiredAuditLog(");
+    assert.ok(eventAt !== -1 && auditAt !== -1, `${name}: the decision event and its audit row must still be written`);
+    assert.ok(atomicAt < eventAt && atomicAt < auditAt, `${name}: the event and the audit row follow the atomic write — a refused decision records neither`);
+  }
+  assert.match(
+    sick,
+    /p_step_status: decisionValue,\s+p_decision_comment: nullableText\(input\.decisionComment\),\s+p_overridden_by_hr_id: null,\s+p_actor_hr_id: input\.actorHrId \?\? null,/,
+    "Sick leave hands the function the same step values the old writer stored (comment through nullableText, no override)",
+  );
+  assert.match(
+    sick,
+    /const stepsAfterDecision = steps\.map\(\(candidate\) =>\s+candidate\.id === step\.id \? \{ \.\.\.candidate, status: decisionValue \} : candidate\s+\);/,
+    "Sick leave's finality rules read the step as it will be once the call commits",
+  );
   assert.match(sequential, /\.rpc\("phx_apply_vacation_paid_approval_with_step", \{[\s\S]*?p_step_id: step\.id,/, "the paid branch writes its step inside the same transaction as the paid approval");
   assert.match(
     sequential,
     /const stepOverriddenByHrId = overrideContext \? hrIdForStorage\(input\.actorHrId\) \|\| null : null;/,
-    "the override column is stored through hrIdForStorage, exactly as recordVacationApprovalStepDecision stores it",
+    "the override column is stored through hrIdForStorage",
   );
-  const atomicCallAt = sequential.indexOf('rpc("phx_apply_vacation_step_decision"');
-  const decisionEventAt = sequential.indexOf("eventType: `approval_${step.stepKey}_${decisionValue}`");
-  const auditAt = sequential.indexOf("await writeRequiredAuditLog(");
-  assert.ok(decisionEventAt !== -1 && auditAt !== -1, "the decision event and its audit row must still be written");
-  assert.ok(
-    atomicCallAt < decisionEventAt && atomicCallAt < auditAt,
-    "the event and the audit row follow the atomic write — a refused decision records neither",
+  assert.equal(
+    (sequential.match(/if \(error\) throw vacationDecisionWriteError\(error\);/g) ?? []).length,
+    2,
+    "both sequential branches (paid and non-paid) map a lost race to a 409",
   );
+
+  // ── 6. A lost race on a leave decision is 409, never 500 or 400 ────────────────────────────────
+  for (const code of ["40001", "55000"]) {
+    const mapped = vacationDecisionWriteError({ code, message: "Vacation request was updated by another user. Refresh and try again." });
+    assert.ok(mapped instanceof ApiError && mapped.status === 409, `THE 409: SQLSTATE ${code} from the decision function must become a 409 conflict`);
+    assert.equal(mapped.message, "Vacation request was updated by another user. Refresh and try again.", "the conflict keeps the function's own sentence");
+  }
+  const other = vacationDecisionWriteError({ code: "23514", message: "check constraint" });
+  assert.ok(!(other instanceof ApiError), "any other database error stays a plain error");
+  const decisionRoute = ts("app/api/vacations/requests/[id]/decision/route.ts");
   assert.match(
-    sequential,
-    /p_request_patch: updatePayload,\s+\}\);\s+if \(error\) throw new Error\(/,
-    "an error from the atomic function must throw before anything else is written",
+    decisionRoute,
+    /if \(error instanceof ApiError && error\.status === 409\) \{\s+return NextResponse\.json\(\{ error: error\.code, message, success: false \}, \{ status: 409 \}\);/,
+    "the decision route answers a lost race with 409",
   );
 }

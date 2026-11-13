@@ -12,6 +12,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { conflictError, validationError } from "@/lib/http/api-errors";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
@@ -65,6 +66,7 @@ type ConversationRow = {
   follow_up_due: string | null;
   follow_up_done_at: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 type ConversationThemeRow = {
@@ -241,7 +243,7 @@ export async function getRetentionDashboardData(
     supabase
       .from("hr_retention_conversations")
       .select(
-        "id,kind,employee_hr_id,employee_name,job_title,line_name,conducted_on,conducted_by,resignation_id,retention_risk,is_regrettable,would_rejoin,summary,follow_up_action,follow_up_due,follow_up_done_at,created_at",
+        "id,kind,employee_hr_id,employee_name,job_title,line_name,conducted_on,conducted_by,resignation_id,retention_risk,is_regrettable,would_rejoin,summary,follow_up_action,follow_up_due,follow_up_done_at,created_at,updated_at",
       )
       .gte("conducted_on", windowStart)
       .order("conducted_on", { ascending: false })
@@ -333,6 +335,7 @@ export async function getRetentionDashboardData(
       (a, b) => a.sentiment.localeCompare(b.sentiment) || a.label.localeCompare(b.label),
     ),
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }));
 
   // Exit coverage: how many of the people who actually left were interviewed. Counted against
@@ -373,7 +376,7 @@ export async function getRetentionDashboardData(
   return { conversations, themes, rollup: buildRollup(conversations, themes), stats, schemaReady: true };
 }
 
-/** The rows phx_replace_retention_conversation_themes / phx_update_retention_conversation insert. */
+/** The theme rows phx_create_retention_conversation / phx_update_retention_conversation insert. */
 function themeRows(themes: RetentionThemeInput[]) {
   return themes.map((theme) => ({
     theme_key: theme.themeKey,
@@ -382,15 +385,24 @@ function themeRows(themes: RetentionThemeInput[]) {
   }));
 }
 
-// One database call, one transaction: the function locks the conversation row, deletes its themes
-// and inserts the new set, so a failure part-way can never leave a conversation with its themes
-// deleted and not replaced (F-HR-011). It throws on any error - the caller must not carry on.
-async function replaceThemes(conversationId: string, themes: RetentionThemeInput[]): Promise<void> {
-  const { error } = await getSupabaseAdmin().rpc("phx_replace_retention_conversation_themes", {
-    p_conversation_id: conversationId,
-    p_themes: themeRows(themes),
-  });
-  if (error) throw new Error(retentionErrorMessage(error));
+/**
+ * The error a failed retention write throws. A lost compare-and-set (40001 from
+ * phx_update_retention_conversation: someone else saved the conversation since this editor loaded
+ * it) is a 409 the route answers as such, never a 500; anything else keeps its plain message.
+ */
+function retentionWriteError(error: unknown): Error {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "40001") return conflictError(retentionErrorMessage(error), "retention_conversation_changed");
+  return new Error(retentionErrorMessage(error));
+}
+
+/** The updated_at the editor's screen loaded, when it sent one — refused if it is not a timestamp. */
+function expectedUpdatedAtFromInput(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    throw validationError("The conversation's loaded version is not a valid timestamp. Reload the page and try again.");
+  }
+  return value;
 }
 
 export async function createRetentionConversation(
@@ -416,9 +428,10 @@ export async function createRetentionConversation(
   if (!employee) throw new Error(`No employee found with HR ID ${employeeHrId}.`);
 
   const row = employee as { hr_id: string; full_name: string; nickname: string | null; job_title: string | null };
-  const { data, error } = await supabase
-    .from("hr_retention_conversations")
-    .insert({
+  // The conversation and its themes in ONE transaction (F-HR-011): a failure part-way leaves
+  // nothing behind, so a retry can never make a duplicate of a half-written conversation.
+  const { data, error } = await supabase.rpc("phx_create_retention_conversation", {
+    p_conversation: {
       kind: input.kind,
       employee_hr_id: row.hr_id,
       employee_name: resolveEmployeeDisplayName(row.full_name, row.nickname, row.hr_id),
@@ -433,13 +446,13 @@ export async function createRetentionConversation(
       follow_up_action: input.followUpAction?.trim() || null,
       follow_up_due: input.followUpDue || null,
       created_by: actor,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(retentionErrorMessage(error));
+    },
+    p_themes: themeRows(themes),
+  });
+  if (error) throw retentionWriteError(error);
+  if (typeof data !== "string" || data === "") throw new Error("The conversation was not recorded.");
 
-  const conversationId = (data as { id: string }).id;
-  await replaceThemes(conversationId, themes);
+  const conversationId = data;
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
@@ -462,6 +475,8 @@ export async function updateRetentionConversation(
   input: UpdateRetentionConversationInput,
   actor: string,
 ): Promise<void> {
+  // Validated before anything is read or written: the version the editor's screen loaded.
+  const expectedUpdatedAt = expectedUpdatedAtFromInput(input.expectedUpdatedAt);
   const supabase = getSupabaseAdmin();
   const { data: before, error: beforeError } = await supabase
     .from("hr_retention_conversations")
@@ -508,14 +523,15 @@ export async function updateRetentionConversation(
   const themes = input.themes !== undefined ? normalizeThemes(input.themes) : null;
 
   // The conversation patch and the themes commit together or not at all, and only if nobody else
-  // changed the conversation since it was read above (compare-and-set on updated_at) - F-HR-011.
+  // changed the conversation since the editor's SCREEN loaded it (compare-and-set on the updated_at
+  // it sent; the server's own read above only when an older client sent none) - F-HR-011.
   const { error } = await supabase.rpc("phx_update_retention_conversation", {
     p_conversation_id: input.id,
     p_patch: patch,
     p_themes: themes === null ? null : themeRows(themes),
-    p_expected_updated_at: current.updated_at ?? null,
+    p_expected_updated_at: expectedUpdatedAt ?? current.updated_at ?? null,
   });
-  if (error) throw new Error(retentionErrorMessage(error));
+  if (error) throw retentionWriteError(error);
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
