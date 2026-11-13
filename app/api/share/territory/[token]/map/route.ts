@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { loadTerritoryPreviewArea } from "@/lib/territory-management/preview-links";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +22,15 @@ export const maxDuration = 60;
  * hidden in the UI — hiding them client-side would still have shipped them in this JSON.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 300, linkLimit: 600, scope: "territory_preview" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "json");
+  }
+  try {
     const areaCode = new URL(request.url).searchParams.get("areaCode") ?? "";
     const area = await loadTerritoryPreviewArea(token, areaCode);
     return NextResponse.json(

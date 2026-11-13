@@ -8,6 +8,7 @@ import {
 import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { systemDeployment } from "@/config/system-settings";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +30,15 @@ export const maxDuration = 60;
  * revocation switch, which would defeat the point of having one.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 1200, linkLimit: 600, scope: "direct_order_share_feed" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "text");
+  }
+  try {
     const resolved = await resolveDirectOrderReportShareLink({ token, surface: "feed" });
     // ?bundle=1 returns the cover figures, the by-status breakdown and the order table in ONE
     // response, so the Sheet's three tabs are always the same snapshot. The bare form stays a plain

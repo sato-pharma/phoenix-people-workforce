@@ -64,7 +64,7 @@ export function runDirectOrderRotationConfirmationTests() {
   const unconfirmed = source.slice(source.indexOf("if (!confirmed)"), source.indexOf("// 4."));
   assert.match(
     unconfirmed,
-    /\.delete\(\)\.eq\("token", newToken\)/,
+    /\.delete\(\)\.eq\("token_hash", hashShareToken\(newToken\)\)/,
     "an unconfirmed rotation must delete the new link it minted rather than leave a stray behind",
   );
   assert.doesNotMatch(

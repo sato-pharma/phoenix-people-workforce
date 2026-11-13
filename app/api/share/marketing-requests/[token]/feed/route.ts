@@ -7,6 +7,7 @@ import {
   resolveMarketingReportShareLink,
 } from "@/lib/marketing-requests/report-share-links";
 import { systemDeployment } from "@/config/system-settings";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,11 +27,18 @@ export const maxDuration = 60;
  * Every response is no-store and noindex: a cached or crawled copy of this data would outlive the
  * revocation switch, which would defeat the point of having one.
  */
-// `_request` is deliberately unused: the response depends only on the token in the path and the
-// configured public URL. Nothing the caller sends may influence what this route serves.
-export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+// `request` is read only for the caller's address, to meter it: the response depends only on the
+// token in the path and the configured public URL. Nothing the caller sends may influence what it serves.
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 1200, linkLimit: 600, scope: "marketing_share_feed" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "text");
+  }
+  try {
     const resolved = await resolveMarketingReportShareLink({ surface: "feed", token });
 
     const csv = buildMarketingReportBundleCsv({

@@ -10,6 +10,15 @@ Direct Orders and Marketing mapped `token: String(row.token)` into the row their
 - The whole token leaves only in the mint response (`created.token` on the screen). A lost token is revoked and a new link minted.
 - Pinned by `tests/share-link-lists-omit-token.test.ts` and section 3 of `tests/cv-lifecycle-share-links-screen.test.ts`.
 
+## Stored as a hash, metered before the lookup (13 Nov 2026)
+
+The Direct Orders report, Marketing Requests report and Territory preview links keep only `token_hash` (the SHA-256 of the token, hex, unique) and `token_preview` (its first 8 characters). The interview calendar links work the same way.
+
+- `src/lib/share-links/token-hash.ts` hashes a token, refuses one that could not have been minted (it is never looked up), and meters a public read per address and per link before the lookup. A refusal is 429 with `Retry-After`, or 503 when the limiter cannot be read; neither serves anything.
+- The weekly rotations observe the sheet's first read by hash, delete an unconfirmed new link by hash, and revoke the old one by its row id.
+- `20261113183501` added the columns and filled them from each row's own token, so every link already in a sheet kept opening. `20261113183503` cleared the plain tokens once the new code was serving.
+- Pinned by `tests/share-link-token-hash.test.ts`.
+
 ## The Marketing panel (13 Oct 2026)
 
 Marketing's links were API-only, so nothing on any screen could say that a second live feed link had paused the weekly token rotation. `src/components/marketing-requests/report-share-links-panel.tsx` is mounted on both All Marketing Requests registers and carries the shared `LiveFeedAmbiguityBanner`.
