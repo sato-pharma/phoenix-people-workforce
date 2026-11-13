@@ -103,7 +103,11 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // 280, RAISED from 277 on 2026-11-03 — by oid the newest three, from other work on the same server-only pattern:
   // public.marketing_customer_merges (595417), public.approval_whatsapp_reminders (595126) and
   // public.marketing_customer_list_checks (594331). 0 of all 280 grant anon, authenticated or PUBLIC anything, read live.
-  { category: "rls_enabled_no_policy", current_count: 280 },
+  // 284, RAISED from 280 on 2026-11-13 — by oid the newest four: public.employee_change_log (the append-only
+  // employee history, 20261113151738, server-only by design) and three from other work on the same pattern,
+  // public.contract_renewal_manager_recommendations (696572), public.phoenix_crm_visit_archive (649346) and
+  // public.phoenix_crm_ireports360_checkin_matches (649338). 0 of all 284 reachable by anon or authenticated, read live.
+  { category: "rls_enabled_no_policy", current_count: 284 },
   { category: "function_search_path_mutable", current_count: 0 },
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
@@ -141,13 +145,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 281 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 285 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /281/);
+  assert.match(exceeded!.message, /285/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
   // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
   // `public` is growth, and fails.
@@ -301,7 +305,7 @@ export function runAdvisorBaselineGuardTests() {
   }
   // Young counters soften ONLY unused_index — a catalog count does not reset with the counters.
   const youngAndGrew = afterCrash(18).map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 281 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 285 } : r,
   );
   assert.ok(
     evaluateAdvisorCounts(REAL_BASELINE, youngAndGrew)
