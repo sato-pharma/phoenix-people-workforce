@@ -3079,6 +3079,7 @@ import { runOfferDraftLookupTests } from "./offer-draft-lookup.test.ts";
 import { runPhoenixCrmVisitArchiveScreenTests } from "./phoenix-crm-visit-archive-screen.test.ts";
 import { runEmployeeAndDeductionHistoryTests } from "./employee-and-deduction-history.test.ts";
 import { runAutomatedPayrollHeldRecordAtomicTests } from "./automated-payroll-held-record-atomic.test.ts";
+import { runAutomatedPayrollLateExpensesTests } from "./automated-payroll-late-expenses.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12234,6 +12235,7 @@ await runTest("The Reps List premium pass (owner, 9 Nov 2026): every tab groups 
 await runTest("the Phoenix CRM sweep (11 Nov 2026): the Yesterday-and-Today page asks the database by uuid, never by the screen's own: id; the same-name check folds as the database does and the approver is told; an outside customer with a grade is filed for approval; a merged duplicate never comes back by a request; a seat's rep who left by the visit day is never credited and a missed day after it is refused; nobody who has left is told anything; and Validate again goes to whoever holds the seat now", runPhoenixCrmSweepTests);
 await runTest("every change to an employee and to a deduction decision is kept, and the money and people tables are in the hourly undo log (enterprise audit, 13 Nov 2026): salary figures and identifiers are named, never stored; the log refuses update, delete and truncate even in replica mode; no browser role reaches it; 43 tables registered, the five largest capped at 24 versions; and no later migration takes any of it back", runEmployeeAndDeductionHistoryTests);
 await runTest("the held-salary record cannot be lost silently (enterprise audit F-PAY-002): publish marks the run and writes who was held in one database call under its claim, a record with no held list is refused, and the readers throw on a missing record instead of listing nobody", runAutomatedPayrollHeldRecordAtomicTests);
+await runTest("late-approved outstation trips (REC-029 / F-PAY-012): only approved, unstamped trips of a published month from September 2026, strictly before the run, not held and not already carried, are listed; every read throws rather than listing nothing; the switch is refused while a run is in Part 2 or ready; OFF leaves the Expenses step identical; Part 2 confirm records a carried trip only when the confirmed figure covers it; publish pays only published non-held people and never a trip another published run carried", runAutomatedPayrollLateExpensesTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

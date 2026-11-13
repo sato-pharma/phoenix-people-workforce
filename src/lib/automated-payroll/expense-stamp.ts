@@ -96,7 +96,11 @@ export function planPaidExpenseStamp(input: {
   };
 }
 
-export type ExpenseStampResult = ExpenseStampPlan & { stamped: number };
+export type ExpenseStampResult = ExpenseStampPlan & {
+  stamped: number;
+  /** Late-approved trips of earlier payout months this run carried and paid, marked by row id (late-expenses.ts). */
+  carriedStamped: number;
+};
 
 const PAGE_SIZE = 1000;
 const UPDATE_CHUNK = 200;
@@ -109,6 +113,11 @@ const UPDATE_CHUNK = 200;
 export async function stampPaidExpenseTrips(input: {
   actorHrId: string;
   batchId: string;
+  /**
+   * Row ids of late-approved trips from EARLIER payout months that this run carried and paid (the
+   * `lateExpensesCarried` list of its `published` record). Marked with the same guards as the month's own.
+   */
+  carriedRowIds?: ReadonlyArray<string>;
   month: number;
   paid: ReadonlyArray<PaidExpenseEmployee>;
   year: number;
@@ -132,9 +141,7 @@ export async function stampPaidExpenseTrips(input: {
 
   const plan = planPaidExpenseStamp({ paid: input.paid, rows });
   const now = new Date().toISOString();
-  let stamped = 0;
-  for (let index = 0; index < plan.rowIds.length; index += UPDATE_CHUNK) {
-    const chunk = plan.rowIds.slice(index, index + UPDATE_CHUNK);
+  const stampChunk = async (chunk: string[]): Promise<number> => {
     const { data, error } = await supabase
       .from("outstation_expenses")
       .update({
@@ -147,10 +154,20 @@ export async function stampPaidExpenseTrips(input: {
       .is("imported_to_payroll_at", null)
       .select("id");
     if (error) throw new Error(`Marking the paid outstation trips failed: ${error.message}`);
-    stamped += (data ?? []).length;
+    return (data ?? []).length;
+  };
+  let stamped = 0;
+  for (let index = 0; index < plan.rowIds.length; index += UPDATE_CHUNK) {
+    stamped += await stampChunk(plan.rowIds.slice(index, index + UPDATE_CHUNK));
+  }
+  // The carried trips are named by id, not found by payout month: their month is an earlier one.
+  const carriedIds = [...new Set((input.carriedRowIds ?? []).map(String).filter(Boolean))];
+  let carriedStamped = 0;
+  for (let index = 0; index < carriedIds.length; index += UPDATE_CHUNK) {
+    carriedStamped += await stampChunk(carriedIds.slice(index, index + UPDATE_CHUNK));
   }
 
-  return { ...plan, stamped };
+  return { ...plan, stamped, carriedStamped };
 }
 
 /**
@@ -167,7 +184,13 @@ export function paidExpenseEmployees(
 
 /** What the publish audit row records: the stamp's outcome, or why it failed. */
 export type ExpenseStampAudit =
-  | { differing: ExpenseStampPlan["differing"]; employees: number; stamped: number; total: number }
+  | {
+      differing: ExpenseStampPlan["differing"];
+      employees: number;
+      stamped: number;
+      total: number;
+      carriedStamped: number;
+    }
   | { error: string };
 
 /**
@@ -180,6 +203,8 @@ export type ExpenseStampAudit =
 export async function recordPaidExpenseStamp(input: {
   actorHrId: string;
   batchId: string;
+  /** Late-approved trips of earlier months this run paid (late-expenses.ts); marked by id. */
+  carriedRowIds?: ReadonlyArray<string>;
   entries: ReadonlyArray<{ compact: string; onHold: boolean; row: { expenses: number } }>;
   month: number;
   runId: string;
@@ -189,6 +214,7 @@ export async function recordPaidExpenseStamp(input: {
     const result = await stampPaidExpenseTrips({
       actorHrId: input.actorHrId,
       batchId: input.batchId,
+      carriedRowIds: input.carriedRowIds,
       month: input.month,
       paid: paidExpenseEmployees(input.entries),
       year: input.year,
@@ -198,6 +224,7 @@ export async function recordPaidExpenseStamp(input: {
       employees: result.employees,
       stamped: result.stamped,
       total: result.total,
+      carriedStamped: result.carriedStamped,
     };
   } catch (error) {
     logError("Automated payroll: marking the paid outstation trips failed", {

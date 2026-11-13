@@ -68,6 +68,11 @@ import { monthNameAndYear } from "./step-definitions.ts";
 import { loadDisputeRefunds, type DisputeRefundsForEmployee } from "./dispute-refunds.ts";
 import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
 import { notYetDue, type HeldBalance } from "./held-settlements.ts";
+import {
+  getCarryLateExpensesSetting,
+  loadLateApprovedExpenses,
+  type LateApprovedExpense,
+} from "./late-expenses.ts";
 import type {
   DraftRow,
   PayrollPeriod,
@@ -389,6 +394,11 @@ export type PayoutExpenseTrip = {
    */
   hrId?: string;
   specialist?: string;
+  /**
+   * Set only on a trip approved after its own payout month was published and added to this run by the
+   * carry switch (late-expenses.ts): that month, and the outstation row id Part 2 confirm records.
+   */
+  carriedFrom?: { month: number; year: number; rowId: string };
 };
 
 export type PayoutExpenseRow = {
@@ -463,36 +473,41 @@ export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string,
     const compact = compactHrKey(row.hr_id ?? "");
     if (!compact) continue;
     const trips = byCompact.get(compact) ?? [];
-    trips.push({
-      allowance: Number(row.allowance ?? 0),
-      approvedAmount:
-        row.approved_amount === null || row.approved_amount === undefined
-          ? null
-          : Number(row.approved_amount),
-      description: text(row.description),
-      expenseDate: text(row.expense_date).slice(0, 10),
-      fromLocation: text(row.from_location),
-      hrApproved: row.hr_approved === true,
-      hrStatus: text(row.hr_status),
-      km: Number(row.km ?? 0),
-      meetingAmount: Number(row.meeting_amount ?? 0),
-      otherAmount: Number(row.other_amount ?? 0),
-      toDate: text(row.to_date).slice(0, 10),
-      // `location` is the legacy single-field fallback used when the upload
-      // didn't split from/to (11 of 97 live rows) — same precedence as
-      // outstation/geocode-warmup.ts.
-      toLocation: text(row.to_location) || text(row.location),
-      total: Number(row.total ?? 0),
-      transportationType: text(row.transportation_type),
-      travelCost: Number(row.travel_cost ?? 0),
-      tripId: text(row.trip_id),
-      tripType: text(row.trip_type),
-      hrId: text(row.hr_id),
-      specialist: text(row.specialist),
-    });
+    trips.push(payoutExpenseTripFromRow(row));
     byCompact.set(compact, trips);
   }
   return byCompact;
+}
+
+/** One expense row as a trip. Shared by the month's own trips and the carried ones, so both read alike. */
+function payoutExpenseTripFromRow(row: PayoutExpenseRow): PayoutExpenseTrip {
+  return {
+    allowance: Number(row.allowance ?? 0),
+    approvedAmount:
+      row.approved_amount === null || row.approved_amount === undefined
+        ? null
+        : Number(row.approved_amount),
+    description: text(row.description),
+    expenseDate: text(row.expense_date).slice(0, 10),
+    fromLocation: text(row.from_location),
+    hrApproved: row.hr_approved === true,
+    hrStatus: text(row.hr_status),
+    km: Number(row.km ?? 0),
+    meetingAmount: Number(row.meeting_amount ?? 0),
+    otherAmount: Number(row.other_amount ?? 0),
+    toDate: text(row.to_date).slice(0, 10),
+    // `location` is the legacy single-field fallback used when the upload
+    // didn't split from/to (11 of 97 live rows) — same precedence as
+    // outstation/geocode-warmup.ts.
+    toLocation: text(row.to_location) || text(row.location),
+    total: Number(row.total ?? 0),
+    transportationType: text(row.transportation_type),
+    travelCost: Number(row.travel_cost ?? 0),
+    tripId: text(row.trip_id),
+    tripType: text(row.trip_type),
+    hrId: text(row.hr_id),
+    specialist: text(row.specialist),
+  };
 }
 
 /**
@@ -933,7 +948,52 @@ async function recommendExpenses(
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
-  return buildExpenseStepRows(members, await loadPayoutExpenseTrips(period), drafts);
+  const memberCompacts = new Set(members.map((member) => member.compact));
+  return buildExpenseStepRows(members, (await loadExpenseStepTrips(period, memberCompacts)).tripsByCompact, drafts);
+}
+
+/**
+ * The trips the Expenses step is built from: this payout month's own, plus, ONLY while the carry switch
+ * is ON, the late-approved trips of earlier published months for people in this run (late-expenses.ts,
+ * REC-029). Shared by the step and by Part 2 confirm, so what is recorded as carried is what was shown.
+ * With the switch OFF the map is exactly the month's own trips, as before.
+ */
+export async function loadExpenseStepTrips(
+  period: PayrollPeriod,
+  memberCompacts: ReadonlySet<string>,
+): Promise<{ carryOn: boolean; tripsByCompact: Map<string, PayoutExpenseTrip[]> }> {
+  const own = await loadPayoutExpenseTrips(period);
+  const carryOn = await getCarryLateExpensesSetting();
+  if (!carryOn) return { carryOn, tripsByCompact: own };
+  const late = await loadLateApprovedExpenses(period);
+  return {
+    carryOn,
+    tripsByCompact: mergeCarriedLateTrips(own, late, memberCompacts),
+  };
+}
+
+/**
+ * Adds the late-approved trips of people IN this run to the month's own trips, each marked with the
+ * payout month it is carried from. A late trip of someone outside the run is not proposed here: it
+ * stays on the "Approved, not yet in a run" list. Pure; returns a new map and leaves `own` untouched.
+ */
+export function mergeCarriedLateTrips(
+  own: ReadonlyMap<string, PayoutExpenseTrip[]>,
+  late: ReadonlyArray<LateApprovedExpense>,
+  memberCompacts: ReadonlySet<string>,
+): Map<string, PayoutExpenseTrip[]> {
+  const merged = new Map<string, PayoutExpenseTrip[]>();
+  for (const [compact, trips] of own) merged.set(compact, [...trips]);
+  for (const trip of late) {
+    if (!memberCompacts.has(trip.compact)) continue;
+    const list = merged.get(trip.compact) ?? [];
+    list.push({
+      ...payoutExpenseTripFromRow(trip.row),
+      carriedFrom: { month: trip.payoutMonth, year: trip.payoutYear, rowId: trip.id },
+    });
+    merged.set(trip.compact, list);
+  }
+  return merged;
 }
 
 /**
@@ -1087,7 +1147,11 @@ function tripDetailRows(
   duplicateHolds: Map<string, DuplicateExpenseHold> = new Map(),
 ): NonNullable<StepRow["details"]> {
   return trips.map((trip) => ({
-    Dates: formatDateRange(trip.expenseDate, trip.toDate),
+    // A trip the carry switch added from an earlier, already published payout month says so beside its
+    // dates (late-expenses.ts). Only that trip's line changes; with the switch OFF nothing here differs.
+    Dates: trip.carriedFrom
+      ? `${formatDateRange(trip.expenseDate, trip.toDate)} · carried from ${monthNameAndYear(trip.carriedFrom.month, trip.carriedFrom.year)}, approved after that month was paid`
+      : formatDateRange(trip.expenseDate, trip.toDate),
     From: trip.fromLocation || "—",
     To: trip.toLocation || "—",
     "Trip Type": trip.tripType || "—",
