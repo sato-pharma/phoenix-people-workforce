@@ -1,9 +1,16 @@
 import { redirect } from "next/navigation";
 
+import { ReportItAccessPanel } from "@/components/report-it/report-it-access-panel";
 import { ReportItAdminDashboard } from "@/components/report-it/report-it-admin-dashboard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { resolveNavigationMode } from "@/lib/auth/permissions";
-import { canViewAllReports, getReportKpis, listReports } from "@/lib/report-it/service";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import {
+  canViewAllReports,
+  getDashboardAccessOverview,
+  getReportKpis,
+  listGrantableEmployees,
+  listReports,
+} from "@/lib/report-it/service";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +31,14 @@ export default async function AdminReportItPage() {
     redirect("/admin");
   }
 
-  const [kpis, initial] = await Promise.all([
+  // The read-all list and the read log belong to `report_it:export` holders alone (owner, 2026-11-13);
+  // someone given read-all by name sees the reports, never who else may read them.
+  const managesAccess = await canAccess(access, "report_it", "export");
+  const [kpis, initial, accessOverview, grantable] = await Promise.all([
     getReportKpis(),
     listReports(access, { limit: 50, offset: 0 }),
+    managesAccess ? getDashboardAccessOverview(access) : Promise.resolve(null),
+    managesAccess ? listGrantableEmployees(access) : Promise.resolve([]),
   ]);
 
   return (
@@ -39,6 +51,7 @@ export default async function AdminReportItPage() {
         </p>
       </header>
       <ReportItAdminDashboard kpis={kpis} initialRows={initial.rows} initialTotal={initial.total} />
+      {accessOverview ? <ReportItAccessPanel employees={grantable} initial={accessOverview} /> : null}
     </main>
   );
 }
