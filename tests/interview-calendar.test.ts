@@ -18,6 +18,7 @@ import {
   canSetInterviewOutcome,
   checkCvUpload,
   grantFromLinkRow,
+  hashInterviewCalendarLinkToken,
   linkTokenFrom,
   mayReadBooking,
   requireCalendarAccess,
@@ -27,7 +28,7 @@ import {
   type InterviewCalendarCaller,
   type InterviewCalendarLinkRow,
 } from "../src/lib/recruitment/interview-calendar.ts";
-import { newInterviewCalendarLinkToken } from "../src/lib/recruitment/interview-calendar-links.ts";
+import { INTERVIEW_CALENDAR_LINK_LIFETIME_DAYS, newInterviewCalendarLinkToken } from "../src/lib/recruitment/interview-calendar-links.ts";
 import {
   canBookInterviews,
   checkPollQuestions,
@@ -461,7 +462,8 @@ function linkRow(overrides: Partial<InterviewCalendarLinkRow> = {}): InterviewCa
     id: "11111111-2222-4333-8444-555555555555",
     is_active: true,
     last_used_at: null,
-    token: "a".repeat(43),
+    token_preview: "aaaaaaaa",
+    expires_at: null,
     updated_at: "2026-09-18T18:00:00.000Z",
     use_count: 0,
     week_start: "2026-09-20",
@@ -488,6 +490,22 @@ function runLinkTests() {
   assert.equal(grantFromLinkRow(linkRow({ guest_cvs: null }), false)?.guestCvs, true, "CVs open without sign-in unless switched off");
   assert.equal(grantFromLinkRow(linkRow({ week_start: "2026-09-20T00:00:00+00:00" }), false)?.weekStart, week);
   assert.equal(grantFromLinkRow(linkRow({ week_start: null }), false)?.weekStart, null, "no week is the whole calendar");
+
+  // KEPT 90 DAYS (owner, 13 Nov 2026): a link past its expiry gives nothing, signed in or not.
+  const madeAt = new Date("2026-09-18T18:00:00.000Z");
+  const expiresAt = new Date(madeAt.getTime() + INTERVIEW_CALENDAR_LINK_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+  assert.equal(INTERVIEW_CALENDAR_LINK_LIFETIME_DAYS, 90, "every link opens nothing 90 days after it was made");
+  const dated = linkRow({ expires_at: expiresAt.toISOString() });
+  assert.ok(grantFromLinkRow(dated, false, new Date(expiresAt.getTime() - 1)), "a link opens up to its last moment");
+  assert.equal(grantFromLinkRow(dated, false, expiresAt), null, "a link opens nothing from its expiry on");
+  assert.equal(grantFromLinkRow(dated, true, new Date(expiresAt.getTime() + 1)), null, "signing in does not reopen an expired link");
+
+  // STORED AS A HASH: the SHA-256 of the link, never the link — and never its first 8 characters alone.
+  const sample = "b".repeat(43);
+  assert.match(hashInterviewCalendarLinkToken(sample), /^[0-9a-f]{64}$/, "the stored form is a 64-character SHA-256");
+  assert.equal(hashInterviewCalendarLinkToken(sample), hashInterviewCalendarLinkToken(sample), "the same link always finds the same row");
+  assert.notEqual(hashInterviewCalendarLinkToken(sample), hashInterviewCalendarLinkToken(`${sample.slice(0, 42)}c`), "one character apart is another row");
+  assert.ok(!hashInterviewCalendarLinkToken(sample).includes(sample.slice(0, 8)), "the hash does not carry the link");
 
   // WITHOUT SIGN-IN, A LINK VIEWS — whatever level it carries (the owner's choice).
   const outsider = caller(null, signedOut, guest);
@@ -1162,6 +1180,31 @@ function runWiringTests() {
       assert.ok(gatedCalls.some((call) => handler.includes(call)), `${where} must reach the calendar's gate`);
     }
   }
+
+  // STORED AS A HASH, SHOWN ONCE, METERED (REC-055). A link is found by its hash and never by itself;
+  // no read of the table asks for the old column; a new link is stored without it and handed back whole
+  // only in the answer that made it; every lookup is metered per address and per link BEFORE it runs.
+  assert.ok(domain.includes('.eq("token_hash", hashInterviewCalendarLinkToken(token))'), "a link is found by its hash");
+  assert.ok(!/\.eq\("token",/.test(domain) && !/\.eq\("token",/.test(links), "no read looks a link up by the link itself");
+  assert.ok(!/(^|,)token(,|$)/.test(/LINK_COLUMNS =\s*"([^"]+)"/.exec(domain)?.[1] ?? "token"), "the list never reads the old token column");
+  const insert = links.slice(links.indexOf(".insert({"), links.indexOf("})", links.indexOf(".insert({")));
+  assert.ok(insert.includes("token_hash: hashInterviewCalendarLinkToken(token)") && insert.includes("token_preview: token.slice(0, 8)"), "a new link is stored as its hash and its first 8 characters");
+  assert.ok(!/(^|[\s{,])token\s*[:,}]/m.test(insert), "a new link is never stored whole");
+  assert.ok(insert.includes("expires_at:"), "a new link is given its expiry");
+  assert.ok(links.includes("created: { id: String((data as { id: string }).id), token }"), "the whole link comes back once, in the answer that made it");
+  const linksRoute = stripComments(read("app/api/recruitment/interview-calendar/links/route.ts"));
+  assert.ok(linksRoute.includes("{ created, links, success: true }") && linksRoute.includes('"Cache-Control": "no-store"'), "the new link is handed back once, never cached");
+  const callerBody = domain.slice(domain.indexOf("export async function interviewCalendarCaller"));
+  const metered = callerBody.indexOf("assertInterviewCalendarLinkRate(request, token)");
+  assert.ok(metered > 0 && metered < callerBody.indexOf("loadInterviewCalendarLinkByToken(token)"), "every API lookup is metered before the link is looked up");
+  assert.ok(domain.includes('scope: "interview_calendar_link_ip"') && domain.includes('scope: "interview_calendar_link_token"'), "metered per address and per link");
+  const sharedPage = stripComments(read("app/share/interview-calendar/[token]/page.tsx"));
+  const pageMeter = sharedPage.indexOf("assertInterviewCalendarLinkRate(incoming, token)");
+  assert.ok(pageMeter > 0 && pageMeter < sharedPage.indexOf("openInterviewCalendarLink(token, access)"), "the shared page is metered before it opens the link");
+  assert.ok(sharedPage.includes("more than 90 days old"), "the dead-link page names expiry as a reason");
+  const copySection = stripComments(read("src/components/recruitment/interview-calendar/copy-link-section.tsx"));
+  assert.ok(!/\blink\.token\b/.test(copySection), "the owner's list never holds a whole link it was not just given");
+  assert.ok(copySection.includes("tokenPreview"), "the owner's list shows each link by its first 8 characters");
 
   // THE CANDIDATE IS SENT NOTHING — the owner's answer. Only the person a calendar is shared with
   // hears about it, in the app. The invitation and a copy link go out only through WhatsApp opening

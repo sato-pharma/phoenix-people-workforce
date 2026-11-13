@@ -7,6 +7,9 @@
 //
 // Holding a link without signing in VIEWS — his choice. Comment or Edit need a Phoenix sign-in,
 // which then gives the link's level. Nothing is sent from here: WhatsApp opens on his own device.
+//
+// A link is shown WHOLE once, right after it is made (owner, 13 Nov 2026, REC-055): Phoenix keeps only
+// its hash, so the list shows its first 8 characters and the day it stops opening (90 days).
 
 import { Check, ClipboardCopy, Link2, Loader2, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -52,9 +55,9 @@ function stamp(iso: string | null): string {
   return `${formatShortDate(cairoDateKey(at))}, ${formatTimeOfDay(cairoMinutesOfDay(at))}`;
 }
 
-function shareMessage(link: InterviewCalendarLink): string {
+function shareMessage(link: InterviewCalendarLink, token: string): string {
   const scope = link.weekStart ? `the interviews for the week of ${formatWeekRange(link.weekStart)}` : "the interview calendar";
-  return `Here is ${scope} (Sato Pharma recruitment):\n${linkUrl(link.token)}`;
+  return `Here is ${scope} (Sato Pharma recruitment):\n${linkUrl(token)}`;
 }
 
 const selectClass  = phxSelectClassName;
@@ -68,6 +71,8 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // The link just made, whole — the only time it can be copied or sent.
+  const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -88,6 +93,8 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
 
   function land(data: Record<string, unknown>) {
     setLinks(Array.isArray(data.links) ? (data.links as InterviewCalendarLink[]) : []);
+    const created = data.created as { id?: unknown; token?: unknown } | undefined;
+    if (created && typeof created.id === "string" && typeof created.token === "string") setFresh({ id: created.id, token: created.token });
   }
 
   async function run(key: string, work: () => Promise<Record<string, unknown>>, fallback: string) {
@@ -102,9 +109,9 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
     }
   }
 
-  async function copy(link: InterviewCalendarLink) {
+  async function copy(link: InterviewCalendarLink, token: string) {
     try {
-      await navigator.clipboard.writeText(linkUrl(link.token));
+      await navigator.clipboard.writeText(linkUrl(token));
       setCopied(link.id);
       window.setTimeout(() => setCopied((current) => (current === link.id ? null : current)), 2000);
     } catch {
@@ -215,9 +222,23 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
                   onChange={(checked) => void run(link.id, () => api.patch(`/links/${link.id}`, { isActive: checked }), "The link could not be changed.")}
                 />
               </div>
-              <p className={cn(`mt-2 break-all border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-[11px] ${adminRecessedDepthClassName}`, link.isActive ? "text-slate-800" : "text-slate-400 line-through")}>
-                {linkUrl(link.token)}
-              </p>
+              {fresh?.id === link.id ? (
+                <>
+                  <p className={cn(`mt-2 break-all border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-[11px] ${adminRecessedDepthClassName}`, link.isActive ? "text-slate-800" : "text-slate-400 line-through")}>
+                    {linkUrl(fresh.token)}
+                  </p>
+                  <p className="mt-1 break-words text-[11px] font-semibold text-orange-700">
+                    Copy or send it now. Phoenix keeps only a scrambled copy, so the whole link is not shown again.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 break-words text-[11px] text-slate-500">
+                  Link starting <span className="font-mono text-slate-700">{link.tokenPreview}</span>. The whole link was shown once, when it was made.
+                </p>
+              )}
+              {link.expiresAt ? (
+                <p className="mt-1 break-words text-[11px] tabular-nums text-slate-500">Stops opening on {stamp(link.expiresAt)}.</p>
+              ) : null}
               <div className="mt-2 grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
                 <select
                   aria-label="Access with this link"
@@ -235,14 +256,16 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
                   ))}
                 </select>
                 <div className="flex flex-wrap gap-2 sm:justify-end">
-                  <Action disabled={!link.isActive} onClick={() => void copy(link)} tone="quiet">
-                    {copied === link.id ? <Check className="h-3.5 w-3.5" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
-                    {copied === link.id ? "Copied" : "Copy link"}
-                  </Action>
-                  {link.isActive ? (
+                  {fresh?.id === link.id ? (
+                    <Action disabled={!link.isActive} onClick={() => void copy(link, fresh.token)} tone="quiet">
+                      {copied === link.id ? <Check className="h-3.5 w-3.5" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+                      {copied === link.id ? "Copied" : "Copy link"}
+                    </Action>
+                  ) : null}
+                  {link.isActive && fresh?.id === link.id ? (
                     <a
                       className={phxWhatsAppShareButtonClassName}
-                      href={whatsAppShareUrl(shareMessage(link))}
+                      href={whatsAppShareUrl(shareMessage(link, fresh.token))}
                       rel="noreferrer"
                       target="_blank"
                     >
@@ -274,7 +297,7 @@ export function CopyLinkSection({ weekStart }: { weekStart: string }) {
       </ul>
       <p className="mt-2 text-[11px] text-slate-500">
         WhatsApp opens on your device with the link typed in; nothing is sent until you press Send there. Switching a link off or deleting it
-        stops it at once.
+        stops it at once, and every link stops opening 90 days after it was made.
       </p>
     </section>
   );
