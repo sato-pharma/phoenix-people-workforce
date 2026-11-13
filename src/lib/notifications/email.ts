@@ -16,6 +16,7 @@ import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import type { CredentialEmailKind } from "@/lib/email/transactional-types";
 import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
 import { openCredentialFields, outboxDedupeDigest, redactedCredentialPayload, sealCredentialFields } from "@/lib/notifications/credential-seal";
+import { sentFiguresClearedPayload } from "@/lib/notifications/sent-figures";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { TEMPORARY_PASSWORD_METRIC_LABEL } from "@/lib/auth/temporary-password";
@@ -130,6 +131,8 @@ export type NotificationEmailInput = {
   sealedCredential?: string;
   /** True on a finished credential row whose code and link have been deleted from the payload. */
   credentialRedacted?: boolean;
+  /** True on a SENT row whose figures (metrics, template context, plan table) were deleted at send (sent-figures.ts). */
+  figuresCleared?: boolean;
   /**
    * The one mailbox a person pressed for (New Hire Accounts). Travels in the outbox payload, so a retried row keeps the
    * same answer at the Recipient Assurance Guard, which is the only reader.
@@ -2158,6 +2161,14 @@ function finishedCredentialPayload(payload: NotificationEmailInput): { payload?:
   return redacted ? { payload: redacted } : {};
 }
 
+/** The payload update a SENT row gets: the credential deleted as above, and then every figure (sent-figures.ts). */
+function sentRowPayload(payload: NotificationEmailInput): { payload?: NotificationEmailInput } {
+  const afterCredential = redactedCredentialPayload(payload) ?? payload;
+  const cleared = sentFiguresClearedPayload(afterCredential);
+  if (cleared) return { payload: cleared };
+  return afterCredential === payload ? {} : { payload: afterCredential };
+}
+
 async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
@@ -2172,7 +2183,7 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
       sent_at: now,
       status: "sent",
       updated_at: now,
-      ...finishedCredentialPayload(row.payload),
+      ...sentRowPayload(row.payload),
     })
     .eq("id", row.id);
   // The email already went out at the provider. If we fail to flip the row to "sent",
