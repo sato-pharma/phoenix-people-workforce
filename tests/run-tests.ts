@@ -2286,6 +2286,7 @@ import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastruct
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
 import { runSchemaShapeRecoveryHealthTests } from "./schema-shape-recovery-health.test.ts";
+import { runSchemaShapeEmployeeKeysTests } from "./schema-shape-employee-keys.test.ts";
 import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
@@ -8730,6 +8731,10 @@ await runTest(
 await runTest(
   "schema-shape recovery health (nothing captured anywhere is 'it never ran' and names pg_cron; some tables uncaptured is the function and names snapshot_runs; disabled rows and per-table age raise nothing)",
   runSchemaShapeRecoveryHealthTests,
+);
+await runTest(
+  "schema-shape employee keys (REC-037: the baseline of keys to employees only rises and holds every money, leave and attendance key; a key dropped or left NOT VALID fails the night; a new unlisted key only warns)",
+  runSchemaShapeEmployeeKeysTests,
 );
 await runTest(
   "schema-shape snapshot in public (the five real pre-images are caught, live *_snapshots tables are not, and the SQL matches the TypeScript)",
