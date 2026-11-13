@@ -19,6 +19,7 @@ import { interviewTypes, type Interview, type InterviewType } from "@/lib/recrui
 import { isInterviewOutcome, normalizeScorecard } from "@/lib/recruitment/scorecards";
 import { notifyInterviewFeedback, sendInterviewScheduledNotifications } from "@/lib/recruitment/interview-notifications";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { logError } from "@/lib/observability/log";
 
 // Rule 7 — notify candidate + interviewer + owner; never block the action on a
 // notification failure.
@@ -38,8 +39,14 @@ async function notifyInterview(
       },
       kind,
     );
-  } catch {
-    // Notifications are best-effort; scheduling must still succeed.
+  } catch (error) {
+    // Notifications are best-effort; scheduling must still succeed. But a failure is RECORDED, never
+    // swallowed (REC-048): the candidate's invitation is already in the outbox and is retried by the
+    // drain ("Queued for retry: …"); anything else that failed is named here.
+    logError("Interview notification failed", {
+      error,
+      labels: { event: "interview_notification_failed", interview_id: interview.id, kind },
+    });
   }
 }
 
@@ -232,12 +239,17 @@ export async function recordInterviewOutcome(
         await notifyInterviewFeedback({
           candidateName: application.candidate?.fullName ?? "Candidate",
           feedback: updated.notes ?? null,
+          interviewId: updated.id,
           interviewerHrId: updated.interviewerHrId,
           jobTitle: application.requisition?.jobTitle ?? "",
           outcome: recordedOutcome,
         });
-      } catch {
-        // Best-effort.
+      } catch (error) {
+        // Best-effort, but recorded (REC-048): the email itself is in the outbox and retried.
+        logError("Interview feedback notification failed", {
+          error,
+          labels: { event: "interview_feedback_notification_failed", interview_id: updated.id },
+        });
       }
     });
   }

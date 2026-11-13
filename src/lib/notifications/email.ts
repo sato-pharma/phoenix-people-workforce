@@ -17,6 +17,12 @@ import type { CredentialEmailKind } from "@/lib/email/transactional-types";
 import { readEmailPolicies } from "@/lib/notifications/email-policy-snapshot";
 import { openCredentialFields, outboxDedupeDigest, redactedCredentialPayload, sealCredentialFields } from "@/lib/notifications/credential-seal";
 import { sentFiguresClearedPayload } from "@/lib/notifications/sent-figures";
+import {
+  directEmailSentPayload,
+  isDirectEmailPayload,
+  sendDirectEmailMessage,
+  type DirectEmailPayload,
+} from "@/lib/notifications/direct-email-payload";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code";
 import { TEMPORARY_PASSWORD_METRIC_LABEL } from "@/lib/auth/temporary-password";
@@ -1710,6 +1716,23 @@ export function classifyOutboxSkip(
   return { terminal: false };
 }
 
+/**
+ * The same classification for a DURABLE DIRECT email (direct-email-payload.ts). Its sender can also
+ * answer "the template is missing or switched off" and "the template's own rules resolved no To" —
+ * neither changes on a retry, and the leave senders fall back to their plain email on the first, so
+ * retrying the template five times would only be noise. Everything else is read exactly as above.
+ */
+export function classifyDirectEmailSkip(reason: string): OutboxSkipClass {
+  const r = reason.toLowerCase();
+  if (r.includes("template not found") || r.includes("is inactive") || r.includes("unsupported email template")) {
+    return { terminal: true, sentryEscalate: false, code: "type_unsupported" };
+  }
+  if (r.includes("no to recipients resolved")) {
+    return { terminal: true, sentryEscalate: false, code: "no_recipients" };
+  }
+  return classifyOutboxSkip(reason);
+}
+
 const transactionalEmailTypes = new Set<EmailNotificationType>(["password_reset", "user_created"]);
 
 function listUnsubscribeHeaders(
@@ -2070,7 +2093,7 @@ export async function sendNotificationEmail(input: NotificationEmailInput): Prom
   return sendNotificationEmailDirect(input);
 }
 
-async function getNotificationOutboxRowByDedupeKey(dedupeKey: string) {
+export async function getNotificationOutboxRowByDedupeKey(dedupeKey: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(notificationOutboxTable)
@@ -2136,7 +2159,7 @@ async function enqueueNotificationEmail(input: NotificationEmailInput) {
   return data as NotificationOutboxRow;
 }
 
-async function claimNotificationOutboxRow(id: string) {
+export async function claimNotificationOutboxRow(id: string) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -2164,12 +2187,17 @@ function finishedCredentialPayload(payload: NotificationEmailInput): { payload?:
 /** The payload update a SENT row gets: the credential deleted as above, and then every figure (sent-figures.ts). */
 function sentRowPayload(payload: NotificationEmailInput): { payload?: NotificationEmailInput } {
   const afterCredential = redactedCredentialPayload(payload) ?? payload;
+  // A durable direct email (direct-email-payload.ts) keeps its recipients and subject; its rendered
+  // body, template context and attachments are deleted like any other sent email's figures.
+  if (isDirectEmailPayload(afterCredential)) {
+    return { payload: directEmailSentPayload(afterCredential) as unknown as NotificationEmailInput };
+  }
   const cleared = sentFiguresClearedPayload(afterCredential);
   if (cleared) return { payload: cleared };
   return afterCredential === payload ? {} : { payload: afterCredential };
 }
 
-async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
+export async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMessageId?: string) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -2197,7 +2225,7 @@ async function markNotificationOutboxSent(row: NotificationOutboxRow, providerMe
   }
 }
 
-async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string, retryAfterMs?: number) {
+export async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMessage: string, retryAfterMs?: number) {
   const supabase = getSupabaseAdmin();
   const attempts = row.attempts + 1;
   const terminal = attempts >= row.max_attempts;
@@ -2249,7 +2277,7 @@ async function markNotificationOutboxFailed(row: NotificationOutboxRow, errorMes
  * type, missing global config, no recipients). Unlike a failure, this does not consume
  * the retry budget or inflate the failure metric — the send will never succeed on retry.
  */
-async function markNotificationOutboxSkipped(row: NotificationOutboxRow, reason: string, code: OutboxSkipCode) {
+export async function markNotificationOutboxSkipped(row: NotificationOutboxRow, reason: string, code: OutboxSkipCode) {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -2600,12 +2628,64 @@ export function auditProbationOutboundEmail(payload: NotificationEmailInput): { 
   return { ok: true };
 }
 
+/** What one attempt at a durable direct email came to — the drain and the inline send read it differently. */
+export type DirectEmailDeliveryOutcome =
+  | { outcome: "sent"; result: SendEmailResult }
+  | { outcome: "skipped"; result: SendEmailResult & { skipped: true } }
+  | { outcome: "queued"; result: SendEmailResult & { skipped: true } }
+  | { error: unknown; message: string; outcome: "threw" };
+
+/**
+ * One attempt at a CLAIMED durable direct email row (REC-048): the stored sender with the stored
+ * input, unchanged — never `sendNotificationEmailDirect`, whose policy routing, manager CC and template
+ * swap would change who receives it. Sent → the row is marked sent (body and figures deleted). A skip
+ * that cannot change on retry → `skipped`. Anything else (a transient skip, a provider error) → the
+ * row is marked failed with the drain's own backoff and attempt limit, so the drain sends it again.
+ * Used by the drain (`processNotificationOutboxRow`) and by the inline send (`durable-email.ts`).
+ */
+export async function deliverDirectEmailOutboxRow(row: NotificationOutboxRow): Promise<DirectEmailDeliveryOutcome> {
+  const payload = row.payload as unknown as DirectEmailPayload;
+  try {
+    const result = await sendDirectEmailMessage(payload.message);
+    if (!result.skipped) {
+      await markNotificationOutboxSent(row, result.id);
+      return { outcome: "sent", result };
+    }
+    const classification = classifyDirectEmailSkip(result.reason);
+    if (classification.terminal) {
+      await markNotificationOutboxSkipped(row, result.reason, classification.code);
+      return { outcome: "skipped", result };
+    }
+    await markNotificationOutboxFailed(row, result.reason);
+    return { outcome: "queued", result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Email failed.";
+    const retryAfterMs = error instanceof RetryableEmailError ? error.retryAfterMs : undefined;
+    await markNotificationOutboxFailed(row, message, retryAfterMs);
+    return { error, message, outcome: "threw" };
+  }
+}
+
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
   const isRetry = row.attempts > 0;
   const claimedRow = await claimNotificationOutboxRow(row.id);
   if (!claimedRow) {
     return { reason: "Notification is already being processed.", skipped: true };
   }
+
+  // A durable direct email (REC-048) goes back to ITS OWN sender with its stored input — before the
+  // identity guard, the probation audit and the policy path below, which all belong to the standard
+  // notification and would re-route it. See direct-email-payload.ts.
+  if (isDirectEmailPayload(claimedRow.payload)) {
+    const delivery = await deliverDirectEmailOutboxRow(claimedRow);
+    console.log("Durable direct email attempted from the outbox", {
+      level: delivery.outcome === "sent" ? "info" : "warning",
+      tags: { component: "email", cron: "outbox-processing", isRetry: String(isRetry), outcome: delivery.outcome },
+      extra: { attempts: claimedRow.attempts, id: claimedRow.id, label: (claimedRow.payload as unknown as DirectEmailPayload).label },
+    });
+    return delivery.outcome === "threw" ? { reason: delivery.message, skipped: true } : delivery.result;
+  }
+
   let claimed = claimedRow;
 
   try {
@@ -2813,7 +2893,9 @@ export async function processNotificationOutbox(limit = notificationOutboxBatchS
     }
     // Deterministic skips (disabled policy, no recipients, …) are terminal config
     // outcomes — count them as skipped, not failed, so they never trip the alarm.
-    const classification = classifyOutboxSkip(result.reason, row.payload.notificationType);
+    const classification = isDirectEmailPayload(row.payload)
+      ? classifyDirectEmailSkip(result.reason)
+      : classifyOutboxSkip(result.reason, row.payload.notificationType);
     if (classification.terminal) skipped += 1;
     else failed += 1;
   }

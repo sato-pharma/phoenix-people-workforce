@@ -7,7 +7,8 @@
 // Kept in its own module (no import of interviews.ts) to avoid a cycle.
 
 import { createSystemNotification } from "@/lib/notifications/system";
-import { EMAIL_TEMPLATE_KEYS, sendTemplatedEmail } from "@/lib/email-templates/service";
+import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
+import { sendDurableEmail } from "@/lib/notifications/durable-email";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { Interview } from "@/lib/recruitment/types";
 
@@ -144,21 +145,29 @@ export async function sendInterviewScheduledNotifications(
       });
     } else {
       // Scheduled / rescheduled → dedicated, admin-editable interview_invitation template.
-      await sendTemplatedEmail({
-        templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_INVITATION,
-        candidateEmail: ctx.candidateEmail,
-        fallbackTo: [ctx.candidateEmail],
-        context: {
-          candidateName: ctx.candidateName,
-          interviewDate: date,
-          interviewLocation: interview.location ?? "To be confirmed",
-          interviewTime: time,
-          interviewerName: name ?? "—",
-          jobTitle: ctx.jobTitle,
-          meetingUrl: interview.meetingLink ?? "",
-          recipientName: ctx.candidateName,
+      // Durable (REC-048): written to the outbox first, so a provider failure is retried by the drain
+      // with this same input instead of being lost.
+      await sendDurableEmail(
+        {
+          input: {
+            templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_INVITATION,
+            candidateEmail: ctx.candidateEmail,
+            fallbackTo: [ctx.candidateEmail],
+            context: {
+              candidateName: ctx.candidateName,
+              interviewDate: date,
+              interviewLocation: interview.location ?? "To be confirmed",
+              interviewTime: time,
+              interviewerName: name ?? "—",
+              jobTitle: ctx.jobTitle,
+              meetingUrl: interview.meetingLink ?? "",
+              recipientName: ctx.candidateName,
+            },
+          },
+          sender: "templated",
         },
-      });
+        { dedupeKey: `recruitment:interview_invitation:${interview.id}:${kind}:${interview.updatedAt}` },
+      );
     }
   }
 
@@ -221,20 +230,29 @@ function interviewNextStep(outcome: string | null): string {
 export async function notifyInterviewFeedback(input: {
   candidateName: string;
   feedback: string | null;
+  /** Names the email's outbox row; optional so an older caller still compiles. */
+  interviewId?: string | null;
   interviewerHrId: string | null;
   jobTitle: string;
   outcome: string | null;
 }): Promise<void> {
-  await sendTemplatedEmail({
-    templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_FEEDBACK,
-    employeeHrId: input.interviewerHrId,
-    context: {
-      candidateName: input.candidateName,
-      feedback: input.feedback?.trim() || "No written feedback was provided.",
-      jobTitle: input.jobTitle,
-      nextStep: interviewNextStep(input.outcome),
-      recipientName: "Team",
-      status: input.outcome || "Recorded",
+  // Durable (REC-048): see the interview invitation above.
+  await sendDurableEmail(
+    {
+      input: {
+        templateKey: EMAIL_TEMPLATE_KEYS.INTERVIEW_FEEDBACK,
+        employeeHrId: input.interviewerHrId,
+        context: {
+          candidateName: input.candidateName,
+          feedback: input.feedback?.trim() || "No written feedback was provided.",
+          jobTitle: input.jobTitle,
+          nextStep: interviewNextStep(input.outcome),
+          recipientName: "Team",
+          status: input.outcome || "Recorded",
+        },
+      },
+      sender: "templated",
     },
-  });
+    { dedupeKey: `recruitment:interview_feedback:${input.interviewId ?? "no-interview"}:${input.interviewerHrId ?? "no-interviewer"}` },
+  );
 }

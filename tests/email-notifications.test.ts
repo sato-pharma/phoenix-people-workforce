@@ -101,6 +101,12 @@ export function runEmailNotificationTests() {
     // bypassing the gate for that one already-reviewed send. See approveHeldNotification
     // in src/lib/notifications/confidence-gate.ts.
     "src/lib/notifications/confidence-gate.ts",
+    // The durable approval-email door (REC-048, 13 Nov 2026). The leave emails and the two background
+    // interview emails write their EXACT sender input to the outbox first; this module calls that same
+    // sender with that same input, inline and on every drain retry. It adds no recipient, CC or body of
+    // its own — the five leave fallback bodies (which fire ONLY when the matching template has been
+    // deactivated, so they cannot themselves be templates) now reach sendPhoenixEmail through it.
+    "src/lib/notifications/direct-email-payload.ts",
     "src/lib/notifications/email.ts",
     // An offer of employment goes to a candidate who has no Phoenix account, so there is no
     // notification preference to resolve and nothing for the dispatcher to hold. It is also the
@@ -129,9 +135,6 @@ export function runEmailNotificationTests() {
     // screen. It is a manual human send, so it passes no origin and never bypasses the
     // confidence gate; see tests/sato-email-lists-only-composer.test.ts.
     "src/lib/sato-email/service.ts",
-    // The five leave fallback bodies, which fire ONLY when the matching template has been
-    // deactivated — so they deliberately cannot themselves be templates.
-    "src/lib/vacation/email.ts",
   ]);
   assert.match(emailTemplateServiceSource, /renderPhoenixEmailHtml/);
   assert.match(emailTemplateServiceSource, /renderPhoenixEmailText/);

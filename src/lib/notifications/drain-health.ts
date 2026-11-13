@@ -36,7 +36,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * rather than 13 days.
  */
 
-export type DrainQueueName = "deferred" | "outbox" | "push" | "telegram";
+/**
+ * `approval_email` is not a drain of its own: it is the durable approval emails (durable-email.ts,
+ * REC-048) that used every outbox retry. Nothing attempts them again until someone presses "send
+ * again" on Email Notifications, so their reading always carries `attempted: 0` and any such row
+ * makes the run unhealthy — the same alarm, the same people, the same once-a-day Telegram as a frozen
+ * drain, with no new channel.
+ */
+export type DrainQueueName = "approval_email" | "deferred" | "outbox" | "push" | "telegram";
 
 export type DrainQueueReading = {
   /** Rows this run actually tried to send. */
@@ -74,7 +81,11 @@ export function assessDrainHealth(readings: DrainQueueReading[]): DrainHealthVer
 export function describeDrainHealth(verdict: DrainHealthVerdict): string {
   if (verdict.healthy) return "all drains attempted their due work";
   return verdict.stranded
-    .map((reading) => `${reading.queue}: ${reading.strandedBefore} row(s) due before the run, 0 attempted`)
+    .map((reading) =>
+      reading.queue === "approval_email"
+        ? `approval_email: ${reading.strandedBefore} approval email(s) out of retries — send again from Email Notifications`
+        : `${reading.queue}: ${reading.strandedBefore} row(s) due before the run, 0 attempted`,
+    )
     .join("; ");
 }
 
@@ -153,12 +164,45 @@ async function countDueDeliveryRows(
 export async function readDrainQueueBacklog(
   runStartedAtIso: string,
 ): Promise<Record<DrainQueueName, number | null>> {
-  const [outbox, telegram, push, deferred] = await Promise.all([
+  const [outbox, telegram, push, deferred, approvalEmail] = await Promise.all([
     countDueOutboxRows(runStartedAtIso),
     countDueDeliveryRows("telegram", runStartedAtIso),
     countDueDeliveryRows("push", runStartedAtIso),
     countDueDeliveryRows("deferred", runStartedAtIso),
+    countExhaustedApprovalEmails(runStartedAtIso),
   ]);
 
-  return { deferred, outbox, push, telegram };
+  return { approval_email: approvalEmail, deferred, outbox, push, telegram };
+}
+
+/** How long an approval email that ran out of retries keeps the alarm up before it is left to the list. */
+export const EXHAUSTED_APPROVAL_EMAIL_ALARM_DAYS = 7;
+
+/**
+ * Durable approval emails (durable-email.ts) that used every outbox retry and were written in the last
+ * EXHAUSTED_APPROVAL_EMAIL_ALARM_DAYS days. Each one is an approval email nobody received; "send
+ * again" re-queues it and the reading clears. `null` when the probe cannot answer, like the others.
+ */
+async function countExhaustedApprovalEmails(runStartedAtIso: string): Promise<number | null> {
+  const windowStartIso = new Date(
+    Date.parse(runStartedAtIso) - EXHAUSTED_APPROVAL_EMAIL_ALARM_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  try {
+    const { count, error } = await getSupabaseAdmin()
+      .from(notificationOutboxTable)
+      .select("id", { count: "exact", head: true })
+      .eq("status", "failed")
+      .eq("payload->>kind", "direct_email")
+      .gte("attempts", notificationOutboxMaxAttempts)
+      .gte("created_at", windowStartIso);
+
+    if (error) throw error;
+    return count ?? 0;
+  } catch (error) {
+    logWarning("Approval-email drain-health probe failed (non-fatal — no alert is raised from an unknown reading)", {
+      error,
+      labels: { event: "drain_health_probe_failed", queue: "approval_email" },
+    });
+    return null;
+  }
 }

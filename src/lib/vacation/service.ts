@@ -1547,6 +1547,12 @@ function canSeeVacation(access: AccessContext, request: VacationRequestRecord, v
  *
  * Only skips are recorded. A successful send already leaves a trail at the provider, and logging
  * every success would bury the signal in a table people read by eye.
+ *
+ * Since 13 Nov 2026 (REC-048) these emails DO go through `notification_outbox`: each writes its row
+ * first (src/lib/notifications/durable-email.ts) and a provider failure is retried by the drain with
+ * the same input. A skip the outbox will retry reaches this recorder as "Queued for retry: …", and a
+ * provider failure still throws to the `.catch` below with the same words — so the event says the
+ * email is waiting, not lost.
  */
 /**
  * The pure half, exported so a test can reach it: given whatever a templated sender returned, was
