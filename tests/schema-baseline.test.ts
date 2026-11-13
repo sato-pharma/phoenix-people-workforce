@@ -184,6 +184,16 @@ export function runSchemaBaselineTests() {
   assert.match(cli, /const LOOKBACK_HOURS = 24;/, "the explanation window looks back 24 hours");
   assert.match(cli, /`--since=\$\{since\}`/, "migrations are chosen by date, not by commits after the baseline's");
 
+  // The snapshot-placement checker reads every .sql file, and the baseline records production's hand-made
+  // tables faithfully; it is left out of that one checker, exactly that file and nothing wider.
+  const placement = readFileSync("scripts/check-sql-backup-placement.ts", "utf8");
+  const skips = placement.split("\n").filter((l) => l.trim().startsWith("/^supabase") && l.includes("schema"));
+  assert.deepEqual(
+    skips.map((l) => l.trim()),
+    [String.raw`/^supabase\/schema\/production\.sql$/,`],
+    "the placement checker skips the generated baseline — exactly that file, never the whole folder",
+  );
+
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
   assert.equal(pkg.scripts["check:schema-baseline"], "node scripts/schema-baseline.mjs --check", "the package script the leg runs");
 }

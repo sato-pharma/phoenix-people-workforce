@@ -41,7 +41,14 @@ const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
  * New work goes in `supabase/migrations/` or a loose `supabase/*.sql` script, both of which
  * ARE scanned.
  */
-const NOT_SCANNED = [/^supabase\/_migrations_archive\//];
+const NOT_SCANNED = [
+  /^supabase\/_migrations_archive\//,
+  // The production schema baseline (docs/schema-baseline.md) is a pg_dump of what production HOLDS,
+  // regenerated, never run. A table created there by hand shows up in it; this check judging the dump
+  // would fail the PR that writes production down, not the hand that made the table. That table is the
+  // live check's to report: check-schema-shape.ts's snapshot_table_in_public reads production itself.
+  /^supabase\/schema\/production\.sql$/,
+];
 
 /**
  * `create table [if not exists] public.foo_backup_20260801` — with or without the schema
