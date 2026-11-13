@@ -216,6 +216,9 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
           <p className="text-sm font-medium text-green-900">
             Ready — this link covers {created.areaCount} areas. Send it to whoever needs it.
           </p>
+          <p className="text-xs text-green-900">
+            Copy this now — it is shown once and cannot be retrieved afterwards.
+          </p>
           <code className="block min-w-0 break-all rounded-md border border-green-200 bg-white px-2 py-1.5 text-xs">
             {previewUrl(created.token)}
           </code>

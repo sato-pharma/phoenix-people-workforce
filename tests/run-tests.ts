@@ -380,6 +380,7 @@ import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runLiveFeedRotationPausedTests } from "./live-feed-rotation-paused.test.ts";
 import { runShareLinkListsOmitTokenTests } from "./share-link-lists-omit-token.test.ts";
+import { runShareLinkTokenHashTests } from "./share-link-token-hash.test.ts";
 import { runMarketingShareLinksPanelTests } from "./marketing-share-links-panel.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
 import { runShareLinkRotatedLabelTests } from "./share-link-rotated-label.test.ts";
@@ -4033,8 +4034,12 @@ await runTest(
   runLiveFeedRotationPausedTests,
 );
 await runTest(
-  "the Direct Orders and Marketing share-link management lists never carry the whole bearer token — the row type has no token field, the mapper emits only the 8-character tokenPreview, the GET routes return that list unchanged, and the one UI panel reads a whole token only from the link it just minted",
+  "the Direct Orders, Marketing and Territory preview share-link management lists never carry the whole bearer token — the row type has no token field, the mapper emits only the 8-character tokenPreview, the GET routes return that list unchanged, and the one UI panel reads a whole token only from the link it just minted",
   runShareLinkListsOmitTokenTests,
+);
+await runTest(
+  "the Direct Orders, Marketing Requests and Territory preview share links are stored only as a SHA-256 hash and an 8-character preview, found by the hash of a well-formed token, rotated and revoked by hash and id, and every public share route meters the caller per address and per link before the lookup",
+  runShareLinkTokenHashTests,
 );
 await runTest(
   "the Marketing Requests live-sheet links panel exists and carries the rotation banner — gated on expenses:export exactly as its service is, mounted on both registers, Sheets feed only (nothing serves a Marketing live link), the bare FEED_TOKEN shown once, the list read on mount, and fitted to the screen: table-fixed with a colgroup, cards on a phone, square, wrapped, Cairo time",

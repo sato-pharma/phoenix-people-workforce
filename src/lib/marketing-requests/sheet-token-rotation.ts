@@ -2,6 +2,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rotatedLabel } from "@/lib/share-links/rotated-label";
+import { hashShareToken, shareTokenPreview } from "@/lib/share-links/token-hash";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rotate the marketing live sheet's feed token, end to end, with nobody opening an editor.
@@ -52,7 +53,7 @@ async function tokenHasBeenUsed(
   const { data } = await supabase
     .from(TABLE)
     .select("access_count")
-    .eq("token", token)
+    .eq("token_hash", hashShareToken(token))
     .maybeSingle();
   return Number((data as { access_count?: number } | null)?.access_count ?? 0) > 0;
 }
@@ -63,7 +64,7 @@ export type MarketingSheetTokenRotationResult =
 
 /** Never log or return a whole token — the first 8 characters are enough to correlate. */
 function preview(token: string): string {
-  return `${token.slice(0, 8)}…`;
+  return `${shareTokenPreview(token)}…`;
 }
 
 /** 32 random bytes, URL-safe — same shape the share-link service mints. */
@@ -116,7 +117,8 @@ export async function rotateMarketingSheetToken(): Promise<MarketingSheetTokenRo
   //    the same reason: the evidence photographs must stay exactly as reachable as before, no more.
   const newToken = await mintToken();
   const { error: insertError } = await supabase.from(TABLE).insert({
-    token: newToken,
+    token_hash: hashShareToken(newToken),
+    token_preview: shareTokenPreview(newToken),
     surface: String(old.surface ?? "feed"),
     label: rotatedLabel(old.label, "Rotated marketing feed link"),
     created_by_hr_id: String(old.created_by_hr_id ?? ""),
@@ -170,7 +172,7 @@ export async function rotateMarketingSheetToken(): Promise<MarketingSheetTokenRo
   if (!confirmed) {
     // The sheet never took the new token. Clean up the one we minted and leave everything on the
     // old one — a working sheet with an old token beats a dead sheet with a new one.
-    await supabase.from(TABLE).delete().eq("token", newToken);
+    await supabase.from(TABLE).delete().eq("token_hash", hashShareToken(newToken));
     return {
       rotated: false,
       reason:
@@ -183,13 +185,13 @@ export async function rotateMarketingSheetToken(): Promise<MarketingSheetTokenRo
   await supabase
     .from(TABLE)
     .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: "system:rotation" })
-    .eq("token", String(old.token));
+    .eq("id", String(old.id));
 
   await writeRequiredAuditLog({
     actorLoginId: "system:rotation",
     entityType: "marketing_request",
     entityId: `share-link:${preview(newToken)}`,
-    oldValues: { token: preview(String(old.token)), revoked: true },
+    oldValues: { token: `${String(old.token_preview ?? "")}…`, revoked: true },
     newValues: {
       token: preview(newToken),
       scope: String(old.scope ?? ""),
@@ -202,5 +204,5 @@ export async function rotateMarketingSheetToken(): Promise<MarketingSheetTokenRo
       `evidence photograph.`,
   });
 
-  return { rotated: true, newTokenPreview: preview(newToken), revokedTokenPreview: preview(String(old.token)) };
+  return { rotated: true, newTokenPreview: preview(newToken), revokedTokenPreview: `${String(old.token_preview ?? "")}…` };
 }

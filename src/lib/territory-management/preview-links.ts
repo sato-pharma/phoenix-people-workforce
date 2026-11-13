@@ -4,6 +4,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { hashShareToken, shareTokenLookupHash, shareTokenPreview } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadTerritoryFilters, loadTerritoryMap } from "@/lib/territory-management/service";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -18,7 +19,10 @@ import { hrIdForStorage } from "@/lib/hr-id";
 // because the owner asked for plain open access. Every other control therefore has to carry the
 // weight the passcode carried there, and each is tightened rather than merely copied:
 //
-//   * the token is the entire credential — 32 random bytes, never derived from the creator;
+//   * the token is the entire credential — 32 random bytes, never derived from the creator — and
+//     it is stored only as its SHA-256 and first 8 characters (`@/lib/share-links/token-hash`,
+//     REC-055); the whole link is shown once, when it is made;
+//   * every public read is limited per address and per link before the token is looked up;
 //   * expiry is MANDATORY and defaults to 14 days (the owner's figure), capped at 90 rather than
 //     the 180 the passcode-protected report link allows;
 //   * `area_codes` is frozen at creation and is the containment: every request is intersected
@@ -59,7 +63,8 @@ export type TerritoryPreviewLink = {
   label: string | null;
   lastAccessedAt: string | null;
   revokedAt: string | null;
-  token: string;
+  /** The first 8 characters. The whole link is returned once, by `createTerritoryPreviewLink`. */
+  tokenPreview: string;
 };
 
 /**
@@ -113,14 +118,15 @@ export async function createTerritoryPreviewLink(
     expires_at: expiresAt,
     label: input.label?.toString().trim() || null,
     line_code: lineCode,
-    token,
+    token_hash: hashShareToken(token),
+    token_preview: shareTokenPreview(token),
   });
   if (error) throw error;
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? hrId,
     entityType: "territory_preview_link",
-    entityId: `preview-link:${token.slice(0, 8)}`,
+    entityId: `preview-link:${shareTokenPreview(token)}`,
     newValues: { areaCount: areaCodes.length, expiresAt, hasPasscode: false, lineCode },
     summary:
       `Territory preview link created by ${hrId} — ${areaCodes.length} areas, no passcode, ` +
@@ -147,7 +153,7 @@ export async function listTerritoryPreviewLinks(access: AccessContext): Promise<
     label: row.label ? str(row.label) : null,
     lastAccessedAt: row.last_accessed_at ? str(row.last_accessed_at) : null,
     revokedAt: row.revoked_at ? str(row.revoked_at) : null,
-    token: str(row.token),
+    tokenPreview: str(row.token_preview),
   }));
 }
 
@@ -156,7 +162,7 @@ export async function revokeTerritoryPreviewLink(access: AccessContext, linkId: 
   const supabase = getSupabaseAdmin();
   const { data: row } = await supabase
     .from("territory_preview_links")
-    .select("id, token")
+    .select("id, token_preview")
     .eq("id", linkId)
     .maybeSingle();
   if (!row) throw notFoundError("Preview link not found.");
@@ -169,7 +175,7 @@ export async function revokeTerritoryPreviewLink(access: AccessContext, linkId: 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "territory_preview_link",
-    entityId: `preview-link:${str((row as { token: string }).token).slice(0, 8)}`,
+    entityId: `preview-link:${str((row as { token_preview: string | null }).token_preview)}`,
     newValues: { revoked: true },
     summary: `Territory preview link revoked by ${access.hrId ?? "unknown"}.`,
   });
@@ -194,13 +200,14 @@ type PreviewLinkRow = {
  * rather than being left to think the page is broken.
  */
 export async function assertTerritoryPreviewToken(token: string): Promise<PreviewLinkRow> {
-  const trimmed = str(token).trim();
-  if (!trimmed) throw notFoundError("Link not found.");
+  // Found by its hash; a token that could not have been minted here is not looked up at all.
+  const tokenHash = shareTokenLookupHash(token);
+  if (!tokenHash) throw notFoundError("Link not found.");
 
   const { data: row } = await getSupabaseAdmin()
     .from("territory_preview_links")
     .select("*")
-    .eq("token", trimmed)
+    .eq("token_hash", tokenHash)
     .maybeSingle();
   if (!row) throw notFoundError("Link not found.");
 

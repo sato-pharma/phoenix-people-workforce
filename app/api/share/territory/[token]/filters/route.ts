@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { loadTerritoryPreviewFilters } from "@/lib/territory-management/preview-links";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +22,16 @@ export const maxDuration = 60;
  * no-store and noindex on every response, including the error: a cached or crawled copy would
  * outlive the expiry and the revoke switch, which are the only two controls this design has left.
  */
-export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 300, linkLimit: 600, scope: "territory_preview" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "json");
+  }
+  try {
     const filters = await loadTerritoryPreviewFilters(token);
     return NextResponse.json(
       { success: true, ...filters },

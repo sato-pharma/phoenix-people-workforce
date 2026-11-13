@@ -7,6 +7,7 @@ import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { hashPasscode, passcodeMatches } from "@/lib/share-links/passcode-hash";
+import { hashShareToken, shareTokenLookupHash, shareTokenPreview } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   APPROVAL_COLUMNS,
@@ -34,7 +35,8 @@ import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 //
 // This module is the entire security boundary for an UNAUTHENTICATED route. It checks existence,
 // revocation, expiry and passcode before it reads a single request row, and it loads the report as
-// the CREATOR rather than as the anonymous caller.
+// the CREATOR rather than as the anonymous caller. A token is stored only as its SHA-256
+// (`token_hash`) and its first 8 characters (`token_preview`) — `@/lib/share-links/token-hash` (REC-055).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_EXPIRY_DAYS = 365;
@@ -75,11 +77,6 @@ export type MarketingShareLink = {
   surface: "live" | "feed";
   tokenPreview: string;
 };
-
-/** The first 8 characters, matching what the audit rows store. Never the whole token. */
-function previewOf(token: unknown): string {
-  return String(token ?? "").slice(0, 8);
-}
 
 /**
  * Create a link. The creator's scope is captured HERE and never re-resolved, so the link cannot
@@ -124,13 +121,14 @@ export async function createMarketingReportShareLink(
     scope,
     scope_hr_id: hrIdForStorage(hrId),
     surface,
-    token,
+    token_hash: hashShareToken(token),
+    token_preview: shareTokenPreview(token),
   });
   if (error) throw error;
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? hrId,
-    entityId: `share-link:${token.slice(0, 8)}`,
+    entityId: `share-link:${shareTokenPreview(token)}`,
     entityType: "marketing_request",
     newValues: { allowFiles, expiresAt, hasPasscode: surface === "live", scope, surface },
     summary: `Marketing request report ${surface} link created by ${hrId}, scope ${scope}, files ${allowFiles ? "ON" : "off"}, expires ${expiresAt.slice(0, 10)}.`,
@@ -174,14 +172,14 @@ export async function listMarketingReportShareLinks(access: AccessContext): Prom
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
     scope: String(row.scope ?? ""),
     surface: String(row.surface) === "feed" ? "feed" : "live",
-    tokenPreview: previewOf(row.token),
+    tokenPreview: String(row.token_preview ?? ""),
   }));
 }
 
 export async function revokeMarketingReportShareLink(access: AccessContext, linkId: string): Promise<void> {
   await assertPermission(access, "expenses", "export");
   const supabase = getSupabaseAdmin();
-  const { data: row } = await supabase.from(TABLE).select("id, created_by_hr_id, token").eq("id", linkId).maybeSingle();
+  const { data: row } = await supabase.from(TABLE).select("id, created_by_hr_id, token_preview").eq("id", linkId).maybeSingle();
   if (!row) throw notFoundError("Share link not found.");
   const isAdmin = access.scope === "system" || access.role === "Super Admin";
   const owns = String((row as { created_by_hr_id: string }).created_by_hr_id).toUpperCase() === (access.hrId ?? "").toUpperCase();
@@ -191,7 +189,7 @@ export async function revokeMarketingReportShareLink(access: AccessContext, link
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
-    entityId: `share-link:${String((row as { token: string }).token).slice(0, 8)}`,
+    entityId: `share-link:${String((row as { token_preview: string | null }).token_preview ?? "")}`,
     entityType: "marketing_request",
     newValues: { revoked: true },
     summary: `Marketing request report share link revoked by ${access.hrId ?? "unknown"}.`,
@@ -217,11 +215,12 @@ export async function assertMarketingShareToken(input: {
   surface: "live" | "feed";
   token: string;
 }): Promise<Record<string, unknown>> {
-  const token = String(input.token ?? "").trim();
-  if (!token) throw notFoundError("Link not found.");
+  // Found by its hash; a token that could not have been minted here is not looked up at all.
+  const tokenHash = shareTokenLookupHash(input.token);
+  if (!tokenHash) throw notFoundError("Link not found.");
 
   const supabase = getSupabaseAdmin();
-  const { data: row } = await supabase.from(TABLE).select("*").eq("token", token).maybeSingle();
+  const { data: row } = await supabase.from(TABLE).select("*").eq("token_hash", tokenHash).maybeSingle();
   // Same answer for "no such link" and "wrong surface": a probing caller learns nothing about
   // which tokens exist.
   if (!row) throw notFoundError("Link not found.");

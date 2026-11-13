@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertMarketingShareToken } from "@/lib/marketing-requests/report-share-links";
+import { assertShareLinkRate, shareLinkRateRefusal } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -36,8 +37,15 @@ function plain(message: string, status: number) {
  * photograph of a named doctor's clinic with a GPS stamp on it.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  // Limited per address and per link before the token is looked up, far above real use
+  // (`@/lib/share-links/token-hash`). A refusal serves nothing and says nothing about the token.
   try {
-    const { token } = await params;
+    await assertShareLinkRate(request, token, { addressLimit: 1200, linkLimit: 1200, scope: "marketing_share_file" });
+  } catch (limitError) {
+    return shareLinkRateRefusal(limitError, "text");
+  }
+  try {
     const url = new URL(request.url);
     const kindParam = String(url.searchParams.get("kind") ?? "");
     const requestCode = String(url.searchParams.get("request") ?? "").trim();

@@ -8,6 +8,7 @@ import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { noteDeadShareTokenRead } from "@/lib/share-links/refusal-counter";
 import { hashPasscode, passcodeMatches } from "@/lib/share-links/passcode-hash";
+import { hashShareToken, shareTokenLookupHash, shareTokenPreview } from "@/lib/share-links/token-hash";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   DIRECT_ORDER_REPORT_COLUMNS,
@@ -32,7 +33,8 @@ import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 //            then the access control, which is stronger than anything we would rebuild here.
 //
 // Both are bearer credentials, so both carry mandatory expiry, one-click revoke, a creator-frozen
-// scope, and an audited access count.
+// scope, and an audited access count. A token is stored only as its SHA-256 (`token_hash`) and its
+// first 8 characters (`token_preview`) — `@/lib/share-links/token-hash` (REC-055).
 // ─────────────────────────────────────────────────────────────────────────────
 
 function badRequest(message: string): never {
@@ -67,11 +69,6 @@ export type DirectOrderShareLink = {
   accessCount: number;
   scope: string;
 };
-
-/** The first 8 characters, matching what the audit rows store. Never the whole token. */
-function previewOf(token: unknown): string {
-  return String(token ?? "").slice(0, 8);
-}
 
 const MAX_EXPIRY_DAYS = 180;
 const DEFAULT_EXPIRY_DAYS = 30;
@@ -109,7 +106,8 @@ export async function createDirectOrderReportShareLink(
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("direct_order_report_share_links").insert({
-    token,
+    token_hash: hashShareToken(token),
+    token_preview: shareTokenPreview(token),
     surface,
     label: input.label?.toString().trim() || null,
     created_by_hr_id: hrIdForStorage(hrId),
@@ -124,7 +122,7 @@ export async function createDirectOrderReportShareLink(
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? hrId,
     entityType: "direct_order_request",
-    entityId: `share-link:${token.slice(0, 8)}`,
+    entityId: `share-link:${shareTokenPreview(token)}`,
     newValues: { surface, scope, expiresAt, hasPasscode: surface === "live" },
     summary: `Direct-orders report ${surface} link created by ${hrId}, scope ${scope}, expires ${expiresAt.slice(0, 10)}.`,
   });
@@ -155,7 +153,7 @@ export async function listDirectOrderReportShareLinks(access: AccessContext): Pr
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
     id: String(row.id),
-    tokenPreview: previewOf(row.token),
+    tokenPreview: String(row.token_preview ?? ""),
     surface: String(row.surface) === "feed" ? "feed" : "live",
     label: row.label ? String(row.label) : null,
     createdAt: String(row.created_at),
@@ -173,7 +171,7 @@ export async function revokeDirectOrderReportShareLink(access: AccessContext, li
   const supabase = getSupabaseAdmin();
   const { data: row } = await supabase
     .from("direct_order_report_share_links")
-    .select("id, created_by_hr_id, token")
+    .select("id, created_by_hr_id, token_preview")
     .eq("id", linkId)
     .maybeSingle();
   if (!row) throw notFoundError("Share link not found.");
@@ -189,7 +187,7 @@ export async function revokeDirectOrderReportShareLink(access: AccessContext, li
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
-    entityId: `share-link:${String((row as { token: string }).token).slice(0, 8)}`,
+    entityId: `share-link:${String((row as { token_preview: string | null }).token_preview ?? "")}`,
     newValues: { revoked: true },
     summary: `Direct-orders report share link revoked by ${access.hrId ?? "unknown"}.`,
   });
@@ -214,14 +212,15 @@ export async function assertDirectOrderShareToken(input: {
   surface: "live" | "feed";
   token: string;
 }): Promise<Record<string, unknown>> {
-  const token = String(input.token ?? "").trim();
-  if (!token) throw notFoundError("Link not found.");
+  // Found by its hash; a token that could not have been minted here is not looked up at all.
+  const tokenHash = shareTokenLookupHash(input.token);
+  if (!tokenHash) throw notFoundError("Link not found.");
 
   const supabase = getSupabaseAdmin();
   const { data: row } = await supabase
     .from("direct_order_report_share_links")
     .select("*")
-    .eq("token", token)
+    .eq("token_hash", tokenHash)
     .maybeSingle();
   // Same answer for "no such link" and "wrong surface": a probing caller learns nothing about
   // which tokens exist.
