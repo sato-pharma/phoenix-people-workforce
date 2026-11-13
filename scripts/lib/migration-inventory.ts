@@ -2402,6 +2402,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // convalidated (production then carried 111 keys to employees), no position_vacancies or probation_cases row
   // for any of the 13, and phx_employee_insert_reconcile_stale_vacancies enabled again. Re-applying is a no-op.
   "20261113160747_leavers_known_only_from_payroll_become_historical_records.sql",
+  // Applied 13 Nov 2026 at about 16:25 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
+  // aws-1 pooler); no ledger row. Read back on BOTH projects: the pre-image holds every row with a medical-trip id
+  // (production 117, staging 14), 0 ids name no employee, 0 rows changed person (only the case changed; 42
+  // people), outstation_expense_requests_medical_trip_phx_employee_fkey convalidated (production then carried 112
+  // keys to employees), the trigger enabled and SECURITY INVOKER, and anon has no usage on the backup schema.
+  // Proven on staging: a lower-case id with spaces is stored as B-148; an id naming nobody is cleared and the
+  // name kept. Re-applying is a no-op.
+  "20261113161558_medical_trip_ids_name_a_real_employee.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
