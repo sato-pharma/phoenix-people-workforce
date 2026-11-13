@@ -136,13 +136,78 @@ export type CvLinkFetchResult =
   | { ok: true; bytes: Buffer; mimeType: string; fileName: string }
   | { ok: false; reason: string };
 
+/** A share link hands off once or twice to its download host; more than this is not a download. */
+const MAX_REDIRECT_HOPS = 5;
+
+type CvLinkHopResult = { ok: true; response: Response } | { ok: false; reason: string };
+
+/**
+ * Follows redirects ONE HOP AT A TIME, and refuses a hop before it is requested.
+ *
+ * Until 13 Nov 2026 (integration audit, finding ISS-015) this was `redirect: "follow"` with the host
+ * checked once, on the final response. That refused the wrong answer but had already SENT the request:
+ * an allowlisted host that redirected to an address inside the private network would have made this
+ * server call it. Now every hop must be https and on the redirect allowlist before it is fetched, so
+ * no request ever leaves for a host that is not a known file host.
+ */
+async function fetchAlongAllowlistedHops(start: URL, signal: AbortSignal): Promise<CvLinkHopResult> {
+  let current = start;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
+    const response = await fetch(current.toString(), { redirect: "manual", signal });
+    if (response.status < 300 || response.status > 399) return { ok: true, response };
+
+    const location = response.headers.get("location");
+    await response.body?.cancel().catch(() => undefined);
+    if (!location) {
+      return { ok: false, reason: `The CV link could not be downloaded — ${current.hostname} answered ${response.status}.` };
+    }
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      return { ok: false, reason: "The CV link redirected somewhere that could not be checked." };
+    }
+    if (next.protocol !== "https:" || !isAllowlistedCvRedirectHost(next.hostname)) {
+      return { ok: false, reason: `The CV link redirected to ${next.hostname}, which we do not download from.` };
+    }
+    current = next;
+  }
+  return { ok: false, reason: "The CV link redirected too many times to be a file download." };
+}
+
+/**
+ * Reads the body and stops at the cap. A host that declares no length (or a false one) used to be
+ * read whole into memory before its size was looked at.
+ */
+async function readUpTo(response: Response, maxBytes: number): Promise<Buffer | "too_large"> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const whole = Buffer.from(await response.arrayBuffer());
+    return whole.length > maxBytes ? "too_large" : whole;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return "too_large";
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
+}
+
 /**
  * Fetches a CV from an allowlisted link, size/type/redirect-guarded.
  *
  * Returns a REASON rather than throwing, and rather than the old bare `null`: the caller writes
  * that reason onto the intake event, which is what puts the message on Inbound Intake Health
- * instead of losing it under `ignored_no_attachment`. Never follows a link to a non-allowlisted
- * host, even via redirect (the final response URL is re-checked).
+ * instead of losing it under `ignored_no_attachment`. Never requests a non-allowlisted host, even
+ * via redirect: every hop is checked before it is fetched (fetchAlongAllowlistedHops), the final
+ * response URL is re-checked, and the body is read no further than `maxBytes`.
  *
  * The reasons are written for Talent Acquisition to read, per the owner's rule that a screen shows
  * human-readable words. The commonest real cause by far is a link left private, so that reason
@@ -159,9 +224,14 @@ export async function fetchCvFromUrl(url: string, maxBytes: number): Promise<CvL
     return { ok: false, reason: `The CV link points at ${parsed.hostname}, which is not a file host we download from.` };
   }
 
+  // Every host on the allowlist serves https; a link pasted as http is asked for over https.
+  parsed.protocol = "https:";
+
   let response: Response;
   try {
-    response = await fetch(parsed.toString(), { redirect: "follow", signal: AbortSignal.timeout(15_000) });
+    const hops = await fetchAlongAllowlistedHops(parsed, AbortSignal.timeout(15_000));
+    if (!hops.ok) return hops;
+    response = hops.response;
   } catch {
     return { ok: false, reason: `The CV link could not be reached — ${parsed.hostname} did not answer in time.` };
   }
@@ -191,14 +261,15 @@ export async function fetchCvFromUrl(url: string, maxBytes: number): Promise<CvL
 
   let bytes: Buffer;
   try {
-    bytes = Buffer.from(await response.arrayBuffer());
+    const read = await readUpTo(response, maxBytes);
+    if (read === "too_large") {
+      return { ok: false, reason: `The linked CV is larger than the maximum accepted size (${maxBytes} bytes).` };
+    }
+    bytes = read;
   } catch {
     return { ok: false, reason: "The CV link started downloading but the transfer failed." };
   }
   if (bytes.length === 0) return { ok: false, reason: "The CV link returned an empty file." };
-  if (bytes.length > maxBytes) {
-    return { ok: false, reason: `The linked CV is larger than the maximum accepted size (${maxBytes} bytes).` };
-  }
 
   // The single commonest failure, and the one worth naming precisely: a share link that was never
   // made public serves a sign-in page. Checked on the BYTES as well as the header, because Drive

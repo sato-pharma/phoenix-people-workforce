@@ -1404,6 +1404,19 @@ The "Outstation Expenses export" journey is **always skipped, deliberately**: th
 record, so it runs only with `SYNTHETIC_ALLOW_MUTATION=true`, which the workflow never sets. That is
 why a fully passing run reads `warning` (amber) on the dashboard rather than `healthy`.
 
+## Error tracking and the edge runtime
+
+Error tracking starts on the **Node runtime only** — `instrumentation.ts` begins with
+`process.env.NEXT_RUNTIME === "nodejs"`, and there is no edge start-up file. That is complete, not a
+gap, for one reason: **nothing in this app runs on the edge runtime.** No route declares it, and
+`proxy.ts` runs on Node.
+
+The integration audit of 13 Nov 2026 (finding ISS-033) asked for an edge start-up or this note.
+`tests/integration-audit-edges.test.ts` keeps the reason true: it reads every file under `app/` and
+`proxy.ts`, and fails if one declares `runtime = "edge"`. A route that needs the edge runtime adds an
+edge start-up for error tracking in the same change; until then an error thrown there would be
+reported nowhere.
+
 ## Railway runtime signals
 
 `railway logs` (add `--http --json` for the access log) and the Railway dashboard's built-in

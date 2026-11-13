@@ -1,9 +1,28 @@
 # CI on a self-hosted runner — BACK ON 2026-11-05 (the owner's spare laptop, or a free Oracle Cloud VM)
 
+## 2026-11-13 — what is live: the repository is PUBLIC and CI runs on GitHub's own runners
+
+🔴 **Read this first. It is the current state, read live on 13 Nov 2026 (integration audit, findings
+ISS-021 and ISS-057). The 5 Nov section below describes a setup that is not connected today.**
+
+- The repository's visibility is **public** (`gh api repos/sato-pharma/phoenix-people-workforce --jq .visibility`).
+- It has **0 self-hosted runners** (`gh api repos/sato-pharma/phoenix-people-workforce/actions/runners --jq .total_count`).
+- The repository variable `CI_RUNNER_LABEL` is **not set**, so every job takes its fallback, `ubuntu-latest`.
+  Pull request 317's `static` job that day ran on runner group "GitHub Actions".
+- Standard GitHub-hosted runners are not metered on a public repository, which is why CI starts again
+  without a payment. That stops the day the repository is made private: the 5 Nov section then applies again.
+
+🔴 **NEVER REGISTER A SELF-HOSTED RUNNER, AND NEVER SET `CI_RUNNER_LABEL`, WHILE THE REPOSITORY IS PUBLIC.**
+On a public repository anyone can open a pull request from a fork, and a workflow that runs for it would
+run their code on the company's own machine. The order is: make the repository private first, then
+follow the 5 Nov section. Whether the repository stays public is the owner's decision, on GitHub's own
+Settings page.
+
 ## 2026-11-05 — CI moves to a free self-hosted machine, behind one repository variable
 
-🔴 **Read this first. It is the current state. Everything below it — the 2026-10-27 cost section and the
-2026-10-19 retirement of the Hetzner box — is now history.**
+**This was the current state from 5 Nov 2026 until the repository became public; it is the route back if
+it is made private again.** Everything below it — the 2026-10-27 cost section and the 2026-10-19
+retirement of the Hetzner box — is history.
 
 **What was decided, and why.** The owner decided this on the evening of 5 Nov 2026 (Cairo).
 - The repository is on GitHub's **free plan**. November's 2,000 included Actions minutes were used up by 5 Nov (2,018 used).
@@ -197,8 +216,8 @@ Roll back at any time with `gh variable delete CI_RUNNER_LABEL --repo sato-pharm
 3. **No Windows step.** Switch CI with the same `gh variable set` line once the runners read Idle.
 
 **Safety.**
-- The repository is **private**, so only accounts with access can make a workflow run on our machine.
-- 🔴 **If it is ever made public, remove the runners first.** On a public repository a fork pull request could run code on the machine.
+- This section assumes the repository is **private**, so only accounts with access can make a workflow run on our machine. 🔴 **It is public as of 13 Nov 2026** (the section at the top of this file), so none of this may be set up until that changes.
+- 🔴 **Never attach a runner while it is public, and if it is ever made public with runners attached, remove the runners first.** On a public repository a fork pull request could run code on the machine.
 - The machine holds no secrets of its own. A job's secrets reach it only for the length of that job, exactly as on a hosted runner.
 - On the laptop, a job runs inside WSL as your Linux user. The script switches off WSL's mounting of the Windows drives inside this Ubuntu (`[automount] enabled=false` in `/etc/wsl.conf`) and the appending of Windows' PATH, from the next WSL restart. So no CI job can reach C:, D: or the photos on them.
 

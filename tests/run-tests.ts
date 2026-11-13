@@ -3085,6 +3085,7 @@ import { runCronAnswerNowTests } from "./cron-answer-now.test.ts";
 import { runPunchFeedStalledTelegramTests } from "./punch-feed-stalled-telegram.test.ts";
 import { runAutomatedPayrollHeldRecordAtomicTests } from "./automated-payroll-held-record-atomic.test.ts";
 import { runEmployeeKeyForeignKeysTests } from "./employee-key-foreign-keys.test.ts";
+import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12252,6 +12253,7 @@ await runTest("a scheduled route that outlasts its scheduler answers at once (in
 await runTest("the punch-feed alarm also reaches Telegram (integration audit, 13 Nov 2026): once per person per Cairo day, after the feed is judged and the admin toggle is read, Telegram alone on the system module, the last punch in Cairo time, and a failed send never becomes an email", runPunchFeedStalledTelegramTests);
 await runTest("the held-salary record cannot be lost silently (enterprise audit F-PAY-002): publish marks the run and writes who was held in one database call under its claim, a record with no held list is refused, and the readers throw on a missing record instead of listing nobody", runAutomatedPayrollHeldRecordAtomicTests);
 await runTest("a pay, deduction, leave or attendance row must name a real employee (enterprise audit, 13 Nov 2026): 22 money, leave and attendance tables carry a key to the employee list, each added only after an orphan count that refuses, ON UPDATE CASCADE ON DELETE RESTRICT, and no later migration takes one off", runEmployeeKeyForeignKeysTests);
+await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

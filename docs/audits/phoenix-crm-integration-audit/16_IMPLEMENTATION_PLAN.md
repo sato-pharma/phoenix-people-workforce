@@ -33,7 +33,7 @@ The first Migration Drift Check dispatch that day (15:53 Cairo) was red on one n
 
 One wide pull request per phase, one at a time; each is merged only on the owner's word.
 
-### 1 — Stop silent failures — IN PROGRESS
+### 1 — Stop silent failures — ON MAIN (pull request 317, commit `eadba666f`, 13 Nov 2026 17:22 Cairo)
 
 | Finding | Change |
 |---|---|
@@ -44,19 +44,31 @@ Two parts of the audit finding are deliberately not in this change. The alarm st
 
 ISS-001, ISS-007 and ISS-008 were planned for this pull request and needed no code; they are in the table above.
 
-### 2 — Harden the edges — PLANNED
+### 2 — Harden the edges — IN PROGRESS (pull request 325)
+
+Every finding was checked against the code before anything changed. The rows below say what the pull request does; they replace the plan's first wording, which was written before that check.
 
 | Finding | Change |
 |---|---|
-| ISS-015 | Applicant-supplied links: host re-checked on every redirect, private addresses refused, response size capped |
-| ISS-011 · ISS-053 · INT-064 | One outbound client: a deadline on every call, bounded retries, provider keys redacted from logs and error reports |
-| ISS-013 · INT-073 | One verification helper for inbound webhooks, with a freshness window |
-| ISS-035 | The attendance agent token stays on the server |
-| ISS-027 · ISS-028 · ISS-033 | The unused websocket allowance removed; the drain's registry row corrected; the edge-runtime note or init |
-| ISS-041 · ISS-043 · ISS-044 · ISS-045 | Unused AI hops, the third-party font request, former-host residue and two unused packages removed |
-| ISS-018 · ISS-019 · ISS-020 · ISS-025 · ISS-047 · ISS-048 | Workflow hygiene: alarms that cannot read their input fail instead of passing, write scopes moved to the job, concurrency groups, one cache key |
-| ISS-021 · ISS-057 | The runner guide and the two contradicting passages corrected |
-| INT-006 | Breached-password check when a password is set |
+| ISS-015 | A CV link an applicant pastes: every redirect hop is checked before it is requested (https only, on the file-host list, five hops at most), and the body is read no further than the size cap |
+| ISS-011 · INT-064 | A deadline on the thirteen outbound calls that had none: seven to Zoom, the place search, place details, the trip review's map and photo, and two to Google Sheets. No retries were added: a repeated create would book a second meeting |
+| ISS-041 | The sales AI address is written out in the code (`api.openai.com` or `api.groq.com`); the two legs no environment had ever set are gone |
+| ISS-027 · ISS-028 · ISS-033 | The unused websocket allowance removed; the notification drain registered as a row per door; error tracking's Node-only start explained in `docs/observability.md` and kept true by a test |
+| ISS-047 · ISS-048 | Concurrency groups for the three workflows that had none; the browser cache key carries the runner image again (`playwright-ubuntu26-X64-…`, where the live keys read `playwright--X64-…`) |
+| ISS-021 · ISS-057 | The runner guide and `docs/testing.md` corrected from a live read: the repository is public, has no self-hosted runner, and GitHub's own scanning is on |
+
+Checked and left alone, each for a stated reason:
+
+| Finding | Reason |
+|---|---|
+| ISS-053 | Already done before the audit: the error tracker drops every query string and the app's log redacts key, secret and token parameters |
+| ISS-013 · INT-073 | The delivery webhook's provider does not sign, and a repeated event rewrites the same row, so a replay changes nothing. A freshness rule would drop the provider's own retries |
+| ISS-035 | Deliberate: the browser calls the attendance agent on its own computer, which the server cannot reach, with a weaker token that unlocks one action |
+| ISS-044 | No host sets the former host's variable, so the fallback changes nothing that runs; the starter images are SVG files, which are never deleted |
+| ISS-045 | One package is imported by the mailbox reader; whether the other is resolved from the root by the MCP reader's build was not proven |
+| ISS-020 | GitHub cannot filter a deployment event by its state before the workflow starts, and a skipped job bills nothing |
+
+Moved out of this pull request: ISS-043 to pull request 6, ISS-025 to pull request 4, INT-006 to the sign-in pull request, and ISS-018 and ISS-019 to the owner's own list below.
 
 ### 3 — Database posture — PLANNED
 
@@ -74,6 +86,7 @@ ISS-001, ISS-007 and ISS-008 were planned for this pull request and needed no co
 | ISS-009 · INT-096 | A nightly encrypted database dump beside the code backup |
 | INT-097 | A restore drill into staging, with the time it took written down |
 | ISS-038 | One rehearsal of the standby host, recorded |
+| ISS-025 | The image workflows' write scopes moved down to the one job that needs them, rehearsed on the emergency route in the same sitting as the standby rehearsal |
 
 ### 5 — The Integrations page — PLANNED
 
@@ -89,8 +102,11 @@ ISS-001, ISS-007 and ISS-008 were planned for this pull request and needed no co
 | ISS-012 · INT-021 | The Location Integrity board moved to a tile source whose terms cover business use |
 | ISS-031 · INT-041 | Standard web push in place of the vendor |
 | ISS-030 | A connect prompt for Telegram at sign-in |
+| ISS-043 | The joining form's font served from the app, not from a third party. It needs the font file fetched and bundled |
 
 ### Last — the second sign-in factor (INT-005) — PLANNED, on its own
+
+INT-006 (refuse a password found in a breach) goes with it. Today a password the database's own sign-in service calls weak is still accepted by Phoenix, so refusing one is a choice about sign-in, not a tidy-up.
 
 ## The owner's own
 
@@ -107,6 +123,8 @@ These are not code. Each is a decision, a payment or a click on the provider's o
 | ISS-052 · ISS-046 · ISS-032 | The non-expiring DNS token, disk encryption on the laptop, the refused error-tracking token | Each provider's token page; the laptop |
 | ISS-010 | Map key restrictions and the daily quota cap | Google Cloud console |
 | ISS-049 | The workflow that lives only on a side branch | GitHub › Actions |
+| ISS-018 | The Actions budget the cost alarm reads. "Cannot read the budget" stays a warning on purpose; the budget value is money, and a public repository is not metered | GitHub › Billing › Budgets |
+| ISS-019 | A token that may read branch protection, so the required-checks alarm stops warning that it could not read it | GitHub › Settings › Developer settings › Tokens |
 
 ## Not changed, on the audit's own verdict
 
