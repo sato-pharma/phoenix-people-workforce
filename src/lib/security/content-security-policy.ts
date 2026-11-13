@@ -148,3 +148,69 @@ export function pageContentSecurityPolicy(
     }
   }
 }
+
+/**
+ * WHERE A BROWSER SENDS A REPORT-ONLY VIOLATION — app/api/security/csp-report/route.ts. The same path
+ * is the `report-uri` (Firefox, Safari) and the `csp-report` endpoint of `report-to` (Chromium).
+ */
+export const CSP_REPORT_PATH = "/api/security/csp-report";
+export const CSP_REPORT_GROUP = "csp-report";
+
+/**
+ * The `Reporting-Endpoints` header a page carries with the report-only policy. Same-origin, so the
+ * relative path is valid.
+ */
+export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`;
+
+/**
+ * Where a page may load a picture from under the report-only policy (S01, F-PLT-011), measured
+ * 13 Nov 2026:
+ *
+ *   'self' data: blob:     employee photos (/api/employees/<hrId>/photo), bundled files, previews made
+ *                          in the browser (a camera capture, a stored signature)
+ *   *.supabase.co          every evidence, invoice and attachment picture (a signed storage address)
+ *   tile.openstreetmap.org the integrity-board and refused-reading map tiles
+ *   *.googleapis.com, *.gstatic.com, *.google.com, *.googleusercontent.com
+ *                          the Maps JavaScript API's tiles and markers (Google's own CSP guide)
+ *   *.onesignal.com        the push-permission prompt's pictures
+ */
+export const REPORT_ONLY_IMAGE_SOURCES = [
+  "'self'",
+  "data:",
+  "blob:",
+  "https://*.supabase.co",
+  "https://tile.openstreetmap.org",
+  "https://*.googleapis.com",
+  "https://*.gstatic.com",
+  "https://*.google.com",
+  "https://*.googleusercontent.com",
+  "https://*.onesignal.com",
+] as const;
+
+/**
+ * THE REPORT-ONLY POLICY A PAGE CARRIES BESIDE ITS ENFORCED ONE (S01, F-PLT-011, 13 Nov 2026).
+ *
+ * It blocks nothing. It tells the browser to REPORT, to CSP_REPORT_PATH, every `<style>` element
+ * without this request's nonce and every picture from outside REPORT_ONLY_IMAGE_SOURCES, so the
+ * enforced policy can drop `'unsafe-inline'` from style-src and narrow img-src once the reports are
+ * measured. It is not enforced yet because what was measured would break today:
+ *
+ *   - the toast library mounted on every page injects a `<style>` with no nonce, as do the .docx CV
+ *     preview, the hiring-pack paper editor and 21 `<style>` elements in our own components;
+ *   - a received email shown in the mailbox frames loads pictures from any host.
+ *
+ * `style-src-attr 'unsafe-inline'` keeps the 1,104 `style={…}` attributes out of the reports, which
+ * cover `<style>` elements only.
+ *
+ * Only the two measured directives are listed, so nothing else is reported. frame-ancestors and
+ * upgrade-insecure-requests are left out because a browser ignores them in a report-only policy.
+ */
+export function pageReportOnlyContentSecurityPolicy(nonce: string): string {
+  return [
+    `style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com`,
+    "style-src-attr 'unsafe-inline'",
+    `img-src ${REPORT_ONLY_IMAGE_SOURCES.join(" ")}`,
+    `report-uri ${CSP_REPORT_PATH}`,
+    `report-to ${CSP_REPORT_GROUP}`,
+  ].join("; ");
+}

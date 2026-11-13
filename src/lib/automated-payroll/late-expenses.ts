@@ -499,6 +499,9 @@ export function refusalKeepingConfirmedFigures(refusal: LateExpenseRefusal): Err
  * success, or when the person's published figure differed from their approved trips — in the trip's own
  * month, or in ANY later published month (REC-035): a trip listed while the switch was OFF may have been
  * paid by a typed amount in a later month, and carrying it once the switch is ON would pay it again.
+ * The same when the person was HELD in any later published month (REC-035): publish never compares a
+ * held person's figure with their trips (expensesCoveredAtPublish skips them), so a typed amount in the
+ * held figure cannot show as differing, and Held Salary Release would pay the trip a second time.
  */
 export function planLateApprovedExpenses(input: {
   currentPeriod: PayrollPeriod;
@@ -544,6 +547,15 @@ export function planLateApprovedExpenses(input: {
     }
     return null;
   };
+  // A later published month that HELD this person: their figure there was never checked against their trips.
+  const laterHeld = (compact: string, ownIndex: number): number | null => {
+    for (const [index, entry] of differingMonths) {
+      if (index <= ownIndex) break;
+      if (entry.held.has(compact)) return index;
+    }
+    return null;
+  };
+  const periodLabel = (index: number) => monthNameAndYear((index % 12) + 1, Math.floor(index / 12));
 
   const listed: LateApprovedExpense[] = [];
   for (const row of input.rows) {
@@ -565,7 +577,9 @@ export function planLateApprovedExpenses(input: {
     const label = monthNameAndYear(payoutMonth, payoutYear);
     const differs = run.differing.get(compact);
     const later = differs ? null : laterDiffering(compact, index);
-    const laterLabel = later ? monthNameAndYear((later.index % 12) + 1, Math.floor(later.index / 12)) : "";
+    const laterLabel = later ? periodLabel(later.index) : "";
+    const heldIndex = differs || later ? null : laterHeld(compact, index);
+    const heldLabel = heldIndex === null ? "" : periodLabel(heldIndex);
     const needsChecking = !run.covered
       ? `${label} was published before payroll kept a list of the trips each figure paid, so whether this ` +
         "trip was paid cannot be told from the record. Check it by hand; it is not added to a run."
@@ -580,7 +594,11 @@ export function planLateApprovedExpenses(input: {
             ? `This person's ${laterLabel} Expenses figure (${money(later.person.paid)}) was not the total of their ` +
               `approved trips (${money(later.person.tripsTotal)}), so this ${label} trip may have been paid by hand in ` +
               `${laterLabel}. Check it by hand; it is not added to a run.`
-            : null;
+            : heldIndex !== null
+              ? `This person was held in ${heldLabel}, so their ${heldLabel} Expenses figure was never compared with ` +
+                `their approved trips, and this ${label} trip may have been paid by hand in that held figure. Check it ` +
+                "by hand; it is not added to a run."
+              : null;
     listed.push({
       id,
       hrId: text(row.hr_id),
@@ -825,7 +843,8 @@ export function lateExpensesPaidAtPublish(
  * For each published (not held) person: when the figure equals their snapshotted approved trips plus the
  * carried trips this run pays them (within 0.50), those own trips are covered. Otherwise — a typed amount,
  * a 0.00 figure that refused their trips, money with no trip behind it — they are `differing`, and their
- * later-approved trips of this month are listed as needing a check by hand, never carried.
+ * later-approved trips of this month are listed as needing a check by hand, never carried. A held person
+ * is in neither list; planLateApprovedExpenses marks their earlier months' listed trips instead (REC-035).
  * NULL when the step kept no snapshot of its own trips: the month is then checked by hand entirely.
  */
 export function expensesCoveredAtPublish(input: {
