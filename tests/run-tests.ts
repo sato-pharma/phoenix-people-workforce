@@ -1151,6 +1151,7 @@ import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
 import { runNewHireMailboxAppPasswordCaptureTests } from "./new-hire-mailbox-app-password-capture.test.ts";
+import { runMailboxEditFormCaptureTests } from "./mailbox-edit-form-capture.test.ts";
 import { runNewHireMailboxAppPasswordRehearsalTests } from "./new-hire-mailbox-app-password-rehearsal.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
@@ -5479,6 +5480,13 @@ await runTest(
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
   + "clear step — the flag is true only because the live rehearsal of 4 Oct 2026 read all four controls)",
   runNewHireMailboxAppPasswordCaptureTests,
+);
+await runTest(
+  "a leaver's mailbox Edit form is read and left without keeping anything (the System Administrator "
+  + "gate is checked before the body is read, an address that is not a leaver on the register is "
+  + "refused before a driver is built and never by a substring, leaving can press only Close modal, "
+  + "Cancel or Close and then Escape, and the answer carries a text field's length but never its value)",
+  runMailboxEditFormCaptureTests,
 );
 await runTest(
   "the app-password rehearsal mints ONE app password only on Phoenix's own invite inbox, refused "

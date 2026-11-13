@@ -235,6 +235,7 @@ async function runWebRouteCases() {
     ["../app/api/new-hire-mailboxes/invite-inbox/route.ts", "invite-inbox", /if \(!dryRun && robotServiceConfigured\(\)\)/],
     ["../app/api/new-hire-mailboxes/app-password-controls/route.ts", "app-password-controls", /if \(robotServiceConfigured\(\)\)/],
     ["../app/api/new-hire-mailboxes/app-password-rehearsal/route.ts", "app-password-rehearsal", /if \(robotServiceConfigured\(\)\)/],
+    ["../app/api/mailbox-offboarding/edit-form-controls/route.ts", "edit-form-controls", /if \(robotServiceConfigured\(\)\)/],
   ];
   for (const [file, action, gate] of routes) {
     const source = code(file).replace(/\s+/g, " ");

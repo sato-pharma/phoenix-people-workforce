@@ -94,7 +94,76 @@ export type JoinerConsoleDriver = {
    * Not in `JOINER_STEP_ORDER`, and a test fails if it is ever wired into the sweep.
    */
   rehearseAppPasswordRemoval: (input: { address: string; password: string }) => Promise<AppPasswordRehearsal>;
+  /**
+   * Sign in as the administrator, open ONE mailbox row's Edit form, read every control on it, and
+   * leave WITHOUT SAVING (13 Nov 2026).
+   *
+   * 🔴 A READ, AND NOTHING BUT A READ. It types into nothing but the account-list search, presses
+   * nothing but Edit and a control that closes the form (`MAILBOX_EDIT_FORM.leave`, then Escape), and
+   * reports a text field's LENGTH, never its value. It exists to answer whether the console's Edit
+   * form holds an on/off, status or access switch that would cut a leaver off — because a password
+   * reset does not, and clearing app passwords from inside the mailbox is blocked by Yahoo's terms.
+   *
+   * The row is chosen by IDENTITY (`rowIdentityRefusal`), never by a count. Not in
+   * `JOINER_STEP_ORDER` and never named by a sweep: its only caller is the Super-Admin route
+   * `POST /api/mailbox-offboarding/edit-form-controls`, and only for a leaver on the register.
+   */
+  captureMailboxEditForm: (input: { address: string }) => Promise<MailboxEditFormReading>;
   close: () => Promise<void>;
+};
+
+/**
+ * One control on the mailbox Edit form, in terms that cannot carry what it holds.
+ *
+ * 🔴 `filled` IS A LENGTH AND ONLY FOR A TEXT-LIKE FIELD — never the value, which is the rule every
+ * read in this module keeps (`FieldState.filled`). A select's `selected` and `options` are the
+ * VISIBLE option labels, which is what a person would read off the screen.
+ */
+export type MailboxEditFormField = {
+  /** `input`, `select`, `textarea`, or the tag of an ARIA switch / checkbox / radio. */
+  tag: string;
+  /** The input type, `select`, `textarea`, or the ARIA role (`switch`, `checkbox`, `radio`, `combobox`). */
+  type: string;
+  /** The `name` attribute, else the `id`. Empty when the control has neither. */
+  name: string;
+  /** What the form calls it: `label[for]`, `aria-label`, `aria-labelledby`, a wrapping label, `title`, placeholder. */
+  label: string;
+  /** Not rendered (zero client rects). Reported so a hidden field is never mistaken for a visible one. */
+  hidden: boolean;
+  /** Ticked / on for a checkbox, radio or switch; `null` for anything else. */
+  checked: boolean | null;
+  /** The visible label of the chosen option of a select; `null` for anything else. */
+  selected: string | null;
+  /** A select's option labels, or every label in a radio's group. Empty for anything else. */
+  options: string[];
+  disabled: boolean;
+  required: boolean;
+  /** `value.length` for a text-like field; `null` for every other kind. NEVER the value. */
+  filled: number | null;
+};
+
+/** What the read-only Edit-form capture comes back with. Never a field's value. */
+export type MailboxEditFormReading = {
+  address: string;
+  /** False when the form was never read — then `why` says what stopped it and what was on screen. */
+  reached: boolean;
+  /** `dialog` when Edit opened a dialog; `page` when none appeared and the whole page was read. */
+  scope: "dialog" | "page" | null;
+  /** Whether the form's own text names this address, compared as whole tokens. Null when not read. */
+  namesAddress: boolean | null;
+  headings: string[];
+  /** The form's own button wordings, as read. None of them was pressed except the one in `leftWith`. */
+  buttons: string[];
+  fields: MailboxEditFormField[];
+  /** The page's controls through `buildControlReport` (redaction-first), as the app-password capture reports them. */
+  controls: string[];
+  observed: number;
+  redacted: number;
+  /** The control (or `Escape`) that closed the form. Null when nothing needed closing or nothing worked. */
+  leftWith: string | null;
+  /** Re-read after leaving: true when no dialog remains. Null when no dialog ever opened. */
+  closed: boolean | null;
+  why: string | null;
 };
 
 /**
@@ -202,6 +271,25 @@ export function createDryRunJoinerDriver(domain = "satopharma.com"): JoinerConso
         outstanding: false,
         removed: false,
         why: `Dry run: no app password was minted on ${address} and nothing was removed.`,
+      };
+    },
+    async captureMailboxEditForm({ address }) {
+      calls.push(`captureMailboxEditForm:${address}`);
+      // `reached: false` for the same reason as `describeAppPasswords` above: nothing was opened.
+      return {
+        address,
+        buttons: [],
+        closed: null,
+        controls: [],
+        fields: [],
+        headings: [],
+        leftWith: null,
+        namesAddress: null,
+        observed: 0,
+        reached: false,
+        redacted: 0,
+        scope: null,
+        why: `Dry run: the Edit form of ${address} was never opened, so no control was read.`,
       };
     },
     async close() { calls.push("close"); },
