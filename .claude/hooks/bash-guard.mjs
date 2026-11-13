@@ -2213,7 +2213,10 @@ try {
     const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
     // No `--jq` carrying spaces or quotes: on Windows `shell: true` hands gh its arguments unescaped
     // (see C10's `readMergeState`). Every argument is fixed text or a value checked below.
-    const gh = async (args) => (await ghRead(args)).trim();
+    // Not `async`: the in-process contract (tests/hook-dispatch.test.ts) refuses a module-level call to
+    // a local async function that is not awaited on the spot, and C21 starts its reads before it awaits
+    // them. Every one of them is awaited before the verdict below.
+    const gh = (args) => ghRead(args).then((out) => out.trim());
     const standDown = String(input?.tool_name ?? '').toLowerCase().includes('powershell')
       ? '$env:PHX_RED_MERGE_OK=1; <the same command>'
       : 'PHX_RED_MERGE_OK=1 <the same command>';
@@ -2439,7 +2442,7 @@ try {
         // required context names and reads those check-runs on the head sha, exactly as a session
         // does by hand. Unreadable in any part → `null`, and the caller keeps the refusal.
         const requiredChecksGreen = async () => {
-          const gh = async (args) => String(await ghRead(args)).trim();
+          const gh = (args) => ghRead(args).then((out) => String(out).trim());
           try {
             const repo =
               repoArgs.length > 0 ? PHOENIX_REPO : await gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
