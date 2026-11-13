@@ -27,14 +27,13 @@
  */
 import { NextResponse } from "next/server";
 
-import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
-import type { AppPasswordRehearsal } from "@/lib/new-hire-mailbox/robot/driver";
+import { forwardToRobotService } from "@/lib/new-hire-mailbox/robot/actions/forward";
+import { runAppPasswordRehearsalAction } from "@/lib/new-hire-mailbox/robot/actions/app-password-rehearsal-action";
 import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
-import { readCompanyInitialPassword } from "@/lib/new-hire-mailbox/robot/initial-password";
-import { createJoinerDriverFromEnv } from "@/lib/new-hire-mailbox/robot/sweep-deps";
+import { robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -94,80 +93,15 @@ export async function POST(request: Request) {
       windowMs: 60 * 60_000,
     });
 
-    const companyPassword = String((await readCompanyInitialPassword()) ?? "");
-    if (companyPassword.length === 0) {
-      return NextResponse.json(
-        {
-          message:
-            "PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD is not set, so there is no password to sign in "
-            + "with. Nothing was opened and nothing was minted.",
-          success: false,
-        },
-        { status: 409 },
-      );
+    // AFTER every check above, in the same order as before the robot service existed (audit
+    // REC-075). The live run opens a robot browser, so once PHOENIX_ROBOT_SERVICE_URL is set it runs
+    // on the robot service and its answer comes back unchanged; otherwise it runs here. Either way it
+    // is the ONE implementation in runAppPasswordRehearsalAction, the company-password check and audit rows included.
+    const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
+    if (robotServiceConfigured()) {
+      return await forwardToRobotService({ action: "app-password-rehearsal", actor, request: { dryRun: false } });
     }
-
-    const driver = await createJoinerDriverFromEnv();
-    let result: AppPasswordRehearsal;
-    try {
-      try {
-        result = await driver.rehearseAppPasswordRemoval({
-          address: INVITE_INBOX_ADDRESS,
-          password: companyPassword,
-        });
-      } finally {
-        await driver.close().catch(() => {});
-      }
-    } catch (error) {
-      // 🔴 A THROW HERE IS THE WORST CASE TO LOSE, because the run may have minted before it threw
-      // and nothing in the response would say so. The row is written with `outstanding: null` —
-      // deliberately not `false`, which would be a claim this path cannot support.
-      await writeAuditLog({
-        actorLoginId: access.loginId ?? null,
-        entityId: INVITE_INBOX_ADDRESS,
-        entityType: "new_hire_mailbox_adoption",
-        newValues: {
-          address: INVITE_INBOX_ADDRESS,
-          failed: true,
-          minted: null,
-          outstanding: null,
-          rehearsal: true,
-          removed: false,
-          why: clientSafeErrorMessage(error, "The app-password rehearsal could not be completed."),
-        },
-        summary:
-          `The app-password rehearsal on ${INVITE_INBOX_ADDRESS} threw — whether it minted first is `
-          + "not known from here, so the page needs a human look",
-      });
-      throw error;
-    }
-
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: INVITE_INBOX_ADDRESS,
-      entityType: "new_hire_mailbox_adoption",
-      newValues: {
-        address: INVITE_INBOX_ADDRESS,
-        // Every stage, because a run that stopped early still carries the calibration it bought.
-        after: result.after.controls,
-        before: result.before.controls,
-        confirming: result.confirming.controls,
-        failed: false,
-        listed: result.listed.controls,
-        minted: result.minted,
-        outstanding: result.outstanding,
-        rehearsal: true,
-        removed: result.removed,
-        why: result.why,
-      },
-      summary: result.outstanding
-        ? `🔴 The app-password rehearsal on ${INVITE_INBOX_ADDRESS} LEFT A LIVE APP PASSWORD — remove it by hand`
-        : result.removed
-          ? `The app-password rehearsal on ${INVITE_INBOX_ADDRESS} minted one and removed it again`
-          : `The app-password rehearsal on ${INVITE_INBOX_ADDRESS} minted nothing`,
-    });
-
-    return NextResponse.json({ result: { address: INVITE_INBOX_ADDRESS, dryRun: false, ...result }, success: true });
+    return await runAppPasswordRehearsalAction({ actor });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "You do not have access to this.", success: false }, { status: 403 });

@@ -11,6 +11,7 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { purgeDepartedPersonalMailboxes } from "@/lib/personal-mailbox/service";
+import { ROBOT_SERVICE_NAME, robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -61,6 +62,12 @@ export const maxDuration = 60;
  * never throws, reported in the response under `robot`, and — like its neighbours — it drives no
  * alarm of its own: a robot that could not sign in must not turn the mailbox switch red.
  *
+ * 🔴 ONCE THE ROBOT SERVICE IS SWITCHED ON (PHOENIX_ROBOT_SERVICE_URL set, audit REC-075) THE TWO
+ * ROBOT PASSES ARE SKIPPED HERE — they run on `phoenix-workforce-robot` from
+ * /api/cron/mailbox-robots instead, so a Chromium never opens beside this process. Unset, this sweep
+ * runs them exactly as before. The register, the departed-access sweep and the personal-mailbox purge
+ * always stay here.
+ *
  * IT ANSWERS 202 AT ONCE AND FINISHES AFTER THE RESPONSE (13 Nov 2026): the scheduler hangs up at 30
  * seconds and this pass was cut at 30,172 ms, so it recorded a failure for a sweep that had finished.
  * `?wait=1` waits for the report as before. The verdict is the switch's ping, never this route's
@@ -82,13 +89,15 @@ async function runSweep(): Promise<Response> {
     // Last, and only after the register is up to date: run the robot over what the sweep found. It
     // never throws (sweep-hook.ts) and its outcome does not feed the switch below — a robot that
     // could not sign in is a different question from "is a leaver holding a live mailbox?".
-    const robot = await runRobotSweepPass();
+    // Skipped once the robot service is on (REC-075): the robots then run on that service's own cron.
+    const delegated = robotServiceConfigured();
+    const robot = delegated ? robotPassesDelegated() : await runRobotSweepPass();
     // The joiner robot rides the same pass, for the same reason the revocation robot does: a new
     // schedule means a new cron-job.org registration against an API that allows 100 requests a day.
     // It is OFF by default and dry-run by default once enabled, never throws, and like its neighbour
     // it does not feed the switch below — provisioning a new hire is a different question from "is a
     // leaver holding a live mailbox?".
-    const joiner = await runJoinerSweepPass(defaultJoinerSweepDeps());
+    const joiner = delegated ? robotPassesDelegated() : await runJoinerSweepPass(defaultJoinerSweepDeps());
     // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
     // carries on (sweep.ts) — including the worst case, where it could not read the register at all
     // and returns errors: 1. A switch driven by throw/no-throw would call that run green, and green
@@ -113,6 +122,15 @@ async function runSweep(): Promise<Response> {
     const message = clientSafeErrorMessage(error, "Mailbox offboarding sweep failed.");
     return NextResponse.json({ error: "mailbox_offboarding_sweep_failed", message }, { status: 500 });
   }
+}
+
+/**
+ * What `robot` and `joiner` report when the robot service runs them instead (audit REC-075): no pass
+ * ran here, and the answer names where they do run, so a reader of this response never takes the
+ * absence of a robot result for a robot that did nothing.
+ */
+function robotPassesDelegated() {
+  return { delegated: true as const, ran: false as const, service: ROBOT_SERVICE_NAME };
 }
 
 export async function POST(request: Request) {

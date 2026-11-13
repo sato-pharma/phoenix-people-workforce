@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { canReadInitialPassword } from "@/lib/new-hire-mailbox/initial-password-store";
+import { runAdoptAction } from "@/lib/new-hire-mailbox/robot/actions/adopt-action";
+import { forwardToRobotService } from "@/lib/new-hire-mailbox/robot/actions/forward";
 import { parseAdoptionRequest } from "@/lib/new-hire-mailbox/robot/adopt";
-import { defaultAdoptionDeps } from "@/lib/new-hire-mailbox/robot/adopt-deps";
-import { runMailboxAdoption } from "@/lib/new-hire-mailbox/robot/adopt-runner";
-import { createJoinerDriverFromEnv } from "@/lib/new-hire-mailbox/robot/sweep-deps";
+import { robotServiceConfigured } from "@/lib/platform/robot-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -72,48 +71,19 @@ export async function POST(request: Request) {
       });
     }
 
-    const result = await runMailboxAdoption({
-      deps: defaultAdoptionDeps(),
-      driver: parsed.dryRun ? undefined : await createJoinerDriverFromEnv(),
-      dryRun: parsed.dryRun,
-      named: parsed.named,
-    });
-
-    // Audited even for a dry run: asking which mailboxes WOULD be reset is itself worth a record of
-    // who asked.
-    //
-    // 🔴 THE COUNTS SAY HOW MANY FAILED AND NOTHING SAYS WHY, so each outcome's own `detail` is
-    // audited beside them. A row reading `failed: 1` is unactionable a day later: the sentence
-    // naming what stopped that one mailbox lived only on the screen of whoever clicked, and had to
-    // be copied out of the browser by hand (measured 2026-10-03, on the invite inbox).
-    //
-    // 🔴 `handover` IS DELIBERATELY LEFT OUT. For a new hire the company password becomes their
-    // real password, so the hand-over sentence can carry a credential — `detail` and `status`
-    // never do, which is why only those two cross into an audit row.
-    await writeAuditLog({
-      actorLoginId: access.loginId ?? null,
-      entityId: parsed.named.join(","),
-      entityType: "new_hire_mailbox_adoption",
-      newValues: {
-        adopted: result.adopted,
-        dryRun: result.dryRun,
-        failed: result.failed,
-        lockedOut: result.lockedOut,
-        named: parsed.named,
-        outcomes: result.outcomes.map((outcome) => ({
-          address: outcome.address,
-          detail: outcome.detail ?? null,
-          status: outcome.status,
-        })),
-        refused: result.refused,
-      },
-      summary: parsed.dryRun
-        ? `Planned adoption of ${parsed.named.length} mailbox(es)`
-        : `Adopted ${result.adopted} of ${parsed.named.length} mailbox(es)`
-          + (result.lockedOut > 0 ? ` — ${result.lockedOut} left locked out` : ""),
-    });
-
-    return NextResponse.json({ result, success: true });
+    // AFTER every check above, in the same order as before the robot service existed (audit
+    // REC-075). A LIVE run opens a robot browser, so once PHOENIX_ROBOT_SERVICE_URL is set it runs on
+    // the robot service and its answer comes back unchanged; a dry run opens nothing and stays here.
+    // Either way it is the ONE implementation in runAdoptAction, audit row included.
+    const actor = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
+    if (!parsed.dryRun && robotServiceConfigured()) {
+      return await forwardToRobotService({
+        action: "adopt",
+        actor,
+        request: { dryRun: parsed.dryRun, named: parsed.named },
+      });
+    }
+    return await runAdoptAction({ actor, dryRun: parsed.dryRun, named: parsed.named });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "You do not have access to this.", success: false }, { status: 403 });

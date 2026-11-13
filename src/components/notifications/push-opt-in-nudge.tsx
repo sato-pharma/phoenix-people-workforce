@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BellRing, X } from "lucide-react";
 
+import { readHomeNotificationSettings } from "@/components/notifications/home-notification-settings";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
 // From the pure rules module, NOT from settings.ts — that file pulls in getSupabaseAdmin,
@@ -24,12 +25,12 @@ type NudgeStatus = "checking" | "hidden" | "visible" | "working" | "granted";
  * This is a nudge, not a gate: it renders nothing while it is still finding out whether to show
  * itself, and nothing ever blocks on it — no modal, no interstitial, no sign-in step.
  *
- * SHOWN AT MOST ONCE. It fetches the same GET /api/notifications/settings the settings panel
- * already calls and never shows when either is true: this person already has an ACTIVE push
- * subscription on some device (`push.deviceCount > 0`), or they have dismissed this exact card
- * before (`shouldShowPushOptInNudge`, in push-opt-in-nudge-rules.ts). Dismissing — or successfully
- * enabling — writes that dismissal permanently via POST /api/notifications/push/nudge, so nobody
- * is asked a second time on any device.
+ * ASKED ONCE, AND AGAIN ONLY AFTER A DROP (owner, 13 Nov 2026). It reads the same GET
+ * /api/notifications/settings the settings panel calls (one request shared with the Telegram card
+ * beside it, home-notification-settings.ts) and never shows when either is true: this person has a
+ * device receiving push now (`push.deviceCount > 0`), or they answered this card before and no device
+ * has stopped receiving since (`shouldShowPushOptInNudge`, in push-opt-in-nudge-rules.ts). Dismissing —
+ * or successfully enabling — writes the answer via POST /api/notifications/push/nudge.
  *
  * Uses requestOneSignalPermission() (PushSubscription.optIn()), the exact call the settings panel
  * makes — never Notifications.requestPermission() directly. See onesignal-client.ts for why
@@ -50,25 +51,18 @@ export function PushOptInNudge() {
     if (!supported) return;
 
     let active = true;
-    fetch("/api/notifications/settings", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.data) throw new Error("settings unavailable");
-        const data = payload.data as {
-          preferences?: { modulePreferences?: Record<string, unknown> };
-          push?: { deviceCount?: number };
-        };
-        const show = shouldShowPushOptInNudge({
-          deviceCount: data.push?.deviceCount ?? 0,
-          modulePreferences: data.preferences?.modulePreferences ?? {},
-        });
-        if (active) setStatus(show ? "visible" : "hidden");
-      })
-      .catch(() => {
-        // Unable to learn whether this person already has push or already dismissed the card —
-        // say nothing rather than risk nagging someone who is already covered.
-        if (active) setStatus("hidden");
+    void readHomeNotificationSettings().then((settings) => {
+      if (!active) return;
+      // Unable to learn whether this person already has push or already answered the card —
+      // say nothing rather than risk nagging someone who is already covered.
+      if (!settings) return setStatus("hidden");
+      const show = shouldShowPushOptInNudge({
+        deviceCount: settings.pushDeviceCount,
+        lastDroppedSubscribedAt: settings.pushLastDroppedSubscribedAt,
+        modulePreferences: settings.modulePreferences,
       });
+      setStatus(show ? "visible" : "hidden");
+    });
     return () => {
       active = false;
     };

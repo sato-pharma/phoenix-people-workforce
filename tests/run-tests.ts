@@ -2587,6 +2587,7 @@ import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-caller
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
 import { runPushOptInNudgeTests } from "./push-opt-in-nudge.test.ts";
+import { runTelegramHomeCardTests } from "./telegram-home-card.test.ts";
 import { runPlansAwaitingApprovalAvailabilityTests } from "./plans-awaiting-approval-availability.test.ts";
 import { runHiringPackDepartmentNameTests } from "./hiring-pack-department-name.test.ts";
 import { runDirectOrderDecidedAtStampTests } from "./direct-order-decided-at-stamp.test.ts";
@@ -3026,6 +3027,7 @@ import { runBackgroundJobsRecoveryTests } from "./background-jobs-recovery.test.
 import { runJobLeaseTests } from "./job-lease.test.ts";
 import { runSharedInstanceStateTests } from "./shared-instance-state.test.ts";
 import { runWorkerOnlyCronRoutesTests } from "./worker-only-cron-routes.test.ts";
+import { runMailboxRobotServiceTests } from "./mailbox-robot-service.test.ts";
 import { runIntegrationDeadlinesTests } from "./integration-deadlines.test.ts";
 import { runErrorScreenshotIntakeTests } from "./error-screenshot-intake.test.ts";
 import { runErrorScreenPictureFilterTests } from "./error-screenshot-picture-filter.test.ts";
@@ -3113,6 +3115,7 @@ import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
 import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
+import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -9937,8 +9940,12 @@ await runTest(
   runMarketingCustomerMergeTombstoneTests,
 );
 await runTest(
-  "push opt-in nudge (never shown with an active subscription, dismissal is permanent and additive)",
+  "push opt-in nudge (never shown with a device receiving, an answer stands until a device drops, additive)",
   runPushOptInNudgeTests,
+);
+await runTest(
+  "the home page Telegram card (everybody not connected, never a test account, once, decided by the server)",
+  runTelegramHomeCardTests,
 );
 await runTest(
   "a failed plans-awaiting-approval lookup reports itself as unavailable, never as a bare 0",
@@ -12093,6 +12100,10 @@ await runTest(
   runWorkerOnlyCronRoutesTests,
 );
 await runTest(
+  "the Turbify mailbox robots run on their own Railway service once PHOENIX_ROBOT_SERVICE_URL is set: both driver factories refuse anywhere but the robot service, the robot cron and the four internal routes refuse off it (the internal ones after the CRON_SECRET bearer), the website keeps its session, CSRF, role and rate-limit checks and forwards only a live run after them, the answer comes back unchanged or a 502 with no credential in it, the daily sweep skips both robot passes, and the Railway block is Europe, robot role and none of the website's variables",
+  runMailboxRobotServiceTests,
+);
+await runTest(
   "every outside call in the background jobs has a deadline: the careers IMAP clients cut a silent host after 30 seconds and carry an error listener, a Headwind call that times out answers 504 saying it may have acted (never that it never reached a server), uploads get a longer deadline, and free OCR stops and terminates its worker at its whole-read deadline",
   runIntegrationDeadlinesTests,
 );
@@ -12341,6 +12352,7 @@ await runTest("the Integrations page: no credential value ever comes back out, t
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
 await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
 await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
+await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

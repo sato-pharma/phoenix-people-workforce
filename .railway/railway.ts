@@ -130,6 +130,35 @@ export default defineRailway(() => {
     },
     env: { ACTION1_API_BASE_URL: preserve(), ACTION1_CLIENT_ID: preserve(), ACTION1_CLIENT_SECRET: preserve(), ACTION1_ORG_ID: preserve(), AI_PROVIDER: preserve(), ANDROID_MANAGEMENT_ENTERPRISE_NAME: preserve(), ANDROID_MANAGEMENT_KEY: preserve(), ANDROID_MANAGEMENT_PROJECT_ID: preserve(), ANTHROPIC_API_KEY: preserve(), ANTHROPIC_API_KEY_2: preserve(), APP_ENV: preserve(), APP_URL: preserve(), ATTENDANCE_AGENT_BROWSER_TOKEN: preserve(), ATTENDANCE_AGENT_TOKEN: preserve(), BREVO_API_KEY: preserve(), BREVO_EMAIL_FROM: preserve(), BREVO_WEBHOOK_SECRET: preserve(), CLOUDFLARE_API_TOKEN: preserve(), CRON_SECRET: preserve(), CRON_SECRET_PREVIOUS: preserve(), CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_SECRET: preserve(), CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL: preserve(), EMAIL_NOTIFICATIONS_ENABLED: preserve(), FTP_VIDEO_HANDOFF_SECRET: preserve(), GITHUB_ACTIONS_DISPATCH_TOKEN: preserve(), GOOGLE_CALENDAR_API_KEY: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_ID: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: preserve(), GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: preserve(), GOOGLE_DRIVE_RECRUITMENT_FOLDER_ID: preserve(), GOOGLE_HOLIDAY_CALENDAR_ID_EG: preserve(), GOOGLE_MAPS_SERVER_KEY: preserve(), GROQ_API_KEY: preserve(), HEADWIND_MDM_BASE_URL: preserve(), HEADWIND_MDM_LOGIN: preserve(), HEADWIND_MDM_PASSWORD: preserve(), HEALTHCHECKS_PING_KEY: preserve(), HR_NOTIFICATION_EMAILS: preserve(), JOB_OFFER_EMAIL_FROM: preserve(), LOCATIONIQ_API_KEY: preserve(), MAILBOX_MONITOR_SECRET: preserve(), MANAGEENGINE_MDM_CLIENT_ID: preserve(), MANAGEENGINE_MDM_CLIENT_SECRET: preserve(), MANAGEENGINE_MDM_REFRESH_TOKEN: preserve(), MARKETING_SHEET_REFRESH_WEBHOOK_SECRET: preserve(), MARKETING_SHEET_REFRESH_WEBHOOK_URL: preserve(), MASTER_MAP_SYNC_TOKEN: preserve(), NEXT_PUBLIC_APP_URL: preserve(), NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY: preserve(), NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: preserve(), NEXT_PUBLIC_ONESIGNAL_APP_ID: preserve(), NEXT_PUBLIC_SENTRY_DSN: preserve(), NEXT_PUBLIC_SMI_USE_FACT_TABLES: preserve(), NEXT_PUBLIC_SUPABASE_ANON_KEY: preserve(), NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: preserve(), NEXT_PUBLIC_SUPABASE_URL: preserve(), NOTIFICATION_DASHBOARD_URL: preserve(), NOTIFICATION_EMAIL_FROM: preserve(), NOTIFICATION_WEBHOOK_SECRET: preserve(), ONESIGNAL_REST_API_KEY: preserve(), OPENAI_API_KEY: preserve(), PHOENIX_ALLOWED_ORIGINS: preserve(), PHOENIX_APP_URL: preserve(), PHOENIX_AUTH_SECRET: preserve(), PHOENIX_AUTH_SECRET_PREVIOUS: preserve(), PHOENIX_EXPENSE_CLAIMS_READ: preserve(), PHOENIX_LIVE_CRM_POLL: preserve(), PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD: preserve(), PHOENIX_PROCESS_ROLE: preserve(), PHOENIX_STRICT_SUPABASE_BRIDGE: preserve(), PHOENIX_TURBIFY_ADMIN_PASSWORD: preserve(), PHOENIX_TURBIFY_ADMIN_USER: preserve(), PHOENIX_TURBIFY_JOINER_DRY_RUN: preserve(), PHOENIX_TURBIFY_JOINER_ENABLED: preserve(), PHOENIX_TURBIFY_REPORT_CONTROLS: preserve(), PHOENIX_TURBIFY_ROBOT_ENABLED: preserve(), RECRUITMENT_APPLY_RECAPTCHA_MIN_SCORE: preserve(), RECRUITMENT_APPLY_RECAPTCHA_SECRET: preserve(), RECRUITMENT_APPLY_WHATSAPP_NUMBER: preserve(), RECRUITMENT_EMAIL_IMPORT_SENDERS: preserve(), RECRUITMENT_EMAIL_INBOXES_JSON: preserve(), RECRUITMENT_WHATSAPP_CLASSIFY_ENABLED: preserve(), RECRUITMENT_WHATSAPP_DIRECT_INTAKE: preserve(), RECRUITMENT_WHATSAPP_IMPORT_SENDERS: preserve(), RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS: preserve(), RESEND_API_KEY: preserve(), RESEND_API_KEY_2: preserve(), RESEND_API_KEY_3: preserve(), RESEND_API_KEY_4: preserve(), RESEND_API_KEY_PEOPLE: preserve(), RESEND_API_KEY_SALES: preserve(), RESEND_EMAIL_FROM_2: preserve(), RESEND_EMAIL_FROM_3: preserve(), RESEND_EMAIL_FROM_4: preserve(), RESEND_EMAIL_FROM_PEOPLE: preserve(), RESEND_EMAIL_FROM_SALES: preserve(), RESEND_WEBHOOK_SECRET: preserve(), RESEND_WEBHOOK_SECRET_2: preserve(), RESEND_WEBHOOK_SECRET_3: preserve(), RESEND_WEBHOOK_SECRET_4: preserve(), RESEND_WEBHOOK_SECRET_PEOPLE: preserve(), RESEND_WEBHOOK_SECRET_SALES: preserve(), SENTRY_AUTH_TOKEN: preserve(), SENTRY_DSN: preserve(), SENTRY_WEBHOOK_SECRET: preserve(), SHEET_REFRESH_WEBHOOK_SECRET: preserve(), SHEET_REFRESH_WEBHOOK_URL: preserve(), SUPABASE_PROJECT_ID: preserve(), SUPABASE_PROJECT_REF: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve(), TELEGRAM_BOT_TOKEN: preserve(), TELEGRAM_BOT_USERNAME: preserve(), WHATSAPP_ACCESS_TOKEN: preserve(), WHATSAPP_APP_SECRET: preserve(), WHATSAPP_PHONE_NUMBER_ID: preserve(), WHATSAPP_PHONE_NUMBER_IDS: preserve(), WHATSAPP_WEBHOOK_VERIFY_TOKEN: preserve(), ZOOM_ACCOUNT_ID: preserve(), ZOOM_CLIENT_ID: preserve(), ZOOM_CLIENT_SECRET: preserve(), ZOOM_HOST_USER: preserve() },
   });
+  // 🔴 THE ROBOT SERVICE (audit REC-075, the owner's "own small Railway service"): the same image again,
+  // with PHOENIX_PROCESS_ROLE=robot, running ONLY the Turbify mailbox robots — their daily pass
+  // (/api/cron/mailbox-robots) and the four live runs the website forwards to it
+  // (/api/internal/mailbox-robot/*) — so a Chromium never opens beside the page server. It runs no
+  // in-process scheduler and no database sampler (src/lib/platform/process-role.ts).
+  //
+  // 🔴 IT DOES NOT EXIST UNTIL THE OWNER CREATES IT BY HAND, the way the worker was on 2026-10-16:
+  // dashboard → New → GitHub repo → this repository, named `phoenix-workforce-robot`, then its region
+  // moved to europe-west4-drams3a (a new service here starts in `sfo`), "Wait for CI" off, the
+  // healthcheck below, and a generated domain. This block was written to match that, and
+  // `scripts/railway-iac-preapply-check.mjs` REFUSES any apply that includes it until the service exists
+  // (it cannot read its variables). docs/deployment.md, "The robot service", has the order.
+  //
+  // Variables: ONLY what the robots, their heartbeat and /api/readyz read. As on the worker, every one but
+  // PHOENIX_PROCESS_ROLE (=robot) is set as a Railway reference to the website's own
+  // (`${{phoenix-people-workforce.NAME}}`), so the secret sync that writes the website reaches it too.
+  // 🔴 PHOENIX_ROBOT_SERVICE_URL is NOT here and NOT on the website's list above: it is set on the WEBSITE
+  // by hand as the LAST step, and unsetting it there is the whole rollback.
+  const phoenixWorkforceRobot = service("phoenix-workforce-robot", {
+    source: github("sato-pharma/phoenix-people-workforce", { checkSuites: false }),
+    replicas: { "europe-west4-drams3a": 1 },
+    deploy: {
+      healthcheckPath: "/api/readyz",
+      healthcheckTimeout: 900,
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 10,
+    },
+    env: { APP_ENV: preserve(), CRON_SECRET: preserve(), HEALTHCHECKS_PING_KEY: preserve(), MAILBOX_MONITOR_SECRET: preserve(), NEXT_PUBLIC_APP_URL: preserve(), NEXT_PUBLIC_SENTRY_DSN: preserve(), NEXT_PUBLIC_SUPABASE_ANON_KEY: preserve(), NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: preserve(), NEXT_PUBLIC_SUPABASE_URL: preserve(), PHOENIX_AUTH_SECRET: preserve(), PHOENIX_NEW_MAILBOX_INITIAL_PASSWORD: preserve(), PHOENIX_PROCESS_ROLE: preserve(), PHOENIX_TURBIFY_ADMIN_PASSWORD: preserve(), PHOENIX_TURBIFY_ADMIN_USER: preserve(), PHOENIX_TURBIFY_JOINER_DRY_RUN: preserve(), PHOENIX_TURBIFY_JOINER_ENABLED: preserve(), PHOENIX_TURBIFY_REPORT_CONTROLS: preserve(), PHOENIX_TURBIFY_ROBOT_ENABLED: preserve(), SENTRY_DSN: preserve(), SUPABASE_SERVICE_ROLE_KEY: preserve() },
+  });
   const phoenixHeadwind = service("phoenix-headwind", {
     source: github("sato-pharma/phoenix-people-workforce", { checkSuites: false, rootDirectory: "infra/headwind-phoenix-actions" }),
     // 🔴 DOCKERFILE, the owner's decision on 2026-10-01, NOT the RAILPACK that `config pull` read
@@ -177,6 +206,6 @@ export default defineRailway(() => {
   });
 
   return project("Phoenix-HR-Workforce", {
-    resources: [phoenixCron, phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixHeadwind, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
+    resources: [phoenixCron, phoenixPeopleWorkforce, phoenixWorkforceWorker, phoenixWorkforceRobot, phoenixHeadwind, headwindDbEu, headwindDbEuVolume, phoenixHeadwindVolume],
   });
 });

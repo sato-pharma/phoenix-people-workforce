@@ -85,7 +85,7 @@ export async function register() {
       const { isUnrecognisedProcessRole, resolveProcessRole } = await import("@/lib/platform/process-role");
       const raw = process.env.PHOENIX_PROCESS_ROLE;
       if (isUnrecognisedProcessRole(raw)) {
-        console.error(`[process-role] PHOENIX_PROCESS_ROLE=${JSON.stringify(raw)} is not web, worker or all — running as "all"`);
+        console.error(`[process-role] PHOENIX_PROCESS_ROLE=${JSON.stringify(raw)} is not web, worker, robot or all — running as "all"`);
       }
       const role = resolveProcessRole(raw);
       console.log(`[process-role] ${role}`);
