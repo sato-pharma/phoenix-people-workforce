@@ -21,7 +21,6 @@ const targetTables = [
   "brick_reference_imports",
   "brick_reference_rows",
   "employee_locations",
-  "geo_bricks",
   "geo_locations",
   "outstation_expense_requests",
   "outstation_location_audit_logs",
@@ -46,7 +45,6 @@ const requiredColumns: Record<string, string[]> = {
     "updated_at",
   ],
   employees: ["department_id", "employment_status", "hr_id", "line_id", "manager_hr_id"],
-  geo_bricks: ["employee_hr_id", "line"],
   geo_locations: ["line"],
   lines: ["id", "name"],
   outstation_expense_requests: ["employee_hr_id", "status"],
@@ -76,11 +74,6 @@ const fkChecks = [
     childColumn: "employee_hr_id",
     childTable: "employee_probation",
     constraint: "employee_probation_employee_hr_id_fkey",
-  },
-  {
-    childColumn: "employee_hr_id",
-    childTable: "geo_bricks",
-    constraint: "geo_bricks_employee_hr_id_fkey",
   },
   {
     childColumn: "employee_hr_id",

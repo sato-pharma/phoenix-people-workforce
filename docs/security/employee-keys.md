@@ -34,7 +34,9 @@ database is asked directly, every night:
 | `tests/schema-shape-employee-keys.test.ts` | In the required CI. The baseline holds at least `MIN_EMPLOYEE_KEYS` keys, includes every money, leave and attendance key, and the gate fires on each case above. |
 
 Measured 2026-11-13: 112 keys on production, all validated, on 78 tables. Staging was the same, with
-the same fingerprint as the committed baseline.
+the same fingerprint as the committed baseline. **110 since 13 Nov 2026:** the empty, unused tables
+`geo_bricks` and `probation_feedback_comments` were dropped on the owner's decision (migration
+`20261113191017`), and their two keys went with them; `MIN_EMPLOYEE_KEYS` followed.
 
 ## Adding a key
 
