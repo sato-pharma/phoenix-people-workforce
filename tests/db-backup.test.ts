@@ -8,6 +8,7 @@ import {
   CODE_BACKUP_FOLDER,
   CODE_BACKUP_MIN_BYTES,
   DB_BACKUP_FOLDER,
+  DB_BACKUP_FIRST_FULL_FILE_BYTES,
   DB_BACKUP_MIN_BYTES,
 } from "../src/lib/observability/code-backup-verify.ts";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
@@ -34,6 +35,11 @@ function jobBlock(jobsText: string, job: string): string {
 export async function runDbBackupTests() {
   // --- The alarm: the database file is judged by the code backup's three rules, against its own floor. ---
   assert.notEqual(DB_BACKUP_FOLDER, CODE_BACKUP_FOLDER, "🔴 the two backups share a folder: each job prunes its own folder to seven files");
+  // The floor is half of the first full file (331,201,672 bytes, 13 Nov 2026). It was 64 MB before one existed.
+  assert.equal(DB_BACKUP_FIRST_FULL_FILE_BYTES, 331_201_672, "the first full file's size is a measurement, not a setting");
+  assert.equal(DB_BACKUP_MIN_BYTES, 165_600_836, "🔴 the database floor is half of the first full file: a database only grows, so it is never lowered");
+  assert.equal(assessDatabaseBackup([file(8, DB_BACKUP_FIRST_FULL_FILE_BYTES)], NOW).outcome, "success", "the first full file itself passes");
+  assert.equal(assessDatabaseBackup([file(8, 100 * 1024 * 1024)], NOW).outcome, "fail", "a 100 MB file passed the old 64 MB floor and is refused now");
   const good = DB_BACKUP_MIN_BYTES * 2;
   assert.equal(assessDatabaseBackup([file(8, good)], NOW).outcome, "success");
   assert.match(assessDatabaseBackup([], NOW).detail, /No backup file/);

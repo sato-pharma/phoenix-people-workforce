@@ -11,10 +11,12 @@ export const CODE_BACKUP_MIN_BYTES = 100 * 1024 * 1024;
 
 // The database backup sits in its own folder, so neither job can prune or overwrite the other's files.
 export const DB_BACKUP_FOLDER = "phoenix-db-backup";
-// A floor that only catches a file that is plainly not the database. Measured 13 Nov 2026: the tables hold
-// 2,157 MB, and a rehearsal dump of production had written 94.7 MB when it was stopped part way. The rule
-// that does the fine work is the one below it: under half of the night before.
-export const DB_BACKUP_MIN_BYTES = 64 * 1024 * 1024;
+// Half of the first full file (owner, 13 Nov 2026: "raise the backup size floor to half of tonight's file").
+// That file, db-backup-2026-11-13.tar.age, is 331,201,672 bytes: 1,411 tables and 5,694,838 rows. The floor
+// was 64 MB until then, set before any full file existed. A database only grows, so never lower this; the
+// rule below it, under half of the night before, does the fine work from night to night.
+export const DB_BACKUP_FIRST_FULL_FILE_BYTES = 331_201_672;
+export const DB_BACKUP_MIN_BYTES = Math.floor(DB_BACKUP_FIRST_FULL_FILE_BYTES / 2);
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const READ_TIMEOUT_MS = 20_000;

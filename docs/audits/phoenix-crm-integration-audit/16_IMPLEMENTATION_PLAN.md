@@ -102,9 +102,19 @@ What the rehearsals found, 13 Nov 2026:
 | The fallback route, rehearsed on staging from this branch (GitHub, 18:38 to 18:46 Cairo, 8 minutes 12 seconds) | Passed. GitHub built the image of main commit `426e43b0e` in 7 minutes 9 seconds and pushed it; a throwaway staging service pulled the private image with the real credentials and its container started (50 seconds); the service was deleted and none was left over. The rehearsal job held read-only package access, which is ISS-025 working. Nothing broke |
 | The standby host, rehearsed from this branch (ISS-038; GitHub, 18:47 to 18:49 Cairo, 2 minutes 9 seconds) | Passed. It reused the image the fallback rehearsal had just built, started one machine in Frankfurt, and the standby's own address reported commit `426e43b0e`; the machine was then removed. The domain never moved and users never left Railway. Nothing broke. A cold run that also has to build the image would take about 7 minutes longer |
 
-Still to do after the merge, each on the owner's word: start one run by hand, read the file on Drive, run the drill on that real file with the owner's key and write its time here, then raise the size floor (64 MB today) to half of that file.
+Done after the merge, each on the owner's word, 13 Nov 2026:
 
-### 5 — The Integrations page — IN PROGRESS
+| Step | Result |
+|---|---|
+| The first full run, started by hand (19:26 Cairo; "run the first database backup by hand now") | The whole run took 2 minutes 41 seconds. The code backup uploaded `code-backup-2026-11-13.tar.age`, 516,949,416 bytes. The database half then took 1 minute 41 seconds: it counted 1,411 tables and 5,694,838 rows as the read-only login on PostgreSQL 17.6, dumped all 1,411, and uploaded `db-backup-2026-11-13.tar.age`, 331,201,672 bytes, read back from Drive at that size. Nothing was waiting behind it, so it did not step aside |
+| The restore drill on that file (19:36 to 19:39 Cairo; "run the restore drill on db-backup-2026-11-13.tar.age") | **Passed: 1,411 of 1,411 tables restored with exactly the rows counted at backup, 5,694,838 rows, in 2 minutes 49 seconds** (decrypt 2 seconds, restore 2 minutes 41 seconds with 2 workers, count 6 seconds). The restored database is 2,987,538,111 bytes. Fetching the file from Drive took a further 123 seconds. It ran on the laptop against a throwaway server that listened on the laptop only and was removed afterwards |
+| What the drill's server refused | Only objects of two Supabase extensions the throwaway server does not have: the scheduler (`pg_cron`) and the vault (`supabase_vault`). The drill was run three times on the same file to read the whole list, and it passed each time with the same 1,411 tables and 5,694,838 rows (2 minutes 49 seconds, 2 minutes 55 seconds, 2 minutes 31 seconds). The number of refusals it printed was 17, then 23, then 20. The script counts the restore tool's error lines, and with two workers those lines run into each other (on the third run one printed line was two glued together), so that number is approximate. Every reason printed, on all three runs, named the scheduler or the vault. The verdict never uses that number: it uses the table and row counts. A real restore goes into a Supabase project, which has both extensions; `cron-jobs.tsv` in the backup lists the scheduled jobs to put back |
+| One difference from the instructions | The throwaway server was PostgreSQL 18.4, the only version on the laptop, not 17. The file was made by the PostgreSQL 17 tools; restoring into a newer version is supported, and every count matched |
+| The size floor ("raise the backup size floor to half of tonight's file") | Raised from 64 MB to 165,600,836 bytes, half of the first full file. A test refuses it being lowered |
+
+Not done yet: the first scheduled night run (02:17 Cairo, 14 Nov 2026) has not happened, so the alarm `phoenix-db-backup-verify` has not yet read a file made on the schedule.
+
+### 5 — The Integrations page — ON MAIN (pull request 346, commit `294da6b5a`, 13 Nov 2026 19:36 Cairo)
 
 | Finding | Change |
 |---|---|
@@ -113,7 +123,7 @@ Still to do after the merge, each on the owner's word: start one run by hand, re
 
 What was built, 13 Nov 2026:
 
-- **The registry**, `src/lib/integrations/registry.ts`: 39 outside services in eleven kinds, each with what it is used for, the names of the variables that hold its credential, and where Phoenix already records that it last worked or failed.
+- **The registry**, `src/lib/integrations/registry.ts`: 39 outside services in eleven kinds when built (38 since Google Fonts left it the same evening, ISS-043), each with what it is used for, the names of the variables that hold its credential, and where Phoenix already records that it last worked or failed.
 - **The page**, `/admin/integrations`, on the Admin Tools hub under Platform Health, for the Super Admin alone. For each service: configured, partly set (with the missing names), not configured, switched on or off, kept outside the app, or no credential needed; then the last success and the last failure in Cairo time. It writes nothing and calls no outside service.
 - **Never a value, never an error's text.** It answers from variable names and shows times only. A source that cannot be read says "Unavailable"; an event Phoenix does not record says "Not recorded".
 - **ISS-042.** WhatsApp messages go through Meta's Graph API v23.0, written in seven files. Meta retires it on 8 October 2027 (Meta's versions table, read 13 Nov 2026); the review date on the page is 8 July 2027. A test fails when the seven files and the registry disagree, or when an eighth appears. The audit counted six files; the seventh is the embedded sign-up exchange route.
@@ -127,7 +137,7 @@ What was built, 13 Nov 2026:
 | ISS-012 · INT-021 | The Location Integrity board moved to a tile source whose terms cover business use |
 | ISS-031 · INT-041 | Standard web push in place of the vendor |
 | ISS-030 | A connect prompt for Telegram at sign-in |
-| ISS-043 | The joining form's font served from the app, not from a third party. It needs the font file fetched and bundled |
+| ISS-043 | **Done, 13 Nov 2026, in the pull request that raised the backup floor.** The joining form's Arabic typeface (Cairo) is three files in `public/fonts` with its licence, declared by the page itself; Google Fonts left the Integrations registry, and a test refuses any page that loads a typeface from a font service. The security policy still names Google Fonts' two hosts as allowed; nothing loads from them, and removing them is a separate change to the policy |
 
 ### Last — the second sign-in factor (INT-005) — PLANNED, on its own
 

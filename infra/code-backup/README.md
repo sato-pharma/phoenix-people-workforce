@@ -84,7 +84,7 @@ sessions, uploads nothing, prunes nothing and exits 75. `run.sh` tries again 10 
 all. A night that stepped aside three times ends red and keeps the older files.
 
 **What watches it:** the same daily call, `/api/cron/code-backup-verify`, reads this folder too and reports
-it as `phoenix-db-backup-verify`: over 36 hours old, under 64 MB, under half the night before, or Drive
+it as `phoenix-db-backup-verify`: over 36 hours old, under 165.6 MB (half of the first full file, 13 Nov 2026), under half the night before, or Drive
 unreadable.
 
 **What rehearses it:** `.github/workflows/backup-image.yml` runs `ci/rehearse.sh` on every pull request that
@@ -132,8 +132,15 @@ rclone copy "drive:phoenix-db-backup/daily/db-backup-YYYY-MM-DD.tar.age" .
 RESTORE_DRILL_TARGET_URL="postgresql://USER@127.0.0.1:5432/postgres?sslmode=disable" bash infra/code-backup/restore-drill.sh --file db-backup-YYYY-MM-DD.tar.age --identity age-key.txt
 ```
 
+**Measured on the first full file, 13 Nov 2026:** `db-backup-2026-11-13.tar.age` (331,201,672 bytes) restored in
+2 minutes 49 seconds on a laptop, 1,411 of 1,411 tables and 5,694,838 rows, into a database of 2.99 GB. Fetching
+the file from Drive took another 123 seconds. Allow 3 GB of disk for the restored copy.
+
 A server without Supabase's own extensions reports those objects as refused. They are counted and shown, and
 they hold no table the manifest lists, so they do not fail the drill. A missing or short table does.
+**The refused number is approximate.** It counts the restore tool's error lines, and with more than one worker
+those lines run into each other: three drills of the first full file printed 17, 23 and 20, and every reason
+named the scheduler (`pg_cron`) or the vault (`supabase_vault`). Read the reasons, not the number.
 
 ### A real restore
 
