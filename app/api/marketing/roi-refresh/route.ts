@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -9,6 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// Both gates must pass: the role names the route has always admitted, and the matrix key that the
+// permission screen and the module lock can see (`marketing_roi_refresh`, the same two roles).
 const REFRESH_ALLOWED_ROLES = new Set(["Super Admin", "CEO"]);
 
 /** GET — return the latest Marketing ROI refresh run status. */
@@ -18,6 +21,7 @@ export async function GET(request: NextRequest) {
     if (!REFRESH_ALLOWED_ROLES.has(access.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    await assertPermission(access, "marketing_roi_refresh", "read");
 
     const supabase = getSupabaseAdmin({ requestTimeoutMs: 10_000 });
     const { data, error } = await supabase
@@ -55,6 +59,7 @@ export async function POST(request: NextRequest) {
     if (!REFRESH_ALLOWED_ROLES.has(access.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    await assertPermission(access, "marketing_roi_refresh", "update");
 
     const supabase = getSupabaseAdmin({ requestTimeoutMs: 58_000 });
 
