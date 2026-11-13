@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const migrationSource = readFileSync(
-  new URL("../supabase/20260511_rls_gap_closure.sql", import.meta.url),
+  new URL("../supabase/scripts/20260511_rls_gap_closure.sql", import.meta.url),
   "utf8",
 );
 
