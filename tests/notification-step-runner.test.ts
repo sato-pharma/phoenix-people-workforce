@@ -98,8 +98,9 @@ export async function runNotificationStepRunnerTests() {
     const handler = src("src/lib/notifications/scheduled-processing.ts");
     assert.match(handler, /createStepBudget\(/, "handler builds a step budget");
     assert.match(handler, /runStep\(/, "handler runs steps through the bounded runner");
-    assert.match(handler, /inFlightStartedAt/, "handler has an overlap guard");
-    assert.match(handler, /OVERLAP_LOCK_MS/, "overlap guard self-heals via a timestamp");
+    assert.match(handler, /createExclusiveRunGuard\(/, "handler has an overlap guard, shared across instances through the job lease (REC-083)");
+    assert.match(handler, /ttlMs: OVERLAP_LOCK_MS/, "overlap guard self-heals: the lease runs out after OVERLAP_LOCK_MS");
+    assert.doesNotMatch(handler, /let inFlightStartedAt/, "the per-process module variable must not come back as the guard");
     assert.match(handler, /processNotificationOutbox\(limit\)/);
     assert.match(handler, /processDueProbationReminderEvents\(limit\)/);
   }
