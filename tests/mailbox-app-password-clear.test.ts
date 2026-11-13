@@ -4,10 +4,11 @@
  * The step RESETS a mailbox password and then deletes the app passwords from inside it. Two things
  * can go badly wrong, and both are asserted here as headlines:
  *
- *   1. 🔴 An UNCALIBRATED build must not reset a single password. The controls that list and remove
- *      an app password have never been observed, so a live pass can only ever get half-way — and
- *      half-way means every named leaver's password was reset for nothing. The refusal has to happen
- *      before the browser opens, for the whole pass, not per candidate.
+ *   1. 🔴 An UNCALIBRATED build must not reset a single password. Without the controls that list and
+ *      remove an app password, a live pass can only ever get half-way — and half-way means every
+ *      named leaver's password was reset for nothing. The refusal has to happen before the browser
+ *      opens, for the whole pass, not per candidate. (Calibrated 13 Nov 2026 from the 4 Oct live
+ *      rehearsal; the refusal is still held here, by passing it in.)
  *   2. 🔴 A WORKING EMPLOYEE must never be cleared. This disconnects the phone in somebody's pocket,
  *      so an active employee, and a leaver whose last day has not arrived, are both refused.
  *
@@ -136,24 +137,39 @@ function runGateCases(): void {
 }
 
 function runCalibrationCases(): void {
-  // 🔴 Shipped FALSE, and every control is still a placeholder. If someone flips the flag without
-  // replacing them, the refusal names what is missing instead of clicking a guess.
-  assert.equal(APP_PASSWORD_CLEAR_CALIBRATED, false, "must ship uncalibrated until the controls are observed");
+  // CALIBRATED FROM THE LIVE REHEARSAL (4 Oct 2026, 19:23 Cairo, on Phoenix's own invite inbox): the
+  // flag is true only because every control holds what that run read off the page.
+  assert.equal(APP_PASSWORD_CLEAR_CALIBRATED, true, "calibrated from the live rehearsal");
+  assert.deepEqual(uncalibratedRevokeControls(), [], "no revoke control is a placeholder");
   assert.deepEqual(
-    uncalibratedRevokeControls().sort(),
-    ["emptyState", "existingList", "removeConfirm", "removeOne"],
-    "every revoke control must still be a placeholder",
+    Object.fromEntries(Object.entries(APP_PASSWORD_REVOKE_CONTROLS).map(([name, control]) => [name, control.label])),
+    {
+      emptyState: "You haven’t added any apps yet.",
+      existingList: "Generated passwords",
+      removeConfirm: "Delete",
+      removeOne: "Remove",
+    },
+    "each control is the wording the live page carried",
   );
   for (const [name, control] of Object.entries(APP_PASSWORD_REVOKE_CONTROLS)) {
-    if (name === "existingList" || name === "removeOne" || name === "removeConfirm" || name === "emptyState") {
-      assert.match(control.selector, /__UNCALIBRATED__/, `${name} must be marked uncalibrated`);
-    }
+    assert.doesNotMatch(control.selector, /__UNCALIBRATED__|nth-of-type/, `${name} is an observed path, with no position that moved between stages`);
   }
-  const refusal = appPasswordClearCalibrationRefusal();
-  assert.ok(refusal, "an uncalibrated build must refuse");
-  assert.match(refusal ?? "", /never been read off the live page/);
-  // It explains the consequence rather than just saying no, because the consequence is a live hole.
-  assert.match(refusal ?? "", /half-revoked/);
+  assert.equal(
+    APP_PASSWORD_REVOKE_CONTROLS.existingList.selector, APP_PASSWORD_REVOKE_CONTROLS.emptyState.selector,
+    "the list and the empty state are the same container — a path, not a wording, calibrates them",
+  );
+  assert.equal(appPasswordClearCalibrationRefusal(), null, "a calibrated build does not refuse");
+
+  // 🔴 And the gate still holds both ways it can fail. Flag off: refused, with the consequence named.
+  const off = appPasswordClearCalibrationRefusal(false);
+  assert.match(off ?? "", /never been read off the live page/);
+  assert.match(off ?? "", /half-revoked/, "it explains the consequence, because the consequence is a live hole");
+  // Flag on with a placeholder left: refused, naming exactly what is missing.
+  const halfDone = appPasswordClearCalibrationRefusal(true, {
+    ...APP_PASSWORD_REVOKE_CONTROLS,
+    removeConfirm: { label: "<unobserved>", selector: "__UNCALIBRATED__" },
+  });
+  assert.match(halfDone ?? "", /still placeholders: removeConfirm\./);
 }
 
 async function runPassCases(): Promise<void> {
@@ -162,12 +178,34 @@ async function runPassCases(): Promise<void> {
   // password for nothing.
   const untouched = spyDriver();
   const blocked = await runAppPasswordClear({
+    calibrationRefusal: appPasswordClearCalibrationRefusal(false),
     deps: clearDeps([candidate()]), driver: untouched, dryRun: false, named: NAMED,
   });
-  assert.equal(blocked.cleared, 0);
+  assert.equal(blocked.cleared, 0, "an uncalibrated pass clears nobody");
   assert.equal(blocked.considered, 0, "an uncalibrated pass must not even load candidates");
   assert.match(blocked.blocked ?? "", /not calibrated/);
   assert.deepEqual(untouched.calls, [], "an uncalibrated pass must make NO console call, including the reset");
+
+  // CALIBRATED, a live pass runs the steps in order and records only what it proved.
+  const liveDeps = clearDeps([candidate()]);
+  const live = spyDriver();
+  const ran = await runAppPasswordClear({ deps: liveDeps, driver: live, dryRun: false, named: NAMED });
+  assert.equal(ran.blocked, null, "the calibrated gate lets a named live pass through");
+  assert.equal(ran.cleared, 1);
+  assert.deepEqual(live.calls, [
+    "signIn",
+    "resetAndCapture:former.person@satopharma.com",
+    "setMailboxPassword:former.person@satopharma.com",
+    "clearAppPasswords:former.person@satopharma.com",
+    "close",
+  ]);
+  assert.deepEqual(liveDeps.recorded, ["former.person@satopharma.com:2:system:turbify-app-password-robot"]);
+  // A clear that could not prove the page empty is reset-only, and is NEVER recorded as cleared.
+  const halfDeps = clearDeps([candidate()]);
+  const half = await runAppPasswordClear({ deps: halfDeps, driver: spyDriver("clearAppPasswords"), dryRun: false, named: NAMED });
+  assert.equal(half.resetOnly, 1);
+  assert.equal(half.cleared, 0);
+  assert.deepEqual(halfDeps.recorded, [], "a mailbox whose app passwords are still there is never recorded as cleared");
 
   // Nothing named clears nobody, and says so rather than running an empty pass.
   const nothing = await runAppPasswordClear({

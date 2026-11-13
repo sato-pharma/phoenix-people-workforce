@@ -45,51 +45,64 @@
 import { randomInt } from "node:crypto";
 
 /**
- * 🔴 FALSE until the list-and-delete controls have been READ OFF THE LIVE PAGE.
+ * TRUE since 13 Nov 2026 (audit step REC-052): all four list-and-delete controls below were READ OFF
+ * THE LIVE PAGE by the rehearsal on Phoenix's own invite inbox, 4 Oct 2026 19:23 Cairo (audit row
+ * 350b7480-a532-46eb-a4e9-5e98b523685d). That run minted one app password, captured the page before,
+ * listed, between Remove and its confirm, and after; pressed Delete; and ended with the page empty
+ * and nothing outstanding. Each control is its attribute-only path from that reading
+ * (docs/mailbox-robot-calibration.md, "Calibrated from the live rehearsal").
  *
- * 🔴 AND THE SENTENCE THAT USED TO SIT HERE WAS FALSE: it said `APP_PASSWORD_PAGE` proves the page
- * is reachable and that `Generate` works “because the joiner presses it in production”. The joiner has
- * NEVER reached that page — every run so far died at the mailbox sign-in — and its own first wording
- * (“Manage your account”) turned out not to be Turbify’s. So nothing downstream may be read as
- * proven, and nothing has ever observed how an EXISTING app password is listed or removed: those
- * wordings below are placeholders. Flipping this without replacing them would have
- * the robot clicking a guess inside a live mailbox's security settings.
+ * 🔴 WHAT THIS DOES NOT SWITCH ON. It lifts the refusal and nothing more: `runAppPasswordClear` still
+ * needs a live console driver and a caller, and neither exists yet. A leaver's app passwords are
+ * cleared by hand until they do, and the register's "App passwords live" list is what tracks them.
  */
-export const APP_PASSWORD_CLEAR_CALIBRATED = false;
+export const APP_PASSWORD_CLEAR_CALIBRATED = true;
+
+export type AppPasswordRevokeControl = { readonly label: string; readonly selector: string };
 
 /**
- * The controls this step needs and nobody has seen yet.
+ * The controls this step needs, as read off the live App Passwords page (4 Oct 2026, 19:23 Cairo).
  *
- * Kept beside the gates rather than in `src/lib/turbify/locators.ts` on purpose: that file is the
- * vocabulary of CONFIRMED on-screen text, and putting unobserved guesses in it would make every
- * entry there untrustworthy.
+ * Kept beside the gates rather than in `src/lib/turbify/locators.ts`: they are the paths of ONE
+ * reading of ONE page, and the step must still prove each one on the page it is driving.
+ * `existingList` and `emptyState` are the same container — "a path, not a wording" calibrates
+ * them: the list is that container with Remove controls under it, the empty state is that container
+ * with none (the page then reads "You haven’t added any apps yet."). The container's position among
+ * its siblings moved between stages, so no `nth-of-type` is kept for it. On that page one mailbox
+ * listed one app password at a time: the page read one Remove both before and after the mint.
  */
 export const APP_PASSWORD_REVOKE_CONTROLS = {
-  /** The list of app passwords already issued for this mailbox. */
-  existingList: { label: "<the list of existing app passwords — unobserved>", selector: "__UNCALIBRATED__" },
+  /** The list of app passwords already issued for this mailbox (a region named "Generated passwords"). */
+  existingList: { label: "Generated passwords", selector: "div.flex-1.overflow-y-auto > div.overflow-y-auto.inset-0" },
   /** The control that removes one entry. */
-  removeOne: { label: "<the remove/revoke control on an entry — unobserved>", selector: "__UNCALIBRATED__" },
-  /** Whatever confirms the removal. */
-  removeConfirm: { label: "<the removal confirm control — unobserved>", selector: "__UNCALIBRATED__" },
+  removeOne: { label: "Remove", selector: "div.flex-1.overflow-y-auto > div.flex.items-center > button.turbify-btn.turbify-btn-error" },
+  /** What confirms the removal — exists only between pressing Remove and answering it, beside Cancel. */
+  removeConfirm: { label: "Delete", selector: "div.flex.flex-col > div.flex.items-center > button.turbify-btn.turbify-btn-primary" },
   /** How the page reads once none are left, which is the only honest proof of success. */
-  emptyState: { label: "<the page showing no app passwords — unobserved>", selector: "__UNCALIBRATED__" },
-} as const;
+  emptyState: { label: "You haven’t added any apps yet.", selector: "div.flex-1.overflow-y-auto > div.overflow-y-auto.inset-0" },
+} as const satisfies Record<string, AppPasswordRevokeControl>;
 
-/** Every placeholder that must be replaced before the flag above may be flipped. */
-export function uncalibratedRevokeControls(): string[] {
-  return Object.entries(APP_PASSWORD_REVOKE_CONTROLS)
+type RevokeControls = Readonly<Record<string, AppPasswordRevokeControl>>;
+
+/** Every control that is still a placeholder — none, once calibrated; the flag may not be true while any is. */
+export function uncalibratedRevokeControls(controls: RevokeControls = APP_PASSWORD_REVOKE_CONTROLS): string[] {
+  return Object.entries(controls)
     .filter(([, control]) => control.selector.includes("__UNCALIBRATED__"))
     .map(([name]) => name);
 }
 
 /**
- * The reason a flip would be refused, or null when the controls are all real.
+ * The reason a live pass would be refused, or null when the flag is true and the controls are all real.
  *
  * Read at the point of use so a half-done calibration fails with the names of what is still missing,
- * rather than by clicking `__UNCALIBRATED__` inside somebody's mailbox.
+ * rather than by clicking `__UNCALIBRATED__` inside somebody's mailbox. Its arguments exist so the
+ * tests can hold the uncalibrated case; every caller reads the defaults.
  */
-export function appPasswordClearCalibrationRefusal(): string | null {
-  if (!APP_PASSWORD_CLEAR_CALIBRATED) {
+export function appPasswordClearCalibrationRefusal(
+  calibrated: boolean = APP_PASSWORD_CLEAR_CALIBRATED,
+  controls: RevokeControls = APP_PASSWORD_REVOKE_CONTROLS,
+): string | null {
+  if (!calibrated) {
     return (
       "Clearing app passwords is not calibrated: the controls that list and remove an existing app "
       + "password have never been read off the live page. The step refuses rather than guess inside a "
@@ -97,7 +110,7 @@ export function appPasswordClearCalibrationRefusal(): string | null {
       + "reset — which is the half-revoked state the register already reports."
     );
   }
-  const missing = uncalibratedRevokeControls();
+  const missing = uncalibratedRevokeControls(controls);
   if (missing.length > 0) {
     return `Clearing app passwords is marked calibrated but these controls are still placeholders: ${missing.join(", ")}.`;
   }

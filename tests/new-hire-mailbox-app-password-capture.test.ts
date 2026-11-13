@@ -357,26 +357,19 @@ async function runDryRunCases(): Promise<void> {
 }
 
 function runStillUncalibratedCases(): void {
-  // 🔴 THE CAPTURE DOES NOT CALIBRATE ANYTHING BY EXISTING. Until a real run replaces the four
-  // placeholders with observed text, the flag stays false — and a session that flipped it on the
-  // strength of this route shipping would arm a robot to click `__UNCALIBRATED__` inside a leaver's
-  // security settings. That is the whole failure this asserts against.
-  assert.equal(
-    APP_PASSWORD_CLEAR_CALIBRATED, false,
-    "shipping the capture does not calibrate the clear step: the flag may only be flipped once the "
-    + "four controls below hold text read off the live page",
-  );
+  // 🔴 THE CAPTURE DOES NOT CALIBRATE ANYTHING BY EXISTING. The flag was flipped (13 Nov 2026) only
+  // because the live rehearsal of 4 Oct 2026 read all four controls off the page — including the
+  // confirm, which no capture of an untouched page can ever see. So the flag and the four controls
+  // move together: true means every one of them is an observed path, never a placeholder.
+  assert.equal(APP_PASSWORD_CLEAR_CALIBRATED, true, "calibrated from the live rehearsal, not from this route shipping");
   assert.deepEqual(
-    uncalibratedRevokeControls().sort(),
-    ["emptyState", "existingList", "removeConfirm", "removeOne"],
-    "and all four are still placeholders — this list is what a capture run must replace, and it is "
-    + "the thing to re-read before touching the flag",
+    uncalibratedRevokeControls(), [],
+    "the flag may only be true while no control is a placeholder — re-read this list before touching the flag",
   );
   for (const [name, control] of Object.entries(APP_PASSWORD_REVOKE_CONTROLS)) {
-    assert.match(
+    assert.doesNotMatch(
       control.selector, /__UNCALIBRATED__/,
-      `${name} must still be a placeholder until a live reading replaces it; a selector that quietly `
-      + "became real without an observation is the guess this gate exists to stop",
+      `${name} holds the path the live rehearsal read; a placeholder with the flag on is the guess this gate exists to stop`,
     );
   }
 }

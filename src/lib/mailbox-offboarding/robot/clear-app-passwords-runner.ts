@@ -104,6 +104,8 @@ export async function runAppPasswordClear(options: {
   dryRun: boolean;
   driver?: AppPasswordClearDriver;
   deps: AppPasswordClearDeps;
+  /** The calibration refusal to obey. Left out — every caller — it is read live; tests hold the uncalibrated case. */
+  calibrationRefusal?: string | null;
 }): Promise<AppPasswordClearResult> {
   const { deps, dryRun, named } = options;
 
@@ -112,7 +114,7 @@ export async function runAppPasswordClear(options: {
   }
 
   // 🔴 FIRST, for the whole pass. An uncalibrated build must not reset a single password.
-  const calibration = appPasswordClearCalibrationRefusal();
+  const calibration = options.calibrationRefusal !== undefined ? options.calibrationRefusal : appPasswordClearCalibrationRefusal();
   if (calibration && !dryRun) {
     logError("App password clearing refused the whole pass", {
       error: new Error(calibration),
