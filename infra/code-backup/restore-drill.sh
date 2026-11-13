@@ -137,9 +137,12 @@ sed -i 's/\r$//' "$WORK/compare.txt"
 mismatches="$(grep -c '^MISMATCH' "$WORK/compare.txt" || true)"
 restored_bytes="$(awk -F'\t' '$1 == "SIZE" { print $2 }' "$WORK/compare.txt")"
 
-echo "restore: $(clock "$restore_seconds") with $jobs workers, restored size ${restored_bytes:-unknown} bytes, $restore_errors object(s) the server refused"
+echo "restore: $(clock "$restore_seconds") with $jobs workers, restored size ${restored_bytes:-unknown} bytes, about $restore_errors object(s) the server refused"
+# The number above is approximate: it counts error lines, and the workers' lines run into each other (17, 23 and
+# 20 on three drills of one file, 13 Nov 2026). Every reason is printed, because the first drill's list of eight
+# cut one off.
 if [ "$restore_errors" -gt 0 ]; then
-  grep -E '^pg_restore: error:' "$WORK/restore.err" | sed -E 's/^pg_restore: error: //' | cut -c1-160 | sort | uniq -c | sort -rn | head -8 | sed 's/^/  refused: /'
+  grep -E '^pg_restore: error:' "$WORK/restore.err" | sed -E 's/^pg_restore: error: //' | cut -c1-160 | sort | uniq -c | sort -rn | head -40 | sed 's/^/  refused: /'
 fi
 echo "timings: decrypt $(clock "$decrypt_seconds"), restore $(clock "$restore_seconds"), count $(clock "$count_seconds")"
 if [ "$mismatches" -ne 0 ]; then
