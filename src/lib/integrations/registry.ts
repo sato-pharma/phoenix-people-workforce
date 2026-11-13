@@ -540,15 +540,8 @@ export const INTEGRATIONS: readonly IntegrationEntry[] = [
     credential: { kind: "none", why: "An open feed with no key." },
     health: { kind: "heartbeat", slugs: ["phoenix-production-planning-fx"] },
   },
-  {
-    id: "google-fonts",
-    name: "Google Fonts",
-    provider: "Google",
-    category: "Open data and assets",
-    usedFor: "The Arabic typeface on the joining form.",
-    credential: { kind: "none", why: "An open service with no key." },
-    health: { kind: "none", why: BROWSER_LOADS_IT },
-  },
+  // Google Fonts left this list on 13 Nov 2026 (ISS-043): the joining form's Arabic typeface is served from
+  // the app's own /fonts, and tests/integrations-registry.test.ts refuses a page that loads one from outside.
 ];
 
 // ── Configured or not ──────────────────────────────────────────────────────────────────────────────────────
