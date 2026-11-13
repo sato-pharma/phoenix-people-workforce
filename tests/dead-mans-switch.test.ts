@@ -51,7 +51,7 @@ export async function runDeadMansSwitchTests() {
       delete process.env.HEALTHCHECKS_PING_KEY;
       const { calls, restore } = stubFetch("resolve");
       try {
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success");
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
         assert.equal(calls.length, 0, "no HEALTHCHECKS_PING_KEY ⇒ must never attempt a network call");
       } finally {
         restore();
@@ -65,7 +65,7 @@ export async function runDeadMansSwitchTests() {
       process.env.APP_ENV = "staging";
       const { calls, restore } = stubFetch("resolve");
       try {
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success");
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
         assert.equal(calls.length, 0, "non-production ⇒ must never attempt a network call, even when configured");
       } finally {
         restore();
@@ -78,9 +78,9 @@ export async function runDeadMansSwitchTests() {
     {
       const { calls, restore } = stubFetch("resolve");
       try {
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success");
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
         assert.equal(calls.length, 1, "configured + production + success ⇒ exactly one ping");
-        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-daily-needs-you-daily-digest?create=1");
+        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-notify-daily?create=1");
         assert.equal(calls[0].init?.method, "POST");
         assert.equal(calls[0].init?.body, undefined, "a success ping with no detail must send no body");
       } finally {
@@ -107,7 +107,7 @@ export async function runDeadMansSwitchTests() {
       const { calls, restore } = stubFetch("resolve");
       try {
         const huge = "x".repeat(10_000);
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "fail", huge);
+        await pingDeadMansSwitch("phoenix-notify-daily", "fail", huge);
         assert.ok((calls[0].init?.body as string).length <= 4_000, "detail body must be capped, not sent unbounded");
       } finally {
         restore();
@@ -120,8 +120,8 @@ export async function runDeadMansSwitchTests() {
       process.env.HEALTHCHECKS_PING_HOST = "https://healthchecks.example.internal/";
       const { calls, restore } = stubFetch("resolve");
       try {
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success");
-        assert.equal(calls[0].url, "https://healthchecks.example.internal/test-ping-key/phoenix-daily-needs-you-daily-digest?create=1");
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
+        assert.equal(calls[0].url, "https://healthchecks.example.internal/test-ping-key/phoenix-notify-daily?create=1");
       } finally {
         restore();
         delete process.env.HEALTHCHECKS_PING_HOST;
@@ -136,7 +136,7 @@ export async function runDeadMansSwitchTests() {
       const { restore } = stubFetch("reject");
       try {
         await assert.doesNotReject(
-          () => pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success"),
+          () => pingDeadMansSwitch("phoenix-notify-daily", "success"),
           "a failed ping attempt must never throw",
         );
       } finally {
@@ -179,7 +179,7 @@ export async function runDeadMansSwitchTests() {
       const { restore } = stubFetch("resolve");
       const log = captureLogLines();
       try {
-        await pingDeadMansSwitch("phoenix-daily-needs-you-daily-digest", "success");
+        await pingDeadMansSwitch("phoenix-notify-daily", "success");
       } finally {
         log.restore();
         restore();
@@ -264,12 +264,12 @@ export async function runDeadMansSwitchTests() {
     {
       const { restore } = stubFetch("reject");
       try {
-        const result = await withDeadMansSwitch("phoenix-daily-needs-you-daily-digest", async () => "ok");
+        const result = await withDeadMansSwitch("phoenix-notify-daily", async () => "ok");
         assert.equal(result, "ok", "a failed ping must never mask a successful run() result");
 
         const boom = new Error("real failure");
         await assert.rejects(
-          () => withDeadMansSwitch("phoenix-daily-needs-you-daily-digest", async () => { throw boom; }),
+          () => withDeadMansSwitch("phoenix-notify-daily", async () => { throw boom; }),
           (err: unknown) => err === boom,
           "a failed ping must never mask run()'s real error, or replace it with a ping error",
         );
@@ -284,9 +284,9 @@ export async function runDeadMansSwitchTests() {
     {
       const { calls, restore } = stubFetch("resolve");
       try {
-        await signalDeadMansSwitchStart("phoenix-daily-needs-you-daily-digest");
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
         assert.equal(calls.length, 1, "one start signal is exactly one request");
-        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-daily-needs-you-daily-digest/start?create=1");
+        assert.equal(calls[0].url, "https://hc-ping.com/test-ping-key/phoenix-notify-daily/start?create=1");
         assert.equal(calls[0].init?.method, "POST");
         assert.equal(calls[0].init?.body, undefined, "a start signal carries no body");
       } finally {
@@ -299,11 +299,11 @@ export async function runDeadMansSwitchTests() {
       const { calls, restore } = stubFetch("resolve");
       try {
         process.env.APP_ENV = "staging";
-        await signalDeadMansSwitchStart("phoenix-daily-needs-you-daily-digest");
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
         assert.equal(calls.length, 0, "non-production ⇒ a start signal must never reach the shared dashboard");
         process.env.APP_ENV = "production";
         delete process.env.HEALTHCHECKS_PING_KEY;
-        await signalDeadMansSwitchStart("phoenix-daily-needs-you-daily-digest");
+        await signalDeadMansSwitchStart("phoenix-notify-daily");
         assert.equal(calls.length, 0, "no ping key ⇒ a start signal must never attempt a network call");
       } finally {
         process.env.APP_ENV = "production";
@@ -317,7 +317,7 @@ export async function runDeadMansSwitchTests() {
       const { restore } = stubFetch("reject");
       try {
         await assert.doesNotReject(
-          () => signalDeadMansSwitchStart("phoenix-daily-needs-you-daily-digest"),
+          () => signalDeadMansSwitchStart("phoenix-notify-daily"),
           "a failed start signal must never throw out of a cron job",
         );
       } finally {
@@ -385,10 +385,16 @@ export async function runDeadMansSwitchTests() {
     {
       const read = (path: string) => stripComments(readFileSync(new URL(path, import.meta.url), "utf8"));
       const sweep = read("../app/api/cron/phoenix-crm-integrity-sweep/route.ts");
-      // The morning jobs (one per request since 13 Nov 2026; `phoenix-notify-daily` before) signal
-      // under each job's own slug.
+      // The morning jobs signal start wherever they run: the 06:36 fan-out under `phoenix-notify-daily`
+      // while PHOENIX_DAILY_JOBS_SPLIT is off, each job's own route under its own slug once it is on.
+      const fanOut = read("../app/api/notifications/daily/route.ts");
       const daily = read("../app/api/cron/daily/[job]/route.ts");
       assert.match(sweep, /withDeadMansSwitch\(\s*"phoenix-crm-integrity-sweep"[\s\S]*?signalStart:\s*true/, "integrity sweep must signal start");
+      assert.match(fanOut, /await signalDeadMansSwitchStart\("phoenix-notify-daily"\);/, "the morning fan-out must signal start");
+      assert.ok(
+        fanOut.indexOf('await signalDeadMansSwitchStart("phoenix-notify-daily");') < fanOut.indexOf("await runDailyNotifications(request"),
+        "and before the run, not after it",
+      );
       assert.match(daily, /await signalDeadMansSwitchStart\(slug\);/, "each morning job must signal start");
       assert.ok(
         daily.indexOf("await signalDeadMansSwitchStart(slug);") < daily.indexOf("await runOneDailyJob(request"),

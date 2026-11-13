@@ -9,13 +9,22 @@
  * entry, its own heartbeat, staggered over the morning. WHAT each job does, who it tells and by
  * which channel did not change — only when, and on which request, it runs.
  *
+ * 🔴 IT SHIPS SWITCHED OFF (owner, 13 Nov 2026: a safe switch-over). Thirty new cron-job.org entries
+ * cost about 120 API requests to arm and the account allows 100 a day, so arming takes two days.
+ * Until `PHOENIX_DAILY_JOBS_SPLIT` is exactly `on` (`dailyJobsSplitIsOn` below, the ONE place
+ * it is read), `/api/notifications/daily` runs all thirty jobs exactly as it did before, under
+ * `phoenix-notify-daily`, and `/api/cron/daily/<job>` answers without running anything. Once it is
+ * on, the reverse. A job runs from one place or the other, never both and never neither
+ * (`dailyJobsRunOn`). The runbook is docs/deployment.md, "Switching the morning jobs over".
+ *
  * THIS FILE IS PURE: no imports, nothing that touches a database. It is the one list of the jobs,
  * their order and their Cairo times, read by:
- *   - `app/api/cron/daily/[job]/route.ts`, which runs ONE job per request (the runners, which do
- *     import the job functions, are in `app/api/cron/daily/_lib/daily-job-runners.ts`);
- *   - `src/lib/observability/job-schedule.ts`, which declares one heartbeat per job from it;
- *   - `src/lib/observability/job-refire.ts`, which re-fires a job a deploy killed;
- *   - `app/api/notifications/daily/route.ts`, the retired fan-out, which now only names them.
+ *   - `app/api/cron/daily/[job]/route.ts`, which runs ONE job per request once the switch is on (the
+ *     runners, which do import the job functions, are in `app/api/cron/daily/_lib/daily-job-runners.ts`);
+ *   - `app/api/notifications/daily/route.ts`, the fan-out, which runs them all in this order while the
+ *     switch is off, and only names them once it is on;
+ *   - `src/lib/observability/job-schedule.ts`, which declares one heartbeat per job from it (switch on);
+ *   - `src/lib/observability/job-refire.ts`, which re-fires a job a deploy killed.
  *
  * 🔴 THE TIMES ARE COPIED IN TWO OTHER PLACES BY HAND, AND A TEST HOLDS ALL THREE TOGETHER.
  * `scripts/cronjob-sync.mjs` (the cron-job.org entries; it is plain JavaScript and the arming
@@ -32,7 +41,7 @@
 export type DailyJobDeclaration = {
   /** Stable, kebab-case. The URL segment (`/api/cron/daily/<key>`) and the heartbeat's suffix. */
   key: string;
-  /** What it is, in words, for the retired route's answer and the 404. */
+  /** What it is, in words, for the fan-out's answer once the switch is on, and the 404. */
   name: string;
   /** Africa/Cairo, 24-hour. */
   hour: number;
@@ -108,6 +117,31 @@ export function dailyJobCronExpression(job: Pick<DailyJobDeclaration, "hour" | "
 /** `06:36`, for people. */
 export function dailyJobCairoTime(job: Pick<DailyJobDeclaration, "hour" | "minute">): string {
   return `${String(job.hour).padStart(2, "0")}:${String(job.minute).padStart(2, "0")}`;
+}
+
+/** The environment variable that switches the morning jobs from the fan-out to their own schedules. */
+export const DAILY_JOBS_SPLIT_SWITCH = "PHOENIX_DAILY_JOBS_SPLIT";
+
+/** The heartbeat and the address of the old 06:36 fan-out, which runs the jobs until the switch is on. */
+export const DAILY_FAN_OUT_SLUG = "phoenix-notify-daily";
+export const DAILY_FAN_OUT_PATH = "/api/notifications/daily";
+
+/**
+ * Is the split switched on? The ONE place `PHOENIX_DAILY_JOBS_SPLIT` is read. Only the exact value
+ * `on` switches it on — unset, empty, `true`, `ON`, `1` or a typo all leave the fan-out running
+ * the jobs, because the fan-out is the arrangement that is known to be armed and watched. It is set
+ * by hand on the Railway service after both arming days (docs/deployment.md), never in a file.
+ */
+export function dailyJobsSplitIsOn(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
+  return env[DAILY_JOBS_SPLIT_SWITCH] === "on";
+}
+
+/**
+ * Where the morning jobs run: all of them from the fan-out, or each from its own route. One answer
+ * for both routes, so a job can never run from both or from neither.
+ */
+export function dailyJobsRunOn(splitOn: boolean): "fan-out" | "own-route" {
+  return splitOn ? "own-route" : "fan-out";
 }
 
 export function isDailyJobKey(value: string): value is DailyJobKey {

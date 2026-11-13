@@ -12,7 +12,7 @@ import {
   WINDOW_HOURS,
 } from "../src/lib/notifications/dead-telegram-link-alert.ts";
 import { DAILY_JOBS, dailyJobHeartbeatSlug } from "../src/lib/scheduled-jobs/daily-jobs.ts";
-import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
+import { jobSchedulesFor } from "../src/lib/observability/job-schedule.ts";
 
 /**
  * Telegram messages thrown away with nothing saying so.
@@ -84,14 +84,15 @@ export function runDeadTelegramLinkAlertTests(): void {
 
   // ── 4. It is its own morning job, on its own schedule and heartbeat ─────────────────────────────
   {
-    // Until 13 Nov 2026 it rode the 06:36 fan-out and was deliberately NOT in JOB_SCHEDULES. The owner
-    // then gave every morning job its own schedule: it is now the job `dead-telegram-link-alert`, with
-    // a cron-job.org entry and a heartbeat of its own, `phoenix-daily-dead-telegram-link-alert`.
+    // It rides the 06:36 fan-out under the fan-out's heartbeat while PHOENIX_DAILY_JOBS_SPLIT is off.
+    // On 13 Nov 2026 the owner gave every morning job its own schedule: it is the job
+    // `dead-telegram-link-alert`, with a cron-job.org entry and, once the switch is on, a heartbeat
+    // of its own, `phoenix-daily-dead-telegram-link-alert`.
     const job = DAILY_JOBS.find((entry) => entry.key === "dead-telegram-link-alert");
     assert.ok(job, "it is one of the morning jobs (src/lib/scheduled-jobs/daily-jobs.ts)");
     assert.ok(
-      JOB_SCHEDULES.some((entry) => entry.slug === dailyJobHeartbeatSlug("dead-telegram-link-alert")),
-      "and it has its own heartbeat declaration",
+      jobSchedulesFor(true).some((entry) => entry.slug === dailyJobHeartbeatSlug("dead-telegram-link-alert")),
+      "and it has its own heartbeat declaration once PHOENIX_DAILY_JOBS_SPLIT is on (while it is off, the fan-out's covers it)",
     );
     const daily = source("app/api/cron/daily/_lib/daily-job-runners.ts");
     assert.ok(/runDeadTelegramLinkAlert\(\)\.catch\(/.test(daily), "it runs as a morning job, with its own catch like every other job");

@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 
-import { DAILY_JOB_RUNNERS, type DailyJobFailureHandler } from "@/app/api/cron/daily/_lib/daily-job-runners";
+import { createDailyJobFailureCollector, DAILY_JOB_RUNNERS } from "@/app/api/cron/daily/_lib/daily-job-runners";
 import { answerNowThenFinish } from "@/lib/http/answer-now";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { pingDeadMansSwitch, signalDeadMansSwitchStart } from "@/lib/observability/dead-mans-switch";
 import { logError, logInfo } from "@/lib/observability/log";
-import { DAILY_JOBS, dailyJobHeartbeatSlug, findDailyJob } from "@/lib/scheduled-jobs/daily-jobs";
+import {
+  DAILY_JOBS,
+  dailyJobHeartbeatSlug,
+  dailyJobsRunOn,
+  dailyJobsSplitIsOn,
+  findDailyJob,
+} from "@/lib/scheduled-jobs/daily-jobs";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -19,7 +25,15 @@ export const maxDuration = 300;
  * its own cron-job.org entry (scripts/cronjob-sync.mjs), its own minute between 06:36 and 07:32 Cairo,
  * and its own heartbeat (`phoenix-daily-<job>`). The list, the order and the times are
  * src/lib/scheduled-jobs/daily-jobs.ts; what each job calls is app/api/cron/daily/_lib/daily-job-runners.ts
- * — the same call the retired fan-out at /api/notifications/daily made, word for word.
+ * — the same call the fan-out at /api/notifications/daily makes, word for word.
+ *
+ * 🔴 IT RUNS NOTHING UNTIL `PHOENIX_DAILY_JOBS_SPLIT` IS `on` (owner, 13 Nov 2026: a safe switch-over).
+ * Arming thirty cron-job.org entries takes two days under the account's 100-requests-a-day cap, and
+ * until the switch is on the 06:36 fan-out still runs every job. So with the switch off this route
+ * authenticates, then answers 200 `{ ran: false, reason: "split_not_switched_on" }`: it runs no job
+ * and records NO heartbeat (an early fire is not a run, and a heartbeat here would teach the sweep a
+ * job ran when it did not). `dailyJobsRunOn` gives both routes the same answer, so a job runs from
+ * one place, never both. Runbook: docs/deployment.md, "Switching the morning jobs over".
  *
  * 🔴 NEVER LOOP OVER THE JOBS HERE, AND NEVER LET ONE REQUEST RUN TWO. Running them together is the
  * defect this route replaced: one heartbeat for thirty jobs, a deploy that killed all of them at once,
@@ -33,23 +47,12 @@ export const maxDuration = 300;
  * killed reads "started, never finished" rather than an unexplained silence.
  */
 
-type DailyJobFailure = { job: string; message: string };
 type RouteContext = { params: Promise<{ job: string }> };
 
 async function runOneDailyJob(request: Request, key: keyof typeof DAILY_JOB_RUNNERS, slug: string): Promise<Response> {
   const runner = DAILY_JOB_RUNNERS[key];
-  const failures: DailyJobFailure[] = [];
-
-  // The old route's failure handler, unchanged: the job's own `.catch` hands its error here, it is
-  // logged with the standard {event: "cron_failed", job} labels, and the job's fallback result is
-  // what the answer carries. The answer and the heartbeat get the REDACTED message — a database or
-  // network error's raw text is a map of the inside; the real error is in the log line.
-  const onJobFailure: DailyJobFailureHandler = (job, fallback) => (error: unknown) => {
-    const message = clientSafeErrorMessage(error, `${job} failed.`, { report: false });
-    failures.push({ job, message });
-    logError(`Daily cron sub-job failed: ${job}`, { labels: { event: "cron_failed", job }, error });
-    return fallback(message);
-  };
+  // The fan-out's failure handler, shared word for word (daily-job-runners.ts).
+  const { failures, onJobFailure } = createDailyJobFailureCollector();
 
   const raw = await runner.run(request, onJobFailure);
   const result = raw instanceof Response ? await raw.json() : raw;
@@ -96,6 +99,18 @@ export async function GET(request: Request, { params }: RouteContext) {
       },
       { status: 404 },
     );
+  }
+
+  // Switch off: the 06:36 fan-out runs this job today. Answer, run nothing, record no heartbeat.
+  if (dailyJobsRunOn(dailyJobsSplitIsOn()) !== "own-route") {
+    return NextResponse.json({
+      job: daily.key,
+      message:
+        "Nothing was run. The morning jobs still run together from /api/notifications/daily until " +
+        "PHOENIX_DAILY_JOBS_SPLIT is switched on; this schedule is armed and waiting for that switch.",
+      ran: false,
+      reason: "split_not_switched_on",
+    });
   }
 
   const slug = dailyJobHeartbeatSlug(daily.key);

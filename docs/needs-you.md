@@ -273,9 +273,12 @@ for. A test refuses the "simplification".
 
 ## Delivery
 
-**Each digest is its own morning job (since 13 Nov 2026).** Until then both rode
-`/api/notifications/daily`, at 06:36 Cairo, beside about thirty unrelated jobs. The owner then gave every
-one of those jobs its own schedule (enterprise audit F-HR-012 / REC-049): the daily digest is the job
+**Each digest is its own morning job — once the split switch is on.** Both ride
+`/api/notifications/daily`, at 06:36 Cairo, beside about thirty unrelated jobs, and the daily digest is
+awaited alone before the rest start. On 13 Nov 2026 the owner gave every one of those jobs its own
+schedule (enterprise audit F-HR-012 / REC-049), shipped behind `PHOENIX_DAILY_JOBS_SPLIT` and switched
+on after the thirty cron-job.org entries are armed (docs/deployment.md, "Switching the morning jobs
+over"). Then the daily digest is the job
 `needs-you-daily-digest` at **06:36**, first of the morning, on `/api/cron/daily/needs-you-daily-digest`
 with its own heartbeat `phoenix-daily-needs-you-daily-digest`; the Sunday email is `needs-you-weekly-email`
 at 07:25, which does nothing on the other six days and still reports. The list, the order and the times
@@ -284,8 +287,9 @@ are `src/lib/scheduled-jobs/daily-jobs.ts`; what each job calls is
 declared job that stops reporting pages every Super Admin every 15 minutes — so each job's cron-job.org
 entry (`scripts/cronjob-sync.mjs`) has to exist.
 
-The old route's positional `Promise.all` destructure and its hand-kept `totalJobs` are gone with it: each
-request runs one job and reports that job's result under that job's name.
+The fan-out's positional `Promise.all` destructure and its hand-kept `totalJobs` are gone either way: the
+fan-out runs the same per-job runners in the list's order and counts the list, and each per-job request
+runs one job and reports that job's result under that job's name.
 
 ### The digest runs on a request of its own
 

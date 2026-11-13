@@ -18,7 +18,7 @@ import { stripComments } from "./support/comment-strip.ts";
 //   1. the helper answers 202 before the run has started, and the run then happens exactly once;
 //   2. `?wait=1` waits and hands back the run's own response, which is what the stranded-job re-fire
 //      reads, and the re-fire really asks for it;
-//   3. each of the four routes checks the cron secret BEFORE answering, and still reports its outcome
+//   3. each of the routes (the morning fan-out and the per-job route among them) checks the cron secret BEFORE answering, and still reports its outcome
 //      to the heartbeat, because a 202 with no heartbeat behind it is a failure turned into silence.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,8 +26,14 @@ const read = (path: string) => stripComments(readFileSync(new URL(path, import.m
 
 const ROUTES: Array<{ file: string; job: string; reportsThrough: RegExp }> = [
   {
-    // The morning jobs, one per request since 13 Nov 2026 (what the old /api/notifications/daily
-    // fan-out ran as `phoenix-notify-daily`). Its heartbeat slug is computed from the job's name.
+    // The morning fan-out, which runs every morning job while PHOENIX_DAILY_JOBS_SPLIT is off.
+    file: "../app/api/notifications/daily/route.ts",
+    job: '"phoenix-notify-daily"',
+    reportsThrough: /pingDeadMansSwitch\(\s*"phoenix-notify-daily"/,
+  },
+  {
+    // The morning jobs one per request, once the switch is on (13 Nov 2026 split). The heartbeat
+    // slug is computed from the job's name.
     file: "../app/api/cron/daily/[job]/route.ts",
     job: "slug",
     reportsThrough: /pingDeadMansSwitch\(\s*slug/,
@@ -165,7 +171,7 @@ export async function runCronAnswerNowTests() {
     }
   }
 
-  // ── 5. The four routes: secret first, answer second, heartbeat still behind it ──────────────
+  // ── 5. The routes: secret first, answer second, heartbeat still behind it ──────────────
   for (const route of ROUTES) {
     const source = read(route.file);
     assert.deepEqual(answerNowRouteProblems(source, route.job, route.reportsThrough), [], `${route.file}`);
@@ -173,8 +179,10 @@ export async function runCronAnswerNowTests() {
   }
   // The pin must fire on a broken copy, or it proves nothing.
   {
-    const good = read(ROUTES[2].file);
-    const { job, reportsThrough } = ROUTES[2];
+    const mailbox = ROUTES.find((route) => route.file.includes("mailbox-offboarding-sweep"));
+    assert.ok(mailbox, "the mailbox sweep is one of the routes");
+    const good = read(mailbox.file);
+    const { job, reportsThrough } = mailbox;
     const unwrapped = good.replace(`return answerNowThenFinish(request, ${job}, () => runSweep());`, "return runSweep();");
     assert.notEqual(unwrapped, good, "the broken copy really differs");
     assert.ok(

@@ -9,8 +9,14 @@ import {
   previousScheduledFire,
   type JobHeartbeatRow,
 } from "@/lib/observability/job-heartbeat-assess";
-import { HEALTHCHECKS_CHECKED_SLUGS, JOB_SCHEDULES, type JobScheduleDeclaration } from "@/lib/observability/job-schedule";
-import { decideJobRefires, JOB_REFIRE_POLICIES, refireStrandedJobs } from "@/lib/observability/job-refire";
+import {
+  HEALTHCHECKS_CHECKED_SLUGS,
+  healthchecksCheckedSlugsFor,
+  JOB_SCHEDULES,
+  jobSchedulesFor,
+  type JobScheduleDeclaration,
+} from "@/lib/observability/job-schedule";
+import { decideJobRefires, JOB_REFIRE_POLICIES, jobRefirePoliciesFor, refireStrandedJobs } from "@/lib/observability/job-refire";
 import { DAILY_JOBS, dailyJobHeartbeatSlug, dailyJobPath } from "@/lib/scheduled-jobs/daily-jobs";
 
 /**
@@ -74,13 +80,23 @@ export async function runJobHeartbeatRegisterTests() {
   // ---------------------------------------------------------------------------
   const parsed = parseDesiredChecks(readFileSync(DOC, "utf8")) as ParsedCheck[];
   const docBySlug = new Map(parsed.map((check) => [check.slug, check] as const));
-  const codeBySlug = new Map(JOB_SCHEDULES.map((declaration) => [declaration.slug, declaration] as const));
+  // The doc table holds the declarations of BOTH positions of the morning-jobs switch
+  // (PHOENIX_DAILY_JOBS_SPLIT): the 06:36 fan-out `phoenix-notify-daily` that is declared while it is
+  // off, and the thirty `phoenix-daily-<job>` rows declared once it is on. A row cannot be added at
+  // the moment of the switch — the switch is an environment variable, not a change — so the doc
+  // carries both, and every row must match the declaration of whichever position declares it.
+  const codeBySlug = new Map(
+    [...jobSchedulesFor(false), ...jobSchedulesFor(true)].map((declaration) => [declaration.slug, declaration] as const),
+  );
+  for (const declaration of JOB_SCHEDULES) {
+    assert.deepEqual(codeBySlug.get(declaration.slug), declaration, `${declaration.slug}: the live declaration is one of the two positions'`);
+  }
 
   assert.deepEqual(
     [...codeBySlug.keys()].sort(),
     [...docBySlug.keys()].sort(),
-    `JOB_SCHEDULES and the ${DOC} table must declare exactly the same slugs — a job declared in ` +
-      "only one of them is either unwatched at runtime or absent from the Healthchecks sync",
+    `JOB_SCHEDULES (with the morning-jobs switch off and on) and the ${DOC} table must declare exactly the same ` +
+      "slugs — a job declared in only one of them is either unwatched at runtime or absent from the Healthchecks sync",
   );
 
   for (const [slug, declaration] of codeBySlug) {
@@ -107,10 +123,27 @@ export async function runJobHeartbeatRegisterTests() {
     parsed.filter((check) => check.externalSync).map((check) => check.slug).sort(),
     `HEALTHCHECKS_CHECKED_SLUGS must equal the ${DOC} rows that are not marked in-house only`,
   );
-  for (const slug of HEALTHCHECKS_CHECKED_SLUGS) {
-    assert.ok(codeBySlug.has(slug), `${slug} pings Healthchecks but is not declared in JOB_SCHEDULES`);
+  // The doc names the checks as they are while the switch is off (what ships). Switching on hands the
+  // fan-out's check to the 06:36 Needs You digest by renaming it (docs/deployment.md, "Switching the
+  // morning jobs over") — the same set with that one slug swapped, never a check more.
+  const digestSlug = dailyJobHeartbeatSlug("needs-you-daily-digest");
+  assert.deepEqual(
+    [...healthchecksCheckedSlugsFor(false)].sort(),
+    parsed.filter((check) => check.externalSync).map((check) => check.slug).sort(),
+    `with the switch off, the checked slugs equal the ${DOC} rows that are not marked in-house only`,
+  );
+  assert.deepEqual(
+    [...healthchecksCheckedSlugsFor(true)].sort(),
+    [...healthchecksCheckedSlugsFor(false)].map((slug) => (slug === "phoenix-notify-daily" ? digestSlug : slug)).sort(),
+    "switching on swaps the fan-out's Healthchecks check for the digest's, and nothing else",
+  );
+  for (const splitOn of [false, true]) {
+    const declared = new Set(jobSchedulesFor(splitOn).map((declaration) => declaration.slug));
+    for (const slug of healthchecksCheckedSlugsFor(splitOn)) {
+      assert.ok(declared.has(slug), `${slug} pings Healthchecks with the switch ${splitOn ? "on" : "off"} but is not declared then`);
+    }
+    assert.ok(healthchecksCheckedSlugsFor(splitOn).size <= 20, "the Healthchecks account holds 20 checks - a 21st would be refused");
   }
-  assert.ok(HEALTHCHECKS_CHECKED_SLUGS.size <= 20, "the Healthchecks account holds 20 checks - a 21st would be refused");
 
   // ---------------------------------------------------------------------------
   // 2. Cron evaluation is Africa/Cairo, not UTC.
@@ -543,20 +576,34 @@ export async function runJobHeartbeatRegisterTests() {
 
   // ── Re-firing a stranded morning job (job-refire.ts) ─────────────────────────────────────────
   // 2026-10-16: a deploy killed phoenix-notify-daily at 06:37 and the day's notifications stayed
-  // half-sent. Since 13 Nov 2026 those are thirty morning jobs, each with its own policy and address. The sweep saw it from 07:36 and did nothing. The decision is pure, so it is pinned
+  // half-sent. The sweep saw it from 07:36 and did nothing. The decision is pure, so it is pinned
   // here; the claim and the trigger are injected, so the "once" and "fail closed" rules are too.
   {
-    const NOTIFY = dailyJobHeartbeatSlug("needs-you-daily-digest");
-    const NOTIFY_PATH = dailyJobPath("needs-you-daily-digest");
+    const NOTIFY = "phoenix-notify-daily";
     const overdue = "2026-10-16T04:36:00.000Z"; // 07:36 Cairo
     const at = (iso: string) => new Date(iso);
 
-    assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "the morning jobs are the first with a re-fire policy");
+    assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "notify-daily is the first job with a re-fire policy");
     assert.deepEqual(
-      Object.keys(JOB_REFIRE_POLICIES),
-      [...DAILY_JOBS.map((job) => dailyJobHeartbeatSlug(job.key)), "phoenix-reconciliation-check"],
+      Object.keys(jobRefirePoliciesFor(false)),
+      [NOTIFY, "phoenix-reconciliation-check"],
       "a job joins this list only after its sub-jobs were read for a same-day repeat (docs/observability.md)",
     );
+    // With the morning-jobs switch on, notify-daily's policy moves to the thirty jobs it ran, each on
+    // its own address with the same cut-off — splitting the bundle changed none of the jobs.
+    const splitPolicies = jobRefirePoliciesFor(true);
+    assert.deepEqual(
+      Object.keys(splitPolicies),
+      [...DAILY_JOBS.map((job) => dailyJobHeartbeatSlug(job.key)), "phoenix-reconciliation-check"],
+      "switch on: each morning job holds the policy notify-daily held, and notify-daily holds none",
+    );
+    for (const job of DAILY_JOBS) {
+      assert.deepEqual(
+        splitPolicies[dailyJobHeartbeatSlug(job.key)],
+        { latestCairoMinutes: jobRefirePoliciesFor(false)[NOTIFY].latestCairoMinutes, path: dailyJobPath(job.key) },
+        `switch on: ${job.key} is re-fired at its own address, with notify-daily's cut-off`,
+      );
+    }
     // 2026-11-03: a merge at 04:40 removed the container 42 seconds into the nightly integrity checks.
     assert.deepEqual(
       decideJobRefires(
@@ -570,8 +617,8 @@ export async function runJobHeartbeatRegisterTests() {
     const due = decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z"));
     assert.deepEqual(
       due.due,
-      [{ day: "2026-10-16", path: NOTIFY_PATH, slug: NOTIFY }],
-      "a stranded morning job at 07:51 Cairo on the day it was missed is due, on its own address",
+      [{ day: "2026-10-16", path: "/api/notifications/daily", slug: NOTIFY }],
+      "a stranded notify-daily at 07:51 Cairo on the day it was missed is due",
     );
     assert.deepEqual(
       decideJobRefires([{ overdueSince: overdue, slug: "phoenix-retention-risk-pre-payroll" }], at("2026-10-16T04:51:00.000Z")).due,
@@ -604,7 +651,7 @@ export async function runJobHeartbeatRegisterTests() {
       now,
     );
     assert.deepEqual(first.results, [{ outcome: "started", slug: NOTIFY }]);
-    assert.deepEqual(triggered, [NOTIFY_PATH], "the job's own route is started exactly once");
+    assert.deepEqual(triggered, ["/api/notifications/daily"], "the route is started exactly once");
     assert.deepEqual(claimed, [`${NOTIFY}:2026-10-16`], "the claim is per job per Cairo day");
 
     triggered.length = 0;

@@ -1,8 +1,10 @@
 import {
+  DAILY_FAN_OUT_SLUG,
   DAILY_JOB_GRACE_SECONDS,
   DAILY_JOBS,
   dailyJobCronExpression,
   dailyJobHeartbeatSlug,
+  dailyJobsSplitIsOn,
 } from "@/lib/scheduled-jobs/daily-jobs";
 
 /**
@@ -77,24 +79,42 @@ export const JOB_SCHEDULE_TIMEZONE = "Africa/Cairo" as const;
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 
-export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
-  // THE MORNING JOBS, ONE HEARTBEAT EACH (owner, 13 Nov 2026 — enterprise audit F-HR-012 / REC-049).
-  // Until then one slug, `phoenix-notify-daily`, stood for the Needs You digest and about thirty other
-  // jobs run at once at 06:36; that route now runs nothing, and its declaration left with it. Each job
-  // is declared here from the one list of them (src/lib/scheduled-jobs/daily-jobs.ts): its own slug
-  // `phoenix-daily-<job>`, its own Cairo minute between 06:36 and 07:32, and the hour of grace the
-  // bundle had. 🔴 Each must match its scripts/cronjob-sync.mjs entry and its docs/observability.md
-  // row exactly, and lands in the SAME sitting as its cron job (see the digest note below) —
-  // tests/daily-jobs-split.test.ts and tests/job-heartbeat-register.test.ts hold the three together.
-  // NO watchingSince: every one is a new declaration, never a restored one.
-  ...DAILY_JOBS.map(
+/**
+ * THE MORNING JOBS, DECLARED BY WHERE THEY RUN TODAY (owner, 13 Nov 2026 — enterprise audit F-HR-012 /
+ * REC-049, shipped behind the `PHOENIX_DAILY_JOBS_SPLIT` switch).
+ *
+ * Switch OFF (what ships): the old 06:36 fan-out still runs all thirty jobs at once, so ONE slug,
+ * `phoenix-notify-daily`, is declared, exactly as before.
+ *
+ * Switch ON: each job runs from its own cron-job.org entry, so each is declared from the one list of
+ * them (src/lib/scheduled-jobs/daily-jobs.ts): its own slug `phoenix-daily-<job>`, its own Cairo
+ * minute between 06:36 and 07:32, and the hour of grace the bundle had. 🔴 Each must match its
+ * scripts/cronjob-sync.mjs entry and its docs/observability.md row exactly.
+ *
+ * 🔴 WHY THE PER-JOB SLUGS ARE NOT DECLARED (OR PINGED) WHILE THE SWITCH IS OFF. The sweep counts a
+ * job as on time only when it succeeded at or after ITS OWN fire minute. If the fan-out reported for
+ * every job at 06:37, the job due at 07:32 would read as stranded every morning the moment its
+ * declaration went live, page every Super Admin and be re-fired — a second run of a morning job. So
+ * while the switch is off the per-job slugs have no declaration and no heartbeat row. At the switch
+ * they have no row, read as "awaiting first run" (never an alert), and the sweep starts watching each
+ * one from the moment it creates its row. NO watchingSince on them: that field is only for a RESTORED
+ * declaration, and a value in the future counts as misdeclared, which alerts.
+ */
+export function dailyJobSchedulesFor(splitOn: boolean): JobScheduleDeclaration[] {
+  if (!splitOn) {
+    return [{ slug: DAILY_FAN_OUT_SLUG, kind: "cron", schedule: "36 6 * * *", graceSeconds: DAILY_JOB_GRACE_SECONDS }];
+  }
+  return DAILY_JOBS.map(
     (job): JobScheduleDeclaration => ({
       slug: dailyJobHeartbeatSlug(job.key),
       kind: "cron",
       schedule: dailyJobCronExpression(job),
       graceSeconds: DAILY_JOB_GRACE_SECONDS,
     }),
-  ),
+  );
+}
+
+const OTHER_JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // The production planner's two sweeps, on minutes nothing else in the account uses (06:07 and
   // 06:11), so a missed heartbeat names one job. Both are gated by their own pair of settings
   // switches and do nothing until the owner arms them — but the SWEEP still has to run, which is
@@ -303,6 +323,17 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-job-heartbeat-sweep", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 30 * MINUTE },
 ];
 
+/** Every declaration for one position of the morning-jobs switch. Pure, so tests can read both. */
+export function jobSchedulesFor(splitOn: boolean): readonly JobScheduleDeclaration[] {
+  return [...dailyJobSchedulesFor(splitOn), ...OTHER_JOB_SCHEDULES];
+}
+
+/**
+ * The declarations this server judges by. Read once at start-up: Railway restarts the service when
+ * `PHOENIX_DAILY_JOBS_SPLIT` changes, so the routes and these declarations always agree.
+ */
+export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = jobSchedulesFor(dailyJobsSplitIsOn());
+
 export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
 
 /**
@@ -322,11 +353,18 @@ export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
  * and the jobs whose silence costs money or data. It must equal the rows of docs/observability.md that
  * are NOT marked `in-house only` - `tests/job-heartbeat-register.test.ts` holds the two together.
  */
-export const HEALTHCHECKS_CHECKED_SLUGS: ReadonlySet<string> = new Set([
-  // The 06:36 Needs You digest holds the check `phoenix-notify-daily` held: the same minute and the
-  // same hour of grace, so the check is handed over by renaming it, not created (docs/observability.md,
-  // "To free a check, hand it over"). The other morning jobs are in-house only.
-  dailyJobHeartbeatSlug("needs-you-daily-digest"),
+export function healthchecksCheckedSlugsFor(splitOn: boolean): ReadonlySet<string> {
+  return new Set([
+    // Switch OFF: the 06:36 fan-out holds the check, as before. Switch ON: the 06:36 Needs You digest
+    // takes it over — the same minute and the same hour of grace, so the check is handed over by
+    // RENAMING it to the digest's slug at the switch, never by creating one (docs/deployment.md,
+    // "Switching the morning jobs over"). The other twenty-nine morning jobs are in-house only.
+    splitOn ? dailyJobHeartbeatSlug("needs-you-daily-digest") : DAILY_FAN_OUT_SLUG,
+    ...OTHER_HEALTHCHECKS_CHECKED_SLUGS,
+  ]);
+}
+
+const OTHER_HEALTHCHECKS_CHECKED_SLUGS: readonly string[] = [
   "phoenix-marketing-field-capture-nudge",
   "phoenix-marketing-list-check",
   "phoenix-marketing-invoice-overdue-nudge",
@@ -346,7 +384,9 @@ export const HEALTHCHECKS_CHECKED_SLUGS: ReadonlySet<string> = new Set([
   "phoenix-expense-claims-refresh",
   "phoenix-recruitment-cv-digest",
   JOB_HEARTBEAT_SWEEP_SLUG,
-]);
+];
+
+export const HEALTHCHECKS_CHECKED_SLUGS: ReadonlySet<string> = healthchecksCheckedSlugsFor(dailyJobsSplitIsOn());
 
 /** Declared slugs, for the sweeper's bootstrap and for the doc-parity test. */
 export function declaredJobSlugs(): string[] {

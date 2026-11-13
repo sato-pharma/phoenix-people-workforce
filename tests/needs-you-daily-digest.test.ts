@@ -21,11 +21,12 @@ import { stripComments } from "./support/comment-strip.ts";
  * not answer, costs the decision more surely than no message would — because the looking has been
  * delegated. Every assertion here is that rule in one of the shapes that could break it.
  *
- * THE ROUTE IT RODE ON CARRIED A DOCUMENTED OFF-BY-ONE. `/api/notifications/daily` destructured
+ * THE ROUTE IT RIDES ON CARRIED A DOCUMENTED OFF-BY-ONE. `/api/notifications/daily` destructured
  * its `Promise.all` positionally, and a job once added without its name put every later result one
- * position off for weeks; `totalJobs` was hand-kept beside it. Since 13 Nov 2026 every morning job
- * has its own schedule and request (`/api/cron/daily/<job>`), each result carries its own name, and
- * the digest is the job `needs-you-daily-digest` at 06:36 — so §4 now pins that instead.
+ * position off for weeks; `totalJobs` was hand-kept beside it. Since 13 Nov 2026 every morning job is
+ * an entry in one list with its own named runner, which the fan-out and the per-job route
+ * (`/api/cron/daily/<job>`, once `PHOENIX_DAILY_JOBS_SPLIT` is on) both run, so each result carries its
+ * own name; the digest is the job `needs-you-daily-digest` at 06:36 — so §4 now pins that instead.
  *
  * WHAT EACH ASSERTION CATCHES, in the words of the change that would break it:
  *

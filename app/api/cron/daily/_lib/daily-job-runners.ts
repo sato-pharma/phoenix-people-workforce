@@ -31,6 +31,8 @@ import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
 import { runMilestoneDueNotices } from "@/lib/milestones/notices";
 import { notifyInactiveUsers } from "@/lib/notifications/inactive-user-digest";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import type { DailyJobKey } from "@/lib/scheduled-jobs/daily-jobs";
 
 /**
@@ -64,7 +66,8 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
   // 🔴 THE NEEDS YOU BOARD IS NOT ONE QUERY — it is 22 sources behind its own two-lane scheduler
   // (heavy ONE at a time, light four, each source racing an 8-second budget). As a passenger in the
   // old 31-way fan-out it lost 1-5 sources every morning for 15 mornings running (from 2026-10-09);
-  // it was then awaited alone before the fan-out, and now it has a request and a minute of its own.
+  // it was then awaited alone before the fan-out — which the fan-out still does while the split
+  // switch is off — and once the switch is on it has a request and a minute of its own.
   // DO NOT "FIX" A RETURNING AMBER ROW BY WIDENING A LANE OR RAISING THE 8-SECOND BUDGET — that
   // trades the board's honesty for a green digest. Make a heavy source cheaper instead, which is the
   // owner's call.
@@ -398,3 +401,25 @@ export const DAILY_JOB_RUNNERS: Readonly<Record<DailyJobKey, DailyJobRunner>> = 
       ),
   },
 };
+
+export type DailyJobFailure = { job: string; message: string };
+
+/**
+ * The old route's failure handler, unchanged, shared by BOTH places a morning job can run from (the
+ * 06:36 fan-out while the split switch is off, the job's own route once it is on), so a failure reads
+ * the same whichever ran it. A job's own `.catch` hands its error here; it is logged with the
+ * standard {event: "cron_failed", job} labels and collected, and the job's fallback result is what
+ * the answer carries. The answer and the heartbeat get the REDACTED message — a database or network
+ * error's raw text is a map of the inside; the real error is in the log line, so the redaction itself
+ * is not reported a second time ({ report: false }).
+ */
+export function createDailyJobFailureCollector(): { failures: DailyJobFailure[]; onJobFailure: DailyJobFailureHandler } {
+  const failures: DailyJobFailure[] = [];
+  const onJobFailure: DailyJobFailureHandler = (job, fallback) => (error: unknown) => {
+    const message = clientSafeErrorMessage(error, `${job} failed.`, { report: false });
+    failures.push({ job, message });
+    logError(`Daily cron sub-job failed: ${job}`, { labels: { event: "cron_failed", job }, error });
+    return fallback(message);
+  };
+  return { failures, onJobFailure };
+}

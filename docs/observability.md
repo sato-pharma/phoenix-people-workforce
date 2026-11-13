@@ -744,9 +744,20 @@ policy):
    can take first. A rename without the pause holds a days-old last ping against the new schedule,
    which can raise a false alarm.
 
+   🔴 **The morning jobs have rows for BOTH positions of the `PHOENIX_DAILY_JOBS_SPLIT` switch**
+   (13 Nov 2026). While it is off — what ships — the 06:36 fan-out runs all thirty and
+   `phoenix-notify-daily` is the declared job and holds the Healthchecks check, as before. Once it is
+   `on`, each `phoenix-daily-<job>` row is declared instead and the check is handed to
+   `phoenix-daily-needs-you-daily-digest` by renaming it (docs/deployment.md, "Switching the morning
+   jobs over"). The per-job rows are marked in-house only so the sync never asks for a check of
+   their own; at the switch, delete the marker from the digest's row in the same change that removes
+   the fan-out's. `tests/job-heartbeat-register.test.ts` checks each row against whichever position
+   declares it.
+
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
-   | `phoenix-daily-needs-you-daily-digest` | `36 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml`; takes over the Healthchecks check `phoenix-notify-daily` held, renamed |
+   | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` — the fan-out, while `PHOENIX_DAILY_JOBS_SPLIT` is off |
+   | `phoenix-daily-needs-you-daily-digest` | `36 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml`; runs once `PHOENIX_DAILY_JOBS_SPLIT` is on, and takes over the check `phoenix-notify-daily` holds, renamed · **in-house only** |
    | `phoenix-daily-birthday` | `38 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-daily-contract-renewals` | `40 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-daily-holiday-confirmation` | `42 6 * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
@@ -881,7 +892,8 @@ policy):
 
    | Check slug | Tags | What a red means |
    |---|---|---|
-   | `phoenix-daily-needs-you-daily-digest` | `platform` | The 06:36 Needs You digest to the owner, in-app and on Telegram: what is waiting on him and on others, with any source that could not be read named first. A red means his morning decision list did not arrive. |
+   | `phoenix-notify-daily` | `hr` | The 06:36 morning fan-out, which runs all thirty morning jobs below while `PHOENIX_DAILY_JOBS_SPLIT` is off — the Needs You digest, birthdays, contract renewals, holiday reminders, the approval reminders and the clean-ups. A red means some or all of those did not happen that morning; the run summary names which. |
+   | `phoenix-daily-needs-you-daily-digest` | `platform in-house-only` | The 06:36 Needs You digest to the owner, in-app and on Telegram: what is waiting on him and on others, with any source that could not be read named first. A red means his morning decision list did not arrive. |
    | `phoenix-daily-birthday` | `hr in-house-only` | Today's birthday notices. A red means nobody was told whose birthday it is today. |
    | `phoenix-daily-contract-renewals` | `hr in-house-only` | The contract renewal notices for contracts nearing their end. A red means a contract can reach its end date with nobody reminded to renew or close it. |
    | `phoenix-daily-holiday-confirmation` | `hr in-house-only` | The reminder to confirm the coming national holidays on the calendar. A red means an unconfirmed holiday can reach payroll and attendance as a working day. |
@@ -1018,8 +1030,8 @@ finished** after a restart, and Healthchecks records each run's duration, so a j
 grace shows before it trips. It is **opt-in** (`withDeadMansSwitch(slug, run, { signalStart: true })`),
 external half only (the in-house register records how a run ENDED), awaited so it can never land after
 the ending ping, and inert outside production exactly like a ping. Wired today into
-every morning job's `phoenix-daily-<job>` heartbeat (the thirty jobs `phoenix-notify-daily` covered
-until 13 Nov 2026) and `phoenix-crm-integrity-sweep` (`phoenix-ireports360-sync` carried it too
+the morning jobs — `phoenix-notify-daily` while the `PHOENIX_DAILY_JOBS_SPLIT` switch is off, each
+`phoenix-daily-<job>` heartbeat once it is on — and `phoenix-crm-integrity-sweep` (`phoenix-ireports360-sync` carried it too
 until the vendor was retired on 6 November 2026). Add it only to a job whose
 check has a grace longer than a normal run — Healthchecks measures the grace from the start — and which
 always ends in a success or a fail ping.
@@ -1040,6 +1052,30 @@ drain-health probe ignores rows touched inside the same grace (`drain-health.ts`
 not spend the day's single drain alert before the drain closes it. The email outbox is a different
 table and is unchanged. Pinned by `tests/orphaned-delivery-claims.test.ts`.
 
+### The morning jobs' heartbeats follow the split switch
+
+The thirty morning jobs moved to one schedule each on 13 Nov 2026 (`/api/cron/daily/<job>`), behind
+the switch `PHOENIX_DAILY_JOBS_SPLIT` because arming thirty cron-job.org entries takes two days (runbook:
+docs/deployment.md, "Switching the morning jobs over"). The heartbeats follow the same switch
+(`jobSchedulesFor`, `healthchecksCheckedSlugsFor`, `jobRefirePoliciesFor`):
+
+- **Off (what ships):** only `phoenix-notify-daily` is declared, pinged, checked at Healthchecks and
+  re-fired, exactly as before. The per-job routes answer `{ ran: false, reason: "split_not_switched_on" }`
+  and record nothing.
+- **On:** the thirty `phoenix-daily-<job>` slugs are declared and pinged by their own routes, and
+  `phoenix-notify-daily` is not.
+
+🔴 **Why the fan-out does not also report each job's own heartbeat while the switch is off.** The
+sweep counts a job as on time only if it succeeded at or after **its own** fire minute. A fan-out
+report at 06:37 would leave every job due after 06:37 — the tablet recording retention is due at
+07:32 — reading as stranded the moment its declaration went live: an alarm to every Super Admin and
+a re-fire, which is a second run of a morning job. So while the switch is off the per-job slugs
+have no declaration and no row. At the switch each has no row, reads as "awaiting first run" (never
+an alert), and the sweep starts watching it from the moment it creates its row — no grace to tune
+and no `watchingSince`, which is only for a restored declaration (a future value counts as
+misdeclared and alerts). After the switch, `phoenix-notify-daily` shows as an **undeclared** row in
+the sweep's detail line (never an alert); delete that row by hand once the switch is on for good.
+
 ### Re-firing a stranded morning job
 
 The same deploy killed `phoenix-notify-daily` at 06:37 on 2026-10-16. The sweep saw it from 07:36 and
@@ -1049,9 +1085,11 @@ calls it in the branch that already found a problem.
 
 What it does, and each limit is deliberate:
 
-- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is each of the thirty morning jobs
-  (`phoenix-daily-<job>`, re-fired on its own `/api/cron/daily/<job>` address; until 13 Nov 2026 they
-  were one job, `phoenix-notify-daily`) and `phoenix-reconciliation-check`. A job joins the list only after
+- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is the morning jobs and
+  `phoenix-reconciliation-check`. The morning jobs follow the `PHOENIX_DAILY_JOBS_SPLIT` switch: while
+  it is off the fan-out `phoenix-notify-daily` holds the policy and is re-fired at
+  `/api/notifications/daily`; once it is on, each of the thirty `phoenix-daily-<job>` holds it and is
+  re-fired on its own `/api/cron/daily/<job>` address — never both (`jobRefirePoliciesFor`). A job joins the list only after
   its sub-jobs were read for what a second run on the same day does. For the morning jobs that was done on
   2026-10-16, when they still ran together: every delivery goes through
   `claimDelivery`, an insert that does nothing on a duplicate of the unique

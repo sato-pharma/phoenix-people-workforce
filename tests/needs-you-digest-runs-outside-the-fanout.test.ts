@@ -8,7 +8,7 @@ import { stripComments } from "./support/comment-strip.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 // THE BOARD'S LANES CANNOT PROTECT IT FROM THE REQUEST THAT CARRIES IT.
 //
-// Until 13 Nov 2026 `/api/notifications/daily` fired at 06:36 Cairo and ran 31 sub-jobs. The Needs
+// `/api/notifications/daily` fires at 06:36 Cairo and runs the morning's sub-jobs. The Needs
 // You digest was one of them, and the board it loads is not one query — it is 22 sources behind its
 // own two-lane scheduler (heavy ONE at a time, light four, each source racing an 8-second budget).
 // Those lanes were built on 2026-10-09 because an unbounded `Promise.all` was making sources starve
@@ -22,19 +22,21 @@ import { stripComments } from "./support/comment-strip.ts";
 // closings that have moved" — failed on every one of them. On 23 Oct it also lost "Payroll months
 // waiting to publish", so that morning's digest carried no payroll line at all.
 //
-// The first fix (24 Oct 2026) awaited the digest on its own before the fan-out. Since 13 Nov 2026
-// there is no fan-out: every morning job has its own schedule, minute and request
-// (`/api/cron/daily/<job>`), and the digest is the job `needs-you-daily-digest`, FIRST, at 06:36.
+// The first fix (24 Oct 2026) awaited the digest on its own before the fan-out, and the fan-out still
+// does while the `PHOENIX_DAILY_JOBS_SPLIT` switch is off. Once it is on (13 Nov 2026 split) there is
+// no fan-out: every morning job has its own schedule, minute and request (`/api/cron/daily/<job>`),
+// and the digest is the job `needs-you-daily-digest`, FIRST, at 06:36.
 //
 // 🔴 The changes that would silently bring the defect back are (a) a loop or `Promise.all` in the
-// route that runs the jobs, (b) another job on the digest's minute, and (c) the digest being called
-// a second time from anywhere in the morning jobs. Each assertion below is written as the change
+// per-job route, (b) another job on the digest's minute, (c) the digest being called a second time
+// from anywhere in the morning jobs, and (d) the fan-out starting the digest together with the rest. Each assertion below is written as the change
 // that would break it. Raising the 8-second budget or widening a lane is NOT a fix — it trades the
 // board's honesty for a green digest — so nothing here pins a timing number.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROUTE_URL = new URL("../app/api/cron/daily/[job]/route.ts", import.meta.url);
 const RUNNERS_URL = new URL("../app/api/cron/daily/_lib/daily-job-runners.ts", import.meta.url);
+const FAN_OUT_URL = new URL("../app/api/notifications/daily/route.ts", import.meta.url);
 const DIGEST = "needs-you-daily-digest";
 
 export function runNeedsYouDigestRunsOutsideTheFanoutTests() {
@@ -72,6 +74,14 @@ export function runNeedsYouDigestRunsOutsideTheFanoutTests() {
   );
   const ownRunner = runners.slice(runners.indexOf(`"${DIGEST}": {`), runners.indexOf(`"${DIGEST}": {`) + 400);
   assert.match(ownRunner, /runNeedsYouDailyDigest\(\)/, "RED the digest's call is not inside its own job's runner");
+
+  // ── While the switch is off, the fan-out awaits the digest ALONE, then starts the rest ──
+  const fanOut = stripComments(readFileSync(FAN_OUT_URL, "utf8"));
+  const digestAwaited = fanOut.indexOf("await DAILY_JOB_RUNNERS[digest.key].run(");
+  const restStarted = fanOut.indexOf("Promise.all(");
+  assert.ok(digestAwaited >= 0, "RED the fan-out no longer awaits the digest on its own");
+  assert.ok(restStarted > digestAwaited, "RED the fan-out starts the other jobs before the digest has finished — the board's sources queue behind them again");
+  assert.match(fanOut, /const rest = DAILY_JOBS\.slice\(1\);/, "RED the fan-out's Promise.all no longer leaves the digest out — it would run twice, the second time as a passenger");
 
   // ── Its answer still names the result, as the old route's answer did ──────
   assert.match(

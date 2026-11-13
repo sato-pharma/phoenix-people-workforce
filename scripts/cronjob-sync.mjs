@@ -505,9 +505,11 @@ const JOBS = {
     requestTimeout: 300,
   },
   // ── THE MORNING JOBS, ONE ENTRY EACH (owner, 13 Nov 2026 — enterprise audit F-HR-012 / REC-049). ──────
-  // Until then one entry (job `8200909`, made by hand, not in this map) called /api/notifications/daily
-  // at 06:36 and that one request ran the Needs You digest and about thirty other jobs at once. That
-  // route now runs nothing; each job has its own address, minute and heartbeat. The list, the order and
+  // One entry (job `8200909`, made by hand, not in this map) calls /api/notifications/daily at 06:36,
+  // and that one request runs the Needs You digest and about thirty other jobs at once. These entries
+  // give each job its own address, minute and heartbeat — but each answers `split_not_switched_on` and
+  // runs nothing until PHOENIX_DAILY_JOBS_SPLIT is `on` on the app; then the fan-out runs nothing and
+  // job `8200909` is disabled (docs/deployment.md, "Switching the morning jobs over"). The list, the order and
   // the times are src/lib/scheduled-jobs/daily-jobs.ts; these entries, JOB_SCHEDULES and the
   // docs/observability.md rows must match it exactly (tests/daily-jobs-split.test.ts).
   //
@@ -518,7 +520,9 @@ const JOBS = {
   // and the heartbeat is the verdict, so the 30 s platform cut (see header) logs no false timeout.
   //
   // 🔴 ARMING. cron-autoarm.yml arms each NEW key on the merge that adds it, at about four API requests
-  // a key, against the account's 100 a day. Thirty keys in one push is about 120: read the arming run.
+  // a key, against the account's 100 a day. Thirty keys in one push is about 120, so the run stops at
+  // the 429 on day 1 and `gh run rerun <run-id>` arms the rest on day 2; a bare dry run of this script
+  // then lists no `daily-*` as MISSING. Only after that is the switch turned on.
   "daily-needs-you-daily-digest": {
     title: "Phoenix — morning job: Needs You daily digest",
     path: "/api/cron/daily/needs-you-daily-digest",

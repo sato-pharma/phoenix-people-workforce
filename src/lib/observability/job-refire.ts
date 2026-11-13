@@ -4,10 +4,13 @@ import type { JobHeartbeatProblem } from "@/lib/observability/job-heartbeat-asse
 import { JOB_SCHEDULE_TIMEZONE } from "@/lib/observability/job-schedule";
 import { logError, logInfo } from "@/lib/observability/log";
 import {
+  DAILY_FAN_OUT_PATH,
+  DAILY_FAN_OUT_SLUG,
   DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES,
   DAILY_JOBS,
   dailyJobHeartbeatSlug,
   dailyJobPath,
+  dailyJobsSplitIsOn,
 } from "@/lib/scheduled-jobs/daily-jobs";
 import { assertApiRateLimit, isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -42,20 +45,38 @@ export type JobRefirePolicy = {
   latestCairoMinutes: number;
 };
 
-export const JOB_REFIRE_POLICIES: Readonly<Record<string, JobRefirePolicy>> = {
-  // The morning jobs, each on its own (13 Nov 2026). They are the sub-jobs `phoenix-notify-daily` ran,
-  // and that slug held this policy after its sub-jobs were read for a same-day repeat on 2026-10-16
-  // (docs/observability.md, "Re-firing a stranded morning job"): every send is keyed per recipient and
-  // day, so a repeat completes what a killed run left and tells nobody twice. Splitting the bundle
-  // changed none of the jobs, so the policy moved with them, job by job, with the same 12:00 cut-off.
-  ...Object.fromEntries(
+/**
+ * The morning jobs' re-fire policies, for one position of the `PHOENIX_DAILY_JOBS_SPLIT` switch.
+ * `phoenix-notify-daily` held its policy after its sub-jobs were read for a same-day repeat on
+ * 2026-10-16 (docs/observability.md, "Re-firing a stranded morning job"): every send is keyed per
+ * recipient and day, so a repeat completes what a killed run left and tells nobody twice.
+ *   - Switch OFF (what ships): the fan-out runs the jobs, so the fan-out is what is re-fired.
+ *   - Switch ON: splitting the bundle changed none of the jobs, so the policy moves with them, job by
+ *     job, with the same 12:00 cut-off, to each job's own route.
+ * Never both: a re-fire of the fan-out while the switch is on would run nothing (the route is the
+ * authorised no-op), and a re-fire of a job's own route while it is off would answer without running.
+ */
+export function dailyJobRefirePoliciesFor(splitOn: boolean): Record<string, JobRefirePolicy> {
+  if (!splitOn) {
+    return { [DAILY_FAN_OUT_SLUG]: { latestCairoMinutes: DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES, path: DAILY_FAN_OUT_PATH } };
+  }
+  return Object.fromEntries(
     DAILY_JOBS.map((job): [string, JobRefirePolicy] => [
       dailyJobHeartbeatSlug(job.key),
       { latestCairoMinutes: DAILY_JOB_REFIRE_LATEST_CAIRO_MINUTES, path: dailyJobPath(job.key) },
     ]),
-  ),
-  "phoenix-reconciliation-check": { latestCairoMinutes: 12 * 60, path: "/api/cron/reconciliation-check" },
-};
+  );
+}
+
+/** Every re-fire policy for one position of the switch. Pure, so tests can read both. */
+export function jobRefirePoliciesFor(splitOn: boolean): Readonly<Record<string, JobRefirePolicy>> {
+  return {
+    ...dailyJobRefirePoliciesFor(splitOn),
+    "phoenix-reconciliation-check": { latestCairoMinutes: 12 * 60, path: "/api/cron/reconciliation-check" },
+  };
+}
+
+export const JOB_REFIRE_POLICIES: Readonly<Record<string, JobRefirePolicy>> = jobRefirePoliciesFor(dailyJobsSplitIsOn());
 
 /** How long a day's claim lives. Longer than a day on purpose: the key already carries the date. */
 const CLAIM_WINDOW_MS = 26 * 60 * 60 * 1000;
