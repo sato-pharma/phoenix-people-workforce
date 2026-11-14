@@ -520,6 +520,39 @@ export async function runSecondSignInStepTests() {
     const card = stripComments(readFileSync("src/components/auth/second-step-card.tsx", "utf8"));
     assert.ok(card.includes('post({ action: "begin_setup", password: currentPassword })') && !card.includes('post({ action: "begin_setup" })'), "the card sends the password with the set-up");
 
+    // 🔴 A STATUS READ THAT FAILS SAYS SO (14 Nov 2026). The card read its status in two places, both
+    // `if (!response.ok) return;` with the thrown fetch swallowed, so a 401, 403, 429, 500 or a dropped
+    // connection left the spinner and the word "Loading" on the screen for ever.
+    assert.equal(
+      card.split('fetch("/api/auth/second-step", { credentials: "same-origin" })').length - 1,
+      1,
+      "the card reads its status in ONE place: the first load, the reload and the retry cannot drift apart",
+    );
+    assert.ok(!card.includes("if (!response.ok) return;"), "🔴 a refused status read is never a silent return: the card would sit on Loading for ever");
+    // Every slice below ends at the next declaration, never at a line break: this file is CRLF on a
+    // Windows checkout and LF on the runner.
+    const readAt = card.indexOf("async function readStatus()");
+    const statusRead = card.slice(readAt, card.indexOf("export function SecondStepCard()", readAt));
+    assert.ok(readAt !== -1 && statusRead.includes("try {") && /catch\s*{\s*return { failure: LOAD_FAILED };/.test(statusRead), "🔴 a status read that throws (the network) comes back as a failure, never as nothing");
+    assert.ok(
+      statusRead.includes("if (!response.ok || !payload?.status) return { failure: messageOf(payload, LOAD_FAILED) };"),
+      "🔴 a refused status read comes back as a failure carrying the server's own message when it sent one",
+    );
+    assert.ok(card.includes('const LOAD_FAILED = "Could not load your second sign-in step.";'), "and a plain line when it sent none");
+    const showAt = card.indexOf("const showRead = useCallback(");
+    const showRead = card.slice(showAt, card.indexOf("}, []);", showAt));
+    assert.ok(showAt !== -1 && showRead.includes("setLoadError(read.failure);"), "🔴 a failed read is kept for the card to show");
+    assert.ok(showRead.includes("setLoadError(null);"), "and a read that works clears it");
+    assert.ok(/}\s*setLoaded\(true\);\s*$/.test(showRead), "🔴 the spinner stops whichever way the read went");
+    assert.ok(card.includes("showRead(await readStatus());") && /readStatus\(\)\.then\(\(read\) => {\s*if \(active\) showRead\(read\);/.test(card), "the first load and the reload both show what the read answered");
+    const failureAt = card.indexOf("{loaded && loadError && (");
+    const failureLine = card.slice(failureAt, card.indexOf("{loaded && status && !status.setUp", failureAt));
+    assert.ok(failureAt !== -1 && failureLine.includes("<FormError>{loadError}</FormError>"), "🔴 the card renders the failed read, in the same element as its other errors");
+    assert.ok(/<button className={phxButtonGhostClassName}[^>]*onClick={retryLoad}[^>]*type="button">\s*Try again\s*<\/button>/.test(failureLine), "🔴 with a Try again button that runs the read again");
+    assert.ok(!/rounded|truncate|line-clamp|min-w-\[|overflow-x/.test(failureLine), "square-edged, never cut short, never wider than the card");
+    const retryAt = card.indexOf("function retryLoad()");
+    assert.ok(retryAt !== -1 && card.slice(retryAt, card.indexOf("function copy(", retryAt)).includes("void refresh();"), "Try again runs the same read");
+
     // 🔴 A waiting key is never read back out for a later caller, and never sent with a refusal.
     const storeSource = stripComments(readFileSync("src/lib/auth/second-step-store.ts", "utf8"));
     const beginBody = storeSource.slice(storeSource.indexOf("export async function beginSecondStepSetup"), storeSource.indexOf("async function replaceRecoveryCodes"));
