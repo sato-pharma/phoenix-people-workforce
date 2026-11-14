@@ -466,6 +466,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     needsReason: false,
     takes: (row) => !approvalNeedsFullName(row),
     run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }, "approved"),
+    outcomeOf: () => "approved",
   },
   {
     key: "refuse",
@@ -478,6 +479,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     takes: () => true,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note: answer.note, refusalReason: answer.reason }, "refused"),
+    outcomeOf: () => "refused",
   },
 ];
 

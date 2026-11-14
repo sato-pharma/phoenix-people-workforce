@@ -185,6 +185,43 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
     assert.ok(read(file).includes(call), `${file} draws what the server answered, not what was pressed`);
   }
 
+  // ── The bulk bar says it too (owner, 14 Nov 2026: "fix the bulk approve wording") ───────────────
+  const queueSource = read("src/components/phoenix-crm/validation-review-queue.tsx");
+  assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "approved"),'), "🔴 a bulk approve reads the server's answer, as one pressed alone does");
+  assert.ok(queueSource.includes('outcomeOf: (answer) => approvalOutcome(answer, "restored"),'), "🔴 and so does a bulk approve-after-all");
+  const bar = stripComments(read("src/components/phoenix-crm/place-check-bulk.tsx"));
+  assert.ok(bar.includes("landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));"), "the bar keeps what each answer did, not only whether it threw");
+  assert.ok(bar.includes("setSummary(landed.length > 0 ? bulkOutcomeSummary(landed) : null);"), "and says it once the run ends");
+  const pickedBlockEnd = bar.indexOf("{VALIDATION_REASON_REQUIRED}</p> : null}\n        </>\n      ) : null}");
+  assert.ok(pickedBlockEnd > -1, "the ticked rows' own block still ends on the reason line");
+  assert.ok(bar.indexOf("{summary !== null && running === null ?") > pickedBlockEnd, "🔴 the summary is drawn outside it — the run clears the ticks, which would hide it");
+  assert.ok(bar.indexOf("{failures.length > 0 ?") > pickedBlockEnd, "🔴 and so is what was not answered");
+
+  const summaryFn = tsFn(done, "export function bulkOutcomeSummary(");
+  const labelsOpening = "const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> = ";
+  const labelsStart = done.indexOf(labelsOpening);
+  assert.ok(labelsStart > -1, "the saved marks' words are one table");
+  const labelsText = done.slice(labelsStart + labelsOpening.length, done.indexOf("\n};", labelsStart) + 2);
+  const savedLabel = new Function(`return ${labelsText};`)() as Record<string, { text: string }>;
+  const bulkOutcomeSummary = new Function(
+    "outcomes",
+    "SAVED_LABEL",
+    "PLACE_APPROVED_NOT_A_LIST_ADD",
+    summaryFn.slice(summaryFn.indexOf("{") + 1, summaryFn.lastIndexOf("}")).replace("new Map<PlaceCheckOutcome, number>()", "new Map()"),
+  ) as (outcomes: string[], labels: Record<string, { text: string }>, listAdd: string) => string;
+  const listAdd = "The place only — this does not add the customer to the rep's list.";
+  assert.equal(
+    bulkOutcomeSummary(["approved", "waiting_building", "approved", "waiting_building", "waiting_building"], savedLabel, listAdd),
+    `Saved. Approved: 2 · Approved, waits for the building: 3. ${listAdd} The 3 customers waiting are each counted once their building is approved.`,
+    "🔴 a bulk approve names the customers who wait for their building, never a plain \"Approved\" over them",
+  );
+  assert.equal(
+    bulkOutcomeSummary(["waiting_building"], savedLabel, listAdd),
+    "Saved. Approved, waits for the building: 1. The customer waiting is counted once the building is approved.",
+    "one waiting customer is said in the singular, and no place-only line rides on an approval that added nothing",
+  );
+  assert.equal(bulkOutcomeSummary(["rejected", "rejected"], savedLabel, listAdd), "Saved. Rejected: 2.", "a bulk reject says only what it did");
+
   // ── A review left waiting on a place no longer in use: listed nowhere, counted nowhere ─────────
   const still = tsFn(reviews, "function reviewStillToDecide(");
   const body = still.slice(still.indexOf("{") + 1, still.lastIndexOf("}"));
