@@ -326,4 +326,28 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     3,
     "the full finance sheet, the Part 2 FAB file and the Part 2 CIB file all pass in the entries they carry",
   );
+
+  // ---- Confirm Part 1 and Confirm Part 2 ask first (owner: "build the confirm prompts") ---------------------
+  // One click froze real money and told finance to pay it. Both buttons now open the page's own in-page
+  // prompt (the one publish, reopen and cancel already use), which then runs the confirm with its gates.
+  for (const part of ["1", "2"] as const) {
+    const handler = part === "1" ? "confirmPart1WithDataGate" : "confirmPart2WithOverpaidGate";
+    assert.ok(
+      !WIZARD.includes(`onClick={() => void ${handler}(run.id)}`),
+      `Confirm Part ${part}: the button no longer confirms on the first click`,
+    );
+    assert.match(
+      WIZARD,
+      new RegExp(
+        `setPendingAction\\(\\{\\s*title: \`Confirm Part ${part} for \\$\\{periodLabel\\}\\?\`,[\\s\\S]{0,600}?` +
+          `label: "Confirm Part ${part}",[\\s\\S]{0,300}?onConfirm: \\(\\) => ${handler}\\(run\\.id\\),\\s*\\}\\)`,
+      ),
+      `Confirm Part ${part}: the button opens the prompt, and the prompt runs the confirm with its gates`,
+    );
+  }
+  assert.match(
+    WIZARD,
+    /setPendingAction\(null\);\s*if \(action\.onConfirm\) void action\.onConfirm\(\);\s*else if \(action\.overridable\) void postReopen\(action\);/,
+    "the prompt's own button runs the confirm, never a plain post that would skip the acknowledgement gates",
+  );
 }
