@@ -803,6 +803,23 @@ are filed as `system_admin`, which is what the rep reads ("From the System Admin
 Pinned by `tests/phoenix-crm-sfe-place-checks.test.ts`, which evaluates the predicates rather than
 spelling-checking them, and by the boundary and refusal suites it sits beside.
 
+### No sentence on his board promises a take-back (14 Nov 2026)
+
+Taking a rejection back became the Super Admin's alone on 10 November 2026 (*"the SFE cannot"*), and
+the buttons left the SFE Manager's board that day. Two sentences stayed. The board was opened as the
+SFE Manager on 14 November and still read:
+
+- on the Polyclinics tab, *"Show the 100 rejected buildings, which can be brought back"*;
+- before the second press of a seated customer's reject, *"You can approve it after all from this row."*
+
+Both were worded by `mode`, and the company board is the Super Admin's **and** the SFE Manager's, so
+`mode` cannot tell them apart. They are now `rejectedBuildingsSwitchLabel` and `seatedRejectWarning`
+in `src/lib/phoenix-crm/validation-feedback.ts`, and both ask `canRestore`, the screen's
+`useCanRestoreValidation()`, which is the page's `canRestoreValidation(viewer)`. The SFE Manager reads
+"Show the 100 rejected buildings" and what the rejection costs; the Super Admin's wording is unchanged;
+a district manager's board still reads "no longer in use". Owner, 14 November 2026: *"fix the brought
+back wording for the SFE Manager"*.
+
 ### Timetables that exist only online (2026-10-28)
 
 - Nada Saied could not validate her doctors at Alma, a polyclinic in Shibin el Kom. Alma's only timetable is the picture it posts online, so her photo of it on a screen was refused twice as "no timetable".
