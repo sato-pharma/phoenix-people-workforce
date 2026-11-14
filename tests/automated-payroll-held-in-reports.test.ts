@@ -109,7 +109,13 @@ export async function runAutomatedPayrollHeldInReportsTests() {
 
   // ==== 46: last month's held people are in the baseline =========================================
   const roster = bodyOf(runService, "async function previousMonthRoster(");
-  assert.match(roster, /if \(leaversError\) throw leaversError;/, "a failed leavers read refuses rather than flagging every leaver");
+  // Paged since the payroll audit of 2026-11-14 (S2): fetchAllRows throws on any failed page, never
+  // returning a short list, so a failed read still refuses.
+  assert.match(
+    roster,
+    /const leavers = await fetchAllRows<\{ employee_hr_id: string \| null \}>\(\s*\(\) => getSupabaseAdmin\(\)\.from\("employee_resignations"\)/,
+    "a failed leavers read refuses rather than flagging every leaver",
+  );
   assert.match(roster, /readPublishedHoldRecord\(prevRun\.id\)/, "HEADLINE: the baseline reads who last month held");
   assert.match(roster, /heldPeopleFromDrafts\(prevRun\.id\)/, "and falls back to the run's draft rows for a count-only month");
 

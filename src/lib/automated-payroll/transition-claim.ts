@@ -40,6 +40,10 @@ export const RUN_HOLD_ACTIONS = {
   include: "Putting an employee back",
   deductionResync: "Applying a deduction decision",
   expenseResync: "Applying an expense decision",
+  // Payroll audit 2026-11-14, S1: a non-employee entry is money in the bank file like any step figure,
+  // and an add racing Confirm Part 2 used to land after the stamp, on a sheet nobody confirmed.
+  nonEmployee: "Changing a non-employee entry",
+  nonEmployeeSync: "Pulling in the standing non-employee list",
 } as const;
 
 const HOLD_ACTION_NAMES = new Set<string>(Object.values(RUN_HOLD_ACTIONS));
