@@ -111,10 +111,11 @@ export async function buildMakeItHappenWorkspace(
     loadProductFamilyMap(),
   ]);
   windowLoads.catch(() => {});
-  // Employee names are read only for a TEAM bound: `personName` names the rep being viewed and the
-  // per-rep list, and both exist only for a team. A single rep's own workspace never reads one.
+  // Employee names name the rep being viewed, the per-rep list AND each brick's rep and District
+  // Manager (the export's tab per District Manager, owner 2026-11-14) — so every bound reads them; the
+  // read is memoised for a minute. A failed read must not blank the planner: names then read unnamed.
   const employeeNamesLoad = boundLoad.then((resolved) =>
-    isTeamBound(resolved) ? loadEmployeeNameMap() : new Map<string, string>(),
+    resolved.rows.kind === "none" ? new Map<string, string>() : loadEmployeeNameMap().catch(() => new Map<string, string>()),
   );
   employeeNamesLoad.catch(() => {});
   // Employment status decides who the per-person list names (team-roster.ts), so it is a team-only
@@ -239,8 +240,40 @@ export async function buildMakeItHappenWorkspace(
     targetValue: row.targetValue,
   });
 
+  // Who covers each brick on each line: the rep and District Manager of the LATEST closed month the
+  // brick sold anything on that line. One brick has one rep and one DM per line and month (checked
+  // on production, September 2026: 0 of 5,652 brick rows shared), so the latest month names today's
+  // cover. Read once from every product's rows, so a brick sits under ONE rep in every product.
+  // A rep sits under ONE District Manager: the one on HIS latest row on that line — so a brick that
+  // last sold under a former manager still files under the rep's current one. Only a brick with no
+  // rep (a vacant seat) keeps its own row's District Manager.
+  const brickCover = new Map<string, { period: string; repHrId: string | null; dmHrId: string | null }>();
+  const repManager = new Map<string, { period: string; dmHrId: string | null }>();
+  for (const row of brickRows) {
+    const key = `${row.lineCode ?? ""}|${row.brickId}`;
+    const seen = brickCover.get(key);
+    if (!seen || seen.period < row.period) {
+      brickCover.set(key, { period: row.period, repHrId: row.repHrId, dmHrId: row.dmHrId });
+    }
+    const repKeyOfRow = canonicalHrIdKey(row.repHrId);
+    if (!repKeyOfRow) continue;
+    const managerKey = `${row.lineCode ?? ""}|${repKeyOfRow}`;
+    const managerSeen = repManager.get(managerKey);
+    if (!managerSeen || managerSeen.period < row.period || (managerSeen.period === row.period && !managerSeen.dmHrId)) {
+      repManager.set(managerKey, { period: row.period, dmHrId: row.dmHrId });
+    }
+  }
+  for (const [key, cover] of brickCover) {
+    const repKeyOfCover = canonicalHrIdKey(cover.repHrId);
+    if (!repKeyOfCover) continue;
+    const manager = repManager.get(`${key.slice(0, key.indexOf("|"))}|${repKeyOfCover}`);
+    if (manager) cover.dmHrId = manager.dmHrId;
+  }
+  const knownName = (hrId: string | null) => (hrId ? (namesByKey.get(canonicalHrIdKey(hrId) ?? "") ?? "Unnamed employee") : null);
+
   /** One product's bricks on one line, each read from its own closed months (rule 9). */
   const bricksOf = (
+    lineCode: string,
     lineBricks: Map<string, BrickUnitsRow[]>,
     code: string,
     historyMonths: string[],
@@ -260,11 +293,14 @@ export async function buildMakeItHappenWorkspace(
       // A brick that only ever booked returns sold nothing to plan on.
       if (!history.some((units) => units > 0)) continue;
       const trend = readTrend(history, openMonths);
+      const cover = brickCover.get(`${lineCode}|${brickId}`);
       bricks.push({
         brickId,
         name: entry.name || "Unnamed brick",
         expectedUnits: trend.expectedUnits,
         realisticMaxUnits: trend.realisticMaxUnits,
+        repName: knownName(cover?.repHrId ?? null),
+        districtManagerName: knownName(cover?.dmHrId ?? null),
       });
     }
     return sortBricks(bricks);
@@ -336,7 +372,7 @@ export async function buildMakeItHappenWorkspace(
             history.map((point) => point.units),
             openMonths.length,
           ),
-          bricks: bricksOf(lineBricks, code, historyMonths, openMonths.length),
+          bricks: bricksOf(line.code, lineBricks, code, historyMonths, openMonths.length),
         });
       }
       if (concentrations.length === 0) continue;
