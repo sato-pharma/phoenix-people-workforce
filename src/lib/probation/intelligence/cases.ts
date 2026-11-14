@@ -218,14 +218,29 @@ export async function assertCaseAcceptsSubmissions(caseId: string | null | undef
 }
 
 /**
- * Probation is a MEDICAL-REPRESENTATIVE-ONLY workflow (owner rule, 2026-07-17). Managers
- * (District/Regional/National Sales Manager) and head-office roles must NEVER get a probation case,
- * even inside the hire+90 window — provisioning them was a scope bug that put 4 non-reps into the
- * live module. Matched on a normalized "medical rep" substring so title variants (e.g. "Senior
- * Medical Representative") are covered while every manager/admin title is excluded.
+ * Automatic probation covers the FIELD ROLES (owner, 13-14 Nov 2026, audit item REC-074): a Medical
+ * Representative, or a District / Senior District / Regional / National Sales Manager. It replaced the
+ * 2026-07-17 Medical-Representatives-only rule ("Field roles only", then "All sales managers").
+ * Office and head-office roles (Training, Product, SFE, Marketing, HR, Finance managers, assistants)
+ * never get a case automatically. Matched as lower-case substrings, so title variants ("Senior Medical
+ * Representative", "Senior District Manager") are covered.
+ *
+ * 🔴 The database hire trigger (public.probation_provision_case_on_hire, migration
+ * 20261114021245_probation_covers_field_sales_managers.sql) holds THE SAME list as a regex;
+ * tests/probation-case-provisioning.test.ts fails when the two differ.
  */
-export function isMedicalRepresentativeTitle(jobTitle: string | null | undefined): boolean {
-  return String(jobTitle ?? "").trim().toLowerCase().includes("medical rep");
+export const PROBATION_FIELD_ROLE_TITLES = [
+  "medical rep",
+  "district manager",
+  "district sales manager",
+  "regional sales manager",
+  "national sales manager",
+] as const;
+
+export function isProbationFieldRoleTitle(jobTitle: string | null | undefined): boolean {
+  const title = String(jobTitle ?? "").trim().toLowerCase();
+  if (!title) return false;
+  return PROBATION_FIELD_ROLE_TITLES.some((fragment) => title.includes(fragment));
 }
 
 export type EnsureProbationCaseInput = {
@@ -303,11 +318,12 @@ export async function ensureProbationCase(
     return { case: null, created: false, skippedReason: "missing_hire_date" };
   }
 
-  // Scope guard (owner rule 2026-07-17): probation is medical-representatives-only. A manager
-  // (DSM/RSM/NSM) or head-office employee never gets a case, even mid hire+90 window. This is the
-  // single choke point for BOTH the backfill and the real-time hire hook (provisioning.ts).
-  if (!isMedicalRepresentativeTitle(identity.jobTitle)) {
-    return { case: null, created: false, skippedReason: "not_medical_representative" };
+  // Scope guard (owner, 13-14 Nov 2026): automatic probation covers the field roles only - Medical
+  // Representatives and the District, Regional and National Sales Managers. An office or head-office
+  // employee never gets a case, even mid hire+90 window. This is the single choke point for BOTH the
+  // backfill and the real-time hire hook (provisioning.ts).
+  if (!isProbationFieldRoleTitle(identity.jobTitle)) {
+    return { case: null, created: false, skippedReason: "not_field_role" };
   }
 
   const startDate = probationStartDate(identity.hireDate);
