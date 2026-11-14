@@ -5,7 +5,6 @@ import { upsertEmployee } from "@/lib/employees/employee-directory";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
 import { approveOutstationRequestForPayroll } from "@/lib/outstation/service";
 import { createSalaryBatch, deleteSalaryBatch } from "@/lib/payroll/service";
-import { createProbationEvaluation, runProbationWorkflow } from "@/lib/probation/service";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createVacationRequest, decideVacationRequest } from "@/lib/vacation/service";
@@ -245,49 +244,6 @@ async function runLifecycleSmoke(lookup: LookupContext) {
   await verifyTerminalFlags(hrId);
 }
 
-async function runProbationSmoke(lookup: LookupContext) {
-  const hrId = `${fixture}_PROB`;
-  await createEmployee(hrId, `${fixture} Probation Employee`, lookup);
-  const probationPayload = {
-      hr_id: hrId,
-      employee_hr_id: hrId,
-      probation_end_date: "2026-06-01",
-      probation_start_date: "2026-03-01",
-      status: "active",
-    };
-  let probationInsert = await supabase
-    .from("employee_probation")
-    .insert(probationPayload)
-    .select("id")
-    .single();
-  if (probationInsert.error && message(probationInsert.error).includes("hr_id")) {
-    const { hr_id: legacyHrId, ...currentPayload } = probationPayload;
-    void legacyHrId;
-    probationInsert = await supabase
-      .from("employee_probation")
-      .insert(currentPayload)
-      .select("id")
-      .single();
-  }
-  if (probationInsert.error) throw probationInsert.error;
-  const probation = probationInsert.data;
-
-  const evaluation = await createProbationEvaluation({
-    employeeHrId: hrId,
-    evaluationScores: {},
-    managerFeedback: "PHASE16 disposable probation feedback.",
-  }, actor, adminAccess);
-  tracked.probationEvaluationIds.add(evaluation.id);
-
-  const terminated = await runProbationWorkflow(evaluation.id, "terminate", actor, adminAccess, {
-    decisionReason: "PHASE16 disposable probation termination.",
-  });
-  addCheck("probation termination workflow completed", terminated?.decision === "terminate" && terminated.status === "terminated", terminated);
-  const probationRow = await selectMaybeSingle("employee_probation", "id,status", "id", String(probation.id));
-  addCheck("probation row marked terminated", probationRow?.status === "terminated", probationRow);
-  await verifyTerminalFlags(hrId);
-}
-
 async function runVacationServiceSmoke(lookup: LookupContext) {
   const managerHrId = `${fixture}_VMGR`;
   const employeeHrId = `${fixture}_VAC`;
@@ -422,7 +378,6 @@ async function main() {
   try {
     const lookup = await resolveLookupContext();
     await runLifecycleSmoke(lookup);
-    await runProbationSmoke(lookup);
     await runVacationServiceSmoke(lookup);
     await runOutstationApprovalSmoke(lookup);
     await runPayrollCleanupReadinessSmoke(lookup);

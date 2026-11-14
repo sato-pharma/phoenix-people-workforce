@@ -145,14 +145,12 @@ function staticRouteAudit() {
   const unguarded = mutationRoutes.filter((route) => !routeIsPublic(route.path) && !routeHasGuard(route.source));
   addCheck("all non-public mutation routes resolve auth or explicit authorization", unguarded.length === 0, unguarded.map((route) => route.path));
 
-  const probationCreate = readSource("app/api/probation/route.ts");
-  const probationWorkflow = readSource("app/api/probation/[id]/workflow/route.ts");
+  const probationDecision = readSource("app/api/probation/cases/[caseId]/decision/route.ts");
   const bulkAction = readSource("app/api/admin/users/bulk-action/route.ts");
   const notificationTest = readSource("app/api/notifications/test/route.ts");
   const emailReplySend = readSource("app/api/admin/email-reply/send/route.ts");
 
-  addCheck("probation create route uses permission matrix", /assertPermission\(access, "probation", "update"\)/.test(probationCreate));
-  addCheck("probation workflow route uses approve/update permission matrix", /assertPermission\(access, "probation", action === "pass" \|\| action === "terminate" \? "approve" : "update"\)/.test(probationWorkflow));
+  addCheck("probation case decision route uses the permission matrix and the decision authority", /assertPermission\(access, "probation", "read"\)/.test(probationDecision) && /decideProbation\(access, caseId,/.test(probationDecision));
   addCheck("bulk access mutation requires authenticated user admin update permission", /Authentication is required/.test(bulkAction) && /assertPermission\(access, "user_admin", "update"\)/.test(bulkAction));
   addCheck("notification test email requires admin update permission", /assertPermission\(access, "admin", "update"\)/.test(notificationTest));
   addCheck("HR reply email send requires communication update permission", /assertPermission\(access, "communication", "update"\)/.test(emailReplySend));

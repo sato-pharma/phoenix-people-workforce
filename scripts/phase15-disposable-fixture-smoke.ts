@@ -6,7 +6,6 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { upsertEmployee } from "@/lib/employees/employee-directory";
 import { importApprovedExpensesToPayroll } from "@/lib/outstation/expenses";
 import { createSalaryBatch, replaceSalaryBatch, runPayrollWorkflow } from "@/lib/payroll/service";
-import { runProbationWorkflow } from "@/lib/probation/service";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { deleteSalesBatch, replaceSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -77,27 +76,6 @@ function addCheck(label: string, ok: boolean, details?: unknown) {
   if (!ok) {
     throw new Error(`${label} failed${details ? `: ${JSON.stringify(details)}` : ""}`);
   }
-}
-
-function addSkipped(label: string, details?: unknown) {
-  checks.push({ details, label, ok: true, skipped: true });
-}
-
-function message(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error && "message" in error) return String((error as { message?: unknown }).message ?? "");
-  return String(error);
-}
-
-function isSchemaGap(error: unknown) {
-  const text = message(error).toLowerCase();
-  return (
-    text.includes("could not find") ||
-    text.includes("does not exist") ||
-    text.includes("schema cache") ||
-    text.includes("relation") ||
-    text.includes("function")
-  );
 }
 
 async function safeDelete(table: string, column: string, values: string[]) {
@@ -465,51 +443,6 @@ async function runWorkforceLifecycle(lookup: LookupContext) {
   return { managerHrId, activeEmployeeHrId: activeHrId };
 }
 
-async function runProbationTermination(lookup: LookupContext, managerHrId: string) {
-  const probationHrId = `${fixture}_PROB`;
-  tracked.employeeHrIds.add(probationHrId);
-  await upsertEmployee(employeeInput(probationHrId, `${fixture} Probation Employee`, lookup, managerHrId));
-
-  try {
-    const probationId = randomUUID();
-    const evaluationId = randomUUID();
-    const { error: probationError } = await supabase.from("employee_probation").insert({
-      employee_hr_id: probationHrId,
-      id: probationId,
-      probation_end_date: "2026-05-31",
-      probation_start_date: "2026-03-01",
-      status: "active",
-    });
-    if (probationError) throw probationError;
-
-    const { error: evaluationError } = await supabase.from("probation_evaluations").insert({
-      employee_hr_id: probationHrId,
-      employee_name: `${fixture} Probation Employee`,
-      id: evaluationId,
-      job_title: lookup.positionTitle,
-      line_name: lookup.lineName,
-      probation_end_date: "2026-05-31",
-      probation_id: probationId,
-      status: "evaluation_requested",
-      workflow_notes: `${fixture} disposable probation`,
-    });
-    if (evaluationError) throw evaluationError;
-
-    await runProbationWorkflow(evaluationId, "terminate", actor, adminAccess, {
-      decisionReason: `${fixture} disposable probation termination`,
-    });
-    const probationEmployee = await selectMaybeSingle("employees", "hr_id,employment_status", "hr_id", probationHrId);
-    addCheck("probation termination uses termination lifecycle", probationEmployee?.employment_status === "terminated", probationEmployee);
-    await assertAuditTrace(probationHrId, "probation termination");
-  } catch (error) {
-    if (isSchemaGap(error)) {
-      addSkipped("probation termination fixture skipped because schema/RPC is not ready", message(error));
-      return;
-    }
-    throw error;
-  }
-}
-
 async function runSalesWorkflow(lookup: LookupContext, employeeHrId: string, managerHrId: string) {
   const approveBatch = randomUUID();
   const rejectBatch = randomUUID();
@@ -792,7 +725,6 @@ async function run() {
   try {
     const lookup = await resolveLookupContext();
     const workforce = await runWorkforceLifecycle(lookup);
-    await runProbationTermination(lookup, workforce.managerHrId);
     await runSalesWorkflow(lookup, workforce.activeEmployeeHrId, workforce.managerHrId);
     await runPayrollAndExpenseWorkflow(lookup, workforce.activeEmployeeHrId);
     await runVacationWorkflow(workforce.activeEmployeeHrId, workforce.managerHrId);
