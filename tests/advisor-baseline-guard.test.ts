@@ -111,14 +111,18 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // public tables (the pharmacy–distributor links, the dispute decision claim, the two automated-payroll
   // carry tables, the three second-sign-in-step tables and the no-timetable declaration's trail) and the six
   // pre-images in the dated schema phoenix_crm_backup_20261114. 0 of all 298 reachable by anon or authenticated, read live.
-  { category: "rls_enabled_no_policy", current_count: 298 },
+  // 297, CORRECTED from 298 the same afternoon — the no-timetable declaration's trail gained a service-role-only
+  // policy from its own migration (PR 408), so it left the count: thirteen joined, not fourteen.
+  { category: "rls_enabled_no_policy", current_count: 297 },
   { category: "function_search_path_mutable", current_count: 0 },
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
   { category: "authenticated_security_definer_function_executable", current_count: 11 },
   // 755, LOWERED from 842 on 2026-10-28 on the owner's word — the highest daily reading of the
   // five days to 27 Oct (755, 720, 751, 713, 699); 842 had been the highest reading to 2026-10-23.
-  { category: "unused_index", current_count: 755 },
+  // 508, LOWERED from 755 on 2026-11-14 on the owner's word — that day's reading, and the highest of the
+  // seven days to 14 Nov (513 on 7 Nov, then 507, 500, 499, 490, 490, 482, 508).
+  { category: "unused_index", current_count: 508 },
   { category: "stats_age_hours", current_count: -1 },
 ];
 
@@ -149,13 +153,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 299 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 298 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /299/);
+  assert.match(exceeded!.message, /298/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
   // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
   // `public` is growth, and fails.
@@ -309,7 +313,7 @@ export function runAdvisorBaselineGuardTests() {
   }
   // Young counters soften ONLY unused_index — a catalog count does not reset with the counters.
   const youngAndGrew = afterCrash(18).map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 299 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 298 } : r,
   );
   assert.ok(
     evaluateAdvisorCounts(REAL_BASELINE, youngAndGrew)
