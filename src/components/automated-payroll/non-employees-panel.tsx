@@ -13,6 +13,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 import { RecurringNonEmployeesPanel } from "./recurring-non-employees-panel";
+import { WrappingTextField } from "./wrapping-text-field";
 
 type Props = {
   runId: string;
@@ -24,6 +25,13 @@ type Props = {
 };
 
 const fieldClassName = "h-9";
+
+// The salary box keeps every digit in view: the browser's up/down arrows took ~15px of a narrow table column and
+// hid the last digit at 1024px. A typed amount needs no spinner.
+const amountFieldClassName = cn(
+  fieldClassName,
+  "text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+);
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -276,9 +284,9 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
       <div className="hidden border border-slate-200 md:block">
         <table className="w-full table-fixed border-collapse text-left text-sm">
           <colgroup>
-            <col className="w-[34%]" />
-            <col className="w-[30%]" />
-            <col className="w-[16%]" />
+            <col className="w-[31%]" />
+            <col className="w-[28%]" />
+            <col className="w-[21%]" />
             <col className="w-[20%]" />
           </colgroup>
           <thead>
@@ -296,38 +304,34 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 <tr key={row.id} className={cn("align-top", index % 2 ? "bg-slate-50/60" : "bg-white")}>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-1.5">
-                      <Input
+                      <WrappingTextField
                         aria-label="Full name (English)"
                         value={draft.fullNameEn}
                         disabled={locked}
                         onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
-                        className={fieldClassName}
                       />
-                      <Input
+                      <WrappingTextField
                         aria-label="Full name (Arabic)"
                         value={draft.fullNameAr}
                         disabled={locked}
                         dir="rtl"
                         onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
-                        className={fieldClassName}
                       />
                     </div>
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-1.5">
-                      <Input
+                      <WrappingTextField
                         aria-label="Bank name"
                         value={draft.bankName ?? ""}
                         disabled={locked}
                         onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
-                        className={fieldClassName}
                       />
-                      <Input
+                      <WrappingTextField
                         aria-label="Bank account"
                         value={draft.bankAccount ?? ""}
                         disabled={locked}
                         onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
-                        className={fieldClassName}
                       />
                     </div>
                   </td>
@@ -338,7 +342,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                       value={String(draft.totalSalary)}
                       disabled={locked}
                       onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
-                      className={cn(fieldClassName, "text-right")}
+                      className={amountFieldClassName}
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -384,38 +388,34 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
               <tr key={row.tempId} className="bg-orange-50/40 align-top">
                 <td className="px-3 py-2">
                   <div className="flex flex-col gap-1.5">
-                    <Input
+                    <WrappingTextField
                       aria-label="Full name (English)"
                       value={row.fullNameEn}
                       placeholder="Full name (English)"
                       onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
-                      className={fieldClassName}
                     />
-                    <Input
+                    <WrappingTextField
                       aria-label="Full name (Arabic)"
                       value={row.fullNameAr}
                       placeholder="الاسم بالعربية"
                       dir="rtl"
                       onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
-                      className={fieldClassName}
                     />
                   </div>
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col gap-1.5">
-                    <Input
+                    <WrappingTextField
                       aria-label="Bank name"
                       value={row.bankName ?? ""}
                       placeholder="Bank Name"
                       onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
-                      className={fieldClassName}
                     />
-                    <Input
+                    <WrappingTextField
                       aria-label="Bank account"
                       value={row.bankAccount ?? ""}
                       placeholder="Bank Account"
                       onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
-                      className={fieldClassName}
                     />
                   </div>
                 </td>
@@ -425,7 +425,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                     type="number"
                     value={String(row.totalSalary)}
                     onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
-                    className={cn(fieldClassName, "text-right")}
+                    className={amountFieldClassName}
                   />
                 </td>
                 <td className="px-3 py-2">
@@ -493,39 +493,35 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
               <div className="flex flex-col gap-2 p-3">
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
-                  <Input
+                  <WrappingTextField
                     value={draft.fullNameEn}
                     disabled={locked}
                     onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
-                  <Input
+                  <WrappingTextField
                     value={draft.fullNameAr}
                     disabled={locked}
                     dir="rtl"
                     onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
-                  <Input
+                  <WrappingTextField
                     value={draft.bankName ?? ""}
                     disabled={locked}
                     onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
-                  <Input
+                  <WrappingTextField
                     value={draft.bankAccount ?? ""}
                     disabled={locked}
                     onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
@@ -573,39 +569,35 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
             <div className="flex flex-col gap-2 p-3">
               <label className="flex flex-col gap-1 text-sm">
                 <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
-                <Input
+                <WrappingTextField
                   value={row.fullNameEn}
                   placeholder="Full name (English)"
                   onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
-                  className={fieldClassName}
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
-                <Input
+                <WrappingTextField
                   value={row.fullNameAr}
                   placeholder="الاسم بالعربية"
                   dir="rtl"
                   onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
-                  className={fieldClassName}
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
-                <Input
+                <WrappingTextField
                   value={row.bankName ?? ""}
                   placeholder="Bank Name"
                   onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
-                  className={fieldClassName}
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
-                <Input
+                <WrappingTextField
                   value={row.bankAccount ?? ""}
                   placeholder="Bank Account"
                   onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
-                  className={fieldClassName}
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
