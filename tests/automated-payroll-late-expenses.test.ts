@@ -1105,7 +1105,9 @@ export async function runAutomatedPayrollLateExpensesTests() {
     const claimed = body.indexOf("whileClaimed(runId, transition");
     const releaseAt = body.indexOf("await releaseLateExpenseReservations(runId);");
     assert.ok(claimed > 0 && releaseAt > claimed, `${signature} releases the run's reservations under its claim`);
-    assert.ok(releaseAt < body.indexOf("updateRun(", claimed), `${signature} releases them before the phase moves`);
+    // Reopen Part 1 moves its phase inside reopenPart1Atomically (one transaction, payroll audit 2026-11-14).
+    const phaseWriteAt = Math.max(body.indexOf("updateRun(", claimed), body.indexOf("reopenPart1Atomically(", claimed));
+    assert.ok(phaseWriteAt > 0 && releaseAt < phaseWriteAt, `${signature} releases them before the phase moves`);
     const ledgerAt = body.indexOf("releaseCarryForwardForCancelledRun(runId)");
     if (ledgerAt >= 0) {
       assert.ok(releaseAt < ledgerAt, `HEADLINE: ${signature} releases the reservations BEFORE the carry-forward ledger`);
