@@ -59,7 +59,7 @@ node scripts/phoenix-inspect/explore.mjs --module kpi-reports --run-id <id> --re
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phoenix-inspect/on-spare.ps1 explore --module kpi-reports
 ```
 
-The staging passwords are read from `%USERPROFILE%.phoenix-inspectstaging-personas.json` on the machine
+The staging passwords are read from `%USERPROFILE%\.phoenix-inspect\staging-personas.json` on the machine
 that runs the browser ([INSPECTION_PERSONAS.md](INSPECTION_PERSONAS.md)).
 
 Output goes to `artifacts/phoenix-inspection/kpi-reports/<run>/` (not in Git): masked PNGs and a

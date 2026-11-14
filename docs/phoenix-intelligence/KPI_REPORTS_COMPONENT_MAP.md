@@ -138,5 +138,40 @@ never requested.
 
 ## 7. Screens to files, from the run
 
-Filled from the run's `manifest.json` (`sourceCandidates` per shot); see `KPI_REPORTS_VISUAL_AUDIT.md`
-for the run id.
+Filled from run `20261114-205500-kpi`'s `manifest.json` (`sourceCandidates` per shot): the CEO's admin
+board only. The District Manager's portal pages were not reached (audit §5.4).
+
+**How to read it.** A file is a **high** candidate when a text the screen shows appears, word for word, as
+a string in that one file. That is a pointer, not proof. For example, `employee-portal-layout.tsx` is
+"high" on admin pages because a word the admin shell shows is also written in that file. The table lists
+the files that are high on **every** shot of a state.
+
+**On all 52 shots:** `kpis-board-view.tsx`, `src/lib/crm/kpis-filters.ts`, `src/config/system-navigation.ts`,
+`src/components/employee-portal/employee-portal-layout.tsx`.
+
+| State | Shots | Also high on every shot of the state (`src/components/crm/` unless named) |
+| --- | --- | --- |
+| summary | 001, 002, 003 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| tab-call-rate | 004, 005, 006 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| tab-coverage | 007, 008, 009 | `kpi-coverage-panels.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx`, `kpis-doctor-filter-bar.tsx` |
+| tab-frequency | 010, 011, 012 | `kpi-frequency-panels.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpi-coverage-panels.tsx`, `kpis-chrome.tsx`, `kpis-doctor-filter-bar.tsx` |
+| tab-am-pm | 013, 014, 015 | `kpi-reports-tables.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-period-picker.tsx`, `kpis-filter-bar.tsx` |
+| tab-pharmacies | 016, 017, 018 | `kpi-reports-tables.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-period-picker.tsx`, `kpis-filter-bar.tsx` |
+| tab-weekly | 019, 020, 021 | `kpis-trend-view.tsx`, `kpis-period-picker.tsx`, `src/lib/crm/kpis-tabs.ts`, `src/lib/crm/kpis-trend-options.ts`, `kpis-chrome.tsx`, `kpis-filter-bar.tsx` |
+| call-rate-am | 022, 023, 024 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| call-rate-pm | 025, 026, 027 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| weekly-quarter | 028, 029, 030 | `kpis-trend-view.tsx`, `kpis-period-picker.tsx`, `src/lib/crm/kpis-tabs.ts`, `src/lib/crm/kpis-trend-options.ts`, `kpis-chrome.tsx`, `kpis-filter-bar.tsx` |
+| period-week-1 | 031, 032, 033 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| sorted-coverage-desc | 034, 035, 036 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| filter-band-behind | 037, 038, 039 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| search-no-match | 040, 041, 042 | `src/lib/crm/kpis-tabs.ts`, `kpis-period-picker.tsx`, `kpis-filter-bar.tsx` |
+| empty-month | 043, 044, 045 | `src/lib/crm/kpis-tabs.ts`, `kpis-chrome.tsx`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx` |
+| coverage-rep-open | 048 | `kpi-coverage-rep-panels.tsx`, `kpis-doctor-filter-bar.tsx`, `kpi-coverage-panels.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| call-rate-rep | 051 | `kpi-coverage-rep-panels.tsx`, `kpi-frequency-rep-panels.tsx` (shared words only; the page itself is `app/(admin)/admin/kpis/call-rate/[rep]/page.tsx`, section 1) |
+| advanced-filters-open | 052, 053 | `kpis-filter-bar.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+| row-detail-open | 054 | `kpi-coverage-panels.tsx`, `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx`, `kpis-doctor-filter-bar.tsx` |
+| keyboard-focus | 056, 057 | `src/lib/crm/kpis-tabs.ts`, `kpis-filter-bar.tsx`, `kpis-period-picker.tsx`, `kpis-chrome.tsx` |
+
+The run agrees with sections 3 and 6: each tab's own panel file is high only on that tab (Coverage →
+`kpi-coverage-panels.tsx`, AM · PM and Pharmacies → `kpi-reports-tables.tsx`, Weekly →
+`kpis-trend-view.tsx`).

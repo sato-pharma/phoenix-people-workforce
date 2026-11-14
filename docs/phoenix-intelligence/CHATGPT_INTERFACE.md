@@ -9,8 +9,8 @@ what each missing piece would cost.
 
 | Piece | Implemented | Tested here | Deployed | Usable from ChatGPT |
 | --- | --- | --- | --- | --- |
-| Visual explorer (`scripts/phoenix-inspect/explore.mjs`) | yes | yes — on the spare laptop against staging (see `KPI_REPORTS_VISUAL_AUDIT.md`) | runs on the spare, on demand | no |
-| Browser self-check (`self-check.mjs`) | yes | yes — 31 of 31 checks on the spare | — | — |
+| Visual explorer (`scripts/phoenix-inspect/explore.mjs`) | yes | yes — against staging: the 19:12 smoke run on the spare, then run `20261114-205500-kpi` on this laptop under a memory guard, **52 of 122 pages** (the CEO's admin board; see `KPI_REPORTS_VISUAL_AUDIT.md` §5) | runs on demand, on the spare or memory-guarded here | no |
+| Browser self-check (`self-check.mjs`) | yes | yes — 31 of 31 on the spare; **34 of 34** on this laptop after the visible-link fix | — | — |
 | Local MCP server (`mcp-server.mjs`, stdio) | yes — capture and inspect also return `structuredContent` (plain JSON) beside the text, which ChatGPT's apps read | yes — unit test with a fake runner (`tests/phoenix-inspect-mcp.test.ts`, including the `structuredContent` shape) and a real stdio client (`mcp-smoke.mjs`, 14/14) | no (a local process) | **no — ChatGPT cannot start a local process** |
 | Streamable HTTP door with token checks (`mcp-http.mjs`, `lib/oauth.mjs`; section 4) | yes — the resource-server half only: it checks tokens, it does not issue them | yes — `tests/phoenix-inspect-mcp-http.test.ts` on an ephemeral 127.0.0.1 port with a fake runner and the SDK's own HTTP client; the real CLI started once on loopback (401 with no token, 8 tools for the owner) | no | no |
 | Authorization server that issues the tokens ChatGPT presents | **no** | no | no | no |

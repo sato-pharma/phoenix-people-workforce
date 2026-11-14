@@ -32,7 +32,7 @@ export function runPhoenixInspectRedactionTests() {
   assert.equal(maskString("Z-9043", keep, safe), "X-0000", "an HR id");
   assert.equal(maskString("01012345678", keep, safe), "00000000000", "a phone number");
   assert.equal(maskString("sammy.e@example.com", keep, safe), "xxxxx.x@xxxxxxx.xxx", "an email");
-  assert.equal(maskString("29801011234567", keep, safe), "00000000000000", "a national id");
+  assert.equal(maskString("29913990000000", keep, safe), "00000000000000", "a national id");
   assert.equal(maskString("12,450 EGP", keep, safe), "00,000 XXX", "a salary-like amount");
   assert.equal(maskString("أحمد مصطفى", keep, safe), "ــــ ـــــ", "Arabic letters become tatweels");
   assert.equal(maskString("٢٠٢٦", keep, safe), "0000", "Arabic-Indic digits become 0");
@@ -82,10 +82,10 @@ export function runPhoenixInspectRedactionTests() {
   assert.deepEqual(findAriaLeaks(`${masked}\n  - cell "Z-9043"`), ["hr-id-like"]);
   assert.deepEqual(findAriaLeaks('- cell "sammy.e@example.com"'), ["email"]);
   assert.deepEqual(findAriaLeaks('- cell "+20 101 234 5678"'), ["egyptian-mobile"]);
-  assert.deepEqual(findAriaLeaks('- cell "29801011234567"'), ["national-id", "long-number"]);
+  assert.deepEqual(findAriaLeaks('- cell "29913990000000"'), ["national-id", "long-number"]);
   assert.ok(findSensitivePatterns("call 01012345678").includes("egyptian-mobile"));
   assert.ok(findSensitivePatterns("+20 101 234 5678").includes("egyptian-mobile"));
-  assert.ok(findSensitivePatterns("id 29801011234567").includes("national-id"));
+  assert.ok(findSensitivePatterns("id 29913990000000").includes("national-id"));
   assert.ok(findSensitivePatterns("owner B-10").includes("hr-id-like"));
   assert.ok(findSensitivePatterns("ref 1234567").includes("long-number"));
   assert.deepEqual(findSensitivePatterns("A 3, B 2, C 1"), [], "grade rules are not an HR id");
