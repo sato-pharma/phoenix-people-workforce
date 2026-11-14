@@ -26,6 +26,12 @@ type Props = {
 const money = formatPayrollMoney;
 const keyOf = (balance: Pick<HeldBalance, "runId" | "compact">) => `${balance.runId}|${balance.compact}`;
 
+/** One held balance as the picker names it: the person, the month held, what is still owed. */
+const choiceLabel = (balance: HeldBalance) =>
+  `${balance.name} · ${monthNameAndYear(balance.month, balance.year)} · owed ${money(balance.outstanding)}${
+    balance.settled ? " · recorded already" : ""
+  }`;
+
 /** What a transfer may say was paid: what is still owed plus what an earlier record already says. Mirrors settlementCeiling. */
 const ceilingOf = (balance: HeldBalance) => Math.round((balance.outstanding + (balance.settled?.amount ?? 0)) * 100) / 100;
 
@@ -192,7 +198,14 @@ export function HeldPaidOutsidePanel({ runId, locked, stepDirty, onChanged }: Pr
           {!locked && open.length > 0 ? (
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-start">
-                <FormField label="Who, and which month" required>
+                {/* A closed native select cannot wrap, so on a phone the chosen line was cut mid-word. The
+                    placeholder is short enough to fit at 375px, and the full choice is repeated below the
+                    select on a phone, where it wraps (the no-ellipsis rule: wrapping wins). */}
+                <FormField
+                  label="Who, and which month"
+                  required
+                  hint={chosen ? <span className="md:hidden">{choiceLabel(chosen)}</span> : undefined}
+                >
                   <select
                     value={target}
                     disabled={!editable}
@@ -200,12 +213,10 @@ export function HeldPaidOutsidePanel({ runId, locked, stepDirty, onChanged }: Pr
                     className={phxSelectClassName}
                     aria-label="Who, and which month"
                   >
-                    <option value="">Choose the person and the month held</option>
+                    <option value="">Choose a person</option>
                     {open.map((balance) => (
                       <option key={keyOf(balance)} value={keyOf(balance)}>
-                        {`${balance.name} · ${monthNameAndYear(balance.month, balance.year)} · owed ${money(balance.outstanding)}${
-                          balance.settled ? " · recorded already" : ""
-                        }`}
+                        {choiceLabel(balance)}
                       </option>
                     ))}
                   </select>
