@@ -90,8 +90,25 @@ interface JourneyResult {
   networkErrors: string[];
   screenshotPath?: string;   // set automatically on failure
   recommendation?: string;   // plain-English suggested next action, set on failure
+  skipReason?: string;       // the reason a check gave when it skipped itself
 }
 ```
+
+### How a run is filed: healthy, warning or failed
+
+`src/lib/synthetic-journeys/overall-status.ts` decides it when the report is saved:
+
+| What the run recorded | The run reads |
+| --- | --- |
+| Any check failed | failed |
+| A check was skipped and gave no reason | warning |
+| Nothing passed at all | warning |
+| Every check that ran passed, and every skip said why | healthy |
+
+A check that skips itself must say why in the same call — `test.skip(condition, "why")` — and that
+sentence is what keeps the run healthy. It is printed under the check on the Synthetic Journeys page
+as "Skipped on purpose: …". Until 14 November 2026 any skip made the run a warning, and the one
+deliberate skip (the Outstation Expenses export) made every clean run read warning.
 
 ### Example report output
 
@@ -167,7 +184,8 @@ function to the real messages production has recorded.
    );
    ```
 
-   and set `mutates: true` in its `JourneyDefinition` for clarity.
+   and set `mutates: true` in its `JourneyDefinition` for clarity. Always give the reason: a skip
+   with no sentence files the whole run as a warning.
 4. Run `pnpm run synthetic:test` and confirm it shows up in the summary and
    in `tests/synthetic/report/latest.json`.
 

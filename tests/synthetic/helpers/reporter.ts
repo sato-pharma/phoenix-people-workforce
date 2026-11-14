@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 
+import { declaredSkipReason } from "./skip-reason";
 import type { JourneyResult } from "./types";
 
 const REPORT_DIR = "tests/synthetic/report";
@@ -21,6 +22,7 @@ function printSummaryTable(results: JourneyResult[]): void {
       for (const err of r.errors) console.log(`   error: ${err}`);
       if (r.recommendation) console.log(`   next: ${r.recommendation}`);
     }
+    if (r.status === "skipped" && r.skipReason) console.log(`   on purpose: ${r.skipReason}`);
   }
   const passed = results.filter((r) => r.status === "passed").length;
   const failed = results.filter((r) => r.status === "failed").length;
@@ -96,6 +98,10 @@ export default class SyntheticReporter implements Reporter {
       consoleErrors: [],
       networkErrors: [],
       screenshotPath: screenshot?.path,
+      // A check that skipped itself said why, and a run is not marked down for it. One skipped with
+      // no reason — the sign-in step before it failed, say — carries none and still is.
+      skipReason:
+        status === "skipped" ? declaredSkipReason([...(result.annotations ?? []), ...test.annotations]) : undefined,
       recommendation:
         status === "failed"
           ? "This step crashed before it could report structured journey results — check the error above (often a login/auth-setup failure)."

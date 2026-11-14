@@ -27,7 +27,7 @@ import { runJourney } from "../helpers/run-journey";
 test("Outstation Expenses export produces a workbook", async ({ page }, testInfo) => {
   test.skip(
     process.env.SYNTHETIC_ALLOW_MUTATION !== "true",
-    "The export writes an audit row; running it hourly would fabricate admin activity in production.",
+    "Downloading the export records that an administrator exported expenses, so an hourly run would record 24 exports a day that nobody made.",
   );
 
   await runJourney(
