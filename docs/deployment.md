@@ -1303,18 +1303,38 @@ Unset, everything runs exactly as before. Set, the sweep skips both robot passes
 and neither the website nor the worker will build a robot driver. 🔴 It is never in `.railway/railway.ts`
 and never on the robot service itself.
 
-**The order — each step only after the one before is proven:**
+**Where it stands.** The service was created on 14 Nov 2026 and answered `/api/readyz` 200 on the
+website's revision the same afternoon, at `https://phoenix-workforce-robot-production.up.railway.app`
+(the address `ROBOT` in `scripts/cronjob-sync.mjs` already held). Read back from Railway that day:
+`europe-west4-drams3a` × 1, Wait for CI off, healthcheck `/api/readyz` with 900 s, restart on failure
+× 10, and 20 variables — the role as a plain value and the other 19 as references to the website's.
+Its `notificationConfig` check reads `false` and that is expected: it holds no email or Telegram
+variables, and `/api/readyz` answers 200 without them. It is off `AWAITING_CREATION`, its
+cron-job.org job `8859323` is declared on, and its heartbeat `phoenix-mailbox-robots` is declared
+(in-house only). The website's variable and the job's `--apply` belong to the merge of the change that
+declared the job on; `node scripts/cronjob-sync.mjs --job mailbox-robots` reads the job's live state.
+One leftover, harmless: Railway named the service `thorough-motivation` at creation and its private
+network name kept that after the rename. Nothing calls it.
+
+**The order — each step only after the one before is proven** (kept as the account of how it was
+done, and as the way to rebuild it):
 
 1. **Create the service by hand**, as the worker was: Railway dashboard → New → GitHub repo → this
    repository, named `phoenix-workforce-robot`. Move it to `europe-west4-drams3a` (a new service in
    this account starts in `sfo`). Turn "Wait for CI" off, set the healthcheck to `/api/readyz` with
    900 s, and generate a domain. The block in `.railway/railway.ts` was written to match. No apply
    is needed to create it, and `scripts/railway-iac-preapply-check.mjs` refuses any apply that
-   includes it until it exists. Until then the daily drift check prints it as a note, not as drift:
-   it is named in `AWAITING_CREATION` in `scripts/check-railway-deploy-settings.mjs` (14 Nov 2026,
-   after the first run following the merge reported a dashboard edit nobody had made).
+   includes it until it exists. A service declared ahead of its creation is named in
+   `AWAITING_CREATION` in `scripts/check-railway-deploy-settings.mjs`, so the daily drift check prints
+   it as a note, not as drift (14 Nov 2026, after the first run following the merge reported a
+   dashboard edit nobody had made). The dashboard gives a new service a random name and no
+   healthcheck; from the CLI the rename is GraphQL `serviceUpdate`, the healthcheck is
+   `serviceInstanceUpdate`, both through `railway api`, and the domain is `railway domain -s <service>`.
+   `railway environment edit --service-config` answers "No changes to apply" and writes nothing.
 2. **Set its variables**: `PHOENIX_PROCESS_ROLE=robot` as a plain value, and every other name in its
    `.railway/railway.ts` block as a reference to the website's own (`${{phoenix-people-workforce.NAME}}`).
+   `railway variable set --service phoenix-workforce-robot --environment production --skip-deploys`
+   takes them all in one command; a reference passes no secret value through the shell.
 3. **Wait for it to be healthy**: `/api/readyz` 200 and `/api/healthz` on the same revision as the website.
 4. **Set `PHOENIX_ROBOT_SERVICE_URL` on the website** to the robot service's `https://` address.
    This redeploys the website. From its next sweep, the website stops running the robots, and the four
@@ -1327,13 +1347,20 @@ and never on the robot service itself.
    - take `phoenix-workforce-robot` out of `AWAITING_CREATION` in
      `scripts/check-railway-deploy-settings.mjs`, so the service disappearing later is reported as drift.
 
-   Until then the job is declared OFF, so the auto-arm on merge creates it switched off, and its
-   heartbeat is undeclared, so it never pages as stranded. This order means the robots never run twice
-   in one day: the website stops first, then the robot service starts.
+   Until that change the job was declared OFF, so the auto-arm on merge created it switched off (job
+   `8859323`, 13 Nov 2026), and its heartbeat was undeclared, so it never paged as stranded. 🔴 The
+   auto-arm arms only a NEWLY ADDED row, so declaring the job on switches nothing on by itself: the
+   `--apply` is run by hand, after the website serves a deployment made with the variable set. This
+   order means the robots never run twice in one day: the website stops first, then the robot service
+   starts.
 
 **Rollback: unset `PHOENIX_ROBOT_SERVICE_URL` on the website.** The sweep runs both robots again on the
 next 08:15 run and the buttons run locally. Then switch the `mailbox-robots` job off, because the robot
-service would otherwise run the passes a second time.
+service would otherwise run the passes a second time: put `enabled: false` back on its row in
+`scripts/cronjob-sync.mjs`, run `--job mailbox-robots --apply`, and take `phoenix-mailbox-robots` out of
+`JOB_SCHEDULES` and both `docs/observability.md` tables in the same change. The job and its heartbeat
+are switched together (`tests/mailbox-robot-service.test.ts`): a job switched off with its heartbeat
+left in is paged as stranded every 15 minutes.
 
 ## Cron Jobs (cron-job.org)
 

@@ -42,11 +42,12 @@ const API = "https://backboard.railway.com/graphql/v2";
  * Services `.railway/railway.ts` declares before they exist on Railway, each with where its creation
  * steps are written. Add a name in the change that declares the service; take it off in the change
  * that follows its creation. tests/railway-deploy-settings-drift.test.ts refuses a name the authoring
- * file does not declare.
+ * file does not declare. An entry is `["service-name", "where its creation steps are written"]`.
+ *
+ * Empty since 14 Nov 2026: `phoenix-workforce-robot`, the one name it has held, was created that day
+ * and came off, so that service vanishing from Railway is reported as drift again.
  */
-export const AWAITING_CREATION = new Map([
-  ["phoenix-workforce-robot", 'docs/deployment.md, "The robot service"'],
-]);
+export const AWAITING_CREATION = new Map([]);
 
 /** Full-line `//` comments out; the authoring file's prose names every field this reads. */
 function stripLineComments(source) {

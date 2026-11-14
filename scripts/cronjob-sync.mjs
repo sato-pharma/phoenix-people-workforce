@@ -74,8 +74,8 @@ const WORKER = "https://phoenix-workforce-worker-production.up.railway.app";
  * The robot service (audit REC-075): same code again, with PHOENIX_PROCESS_ROLE=robot, running ONLY the
  * Turbify mailbox robots so a Chromium never opens beside the page server. 🔴 This address is the one
  * Railway generates for a service named `phoenix-workforce-robot` in the `production` environment, the
- * way it generated WORKER's — it does not exist until the owner creates the service, and it must be
- * read off the service's Networking tab then and corrected here if it differs, BEFORE its job is armed.
+ * way it generated WORKER's. Read back from Railway on 14 Nov 2026, the day the service was created:
+ * the generated domain is this one, so nothing here needed correcting before its job was armed.
  */
 const ROBOT = "https://phoenix-workforce-robot-production.up.railway.app";
 
@@ -756,13 +756,15 @@ const JOBS = {
   // ── THE ROBOT SERVICE (audit REC-075) ─────────────────────────────────────────────────────────────
   "mailbox-robots": {
     base: ROBOT,
-    // 🔴 DECLARED OFF, and it stays off until the robot service exists, is healthy, and the website's
-    // PHOENIX_ROBOT_SERVICE_URL is about to be set (docs/deployment.md, "The robot service"). The
-    // auto-arm on merge therefore creates it DISABLED. Arming it is its own change: flip this to
-    // enabled, declare `phoenix-mailbox-robots` in JOB_SCHEDULES and the docs/observability.md table,
-    // and run `--job mailbox-robots --apply`. Until then the route's heartbeat is undeclared, so it
-    // never pages as stranded.
-    enabled: false,
+    // DECLARED ON since 14 Nov 2026, the day the robot service was created and answered healthy on the
+    // website's revision. Job `8859323`: the auto-arm created it switched OFF on 13 Nov, and it arms
+    // only a NEWLY ADDED row, so switching it on is `--job mailbox-robots --apply` by hand.
+    // 🔴 THE WEBSITE'S PHOENIX_ROBOT_SERVICE_URL IS SET BEFORE THAT APPLY, NEVER AFTER. With this job
+    // on and the variable unset, the 08:15 sweep on the website and this 08:20 run both drive the
+    // mailboxes the same morning (docs/deployment.md, "The robot service"). Rollback is the reverse:
+    // unset the variable, then put `enabled: false` back here and apply again.
+    // Heartbeat: `phoenix-mailbox-robots` in JOB_SCHEDULES, in-house only. The two are switched
+    // together (tests/mailbox-robot-service.test.ts): off here means out of JOB_SCHEDULES too.
     title: "Phoenix — Turbify mailbox robots (robot service)",
     path: "/api/cron/mailbox-robots",
     // 08:20 Cairo: five minutes after the mailbox-offboarding sweep (08:15) has brought the leavers'

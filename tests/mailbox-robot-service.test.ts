@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { JOBS as DECLARED_JOBS, ROBOT } from "../scripts/cronjob-sync.mjs";
 import { createTurbifyConsoleDriver } from "../src/lib/mailbox-offboarding/robot/turbify-console.ts";
 import { parseRobotActor } from "../src/lib/new-hire-mailbox/robot/actions/actor.ts";
 import { forwardToRobotService, ROBOT_ACTIONS, robotActionPath } from "../src/lib/new-hire-mailbox/robot/actions/forward.ts";
 import { createJoinerDriverFromEnv } from "../src/lib/new-hire-mailbox/robot/sweep-deps.ts";
+import { jobSchedulesFor } from "../src/lib/observability/job-schedule.ts";
 import { resolveProcessRole, robotOnlyRouteRefusal, runsBackgroundJobs, workerOnlyRouteRefusal } from "../src/lib/platform/process-role.ts";
 import {
   RobotDriverRefusedError,
@@ -363,6 +365,38 @@ function runRailwayBlockCases() {
   assert.match(iac, /resources: \[[^\]]*phoenixWorkforceRobot/, "and it is one of the project's resources, so a whole-project apply never deletes it");
 }
 
+/**
+ * THE ROBOT SERVICE'S CRON JOB AND ITS HEARTBEAT ARE SWITCHED TOGETHER (armed 14 Nov 2026).
+ *
+ * Declared on with no heartbeat, a morning on which neither robot ran is silent. Declared off with the
+ * heartbeat left in — which is what a rollback does if it stops at the job — the sweep pages every Super
+ * Admin every 15 minutes about a job that was switched off on purpose.
+ */
+function runCronJobCases() {
+  type DeclaredJob = { base?: string; enabled?: boolean; path: string; schedule: { hours: number[]; minutes: number[] } };
+  const job = (DECLARED_JOBS as unknown as Record<string, DeclaredJob>)["mailbox-robots"];
+  assert.ok(job, "scripts/cronjob-sync.mjs declares the robot service's cron job");
+  assert.equal(job.base, ROBOT, "it calls the robot service — the website and the worker answer it 503 wrong_process");
+  assert.equal(job.path, "/api/cron/mailbox-robots");
+  const declaredOn = job.enabled !== false;
+  for (const splitOn of [false, true]) {
+    const heartbeat = jobSchedulesFor(splitOn).find((declaration) => declaration.slug === "phoenix-mailbox-robots");
+    assert.equal(
+      Boolean(heartbeat),
+      declaredOn,
+      "the mailbox-robots job and its heartbeat phoenix-mailbox-robots are switched together: " +
+        (declaredOn ? "the job is declared on, but JOB_SCHEDULES does not watch it" : "the job is declared off, but JOB_SCHEDULES still watches it and would page it as stranded"),
+    );
+    if (heartbeat) {
+      assert.equal(
+        heartbeat.schedule,
+        job.schedule.minutes[0] + " " + job.schedule.hours[0] + " * * *",
+        "the heartbeat expects the fire at the minute cron-job.org is told to make it",
+      );
+    }
+  }
+}
+
 export async function runMailboxRobotServiceTests() {
   await runFactoryGuardCases();
   await runRobotOnlyRouteCases();
@@ -370,4 +404,5 @@ export async function runMailboxRobotServiceTests() {
   await runForwarderCases();
   runSweepCases();
   runRailwayBlockCases();
+  runCronJobCases();
 }
