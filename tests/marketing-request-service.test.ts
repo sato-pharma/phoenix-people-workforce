@@ -311,7 +311,9 @@ export async function runMarketingRequestServiceTests() {
 
   assert.match(serviceSource, /createMarketingApprovalSteps/, "marketing request submit must create approval steps");
   assert.match(serviceSource, /marketing_request_approval_steps/, "marketing workflow must use approval-step table");
-  assert.match(serviceSource, /createSystemNotification/, "marketing workflow must use central notification engine");
+  // REC-032 (14 Nov 2026): approval notices go through the one door, raiseApproval, which hands them to
+  // the same sender unchanged — so the door's form counts as the engine call it wraps.
+  assert.match(serviceSource, /createSystemNotification|raiseApproval\(/, "marketing workflow must use central notification engine");
   assert.match(serviceSource, /eventType:\s*"request_assigned"/, "marketing workflow must notify the assigned approver");
   assert.match(serviceSource, /assertMarketingStepAssignedToActor/, "marketing decisions must require the assigned approver");
   assert.match(serviceSource, /!isSamePerson\(step\.assignedHrId, actorHrId\)/, "wrong approver must be blocked, including under a shared-identity alias");
@@ -2142,17 +2144,18 @@ export async function runMarketingRequestServiceTests() {
   // used to fix 6 sibling instances of this exact defect class elsewhere in the codebase).
   assert.match(
     serviceSource,
-    /import \{ createSystemNotification, logNotificationSendFailure \} from "@\/lib\/notifications\/system";/,
+    // REC-032: the notices themselves now go through raiseApproval, so only the logger is imported here.
+    /import \{ (?:createSystemNotification, )?logNotificationSendFailure \} from "@\/lib\/notifications\/system";/,
     "marketing-requests service must import the shared notification-failure logger",
   );
   assert.doesNotMatch(
     serviceSource,
-    /title:\s*"Marketing request submitted",\s*\}\)\.catch\(\(\) => undefined\);/,
+    /title:\s*"Marketing request submitted",\s*\}(?: \})?\)\.catch\(\(\) => undefined\);/,
     "the request-submitted notification failure must not be swallowed without logging",
   );
   assert.match(
     serviceSource,
-    /title:\s*"Marketing request submitted",\s*\}\)\.catch\(\(error: unknown\) => logNotificationSendFailure\("marketingRequests\.createMarketingRequestDraft\.submitted", error\)\);/,
+    /title:\s*"Marketing request submitted",\s*\}(?: \})?\)\.catch\(\(error: unknown\) => logNotificationSendFailure\("marketingRequests\.createMarketingRequestDraft\.submitted", error\)\);/,
     "the request-submitted notification failure must be logged via the shared helper",
   );
 

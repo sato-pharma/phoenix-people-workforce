@@ -164,10 +164,12 @@ export function runDirectOrdersHeldLaneTests() {
   );
 
   // ── One email per event, not N copies (spec C4) ─────────────────────────────────────────
+  // REC-032 (14 Nov 2026): approval notices go through the one door, raiseApproval, which hands them to
+  // the same sender unchanged — so the door's form counts as the engine call it wraps.
   assert.match(
     serviceSource,
-    /await createSystemNotificationForRecipients\(/,
-    "notifyDirectOrder must use the consolidated To/Cc envelope helper",
+    /await raiseApproval\(approvalIdentity\("direct_order", input\.eventType\), \{ via: "notices"/,
+    "notifyDirectOrder must use the consolidated To/Cc envelope helper (the door's notices delivery)",
   );
   assert.ok(
     !/recipientHrIds\.map\(\(recipientHrId\) =>\s*\n?\s*createSystemNotification\(/.test(serviceSource),

@@ -182,7 +182,8 @@ export function runVacationModuleTests() {
   assert.doesNotMatch(serviceSource, /\["HR Manager", "Super Admin"\]/, "HR step authority is Super Admin only, not a separate HR Manager role");
   assert.doesNotMatch(serviceSource, /vacationPilotHrApproverKeys/, "hardcoded approver keys must be removed from vacation service");
   assert.match(serviceSource, /createVacationApprovalSteps/, "vacation submit must create approval-step rows");
-  assert.match(submittedBlock, /createSystemNotification\(\{/, "vacation submitted pilot must route through createSystemNotification");
+  // REC-032: through the one door, which hands the notice to createSystemNotification unchanged.
+  assert.match(submittedBlock, /createSystemNotification\(\{|via: "notice", notice: \{/, "vacation submitted pilot must route through createSystemNotification");
   assert.match(submittedBlock, /eventType: "request_submitted"/, "vacation submitted pilot must use the engine policy event key");
   assert.match(submittedBlock, /input\.approvalRecipients\.map/, "vacation submitted pilot must notify exact approval-step recipients");
   assert.match(submittedBlock, /recipientHrId: recipient\.hrId/, "vacation submitted pilot must send only to resolved approvers");

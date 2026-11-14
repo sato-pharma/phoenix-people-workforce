@@ -63,6 +63,7 @@
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
 
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { bidiIsolate } from "@/emails/bidi";
@@ -2273,6 +2274,46 @@ export async function withdrawPhoenixCrmDoubleVisitWaitingNotices(requestId: str
   }
 }
 
+/**
+ * The Phoenix CRM notices that ask for, answer or return a decision (enterprise audit REC-032). They go
+ * through the one approvals door, `raiseApproval`; the rest of this module's notices — the day start,
+ * the first visit, a forecast sent, a rep's plan removed — are not approvals and keep the engine
+ * directly. Either way the delivery is identical: same recipients, same channels, same key.
+ */
+const PHOENIX_CRM_APPROVAL_KINDS: ReadonlySet<PhoenixCrmNotice["kind"]> = new Set<PhoenixCrmNotice["kind"]>([
+  "double_visit_request",
+  "manager_plan",
+  "monthly_plan_decided",
+  "monthly_plan_submitted",
+  "plan_decided",
+  "plan_edit",
+  "plan_submitted",
+  "recorded_visit_decided",
+  "request_answered",
+  "request_created",
+  "request_decided",
+  "request_returned",
+  "unplanned_visit_decided",
+  "unplanned_visit_raised",
+  "validation_not_confirmed",
+  "visit_ask",
+]);
+
+/** Exported for tests/approvals-one-door.test.ts. */
+export function isPhoenixCrmApprovalNotice(kind: PhoenixCrmNotice["kind"]): boolean {
+  return PHOENIX_CRM_APPROVAL_KINDS.has(kind);
+}
+
+function sendPhoenixCrmDelivery(
+  notice: PhoenixCrmNotice,
+  input: Parameters<typeof createSystemNotificationForRecipients>[0],
+  recipientHrIds: string[],
+) {
+  return isPhoenixCrmApprovalNotice(notice.kind)
+    ? raiseApproval(approvalIdentity("phoenix_crm", input.eventType), { via: "notices", notice: input, recipientHrIds })
+    : createSystemNotificationForRecipients(input, recipientHrIds);
+}
+
 async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boolean): Promise<void> {
   // Straight to the module's own page. `/field-crm?tab=` still works for every link already sent, but it
   // is a redirect — a whole portal render — before the page the notice is about. The badges read both.
@@ -2290,7 +2331,8 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
   };
 
   if (!isTest) {
-    await createSystemNotificationForRecipients(
+    await sendPhoenixCrmDelivery(
+      notice,
       {
         ...base,
         channels: phoenixCrmChannels(delivery.eventType, delivery.inAppOnly),
@@ -2306,7 +2348,8 @@ async function deliver(notice: PhoenixCrmNotice, delivery: Delivery, isTest: boo
   // test account mirrors is dropped rather than told — never addressed to the real person.
   const mirrors = await testAccountsMirroring(delivery.recipients);
   for (const mirror of mirrors) {
-    await createSystemNotificationForRecipients(
+    await sendPhoenixCrmDelivery(
+      notice,
       {
         ...base,
         // In-app alone. `createSystemNotificationForRecipient` enforces this again from the

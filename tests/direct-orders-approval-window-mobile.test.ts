@@ -240,8 +240,15 @@ export function runDirectOrdersApprovalWindowMobileTests() {
     "utf8",
   );
   const countIn = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  // REC-032 (14 Nov 2026): the buttons wear the one approvals interface, whose regular size is the
+  // 44px floor — so the floor is read where it now lives, and this panel must use that size.
+  const kit = readFileSync(
+    new URL("../src/components/approvals-hub/approval-action-kit.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(kit, /regular: "h-11 /, "the one approvals interface's regular size is the 44px floor");
   assert.ok(
-    countIn(actions, "h-11") >= 3,
+    countIn(actions, "\"regular\"") >= 2 && !/"dense"/.test(actions),
     "every decision button must clear the 44px touch floor — this is the screen where money moves, " +
       "reached after eight sections of evidence",
   );

@@ -15,13 +15,13 @@
  * `phoenix_crm_decide_validation_review` (the decision) — migration 20261003130536.
  */
 
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { phoenixCrmChannels } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
-import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
@@ -295,8 +295,7 @@ export async function notifyValidationReviewWaiting(input: { customerName: strin
     const recipients = hrIds.filter((hrId) => !hrId.startsWith("TEST-"));
     if (recipients.length === 0) return;
     const rep = nameOf(names, input.repHrId, "A rep");
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ module: "phoenix_crm", step: "waiting" }, { via: "notices", notice: {
         actionUrl: VALIDATION_REVIEWS_PATH,
         category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
         channels: phoenixCrmChannels("validation_review_waiting"),
@@ -309,9 +308,7 @@ export async function notifyValidationReviewWaiting(input: { customerName: strin
         subjectHrId: input.repHrId,
         telegram: { ctaLabel: "Open the reviews", ctaUrl: VALIDATION_REVIEWS_PATH },
         title: `Place to check: ${input.customerName}`,
-      },
-      recipients,
-    );
+      }, recipientHrIds: recipients });
   } catch (error) {
     logError("Phoenix CRM validation review notice failed", { error, labels: { event: "phoenix_crm_validation_review_notify_failed" } });
   }

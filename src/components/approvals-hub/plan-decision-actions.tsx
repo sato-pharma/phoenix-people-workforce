@@ -4,13 +4,14 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CornerUpLeft, Flag, ListChecks, MessageSquarePlus, XCircle } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import {
+  ApprovalConfirmButtons,
+  ApprovalResponsePanel,
+  approvalActionClassName,
+} from "@/components/approvals-hub/approval-action-kit";
 import type { PlanReturnableActivity } from "@/lib/approvals-hub/service";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
-import {
-  phxButtonApproveClassName,
-  phxTextareaClassName,
-} from "@/components/ui/form-tokens";
+import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
 export type PlanDecisionActionsProps = {
   planId: string;
@@ -197,20 +198,17 @@ export function PlanDecisionActions({
   // Nothing actionable → render nothing (the page shows a read-only banner instead).
   if (!hasStandard && !canAcknowledge && !isEditRequestDecision && !canRequestVisitDetails) return null;
 
-  const shell = adminPanelClassName;
-  const headerBar = `${adminPanelHeaderClassName} px-4 py-2.5`;
-  const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
-
   // ── Premium per-activity return composer ─────────────────────────────────────
   if (mode.kind === "return") {
     return (
-      <section className={shell}>
-        <header className={`flex items-center justify-between ${headerBar}`}>
-          <h3 className={headerText}>Return plan — flag what to fix</h3>
-          <span className="inline-flex items-center gap-1 rounded-full bg-phx-warn px-2 py-0.5 text-phx-2xs font-black text-white">
+      <ApprovalResponsePanel
+        title="Return plan — flag what to fix"
+        aside={
+          <span className="inline-flex items-center gap-1 bg-phx-warn px-2 py-0.5 text-phx-2xs font-black text-white">
             <Flag className="h-3 w-3" /> {flaggedCount} flagged
           </span>
-        </header>
+        }
+      >
 
         <div className="space-y-4 px-4 py-4">
           <div>
@@ -259,7 +257,7 @@ export function PlanDecisionActions({
                                 {a.timeLabel ? <span className="text-phx-xs text-slate-500">{a.timeLabel}</span> : null}
                               </span>
                               <span
-                                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-phx-2xs font-bold ${
+                                className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-phx-2xs font-bold ${
                                   flagged ? "bg-orange-500 text-white" : "border border-slate-300 text-slate-500"
                                 }`}
                               >
@@ -294,7 +292,7 @@ export function PlanDecisionActions({
               type="button"
               onClick={submitReturn}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60"
+              className={approvalActionClassName("confirm")}
             >
               <CornerUpLeft className="h-4 w-4" />
               {busy ? "Returning…" : `Return${flaggedCount ? ` with ${flaggedCount} note${flaggedCount === 1 ? "" : "s"}` : ""}`}
@@ -303,13 +301,13 @@ export function PlanDecisionActions({
               type="button"
               onClick={toMenu}
               disabled={busy}
-              className="border border-slate-300 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+              className={approvalActionClassName("neutral")}
             >
               Cancel
             </button>
           </div>
         </div>
-      </section>
+      </ApprovalResponsePanel>
     );
   }
 
@@ -318,10 +316,7 @@ export function PlanDecisionActions({
     const action = mode.action;
     const needsReason = SIMPLE_REASON_REQUIRED[action];
     return (
-      <section className={shell}>
-        <header className={headerBar}>
-          <h3 className={headerText}>Your response</h3>
-        </header>
+      <ApprovalResponsePanel>
         <div className="space-y-3 px-4 py-4">
           <p className="text-sm font-bold text-slate-900">
             {needsReason ? `${SIMPLE_LABEL[action]} — provide a reason` : `Confirm: ${SIMPLE_LABEL[action]}?`}
@@ -340,42 +335,27 @@ export function PlanDecisionActions({
             />
           ) : null}
           {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => submitSimple(action)}
-              disabled={busy}
-              className="bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60"
-            >
-              {busy ? "Submitting…" : `Confirm ${SIMPLE_LABEL[action]}`}
-            </button>
-            <button
-              type="button"
-              onClick={toMenu}
-              disabled={busy}
-              className="border border-slate-300 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-            >
-              Cancel
-            </button>
-          </div>
+          <ApprovalConfirmButtons
+            busy={busy}
+            confirmLabel={`Confirm ${SIMPLE_LABEL[action]}`}
+            onConfirm={() => submitSimple(action)}
+            onCancel={toMenu}
+          />
         </div>
-      </section>
+      </ApprovalResponsePanel>
     );
   }
 
   // ── Action menu ──────────────────────────────────────────────────────────────
   return (
-    <section className={shell}>
-      <header className={headerBar}>
-        <h3 className={headerText}>Your response</h3>
-      </header>
+    <ApprovalResponsePanel>
       <div className="flex flex-wrap gap-2 px-4 py-4">
         {isEditRequestDecision ? (
           <>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve_edit" }); }} className={phxButtonApproveClassName}>
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve_edit" }); }} className={approvalActionClassName("approve")}>
               <CheckCircle2 className="h-4 w-4" /> Allow edits
             </button>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject_edit" }); }} className="inline-flex items-center gap-1.5 border border-rose-500 px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50">
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject_edit" }); }} className={approvalActionClassName("reject")}>
               <XCircle className="h-4 w-4" /> Keep locked
             </button>
           </>
@@ -383,31 +363,31 @@ export function PlanDecisionActions({
 
         {hasStandard ? (
           <>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve" }); }} className={phxButtonApproveClassName}>
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "approve" }); }} className={approvalActionClassName("approve")}>
               <CheckCircle2 className="h-4 w-4" /> Approve
             </button>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "return" }); }} className="inline-flex items-center gap-1.5 border border-amber-500 px-4 py-2 text-sm font-bold text-amber-700 hover:bg-amber-50">
+            <button type="button" onClick={() => { reset(); setMode({ kind: "return" }); }} className={approvalActionClassName("return")}>
               <CornerUpLeft className="h-4 w-4" /> Return with notes
             </button>
-            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject" }); }} className="inline-flex items-center gap-1.5 border border-rose-500 px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50">
+            <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "reject" }); }} className={approvalActionClassName("reject")}>
               <XCircle className="h-4 w-4" /> Reject
             </button>
           </>
         ) : null}
 
         {canRequestVisitDetails ? (
-          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "request_details" }); }} className="inline-flex items-center gap-1.5 border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "request_details" }); }} className={approvalActionClassName("neutral")}>
             <ListChecks className="h-4 w-4" /> Request visit details
           </button>
         ) : null}
 
         {canAcknowledge ? (
-          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "acknowledge" }); }} className="inline-flex items-center gap-1.5 bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)] transition-shadow hover:bg-black">
+          <button type="button" onClick={() => { reset(); setMode({ kind: "confirm", action: "acknowledge" }); }} className={approvalActionClassName("acknowledge")}>
             <CheckCircle2 className="h-4 w-4" /> Acknowledge (HR)
           </button>
         ) : null}
       </div>
       {error ? <p className="px-4 pb-3 text-sm font-semibold text-rose-600">{error}</p> : null}
-    </section>
+    </ApprovalResponsePanel>
   );
 }

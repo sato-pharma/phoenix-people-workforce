@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import {
   assertPermission,
   normalizeHrId,
@@ -18,7 +19,6 @@ import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { conflictError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
-import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -425,7 +425,7 @@ async function notifyHrVisibilityRecipients(input: {
   const hrRecipients = resolveHrNotificationRecipients(input.directory);
   await Promise.allSettled(
     hrRecipients.map((hr) =>
-      createSystemNotification({
+      raiseApproval({ module: "excuse", step: "fyi" }, { via: "notice", notice: {
         actionUrl: input.actionUrl,
         channels: ["in_app", "telegram", "push"],
         eventType: input.eventType,
@@ -440,7 +440,7 @@ async function notifyHrVisibilityRecipients(input: {
         recordId: String(input.metadata.requestId ?? ""),
         subjectHrId: String(input.metadata.employeeHrId ?? ""),
         title: input.title,
-      }),
+      } }),
     ),
   );
 }
@@ -472,7 +472,7 @@ async function deliverManagerOfExcuseNotice(input: {
   const verb = input.type === "resubmitted" ? "resubmitted" : "submitted";
   const message = `${input.employee.displayName} ${verb} a ${typeLabel} for ${input.request.excuseDate}.`;
   const occurrenceKey = input.occurrenceKey ?? input.request.createdAt;
-  await createSystemNotification({
+  await raiseApproval({ module: "excuse", step: "waiting" }, { via: "notice", notice: {
     actionUrl: managerActionUrl,
     actorId: input.request.employeeHrId,
     channels: ["in_app", "email", "telegram", "push"],
@@ -521,7 +521,7 @@ async function deliverManagerOfExcuseNotice(input: {
     recordId: input.request.id,
     subjectHrId: input.request.employeeHrId,
     title,
-  });
+  } });
 
   await notifyHrVisibilityRecipients({
     actionUrl: managerActionUrl,
@@ -560,7 +560,7 @@ async function deliverDecisionNotices(input: {
     // Best-effort — the manager's decision (DB update + audit log) has already committed by
     // the time callers reach this point; a notification failure (e.g. a synthetic/orphaned
     // employeeHrId tripping the notification_events.employee_hr_id FK) must never mask that.
-    await createSystemNotification({
+    await raiseApproval(approvalIdentity("excuse", input.request.status), { via: "notice", notice: {
       actionUrl,
       actorId: input.request.managerHrId,
       channels: ["in_app", "email", "telegram", "push"],
@@ -609,7 +609,7 @@ async function deliverDecisionNotices(input: {
       recordId: input.request.id,
       subjectHrId: input.request.employeeHrId,
       title,
-    });
+    } });
   } catch (error) {
     logError("Failed to notify employee of excuse decision", { labels: { event: "excuse_employee_decision_notify_failed", requestId: input.request.id }, error });
   }
@@ -1071,7 +1071,7 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
     const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
     if (ageDays < 2) continue;
     try {
-      await createSystemNotification({
+      await raiseApproval({ module: "excuse", step: "reminder" }, { via: "notice", notice: {
         channels: ["in_app", "email", "telegram", "push"],
         eventType: "excuse_sla_reminder",
         message: `${String(row.employee_name)}'s ${String(row.excuse_type)} excuse for ${String(row.excuse_date)} has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
@@ -1091,7 +1091,7 @@ export async function runExcuseSlaDaily(): Promise<{ processed: number; errors: 
           ctaLabel: "Review now",
           tone: "warning" as const,
         },
-      });
+      } });
       processed++;
     } catch {
       errors++;

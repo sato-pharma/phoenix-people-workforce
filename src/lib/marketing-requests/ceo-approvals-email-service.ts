@@ -1,3 +1,4 @@
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import { createHash } from "node:crypto";
 
 import { systemEmail } from "@/config/system-settings";
@@ -31,7 +32,6 @@ import {
   type ApprovedRequestsRecipient,
 } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
-import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -202,7 +202,7 @@ export async function sendMarketingCeoApprovalsEmail(
   const idempotencyKey = `marketing-approved-requests:${fingerprint}`;
   const senderEmail = String(sender?.email ?? "").trim();
 
-  const result = await sendPhoenixEmail({
+  const result = await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendPhoenixEmail({
     cc: recipients.cc.map((person) => person.email),
     from: `${content.senderName} via Phoenix <${systemEmail.defaultFromEmail}>`,
     html,
@@ -212,7 +212,7 @@ export async function sendMarketingCeoApprovalsEmail(
     subject,
     text,
     to: recipients.to.map((person) => person.email),
-  });
+  }) });
   const sentAtIso = new Date().toISOString();
 
   await writeRequiredAuditLog({
@@ -239,8 +239,7 @@ export async function sendMarketingCeoApprovalsEmail(
   // The email is the act; the bell and Telegram copies never hold up his answer.
   await afterResponse("marketing_notice:approved_requests_sent", async () => {
     try {
-      await createSystemNotificationForRecipients(
-        {
+      await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "notices", notice: {
           category: "general",
           channels: ["in_app", "telegram"],
           eventType: APPROVED_REQUESTS_EMAIL_EVENT,
@@ -249,9 +248,7 @@ export async function sendMarketingCeoApprovalsEmail(
           module: APPROVED_REQUESTS_EMAIL_MODULE,
           priority: "normal",
           title: subject,
-        },
-        recipients.notifyHrIds,
-      );
+        }, recipientHrIds: recipients.notifyHrIds });
     } catch (error) {
       logError("marketing_approved_requests_notice_failed", {
         error,

@@ -1,3 +1,4 @@
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
@@ -14,7 +15,6 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
-import { createSystemNotification } from "@/lib/notifications/system";
 import {
   probationDaysRemaining,
   probationEndDate as canonicalProbationEndDate,
@@ -1110,7 +1110,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
       : `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`;
     const reminderManagerName = employee.managerName ?? managerOf(employee, employees)?.displayName ?? "Team";
     const actionUrl = `/api/probation/redirect?employeeHrId=${encodeURIComponent(employee.hrId)}`;
-    const notificationResult = await createSystemNotification({
+    const notificationResult = await raiseApproval({ module: "probation", step: "reminder" }, { via: "notice", notice: {
       actionUrl,
       actorId: "system",
       email: {
@@ -1175,7 +1175,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
       recordId: event.id,
       subjectHrId: employee.hrId,
       title: event.subject ?? "Probation reminder",
-    });
+    } });
     const notificationResults = [notificationResult];
     const deliverySent = notificationResults.some((result) => result.deliveries.some((delivery) => delivery.status === "sent"));
 

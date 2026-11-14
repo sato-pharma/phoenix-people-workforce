@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { randomUUID } from "node:crypto";
 import { getVacationVisibilityScope, isAllVacationVisibilityAccess } from "@/lib/vacation/visibility-scope";
 
@@ -33,7 +34,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { continuousServiceStartDate, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
-import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
+import type { SystemNotificationChannel } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { afterResponse } from "@/lib/http/after-response";
 import { isUuid } from "@/lib/http/uuid";
@@ -2250,8 +2251,7 @@ async function notifyRecipients(input: {
     ).values(),
   );
 
-  await createSystemNotificationForRecipients(
-    {
+  await raiseApproval(approvalIdentity("leave", input.type), { via: "notices", notice: {
       ...(input.channels ? { channels: input.channels } : {}),
       actionUrl: input.href,
       category: "vacation_request",
@@ -2266,9 +2266,7 @@ async function notifyRecipients(input: {
       priority: "high",
       subjectHrId: input.subjectHrId ?? undefined,
       title: input.title,
-    },
-    recipientHrIds,
-  );
+    }, recipientHrIds: recipientHrIds });
 }
 
 async function notifyVacationSubmittedByGovernance(input: {
@@ -2366,7 +2364,7 @@ async function notifyVacationSubmittedByGovernance(input: {
       // Sequential submit email is sent once above: primary manager TO, visibility approvers CC.
       // Per-recipient notification records remain in-app/Telegram only.
       const isPrimaryEmailRecipient = !sequential && samePrimaryRecipient(recipient);
-      return createSystemNotification({
+      return raiseApproval({ module: "leave", step: "waiting" }, { via: "notice", notice: {
         actionUrl: actionCenterUrl,
         category: "vacation_request",
         channels: sequential || !isPrimaryEmailRecipient ? ["in_app", "telegram"] : ["in_app", "email", "telegram"],
@@ -2409,7 +2407,7 @@ async function notifyVacationSubmittedByGovernance(input: {
           buttons: telegramButtons,
         },
         title: input.title,
-      });
+      } });
     }),
     submitEmail,
   ]);
@@ -2469,7 +2467,7 @@ async function dispatchVacationInformed(input: {
 
   const href = `/hr/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   for (const informedHrId of informedHrIds) {
-    await createSystemNotification({
+    await raiseApproval({ module: "leave", step: "fyi" }, { via: "notice", notice: {
       actionUrl: href,
       category: "vacation_request",
       channels: ["in_app", "email", "telegram"],
@@ -2498,7 +2496,7 @@ async function dispatchVacationInformed(input: {
       recordId: input.request.id,
       subjectHrId: input.request.employeeHrId,
       title: `${input.request.employeeName} requested ${vacationTypeLabel(input.request.vacationType)}`,
-    });
+    } });
   }
 }
 
@@ -2640,7 +2638,7 @@ async function dispatchVacationNextManagerStep(input: {
   // Gap 3: call createSystemNotification directly (not notifyRecipients) so we can attach
   // a Telegram "Review Request" button — mirroring exactly what the direct manager received
   // on submission. notifyRecipients doesn't expose the telegram.buttons param.
-  await createSystemNotification({
+  await raiseApproval({ module: "leave", step: "waiting" }, { via: "notice", notice: {
     actionUrl: actionHref,
     category: "vacation_request",
     // Email is delivered by the templated sendVacationManagerDecisionEmail below; keep this
@@ -2665,7 +2663,7 @@ async function dispatchVacationNextManagerStep(input: {
     subjectHrId: input.request.employeeHrId,
     telegram: { buttons: [{ label: "Review Request", url: actionHref }] },
     title: `${input.request.employeeName}'s vacation request needs your approval`,
-  });
+  } });
   await notifyRecipients({
     channels: ["in_app", "telegram", "push"],
     href: `/employee-portals/vacation-report?requestId=${encodeURIComponent(input.request.id)}`,

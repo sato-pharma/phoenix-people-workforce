@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { randomUUID } from "node:crypto";
 
 import { unstable_cache } from "next/cache.js";
@@ -91,7 +92,7 @@ import {
   assertMarketingWorkflowTransition,
   toMarketingRequestWorkflowStatus,
 } from "@/lib/marketing-requests/workflow";
-import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
+import { logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
 import { marketingInboxWaitingLabel, summarizeMarketingInboxWaiting } from "@/lib/marketing-requests/inbox-waiting";
@@ -3321,7 +3322,7 @@ async function notifyMarketingWorkflow(params: {
     returnedByName: cleanText(params.metadata?.returnedByName as string | null | undefined),
   });
 
-  await createSystemNotification({
+  await raiseApproval(approvalIdentity("marketing", params.eventType), { via: "notice", notice: {
     actionUrl: marketingActionUrl(params.request.id),
     actorId: params.actorHrId,
     email: {
@@ -3346,7 +3347,7 @@ async function notifyMarketingWorkflow(params: {
     subjectHrId: params.request.requesterHrId,
     telegram: isAssigned ? { buttons: marketingTelegramButtons(params.request.id) } : undefined,
     title: params.title,
-  }).catch((error) => {
+  } }).catch((error) => {
     // Best-effort, but no longer silent — surface so a broken marketing notification is visible.
     logError("Marketing workflow notification failed", {
       labels: { event: "marketing_notification_failed", eventType: params.eventType, requestId: params.request.id },
@@ -8557,7 +8558,7 @@ export async function createMarketingRequestDraft(
     }
     await afterResponse("marketing_notice:request_submitted", async () => {
       const requesterDisplayName = employeeNameByHrId(employeeRows, request.requesterHrId) || request.requesterHrId;
-      await createSystemNotification({
+      await raiseApproval({ module: "marketing", step: "waiting" }, { via: "notice", notice: {
         actionUrl: marketingActionUrl(request.id),
         actorId: request.requesterHrId,
         channels: ["in_app", "telegram", "push"],
@@ -8575,7 +8576,7 @@ export async function createMarketingRequestDraft(
         recordId: request.id,
         subjectHrId: request.requesterHrId,
         title: "Marketing request submitted",
-      }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
+      } }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
     });
 
     refreshSharedTradeCounterparties("marketing request submitted");

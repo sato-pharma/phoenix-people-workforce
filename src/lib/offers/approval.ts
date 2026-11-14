@@ -20,12 +20,12 @@
  * `afterResponse`, and a notice that failed must never undo or block the decision.
  */
 
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import type { OfferRecord } from "@/lib/offers/types";
 import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
 import { resolveHrIdsForRole } from "@/lib/notifications/role-recipients";
 import {
-  createSystemNotificationForRecipients,
   logNotificationSendFailure,
   type SystemNotificationChannel,
 } from "@/lib/notifications/system";
@@ -98,8 +98,7 @@ export async function announceOfferAwaitingApproval(offer: OfferNoticeFields, re
       });
       return;
     }
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ module: "offer", step: "waiting" }, { via: "notices", notice: {
         actionUrl: "/offers",
         actorId: requestedBy,
         channels: [...OFFER_APPROVAL_CHANNELS],
@@ -115,9 +114,7 @@ export async function announceOfferAwaitingApproval(offer: OfferNoticeFields, re
         priority: "high",
         recordId: offerId,
         title: offerApprovalRequestTitle(offer),
-      },
-      approvers.hrIds,
-    );
+      }, recipientHrIds: approvers.hrIds });
   } catch (error) {
     logNotificationSendFailure("offerApproval.announceAwaitingApproval", error);
   }
@@ -135,8 +132,7 @@ export async function announceOfferApprovalDecision(
   const approved = decision.outcome === "approved";
   const reason = String(decision.reason ?? "").trim();
   try {
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ decision: approved ? "approved" : "rejected", module: "offer", step: "decided" }, { via: "notices", notice: {
         actionUrl: "/offers",
         actorId: decision.by,
         channels: ["in_app", "push"],
@@ -155,9 +151,7 @@ export async function announceOfferApprovalDecision(
         title: approved
           ? `Offer approved and sent: ${stated(offer.candidateName)}`
           : `Offer rejected — back to draft: ${stated(offer.candidateName)}`,
-      },
-      [requester],
-    );
+      }, recipientHrIds: [requester] });
   } catch (error) {
     logNotificationSendFailure("offerApproval.announceDecision", error);
   }

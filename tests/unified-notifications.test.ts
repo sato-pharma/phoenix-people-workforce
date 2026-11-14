@@ -104,7 +104,8 @@ export function runUnifiedNotificationsTests() {
     "src/lib/vacation/service.ts",
   ];
   for (const file of migratedProducerFiles) {
-    assert.match(source(file), /createSystemNotification/, `${file} must route automated notification through createSystemNotification`);
+    // REC-032: an approval notice reaches createSystemNotification through the one door, raiseApproval.
+    assert.match(source(file), /createSystemNotification|raiseApproval\(/, `${file} must route automated notification through createSystemNotification`);
     assert.doesNotMatch(source(file), /from "@\/lib\/notifications\/email"/, `${file} must not import legacy notification email helper directly`);
   }
 

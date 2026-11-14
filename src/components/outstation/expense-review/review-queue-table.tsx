@@ -4,7 +4,6 @@ import { AlertTriangle, ArrowRight, Check, ChevronsDownUp, ChevronsUpDown, Eye, 
 import { Fragment, type ReactNode, useState } from "react";
 
 import {
-  CrmButton,
   CrmCard,
   CrmCardsOnPhone,
   CrmEmpty,
@@ -16,6 +15,7 @@ import {
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { APPROVAL_ACTION_LABEL, approvalActionClassName } from "@/components/approvals-hub/approval-action-kit";
 import { TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
@@ -296,12 +296,13 @@ function DecisionCell({ actions, record }: { actions: RowActions; record: Loaded
       <DecisionPill decision={decision} record={record} unsaved={actions.isUnsaved(record)} />
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {actions.canDecide && !imported && state === "pending" ? (
-          <CrmButton
+          <button
+            type="button"
+            className={approvalActionClassName("approve", "dense")}
             data-quick-approve
             data-row-block={blocked ?? undefined}
             disabled={blocked !== null}
             onClick={() => actions.onQuickApprove(record)}
-            size="sm"
             title={
               blocked === "reason"
                 ? "A changed amount needs its reason — open the trip to write it"
@@ -309,20 +310,19 @@ function DecisionCell({ actions, record }: { actions: RowActions; record: Loaded
                   ? "Days with no visit and no meeting — open the trip to approve it with its pre-cut"
                   : "Approve as it stands; Save commits it"
             }
-            variant="success"
           >
-            <Check aria-hidden className="h-3.5 w-3.5" /> Approve
-          </CrmButton>
+            <Check aria-hidden className="h-3.5 w-3.5" /> {APPROVAL_ACTION_LABEL.approve}
+          </button>
         ) : null}
         {actions.canDecide && !imported && state !== "pending" ? (
-          <CrmButton onClick={() => actions.onUndo(record.tripId)} size="sm" variant="secondary">
+          <button type="button" className={approvalActionClassName("neutral", "dense")} onClick={() => actions.onUndo(record.tripId)}>
             <Undo2 aria-hidden className="h-3.5 w-3.5" />
             {state === "approved" ? "Unapprove" : "Undo rejection"}
-          </CrmButton>
+          </button>
         ) : null}
-        <CrmButton data-open-trip onClick={() => actions.onOpen(record.tripId)} size="sm" variant="secondary">
-          <Eye aria-hidden className="h-3.5 w-3.5" /> Review
-        </CrmButton>
+        <button type="button" className={approvalActionClassName("neutral", "dense")} data-open-trip onClick={() => actions.onOpen(record.tripId)}>
+          <Eye aria-hidden className="h-3.5 w-3.5" /> {APPROVAL_ACTION_LABEL.review}
+        </button>
       </div>
     </div>
   );
