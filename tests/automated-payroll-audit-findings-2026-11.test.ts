@@ -32,6 +32,7 @@ const NON_EMPLOYEES = read("../src/lib/automated-payroll/non-employees.ts");
 const RECURRING = read("../src/lib/automated-payroll/non-employee-recurring.ts");
 const WIZARD = read("../src/components/automated-payroll/automated-payroll-wizard.tsx");
 const PAID_OUTSIDE_PANEL = read("../src/components/automated-payroll/held-paid-outside-panel.tsx");
+const RECOMMENDATION_STEP = read("../src/components/automated-payroll/recommendation-step.tsx");
 
 /** One exported function's body: from its declaration to the next top-level `export`. */
 function bodyOf(source: string, declaration: string): string {
@@ -145,6 +146,13 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     PAID_OUTSIDE_PANEL,
     /hint=\{chosen \? <span className="md:hidden">\{choiceLabel\(chosen\)\}<\/span> : undefined\}/,
     "on a phone the chosen person, month and amount show in full under the picker",
+  );
+  // At 375px the Confirmed badge shared a row that could not wrap with the two Excel buttons and was
+  // squeezed to "Co" (owner, 14 Nov 2026): the row wraps, and the badge never shrinks.
+  assert.match(
+    RECOMMENDATION_STEP,
+    /<div className="flex flex-wrap items-center gap-2">\s*\{confirmed \? \(\s*<Badge variant="success" className="shrink-0 gap-1">/,
+    "the Confirmed badge and the Excel buttons wrap on a phone instead of cutting the badge",
   );
 
   // ---- FINDING 10: a step goes back to pending BEFORE its figures are written ---------------------------
