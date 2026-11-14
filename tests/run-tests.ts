@@ -2672,6 +2672,7 @@ import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts"
 import { runLineVacanciesManagerReadableReasonTests } from "./line-vacancies-manager-readable-reason.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
+import { runEmployeeStoredAreaGuardTests } from "./employee-stored-area-guard.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
 import { runVacanciesEmptySeatsTests } from "./vacancies-empty-seats.test.ts";
 import { runOrganogramTileEmployeeActionsTests } from "./organogram-tile-employee-actions.test.ts";
@@ -10269,6 +10270,11 @@ await runTest(
 await runTest(
   "Employee Master operating-area picker (an area with line_id NULL belongs to every line -- Pedia can hire into Beni Suef)",
   runEmployeeAreaLineOptionsTests,
+);
+
+await runTest(
+  "Employee Master stored area (an edit never empties the area of someone who holds a seat, and the form offers the area on the record)",
+  runEmployeeStoredAreaGuardTests,
 );
 
 await runTest(
