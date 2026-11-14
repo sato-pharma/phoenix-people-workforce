@@ -33,10 +33,11 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     );
   }
 
-  if (!process.env.SYNTHETIC_ADMIN_HR_ID || !process.env.SYNTHETIC_ADMIN_PASSWORD) {
+  if (!process.env.SYNTHETIC_ADMIN_HR_ID || !process.env.SYNTHETIC_ADMIN_PASSWORD || !process.env.SYNTHETIC_ADMIN_TOTP_SECRET) {
     throw new Error(
-      "Missing SYNTHETIC_ADMIN_HR_ID and/or SYNTHETIC_ADMIN_PASSWORD. These must be set to a " +
-        "Super Admin test account's credentials for the target environment. See tests/synthetic/README.md.",
+      "Missing SYNTHETIC_ADMIN_HR_ID, SYNTHETIC_ADMIN_PASSWORD and/or SYNTHETIC_ADMIN_TOTP_SECRET. These must be set to a " +
+        "Super Admin test account's credentials for the target environment, including its authenticator key " +
+        "(a Super Admin's password sign-in also asks for a code). See tests/synthetic/README.md.",
     );
   }
 }

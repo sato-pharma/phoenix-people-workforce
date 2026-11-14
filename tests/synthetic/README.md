@@ -32,10 +32,11 @@ affects the other.
 | `SYNTHETIC_BASE_URL` | yes | URL of the environment to test, e.g. `http://localhost:3000`. |
 | `SYNTHETIC_ADMIN_HR_ID` | yes | HR_ID of a Super Admin test account (Phoenix Workforce login is HR_ID + password — there is no email login). |
 | `SYNTHETIC_ADMIN_PASSWORD` | yes | Password for that account. |
+| `SYNTHETIC_ADMIN_TOTP_SECRET` | yes | That account's authenticator key (base32). A Super Admin's password sign-in also asks for a 6-digit code (`docs/security/second-sign-in-step.md`); the setup makes the current code from this key and types it. For production it was set up on the server on 14 Nov 2026 and exists only as the repository secret. |
 | `SYNTHETIC_ALLOW_PRODUCTION` | no | Set to `true` to allow `SYNTHETIC_BASE_URL` to point at `phoenix-hr.satopharma.com`. Unset/anything else refuses to run. |
 | `SYNTHETIC_ALLOW_MUTATION` | no | Reserved for future mutating journeys. Has no effect today — none of the current journeys mutate data. |
 
-If any of the three required variables are missing, or `SYNTHETIC_BASE_URL`
+If any of the four required variables are missing, or `SYNTHETIC_BASE_URL`
 points at production without the flag, the run aborts immediately with a
 plain-English error before any browser opens — see `helpers/global-setup.ts`.
 
@@ -55,6 +56,7 @@ pnpm exec playwright install chromium
 export SYNTHETIC_BASE_URL=http://localhost:3000
 export SYNTHETIC_ADMIN_HR_ID=<a real local Super Admin HR_ID>
 export SYNTHETIC_ADMIN_PASSWORD=<its password>
+export SYNTHETIC_ADMIN_TOTP_SECRET=<its authenticator key>
 pnpm run synthetic:test
 ```
 
@@ -147,15 +149,16 @@ Full report: tests/synthetic/report/latest.md
 
 ## Troubleshooting
 
-- **"Missing required env var SYNTHETIC_BASE_URL" / HR_ID / PASSWORD** — set
+- **"Missing required env var SYNTHETIC_BASE_URL" / HR_ID / PASSWORD / TOTP_SECRET** — set
   the missing variable(s) and re-run; nothing ran yet.
 - **"SYNTHETIC_BASE_URL points at production. Refusing to run."** — you're
   targeting `phoenix-hr.satopharma.com`. Only set
   `SYNTHETIC_ALLOW_PRODUCTION=true` if you explicitly intend a read-only
   smoke run against production.
 - **The `setup` project (authenticate as synthetic admin) fails/times out**
-  — usually wrong `SYNTHETIC_ADMIN_HR_ID`/`SYNTHETIC_ADMIN_PASSWORD`, or the
-  account isn't Super Admin, or `SYNTHETIC_BASE_URL` isn't reachable. All
+  — usually wrong `SYNTHETIC_ADMIN_HR_ID`/`SYNTHETIC_ADMIN_PASSWORD`, a
+  `SYNTHETIC_ADMIN_TOTP_SECRET` that is not the account's current key (its second
+  step was reset or set up again), or the account isn't Super Admin, or `SYNTHETIC_BASE_URL` isn't reachable. All
   journeys depend on this step and will show as skipped if it fails.
 - **A single journey fails** — check its entry in
   `tests/synthetic/report/latest.md` for the error, console/network errors,

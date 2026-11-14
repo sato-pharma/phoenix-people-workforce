@@ -178,7 +178,12 @@ What is left, and known:
 - 🔴 **Until an account is set up, its password alone still opens it, and whoever signs in first with the
   password chooses the phone.** The step protects an account from the moment it is set up, not from the
   moment this shipped. Set both Super Admin accounts up as soon as it is live. The Phoenix System
-  Administrator account has no person and no passkey: somebody must set it up, or it should be switched off.
+  Administrator account (`admin-HR`) has no person and no passkey; its only user is the production smoke
+  test (`.github/workflows/synthetic-journeys.yml`). **Set up 14 Nov 2026, 02:26 Cairo, on the server**: the
+  key went straight to the repository secret `SYNTHETIC_ADMIN_TOTP_SECRET` and was never shown, its 10
+  recovery codes were not kept (another Super Admin can reset it), and `tests/synthetic/helpers/auth.setup.ts`
+  types the current code at every run. Resetting its step breaks the smoke test until it is set up again
+  and the secret replaced.
 - **Adding a passkey asked only for a live session**, and a passkey counts as both steps, so a stolen
   session could add a passkey that outlived a reset of the second step and a password change. **Closed 14
   Nov 2026:** for an account the step is asked of, `app/api/auth/biometric/register/options/route.ts` asks

@@ -142,15 +142,19 @@ jobs:
         env:
           HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
           PASSWORD: ${{ secrets.SYNTHETIC_ADMIN_PASSWORD }}
+          # The account is a Super Admin, so its password sign-in also asks for an authenticator
+          # code; this is the account's authenticator key (set up on the server, 14 Nov 2026).
+          TOTP_SECRET: ${{ secrets.SYNTHETIC_ADMIN_TOTP_SECRET }}
         run: |
           missing=""
           [ -z "$HR_ID" ] && missing="$missing SYNTHETIC_ADMIN_HR_ID"
           [ -z "$PASSWORD" ] && missing="$missing SYNTHETIC_ADMIN_PASSWORD"
+          [ -z "$TOTP_SECRET" ] && missing="$missing SYNTHETIC_ADMIN_TOTP_SECRET"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository secret(s):$missing — create a dedicated read-only Super Admin account and add them under Settings → Secrets and variables → Actions. See tests/synthetic/README.md."
             exit 1
           fi
-          echo "Both synthetic credentials are present."
+          echo "All three synthetic credentials are present."
 
       # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`, setup-node resolves
       # the pnpm binary while configuring the cache. Same ordering as ci.yml.
@@ -246,6 +250,7 @@ jobs:
           SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
           SYNTHETIC_ADMIN_HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
           SYNTHETIC_ADMIN_PASSWORD: ${{ secrets.SYNTHETIC_ADMIN_PASSWORD }}
+          SYNTHETIC_ADMIN_TOTP_SECRET: ${{ secrets.SYNTHETIC_ADMIN_TOTP_SECRET }}
           # Required for the suite to accept a production base URL at all. Journeys stay read-only
           # regardless; SYNTHETIC_ALLOW_MUTATION is deliberately never set here.
           SYNTHETIC_ALLOW_PRODUCTION: "true"
