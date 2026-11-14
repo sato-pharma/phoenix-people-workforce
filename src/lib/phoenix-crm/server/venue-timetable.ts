@@ -39,6 +39,7 @@ import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/ser
 import { judgeScheduleBoard, readScheduleBoard, recordPlaceSchedule, type ScheduleBoardReading } from "@/lib/phoenix-crm/server/schedule-check";
 import { signboardNameIsUsable } from "@/lib/phoenix-crm/signboard-rules";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { quotedInList } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -221,7 +222,7 @@ export async function runLostTimetableRereads(
       .eq("is_test", false)
       .not("shared_place_id", "is", null)
       .not("photo_path", "is", null)
-      .or(`schedule_check.is.null,and(schedule_check->>verdict.eq.unjudged,schedule_check->>reason.in.(${SCHEDULE_REREAD_REASONS.join(",")}))`);
+      .or(`schedule_check.is.null,and(schedule_check->>verdict.eq.unjudged,schedule_check->>reason.in.(${quotedInList(SCHEDULE_REREAD_REASONS.map(String))}))`);
     // 🔴 Past the rows already walked, or the rows the night rules out would be all it ever saw.
     if (after) backlog = backlog.gt("id", after);
     // Each page is under PostgREST's 1,000-row ceiling by construction.
