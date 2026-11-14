@@ -759,7 +759,6 @@ export async function WorkspaceProbationPage() {
       title="Probation Tracker"
     >
       <EmployeeProbationDashboard
-        canSubmitManagerFeedback={["District Manager", "Regional Manager", "National Sales Manager", "Manager"].includes(access.role)}
         initialData={initialData ?? []}
       />
     </WorkspaceFrame>
