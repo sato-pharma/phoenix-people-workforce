@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   NEVER_TOUCH_PATHS,
@@ -6,6 +7,7 @@ import {
   STAGING_ORIGIN,
   classifyRequest,
   maskPathIds,
+  sanitizeErrorText,
   sanitizeUrlForLog,
 } from "../scripts/phoenix-inspect/lib/fence.mjs";
 
@@ -103,4 +105,28 @@ export function runPhoenixInspectFenceTests() {
   assert.equal(maskPathIds("/x/0f8fad5b-d9cb-469f-a165-70867728950e"), "/x/:uuid");
   assert.equal(maskPathIds("/x/%D8%A3%D8%AD%D9%85%D8%AF"), "/x/:text", "an encoded name is masked");
   assert.equal(maskPathIds("/admin/kpis"), "/admin/kpis", "ordinary segments are kept");
+
+  // An error is recorded as its first line, with every address masked and long digit runs zeroed:
+  // Playwright's call log quotes the link it waited on (14 Nov 2026, a rep number in the manifest).
+  const esc = String.fromCharCode(27);
+  const timedOut = [
+    "locator.click: Timeout 30000ms exceeded.",
+    "Call log:",
+    `${esc}[2m  - waiting for locator('a[href*="rep="]').first()${esc}[22m`,
+    `${esc}[2m    - locator resolved to <a href="/admin/kpis?month=2026-08&tab=coverage&rep=8123">Sammy Example</a>${esc}[22m`,
+  ].join("\n");
+  assert.equal(sanitizeErrorText(timedOut, STAGING_ORIGIN), "locator.click: Timeout 30000ms exceeded.", "the call log never travels");
+  const failedGoto = sanitizeErrorText(
+    `page.goto: net::ERR_ABORTED at ${STAGING_ORIGIN}/admin/kpis/call-rate/crm%3A8123?month=2026-08&rep=8123`,
+    STAGING_ORIGIN,
+  );
+  assert.equal(failedGoto, "page.goto: net::ERR_ABORTED at /admin/kpis/call-rate/:text?month=…&rep=…", "an address in the first line is masked");
+  assert.equal(sanitizeErrorText("waiting for /employee-portals/kpis/call-rate/Z-9043?rep=1", STAGING_ORIGIN), "waiting for /employee-portals/kpis/call-rate/:id?rep=…");
+  assert.equal(sanitizeErrorText("row 81234 of 99", STAGING_ORIGIN), "row 00000 of 99", "a long number outside an address is masked");
+  assert.ok(!/8123|Sammy|9043/.test(`${sanitizeErrorText(timedOut, STAGING_ORIGIN)}${failedGoto}`), "no id or name survives");
+
+  // Every place the capture records an error goes through it.
+  const capture = readFileSync(new URL("../scripts/phoenix-inspect/lib/capture.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(capture, /\.error = String\(/, "no error is recorded raw");
+  assert.equal((capture.match(/sanitizeErrorText\(error\.message, origin/g) ?? []).length, 4, "sign-in, navigation, capture and the denied probe");
 }

@@ -11,7 +11,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { classifyRequest, collectPageStoppedWrites, installFence, sanitizeUrlForLog } from "./fence.mjs";
+import { classifyRequest, collectPageStoppedWrites, installFence, sanitizeErrorText, sanitizeUrlForLog } from "./fence.mjs";
 import { measurePageCall, summarizeMeasurements } from "./measure.mjs";
 import { SAFE_WORDS, findAriaLeaks, maskDocument, maskString, pageCall, sanitizeAriaSnapshot, verifyDocument } from "./redact.mjs";
 import { RUN_BOUNDS, VIEWPORTS, classifyControl } from "./safety.mjs";
@@ -77,7 +77,7 @@ export async function signIn(browser, origin, loginId, password) {
           maxRedirects: 0,
         });
       } catch (error) {
-        if (attempt === 2) return { ok: false, status: null, code: `network-error: ${String(error.message).split("\n")[0].slice(0, 120)}`, state: null };
+        if (attempt === 2) return { ok: false, status: null, code: `network-error: ${sanitizeErrorText(error.message, origin, 120)}`, state: null };
         await new Promise((resolve) => setTimeout(resolve, 5_000));
       }
     }
@@ -214,14 +214,17 @@ export async function captureOne(browser, job) {
     const verdict = classifyRequest({ method: "GET", url: target }, { origin });
     if (!verdict.allow) throw Object.assign(new Error(`address refused by the fence: ${verdict.reason}`), { outcome: "refused" });
     let response = await page.goto(target, { waitUntil: "domcontentloaded" }).catch((error) => {
-      throw Object.assign(new Error(`navigation failed: ${String(error.message).split("\n")[0].slice(0, 160)}`), { outcome: "navigation-failed" });
+      throw Object.assign(new Error(`navigation failed: ${sanitizeErrorText(error.message, origin, 160)}`), { outcome: "navigation-failed" });
     });
     steps.push(`goto ${entry.requested} -> ${response?.status() ?? "no response"}`);
     await settle(page);
 
     if (state.followFirst) {
-      const link = page.locator(state.followFirst).first();
-      if ((await link.count()) === 0) throw Object.assign(new Error(`no element matches ${state.followFirst}`), { outcome: "not-present" });
+      // The first link a person can SEE: the board renders a desktop table and phone cards side by side
+      // and hides one, so a plain .first() picked the hidden card's link on desktop and the click waited
+      // 30 s for it (14 Nov 2026, three drill-downs).
+      const link = page.locator(state.followFirst).filter({ visible: true }).first();
+      if ((await link.count()) === 0) throw Object.assign(new Error(`no visible element matches ${state.followFirst}`), { outcome: "not-present" });
       const { verdict: control } = await vetControl(link, origin);
       if (!control.allowed) throw Object.assign(new Error(`link refused: ${control.reason}`), { outcome: "refused" });
       await Promise.all([page.waitForURL((url) => url.href !== page.url(), { timeout: 60_000 }).catch(() => {}), link.click()]);
@@ -282,7 +285,7 @@ export async function captureOne(browser, job) {
         await held;
         await route.continue().catch(() => {});
       });
-      const link = page.locator('a[href*="/kpis/frequency"]').first();
+      const link = page.locator('a[href*="/kpis/frequency"]').filter({ visible: true }).first();
       if ((await link.count()) === 0) throw Object.assign(new Error("no link to a sibling KPIs page to navigate through"), { outcome: "not-present" });
       const { verdict: control } = await vetControl(link, origin);
       if (!control.allowed) throw Object.assign(new Error(`link refused: ${control.reason}`), { outcome: "refused" });
@@ -293,7 +296,7 @@ export async function captureOne(browser, job) {
     }
     if (state.mock === "error") {
       await page.route(/[?&]_rsc=/, (route) => route.fulfill({ status: 500, body: "mock failure" }));
-      const tab = page.locator('a[href*="tab=am-pm"], a[href*="/kpis/coverage"]').first();
+      const tab = page.locator('a[href*="tab=am-pm"], a[href*="/kpis/coverage"]').filter({ visible: true }).first();
       if ((await tab.count()) === 0) throw Object.assign(new Error("no tab link to navigate through"), { outcome: "not-present" });
       const { verdict: control } = await vetControl(tab, origin);
       if (!control.allowed) throw Object.assign(new Error(`link refused: ${control.reason}`), { outcome: "refused" });
@@ -381,7 +384,7 @@ export async function captureOne(browser, job) {
     entry.sourceCandidates = sourceIndexLookup(keptTexts);
   } catch (error) {
     entry.outcome = error.outcome ?? "error";
-    entry.error = String(error.message).slice(0, 300);
+    entry.error = sanitizeErrorText(error.message, origin, 300);
     for (const file of files) rmSync(file, { force: true });
     entry.image = null;
   } finally {
@@ -430,7 +433,7 @@ export async function probeDenied(browser, job) {
     }
   } catch (error) {
     result.outcome = "navigation-failed";
-    result.error = String(error.message).split("\n")[0].slice(0, 200);
+    result.error = sanitizeErrorText(error.message, origin, 200);
   } finally {
     await collectPageStoppedWrites(page, { origin }, stopped).catch(() => {});
     await context.close().catch(() => {});

@@ -179,6 +179,29 @@ export function sanitizeUrlForLog(url, policyOrigin) {
   return `${maskPathIds(target.pathname)}${query}`;
 }
 
+/**
+ * An error message as a manifest, a log or a tool reply may keep it: its first line only (Playwright's
+ * call log below it quotes the element it waited for, href and text included), escape codes removed,
+ * every address reduced by sanitizeUrlForLog, and every other run of three or more digits masked (a
+ * timeout's own "30000ms" is kept). Found 14 Nov 2026: a timed-out drill-down click wrote the link it
+ * waited on, a staging rep number with it, into the run's manifest.
+ */
+export function sanitizeErrorText(message, policyOrigin, max = 200) {
+  const firstLine = String(message ?? "").replace(/\u001b\[[0-9;]*m/g, "").split("\n")[0].trim();
+  const relativeTo = (address) => {
+    try {
+      return sanitizeUrlForLog(new URL(address, policyOrigin).href, policyOrigin);
+    } catch {
+      return "(unparseable)";
+    }
+  };
+  const addressesMasked = firstLine
+    .replace(/\b(?:https?|wss?):\/\/[^\s"'<>)]*/gi, (address) => sanitizeUrlForLog(address, policyOrigin))
+    .replace(/\b(?:data|blob):[^\s"'<>)]*/gi, (address) => `${address.split(":")[0]}:(inline)`)
+    .replace(/(^|[\s"'(=])(\/[^\s"'<>)]*)/g, (whole, lead, address) => `${lead}${relativeTo(address)}`);
+  return addressesMasked.replace(/(?<!\d)\d{3,}(?!\d)(?!ms\b)/g, (digits) => "0".repeat(digits.length)).slice(0, max);
+}
+
 /** Masks path segments that look like ids: digits, uuids, hr ids, long hex, and dynamic tokens. */
 export function maskPathIds(pathname) {
   return pathname

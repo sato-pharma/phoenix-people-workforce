@@ -72,6 +72,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   <button class="tiny" type="button" aria-label="Weekly">.</button>
   <img alt="${FAKE.name}" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
   <a href="/api/crm/kpis-export?month=2026-08" download>Export XLSX</a>
+  <div class="phone-cards" style="display:none"><a href="/fixture/rep/Z-9043?month=2026-08&amp;card=1">${FAKE.name}</a></div>
   <a href="/fixture/rep/Z-9043?month=2026-08">${FAKE.name}</a>
   <form id="f" method="post" action="/api/form"><input name="x" value="1"></form>
   <div class="wide"></div>
@@ -184,7 +185,7 @@ try {
 
   // 4. Following the page's own link keeps the id out of the record.
   const followed = (await capture({ id: "follow", label: "follow", address: "/fixture", followFirst: 'a[href*="/fixture/rep/"]' }, "desktop")).entry;
-  check("a drill-down is followed by the page's own link", followed.outcome === "captured", followed.error ?? "");
+  check("a drill-down follows the first VISIBLE link, past a hidden phone-card copy", followed.outcome === "captured", followed.error ?? "");
   check("the drill-down's id is masked in the record", !JSON.stringify(followed).includes("Z-9043"));
 
   // 5. Navigation failure is an outcome, not a crash, and leaves no picture.
