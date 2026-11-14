@@ -33,7 +33,12 @@ import {
 } from "@/lib/automated-payroll/data-quality";
 import type { PayrollDayCollision } from "@/lib/automated-payroll/day-collisions";
 import type { ModuleDriftReport } from "@/lib/automated-payroll/module-drift";
-import { columnLabel, isUnbackedCharge, stepOpenDuringPart2 } from "@/lib/automated-payroll/module-sourced-steps";
+import {
+  columnLabel,
+  isUnbackedCharge,
+  stepOpenDuringPart2,
+  stepsWhereModuleMoved,
+} from "@/lib/automated-payroll/module-sourced-steps";
 import { cairoTimeLabel, describeChargeSource } from "@/lib/automated-payroll/cell-history-labels";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
@@ -819,7 +824,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     // A Part 1 deduction step a decision re-opened during Part 2 stays open, so the block Part 2's
     // confirm raises about it has a button that clears it (module-sourced-steps.ts). Re-confirming it
     // here lands the figure in Part 2; "Unconfirm Part 1" would re-freeze the paid first instalment.
-    if (run.phase === "part2" && stepPhase(stepKey) === "part1" && stepOpenDuringPart2(stepKey, stepStates)) {
+    // A confirmed one whose module figure moved since stays open too, so the drift block's "confirm it
+    // again" has a live button — the server opens exactly the same steps (assertPart1StepOpenDuringPart2).
+    if (
+      run.phase === "part2" &&
+      stepPhase(stepKey) === "part1" &&
+      stepOpenDuringPart2(stepKey, stepStates, moduleDrift ? stepsWhereModuleMoved(moduleDrift) : [])
+    ) {
       return false;
     }
     return run.phase !== stepPhase(stepKey);

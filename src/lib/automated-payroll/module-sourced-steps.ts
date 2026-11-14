@@ -195,15 +195,42 @@ export function reopenedPart1DeductionSteps(
 }
 
 /**
- * Whether the wizard lets HR save and confirm a Part 1 step while the run is in Part 2: only a step
- * `reopenedPart1DeductionSteps` names, so the block Part 2 raises always has a button that clears it.
+ * The steps whose module figure has moved since their confirm, for at least one employee — the steps
+ * the drift banner names. A Part 1 one stays open during Part 2 until it is confirmed again
+ * (`stepOpenDuringPart2`). A row whose module never moved (an unbacked charge) does not count: there is
+ * nothing new to take.
+ */
+export function stepsWhereModuleMoved(report: {
+  rows: ReadonlyArray<{ stepKey: StepKey; proposedNow: number; proposedAtConfirm: number }>;
+}): StepKey[] {
+  return [
+    ...new Set(report.rows.filter((row) => row.proposedNow !== row.proposedAtConfirm).map((row) => row.stepKey)),
+  ];
+}
+
+/**
+ * Whether the wizard lets HR save and confirm a Part 1 step while the run is in Part 2, so every block
+ * Part 2 raises has a button that clears it. Two kinds of step stay open:
+ *
+ * - a step `reopenedPart1DeductionSteps` names (a decision re-opened it);
+ * - a CONFIRMED Part 1 deduction step whose module figure has moved since its confirm
+ *   (`movedSteps`, from `stepsWhereModuleMoved`). The drift block names that step and says "confirm it
+ *   again", yet the step stayed locked, so the block could not be cleared from the screen. Measured
+ *   on the live October 2026 run, 14 Nov 2026: Esraa Awad Hemida Maatouq's 241.94 of unpaid vacation,
+ *   approved after Unpaid Vacation was confirmed, blocked Part 2 with "Re-confirm & continue" greyed
+ *   out. Re-confirming stores the module's current figures as the new snapshot, so the step locks again.
+ *
  * Every other Part 1 step stays locked once Part 1 is confirmed.
  */
 export function stepOpenDuringPart2(
   stepKey: StepKey,
   states: ReadonlyArray<{ stepKey: StepKey; status: string }>,
+  movedSteps: readonly StepKey[] = [],
 ): boolean {
-  return reopenedPart1DeductionSteps(states).includes(stepKey);
+  if (reopenedPart1DeductionSteps(states).includes(stepKey)) return true;
+  return (
+    movedSteps.includes(stepKey) && MODULE_SOURCED_STEP_KEYS.includes(stepKey) && PART1_STEP_KEYS.includes(stepKey)
+  );
 }
 
 /** The Part 2 confirm's refusal while a Part 1 deduction step is open again. */
