@@ -26,6 +26,10 @@ function formatDate(iso: string): string {
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? "—" : parsed.toISOString().slice(0, 10);
 }
+/** The first 12 characters of a file's fingerprint, in threes ("a1b 2c3 d4e 5f6"); the whole one is the tooltip. */
+export function shortFingerprint(sha256: string): string {
+  return (sha256.slice(0, 12).match(/.{1,3}/g) ?? []).join(" ");
+}
 
 /**
  * Read-only "what's uploaded this month" panel for the Sales Upload page. Pick a month and the
@@ -167,6 +171,7 @@ export function UploadedSheetsPanel({
                   { label: "Value", value: money(batch.totalValue) },
                   { label: "Uploaded", value: formatDate(batch.createdAt) },
                   { label: "File", value: batch.fileName || "—" },
+                  ...(batch.fileSha256 ? [{ label: "Fingerprint", value: shortFingerprint(batch.fileSha256) }] : []),
                 ]}
               />
             </CrmCard>
@@ -207,6 +212,13 @@ export function UploadedSheetsPanel({
                     <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
                     <span className="min-w-0 break-words">{batch.fileName || "—"}</span>
                   </span>
+                  {/* The file's fingerprint (REC-069): two rows with the same one are the same bytes,
+                      whatever they are called. Merged into the File cell — never a new column. */}
+                  {batch.fileSha256 ? (
+                    <span className="mt-0.5 block break-all font-mono text-phx-xs text-phx-ink-faint" title={batch.fileSha256}>
+                      Fingerprint {shortFingerprint(batch.fileSha256)}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2 text-right">{deleteButton(batch)}</td>
               </tr>

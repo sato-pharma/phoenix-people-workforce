@@ -505,6 +505,11 @@ export async function persistNormalizedBatch(input: {
   // period (legacy callers). The new Sales Upload commit ALWAYS passes this so a user-picked period
   // is honored and replace/insert target the same month.
   period?: string;
+  /**
+   * The fingerprint of the bytes the person chose for this batch (upload-fingerprint.ts, REC-069): stored
+   * on the batch and compared by the duplicate guard. Absent, the batch is stored without one.
+   */
+  fileSha256?: string | null;
 }): Promise<{ batchId: string; period: string | null; importedRows: number }> {
   const supabase = getSupabaseAdmin();
   const { coded } = input.result;
@@ -525,6 +530,7 @@ export async function persistNormalizedBatch(input: {
     priceMonthOf: (r) => r.invoiceDate,
     priceDistributorOf: () => input.distributorCode,
     totalRows: sheetRows.length,
+    fileSha256: input.fileSha256 ?? null,
   });
   const rows = stored.rows;
   const totalQty = stored.totalQty;
@@ -554,6 +560,7 @@ export async function persistNormalizedBatch(input: {
       recognition_engine_version: RECOGNITION_ENGINE_VERSION,
       blocking_reasons: [IMPORT_FINALIZING_REASON],
       uploaded_by: input.uploadedBy,
+      file_sha256: input.fileSha256 ?? null,
     })
     .select("id")
     .single();

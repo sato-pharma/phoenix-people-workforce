@@ -9,6 +9,7 @@ import { describeRefusedRow, isRefusedRow } from "@/lib/sales/normalizer/row-mes
 import { formFiles, formUndatedPeriod, partLabel } from "@/lib/sales/normalizer/multi-file";
 import { buildCodedFileParts, learnFromImportHistory } from "@/lib/sales/normalizer/service";
 import { combinedFileName, labelRowText } from "@/lib/sales/sales-upload-files";
+import { digestsOfNamedFiles, uploadFingerprint, uploadPartQualifier } from "@/lib/sales/upload-fingerprint";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -95,6 +96,9 @@ export async function POST(request: Request) {
         fileName: manyDistributors ? `${combinedFileName(part.fileNames)} (${part.distributorName})` : combinedFileName(part.fileNames),
         persistOnlyIfValidated: true,
         uploadedBy: access.loginId ?? access.hrId ?? "admin",
+        // The bytes the person chose, never the coded copy built from them (REC-069), told apart from
+        // the upload's other parts.
+        fileSha256: uploadFingerprint(await digestsOfNamedFiles(files, part.fileNames), uploadPartQualifier(part, parts)),
       });
 
       if (!persisted.batchId) {

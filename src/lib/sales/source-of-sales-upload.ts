@@ -29,6 +29,7 @@ import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { describeRefusedRow, isRefusedRow, summarizeRefusedRows } from "@/lib/sales/normalizer/row-messages";
 import { buildCodedBuffer } from "@/lib/sales/normalizer/service";
+import { fileSha256 } from "@/lib/sales/upload-fingerprint";
 import type { NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
 
 // Stored map → composite-key brick lookup for the preview diff (mapping sheet = source of truth).
@@ -403,6 +404,8 @@ export async function importSourceOfSalesFile(input: {
       persistOnlyIfValidated: false,
       uploadedBy: input.uploadedBy,
       periodOverride: input.periodOverride,
+      // The bytes the person chose, never the coded copy built from them (REC-069).
+      fileSha256: fileSha256(await input.file.arrayBuffer()),
     });
 
     // Surface ignored rows as an advisory so the user knows exactly how many units were excluded

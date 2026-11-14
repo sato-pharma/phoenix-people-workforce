@@ -6,6 +6,7 @@ import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contr
 import { formFiles, formUndatedPeriod, recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { persistNormalizedBatch, recognitionErrorMessage } from "@/lib/sales/normalizer/service";
 import { combinedFileName } from "@/lib/sales/sales-upload-files";
+import { digestsOfNamedFiles, uploadFingerprint, uploadPartQualifier } from "@/lib/sales/upload-fingerprint";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -52,6 +53,8 @@ export async function POST(request: Request) {
         period: part.period ?? undefined,
         result: part.result,
         uploadedBy: access.loginId ?? access.hrId ?? "admin",
+        // The bytes of the sheets this part was read from (REC-069), told apart from the upload's other parts.
+        fileSha256: uploadFingerprint(await digestsOfNamedFiles(files, part.fileNames), uploadPartQualifier(part, parts)),
       });
       batches.push({ ...persisted, distributorName: part.distributorName, exceptions: part.result.exceptions.length });
     }

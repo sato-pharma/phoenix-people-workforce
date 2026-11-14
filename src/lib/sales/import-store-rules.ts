@@ -23,6 +23,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //   2. A locked month is refused (`assertPeriodNotLocked`), and a month whose lock cannot be read too.
 //   3. The same workbook already stored under another month is refused (import-duplicate-guard.ts), on
 //      each stored batch's own month's price and deduction — only for a batch that will count as sales.
+//      The same BYTES (the file's fingerprint, REC-069) under another month or another distributor are
+//      refused first, whatever the file is called.
 // Both writers store exactly the rows and totals it returns. A new money rule for imports goes HERE.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,6 +131,11 @@ export async function applyImportStoreRules<R extends StoreRuleRow>(input: {
   totalRows: number;
   /** The sheet's own totals, stored as they are when no deduction changed a row. */
   sheetTotals?: { totalQty: number; totalValue: number };
+  /**
+   * The fingerprint of the bytes the batch is read from (upload-fingerprint.ts, REC-069). The same bytes
+   * under another month or distributor are refused in step 3; absent, only name and figures are compared.
+   */
+  fileSha256?: string | null;
 }, seams: ImportStoreRuleSeams = {}): Promise<{ rows: R[]; deducted: boolean; totalQty: number; totalValue: number }> {
   // 1. EPDA's bonus deduction.
   const rows = input.countsAsSales ? applyEpdaBonusDeduction(input.sheetRows, input.deductionMonthOf) : input.sheetRows;
@@ -163,6 +170,7 @@ export async function applyImportStoreRules<R extends StoreRuleRow>(input: {
     await (seams.assertNotADuplicate ?? assertNotADuplicateUpload)({
       distributorCode: input.distributorCode,
       fileName: input.fileName,
+      fileSha256: input.fileSha256 ?? null,
       period: input.period,
       totalRows: input.totalRows,
       totalQty: totals.totalQty,
