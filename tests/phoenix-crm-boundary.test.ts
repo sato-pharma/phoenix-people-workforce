@@ -209,6 +209,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "approve"),
+  // Declaring that a building has no timetable, or taking that back (owner, 14 Nov 2026): the Super Admin
+  // alone — `update` at the route, `canDecideSharedPlaces` in the service. It writes a screen marker.
+  post("validation-reviews/shared-place/no-timetable", "update"),
   // A PM customer's full name that matched the signboard under 60% (owner, 2026-11-07, pm-name-rules.ts):
   // `approve` at the route, and `decideHeldFullName` narrows it to the Super Admin and the SFE Manager
   // before a row is read.
