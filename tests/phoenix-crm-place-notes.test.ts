@@ -556,7 +556,14 @@ function checkDecisionCommentReachesTheRep(): void {
   assert.equal(decisionNoteIsAComment("Written before the rule", [comment("Something else")]), false);
   assert.equal(decisionNoteIsAComment(null, [comment("Anything")]), false);
   const board = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
-  assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("place", row\.placeId\)\]/);
+  // The place rows go through the one helper, which the board also runs on the older decisions it reads on
+  // the click (`place-checks-on-demand.ts`, 2026-11-14) — one rule, never a second copy.
+  assert.match(board, /withoutDecisionNotesThatAreComments\(reviews\.rows, notes\.notes\)/);
+  assert.match(
+    read("src/lib/phoenix-crm/place-checks-on-demand.ts"),
+    /decisionNoteIsAComment\(row\.decisionNote, notes\[placeNoteSubjectKey\("place", row\.placeId\)\]/,
+  );
+  assert.match(read("src/components/phoenix-crm/validation-reviews-board.tsx"), /withoutDecisionNotesThatAreComments\(everything\.olderDecided/);
   assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("shared_place", row\.sharedPlaceId\)\]/);
 
   // The rep's list carries both shapes: on a customer's card, and for an empty building inside To validate only.
@@ -624,8 +631,15 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
   assert.match(company, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the deciders' page gates on the same predicate");
   assert.match(company, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "and reads through the same loaders");
+  // The board's filter lists are built by `placeCheckOptions`, which the page also runs on the server to
+  // count the opening figures (2026-11-14, "Load lists on demand") — one list, never a second copy.
   const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
-  assert.match(board, /row\.decidedByName\),\s*\.\.\.validated\.map\(\(row\) => row\.decidedByName\),\s*\.\.\.reopened\.map\(\(row\) => row\.refusedByName\)/, "its Decided by box still lists them");
+  assert.match(board, /placeCheckOptions\(\{ team, pending, decided, everyDecided, validated, reopened, sharedPlaces \}\)/, "the board's lists are the shared ones");
+  assert.match(
+    read("src/lib/phoenix-crm/place-checks-on-demand.ts"),
+    /row\.decidedByName\),\s*\.\.\.input\.validated\.map\(\(row\) => row\.decidedByName\),\s*\.\.\.input\.reopened\.map\(\(row\) => row\.refusedByName\)/,
+    "its Decided by box still lists them",
+  );
 
   // 🔴 A COMMENT WRITTEN WITH A DECISION STILL REACHES THE MANAGER (owner, 2026-11-01). It travels as a place
   // note, through its own table, so holding back `decision_note` does not touch it.

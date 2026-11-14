@@ -1094,6 +1094,7 @@ export const accessRegistry = [
   // The Super Admin and the SFE Manager — `canDecideValidationReviews` in the loader and the answer, so a `read` here is
   // only gate one. GET is read when the tab is first opened; POST stores his "same place or different
   // places" answer on the ordered pair, or takes it back.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/everything", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-customer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),

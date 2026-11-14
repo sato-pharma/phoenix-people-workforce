@@ -5,9 +5,10 @@
  * able to filter by rep by line by region by period by field by rejected by accepted by any single
  * thing").
  *
- * The page hands this board every set at once — the places waiting for a decision, the ones decided in
- * the last two weeks, the validations the system never questioned, the customers sent back, and the
- * polyclinics. The filter bar is shared: rep, line, region, area, list and period narrow every tab, a
+ * The board holds every set — the places waiting for a decision, the ones decided in the last two
+ * weeks, the validations the system never questioned, the customers sent back, and the polyclinics. A
+ * manager's page hands all of them at once; the Super Admin's hands what Needs you draws and the board
+ * reads the rest on the first click that needs it (`onDemand`, owner, 2026-11-14). The filter bar is shared: rep, line, region, area, list and period narrow every tab, a
  * free-text box searches the names, and an outcome selector narrows to just the waiting / approved /
  * rejected / in-use rows. Every count in a heading is the filtered count.
  *
@@ -32,9 +33,10 @@
  * how one of two copies drifts; the portal mirrors removed in 2026-08 are the repo's own account of that.
  */
 
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
+import { useCrmGet } from "@/components/phoenix-crm/api";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { cn } from "@/lib/utils";
 import { CrmButton, CrmCheck, CrmField, CrmPill, CrmSearchField, CrmSelect } from "@/components/phoenix-crm/ui";
@@ -48,20 +50,32 @@ import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-revie
 import {
   decidedByMatches,
   decidedSectionTitle,
-  distinctValues,
   EMPTY_VALIDATION_REVIEW_FILTERS,
   hasActiveValidationReviewFilter,
   matchesValidationReviewFilters,
   validatedPassesOutcome,
   validationReviewPeriodCutoff,
   withinValidationReviewPeriod,
-  type ValidationReviewFilterable,
   type ValidationReviewFilters,
   type ValidationReviewOutcome,
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
 import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
-import { placeCheckScorecard, standingOfPlaceInUse, type PlaceStanding } from "@/lib/phoenix-crm/place-check-scorecard";
+import {
+  chipTakes,
+  clinicsInUse,
+  filterableReopened,
+  isReal,
+  mergeDecided,
+  PLACE_CHECKS_EVERYTHING_ROUTE,
+  placeCheckOptions,
+  placeCheckScorecardOf,
+  unconfirmedOpenCount,
+  withoutDecisionNotesThatAreComments,
+  type PlaceChecksEverything,
+  type PlaceChecksSummary,
+  type UnconfirmedChip,
+} from "@/lib/phoenix-crm/place-checks-on-demand";
 import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
@@ -105,9 +119,6 @@ const PAGE_BUILDINGS = 10;
  */
 type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "sameCustomer" | "history";
 
-/** The narrowing inside Not confirmed, each one a standing `standingOfPlaceInUse` gives a place. */
-type UnconfirmedChip = "open" | Exclude<PlaceStanding, "confirmed" | "waiting"> | "all";
-
 const CHIP_LABELS: Record<UnconfirmedChip, string> = {
   open: "Not confirmed",
   notReadable: "Not readable",
@@ -126,13 +137,6 @@ const CHIP_TITLES: Record<UnconfirmedChip, string> = {
   all: "Every clinic in use",
 };
 
-function chipTakes(chip: UnconfirmedChip, row: ValidatedPlaceRow): boolean {
-  if (chip === "all") return true;
-  if (row.reviewed) return false;
-  const standing = standingOfPlaceInUse(row);
-  return chip === "open" ? standing !== "confirmed" : standing === chip;
-}
-
 /**
  * Where a scorecard count's own rows are (owner, 2026-10-17: "make me see what is the unreadable — the
  * photos"): a photo problem or a sign never read is that standing's narrowing of Not confirmed, a place
@@ -149,16 +153,6 @@ function placeOfTarget(target: ScoreTarget): { view: PlaceCheckView; chip: Uncon
     default:
       return { view: "unconfirmed", chip: target };
   }
-}
-
-/** A row the shared filters can read, for a reopened customer who has no place on file any more. */
-function filterableReopened(row: ReopenedCustomerRow): ValidationReviewFilterable {
-  return { ...row, speciality: null, placeLabel: null, address: null, brickName: null, areaName: null };
-}
-
-/** A test entry is never drawn on this board: it is nobody's real work and nobody decides on it. */
-function isReal(row: { isTest: boolean }): boolean {
-  return !row.isTest;
 }
 
 /**
@@ -183,6 +177,27 @@ function Paged<Row>({ children, noun, rows, size }: { children: (shown: Row[]) =
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * What the board says while the click's read is on its way — every place in use and the older decisions —
+ * and, when it fails, why, with the one button that asks again.
+ */
+function ReadingEverything({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  return (
+    <AdminCallout tone={error ? "warning" : "neutral"}>
+      <span className="flex min-w-0 flex-wrap items-center gap-3">
+        <span className="min-w-0 flex-1 basis-60 break-words">
+          {error ?? "Reading every place in use and every older decision, so each list and count here is complete."}
+        </span>
+        {error ? (
+          <CrmButton onClick={onRetry} size="sm">
+            Try again
+          </CrmButton>
+        ) : null}
+      </span>
+    </AdminCallout>
   );
 }
 
@@ -216,6 +231,7 @@ export function ValidationReviewsBoard({
   capped,
   mode,
   noteIndex,
+  onDemand,
   reviewDeck,
 }: {
   /** Whose board this is — see the header. "company" is the Super Admin's and the SFE Manager's, "team" a district manager's. */
@@ -232,11 +248,21 @@ export function ValidationReviewsBoard({
   /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
   capped: { reviews: boolean; validated: boolean; reopened: boolean; sharedPlaces: boolean };
   /**
+   * 🔴 THE SUPER ADMIN'S PAGE SENDS WHAT NEEDS YOU DRAWS, AND THE REST WAITS FOR THE CLICK (owner,
+   * 2026-11-14, "Load lists on demand"; `place-checks-on-demand.ts`). With it, `validated` is only the
+   * places seated in a building and `decided` only the last 14 days; `summary` holds every opening figure
+   * counted on the server, and every place in use and every older decision are read from
+   * `PLACE_CHECKS_EVERYTHING_ROUTE` on the first click that needs them. Without it (a manager's page) the
+   * board is handed every row, as it always was.
+   */
+  onDemand?: { summary: PlaceChecksSummary; readAt: string };
+  /**
    * The one-by-one review (owner, 2026-10-18), handed in by the Super Admin's page and drawn on his
    * board alone. It is a render prop rather than an import so the review is in none of the portal's
-   * bundles; the board hands it what each of its tabs holds right now, filters applied.
+   * bundles; the board hands it what each of its tabs holds right now, filters applied, and whether it
+   * holds every row yet — the review asks for them (`want`) and opens once they are in (`ready`).
    */
-  reviewDeck?: (input: PlaceReviewDeckInput) => ReactNode;
+  reviewDeck?: (input: PlaceReviewDeckInput, everything: { ready: boolean; want: () => void; error: string | null; retry: () => void }) => ReactNode;
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
   const [view, setView] = useState<PlaceCheckView>("needs");
@@ -249,51 +275,58 @@ export function ValidationReviewsBoard({
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
+  // ── The rows the page did not send (`onDemand`) ──────────────────────────────────────────────────
+  // Asked for once, on the first click that needs them — Not confirmed, any filter or outcome, a tapped
+  // count (it sets the rep), or the review — and then kept for the visit: a re-read of the page reads them
+  // again behind the rows on screen (`readAt`), and clearing the filters never throws them away.
+  const filtering = hasActiveValidationReviewFilter(filters) || filters.outcome !== "all";
+  const [deckAsked, setDeckAsked] = useState(false);
+  const askForDeck = useCallback(() => setDeckAsked(true), []);
+  const [wanted, setWanted] = useState(false);
+  if (onDemand && !wanted && (view === "unconfirmed" || filtering || deckAsked)) setWanted(true);
+  const everythingRead = useCrmGet<PlaceChecksEverything>(onDemand && wanted ? PLACE_CHECKS_EVERYTHING_ROUTE : null, "everything");
+  const readAt = onDemand?.readAt ?? null;
+  const readAtSeen = useRef(readAt);
+  const reloadEverything = everythingRead.reload;
+  useEffect(() => {
+    if (readAtSeen.current === readAt) return;
+    readAtSeen.current = readAt;
+    // A decision re-read the page (`placeCheckReread`): what the click read is as old as the page before it.
+    if (wanted) reloadEverything();
+  }, [readAt, wanted, reloadEverything]);
+  const everything = onDemand ? everythingRead.data : null;
+  /** Whether the board holds every row: always on a manager's board, and on the Super Admin's once the click's read is in. */
+  const complete = !onDemand || everything !== null;
+
   const pending = useMemo(() => pendingRows.filter(isReal), [pendingRows]);
-  // 🔴 THE PAGE MAY HAND EVERY DECISION EVER MADE (`everyDecision`), and the board shows the older ones
-  // only while a decider is chosen — so "Decided by Khaled Bedair" answers for all of his, and with
-  // nobody chosen the board is the recent window it always was.
-  const everyDecided = useMemo(() => decidedRows.filter(isReal), [decidedRows]);
+  // 🔴 THE BOARD SHOWS THE OLDER DECISIONS ONLY WHILE A DECIDER IS CHOSEN — so "Decided by Khaled Bedair"
+  // answers for all of his, and with nobody chosen the board is the recent window it always was. A
+  // manager's page hands every decision; the Super Admin's hands the recent ones, and the older ones
+  // arrive with the click.
+  const everyDecided = useMemo(() => {
+    const recent = decidedRows.filter(isReal);
+    return everything ? mergeDecided(recent, withoutDecisionNotesThatAreComments(everything.olderDecided.filter(isReal), noteIndex.notes)) : recent;
+  }, [decidedRows, everything, noteIndex.notes]);
   const decided = useMemo(
     () => (filters.decider ? everyDecided : everyDecided.filter((row) => row.recent)),
     [everyDecided, filters.decider],
   );
-  const validated = useMemo(() => validatedRows.filter(isReal), [validatedRows]);
+  const validated = useMemo(() => (everything ? everything.validated.filter(isReal) : validatedRows.filter(isReal)), [everything, validatedRows]);
   const reopened = useMemo(() => reopenedRows.filter(isReal), [reopenedRows]);
   const sharedPlaces = useMemo(() => venueRows.filter(isReal), [venueRows]);
 
-  const everyRow = useMemo<ValidationReviewFilterable[]>(() => [...pending, ...decided, ...validated], [pending, decided, validated]);
-  // A venue's own rep, line, region and area belong in the dropdowns too: a rep who has captured a
-  // polyclinic and nothing else would otherwise be unreachable from the Rep box, and his venue could
-  // only be found by typing in the search field.
-  const reps = useMemo(
-    () => distinctValues([...everyRow.map((row) => row.repName), ...sharedPlaces.map((row) => row.repName)]),
-    [everyRow, sharedPlaces],
+  // 🔴 EVERY SENTENCE BELOW THAT NAMES A DECISION IS BEHIND THIS FLAG. A manager's board must not say
+  // "waiting for your decision", must not explain what approving or refusing does, and must not name
+  // who settled a row — the three places this board used to state the decision out loud.
+  const team = mode === "team";
+  // The filter bar's lists, counted from every row the board holds; until the click's read is in, the
+  // server counted them from every row it read. A manager's board never names a decider, so it gets no
+  // list and no box.
+  const counted = useMemo(
+    () => placeCheckOptions({ team, pending, decided, everyDecided, validated, reopened, sharedPlaces }),
+    [team, pending, decided, everyDecided, validated, reopened, sharedPlaces],
   );
-  const lines = useMemo(() => distinctValues([...everyRow.map((row) => row.line), ...sharedPlaces.map((row) => row.line)]), [everyRow, sharedPlaces]);
-  const regions = useMemo(
-    () => distinctValues([...everyRow.map((row) => row.region), ...sharedPlaces.map((row) => row.region)]),
-    [everyRow, sharedPlaces],
-  );
-  const areas = useMemo(
-    () => distinctValues([...everyRow.map((row) => row.areaName), ...sharedPlaces.map((row) => row.areaName)]),
-    [everyRow, sharedPlaces],
-  );
-  const lists = useMemo(() => distinctValues(everyRow.map((row) => row.listType)), [everyRow]);
-  // Everybody who has decided anything this board holds — a person, or "The system". A manager's board
-  // never names a decider, so it gets no list and no box.
-  const deciders = useMemo(
-    () =>
-      mode === "team"
-        ? []
-        : distinctValues([
-            ...everyDecided.map((row) => row.decidedByName),
-            ...validated.map((row) => row.decidedByName),
-            ...reopened.map((row) => row.refusedByName),
-            ...sharedPlaces.map((row) => row.decidedByName),
-          ]),
-    [mode, everyDecided, validated, reopened, sharedPlaces],
-  );
+  const { reps, lines, regions, areas, lists, deciders } = complete || !onDemand ? counted : onDemand.summary.options;
 
   const cutoff = validationReviewPeriodCutoff(filters.period);
 
@@ -326,17 +359,7 @@ export function ValidationReviewsBoard({
       }),
     [clinicDecided, filters, cutoff],
   );
-  const inUse = useMemo(
-    () =>
-      clinicValidated.filter(
-        (row) =>
-          validatedPassesOutcome(row, filters.outcome) &&
-          decidedByMatches(row.decidedByName, filters.decider) &&
-          matchesValidationReviewFilters(row, filters) &&
-          withinValidationReviewPeriod(row.validatedAt, cutoff),
-      ),
-    [clinicValidated, filters, cutoff],
-  );
+  const inUse = useMemo(() => clinicsInUse(clinicValidated, filters, cutoff), [clinicValidated, filters, cutoff]);
   const filteredValidated = useMemo(() => inUse.filter((row) => chipTakes(chip, row)), [inUse, chip]);
   // 🔴 THE SCORECARD COUNTS A CUSTOMER SEATED IN A POLYCLINIC TOO, AND THIS LIST IS THE SINGLE CLINICS — so
   // a count tapped through to here can hold more than the list shows. Those customers' photo is their
@@ -381,33 +404,17 @@ export function ValidationReviewsBoard({
   const needsGroups = useMemo(() => filteredVenueGroups.filter((group) => venueNeedsDecision(group)), [filteredVenueGroups]);
 
   // The scorecard reads every rep's places through the same filters, the clinics and the seated alike.
-  const scorecard = useMemo(
-    () =>
-      placeCheckScorecard({
-        waiting: pending.filter(
-          (row) => decidedByMatches(null, filters.decider) && matchesValidationReviewFilters(row, filters) && withinValidationReviewPeriod(row.createdAt, cutoff),
-        ),
-        inUse: validated.filter(
-          (row) =>
-            decidedByMatches(row.decidedByName, filters.decider) &&
-            matchesValidationReviewFilters(row, filters) &&
-            withinValidationReviewPeriod(row.validatedAt, cutoff),
-        ),
-        reopened: reopened.filter(
-          (row) =>
-            decidedByMatches(row.refusedByName, filters.decider) &&
-            matchesValidationReviewFilters(filterableReopened(row), filters) &&
-            withinValidationReviewPeriod(row.reopenedAt, cutoff),
-        ),
-      }),
-    [pending, validated, reopened, filters, cutoff],
+  // Until the click's read is in, the server's count stands for the board with no filter; with a filter
+  // there is no count to show yet — never one taken from the seated places alone.
+  const countedScorecard = useMemo(
+    () => (complete ? placeCheckScorecardOf({ pending, validated, reopened }, filters, cutoff) : null),
+    [complete, pending, validated, reopened, filters, cutoff],
   );
+  const scorecard = countedScorecard ?? (onDemand && !filtering ? onDemand.summary.scorecard : null);
+  /** The board is waiting for the click's read: what it would draw needs rows it does not hold yet. */
+  const reading = !complete && (filtering || view === "unconfirmed");
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
-  // 🔴 EVERY SENTENCE BELOW THAT NAMES A DECISION IS BEHIND THIS FLAG. A manager's board must not say
-  // "waiting for your decision", must not explain what approving or refusing does, and must not name
-  // who settled a row — the three places this board used to state the decision out loud.
-  const team = mode === "team";
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
@@ -449,7 +456,9 @@ export function ValidationReviewsBoard({
   const needsCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
   const openCount = (showWaiting ? filteredPending.length : 0) + needsGroups.length;
   const historyCount = (showDecided ? filteredDecided.length : 0) + (showReopened ? filteredReopened.length : 0);
-  const unconfirmedCount = showValidated ? inUse.filter((row) => chipTakes("open", row)).length : 0;
+  const unconfirmedCount = complete ? unconfirmedOpenCount(inUse, filters) : onDemand && !filtering ? onDemand.summary.unconfirmed : null;
+  // While the click's read is on its way under a filter, no tab shows a count it cannot stand behind.
+  const shown = (count: number) => (reading && filtering ? null : count);
   const decidedTitle = decidedSectionTitle(filters, team);
 
   // The filter signature remounts every paged list so "Show more" starts over when a filter changes,
@@ -460,12 +469,12 @@ export function ValidationReviewsBoard({
   // 🔴 THE COMPARISON TAB IS THE SUPER ADMIN'S ALONE: a manager's board is `mode="team"` and is never
   // handed the tab, the panel or the read (the route refuses a manager as well).
   const tabs: ReadonlyArray<{ key: PlaceCheckView; label: string; count: number | null; open: number }> = [
-    { key: "needs", label: team ? "Being checked" : "Needs you", count: needsCount, open: openCount },
+    { key: "needs", label: team ? "Being checked" : "Needs you", count: shown(needsCount), open: reading && filtering ? 0 : openCount },
     { key: "unconfirmed", label: "Not confirmed", count: unconfirmedCount, open: 0 },
-    { key: "polyclinics", label: "Polyclinics and hospitals", count: buildingGroups.length, open: 0 },
+    { key: "polyclinics", label: "Polyclinics and hospitals", count: shown(buildingGroups.length), open: 0 },
     ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null, open: 0 }]),
     ...(team ? [] : [{ key: "sameCustomer" as const, label: "Same customer, several reps", count: null, open: 0 }]),
-    { key: "history", label: "History", count: historyCount, open: 0 },
+    { key: "history", label: "History", count: shown(historyCount), open: 0 },
   ];
   const selectView = (key: PlaceCheckView) => {
     setView(key);
@@ -494,7 +503,9 @@ export function ValidationReviewsBoard({
   return (
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
-        {deckInput && reviewDeck ? reviewDeck(deckInput) : null}
+        {deckInput && reviewDeck
+          ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything })
+          : null}
         <div className="min-w-0 border border-slate-200 bg-white px-4 py-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
@@ -613,14 +624,16 @@ export function ValidationReviewsBoard({
           </AdminCallout>
         ) : null}
 
-        <PlaceCheckScorecard
-          mode={mode}
-          onOpen={openScore}
-          onPickRep={(rep) => set("rep", rep)}
-          pickedRep={filters.rep}
-          reps={scorecard.reps}
-          total={scorecard.total}
-        />
+        {scorecard ? (
+          <PlaceCheckScorecard
+            mode={mode}
+            onOpen={openScore}
+            onPickRep={(rep) => set("rep", rep)}
+            pickedRep={filters.rep}
+            reps={scorecard.reps}
+            total={scorecard.total}
+          />
+        ) : null}
 
         <div aria-label="Place checks" className="flex min-w-0 flex-wrap border-b border-slate-200" role="tablist">
           {tabs.map(({ key, label, count, open }, index) => (
@@ -648,7 +661,7 @@ export function ValidationReviewsBoard({
           ))}
         </div>
 
-        {view === "needs" ? (
+        {!reading && view === "needs" ? (
           <div aria-labelledby="vr-tab-needs" className="space-y-5" id="vr-panel-needs" role="tabpanel">
             {team ? null : <AdviceSummary advice={advice} />}
             {showWaiting ? (
@@ -703,7 +716,7 @@ export function ValidationReviewsBoard({
           </div>
         ) : null}
 
-        {view === "unconfirmed" ? (
+        {!reading && view === "unconfirmed" ? (
           <div aria-labelledby="vr-tab-unconfirmed" className="space-y-3" id="vr-panel-unconfirmed" role="tabpanel">
             <div aria-label="Narrow the places in use" className="flex min-w-0 flex-wrap gap-2" role="group">
               {(Object.keys(CHIP_LABELS) as UnconfirmedChip[]).map((key) => {
@@ -763,7 +776,7 @@ export function ValidationReviewsBoard({
           </div>
         ) : null}
 
-        {view === "polyclinics" ? (
+        {!reading && view === "polyclinics" ? (
           <div aria-labelledby="vr-tab-polyclinics" className="space-y-3" id="vr-panel-polyclinics" role="tabpanel">
             {rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
               <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
@@ -798,6 +811,10 @@ export function ValidationReviewsBoard({
           </div>
         ) : null}
 
+        {reading && view !== "samePlace" && view !== "sameCustomer" ? (
+          <ReadingEverything error={everythingRead.error} onRetry={reloadEverything} />
+        ) : null}
+
         {!team && samePlaceOpened ? (
           <div aria-labelledby="vr-tab-samePlace" hidden={view !== "samePlace"} id="vr-panel-samePlace" role="tabpanel">
             <PlaceMatchBoardView filters={filters} />
@@ -810,7 +827,7 @@ export function ValidationReviewsBoard({
           </div>
         ) : null}
 
-        {view === "history" ? (
+        {!reading && view === "history" ? (
           <div aria-labelledby="vr-tab-history" className="space-y-5" id="vr-panel-history" role="tabpanel">
             {showDecided ? (
               <AdminTableShell
