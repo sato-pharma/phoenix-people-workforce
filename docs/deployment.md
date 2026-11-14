@@ -1310,7 +1310,9 @@ and never on the robot service itself.
    this account starts in `sfo`). Turn "Wait for CI" off, set the healthcheck to `/api/readyz` with
    900 s, and generate a domain. The block in `.railway/railway.ts` was written to match. No apply
    is needed to create it, and `scripts/railway-iac-preapply-check.mjs` refuses any apply that
-   includes it until it exists.
+   includes it until it exists. Until then the daily drift check prints it as a note, not as drift:
+   it is named in `AWAITING_CREATION` in `scripts/check-railway-deploy-settings.mjs` (14 Nov 2026,
+   after the first run following the merge reported a dashboard edit nobody had made).
 2. **Set its variables**: `PHOENIX_PROCESS_ROLE=robot` as a plain value, and every other name in its
    `.railway/railway.ts` block as a reference to the website's own (`${{phoenix-people-workforce.NAME}}`).
 3. **Wait for it to be healthy**: `/api/readyz` 200 and `/api/healthz` on the same revision as the website.
@@ -1321,7 +1323,9 @@ and never on the robot service itself.
    domain against `ROBOT` in `scripts/cronjob-sync.mjs` and fix it if it differs. Then, in one change:
    - switch `mailbox-robots` to enabled;
    - declare `phoenix-mailbox-robots` in `JOB_SCHEDULES` and the `docs/observability.md` table;
-   - run `node scripts/cronjob-sync.mjs --job mailbox-robots --apply`.
+   - run `node scripts/cronjob-sync.mjs --job mailbox-robots --apply`;
+   - take `phoenix-workforce-robot` out of `AWAITING_CREATION` in
+     `scripts/check-railway-deploy-settings.mjs`, so the service disappearing later is reported as drift.
 
    Until then the job is declared OFF, so the auto-arm on merge creates it switched off, and its
    heartbeat is undeclared, so it never pages as stranded. This order means the robots never run twice

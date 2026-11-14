@@ -17,6 +17,14 @@
 // It also names a live volume the file does not declare at all, because a plan from that file would
 // try to detach it.
 //
+// 🔴 A SERVICE DECLARED AHEAD OF ITS CREATION IS NOT DRIFT (2026-11-14). The robot service's block was
+// merged on 13 Nov with the service itself still to be created by the owner, by hand, and the next
+// day's run reported "a dashboard edit" when nobody had touched Railway. A name in AWAITING_CREATION
+// below that is absent from Railway is printed as a note and the run stays at exit 0. The moment the
+// service exists it is compared like every other one, listed or not, and the note asks for the name
+// to come off the list — while it stays there, that service vanishing again would read as "not created
+// yet" instead of drift.
+//
 // Exit 0 = matches · 1 = drift (each line says what and where) · 2 = cannot tell (no credential, the
 // API refused, or the authoring file could not be read). A 2 is NEVER a pass.
 //
@@ -29,6 +37,16 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const API = "https://backboard.railway.com/graphql/v2";
+
+/**
+ * Services `.railway/railway.ts` declares before they exist on Railway, each with where its creation
+ * steps are written. Add a name in the change that declares the service; take it off in the change
+ * that follows its creation. tests/railway-deploy-settings-drift.test.ts refuses a name the authoring
+ * file does not declare.
+ */
+export const AWAITING_CREATION = new Map([
+  ["phoenix-workforce-robot", 'docs/deployment.md, "The robot service"'],
+]);
 
 /** Full-line `//` comments out; the authoring file's prose names every field this reads. */
 function stripLineComments(source) {
@@ -78,14 +96,16 @@ export function parseAuthoringFile(source) {
  * Compare what the file declares with what Railway stores. `live` is `{ services: { name: { id,
  * healthcheckPath, healthcheckTimeout, restartPolicyType, restartPolicyMaxRetries } }, volumes: [{
  * name, mountPath, serviceId }] }` for ONE environment. Returns one plain-words line per difference.
+ * A declared service that is absent from Railway and named in `awaiting` is not a difference.
  */
-export function compareDeploySettings(declared, live) {
+export function compareDeploySettings(declared, live, awaiting = AWAITING_CREATION) {
   const drift = [];
   const nameById = new Map(Object.entries(live.services).map(([name, s]) => [s.id, name]));
   for (const [name, want] of Object.entries(declared.services)) {
     const have = live.services[name];
     if (!have) {
-      drift.push(`${name}: declared in .railway/railway.ts but not found on Railway`);
+      if (awaiting.has(name)) continue;
+      drift.push(`${name}: declared in .railway/railway.ts but not found on Railway (a service declared ahead of its creation is named in AWAITING_CREATION in scripts/check-railway-deploy-settings.mjs)`);
       continue;
     }
     for (const field of ["healthcheckPath", "healthcheckTimeout", "restartPolicyType", "restartPolicyMaxRetries"]) {
@@ -110,6 +130,20 @@ export function compareDeploySettings(declared, live) {
     }
   }
   return drift;
+}
+
+/**
+ * Which names in `awaiting` are still to be created (`pending`: declared, absent from Railway) and
+ * which have been created since (`created`: on Railway, so compared in full and due off the list).
+ */
+export function servicesAwaitingCreation(declared, live, awaiting = AWAITING_CREATION) {
+  const pending = [];
+  const created = [];
+  for (const name of awaiting.keys()) {
+    if (!(name in declared.services)) continue;
+    (live.services[name] ? created : pending).push(name);
+  }
+  return { pending, created };
 }
 
 async function query(token, body) {
@@ -186,6 +220,13 @@ async function main() {
     return;
   }
   const drift = compareDeploySettings(declared, live);
+  const { pending, created } = servicesAwaitingCreation(declared, live);
+  for (const name of pending) {
+    console.log(`[railway-deploy-settings] NOTE — ${name} is declared in .railway/railway.ts and has not been created on Railway yet (${AWAITING_CREATION.get(name)}). Not drift.`);
+  }
+  for (const name of created) {
+    console.log(`[railway-deploy-settings] NOTE — ${name} now exists on Railway and is compared like every other service. Take it out of AWAITING_CREATION in scripts/check-railway-deploy-settings.mjs, so that its disappearing later is reported.`);
+  }
   if (drift.length) {
     console.log(`[railway-deploy-settings] DRIFT — ${drift.length} stored setting(s) on ${environmentName} differ from .railway/railway.ts:`);
     for (const line of drift) console.log(`  - ${line}`);
@@ -193,7 +234,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`[railway-deploy-settings] OK — ${count} services and ${declared.volumes.length} volumes on ${environmentName} match .railway/railway.ts.`);
+  console.log(`[railway-deploy-settings] OK — ${count - pending.length} services and ${declared.volumes.length} volumes on ${environmentName} match .railway/railway.ts.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
