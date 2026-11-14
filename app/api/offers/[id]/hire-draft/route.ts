@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { buildOfferHireDraft } from "@/lib/offers/hire-draft";
-import { findOpenOfferVacancy, formatOfferVacancyLabel } from "@/lib/offers/vacancies";
+import { checkOfferVacancy, formatOfferVacancyLabel } from "@/lib/offers/vacancies";
 import { getOffer } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
 import { candidateForOfferLetter } from "@/lib/recruitment/candidate-offer-link";
@@ -61,8 +61,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     // pre-selected: the hire would aim at an occupied chair and the vacancy closer would find
     // nothing to close. `seatTaken` is the difference between "this offer never named a seat" and
     // "the seat it named is gone", which is the sentence the screen needs to be able to say.
-    const vacancy = await findOpenOfferVacancy(offer.vacancyId);
-    const seatTaken = offer.vacancyId !== null && vacancy === null;
+    // `seatUnread` is the third case (REC-034, 14 Nov 2026): the open seats could not be read, which
+    // is NOT "the seat is gone" — the screen says so instead of blaming somebody else's hire.
+    const seatCheck = await checkOfferVacancy(offer.vacancyId);
+    const vacancy = seatCheck.status === "open" ? seatCheck.vacancy : null;
+    const seatTaken = seatCheck.status === "closed";
+    const seatUnread = seatCheck.status === "unread";
 
     /**
      * ── And the CV, when the ATS holds one for this letter ──
@@ -99,6 +103,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       reference: offer.reference,
       seat: vacancy ? { id: vacancy.vacancyId, label: formatOfferVacancyLabel(vacancy) } : null,
       seatTaken,
+      seatUnread,
       success: true,
     });
   } catch (error) {
