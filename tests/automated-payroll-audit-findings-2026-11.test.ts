@@ -138,6 +138,14 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     /const ceilingOf = \(balance: HeldBalance\) => Math\.round\(\(balance\.outstanding \+ \(balance\.settled\?\.amount \?\? 0\)\) \* 100\) \/ 100;/,
     "the panel's limit mirrors settlementCeiling",
   );
+  // A closed native select cannot wrap: at 375px "Choose the person and the month held" was cut mid-word
+  // (owner, 14 Nov 2026). The placeholder fits, and on a phone the full choice is repeated below, wrapped.
+  assert.match(PAID_OUTSIDE_PANEL, /<option value="">Choose a person<\/option>/, "the picker's placeholder fits a phone");
+  assert.match(
+    PAID_OUTSIDE_PANEL,
+    /hint=\{chosen \? <span className="md:hidden">\{choiceLabel\(chosen\)\}<\/span> : undefined\}/,
+    "on a phone the chosen person, month and amount show in full under the picker",
+  );
 
   // ---- FINDING 10: a step goes back to pending BEFORE its figures are written ---------------------------
   const save = bodyOf(RUN_SERVICE, "export async function saveStep(");
