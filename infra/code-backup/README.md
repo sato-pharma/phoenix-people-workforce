@@ -89,7 +89,8 @@ unreadable.
 
 **What rehearses it:** `.github/workflows/backup-image.yml` runs `ci/rehearse.sh` on every pull request that
 touches this folder. It builds this image and proves the backup, the restore drill and the step-aside on a
-throwaway PostgreSQL 17. It reaches no real database and holds no secret.
+throwaway PostgreSQL 17. It reaches no real database and holds no secret. The service runs as an unprivileged
+user, never root (the image's `USER phoenix`), and the rehearsal fails if that is ever undone.
 
 ### Its variables
 

@@ -25,7 +25,9 @@ ADMIN_PASS=rehearsal-admin
 READER_PASS=rehearsal-reader
 MIGRATION="$(ls supabase/migrations/*_phoenix_backup_reader_role.sql)"
 WORK="$(mktemp -d)"
-chmod 755 "$WORK"
+# The image runs as an unprivileged user (uid 10001), not as the runner's user, so every folder made HERE
+# that the container writes into is open to it. The folder is this rehearsal's own and is removed at the end.
+chmod 777 "$WORK"
 
 inside() { docker run --rm --network host -v "$WORK:/work" "$IMAGE" bash -c "$1"; }
 cleanup() {
@@ -73,6 +75,9 @@ echo "--- the image"
 docker build --quiet -t "$IMAGE" infra/code-backup > /dev/null
 if docker run --rm "$IMAGE" bash -c 'ls /usr/local/bin | grep -q restore-drill'; then fail "the script that decrypts is in the image that makes the backups"; fi
 docker run --rm "$IMAGE" pg_dump --version
+RUNS_AS="$(docker run --rm "$IMAGE" id -u)"
+[ "$RUNS_AS" != "0" ] || fail "the backup image runs as root"
+echo "ok: the image runs as an unprivileged user (uid $RUNS_AS)"
 
 echo "--- a throwaway PostgreSQL 17"
 docker run -d --name "$PG" -e POSTGRES_PASSWORD="$ADMIN_PASS" -p "127.0.0.1:$PORT:5432" postgres:17 -c fsync=off -c full_page_writes=off > /dev/null
@@ -119,6 +124,7 @@ echo "--- a night's backup"
 docker run --rm -v "$WORK:/work" "$IMAGE" bash -c 'age-keygen -o /work/key.txt 2> /dev/null && age-keygen -o /work/other-key.txt 2> /dev/null && chmod 644 /work/key.txt /work/other-key.txt'
 RECIPIENT="$(grep -o 'age1[a-z0-9]*' "$WORK/key.txt" | head -1)"
 mkdir -p "$WORK/remote/daily"
+chmod 777 "$WORK/remote" "$WORK/remote/daily"
 # Eight older nights, so pruning has something to do: seven are kept, counting tonight's.
 for day in 01 02 03 04 05 06 07 08; do echo "an older night" > "$WORK/remote/daily/db-backup-2020-01-$day.tar.age"; done
 expect 0 "the backup runs" backup
@@ -188,6 +194,7 @@ docker rm -f "$YIELD" > /dev/null
 
 echo "--- the night: both backups, and a retry only after a step-aside"
 mkdir -p "$WORK/stub"
+chmod 777 "$WORK/stub"
 printf '#!/usr/bin/env bash\necho "stub: the code backup fails"\nexit 1\n' > "$WORK/stub/code-fails"
 printf '#!/usr/bin/env bash\necho "stub: the code backup is fine"\n' > "$WORK/stub/code-ok"
 printf '#!/usr/bin/env bash\nn="$(cat /work/stub/tries 2> /dev/null || echo 0)"\nn=$((n + 1))\necho "$n" > /work/stub/tries\nif [ "$n" -ge 3 ]; then exit 0; fi\nexit 75\n' > "$WORK/stub/db-third-time"

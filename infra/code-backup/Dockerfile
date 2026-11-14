@@ -11,4 +11,12 @@ COPY db-backup.sh /usr/local/bin/db-backup
 COPY run.sh /usr/local/bin/nightly-backup
 RUN chmod +x /usr/local/bin/code-backup /usr/local/bin/db-backup /usr/local/bin/nightly-backup
 
+# The job runs as an unprivileged user, never root: both scripts write only under mktemp -d and take every
+# credential from the environment. git and rclone want a home they can write to, so the user gets a real one.
+# ci/rehearse.sh fails if this image ever runs as root again.
+RUN adduser -D -u 10001 -h /home/phoenix phoenix
+USER phoenix
+ENV HOME=/home/phoenix
+WORKDIR /home/phoenix
+
 CMD ["/usr/local/bin/nightly-backup"]
