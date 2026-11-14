@@ -29,7 +29,7 @@ import { useState } from "react";
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
-import { RestoreAfterRejection } from "@/components/phoenix-crm/place-check-restore";
+import { RestoreAfterRejection, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
@@ -39,7 +39,7 @@ import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import type { SeatedCustomer, SeatedTimetable } from "@/lib/phoenix-crm/shared-place-groups";
-import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { seatedRejectWarning, VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex } from "@/lib/phoenix-crm/view-types";
 
 /** What the system read beside this customer's name on the building's timetable. A verdict, never a decision. */
@@ -208,6 +208,8 @@ function Cost({ customer }: { customer: SeatedCustomer }) {
  * name this customer — and a different timetable reason can still be picked. The note stays optional.
  */
 function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
+  // Only the Super Admin approves after a rejection, so only he is told he can (owner, 2026-11-10).
+  const canRestore = useCanRestoreValidation();
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(customer);
   const [open, setOpen] = useState(false);
@@ -282,7 +284,7 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
       <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
-          <CrmNote tone="warn">This retires their seat — the rep captures the customer again from their own list. You can approve it after all from this row.</CrmNote>
+          <CrmNote tone="warn">{seatedRejectWarning(canRestore)}</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton busy={saving} disabled={saving} onClick={() => void reject()} variant="danger">
               {saving ? "Rejecting…" : "Yes, reject them"}

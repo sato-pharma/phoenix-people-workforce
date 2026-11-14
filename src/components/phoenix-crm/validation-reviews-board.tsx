@@ -45,6 +45,7 @@ import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer
 import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-board";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
+import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -62,6 +63,7 @@ import {
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
 import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
+import { rejectedBuildingsSwitchLabel } from "@/lib/phoenix-crm/validation-feedback";
 import {
   chipTakes,
   clinicsInUse,
@@ -328,6 +330,9 @@ export function ValidationReviewsBoard({
   // "waiting for your decision", must not explain what approving or refusing does, and must not name
   // who settled a row — the three places this board used to state the decision out loud.
   const team = mode === "team";
+  // Taking a rejection back is the Super Admin's alone, so only his board says a rejected building can
+  // be brought back (owner, 2026-11-10; the SFE Manager's board said it too until 14 Nov 2026).
+  const canRestore = useCanRestoreValidation();
   // The filter bar's lists, counted from every row the board holds; until the click's read is in, the
   // server counted them from every row it read. A manager's board never names a decider, so it gets no
   // list and no box.
@@ -817,9 +822,7 @@ export function ValidationReviewsBoard({
             ) : null}
             {!openedBuilding && rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
               <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
-                {team
-                  ? `Show the ${rejectedBuildings} ${rejectedBuildings === 1 ? "building" : "buildings"} no longer in use`
-                  : `Show the ${rejectedBuildings} rejected ${rejectedBuildings === 1 ? "building" : "buildings"}, which can be brought back`}
+                {rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })}
               </CrmCheck>
             ) : null}
             <div className="scroll-mt-4" id="vr-building-list" />

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { rejectedBuildingsSwitchLabel, seatedRejectWarning } from "@/lib/phoenix-crm/validation-feedback";
+
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -184,4 +186,26 @@ export function runPhoenixCrmSfePlaceChecksTests() {
   const venues = read("src/components/phoenix-crm/shared-place-list.tsx");
   assert.ok(venues.includes('VENUE_ACTIONS.filter((action) => action.key !== "restore")'), "nor bring a rejected building back in bulk");
   assert.ok(venues.includes("{canRestore ? ("), "nor on its own row");
+
+  // ── 10. AND NO SENTENCE ON HIS BOARD PROMISES ONE (seen on his own board, 14 Nov 2026) ──
+  const wording = { rejectedBuildingsSwitchLabel, seatedRejectWarning };
+  const superAdmin = { team: false, canRestore: true };
+  const sfeManager = { team: false, canRestore: false };
+  assert.equal(wording.rejectedBuildingsSwitchLabel(100, superAdmin), "Show the 100 rejected buildings, which can be brought back", "the Super Admin is told a rejected building can be brought back");
+  assert.equal(wording.rejectedBuildingsSwitchLabel(100, sfeManager), "Show the 100 rejected buildings", "🔴 the SFE Manager is NOT: he has no button to bring one back");
+  assert.equal(wording.rejectedBuildingsSwitchLabel(1, sfeManager), "Show the 1 rejected building", "one building reads as one");
+  assert.equal(wording.rejectedBuildingsSwitchLabel(3, { team: true, canRestore: false }), "Show the 3 buildings no longer in use", "a district manager's board never says rejected");
+  assert.ok(wording.seatedRejectWarning(true).endsWith("You can approve it after all from this row."), "the Super Admin is told he can approve a seated customer after all");
+  assert.equal(
+    wording.seatedRejectWarning(false),
+    "This retires their seat — the rep captures the customer again from their own list.",
+    "🔴 the SFE Manager reads what the rejection costs and no promise of a take-back",
+  );
+  const placeBoard = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  assert.ok(placeBoard.includes("const canRestore = useCanRestoreValidation();"), "the board asks who takes a rejection back, from the page's own gate");
+  assert.ok(placeBoard.includes("rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })"), "and words the rejected-buildings switch by the answer");
+  assert.ok(!placeBoard.includes("which can be brought back"), "🔴 the promise is written in one place, never again on the board itself");
+  const seated = read("src/components/phoenix-crm/shared-place-customers.tsx");
+  assert.ok(seated.includes("{seatedRejectWarning(canRestore)}"), "the seated customer's reject warning is worded by the same answer");
+  assert.ok(!seated.includes("You can approve it after all"), "🔴 and never promises the take-back to everybody again");
 }

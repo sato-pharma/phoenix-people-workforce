@@ -223,6 +223,29 @@ export const PLACE_APPROVAL_IS_NOT_A_LIST_ADD =
 /** Beside a settled or just-saved approval, where the long sentence above would crowd the row. */
 export const PLACE_APPROVED_NOT_A_LIST_ADD = "The place only — this does not add the customer to the rep's list.";
 
+// ── A take-back is promised only to the one who has it ───────────────────────────────────────────
+
+/**
+ * Taking a rejection back is the Super Admin's alone (owner, 2026-11-10: "the SFE cannot"). The SFE
+ * Manager decides on the same board, and two sentences on it still promised him a take-back he has no
+ * button for (seen on his own board, 14 Nov 2026). Both now ask who is reading.
+ *
+ * 🔴 `canRestore` IS THE SCREEN'S `useCanRestoreValidation()`, the page's `canRestoreValidation(viewer)`.
+ * Never key these on `mode`: the company board is the Super Admin's AND the SFE Manager's.
+ */
+export function rejectedBuildingsSwitchLabel(count: number, reader: { team: boolean; canRestore: boolean }): string {
+  const buildings = count === 1 ? "building" : "buildings";
+  // A manager's board never says a building was rejected, or that anything is decided.
+  if (reader.team) return `Show the ${count} ${buildings} no longer in use`;
+  return reader.canRestore ? `Show the ${count} rejected ${buildings}, which can be brought back` : `Show the ${count} rejected ${buildings}`;
+}
+
+/** What rejecting a customer seated in a polyclinic costs, said before the second press. */
+export function seatedRejectWarning(canRestore: boolean): string {
+  const cost = "This retires their seat — the rep captures the customer again from their own list.";
+  return canRestore ? `${cost} You can approve it after all from this row.` : cost;
+}
+
 // ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
 
 /** Said first, so the clause's "its" has a subject and the rep knows which photo is meant. */
