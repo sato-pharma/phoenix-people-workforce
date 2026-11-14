@@ -57,11 +57,33 @@ function messageOf(payload: Record<string, unknown> | null, fallback: string) {
   return typeof payload?.message === "string" ? payload.message : fallback;
 }
 
+type StatusRead = { failure: string } | { others: OtherAccount[]; status: Status };
+
+const LOAD_FAILED = "Could not load your second sign-in step.";
+
+/**
+ * The status read, in ONE place for the first load, the reload after a change and "Try again".
+ * It never throws and never answers nothing: a refusal (401, 403, 429, 500), an answer with no status
+ * in it and a network failure all come back as a `failure` line the card shows. The server's own
+ * `message` is used when it sent one.
+ */
+async function readStatus(): Promise<StatusRead> {
+  try {
+    const response = await fetch("/api/auth/second-step", { credentials: "same-origin" });
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!response.ok || !payload?.status) return { failure: messageOf(payload, LOAD_FAILED) };
+    return { others: (payload.others as OtherAccount[] | undefined) ?? [], status: payload.status as Status };
+  } catch {
+    return { failure: LOAD_FAILED };
+  }
+}
+
 export function SecondStepCard() {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [others, setOthers] = useState<OtherAccount[]>([]);
@@ -71,40 +93,40 @@ export function SecondStepCard() {
   const [setup, setSetup] = useState<Setup | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const response = await fetch("/api/auth/second-step", { credentials: "same-origin" });
-      if (!response.ok) return;
-      const payload = (await response.json()) as { others?: OtherAccount[]; status?: Status };
-      setStatus(payload.status ?? null);
-      setOthers(payload.others ?? []);
-    } catch {
-      // A failed read leaves the card as it was; every button still answers for itself.
-    } finally {
-      setLoaded(true);
+  // A failed read SAYS SO: the spinner stops and the card shows the failure with "Try again". What the
+  // card already showed stays as it was, and every button still answers for itself.
+  const showRead = useCallback((read: StatusRead) => {
+    if ("failure" in read) {
+      setLoadError(read.failure);
+    } else {
+      setLoadError(null);
+      setStatus(read.status);
+      setOthers(read.others);
     }
+    setLoaded(true);
   }, []);
 
+  const refresh = useCallback(async () => {
+    showRead(await readStatus());
+  }, [showRead]);
+
   // The first read, as a promise chain so every setState lands inside a callback (the same shape as
-  // BiometricDevicesCard beside it).
+  // BiometricDevicesCard beside it). readStatus never rejects, so the chain needs no catch.
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/second-step", { credentials: "same-origin" })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const payload = (await response.json()) as { others?: OtherAccount[]; status?: Status };
-        if (!active) return;
-        setStatus(payload.status ?? null);
-        setOthers(payload.others ?? []);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setLoaded(true);
-      });
+    void readStatus().then((read) => {
+      if (active) showRead(read);
+    });
     return () => {
       active = false;
     };
-  }, []);
+  }, [showRead]);
+
+  function retryLoad() {
+    setLoadError(null);
+    setLoaded(false);
+    void refresh();
+  }
 
   function copy(text: string) {
     navigator.clipboard
@@ -224,6 +246,17 @@ export function SecondStepCard() {
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading
         </p>
+      )}
+
+      {loaded && loadError && (
+        <div className="mt-4">
+          <FormError>{loadError}</FormError>
+          <div className="mt-3">
+            <button className={phxButtonGhostClassName} disabled={busy} onClick={retryLoad} type="button">
+              Try again
+            </button>
+          </div>
+        </div>
       )}
 
       {loaded && status && !status.setUp && !setup && !recoveryCodes && (
