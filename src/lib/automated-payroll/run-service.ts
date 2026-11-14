@@ -122,6 +122,7 @@ import {
   RECOMMENDED_AT_CONFIRM_KEY,
   snapshotFromSummary,
   snapshotRecommendations,
+  stepsWhereModuleMoved,
   takeCurrentModuleFigures,
   type ModuleDriftReport,
 } from "./module-drift.ts";
@@ -1221,15 +1222,51 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
  * re-opened ones, so nothing on screen said a Part 1 step had changed. The server now answers the
  * same question the screen does.
  */
-async function assertPart1StepOpenDuringPart2(run: MonthlySalaryRun, stepKey: StepKey): Promise<void> {
+async function assertPart1StepOpenDuringPart2(
+  access: AccessContext,
+  run: MonthlySalaryRun,
+  stepKey: StepKey,
+): Promise<void> {
   if (run.phase !== "part2" || stepPhase(stepKey) !== "part1") return;
   const states = await listStepStates(run.id);
-  if (!stepOpenDuringPart2(stepKey, states)) {
+  if (stepOpenDuringPart2(stepKey, states)) return;
+  // A confirmed deduction step whose module figure moved since is open too, so the drift block's
+  // "confirm it again" has a button (14 Nov 2026). Only computed when the cheap answer was no.
+  const moved = await moduleMovedOnStep(access, run, stepKey, states);
+  if (!stepOpenDuringPart2(stepKey, states, moved ? [stepKey] : [])) {
     throw new Error(
       `Conflict: Part 1 is confirmed, so "${stepDefinition(stepKey).title}" is locked. Its figures are ` +
         "already in the first instalment the bank paid. Change it on a Part 2 step, or reopen Part 1.",
     );
   }
+}
+
+/**
+ * Has the Deductions module moved, for anyone, since this confirmed Part 1 step was confirmed? The
+ * same question `getModuleDrift` answers for the banner, asked of one step, so the screen and the
+ * server open the same steps (`stepsWhereModuleMoved`).
+ */
+async function moduleMovedOnStep(
+  access: AccessContext,
+  run: MonthlySalaryRun,
+  stepKey: StepKey,
+  states: StepState[],
+): Promise<boolean> {
+  if (!MODULE_SOURCED_STEP_KEYS.includes(stepKey)) return false;
+  const state = states.find((candidate) => candidate.stepKey === stepKey && candidate.status === "confirmed");
+  const snapshot = snapshotFromSummary(state?.summary);
+  if (!snapshot) return false;
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const { members, sources, draftRows } = await loadRunContext(period, run.id);
+  const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+  const report = detectModuleDrift({
+    stepKey,
+    rows,
+    snapshot,
+    chargedByCompact: chargedFiguresFromDrafts(draftRows),
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
+  return stepsWhereModuleMoved(report).includes(stepKey);
 }
 
 /**
@@ -1303,7 +1340,7 @@ export async function saveStep(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
-  await assertPart1StepOpenDuringPart2(run, stepKey);
+  await assertPart1StepOpenDuringPart2(access, run, stepKey);
   // Asked once here, before Part 1 Not Paid below can record anything, and again under the hold.
   await assertStepUnchangedSince(runId, stepKey, options?.expectedRevision, options?.revisionSource ?? "screen");
 
@@ -1450,7 +1487,7 @@ export async function confirmStep(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
-  await assertPart1StepOpenDuringPart2(run, stepKey);
+  await assertPart1StepOpenDuringPart2(access, run, stepKey);
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const [{ members, sources, draftRows, directory }, states] = await Promise.all([
@@ -1627,7 +1664,7 @@ async function attachChargeSources(runId: string, report: ModuleDriftReport): Pr
   const differing = report.rows.filter((row) => row.overridden);
   if (differing.length === 0) return report;
   const compacts = [...new Set(differing.map((row) => compactHrKey(row.hrId)).filter(Boolean))];
-  const columns = [...new Set(differing.map((row) => draftColumnForField(row.field)))];
+  const columns = [...new Set(differing.map((row) => draftColumnForField(row.chargedField ?? row.field)))];
   const [latest, names] = await Promise.all([
     listLatestCellWrites(runId, compacts, columns),
     employeeNamesByCompactKey(),
@@ -1636,7 +1673,7 @@ async function attachChargeSources(runId: string, report: ModuleDriftReport): Pr
     ...report,
     rows: report.rows.map((row) => {
       if (!row.overridden) return row;
-      const write = latest.get(`${compactHrKey(row.hrId)}|${draftColumnForField(row.field)}`);
+      const write = latest.get(`${compactHrKey(row.hrId)}|${draftColumnForField(row.chargedField ?? row.field)}`);
       if (!write) return { ...row, chargeSource: { kind: "unknown", name: null, stepKey: null, at: null } };
       const kind = chargeSourceKind(write.writeReason);
       return {
@@ -3683,7 +3720,7 @@ export async function importStepUpload(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
-  await assertPart1StepOpenDuringPart2(run, stepKey);
+  await assertPart1StepOpenDuringPart2(access, run, stepKey);
 
   const { edits: parsed, invalidHrIds, revision: fileRevision } = await parseStepWorkbook({ file, stepKey });
   // The file's own revision when it carries one (it says what the figures in it were read from);
