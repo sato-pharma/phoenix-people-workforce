@@ -58,6 +58,7 @@ export type JoiningFormState =
   | "not_sent"
   | "being_updated"
   | "seat_unavailable"
+  | "seat_unread"
   | "start_date_pending";
 
 /**
@@ -71,6 +72,13 @@ export function joiningFormState(input: {
   /** Above 0 once HR has updated the offer (owner, 2026-11-10). Absent reads as never updated. */
   revision?: number;
   seatOpen: boolean;
+  /**
+   * The open seats could not be read just now (REC-034, 14 Nov 2026). Not the same as a closed seat:
+   * nothing is lost, he is asked to try again, and HR is not told the seat was filled. Checked for
+   * EVERY title, because a non-sales offer that names a seat would otherwise go through without it
+   * and leave the vacancy open with the hire unseated.
+   */
+  seatUnread?: boolean;
   status: OfferStatus;
 }): JoiningFormState {
   if (input.employeeHrId) return "submitted";
@@ -82,6 +90,7 @@ export function joiningFormState(input: {
   if (input.status === "draft" || input.status === "pending_approval") {
     return input.revision && input.revision > 0 ? "being_updated" : "not_sent";
   }
+  if (input.seatUnread) return "seat_unread";
   if (input.requiresSeat && !input.seatOpen) return "seat_unavailable";
   return "open";
 }
@@ -102,6 +111,11 @@ export const JOINING_FORM_STATE_MESSAGE: Record<Exclude<JoiningFormState, "open"
   seat_unavailable: {
     body: "Our HR team needs to confirm your position before you can complete this form. They will contact you shortly — you can also reply to the offer email.",
     title: "Your position is being confirmed",
+  },
+  // The seats could not be read (REC-034): a passing fault, never "your position is being confirmed".
+  seat_unread: {
+    body: "We could not finish checking your position just now. Please try again in a few minutes. If this keeps happening, reply to the offer email and our HR team will help.",
+    title: "Please try again in a few minutes",
   },
   // An offer sent before a start date was required: no first day, so no record can be made yet.
   start_date_pending: {

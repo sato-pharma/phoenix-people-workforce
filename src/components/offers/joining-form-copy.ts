@@ -401,6 +401,9 @@ export const AR_MESSAGES: Record<string, string> = {
   "Your position is being confirmed": "جارٍ تأكيد الوظيفة",
   "Our HR team needs to confirm your position before you can complete this form. They will contact you shortly — you can also reply to the offer email.":
     "يحتاج فريق الموارد البشرية إلى تأكيد الوظيفة قبل استكمال هذا النموذج، وسيتواصل معك قريباً — ويمكنك أيضاً الرد على بريد العرض.",
+  "Please try again in a few minutes": "يُرجى المحاولة مرة أخرى بعد بضع دقائق",
+  "We could not finish checking your position just now. Please try again in a few minutes. If this keeps happening, reply to the offer email and our HR team will help.":
+    "تعذّر استكمال التحقق من الوظيفة الآن. يُرجى المحاولة مرة أخرى بعد بضع دقائق. وإذا تكرر ذلك، يُرجى الرد على بريد العرض وسيساعدك فريق الموارد البشرية.",
   "Your start date is being confirmed": "جارٍ تأكيد تاريخ بدء العمل",
   "Our HR team needs to confirm your start date before you can complete this form. They will contact you shortly — you can also reply to the offer email.":
     "يحتاج فريق الموارد البشرية إلى تأكيد تاريخ بدء العمل قبل استكمال هذا النموذج، وسيتواصل معك قريباً — ويمكنك أيضاً الرد على بريد العرض.",

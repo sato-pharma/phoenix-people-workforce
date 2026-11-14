@@ -1,5 +1,7 @@
-import { getOpenWorkforceVacancies } from "@/lib/employees/vacancy-closer";
+import { getOpenWorkforceVacanciesOrThrow } from "@/lib/employees/vacancy-closer";
+import { logError } from "@/lib/observability/log";
 import type { OfferVacancyOption } from "@/lib/offers/types";
+import { classifyOfferVacancy, type OfferVacancyCheck, type OpenVacancyRead } from "@/lib/offers/vacancy-check";
 
 // Re-exported rather than defined here: the label is pure and the composer is a client component,
 // while everything else in this file reaches the service-role Supabase client. See vacancy-label.ts.
@@ -28,32 +30,60 @@ export { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
  * is the owner's alone.
  */
 export async function loadOfferVacancyOptions(): Promise<OfferVacancyOption[]> {
+  const read = await readOfferVacancies();
+  // The picker is a convenience on a screen whose real job is sending a letter. A vacancy read that
+  // fails must not take the Offers page down with it — the seat field simply offers nothing, and
+  // every other part of the composer still works. A caller that must tell "no seats" from "could
+  // not read the seats" uses readOfferVacancies() or checkOfferVacancy() instead (REC-034).
+  return read.ok ? read.options : [];
+}
+
+/**
+ * The open seats, or { ok: false } when they could not be read (REC-034, 14 Nov 2026). Never an
+ * empty list for a failed read: an empty list means "every seat is filled", and the joining form,
+ * the hire draft and the Offers screen each turned that into "the seat on this offer is gone".
+ */
+export async function readOfferVacancies(): Promise<OpenVacancyRead> {
   try {
-    const rows = await getOpenWorkforceVacancies();
-    return rows
-      .map((row) => ({
-        areaId: row.areaId,
-        areaName: row.areaName,
-        departmentId: row.departmentId,
-        jobTitle: row.jobTitle,
-        lineId: row.lineId,
-        lineName: row.lineName,
-        managerHrId: row.managerHrId,
-        managerName: row.managerName,
-        positionId: row.positionId,
-        positionTitle: row.positionTitle,
-        regionName: row.regionName,
-        vacancyCode: row.vacancyCode,
-        vacancyId: row.vacancyId,
-      }))
-      .sort(compareOfferVacancies);
-  } catch {
-    // The picker is a convenience on a screen whose real job is sending a letter. A vacancy read
-    // that fails must not take the Offers page down with it — the seat field simply offers nothing,
-    // and every other part of the composer still works. The closer already swallows the timeouts
-    // and schema-cache cases; this catches the rest.
-    return [];
+    return { ok: true, options: await loadOfferVacancyOptionsStrict() };
+  } catch (error) {
+    logError("The open vacancies could not be read for an offer", {
+      error,
+      labels: { event: "offer_vacancy_read_failed" },
+    });
+    return { ok: false };
   }
+}
+
+/**
+ * Where the seat an offer names stands: open (with the seat), closed, none named, or unread.
+ * See vacancy-check.ts — `unread` is never `closed`.
+ */
+export async function checkOfferVacancy(vacancyId: number | null | undefined): Promise<OfferVacancyCheck> {
+  if (!vacancyId) return { status: "none" };
+  return classifyOfferVacancy(vacancyId, await readOfferVacancies());
+}
+
+/** The open seats, throwing when they cannot be read. */
+async function loadOfferVacancyOptionsStrict(): Promise<OfferVacancyOption[]> {
+  const rows = await getOpenWorkforceVacanciesOrThrow();
+  return rows
+    .map((row) => ({
+      areaId: row.areaId,
+      areaName: row.areaName,
+      departmentId: row.departmentId,
+      jobTitle: row.jobTitle,
+      lineId: row.lineId,
+      lineName: row.lineName,
+      managerHrId: row.managerHrId,
+      managerName: row.managerName,
+      positionId: row.positionId,
+      positionTitle: row.positionTitle,
+      regionName: row.regionName,
+      vacancyCode: row.vacancyCode,
+      vacancyId: row.vacancyId,
+    }))
+    .sort(compareOfferVacancies);
 }
 
 /** Line, then position, then area — the order somebody hunting for a seat reads them in. */
@@ -64,20 +94,3 @@ function compareOfferVacancies(a: OfferVacancyOption, b: OfferVacancyOption): nu
   if (byPosition !== 0) return byPosition;
   return (a.areaName ?? "").localeCompare(b.areaName ?? "");
 }
-
-/**
- * The seat an offer points at, or null — and null is the answer for a seat that has since been
- * FILLED, not only for an offer that never named one.
- *
- * That collapse is deliberate and is the whole reason this is a lookup rather than a read of the
- * stored id. Between an offer being written and being accepted, somebody else may have been hired
- * into the seat; pre-selecting it then would aim the new hire at an occupied chair and leave the
- * vacancy closer with nothing to close. A seat that is gone reads exactly like a seat that was
- * never chosen, and the form's own picker is where that is settled.
- */
-export async function findOpenOfferVacancy(vacancyId: number | null): Promise<OfferVacancyOption | null> {
-  if (!vacancyId) return null;
-  const options = await loadOfferVacancyOptions();
-  return options.find((option) => option.vacancyId === vacancyId) ?? null;
-}
-

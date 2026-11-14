@@ -1792,6 +1792,7 @@ export function EmployeeManagement({
           reference?: string;
           seat?: { id: number; label: string } | null;
           seatTaken?: boolean;
+          seatUnread?: boolean;
         };
         if (cancelled) return;
         if (!response.ok || !payload.draft) {
@@ -1826,9 +1827,11 @@ export function EmployeeManagement({
         const opening = `Filled in from offer ${payload.reference ?? ""} for ${payload.candidateName ?? "this candidate"}.`.trim();
         const seatSentence = payload.seatTaken
           ? "The seat that offer named has since been filled by somebody else — choose the seat again below."
-          : payload.seat
-            ? `Seat: ${payload.seat.label}.`
-            : "No seat was chosen on the offer — choose one below.";
+          : payload.seatUnread
+            ? "The open seats could not be checked just now — choose the seat below, or open this offer again in a few minutes."
+            : payload.seat
+              ? `Seat: ${payload.seat.label}.`
+              : "No seat was chosen on the offer — choose one below.";
         // Read off `filled`, never off the draft: this sentence exists to describe the form.
         const netFilled = Number(filled.netSalary);
         const salarySentence =

@@ -6,7 +6,7 @@ import {
   offerErrorMessage,
 } from "@/lib/offers/service";
 import { resolveOfferSender } from "@/lib/offers/identity";
-import { loadOfferVacancyOptions } from "@/lib/offers/vacancies";
+import { readOfferVacancies } from "@/lib/offers/vacancies";
 import { loadOfferPeopleNames } from "@/lib/offers/people";
 import { EMPTY_OFFER_COPY_DIRECTORY, type OfferCopyDirectory } from "@/lib/offers/copy-directory";
 import { loadOfferCopyDirectory } from "@/lib/offers/copy-directory-loader";
@@ -34,6 +34,11 @@ export type OffersWorkspace = {
   templates: OfferTemplate[];
   /** The open seats an offer can be written against. An empty list is a state, not a failure. */
   vacancies: OfferVacancyOption[];
+  /**
+   * The open seats could not be read (REC-034, 14 Nov 2026). Then `vacancies` is empty because of the
+   * fault, not because every seat is filled — and the list must not call any seat "no longer open".
+   */
+  vacanciesUnread: boolean;
 };
 
 /**
@@ -54,14 +59,16 @@ export async function loadOffersWorkspace(options: { viewerHrId?: string | null 
     replyTo: sender.replyTo,
   };
 
-  // OUTSIDE the try, and swallowing its own failures inside `loadOfferVacancyOptions`. The seats
+  // OUTSIDE the try, and never throwing: `readOfferVacancies` says when it could not read. The seats
   // come from a different table in a different module; a vacancy read that fails is a picker with
   // nothing in it, never an Offers screen that will not load.
   // The CC/BCC picker's lists the same way: they never stop the screen loading, and typing still works.
-  const [vacancies, copyDirectory] = await Promise.all([
-    loadOfferVacancyOptions(),
+  const [vacancyRead, copyDirectory] = await Promise.all([
+    readOfferVacancies(),
     loadOfferCopyDirectory().catch(() => EMPTY_OFFER_COPY_DIRECTORY),
   ]);
+  const vacancies = vacancyRead.ok ? vacancyRead.options : [];
+  const vacanciesUnread = !vacancyRead.ok;
 
   try {
     const [offers, templates, jobTitles] = await Promise.all([
@@ -71,7 +78,7 @@ export async function loadOffersWorkspace(options: { viewerHrId?: string | null 
     ]);
     // The viewer is named too, so an offer they send in this sitting shows their name without a reload.
     const people = await loadOfferPeopleNames(offers, [options.viewerHrId]);
-    return { copyDirectory, error: null, jobTitles, offers, people, sender: senderInfo, templates, vacancies };
+    return { copyDirectory, error: null, jobTitles, offers, people, sender: senderInfo, templates, vacancies, vacanciesUnread };
   } catch (error) {
     // The migration being absent gets its own sentence — the raw PostgREST message names a table
     // and tells HR nothing they can act on.
@@ -86,6 +93,7 @@ export async function loadOffersWorkspace(options: { viewerHrId?: string | null 
       sender: senderInfo,
       templates: [],
       vacancies,
+      vacanciesUnread,
     };
   }
 }

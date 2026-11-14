@@ -42,7 +42,7 @@ import {
   stampOfferAcceptedByJoiningForm,
 } from "@/lib/offers/service";
 import type { OfferRecord, OfferVacancyOption } from "@/lib/offers/types";
-import { findOpenOfferVacancy } from "@/lib/offers/vacancies";
+import { checkOfferVacancy } from "@/lib/offers/vacancies";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -248,12 +248,15 @@ async function loadOffer(token: string): Promise<Loaded | null> {
     throw error;
   }
   const requiresSeat = offerRequiresSeat(offer.title);
-  const vacancy = offer.employeeHrId ? null : await findOpenOfferVacancy(offer.vacancyId);
+  // Three answers, not two (REC-034): a seat that could not be READ is never a seat that was filled.
+  const seatCheck = offer.employeeHrId ? null : await checkOfferVacancy(offer.vacancyId);
+  const vacancy = seatCheck?.status === "open" ? seatCheck.vacancy : null;
   const state = joiningFormState({
     employeeHrId: offer.employeeHrId ?? null,
     requiresSeat,
     revision: offer.revision ?? 0,
     seatOpen: Boolean(vacancy),
+    seatUnread: seatCheck?.status === "unread",
     status: offer.status,
   });
   const seat = state === "open" ? await loadSeat(vacancy) : null;
@@ -583,6 +586,8 @@ export async function submitJoiningForm(
   if (!loaded) return { message: "This link is not valid any more. Please reply to the offer email.", ok: false, status: 404 };
   const { offer, seat, state, vacancy } = loaded;
   if (state !== "open") {
+    // Only a seat that is really gone is HR's to settle. A failed read (seat_unread) tells nobody:
+    // he is asked to try again, and the read failure is logged as offer_vacancy_read_failed.
     if (state === "seat_unavailable") {
       await announceJoiningFormBlocked(offer, "the seat on the offer is no longer open in the organogram.");
     }

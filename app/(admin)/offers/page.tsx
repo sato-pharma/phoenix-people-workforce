@@ -81,6 +81,7 @@ async function OffersContent({
       sender={workspace.sender}
       templates={workspace.templates}
       vacancies={workspace.vacancies}
+      vacanciesUnread={workspace.vacanciesUnread}
     />
   );
 }

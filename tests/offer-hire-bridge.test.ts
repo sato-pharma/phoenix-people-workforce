@@ -175,7 +175,7 @@ export function runOfferHireBridgeTests() {
   assert.match(route, /status: 409/, "and refuses it as a conflict, not as a 404 that reads like a missing offer");
   assert.match(
     route,
-    /findOpenOfferVacancy\(offer\.vacancyId\)/,
+    /const seatCheck = await checkOfferVacancy\(offer\.vacancyId\);[\s\S]*const vacancy = seatCheck\.status === "open" \? seatCheck\.vacancy : null;/,
     "the seat is re-read LIVE and only when still open — a seat filled while the letter was out must never be pre-selected",
   );
   assert.match(route, /assertPermission\(access, "offers", "read"\)/, "gated, like every other route under /api/offers");

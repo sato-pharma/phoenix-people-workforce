@@ -307,7 +307,15 @@ function OfferCopiedTo({ offer }: { offer: OfferRecord }) {
  * nothing here can fix it — it is simply the fact that Add Employee will ask for the seat again,
  * said before somebody clicks and wonders why the form came up empty.
  */
-function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferVacancyOption[] }) {
+function OfferSeat({
+  offer,
+  vacancies,
+  vacanciesUnread,
+}: {
+  offer: OfferRecord;
+  vacancies: OfferVacancyOption[];
+  vacanciesUnread: boolean;
+}) {
   if (offer.vacancyId === null) return null;
   const vacancy = vacancies.find((option) => option.vacancyId === offer.vacancyId);
   return (
@@ -319,7 +327,10 @@ function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferV
           // on Add Employee", although its OWN hire had closed the seat and nothing was left to do.
           offer.employeeHrId
           ? "filled by this hire"
-          : offer.status === "sent"
+          : // REC-034: when the seats could not be read, an empty list says nothing about this seat.
+            vacanciesUnread
+            ? "could not be checked just now"
+            : offer.status === "sent"
             ? "no longer open — choose it again on Add Employee"
             : "no longer open"}
     </span>
@@ -396,6 +407,7 @@ export function OfferComposer({
   sender,
   templates,
   vacancies,
+  vacanciesUnread,
 }: {
   /**
    * `offers:approve` — the HR Manager (owner, 2026-11-10). With it, Send emails the candidate and an
@@ -416,6 +428,8 @@ export function OfferComposer({
   templates: OfferTemplate[];
   /** The open seats a letter can be written against. Empty is a state, not a failure. */
   vacancies: OfferVacancyOption[];
+  /** The open seats could not be read (REC-034): the list is empty because of the fault. */
+  vacanciesUnread: boolean;
 }) {
   /**
    * The way out to Add Employee, derived from where this screen already is rather than passed down
@@ -1566,11 +1580,13 @@ export function OfferComposer({
             <p className={offerHintClassName}>
               {offerRequiresSeat(draft.title) && !draft.vacancyId
                 ? "Required for a Medical Representative or District Manager offer — the candidate's joining form places the new hire in this seat, so the offer cannot be sent without it."
-                : vacancies.length === 0
-                  ? "No open seats are on file. The letter can still be written; the seat is then chosen on Add Employee."
-                  : draft.vacancyId
-                    ? "The candidate's joining form places the new hire in this seat on acceptance. The seat is closed by the hire, not by this offer."
-                    : "Optional. Choosing it now means the joining form places the candidate in this seat on acceptance."}
+                : vacanciesUnread
+                  ? "The open seats could not be read just now. The letter can still be written; reload in a few minutes to choose a seat, or choose it on Add Employee."
+                  : vacancies.length === 0
+                    ? "No open seats are on file. The letter can still be written; the seat is then chosen on Add Employee."
+                    : draft.vacancyId
+                      ? "The candidate's joining form places the new hire in this seat on acceptance. The seat is closed by the hire, not by this offer."
+                      : "Optional. Choosing it now means the joining form places the candidate in this seat on acceptance."}
             </p>
           </div>
 
@@ -1899,7 +1915,7 @@ export function OfferComposer({
                   </td>
                   <td className="break-words px-5 py-3 text-slate-600">
                     {offer.title}
-                    <OfferSeat offer={offer} vacancies={vacancies} />
+                    <OfferSeat offer={offer} vacancies={vacancies} vacanciesUnread={vacanciesUnread} />
                     <OfferApprovalNote offer={offer} />
                   </td>
                   <td className="break-words px-5 py-3 text-right tabular-nums text-slate-900">
@@ -2090,7 +2106,7 @@ export function OfferComposer({
                   <p className="mt-0.5 break-words text-xs font-semibold text-slate-700">{offer.title}</p>
                   <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <OfferCopiedTo offer={offer} />
-                  <OfferSeat offer={offer} vacancies={vacancies} />
+                  <OfferSeat offer={offer} vacancies={vacancies} vacanciesUnread={vacanciesUnread} />
                   <OfferApprovalNote offer={offer} />
                 </div>
                 {/* `shrink-0`: the status never gives up width to the column beside it. Measured on
