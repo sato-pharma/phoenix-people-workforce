@@ -818,6 +818,7 @@ policy):
    | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
+   | `phoenix-mailbox-robots` | `20 8 * * *` | 1h | cron-job.org job `8859323`, on the robot service · **in-house only** |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` · **in-house only** |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
@@ -955,6 +956,7 @@ policy):
    | `phoenix-retention-risk-sweep` | `hr in-house-only silent-when-clean` | The daily 07:40 sweep for five or more consecutive working days of recorded leave, and for a Medical Rep with five or more and no CRM entry at all. A red means HR was not warned before the money moves. |
    | `phoenix-retention-risk-pre-payroll` | `hr in-house-only` | The "take care, HR" notice on the 25th, listing every employee currently flagged, several working days before Part 1 pays. It fires once a month, so a red is a whole month with nobody warned. |
    | `phoenix-mailbox-offboarding-sweep` | `hr` | The daily 08:15 mailbox-offboarding sweep: it opens a revocation task for any leaver still holding a mailbox the exit workflow missed, and alerts on overdue, lapsed forwarding and the rest. A red means a leaver can still read company mail. |
+   | `phoenix-mailbox-robots` | `hr in-house-only` | The two Turbify mailbox robots (the leaver revocation robot and the joiner provisioning robot) at 08:20 on the robot service, five minutes after the sweep above. A red means neither robot ran that morning: revocation tasks and new-hire mailboxes wait for a person. |
    | `phoenix-process-notifications` | `platform` | Drains and retries the email and notification outbox every five minutes. A red means queued mail and notifications are sitting undelivered. |
    | `phoenix-background-jobs` | `platform in-house-only` | Drains the durable background-job outbox — imports, exports and other async work — and recaps to the Super Admin. A red means queued imports and exports are not running. |
    | `phoenix-inbound-intake` | `recruitment` | Drains the inbound-CV intake queue every two minutes: WhatsApp media, re-fetched emails, AI extraction and candidate creation. A red means CVs are arriving and not becoming candidates. |

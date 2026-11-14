@@ -255,6 +255,10 @@ const OTHER_JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // half fires from the payroll wizard itself when Part 1 is confirmed (see confirmPart1).
   { slug: "phoenix-retention-risk-pre-payroll", kind: "cron", schedule: "45 7 25 * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-mailbox-offboarding-sweep", kind: "cron", schedule: "15 8 * * *", graceSeconds: 1 * HOUR },
+  // The two Turbify mailbox robots on the robot service (audit REC-075), five minutes after the sweep
+  // above. Declared on 14 Nov 2026, in the change that armed its cron-job.org job: a declared job that
+  // cannot report is paged as stranded, so it was left out until the service existed. In-house only.
+  { slug: "phoenix-mailbox-robots", kind: "cron", schedule: "20 8 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-process-notifications", kind: "cron", schedule: "*/5 * * * *", graceSeconds: 10 * MINUTE },
   { slug: "phoenix-background-jobs", kind: "cron", schedule: "0 3 * * 5", graceSeconds: 2 * HOUR },
   { slug: "phoenix-inbound-intake", kind: "cron", schedule: "*/2 * * * *", graceSeconds: 10 * MINUTE },

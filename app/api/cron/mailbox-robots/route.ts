@@ -17,7 +17,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** The heartbeat this job reports to. Undeclared until the job is armed — see below. */
+/** The heartbeat this job reports to, declared in JOB_SCHEDULES since the job was armed — see below. */
 const JOB_SLUG = "phoenix-mailbox-robots";
 const JOB = "cron/mailbox-robots";
 /** One run at a time across every replica, held for at most an hour if a run dies holding it. */
@@ -39,9 +39,9 @@ const LEASE_TTL_SECONDS = 3600;
  * so a re-fire or a second replica never drives the same mailboxes twice, then the two passes. Each
  * pass is off by default and dry-run by default once enabled, and never throws (sweep-hook.ts).
  *
- * The heartbeat `phoenix-mailbox-robots` is deliberately NOT declared in JOB_SCHEDULES yet: a declared
- * job that has never reported is paged as stranded every 15 minutes, and this one cannot report until
- * the service exists and its cron job is armed. It is declared in the change that arms it.
+ * The heartbeat `phoenix-mailbox-robots` has been declared in JOB_SCHEDULES since 14 Nov 2026, the
+ * change that armed this job. It was left out until then on purpose: a declared job that cannot
+ * report is paged as stranded, and this one could not report before the service existed.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, JOB);
