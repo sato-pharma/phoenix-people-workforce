@@ -15,6 +15,7 @@ import {
   checkExpectedValues,
   checkForbiddenVariables,
 } from "../scripts/secret-policy.mjs";
+import { parseOverwriteNames, planSecretSync, railwayValuesByName } from "../scripts/lib/secret-sync-plan.mjs";
 import { variables as syncedVariables } from "../scripts/sync-railway-production-secrets.mjs";
 
 // Guards scripts/secret-policy.mjs — the production-variable POLICY, added 2026-09-30 alongside
@@ -309,8 +310,9 @@ export function runRailwaySecretPolicyTests() {
   assert.ok(syncStep, "the workflow must keep a step named 'Sync production secrets to Railway'");
   const exported = [...syncStep.matchAll(/^\s+([A-Z][A-Z0-9_]*):\s*\$\{\{/gm)].map((match) => match[1]);
   assert.ok(exported.length >= 40, `the sync step must still export its values (found ${exported.length})`);
-  // The four the script consumes itself to reach Railway, never through an entry.
-  const RAILWAY_CONTROL = new Set(["RAILWAY_API_TOKEN", "RAILWAY_TOKEN", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_NAME"]);
+  // The four the script consumes itself to reach Railway, never through an entry, and the one the
+  // step's own command line reads (the names released for overwriting, section 11).
+  const RAILWAY_CONTROL = new Set(["RAILWAY_API_TOKEN", "RAILWAY_TOKEN", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_NAME", "SYNC_OVERWRITE"]);
   const readByAnEntry = new Set(syncedVariables.flatMap((entry) => entry.github));
   const unread = exported.filter((name) => !RAILWAY_CONTROL.has(name) && !readByAnEntry.has(name));
   assert.deepEqual(
@@ -322,5 +324,123 @@ export function runRailwaySecretPolicyTests() {
   assert.ok(
     dispatchEntry?.github.some((name) => exported.includes(name)),
     "the synthetic-journeys dispatch token must reach the sync step under a name its entry reads",
+  );
+
+  // --- 11. the sync never replaces a production value on its own -----------------------------
+  // Until 14 Nov 2026 the script wrote every non-empty GitHub value over Railway's without reading
+  // what Railway held. On 13 Nov 2026 a push that merely touched the script (run 43454705003) put a
+  // GitHub secret from 4 November over the dispatch token set on Railway alone on 7 November, and
+  // the workflow watch and the synthetic journeys were stranded for nine hours. The decision now
+  // lives in scripts/lib/secret-sync-plan.mjs: add, confirm, HOLD, and replace only by name.
+  const entries = [
+    { railway: "HELD_ONE", github: ["HELD_ONE"], required: true },
+    { railway: "SAME_ONE", github: ["SAME_ONE"], required: true },
+    { railway: "NEW_ONE", github: ["NEW_ONE"], required: false },
+    { railway: "BLANK_ON_RAILWAY", github: ["BLANK_ON_RAILWAY"], required: false },
+    { railway: "RELEASED_ONE", github: ["RELEASED_ONE"], required: false },
+    { railway: "EMPTY_OPTIONAL", github: ["EMPTY_OPTIONAL"], required: false },
+    { railway: "EMPTY_REQUIRED", github: ["EMPTY_REQUIRED"], required: true },
+    { railway: "ALIASED", github: ["ALIASED_FIRST", "ALIASED_SECOND"], required: false },
+  ];
+  const github: Record<string, string> = {
+    HELD_ONE: "github-old-value",
+    SAME_ONE: "one-value",
+    NEW_ONE: "brand-new",
+    BLANK_ON_RAILWAY: "restored",
+    RELEASED_ONE: "github-rotated",
+    ALIASED_SECOND: "from-the-second-name",
+  };
+  const githubValueOf = (names: string[]) => names.map((name) => github[name] ?? "").find(Boolean) ?? "";
+  const railwayValues = new Map([
+    ["HELD_ONE", "set-on-railway-by-hand"],
+    ["SAME_ONE", "  one-value\n"],
+    ["BLANK_ON_RAILWAY", "   "],
+    ["RELEASED_ONE", "railway-behind"],
+    ["ALIASED", "from-the-second-name"],
+    ["NOT_SYNCED_AT_ALL", "left alone"],
+  ]);
+
+  const pushRun = planSecretSync({ entries, githubValueOf, railwayValues });
+  assert.deepEqual(
+    pushRun.held,
+    ["HELD_ONE", "RELEASED_ONE"],
+    "a run that names nothing must HOLD every value production holds differently — writing it is how a stale GitHub secret replaced a working production token on 13 Nov 2026",
+  );
+  assert.deepEqual(
+    pushRun.writes.map((write) => `${write.entry.railway}:${write.reason}`),
+    ["NEW_ONE:new", "BLANK_ON_RAILWAY:new"],
+    "a run that names nothing writes only what production does not hold: an absent name and a blank one",
+  );
+  assert.ok(
+    !pushRun.writes.some((write) => write.entry.railway === "HELD_ONE"),
+    "a held value must never also be planned as a write",
+  );
+  assert.deepEqual(
+    pushRun.unchanged,
+    ["SAME_ONE", "ALIASED"],
+    "a value production already holds is left alone, compared after trimming and through an entry's second GitHub name",
+  );
+  assert.deepEqual(pushRun.skippedEmpty.map((entry) => entry.railway), ["EMPTY_OPTIONAL"], "an empty optional GitHub value is skipped, never written as blank");
+  assert.deepEqual(pushRun.missingRequired.map((entry) => entry.railway), ["EMPTY_REQUIRED"], "an empty required GitHub value is still a failure");
+
+  const handRun = planSecretSync({ entries, githubValueOf, railwayValues, overwrite: ["RELEASED_ONE", "SAME_ONE", "NOT_A_SYNCED_NAME"] });
+  assert.deepEqual(handRun.held, ["HELD_ONE"], "releasing one name must not release another: each held value is released by its own name");
+  assert.deepEqual(
+    handRun.writes.filter((write) => write.reason === "released").map((write) => `${write.entry.railway}=${write.value}`),
+    ["RELEASED_ONE=github-rotated"],
+    "a released value is written with GitHub's value",
+  );
+  assert.deepEqual(handRun.unknownOverwrite, ["NOT_A_SYNCED_NAME"], "a released name the script does not sync must be reported, never ignored");
+  assert.deepEqual(handRun.unusedOverwrite, ["SAME_ONE"], "releasing a value production already holds is said, because nothing is written for it");
+
+  assert.deepEqual(
+    parseOverwriteNames(["--dry-run", "--overwrite=A, B,,A", "--overwrite=C", "--overwrite="]),
+    { names: ["A", "B", "C"], problems: [] },
+    "--overwrite takes a comma list, may repeat, and an empty one releases nothing (the workflow passes it empty on every push)",
+  );
+  assert.equal(
+    parseOverwriteNames(["--overwrite"]).problems.length,
+    1,
+    "a bare --overwrite must be refused: read as 'everything', it is the unconditional write again",
+  );
+
+  for (const payload of [
+    { A: "1", B: "2" },
+    { variables: { A: "1", B: "2" } },
+    { variables: [{ name: "A", value: "1" }, { key: "B", rawValue: "2" }] },
+    [{ name: "A", value: "1" }, { name: "B", value: "2" }],
+  ]) {
+    assert.deepEqual(
+      [...railwayValuesByName(payload)],
+      [["A", "1"], ["B", "2"]],
+      `Railway's variable list must be read in every shape the CLI has answered in (${JSON.stringify(payload).slice(0, 40)})`,
+    );
+  }
+  assert.equal(railwayValuesByName("not json at all").size, 0, "an answer that is not a list of variables reads as nothing, which the script refuses to act on");
+
+  // The script itself: it reads production before it writes, refuses an answer it cannot read, and
+  // hands the names to the workflow, which passes a person's release through the environment.
+  const listAt = syncSource.indexOf("runRailway(listArgs)");
+  const planAt = syncSource.indexOf("planSecretSync({ entries: variables");
+  // The call, not the helper's own declaration `function runRailway(cliArgs)` further up the file.
+  const writeAt = syncSource.indexOf("const result = runRailway(cliArgs);");
+  assert.ok(listAt > 0 && planAt > listAt && writeAt > planAt, "the script must list production's variables, then plan, and only then write");
+  assert.match(
+    syncSource,
+    /if \(railwayValues\.size === 0\) \{[\s\S]{0,400}?process\.exit\(1\);/,
+    "an empty or unreadable list must stop the run: read as 'production holds nothing', every value would look new and be written",
+  );
+  assert.match(syncSource, /for \(const \{ entry, value, reason \} of plan\.writes\)/, "the only values written are the plan's writes — never the whole variable list");
+  assert.match(syncSource, /if \(plan\.held\.length > 0\) \{\s*finish\("held", plan\.held\);\s*process\.exit\(3\);/, "a held value must end the run red, or a push-started run has no signal at all");
+  assert.match(workflowSource, /SYNC_OVERWRITE: \$\{\{ inputs\.overwrite \}\}/, "the released names must come from the hand-run input alone, so a push releases nothing");
+  assert.match(
+    workflowSource,
+    /run: node scripts\/sync-railway-production-secrets\.mjs --overwrite="\$SYNC_OVERWRITE"/,
+    "the input must reach the script through the environment, quoted — never interpolated into the command line",
+  );
+  assert.match(
+    workflowSource,
+    /if: \$\{\{ failure\(\) && steps\.sync\.outcome == 'failure' \}\}[\s\S]{0,400}?secrets\.TELEGRAM_ALERT_CHAT_ID/,
+    "a held or failed sync must be told on Telegram, to the existing alert chat: a red run started by somebody else's push is read by nobody",
   );
 }

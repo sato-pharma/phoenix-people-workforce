@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 import { RAILWAY_CLI_PACKAGE } from "./secret-policy.mjs";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
+import { parseOverwriteNames, planSecretSync, railwayValuesByName } from "./lib/secret-sync-plan.mjs";
 import {
   describeAttempt,
   firstErrorLine,
@@ -18,7 +20,7 @@ import {
 refuseUnknownFlags({
   name: "sync-railway-production-secrets",
   entry: import.meta.url,
-  known: ["--dry-run"],
+  known: ["--dry-run", "--overwrite"],
 });
 
 function resolveValue(names) {
@@ -197,6 +199,18 @@ const variables = [
 function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
+  // The names a person released for overwriting (--overwrite=NAME,NAME). Judged before any
+  // credential is tried, so a mistyped name stops the run with nothing read and nothing written.
+  const { names: overwrite, problems: overwriteProblems } = parseOverwriteNames(args);
+  const syncedNames = new Set(variables.map((entry) => entry.railway));
+  for (const name of overwrite) {
+    if (!syncedNames.has(name)) overwriteProblems.push(`--overwrite names ${name}, which this script does not sync`);
+  }
+  if (overwriteProblems.length > 0) {
+    console.error("[sync-railway-production-secrets] REFUSED:");
+    for (const problem of overwriteProblems) console.error(`  - ${problem}`);
+    process.exit(2);
+  }
   const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";
   const projectId = process.env.RAILWAY_PROJECT_ID?.trim();
   const serviceName = process.env.RAILWAY_SERVICE_NAME?.trim() || process.env.RAILWAY_SERVICE_ID?.trim();
@@ -238,6 +252,7 @@ function main() {
   const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
   const cliArgsBase = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "set"];
   const commonArgs = ["--skip-deploys", "--service", serviceName, "--environment", railEnv, "--project", projectId];
+  const listArgs = ["--yes", RAILWAY_CLI_PACKAGE, "variable", "list", "--json", "--service", serviceName, "--environment", railEnv, "--project", projectId];
 
   // Which attempt the CLI actually accepted. Deliberately starts null: pre-seeding it would collapse
   // the retry list to one entry and defeat the fallback below. Set on the first successful command,
@@ -284,7 +299,7 @@ function main() {
     return last;
   }
 
-  let updated = 0;
+  let written = 0;
   let skipped = 0;
   const failures = [];
 
@@ -294,19 +309,44 @@ function main() {
     for (const warning of legacyWarnings) console.warn(`  - ${warning}`);
   }
 
-  for (const entry of variables) {
-    const value = resolveValue(entry.github);
-
-    if (!value) {
-      if (entry.required) {
-        failures.push(`${entry.github.join(" or ")} is missing`);
-      } else {
-        skipped += 1;
-        console.log(`[sync-railway-production-secrets] skipping optional ${entry.railway} because ${entry.github.join(" or ")} is empty`);
-      }
-      continue;
+  // 🔴 READ PRODUCTION BEFORE WRITING TO IT (14 Nov 2026). This script used to write every non-empty
+  // GitHub value over Railway's without looking, and on 13 Nov 2026 a push that merely touched this
+  // file put a GitHub secret from 4 November over the dispatch token set on Railway on 7 November.
+  // The decision of what may be written lives in scripts/lib/secret-sync-plan.mjs, with the account.
+  //
+  // A dry run makes no Railway call, so it compares nothing: it lists every value GitHub holds.
+  let railwayValues = new Map();
+  if (!dryRun) {
+    const listed = runRailway(listArgs);
+    if (listed.status !== 0) {
+      console.error("[sync-railway-production-secrets] FAILED: production's variables could not be read, so nothing was written.");
+      console.error(`  - ${firstErrorLine(listed)}`);
+      finish("failed", []);
+      process.exit(1);
     }
+    try {
+      railwayValues = railwayValuesByName(JSON.parse(listed.stdout || "{}"));
+    } catch {
+      railwayValues = new Map();
+    }
+    // An unreadable or empty answer must never read as "production holds nothing": every value would
+    // then look new, and the run would write all of them, which is the old unconditional sync.
+    if (railwayValues.size === 0) {
+      console.error("[sync-railway-production-secrets] FAILED: Railway's answer held no variables this script could read, so nothing was written.");
+      finish("failed", []);
+      process.exit(1);
+    }
+  }
 
+  const plan = planSecretSync({ entries: variables, githubValueOf: resolveValue, railwayValues, overwrite });
+
+  for (const entry of plan.missingRequired) failures.push(`${entry.github.join(" or ")} is missing`);
+  for (const entry of plan.skippedEmpty) {
+    skipped += 1;
+    console.log(`[sync-railway-production-secrets] skipping optional ${entry.railway} because ${entry.github.join(" or ")} is empty`);
+  }
+
+  for (const { entry, value, reason } of plan.writes) {
     const cliArgs = [...cliArgsBase, `${entry.railway}=${value}`, ...commonArgs];
 
     if (dryRun) {
@@ -319,7 +359,7 @@ function main() {
       // one, which is all a dry run has to answer. Masked 2026-09-30.
       const maskedArgs = [...cliArgsBase, `${entry.railway}=<redacted ${value.length} chars>`, ...commonArgs];
       console.log(`[dry-run] ${[npmCommand, ...maskedArgs].join(" ")}`);
-      updated += 1;
+      written += 1;
       continue;
     }
 
@@ -332,17 +372,79 @@ function main() {
       continue;
     }
 
-    updated += 1;
-    console.log(`[sync-railway-production-secrets] synced ${entry.railway}`);
+    written += 1;
+    console.log(
+      `[sync-railway-production-secrets] synced ${entry.railway} (${reason === "new" ? "production held nothing under this name" : "released by --overwrite"})`,
+    );
+  }
+
+  if (dryRun) {
+    console.log("[dry-run] no Railway call was made, so nothing was compared: a real run leaves a value production already holds, and HOLDS one that differs unless --overwrite names it.");
+  } else {
+    console.log(`[sync-railway-production-secrets] unchanged: ${plan.unchanged.length} value(s) production already holds`);
+  }
+  for (const name of plan.unusedOverwrite) {
+    console.log(`[sync-railway-production-secrets] --overwrite named ${name}, but production already holds GitHub's value: nothing to release`);
+  }
+
+  if (plan.held.length > 0) {
+    console.error(`[sync-railway-production-secrets] HELD: production holds a different value for ${plan.held.length} variable(s), and none of them was overwritten:`);
+    for (const name of plan.held) console.error(`  - ${name}`);
+    console.error("  One of the two stores is behind, and this script cannot tell which.");
+    console.error("  If production is right: set the GitHub secret or variable to production's value (gh secret set NAME).");
+    console.error(`  If GitHub is right: run this workflow by hand and release them: gh workflow run sync-railway-production-secrets.yml -f overwrite=${plan.held.join(",")}`);
   }
 
   if (failures.length > 0) {
     console.error("[sync-railway-production-secrets] FAILED:");
     for (const failure of failures) console.error(`  - ${failure}`);
+    finish("failed", plan.held);
     process.exit(1);
   }
 
-  console.log(`[sync-railway-production-secrets] completed: updated=${updated}, skipped=${skipped}, environment=${railEnv}`);
+  console.log(
+    `[sync-railway-production-secrets] completed: written=${written}, unchanged=${plan.unchanged.length}, held=${plan.held.length}, skipped=${skipped}, environment=${railEnv}`,
+  );
+
+  // A held value ends the run red, after everything else was written: it is the only signal a run
+  // started by a push has, and Wait for CI is off on production, so a red run withholds no deploy.
+  if (plan.held.length > 0) {
+    finish("held", plan.held);
+    process.exit(3);
+  }
+  finish("ok", []);
+}
+
+/**
+ * Hand the outcome to the workflow: the step's outputs (read by the Telegram step) and the job
+ * summary. Names only, never a value. Does nothing outside GitHub Actions.
+ *
+ * @param {"ok" | "held" | "failed"} outcome
+ * @param {string[]} held
+ */
+function finish(outcome, held) {
+  const outputFile = process.env.GITHUB_OUTPUT;
+  if (outputFile) appendFileSync(outputFile, `outcome=${outcome}\nheld=${held.join(",")}\n`);
+  const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryFile && held.length > 0) {
+    appendFileSync(
+      summaryFile,
+      [
+        "### Secrets sync: production values held",
+        "",
+        `Production holds a different value for ${held.length} variable(s). None was overwritten.`,
+        "",
+        ...held.map((name) => `- \`${name}\``),
+        "",
+        "One of the two stores is behind. If production is right, set the GitHub secret to production's value.",
+        `If GitHub is right, run this workflow by hand with \`overwrite=${held.join(",")}\`.`,
+        "",
+      ].join("\n"),
+    );
+  }
+  if (process.env.GITHUB_ACTIONS === "true" && held.length > 0) {
+    console.log(`::error::The secrets sync HELD ${held.length} production value(s) that differ from GitHub and overwrote none: ${held.join(", ")}. Read the step's output for how to release them.`);
+  }
 }
 
 if (isMainModule()) {
