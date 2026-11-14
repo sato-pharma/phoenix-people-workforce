@@ -28,7 +28,7 @@
 // Only metrics this LEVEL can answer are offered. A medical rep is never shown a line comparison or
 // a rep-by-rep tick, because there are no lines to compare and nobody beneath him.
 
-import { useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 
 import {
   phxButtonGhostClassName,
@@ -45,6 +45,7 @@ import {
   type ReviewMetric,
   type ReviewMetricId,
 } from "@/lib/business-review/pack/metrics";
+import { packFileNameFromDisposition } from "@/lib/business-review/pack/filename";
 import { cn } from "@/lib/utils";
 
 import { hiddenEntries, type HiddenFields } from "./hidden-fields";
@@ -117,6 +118,52 @@ function PackPickerForm({ action, hidden, level, selected }: Props) {
   }
 
   const allIds = available.map((metric) => metric.id);
+
+  // 🔴 ONE DOWNLOAD AT A TIME (14 Nov 2026). The buttons used to submit the form straight at the pack route,
+  // and the answer is an attachment, so the page showed nothing while a slow pack was built. On 12 Nov one
+  // browser sent 188 requests in five minutes: every click cancelled the last and started another, and the
+  // server built them all (see lib/business-review/pack/single-flight.ts). Now the page fetches the file
+  // itself, says it is preparing it, and ignores every click until that file has arrived or failed. The
+  // buttons keep their formAction, so without JavaScript they still download as before.
+  const [preparing, setPreparing] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const busy = useRef(false);
+
+  async function download(event: MouseEvent<HTMLButtonElement>, format: string, label: string) {
+    event.preventDefault();
+    if (busy.current) return;
+    const form = event.currentTarget.form;
+    if (!form) return;
+    busy.current = true;
+    setPreparing(label);
+    setDownloadError(null);
+    try {
+      const query = new URLSearchParams();
+      for (const [name, value] of new FormData(form)) {
+        if (typeof value === "string" && name !== "format") query.append(name, value);
+      }
+      query.set("format", format);
+      const response = await fetch(`${PACK_ROUTE}?${query.toString()}`, { credentials: "same-origin" });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        throw new Error(typeof body?.error === "string" ? body.error : "The file could not be built. Please try again.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = packFileNameFromDisposition(response.headers.get("Content-Disposition")) ?? `Sales Review.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setDownloadError(error instanceof Error && error.message ? error.message : "The file could not be built. Please try again.");
+    } finally {
+      busy.current = false;
+      setPreparing(null);
+    }
+  }
 
   return (
     <details className={cn(phxFormBlockClassName, "group")}>
@@ -251,19 +298,32 @@ function PackPickerForm({ action, hidden, level, selected }: Props) {
             <span className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Download</span>
             {DOWNLOADS.map(({ format, label }) => (
               <button
+                aria-busy={preparing === label}
                 className={phxButtonPrimaryClassName}
-                disabled={none}
+                disabled={none || preparing !== null}
                 formAction={PACK_ROUTE}
                 key={format}
                 name="format"
+                onClick={(event) => void download(event, format, label)}
                 type="submit"
                 value={format}
               >
-                {label}
+                {preparing === label ? "Preparing…" : label}
               </button>
             ))}
           </span>
         </div>
+
+        <p aria-live="polite" className="mt-2 break-words text-xs empty:mt-0">
+          {preparing ? (
+            <span className="font-bold text-slate-700">
+              Preparing your {preparing} file. Sections marked takes longer can need a minute; it downloads on its own
+              when it is ready.
+            </span>
+          ) : downloadError ? (
+            <span className="font-bold text-rose-700">{downloadError}</span>
+          ) : null}
+        </p>
 
         {none ? (
           <p className="mt-2 break-words text-xs font-bold text-rose-700">Tick at least one section to download.</p>
