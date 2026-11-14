@@ -258,6 +258,29 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.equal(seated.has("venue-gone"), false, "a building the board does not hold files nobody — the customer stays among the clinics");
   assert.ok(![...seated.values()].flat().some((customer) => customer.customerName === "Single Clinic" || customer.customerName === "A Clinic"), "a single clinic is never filed under a building");
 
+  // ── Inside one building the WAITING customers are listed oldest first (owner, 14 Nov 2026) ──────
+  // Live that day one held building listed seven waiting customers by name, waits 5, 3, 5, 3, 5, 5, 3 days.
+  const queue = seatedCustomersByVenue({
+    pending: [
+      review({ reviewId: "review-q1", placeId: "place-q1", customerName: "Adel Zaki", createdAt: "2026-11-11T08:00:00.000Z" }),
+      review({ reviewId: "review-q2", placeId: "place-q2", customerName: "Zaki Adel", createdAt: "2026-11-09T08:00:00.000Z" }),
+      review({ reviewId: "review-q3", placeId: "place-q3", customerName: "Maged Nour", createdAt: "2026-11-09T09:30:00+02:00" }),
+      review({ reviewId: "review-q4", placeId: "place-q4", customerName: "Aya Broken", createdAt: "" }),
+      review({ reviewId: "review-q6", placeId: "place-q6", customerName: "Tied Second", createdAt: "2026-11-10T08:00:00.000Z" }),
+      review({ reviewId: "review-q5", placeId: "place-q5", customerName: "Tied First", createdAt: "2026-11-10T08:00:00.000Z" }),
+    ],
+    decided: [],
+    validated: [validated({ placeId: "place-u2", customerName: "Wael Samir" }), validated({ placeId: "place-u1", customerName: "Bassem Nabil" })],
+    reopened: [],
+    venueIds,
+  });
+  assert.deepEqual(
+    names(queue.get("venue-nile")).slice(0, 6),
+    ["Maged Nour", "Zaki Adel", "Tied First", "Tied Second", "Adel Zaki", "Aya Broken"],
+    "🔴 the customers waiting in one building are read oldest first — compared as instants, the place breaking a tie, a broken stamp last",
+  );
+  assert.deepEqual(names(queue.get("venue-nile")).slice(6), ["Bassem Nabil", "Wael Samir"], "and the customers already in use keep their name order, after everybody waiting");
+
   const nileRows = seated.get("venue-nile") ?? [];
   const mona = nileRows.find((customer) => customer.customerName === "Mona Said");
   assert.equal(mona?.state, "waiting");
