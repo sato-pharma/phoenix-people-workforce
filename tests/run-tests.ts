@@ -3141,6 +3141,7 @@ import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.
 import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-status.test.ts";
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
 import { runSyntheticJourneySignInStepTests } from "./synthetic-journey-sign-in-step.test.ts";
+import { runSyntheticJourneysRunHistoryFitTests } from "./synthetic-journeys-run-history-fit.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12443,6 +12444,7 @@ await runTest("smoke-test advice on the Synthetic Journeys page (a failed assert
 await runTest("smoke-test run status on the Synthetic Journeys page (every check passed and the one skip said why is healthy; a skip with no reason is still a warning; a skip never hides a failure or stands in for a pass)", runSyntheticJourneyRunStatusTests);
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);
 await runTest("smoke-suite sign-in step is saved under its own code (sign-in, not the test runner's internal hash), with its /login page and Super Admin role; every other check keeps its own code", runSyntheticJourneySignInStepTests);
+await runTest("Synthetic Journeys Run History fits a phone: the table is the desktop's alone and a phone gets cards with every run's facts and its View button, never a sideways scroll", runSyntheticJourneysRunHistoryFitTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
