@@ -127,7 +127,9 @@ export function runWorkforceLifecycleSeatTests() {
   assert.match(resignationsSource, /phx_resign_employee_and_open_vacancy/);
   assert.match(resignationsSource, /replacement_for_hr_id: employee\.hrId/);
 
-  const probationSource = readFileSync("src/lib/probation/service.ts", "utf8");
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow left probation/service.ts; a
+  // probation is decided on its case, in probation/intelligence/decision.ts.
+  const probationSource = readFileSync("src/lib/probation/intelligence/decision.ts", "utf8");
   assert.match(probationSource, /resignEmployeeAndOpenVacancy/);
   assert.match(probationSource, /employeeStatus: "terminated"/);
 

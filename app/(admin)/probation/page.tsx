@@ -66,10 +66,8 @@ export default async function ProbationPage() {
   return (
     <ProbationTracker
       capabilities={{
-        canCreate: canAdminister,
         canExport: canViewAllProbation(access),
         canManageWorkflow: canAdminister,
-        canSubmitManagerFeedback: canAdminister,
         viewerMode: access.role === "CEO" ? "executive" : "hr",
       }}
       initialData={initialData}

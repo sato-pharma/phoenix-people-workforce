@@ -97,10 +97,12 @@ export function runPhase16ProductionGapBurndownTests() {
     /finally\s*\{\s*await cleanup\(\);/,
     "Phase 16 smoke must always attempt cleanup in a finally block.",
   );
-  assert.match(
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow was retired; a probation is
+  // decided on its case (/api/probation/cases/[caseId]/decision), so the smoke no longer drives it.
+  assert.doesNotMatch(
     phase16SmokeSource,
-    /createProbationEvaluation[\s\S]*runProbationWorkflow/,
-    "Phase 16 smoke must test probation through the app service workflow.",
+    /createProbationEvaluation|runProbationWorkflow/,
+    "Phase 16 smoke must not call the retired probation evaluation workflow.",
   );
   assert.match(
     phase16SmokeSource,

@@ -8,7 +8,6 @@ import { readFileSync } from "node:fs";
 //      says completed while the person stays active, payroll-eligible and able to log in.
 export function runTerminationTruthTests() {
   const resignations = readFileSync("src/lib/resignations/service.ts", "utf8");
-  const probation = readFileSync("src/lib/probation/service.ts", "utf8");
   const contracts = readFileSync("src/lib/contracts/service.ts", "utf8");
   const decision = readFileSync("src/lib/probation/intelligence/decision.ts", "utf8");
 
@@ -22,7 +21,6 @@ export function runTerminationTruthTests() {
   );
 
   for (const [label, source] of [
-    ["probation termination", probation],
     ["contract non-renewal", contracts],
     ["probation intelligence decision", decision],
   ] as const) {

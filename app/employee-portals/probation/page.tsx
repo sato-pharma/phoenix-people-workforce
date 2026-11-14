@@ -230,7 +230,6 @@ export default async function EmployeePortalProbationPage() {
       {hasTracker ? (
         <EmployeeProbationDashboard
           canExport={canExportProbation(access)}
-          canSubmitManagerFeedback={canSubmitManagerFeedback}
           initialData={initialData!}
         />
       ) : (

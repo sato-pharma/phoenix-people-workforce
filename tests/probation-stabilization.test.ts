@@ -22,7 +22,7 @@ export function runProbationStabilizationTests() {
   const portalPageSource = readFileSync("app/employee-portals/probation/page.tsx", "utf8");
   const exportRouteSource = readFileSync("app/api/exports/route.ts", "utf8");
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
-  const workflowRouteSource = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
+  const decisionSource = readFileSync("src/lib/probation/intelligence/decision.ts", "utf8");
   const notificationProcessRouteSource = readFileSync("app/api/notifications/process/route.ts", "utf8");
   const scheduledNotificationProcessingSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
   const contractRenewalsCronSource = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
@@ -34,13 +34,14 @@ export function runProbationStabilizationTests() {
 
   assert.match(serviceSource, /export const getProbationRows = cache\(loadProbationRows\)/);
   assert.match(serviceSource, /function loadProbationRows\(access: AccessContext\)/);
-  assert.match(serviceSource, /canReadProbationEmployee\(access, employee, viewer, employees\)/);
+  assert.match(serviceSource, /canReadProbationEmployee\(access, employee, viewer, employees, viewerAllowedLines\)/);
   assert.match(serviceSource, /export function canReadAllProbation/);
   assert.match(serviceSource, /canViewAllProbation\(access\) \|\| access\.role === "CEO"/);
   assert.match(serviceSource, /if \(canReadAllProbation\(access\)\) return true/);
   assert.match(adminPageSource, /isProbationAdministrator\(access\)/);
   assert.match(adminPageSource, /canReadAllProbation\(access\)/);
-  assert.match(adminPageSource, /canCreate: canAdminister/);
+  // REC-010: the tracker no longer starts a review, so the page passes no "create" capability.
+  assert.doesNotMatch(adminPageSource, /canCreate:/);
   assert.match(adminPageSource, /canManageWorkflow: canAdminister/);
   assert.match(adminPageSource, /canExport: canViewAllProbation\(access\)/);
   assert.match(portalPageSource, /getProbationTrackerRows\(access\)/);
@@ -86,8 +87,6 @@ export function runProbationStabilizationTests() {
   // render for someone /api/exports would 403.
   assert.match(portalPageSource, /canExport=\{canExportProbation\(access\)\}/);
 
-  assert.match(serviceSource, /allowedWorkflowActions/);
-  assert.match(serviceSource, /validateWorkflowTransition/);
   // Cairo/UTC timezone fix (2026-07-25): service.ts's own local probationDays=90 /
   // baseProbationEndDate() / currentProbationEndDate() were a second, independent
   // reimplementation of probation/date.ts's canonical (owner-locked, hire+90-day) rule — and,
@@ -124,47 +123,15 @@ export function runProbationStabilizationTests() {
   assert.match(serviceSource, /workflowApproverHrIds:\s*probationWorkflowApproverHrIds/);
   assert.match(serviceSource, /ctaLabel:\s*"Open Probation Review"/);
   assert.match(serviceSource, /\/api\/probation\/redirect/);
-  // SCOPE LEAK FIX (2026-07-19): notifyProbationWorkflow now resolves an EXPLICIT, dynamically
-  // role-resolved recipientHrId per notification (DM + NSM chain-walk + Super Admin + CEO) instead of
-  // relying on the generic cross-module governance resolver, whose department-based org-scope match
-  // leaked another line's probationer's case-status update to up to 98 active users company-wide. The
-  // ORIGINAL intent of this guard — no HARDCODED/literal recipient list — is preserved by the assertions
-  // below; a dynamically role-resolved recipientHrId is the fix, not the regression it used to guard.
+  // No HARDCODED / literal recipient list anywhere in the probation service.
   assert.doesNotMatch(serviceSource, /recipients:\s*\[/, "no hardcoded literal recipient array");
-  assert.match(serviceSource, /recipientHrIds\.map\(\(recipientHrId\)/, "notifyProbationWorkflow sends one explicit notification per dynamically-resolved recipient");
   assert.doesNotMatch(serviceSource, /Approve in Telegram|Reject in Telegram|callback_query/);
-  assert.match(serviceSource, /ensureSystemProbationReview/);
+  // REC-010 (14 Nov 2026): the sweep no longer opens a legacy evaluation for every probationer.
+  assert.doesNotMatch(serviceSource, /ensureSystemProbationReview/);
 
-  // ── SCOPE LEAK FIX (owner report 2026-07-19): probation case-status notifications must be
-  // line-scoped, never routed through the generic cross-module governance resolver's
-  // department-based org-scope match (department_id groups the ENTIRE field-sales org under one id
-  // in this data, not per line — that leaked another line's probationer's status to up to 98 active
-  // users company-wide, e.g. an Anti Infective rep's update reaching Pedia/CNS NSMs and reps). ──
-  assert.match(
-    serviceSource,
-    /async function notifyProbationWorkflow\(\s*record: ProbationWorkflowRecord,\s*employee: EmployeeScopeRow,\s*directory: EmployeeScopeRow\[\]/,
-    "notifyProbationWorkflow takes the subject employee + directory so it can resolve its own scoped recipients",
-  );
-  assert.match(
-    serviceSource,
-    /const \[\{ nsmHrIds \}, hrApproverHrIds, ceoHrIds\] = await Promise\.all\(\[\s*resolveFeedbackExtraRecipients\(employee, directory\)/,
-    "reuses the already-correct NSM management-chain walk (resolveFeedbackExtraRecipients), not a department/line broad match",
-  );
-  assert.doesNotMatch(
-    serviceSource,
-    /await notifyProbationWorkflow\(record, employee\.displayName/,
-    "the old call signature (subject name only, no scoped recipient resolution) must not reappear",
-  );
-  assert.match(
-    serviceSource,
-    /await notifyProbationWorkflow\(record, employee, employees, employee\.displayName/,
-    "case-creation call site passes the subject employee + directory for scoped recipient resolution",
-  );
-  assert.match(
-    serviceSource,
-    /idempotencyKey: `probation:\$\{record\.employeeHrId\}:\$\{record\.status\}:\$\{recipientHrId\}`/,
-    "idempotency key is per (case, status, recipient) — each explicit recipient gets its own dedupe key",
-  );
+  // The legacy case-status notices (notifyProbationWorkflow, and its 2026-07-19 scope-leak fix) went
+  // with the legacy evaluation workflow in REC-010 (14 Nov 2026); a case decision sends no notice.
+  assert.doesNotMatch(serviceSource, /notifyProbationWorkflow/);
   assert.match(notificationProcessRouteSource, /runScheduledNotificationProcessing/);
   assert.match(scheduledNotificationProcessingSource, /processDueProbationReminderEvents/);
   assert.match(scheduledNotificationProcessingSource, /processNotificationOutbox/);
@@ -173,16 +140,8 @@ export function runProbationStabilizationTests() {
   assert.match(inAppNotificationsSource, /mapInAppNotificationRows/);
   assert.match(portalServiceSource, /recipients\.cs/);
   assert.match(portalServiceSource, /category.*probation/);
-  assert.match(workflowRouteSource, /expectedUpdatedAt/);
-  assert.match(workflowRouteSource, /status: 409/);
-  assert.match(workflowRouteSource, /"pass"/);
-  assert.match(workflowRouteSource, /"terminate"/);
-  assert.doesNotMatch(workflowRouteSource, /"extend"/);
-  assert.doesNotMatch(workflowRouteSource, /"upload_letter"/);
-  assert.doesNotMatch(workflowRouteSource, /approve_/);
-  assert.doesNotMatch(workflowRouteSource, /"complete"/);
 
-  assert.match(serviceSource, /resignEmployeeAndOpenVacancy/);
+  assert.match(decisionSource, /resignEmployeeAndOpenVacancy/, "a probation termination runs the resignation flow from the case decision");
   assert.match(serviceSource, /\.from\("notification_events"\)/);
   assert.match(serviceSource, /if \(error\) throw error/);
   assert.match(resignationsSource, /vacancyCodeFromEmployee/);
@@ -197,10 +156,10 @@ export function runProbationStabilizationTests() {
   assert.match(resignationsReportSource, /isTerminatedResignation/);
   assert.match(resignationsReportSource, /["']Terminated["']/);
 
-  assert.match(trackerSource, /SelectedWorkflowAction/);
-  assert.match(trackerSource, /Type HR ID to confirm termination/);
-  assert.match(trackerSource, /expectedUpdatedAt: workflow\.updatedAt/);
-  assert.match(trackerSource, /Start review/);
+  // REC-010: the tracker decides nothing — it links to the case, where the decision is taken.
+  assert.doesNotMatch(trackerSource, /SelectedWorkflowAction/);
+  assert.doesNotMatch(trackerSource, /Start review/);
+  assert.match(trackerSource, /href=\{`\/probation\/cases\/\$\{row\.workflow\.id\}`\}/);
   assert.match(trackerSource, /Managers Feedback in Probation Period/);
   assert.match(trackerSource, /Feedback Text/);
   assert.doesNotMatch(trackerSource, /Approve extension/);
@@ -209,7 +168,6 @@ export function runProbationStabilizationTests() {
   assert.doesNotMatch(trackerSource, /action === "extend"/);
   assert.doesNotMatch(trackerSource, /action === "upload_letter"/);
   assert.doesNotMatch(trackerSource, /Attach letter/);
-  assert.doesNotMatch(readFileSync("app/api/probation/route.ts", "utf8"), /probationEndDate/);
   assert.doesNotMatch(trackerSource, /onClick=\{\(\) => runWorkflow\(row,/);
 
   // ── Line-scoped probation matching must prefer numeric line_id (canonical

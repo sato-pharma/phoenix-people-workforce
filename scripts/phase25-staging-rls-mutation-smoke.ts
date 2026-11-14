@@ -707,7 +707,7 @@ async function verifyServiceRoleGuardSources(): Promise<Check[]> {
     ["src/lib/vacation/service.ts", "vacation decision service", [/assertPermission\(access, "leave", "approve"\)/]],
     ["app/api/admin/outstation/expenses/import/route.ts", "approved expense import route", [/resolveAccessContext\(request\)/, /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/]],
     ["app/api/employees/route.ts", "employee mutation route", [/resolveAccessContext\(request\)/, /assertPermission\(access, "employees", "update"\)/]],
-    ["app/api/probation/[id]/workflow/route.ts", "probation workflow route", [/resolveAccessContext\(request\)/, /assertPermission\(access, "probation"/]],
+    ["app/api/probation/cases/[caseId]/decision/route.ts", "probation case decision route", [/resolveAccessContext\(request\)/, /assertPermission\(access, "probation"/]],
   ];
 
   for (const [path, label, patterns] of expectations) {

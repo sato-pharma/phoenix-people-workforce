@@ -199,13 +199,6 @@ export const NOTICE_PINS: Array<{ file: string; specs: NoticePinSpec[] }> = [
     ],
   },
   {
-    file: "../src/lib/probation/service.ts",
-    specs: [
-      { fn: "createProbationEvaluation", calls: ["notifyProbationWorkflow"] },
-      { fn: "runProbationWorkflow", calls: ["notifyProbationWorkflow"] },
-    ],
-  },
-  {
     file: "../src/lib/contracts/service.ts",
     specs: [
       { fn: "createContractRenewalRequest", calls: ["notifyContractWorkflow"] },

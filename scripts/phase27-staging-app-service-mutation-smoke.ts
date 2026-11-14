@@ -43,9 +43,6 @@ type AppRoutes = {
   login: {
     POST: (request: Request) => Promise<Response>;
   };
-  probation: {
-    POST: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
-  };
   vacation: {
     POST: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   };
@@ -567,11 +564,10 @@ function applyStagingAppRouteEnv() {
 }
 
 async function importAppRoutes(): Promise<AppRoutes> {
-  const [login, employees, expenses, probation, vacation] = await Promise.all([
+  const [login, employees, expenses, vacation] = await Promise.all([
     import("../app/api/auth/login/route.ts"),
     import("../app/api/employees/route.ts"),
     import("../app/api/admin/outstation/expenses/route.ts"),
-    import("../app/api/probation/[id]/workflow/route.ts"),
     import("../app/api/vacations/requests/[id]/decision/route.ts"),
   ]);
 
@@ -579,7 +575,6 @@ async function importAppRoutes(): Promise<AppRoutes> {
     employees,
     expenses,
     login,
-    probation,
     vacation,
   };
 }
@@ -839,33 +834,8 @@ async function runDirectAppRouteChecks(
     checks.push(fail("App service guards", "Employee cannot save approved expense through direct app route", error, "Employee"));
   }
 
-  try {
-    const result = await callDynamicRouteJson(
-      routes.probation.POST,
-      hrCookie,
-      `/api/probation/${fixtures.probationId}/workflow`,
-      fixtures.probationId,
-      { action: "pass", note: "PHASE27 probation pass" },
-    );
-    expectStatus(result.status, 200, "HR probation workflow app route", result.body);
-    checks.push(pass("App service mutations", "HR can run probation decision through direct app route", "HR Advisory"));
-  } catch (error) {
-    checks.push(fail("App service mutations", "HR can run probation decision through direct app route", error, "HR Advisory"));
-  }
-
-  try {
-    const result = await callDynamicRouteJson(
-      routes.probation.POST,
-      employeeCookie,
-      `/api/probation/${fixtures.probationId}/workflow`,
-      fixtures.probationId,
-      { action: "pass" },
-    );
-    expectStatus(result.status, 403, "Employee denied probation workflow", result.body);
-    checks.push(pass("App service guards", "Employee cannot run probation decision through direct app route", "Employee"));
-  } catch (error) {
-    checks.push(fail("App service guards", "Employee cannot run probation decision through direct app route", error, "Employee"));
-  }
+  // REC-010 (14 Nov 2026): the legacy probation workflow route was deleted; a probation is decided on
+  // its case. The two route checks that drove it went with it.
 
   try {
     const result = await callDynamicRouteJson(

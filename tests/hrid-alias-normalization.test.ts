@@ -53,8 +53,10 @@ export function runHrIdAliasNormalizationTests() {
   assert.match(contractsSource, /function cleanHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "cleanHrId delegates to the canonical alias-aware helper");
   assert.doesNotMatch(contractsSource, /employee\.hrId\.toUpperCase\(\)/, "no remaining raw .toUpperCase() HR_ID comparison against the contract/request maps");
 
-  const probationSource = readFileSync("src/lib/probation/service.ts", "utf8");
-  assert.match(probationSource, /const employee = employees\.find\(\(row\) => normalizeHrId\(row\.hrId\) === employeeHrId\)/, "probation evaluation employee lookup uses the alias-aware normalizeHrId helper");
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow left probation/service.ts; a
+  // probation is decided on its case, in probation/intelligence/decision.ts.
+  const probationSource = readFileSync("src/lib/probation/intelligence/decision.ts", "utf8");
+  assert.match(probationSource, /return normalizeHrId\(v\) \?\? String\(v \?\? ""\)\.trim\(\)\.toLowerCase\(\);/, "the probation case decision compares HR ids through the alias-aware normalizeHrId helper");
 
   const hiringDocumentsSource = readFileSync("src/lib/hiring-documents/service.ts", "utf8");
   assert.match(hiringDocumentsSource, /function normalizeHrId\(value: string \| null \| undefined\) \{\s*return canonicalHrIdForDisplay\(value\);/, "hiring-documents normalizeHrId delegates to the canonical alias-aware helper");
