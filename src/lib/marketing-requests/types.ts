@@ -328,8 +328,16 @@ export type MarketingVenueMergeResult = {
   alreadyOnSurvivor: number;
   codesMoved: number;
   customerLinksMoved: number;
+  /** Customer links moved to the survivor's own copy of a distributor code the duplicate also held. */
+  customerLinksRepointed: number;
+  /** The duplicate's copies of codes the survivor already held, switched off by the merge. */
+  duplicateCodesRetired: number;
   loserId: string;
+  /** Links or targets left on the duplicate's code because their customer or request already held the survivor's. */
+  repointsAlreadyOnSurvivorCode: number;
   requestTargetsMoved: number;
+  /** Request targets moved to the survivor's own copy of a distributor code the duplicate also held. */
+  requestTargetsRepointed: number;
   survivorId: string;
   transfersMoved: number;
 };
