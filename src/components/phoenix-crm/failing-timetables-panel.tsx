@@ -54,6 +54,23 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
         view.capped ? " The window holds more refusals than one read can carry, so this list is a floor." : ""
       }${more > 0 ? ` The first ${view.rows.length} are shown.` : ""}`}
     >
+      {/* Phone: the buildings as cards. The table follows it directly, as in every panel of the module. */}
+      <CrmCardsOnPhone>
+        {view.rows.map((row) => (
+          <div key={row.sharedPlaceId} className="px-4 py-4">
+            <Building row={row} />
+            <div className="mt-2">
+              <WhatHappened row={row} />
+            </div>
+            <p className="mt-2 break-words text-xs text-slate-500">Last refused {row.lastRefusedAtText}</p>
+            <div className="mt-3">
+              <CrmButton disabled={opened === row.sharedPlaceId} onClick={() => onOpen(row.sharedPlaceId)} size="sm">
+                {opened === row.sharedPlaceId ? "Opened below" : "Open this building"}
+              </CrmButton>
+            </div>
+          </div>
+        ))}
+      </CrmCardsOnPhone>
       {/* Desktop: the module's own table. Three columns — the last refusal sits under what happened — so the
           button's column is wide enough beside the sidebar. */}
       <CrmTable columns={["32%", "46%", "22%"]}>
@@ -89,24 +106,6 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
           ))}
         </tbody>
       </CrmTable>
-
-      {/* Phone: the same buildings as cards. */}
-      <CrmCardsOnPhone>
-        {view.rows.map((row) => (
-          <div key={row.sharedPlaceId} className="px-4 py-4">
-            <Building row={row} />
-            <div className="mt-2">
-              <WhatHappened row={row} />
-            </div>
-            <p className="mt-2 break-words text-xs text-slate-500">Last refused {row.lastRefusedAtText}</p>
-            <div className="mt-3">
-              <CrmButton disabled={opened === row.sharedPlaceId} onClick={() => onOpen(row.sharedPlaceId)} size="sm">
-                {opened === row.sharedPlaceId ? "Opened below" : "Open this building"}
-              </CrmButton>
-            </div>
-          </div>
-        ))}
-      </CrmCardsOnPhone>
     </AdminTableShell>
   );
 }
