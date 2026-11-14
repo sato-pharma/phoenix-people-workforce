@@ -15,6 +15,7 @@ import {
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { SecondStepQrCode } from "@/components/auth/second-step-qr-code";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import {
   clearSessionActivity,
@@ -829,8 +830,9 @@ function useCopied(): [boolean, (text: string) => void] {
 
 /**
  * The second sign-in step: the code field and, above it, for an account that is not set up yet, the key
- * to put into an authenticator app. No QR picture is drawn here; the key is typed, copied, or opened
- * straight in the app by its own link, which is what a phone does best.
+ * to put into an authenticator app. The person scans the QR code with the phone (owner, 14 Nov 2026), or
+ * types the key, copies it, or opens it straight in the app by its own link, which is what a phone
+ * reading this page itself does best. The code and the link carry the same address.
  */
 function SecondStepFields({
   code,
@@ -862,23 +864,28 @@ function SecondStepFields({
             Google Authenticator and Microsoft Authenticator both work. Choose to add an account.
           </li>
           <li>
-            <span className="font-bold text-white">2. Give it this key.</span> Type it in, or open it in the app
-            if you are reading this on the phone itself.
-            <span
-              className="mt-2 block break-words border border-white/14 bg-black/40 px-4 py-3 font-mono text-base font-bold tracking-[0.08em] text-[#ffb366]"
-              data-second-step-key
-            >
-              {setup.secretForTyping}
-            </span>
-            <span className="mt-1 block text-white/52">Account name, if the app asks: {setup.account}</span>
-            <span className="mt-2 flex flex-wrap gap-2">
-              <button className={secondStepQuietButtonClass} onClick={() => copy(setup.secret)} type="button">
-                {copied ? "Key copied" : "Copy the key"}
-              </button>
-              <a className={secondStepQuietButtonClass} href={setup.otpauthUri}>
-                Open in the app
-              </a>
-            </span>
+            <span className="font-bold text-white">2. Scan this code with the app, or give it the key.</span>{" "}
+            Type the key in, or open it in the app if you are reading this on the phone itself.
+            <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
+              <SecondStepQrCode otpauthUri={setup.otpauthUri} />
+              <div className="flex-1 [overflow-wrap:anywhere]">
+                <span
+                  className="block break-words border border-white/14 bg-black/40 px-4 py-3 font-mono text-base font-bold tracking-[0.08em] text-[#ffb366]"
+                  data-second-step-key
+                >
+                  {setup.secretForTyping}
+                </span>
+                <span className="mt-1 block text-white/52">Account name, if the app asks: {setup.account}</span>
+                <span className="mt-2 flex flex-wrap gap-2">
+                  <button className={secondStepQuietButtonClass} onClick={() => copy(setup.secret)} type="button">
+                    {copied ? "Key copied" : "Copy the key"}
+                  </button>
+                  <a className={secondStepQuietButtonClass} href={setup.otpauthUri}>
+                    Open in the app
+                  </a>
+                </span>
+              </div>
+            </div>
           </li>
           <li>
             <span className="font-bold text-white">3. Type the 6-digit code the app now shows.</span>
