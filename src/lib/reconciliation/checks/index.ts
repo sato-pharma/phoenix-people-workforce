@@ -5,6 +5,7 @@ import { notificationsIntegrityReconciliationChecks } from "@/lib/reconciliation
 import { payrollReconciliationChecks } from "@/lib/reconciliation/checks/payroll";
 import { phoenixCrmPlacesReconciliationChecks } from "@/lib/reconciliation/checks/phoenix-crm-places";
 import { recruitmentReconciliationChecks } from "@/lib/reconciliation/checks/recruitment";
+import { salesTruthReconciliationChecks } from "@/lib/reconciliation/checks/sales-truth";
 import type { ReconciliationCheck } from "@/lib/reconciliation/types";
 
 /**
@@ -20,4 +21,6 @@ export const reconciliationChecks: ReconciliationCheck[] = [
   ...recruitmentReconciliationChecks,
   ...directOrdersReconciliationChecks,
   ...phoenixCrmPlacesReconciliationChecks,
+  // One lane, one month at a time; the runner starts it first (sales-truth.ts, runner.ts).
+  ...salesTruthReconciliationChecks,
 ];

@@ -1928,6 +1928,7 @@ import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-expor
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts";
 import { runSalesTruthStoreSplitTests } from "./sales-truth-store-split.test.ts";
+import { runSalesTruthDeclaredTests } from "./sales-truth-declared.test.ts";
 import {
   runClosingManagerAsOfTests,
   runClosingPerformanceReviewRehomedAreaTests,
@@ -6335,6 +6336,7 @@ await runTest('A closing can be published silently, and silence is opt-out only'
 await runTest('Publishing a closing tells everyone on the line by email, Telegram and in-app', runClosingPublishLineWideTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
 await runTest('SALES TRUTH Source of Sales carries the closing\'s own store split and asks the merge about its own month', runSalesTruthStoreSplitTests);
+await runTest('SALES TRUTH runs every night and only the declared differences are quiet', runSalesTruthDeclaredTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
 await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);
 await runTest('identity-card DESIGN LOCK (the portal identity banner always renders PhoenixSignatureCard)', runIdentityCardSignatureLockTests);

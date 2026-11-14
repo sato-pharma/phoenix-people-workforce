@@ -175,7 +175,24 @@ export async function runReconciliationCheckList(
   const startedAt = clock.now();
   const deadline = startedAt + Math.max(1_000, options.runBudgetMs ?? DEFAULT_RUN_BUDGET_MS);
 
-  const results = await mapWithConcurrency(checks, concurrency, (check) => runOne(check, timeoutMs, deadline, clock));
+  // A lane is one unit of work: its checks run one after another in a single slot. Lanes start first —
+  // they are the longest units, and starting the longest job first is what keeps the whole night
+  // inside the run budget. Results still come back in registry order.
+  const lanes = new Map<string, number[]>();
+  const singles: number[][] = [];
+  checks.forEach((check, index) => {
+    if (!check.lane) {
+      singles.push([index]);
+      return;
+    }
+    const lane = lanes.get(check.lane) ?? [];
+    lane.push(index);
+    lanes.set(check.lane, lane);
+  });
+  const results = new Array<ReconciliationCheckResult>(checks.length);
+  await mapWithConcurrency([...lanes.values(), ...singles], concurrency, async (unit) => {
+    for (const index of unit) results[index] = await runOne(checks[index], timeoutMs, deadline, clock);
+  });
 
   const counts = summarizeReconciliationResults(results);
   return {
