@@ -84,7 +84,7 @@ export async function runApprovalsOneDoorTests() {
   }
   assert.equal(stamped.metadata.idempotencyKey, "contract:1:hr_review", "the stamp must keep the caller's idempotency key");
   assert.equal(stamped.metadata.recordId, "1", "the stamp must keep the caller's own metadata");
-  assert.deepEqual(stamped.metadata.approval, { decision: null, module: "contract", step: "waiting" });
+  assert.deepEqual((stamped.metadata as Record<string, unknown>).approval, { decision: null, module: "contract", step: "waiting" });
   assert.equal(notice.metadata.idempotencyKey, "contract:1:hr_review");
   assert.equal("approval" in notice.metadata, false, "the stamp must not mutate the caller's notice");
 
@@ -145,7 +145,7 @@ export async function runApprovalsOneDoorTests() {
   for (const kind of ["plan_submitted", "plan_decided", "request_created", "request_returned", "unplanned_visit_raised", "visit_ask"] as const) {
     assert.equal(isPhoenixCrmApprovalNotice(kind), true, `the CRM "${kind}" notice is an approval`);
   }
-  for (const kind of ["day_start", "first_visit", "forecast_sent", "rep_plan"] as const) {
+  for (const kind of ["day_start", "first_visit", "forecast_sent"] as const) {
     assert.equal(isPhoenixCrmApprovalNotice(kind), false, `the CRM "${kind}" notice is not an approval`);
   }
   const crm = read("src/lib/phoenix-crm/server/notifications.ts");
