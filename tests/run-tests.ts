@@ -1001,6 +1001,7 @@ import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
 import { runVenueValidationRuleTests } from "./venue-validation-rule.test.ts";
 import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
+import { runMarketingVenueMergeCodeCollisionTests } from "./marketing-venue-merge-code-collision.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiFastAwaitingDataTests } from "./marketing-roi-fast-awaiting-data.test.ts";
@@ -5177,6 +5178,10 @@ await runTest(
 await runTest(
   "marketing venue merge (a colliding child is counted not thrown, one collision does not abort the rest, a real failure still surfaces, all four child tables move, the loser is deactivated, the mark is idempotent, the FK is SET NULL so deleting a survivor keeps its duplicates' record, and the backfill cannot fire on the wrong database)",
   runMarketingVenueMergeTests,
+);
+await runTest(
+  "marketing venue merge code collisions (a code the survivor already holds stays on the duplicate, so every link and request target naming it moves to the survivor's copy and the leftover is switched off with a note; a repoint that collides is counted, not thrown; a code that moved stays active; the audit states the counts)",
+  runMarketingVenueMergeCodeCollisionTests,
 );
 await runTest(
   "marketing venue merge route + admin action (the merge is reachable at all, the route delegates authorization instead of re-deciding it, it is registered as its own audited CSRF mutation rather than falling through the /api/marketing-requests/** blanket, the picker reads the venue table so an unlinked duplicate is still offerable, and the Customer Database gate still matches the service's)",

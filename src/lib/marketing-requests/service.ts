@@ -10634,6 +10634,97 @@ export async function moveMarketingVenueChildren(
   return { alreadyOnSurvivor, moved };
 }
 
+export type MarketingVenueCodeCollisionOutcome = {
+  /** Links and targets that could not be repointed because their owner already holds the survivor's code. */
+  alreadyOnSurvivorCode: number;
+  customerLinksRepointed: number;
+  duplicateCodesRetired: number;
+  requestTargetsRepointed: number;
+};
+
+/**
+ * Settle every distributor code the merge left behind on the duplicate venue.
+ *
+ * A code whose (distributor, normalized code) the survivor already holds cannot move — it hits
+ * `marketing_pharmacy_distributor_codes_unique` and `moveMarketingVenueChildren` steps over it. But
+ * the customer links and request targets have ALREADY moved by then, still carrying that leftover
+ * code's id, so a link on the survivor named a code belonging to the merged duplicate, and the
+ * leftover stayed `active` and kept showing as an unmatched code in the nightly master re-check.
+ * Seen on production 2026-11-14 (two "اسامه" venues, POS code 11568735), fixed then by hand.
+ *
+ * So, for each leftover code with a twin on the survivor: every link and request target naming it
+ * is repointed to the twin, and the leftover is switched off with a note saying why. A repoint that
+ * collides (the same customer or request already holds the twin) is counted and left as it was —
+ * the owner of that row already has the survivor's code, so nothing is lost and nothing is deleted.
+ */
+export async function settleMarketingVenueCodeCollisions(
+  supabase: SupabaseClient,
+  loserId: string,
+  survivorId: string,
+  settledAt: string,
+): Promise<MarketingVenueCodeCollisionOutcome> {
+  const outcome: MarketingVenueCodeCollisionOutcome = {
+    alreadyOnSurvivorCode: 0,
+    customerLinksRepointed: 0,
+    duplicateCodesRetired: 0,
+    requestTargetsRepointed: 0,
+  };
+
+  type CodeRow = { distributor_id: number | string; id: string; normalized_pharmacy_code: string; validation_notes: string | null };
+  const codeColumns = "id, distributor_id, normalized_pharmacy_code, validation_notes";
+
+  const leftovers = await supabase.from("marketing_pharmacy_distributor_codes").select(codeColumns).eq("pharmacy_id", loserId);
+  if (leftovers.error) throw leftovers.error;
+  const leftoverRows = (leftovers.data ?? []) as CodeRow[];
+  if (leftoverRows.length === 0) return outcome;
+
+  const survivorCodes = await supabase.from("marketing_pharmacy_distributor_codes").select(codeColumns).eq("pharmacy_id", survivorId);
+  if (survivorCodes.error) throw survivorCodes.error;
+  const codeKey = (row: CodeRow) => `${String(row.distributor_id)}|${row.normalized_pharmacy_code}`;
+  const twinByKey = new Map(((survivorCodes.data ?? []) as CodeRow[]).map((row) => [codeKey(row), row.id]));
+
+  for (const leftover of leftoverRows) {
+    const twinId = twinByKey.get(codeKey(leftover));
+    // No twin means the code did not stay behind on a collision — leave it for a person to look at.
+    if (!twinId) continue;
+
+    for (const [table, counter] of [
+      ["marketing_customer_pharmacies", "customerLinksRepointed"],
+      ["marketing_request_pharmacies", "requestTargetsRepointed"],
+    ] as const) {
+      const holders = await supabase.from(table).select("id").eq("distributor_code_id", leftover.id);
+      if (holders.error) throw holders.error;
+      for (const holder of (holders.data ?? []) as Array<{ id: string }>) {
+        const repoint = await supabase
+          .from(table)
+          .update({ distributor_code_id: twinId, updated_at: settledAt })
+          .eq("id", holder.id);
+        if (!repoint.error) {
+          outcome[counter] += 1;
+          continue;
+        }
+        if (String((repoint.error as { code?: string }).code) !== "23505") throw repoint.error;
+        outcome.alreadyOnSurvivorCode += 1;
+      }
+    }
+
+    const note = `Duplicate left by the venue merge on ${cairoDateTime(settledAt) ?? settledAt} (Cairo): `
+      + "the surviving venue already holds this distributor code, so its links were moved to that copy and this one was switched off.";
+    const retire = await supabase
+      .from("marketing_pharmacy_distributor_codes")
+      .update({
+        active: false,
+        updated_at: settledAt,
+        validation_notes: leftover.validation_notes ? `${leftover.validation_notes}\n${note}` : note,
+      })
+      .eq("id", leftover.id);
+    if (retire.error) throw retire.error;
+    outcome.duplicateCodesRetired += 1;
+  }
+
+  return outcome;
+}
+
 /**
  * Every venue a merge could name, for the picker on the Customer Database screen.
  *
@@ -10739,6 +10830,9 @@ export async function mergeMarketingVenue(
   );
 
   const mergedAt = new Date().toISOString();
+  // After every move: the links and targets above carried the duplicate's code ids onto the
+  // survivor, and the codes that collided stayed behind — point them at the survivor's copy.
+  const codeCollisions = await settleMarketingVenueCodeCollisions(supabase, loserId, survivorId, mergedAt);
   const actorHrId = access.hrId ?? access.loginId ?? null;
   const markResult = await supabase
     .from("marketing_pharmacies")
@@ -10765,8 +10859,12 @@ export async function mergeMarketingVenue(
       + codes.alreadyOnSurvivor + transfers.alreadyOnSurvivor,
     codesMoved: codes.moved,
     customerLinksMoved: customerLinks.moved,
+    customerLinksRepointed: codeCollisions.customerLinksRepointed,
+    duplicateCodesRetired: codeCollisions.duplicateCodesRetired,
     loserId,
+    repointsAlreadyOnSurvivorCode: codeCollisions.alreadyOnSurvivorCode,
     requestTargetsMoved: requestTargets.moved,
+    requestTargetsRepointed: codeCollisions.requestTargetsRepointed,
     survivorId,
     transfersMoved: transfers.moved,
   };
@@ -10784,6 +10882,9 @@ export async function mergeMarketingVenue(
       + `"${survivor.displayName}" (${survivor.pharmacyCode}). Moved ${result.customerLinksMoved} customer link(s), `
       + `${result.requestTargetsMoved} request target(s), ${result.codesMoved} distributor code(s), `
       + `${result.transfersMoved} transfer(s); ${result.alreadyOnSurvivor} already on the survivor. `
+      + `Switched off ${result.duplicateCodesRetired} duplicate distributor code(s) the survivor already held, `
+      + `repointing ${result.customerLinksRepointed} customer link(s) and ${result.requestTargetsRepointed} request target(s) `
+      + `to the survivor's copy; ${result.repointsAlreadyOnSurvivorCode} already held it. `
       + `Reason: ${reason}`,
   });
 
