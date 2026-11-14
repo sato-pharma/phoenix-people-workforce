@@ -112,8 +112,11 @@ export async function runWeeklySharedDerivationTests() {
       { branchName: null, areaCode: null },
     ];
     const rows = Array.from({ length: 400 }, (_, i) => ({ ...depots[i % depots.length], i }));
-    const govs = [...resolveBranchGovernorates(depots[0]) as Set<never>];
-    for (const viewer of [new Set(govs), new Set(["giza" as never]), new Set(["alexandria" as never])]) {
+    const first = resolveBranchGovernorates(depots[0]);
+    const govs: string[] = first instanceof Set ? [...first] : [];
+    assert.ok(govs.length > 0, "the first depot names a governorate, so the first viewer is a real one");
+    const viewers: Set<string>[] = [new Set(govs), new Set(["giza"]), new Set(["alexandria"])];
+    for (const viewer of viewers) {
       const expected = rows.filter((row) => {
         const scope = resolveBranchGovernorates(row);
         if (scope === "ALL" || scope === "FLOOR") return true;
