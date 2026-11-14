@@ -28,10 +28,14 @@ import {
   type MakeItHappenWorkspace,
 } from "@/lib/sales/make-it-happen/engine";
 import {
+  NO_DISTRICT_MANAGER,
+  VACANT_SEAT,
+  brickTabName,
   buildForecastExportModel,
   buildForecastPdfHtml,
   buildForecastWorkbook,
   forecastExportFilename,
+  groupBricksByDistrict,
 } from "@/lib/sales/make-it-happen/export-document";
 import {
   NO_PLANNER_FILTERS,
@@ -770,8 +774,62 @@ export async function runMakeItHappenTests() {
   const brickBook = new ExcelJS.Workbook();
   await brickBook.xlsx.load((await buildForecastWorkbook(brickModel)) as unknown as ArrayBuffer);
   const brickTexts: string[] = [];
-  brickBook.getWorksheet("By brick")?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
-  assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "the workbook's By brick sheet carries each brick and its units");
+  brickBook.getWorksheet(NO_DISTRICT_MANAGER)?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
+  assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "a brick with no named cover lands on the No District Manager tab, with its units");
+  assert.ok(brickTexts.some((text) => text.startsWith(VACANT_SEAT)), "and under a Vacant seat table, never dropped");
+
+  // ── Owner, 2026-11-14: the brick sheet is one tab per District Manager, then one table per rep ──
+  const covered = (brickId: string, pace: number, repName: string | null, districtManagerName: string | null): BrickPlanRow => ({
+    ...brick(brickId, pace),
+    repName,
+    districtManagerName,
+  });
+  const coverWorkspace: MakeItHappenWorkspace = {
+    ...workspace,
+    lines: [
+      {
+        ...cnsLine,
+        rows: [
+          { ...alpha, bricks: [covered("t1", 30, "Rep Zed", "Manager Bee"), covered("t2", 10, "Rep Amr", "Manager Bee"), covered("t3", 10, null, "Manager Ann")] },
+          { ...beta, bricks: [covered("t1", 5, "Rep Zed", "Manager Bee"), covered("t4", 5, "Rep Kim", null)] },
+        ],
+      },
+      pediaLine,
+    ],
+  };
+  const coverModel = buildForecastExportModel({
+    workspace: coverWorkspace, units: { A: 50, B: 10 }, goalPct: 100, filters: NO_PLANNER_FILTERS, now: new Date("2026-11-14T12:00:00Z"),
+  });
+  const districts = groupBricksByDistrict(coverModel);
+  assert.deepEqual(districts.map((district) => district.name), ["Manager Ann", "Manager Bee", NO_DISTRICT_MANAGER], "District Managers by name, the unnamed bucket last");
+  const bee = districts[1];
+  assert.deepEqual(bee.reps.map((rep) => rep.name), ["Rep Amr", "Rep Zed"], "then each District Manager's reps by name");
+  assert.deepEqual(
+    bee.reps[1].rows.map((row) => [row.brick, row.product, row.units]),
+    [["Brick t1", "Alpha", 30], ["Brick t1", "Beta", 5]],
+    "a rep's table lists that rep's bricks, each brick's products together",
+  );
+  assert.equal(bee.reps[1].bricks, 1, "a brick counts once however many products it carries");
+  assert.equal(bee.value, bee.reps.reduce((sum, rep) => sum + rep.value, 0), "a District Manager's total is the value of the reps, never units");
+  assert.deepEqual(districts[0].reps.map((rep) => rep.name), [VACANT_SEAT], "a brick with no rep is named a vacant seat under its District Manager");
+  const totalBrickValue = districts.reduce((sum, district) => sum + district.value, 0);
+  assert.equal(totalBrickValue, coverModel.lines.reduce((sum, line) => sum + line.forecastValue, 0), "the tabs together hold the whole forecast, nothing lost or doubled");
+  const coverBook = new ExcelJS.Workbook();
+  await coverBook.xlsx.load((await buildForecastWorkbook(coverModel)) as unknown as ArrayBuffer);
+  assert.deepEqual(
+    coverBook.worksheets.map((sheet) => sheet.name),
+    ["Cover", "Forecast", "Manager Ann", "Manager Bee", NO_DISTRICT_MANAGER, "Scenarios"],
+    "one tab per District Manager between the forecast and the scenarios",
+  );
+  const beeTexts: string[] = [];
+  coverBook.getWorksheet("Manager Bee")?.eachRow((excelRow) => excelRow.eachCell((cell) => beeTexts.push(String(cell.value ?? ""))));
+  assert.ok(beeTexts.some((text) => text.startsWith("Rep Zed · CNS")), "each rep has his own table on his District Manager's tab");
+  assert.ok(!beeTexts.some((text) => text.startsWith("Rep Kim")), "a rep of another District Manager is not on this tab");
+  const taken = new Set(["cover"]);
+  assert.equal(brickTabName("Cover", taken), "Cover (2)", "a tab name never collides, ignoring case");
+  assert.equal(brickTabName("A/B: [C]?*", taken), "A B C", "characters Excel refuses in a tab name are dropped");
+  assert.equal(brickTabName("x".repeat(40), taken).length, 31, "a tab name is at most 31 characters");
+  assert.equal(brickTabName("Osama Mohamed El-said Mahmoud Ahmed", taken), "Osama Mohamed El-said Mahmoud", "a long name is cut at a whole word, never mid-word");
 
   // ── Scope ──
   for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {

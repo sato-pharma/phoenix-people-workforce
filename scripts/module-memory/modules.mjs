@@ -160,6 +160,24 @@ export const MODULES = [
     keywords: ["closing export", "premium closing", "performance review", "rankings tab", "no office matrix", "consolidated closing", "national total", "filtered total", "workbook"],
     tables: [],
   },
+  // 🔴 SPLIT 2026-11-14, FOR THE SAME REASON AND BY THE SAME TEST AS `sales-closing-exports` ABOVE: the
+  // brick-tabs-per-District-Manager rule took `sales-closing` to a 4,131-byte pointer, over the 4,000
+  // margin. Make It Happen — the forecast planner and its Excel and PDF — is its own family: it reads
+  // the closing, never decides a closing number. `sales-closing` KEEPS EVERY GLOB IT HAD (make-it-happen
+  // included), so a planner file loads the PAIR and every money rule still arrives.
+  {
+    id: "sales-make-it-happen",
+    title: "Make It Happen — the forecast planner, its team list and its Excel and PDF",
+    scope: "The Make It Happen forecast: who plans which rows, the per-person team list, the per-brick forecast, and the Excel and PDF files — the brick tabs per District Manager, then per medical rep.",
+    globs: [
+      "src/lib/sales/make-it-happen/**",
+      "src/components/sales/make-it-happen/**",
+      "app/**/make-it-happen/**",
+      "tests/*make-it-happen*",
+    ],
+    keywords: ["make it happen", "forecast planner", "forecast per brick", "brick tab", "per dsm", "per mr"],
+    tables: ["phx_make_it_happen"],
+  },
   // 🔴 SPLIT 2026-10-15, FOR THE SAME REASON AND BY THE SAME TEST AS `sales-closing-exports` ABOVE:
   // the Kafr El-Sheikh 2 rule took `sales-closing` from 35 rules to 36 and its pointer from 3,960 to
   // 4,149, over the 4,000 margin. 🔴 THE MODULE WAS ALREADY AT THE MARGIN WITH 35 — 40 bytes under —
