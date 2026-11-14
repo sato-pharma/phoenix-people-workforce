@@ -409,10 +409,11 @@ export async function WorkspacePlansPage({ searchParams }: { searchParams: Searc
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "weekly_plans" });
   const selectedPlanId = Array.isArray(searchParams.plan) ? searchParams.plan[0] : searchParams.plan;
   const workspace = await getEmployeePlansWorkspace(access);
+  // DR-02 (owner, 14 Nov 2026): Phoenix CRM is the one plan store, so this page is history (legacy-closed.ts).
   return (
     <WorkspaceFrame
       access={access}
-      description="Submit, review, and follow up on weekly and monthly plans from the admin shell."
+      description="Every weekly and monthly plan filed here before 14 November 2026, to read. New plans are made, sent and approved in Phoenix CRM."
       icon={<CalendarDays className="h-3.5 w-3.5" />}
       title="Weekly / Monthly Plan"
     >

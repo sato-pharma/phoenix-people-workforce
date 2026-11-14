@@ -7,12 +7,15 @@ import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { assertBaseSalaryMapLoaded } from "@/lib/deductions/connectors/health.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
+import { loadManagerPlansInRange } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { buildWeekKey, planDeductionGraceDeadlineForMonday } from "@/lib/weekly-planning/week";
 import {
+  onTimePhoenixCrmPlans,
   owesAWeeklyPlan,
   selectNoWeeklyPlanDrafts,
+  type PhoenixCrmWeekSubmission,
   type OnTimeWeeklyPlan,
   type WeeklyPlanRosterEntry,
   type WeeklyPlanWeek,
@@ -112,7 +115,32 @@ async function loadOnTimePlans(weeks: readonly WeeklyPlanWeek[]): Promise<OnTime
     const compactKey = compactDeductionsHrId(row.employee_hr_id);
     if (compactKey) onTime.push({ weekKey: row.period_key, employeeCompactKey: compactKey });
   }
+
+  // DR-02 (owner, 14 Nov 2026): the week sent in Phoenix CRM counts too — the legacy form is closed. Read
+  // the same way, fail closed the same way: a plan we could not read must never become a charge.
+  const crmRows = await loadPhoenixCrmWeekSubmissions(weeks);
+  onTime.push(
+    ...onTimePhoenixCrmPlans({
+      rows: crmRows,
+      weeks,
+      deadlineForMonday: (mondayIso) => planDeductionGraceDeadlineForMonday(mondayIso).getTime(),
+    }),
+  );
   return onTime;
+}
+
+/**
+ * Every Phoenix CRM manager week that could hold one of these Mondays, through the module's one door for
+ * outside screens (manager-plan-readers.ts) — every page, test personas never. A failed read throws.
+ */
+async function loadPhoenixCrmWeekSubmissions(weeks: readonly WeeklyPlanWeek[]): Promise<PhoenixCrmWeekSubmission[]> {
+  const mondays = weeks.map((week) => week.mondayIso).sort();
+  try {
+    const plans = await loadManagerPlansInRange({ from: mondays[0], to: mondays[mondays.length - 1], isTest: false });
+    return plans.map((plan) => ({ hrId: plan.managerHrId, weekStart: plan.weekStart, submittedAt: plan.submittedAt }));
+  } catch (error) {
+    throw new Error(`Failed to load the Phoenix CRM weekly plans: ${(error as { message?: string } | null)?.message ?? String(error)}`);
+  }
 }
 
 /** Approved leave re-keyed by the COMPACT hr id the rest of the deductions module uses. */

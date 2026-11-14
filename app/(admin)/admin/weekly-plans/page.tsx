@@ -28,17 +28,18 @@ export default async function AdminWeeklyPlansPage({
   ]);
   const selectedPlanId = Array.isArray(params.plan) ? params.plan[0] : params.plan;
 
+  // DR-02 (owner, 14 Nov 2026): Phoenix CRM is the one plan store, so this page is history (legacy-closed.ts).
   return (
     <div className="space-y-6">
       <AdminPageHero
         badges={
           <>
             <AdminInsightChip tone="orange">Admin Shell</AdminInsightChip>
-            <AdminInsightChip tone="slate">Manager Reviews</AdminInsightChip>
-            <AdminInsightChip tone="emerald">CEO Decisions</AdminInsightChip>
+            <AdminInsightChip tone="slate">History</AdminInsightChip>
+            <AdminInsightChip tone="emerald">Read only</AdminInsightChip>
           </>
         }
-        description="Review submitted field plans, return corrections with row-level notes, finalize CEO decisions, and track HR acknowledgements from the desktop admin workspace."
+        description="Every weekly and monthly plan filed here before 14 November 2026, to read and export. New plans are made, sent and approved in Phoenix CRM."
         eyebrow="Planning Governance"
         icon={<CalendarDays className="h-3.5 w-3.5" />}
         title="Weekly / Monthly Plans"
@@ -47,16 +48,16 @@ export default async function AdminWeeklyPlansPage({
             <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
               <div className="flex items-center gap-2 text-orange-100">
                 <ClipboardCheck className="h-4 w-4" />
-                Review queue
+                Plans moved
               </div>
-              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Manager approvals, returns, and CEO decisions.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Weekly plans are made and approved in Phoenix CRM.</p>
             </div>
             <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
               <div className="flex items-center gap-2 text-emerald-100">
                 <ShieldCheck className="h-4 w-4" />
                 HR acknowledgement
               </div>
-              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Final approvals remain visible for HR follow-through.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Every decision and acknowledgement here stays visible.</p>
             </div>
           </div>
         }

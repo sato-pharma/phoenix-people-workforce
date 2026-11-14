@@ -88,3 +88,14 @@ re-add `deductions_categories_category_check` because both `daily_deductions_lin
 
 `tests/daily-deductions-no-weekly-plan.test.ts` (15 guards, each broken one at a time and its own
 assertion watched to fire), `tests/deductions-module-safety.test.ts`.
+
+## Phoenix CRM weeks count too (14 Nov 2026)
+
+The owner made Phoenix CRM the one plan store on 14 Nov 2026 (decision DR-02), and the legacy Weekly Plans form stopped accepting writes (`src/lib/weekly-planning/legacy-closed.ts`). The product managers had planned their weeks in Phoenix CRM since 17 Oct and stopped filing the legacy form after 24 Oct, so a connector reading the legacy form alone would have charged a day for weeks they did plan.
+
+The connector now counts a week when either store holds a plan sent on time:
+
+- the legacy `employee_plan_headers` row, as before, for the weeks before the switch;
+- a `phoenix_crm_manager_plans` week whose `submitted_at` is no later than the deadline of the Monday inside it (a Phoenix CRM week starts on Saturday, so it holds exactly one Monday). Test personas never count.
+
+Who owes a plan, the deadline, the first Monday and the one-day charge are unchanged. A failed Phoenix CRM read fails closed, like the legacy read: the connector reports a warning and charges nobody. Pinned by `tests/weekly-plans-one-store.test.ts`.
