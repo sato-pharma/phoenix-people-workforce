@@ -14,6 +14,10 @@
 // explicit warning and nothing here is ever auto-applied.
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import {
+  foldCustomerName as normalizeArabicPharmacyName,
+  removeCustomerStopWords as removeStopWords,
+} from "@/lib/customer-master/name-key";
 
 export type PharmacyMatchConfidence = "high" | "medium" | "low";
 export type PharmacyMatchReason = "exact_key" | "normalized_name_similarity" | "token_overlap";
@@ -44,53 +48,10 @@ export function assertPharmacyMasterAccess(access: AccessContext): void {
   }
 }
 
-// ── Arabic-aware name normalization (mirrors the normalizeIdentityText / normalizeAliasKey
-//    convention already used in src/lib/sales/customer-mapping.ts + normalizer/resolvers.ts:
-//    NFKD, strip combining marks + tatweel, unify alef/ya forms, lowercase, collapse
-//    non-letter/digit to spaces). ──────────────────────────────────────────────────────────
-export function normalizeArabicPharmacyName(value: string | null | undefined): string {
-  if (!value) return "";
-  let text = value.normalize("NFKD");
-  text = Array.from(text)
-    .filter((ch) => {
-      const code = ch.codePointAt(0) ?? 0;
-      const isLatinCombining = code >= 0x0300 && code <= 0x036f;
-      const isArabicHarakat = (code >= 0x064b && code <= 0x065f) || code === 0x0670;
-      return !isLatinCombining && !isArabicHarakat;
-    })
-    .join("");
-  text = text.replace(/ـ/g, ""); // tatweel
-  text = text.replace(/[إأآا]/g, "ا");
-  text = text.replace(/ى/g, "ي");
-  text = text.toLowerCase();
-  text = text.replace(/[^0-9a-zء-ي\s]/g, " ");
-  text = text.replace(/\s+/g, " ").trim();
-  return text;
-}
-
-// Common generic tokens that carry no distinguishing signal for pharmacy-identity matching.
-// Removing them (safely — never below zero tokens) sharpens the real name-similarity signal.
-const STOP_WORDS = new Set([
-  "صيدلية",
-  "صيدليه",
-  "فارما",
-  "الجديدة",
-  "الجديده",
-  "جديدة",
-  "جديده",
-  "دكتور",
-  "د",
-  "مستشفى",
-  "مستشفي",
-]);
-
-/** Remove stop words from an already-normalized string — but never down to zero tokens, so a
- *  name consisting ONLY of generic words (rare) still has something to compare. */
-export function removeStopWords(normalized: string): string {
-  const tokens = normalized.split(" ").filter(Boolean);
-  const filtered = tokens.filter((token) => !STOP_WORDS.has(token));
-  return (filtered.length > 0 ? filtered : tokens).join(" ");
-}
+// ── Arabic-aware name normalization: `foldCustomerName` in src/lib/customer-master/name-key.ts. ──
+// The fold and its stop words live in the one customer-master home (REC-009, 14 Nov 2026), unchanged.
+// These two names answer here as before, and are the very same functions.
+export { normalizeArabicPharmacyName, removeStopWords };
 
 export function nameTokens(value: string | null | undefined): Set<string> {
   const cleaned = removeStopWords(normalizeArabicPharmacyName(value));

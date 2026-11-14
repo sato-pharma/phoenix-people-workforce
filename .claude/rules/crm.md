@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**"
+  - "src/lib/{crm,crm-integrity,customer-360,customer-identity,customer-master,double-visit-analytics,visits-report,field-activity,weekly-planning}/**"
   - "src/components/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,double-visit-report,field-activity,weekly-planning}/**"
   - "app/**/{crm,crm-integrity,crm-tools,field-crm,customer-360,double-visit-analytics,double-visit-data-integrity,double-visit-report,dv-planner,doctor-coverage,doctor-coverage-settings,doctor-list,doctor-list-changes,rep-doctor-lists,reps-list,reps-plans,kpis,field-activity,visit-entry,visits,plan-verification,weekly-plans,plans,my-list,contact-review}/**"
   - "tests/*{crm,ireports,visit,reps-list,reps-plans,kpi,double-visit,doctor-list,coverage}*"
@@ -28,6 +28,7 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **CUSTOMER NAMES: ONE KEY** — `foldCustomerName` (`src/lib/customer-master/name-key.ts`; audit REC-009, 14 Nov 2026) is the one matcher Pharmacy Master, Pharmacy Search, Direct Orders and Phoenix CRM's pharmacy rules read; `normalizeArabicPharmacyName` is the same function at its old address. The owner chose "one home, no merges": every other customer-name fold keeps its rule and is listed with its reason in `CUSTOMER_NAME_FOLDS_THAT_DIFFER`. A new Arabic fold calls the key or is listed there, or `tests/customer-name-key.test.ts` refuses it. Account: `docs/customer-master.md`.
 - 🔒 **THE DOORS INTO CUSTOMER 360 ARE OFFICE ROLES ONLY AND STILL SCOPED BY THE PAGE** (owner, 2026-11-03). `canOpenCustomer360` asks what the Customer 360 pages ask; a direct order links to `dor_<pharmacy>`, and Marketing and Finance Ageing link through `/customer-360/marketing-customer/<id>`, which finds the hub in the viewer's own scoped report or says it is not theirs. Pinned by `tests/approver-context.test.ts`.
 
 ### Owner rules (moved from AGENTS.md §4)

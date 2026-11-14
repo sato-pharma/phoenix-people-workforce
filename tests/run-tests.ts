@@ -2806,6 +2806,7 @@ import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.t
 import { runMonthlyImportValidateDryRunTests } from "./monthly-import-validate-dry-run.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runSalesImportOneDoorTests } from "./sales-import-one-door.test.ts";
+import { runCustomerNameKeyTests } from "./customer-name-key.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
@@ -11075,6 +11076,11 @@ await runTest(
 await runTest(
   "every sales import runs its money rules through one door: only applyImportStoreRules deducts EPDA bonus units, checks the month lock and looks for the same workbook on a write; the Normalizer writer now refuses a locked month before anything is written; the same sheet through Monthly Import and the Normalizer stores identical rows, totals and duplicate check",
   runSalesImportOneDoorTests,
+);
+
+await runTest(
+  "one customer name key: foldCustomerName is the one matcher Pharmacy Master, Pharmacy Search, Direct Orders and Phoenix CRM pharmacy rules read, moved unchanged; a table of sample names folds alike from every caller, and every other Arabic fold is listed as a known difference or not a customer name",
+  runCustomerNameKeyTests,
 );
 
 await runTest(

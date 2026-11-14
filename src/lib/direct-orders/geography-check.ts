@@ -1,4 +1,4 @@
-import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Does the geography on this request agree with the distributor's own record? (owner rule, 2026-08-08)
@@ -153,8 +153,8 @@ function compareCodes(declared: string | null, master: string | null): DirectOrd
 
 /** Arabic-safe containment: both sides folded through the pharmacy matcher's own normalizer. */
 function addressNames(address: string, placeName: string): boolean {
-  const haystack = normalizeArabicPharmacyName(address);
-  const needle = normalizeArabicPharmacyName(placeName);
+  const haystack = foldCustomerName(address);
+  const needle = foldCustomerName(placeName);
   // Two characters is noise — "ال" would match half of Egypt.
   if (!haystack || !needle || needle.length < 3) return false;
   return haystack.includes(needle);
