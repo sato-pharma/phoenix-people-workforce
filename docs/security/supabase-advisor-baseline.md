@@ -150,7 +150,14 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (298 as of 2026-11-14; 284 on 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (297 as of 2026-11-14; 284 on 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Corrected 298 to 297 on 2026-11-14 — thirteen joined, not fourteen.** The entry below counted
+`public.phoenix_crm_shared_place_timetable_marks` while its migration was still being finished. PR 408's
+migration gives the table one policy, `phoenix_crm_shared_place_timetable_marks_service_role`, for
+`service_role` only; by 16:15 Cairo that policy was on production, so the table left this count and
+production read 297. It still grants `anon` and `authenticated` nothing. The other thirteen in the table
+below stand, and the accepted count is 297.
 
 **Raised 284 to 298 on 2026-11-14 — eight new server-only tables and six clean-up pre-images.** The
 daily check of 14 Nov read 297 at 15:54 Cairo and went red (run 43602048772); production read 298 ten
@@ -504,7 +511,14 @@ one's grants outside a migration.
   overlapping `authenticated` SELECT policies into one; writes unchanged). Perf-only, not
   a security gap.
 
-### DEFERRED - `unused_index` (755 accepted as of 2026-10-28; 842 on 2026-10-23, 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+### DEFERRED - `unused_index` (508 accepted as of 2026-11-14; 755 on 2026-10-28; 842 on 2026-10-23, 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+
+**Lowered 755 to 508 on 2026-11-14, on the owner's word.** The daily check read 513 (7 Nov), 507
+(8 Nov), 500 (9 Nov), 499 (10 Nov), 490 (11 and 12 Nov), 482 (13 Nov) and 508 (14 Nov), and production
+read 508 again that afternoon on counters 314 hours old (13.1 days). 508 is that day's reading and the
+highest of the seven days to 14 Nov. There is no room above it: the count rose by 26 between 13 and
+14 Nov as new tables' indexes arrived, so a day like that on top of 508 turns the check red and needs a
+dated decision here. Still not a drop list.
 
 **Not raised on 2026-10-30 — a crash restart, not new indexes.** The 30 Oct drift run read **815**
 (807 by 23:08 Cairo) on counters **18 hours old**: production's Postgres crashed and restarted on

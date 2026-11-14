@@ -95336,6 +95336,12 @@ CREATE POLICY phoenix_crm_settings_service_role ON public.phoenix_crm_settings T
 ALTER TABLE public.phoenix_crm_shared_place_timetable_marks ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: phoenix_crm_shared_place_timetable_marks phoenix_crm_shared_place_timetable_marks_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phoenix_crm_shared_place_timetable_marks_service_role ON public.phoenix_crm_shared_place_timetable_marks TO service_role USING (true) WITH CHECK (true);
+
+--
 -- Name: phoenix_crm_shared_places; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -105632,7 +105638,7 @@ GRANT ALL ON TABLE public.phoenix_crm_settings TO service_role;
 -- Name: TABLE phoenix_crm_shared_place_timetable_marks; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT SELECT,INSERT ON TABLE public.phoenix_crm_shared_place_timetable_marks TO service_role;
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE public.phoenix_crm_shared_place_timetable_marks TO service_role;
 
 --
 -- Name: SEQUENCE phoenix_crm_shared_place_timetable_marks_id_seq; Type: ACL; Schema: public; Owner: postgres
