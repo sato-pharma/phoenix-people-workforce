@@ -575,16 +575,22 @@ Two things `pull` confirmed that are worth knowing on their own:
 - **`phoenix-people-workforce`'s source carried `checkSuites: true`** on 10 Oct (it reads `false` since the
   release gate went live, 19 Oct). That was the Wait-for-CI deploy gate of "The deploy gate" above, visible in
   configuration rather than inferred from behaviour.
-- 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires five production routes on a
-  time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
-  `cron/recruitment-email-intake`, `notifications/daily` (the morning fan-out; once `PHOENIX_DAILY_JOBS_SPLIT`
-  is `on` it answers 200 and runs nothing — see "Switching the morning jobs over"), `cron/background-jobs` — with
-  `restartPolicyType: NEVER`, i.e. a one-shot container. (It fired the three iReports360 syncs too,
-  until they were removed from `.railway/railway.ts` with the vendor on 6 November 2026; the live
-  service keeps the old command until the next `railway config apply`.) An audit on
-  2026-09-30 listed it as a leftover to delete; that was wrong, and deleting it would remove a
-  production cron path. cron-job.org is the scheduler of record (§ Cron Jobs), so establish which of
-  the two is actually firing each route before touching either.
+- 🔴 **`phoenix-cron` is switched off, and its cron secret is dead on purpose.** It is an `alpine:3`
+  one-shot container (`restartPolicyType: NEVER`) with no schedule. Read live on 14 November 2026, its
+  only deployments were three from 1 August 2026, all removed, so it calls nothing. cron-job.org is the
+  scheduler of record (§ Cron Jobs). Its live start command is still the August one. If the service were
+  started, that command would call `notifications/process`, `cron/inbound-intake` and
+  `cron/recruitment-email-intake` (the worker's routes since 16 October), `notifications/daily`,
+  `cron/background-jobs` and three iReports360 routes removed with the vendor on 6 November 2026. It reads
+  the hour in UTC but its hour lists are Cairo hours, so every timed call would land three hours off.
+  - **Since 14 November 2026 its `CRON_SECRET` is the placeholder
+    `removed-2026-11-14-this-service-is-switched-off`**, so a start would be refused (401) on every
+    route. The name stays because `.railway/railway.ts` declares it with `preserve()` and
+    `tests/railway-iac-preapply.test.ts` expects it there. Never put the live secret back.
+  - **Never set a variable on it without `--skip-deploys`:** a deployment starts the container, which
+    then runs its command once.
+  - An audit on 2026-09-30 listed it as a leftover to delete. Whether to delete it is the owner's
+    decision; it is not a clean-up.
 
 ### The first apply, 2026-10-10
 
@@ -1248,7 +1254,14 @@ place's log says it did not start.
 
 **Every other variable on the worker is a Railway reference to the website's own**
 (`${{phoenix-people-workforce.NAME}}`), so the GitHub → Railway secret sync, which writes the website,
-reaches the worker with nothing to keep in step. Its source is `main` with "Wait for CI" off since 20 Oct, held
+reaches the worker with nothing to keep in step. 🔴 **That was not true until 14 November 2026:** 26
+of the worker's values were its own plain copies, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` and
+`PHOENIX_AUTH_SECRET` among them. Three had already drifted from the website's: the Brevo webhook secret,
+the Cloudflare token and the GitHub dispatch token. All 26 were turned into references that day with
+`--skip-deploys` and read back equal. Only `PHOENIX_PROCESS_ROLE` and `PHOENIX_LIVE_CRM_POLL` are the
+worker's own; any other plain value on it is drift. To compare without printing a value, read the stored
+form from `railway environment config --json` and compare the resolved values from
+`railway variable list --json` by sha-256. Its source is `main` with "Wait for CI" off since 20 Oct, held
 by the same release gate as the website, and its healthcheck is `/api/readyz` (set on the service itself on
 19 Oct — until then it had none). Both are in `.railway/railway.ts`.
 
