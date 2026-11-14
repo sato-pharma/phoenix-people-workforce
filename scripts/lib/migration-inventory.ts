@@ -2398,6 +2398,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // au.line_area_map and employee_salary_structure all restored, and a corrupted hr_note came back. Re-applying is a
   // no-op (`create or replace`, drop-and-create of the new trigger).
   "20261114020715_history_and_undo_log_review_fixes.sql",
+  // Applied 14 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the same
+  // route; no ledger row. Read back on BOTH projects: md5(prosrc) of phx_refuse_audit_trail_change
+  // 930f076852c9167b189b272acf36c03c, equal to this file's body as LF text, its search_path = public, pg_temp kept;
+  // employee_change_log_no_update, _no_delete and _no_truncate all on that function and enabled ALWAYS (A);
+  // phx_refuse_history_change gone (0 rows in pg_proc). Rehearsed on staging in a rolled-back transaction: an UPDATE
+  // under replica mode, a DELETE and a TRUNCATE of employee_change_log each refused, and a deductions_audit DELETE
+  // still refused. Re-applying is a no-op (`create or replace`, `drop function if exists`).
+  "20261114021603_employee_change_log_shares_the_audit_trail_refusal.sql",
   // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
   // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
   // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all

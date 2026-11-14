@@ -28,6 +28,9 @@ const RECOVERY_FILE = "20261113151741_recovery_protects_money_and_people_tables.
 // not a decision and a real one's delete is logged, the view resolves a login through app_auth_users,
 // and a restore merges by key instead of emptying the table.
 const FIX_FILE = "20261114020715_history_and_undo_log_review_fixes.sql";
+// The same review: the log's refusal triggers call the one append-only refusal the payroll and
+// deduction trails already use, and the copy 20261113151738 made of it is dropped.
+const SHARED_REFUSAL_FILE = "20261114021603_employee_change_log_shares_the_audit_trail_refusal.sql";
 
 const MASKED = [
   "base_salary", "basic_salary", "gross_salary", "net_salary",
@@ -93,7 +96,7 @@ function lastDefiner(files: string[], fn: string): { file: string; body: string 
 
 export async function runEmployeeAndDeductionHistoryTests() {
   const files = readdirSync(MIGRATIONS).filter((name) => name.endsWith(".sql")).sort();
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE]) {
     assert.ok(files.includes(name), `the migration must still be here: ${name}`);
   }
 
@@ -149,12 +152,33 @@ export async function runEmployeeAndDeductionHistoryTests() {
     );
   }
 
+  // ---- One append-only refusal, not two ------------------------------------------------------------
+  for (const verb of ["update", "delete", "truncate"]) {
+    const definers = files.filter((name) => read(name).includes(`trigger employee_change_log_no_${verb} `));
+    const last = definers[definers.length - 1];
+    assert.match(
+      read(last),
+      new RegExp(`trigger employee_change_log_no_${verb} before ${verb} on public\\.employee_change_log\\s+for each \\w+ execute function public\\.phx_refuse_audit_trail_change\\(\\);`),
+      `${last}: the ${verb} refusal must call phx_refuse_audit_trail_change(), the one refusal every append-only ` +
+        "trail shares — a second copy drifts from it",
+    );
+    assert.match(
+      read(last),
+      new RegExp(`alter table public\\.employee_change_log enable always trigger employee_change_log_no_${verb};`),
+      `${last}: a replaced refusal trigger must be set ENABLE ALWAYS again`,
+    );
+  }
+  const copyFiles = files.filter((name) => read(name).includes("phx_refuse_history_change"));
+  assert.ok(
+    read(copyFiles[copyFiles.length - 1]).includes("drop function if exists public.phx_refuse_history_change();"),
+    "the copy of the append-only refusal must stay dropped",
+  );
+
   // ---- No browser role reaches the log, its view or its functions ---------------------------------
   for (const target of [
     "revoke all on public.employee_change_log from public, anon, authenticated;",
     "revoke all on public.v_employee_change_log from public, anon, authenticated;",
     "revoke execute on function public.phx_log_employee_change() from public, anon, authenticated;",
-    "revoke execute on function public.phx_refuse_history_change() from public, anon, authenticated;",
   ]) {
     assert.ok(employee.includes(target), `missing: ${target}`);
   }
@@ -292,7 +316,7 @@ export async function runEmployeeAndDeductionHistoryTests() {
 
   // ---- No ledger row, so each needs its evidenced exception ---------------------------------------
   const inventory = readFileSync("scripts/lib/migration-inventory.ts", "utf8");
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE, SHARED_REFUSAL_FILE]) {
     assert.ok(
       inventory.includes(`"${name}",`),
       `${name} was applied by apply-sql-file.mjs, which writes no ledger row: it needs its evidenced ` +
