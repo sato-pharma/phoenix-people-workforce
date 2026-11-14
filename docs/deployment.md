@@ -1326,8 +1326,10 @@ variables, and `/api/readyz` answers 200 without them. It is off `AWAITING_CREAT
 cron-job.org job `8859323` is declared on, and its heartbeat `phoenix-mailbox-robots` is declared
 (in-house only). The website's variable and the job's `--apply` belong to the merge of the change that
 declared the job on; `node scripts/cronjob-sync.mjs --job mailbox-robots` reads the job's live state.
-One leftover, harmless: Railway named the service `thorough-motivation` at creation and its private
-network name kept that after the rename. Nothing calls it.
+Its private network name is `phoenix-workforce-robot.railway.internal`, matching the worker's. Railway
+named the service `thorough-motivation` at creation, and the private name kept that after the service
+was renamed. Nothing called it. It was renamed on 14 Nov 2026 with no deployment, through
+`privateNetworkEndpointRename` in `railway api`. The dashboard's service rename does not change it.
 
 **The order — each step only after the one before is proven** (kept as the account of how it was
 done, and as the way to rebuild it):
