@@ -27,6 +27,9 @@ import {
 export const MAKE_IT_HAPPEN_PORTAL_ROLES: ReadonlyArray<PhoenixRole> = [
   "Medical Rep",
   "District Manager",
+  // Owner, 2026-11-14 ("Yes, own region"): his own region only. The bound is the sales scope's seat
+  // areas (vs-target-scope.ts), and a Regional Manager whose seat gives no areas fails closed to none.
+  "Regional Manager",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",

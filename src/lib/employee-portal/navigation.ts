@@ -1095,6 +1095,7 @@ export function resolveEmployeePortalNavVisibility(
     showMakeItHappenTab:
       isMedicalRep ||
       resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
       isNationalSalesManager ||
       isProductManager ||
       isGroupProductManager ||

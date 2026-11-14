@@ -28,14 +28,19 @@ import {
   type MakeItHappenWorkspace,
 } from "@/lib/sales/make-it-happen/engine";
 import {
+  BRICKS_TAB,
+  DISTRICT_MANAGERS_TAB,
+  MEDICAL_REPS_TAB,
+  NO_AREA,
   NO_DISTRICT_MANAGER,
+  NO_REGION,
   VACANT_SEAT,
-  brickTabName,
   buildForecastExportModel,
   buildForecastPdfHtml,
   buildForecastWorkbook,
   forecastExportFilename,
   groupBricksByDistrict,
+  groupBricksByRegion,
 } from "@/lib/sales/make-it-happen/export-document";
 import {
   NO_PLANNER_FILTERS,
@@ -616,7 +621,7 @@ export async function runMakeItHappenTests() {
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load((await buildForecastWorkbook(model)) as unknown as ArrayBuffer);
-  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Forecast", "By brick", "Scenarios"]);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Forecast", BRICKS_TAB, "Scenarios"]);
   const forecastSheet = workbook.getWorksheet("Forecast");
   assert.ok(forecastSheet);
   const texts: string[] = [];
@@ -774,15 +779,30 @@ export async function runMakeItHappenTests() {
   const brickBook = new ExcelJS.Workbook();
   await brickBook.xlsx.load((await buildForecastWorkbook(brickModel)) as unknown as ArrayBuffer);
   const brickTexts: string[] = [];
-  brickBook.getWorksheet(NO_DISTRICT_MANAGER)?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
-  assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "a brick with no named cover lands on the No District Manager tab, with its units");
-  assert.ok(brickTexts.some((text) => text.startsWith(VACANT_SEAT)), "and under a Vacant seat table, never dropped");
+  assert.deepEqual(
+    brickBook.worksheets.map((sheet) => sheet.name),
+    ["Cover", "Forecast", BRICKS_TAB, "Scenarios"],
+    "one District Manager and one rep: no District Managers or Medical Reps tab, the Bricks tab alone",
+  );
+  brickBook.getWorksheet(BRICKS_TAB)?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
+  assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "a brick with no named cover is still on the Bricks tab, with its units");
+  assert.ok(brickTexts.includes(VACANT_SEAT), "under a Vacant seat, never dropped");
+  assert.ok(brickTexts.some((text) => text.startsWith(`${NO_REGION} · ${NO_AREA}`)), "and under No region · No area when its place is not known");
 
   // ── Owner, 2026-11-14: the brick sheet is one tab per District Manager, then one table per rep ──
-  const covered = (brickId: string, pace: number, repName: string | null, districtManagerName: string | null): BrickPlanRow => ({
+  const covered = (
+    brickId: string,
+    pace: number,
+    repName: string | null,
+    districtManagerName: string | null,
+    areaName: string | null = null,
+    regionName: string | null = null,
+  ): BrickPlanRow => ({
     ...brick(brickId, pace),
     repName,
     districtManagerName,
+    areaName,
+    regionName,
   });
   const coverWorkspace: MakeItHappenWorkspace = {
     ...workspace,
@@ -790,8 +810,15 @@ export async function runMakeItHappenTests() {
       {
         ...cnsLine,
         rows: [
-          { ...alpha, bricks: [covered("t1", 30, "Rep Zed", "Manager Bee"), covered("t2", 10, "Rep Amr", "Manager Bee"), covered("t3", 10, null, "Manager Ann")] },
-          { ...beta, bricks: [covered("t1", 5, "Rep Zed", "Manager Bee"), covered("t4", 5, "Rep Kim", null)] },
+          {
+            ...alpha,
+            bricks: [
+              covered("t1", 30, "Rep Zed", "Manager Bee", "Tanta", "Delta"),
+              covered("t2", 10, "Rep Amr", "Manager Bee", "Mansoura", "Delta"),
+              covered("t3", 10, null, "Manager Ann", "Assiut", "Upper Egypt"),
+            ],
+          },
+          { ...beta, bricks: [covered("t1", 5, "Rep Zed", "Manager Bee", "Tanta", "Delta"), covered("t4", 5, "Rep Kim", null)] },
         ],
       },
       pediaLine,
@@ -816,26 +843,73 @@ export async function runMakeItHappenTests() {
   assert.equal(totalBrickValue, coverModel.lines.reduce((sum, line) => sum + line.forecastValue, 0), "the tabs together hold the whole forecast, nothing lost or doubled");
   const coverBook = new ExcelJS.Workbook();
   await coverBook.xlsx.load((await buildForecastWorkbook(coverModel)) as unknown as ArrayBuffer);
+  // ── Owner, 2026-11-14 (later): one tab per LEVEL — District Managers, Medical Reps, then Bricks from region down ──
   assert.deepEqual(
     coverBook.worksheets.map((sheet) => sheet.name),
-    ["Cover", "Forecast", "Manager Ann", "Manager Bee", NO_DISTRICT_MANAGER, "Scenarios"],
-    "one tab per District Manager between the forecast and the scenarios",
+    ["Cover", "Forecast", DISTRICT_MANAGERS_TAB, MEDICAL_REPS_TAB, BRICKS_TAB, "Scenarios"],
+    "a team file carries a District Managers tab, a Medical Reps tab and a Bricks tab, in that order",
   );
-  const beeTexts: string[] = [];
-  coverBook.getWorksheet("Manager Bee")?.eachRow((excelRow) => excelRow.eachCell((cell) => beeTexts.push(String(cell.value ?? ""))));
-  assert.ok(beeTexts.some((text) => text.startsWith("Rep Zed · CNS")), "each rep has his own table on his District Manager's tab");
-  assert.ok(!beeTexts.some((text) => text.startsWith("Rep Kim")), "a rep of another District Manager is not on this tab");
-  const taken = new Set(["cover"]);
-  assert.equal(brickTabName("Cover", taken), "Cover (2)", "a tab name never collides, ignoring case");
-  assert.equal(brickTabName("A/B: [C]?*", taken), "A B C", "characters Excel refuses in a tab name are dropped");
-  assert.equal(brickTabName("x".repeat(40), taken).length, 31, "a tab name is at most 31 characters");
-  assert.equal(brickTabName("Osama Mohamed El-said Mahmoud Ahmed", taken), "Osama Mohamed El-said Mahmoud", "a long name is cut at a whole word, never mid-word");
+  const sheetTexts = (name: string) => {
+    const texts: string[] = [];
+    coverBook.getWorksheet(name)?.eachRow((excelRow) => excelRow.eachCell((cell) => texts.push(String(cell.value ?? ""))));
+    return texts;
+  };
+  const managerTexts = sheetTexts(DISTRICT_MANAGERS_TAB);
+  assert.ok(
+    ["Manager Ann", "Manager Bee", NO_DISTRICT_MANAGER].every((name) => managerTexts.includes(name)),
+    "every District Manager has a row on the District Managers tab",
+  );
+  assert.ok(managerTexts.includes("Delta") && managerTexts.includes("Upper Egypt"), "each District Manager's region is named");
+  const repTexts = sheetTexts(MEDICAL_REPS_TAB);
+  assert.ok(repTexts.includes("Manager Bee · medical reps"), "each District Manager has a table of his reps");
+  assert.ok(repTexts.includes("Rep Zed") && repTexts.includes("Rep Kim") && repTexts.includes(VACANT_SEAT), "every rep is listed, a vacant seat too");
+  assert.ok(repTexts.includes("Tanta"), "with the area his bricks sit in");
+
+  const regions = groupBricksByRegion(coverModel);
+  assert.deepEqual(regions.map((line) => line.lineName), ["CNS"], "one block per line that sold on a brick");
+  assert.deepEqual(regions[0].regions.map((region) => region.name), ["Delta", "Upper Egypt", NO_REGION], "regions by name, the unplaced bucket last");
+  assert.deepEqual(regions[0].regions[0].areas.map((area) => area.name), ["Mansoura", "Tanta"], "then each region's areas by name");
+  const tanta = regions[0].regions[0].areas[1];
+  assert.deepEqual(tanta.rows.map((row) => [row.brick, row.product]), [["Brick t1", "Alpha"], ["Brick t1", "Beta"]], "then the area's bricks, each brick's products together");
+  assert.equal(tanta.bricks, 1, "a brick counts once however many products it carries");
+  assert.equal(regions[0].regions[0].value, regions[0].regions[0].areas.reduce((sum, area) => sum + area.value, 0), "a region's total is its areas' value, never units");
+  assert.equal(regions[0].value, totalBrickValue, "the Bricks tab holds the whole brick forecast, nothing lost or doubled");
+  const brickTabTexts = sheetTexts(BRICKS_TAB);
+  const at = (text: string) => brickTabTexts.indexOf(text);
+  assert.ok(at("CNS · by region") >= 0, "the Bricks tab opens on the regions");
+  assert.ok(
+    at("CNS · by region") < at("CNS · Delta · by area") &&
+      at("CNS · Delta · by area") < at("Delta · Mansoura · 1 brick") &&
+      at("Delta · Mansoura · 1 brick") < at("CNS · Upper Egypt · by area"),
+    "region, then its areas, then each area's bricks, before the next region",
+  );
+
+  // A District Manager's own file: no District Managers tab, his reps and his bricks.
+  const ownDistrictModel = buildForecastExportModel({
+    workspace: {
+      ...coverWorkspace,
+      lines: [
+        {
+          ...cnsLine,
+          rows: [{ ...alpha, bricks: [covered("t1", 30, "Rep Zed", "Manager Bee", "Tanta", "Delta"), covered("t2", 10, "Rep Amr", "Manager Bee", "Mansoura", "Delta")] }],
+        },
+      ],
+    },
+    units: { A: 40 }, goalPct: 100, filters: NO_PLANNER_FILTERS, now: new Date("2026-11-14T12:00:00Z"),
+  });
+  const ownDistrictBook = new ExcelJS.Workbook();
+  await ownDistrictBook.xlsx.load((await buildForecastWorkbook(ownDistrictModel)) as unknown as ArrayBuffer);
+  assert.deepEqual(
+    ownDistrictBook.worksheets.map((sheet) => sheet.name),
+    ["Cover", "Forecast", MEDICAL_REPS_TAB, BRICKS_TAB, "Scenarios"],
+    "a District Manager's own file has no District Managers tab",
+  );
 
   // ── Scope ──
-  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {
-    assert.equal(canUseMakeItHappen(role), true, `${role} is one of the eight owner-named roles`);
+  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {
+    assert.equal(canUseMakeItHappen(role), true, `${role} is one of the nine owner-named roles (Regional Manager added 2026-11-14, own region only)`);
   }
-  for (const role of ["CEO", "Regional Manager", "Employee", "HR Operations", null]) {
+  for (const role of ["CEO", "Employee", "HR Operations", null]) {
     assert.equal(canUseMakeItHappen(role), false, `${role ?? "no role"} was not named`);
   }
 
@@ -849,6 +923,11 @@ export async function runMakeItHappenTests() {
   const selfScoped = applyMakeItHappenBound(rows, { rows: { kind: "self", hrId: "M-1" } as never, productCodes: null, label: "You" });
   assert.ok(selfScoped.every((item) => item.repHrId === "M-1"), "a medical rep never plans another rep's rows");
   assert.equal(isTeamBound({ rows: { kind: "self", hrId: "M-1" } as never, productCodes: null, label: "" }), false);
+  // A Regional Manager plans his own region only: his seat's areas (vs-target-scope.ts), never the line.
+  const regionRows = [row({ productCode: "P1", areaCode: "A1" }), row({ productCode: "P1", areaCode: "A2" }), row({ productCode: "P1", areaCode: "B9" })];
+  const regionBound = { rows: { kind: "areas", areaCodes: new Set(["A1", "A2"]), lineCodes: new Set(["cns"]) } as never, productCodes: null, label: "Your region" };
+  assert.deepEqual(applyMakeItHappenBound(regionRows, regionBound).map((item) => item.areaCode), ["A1", "A2"], "a Regional Manager sees his own region's areas and no other region's");
+  assert.equal(isTeamBound(regionBound), true, "and gets the per-rep team view, like a District Manager");
   assert.equal(isTeamBound({ rows: { kind: "company" }, productCodes: null, label: "" }), true);
   assert.equal(makeItHappenBoundLabel({ kind: "line", lineCodes: new Set(["PD"]) }), "Your line");
   assert.equal(

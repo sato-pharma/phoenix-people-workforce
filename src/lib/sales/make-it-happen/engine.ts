@@ -635,6 +635,13 @@ export type BrickPlanRow = {
    */
   repName?: string | null;
   districtManagerName?: string | null;
+  /**
+   * Where the brick sits, read from the same latest closed month: its area and that area's region on
+   * this line. null = not known; undefined = not read (a fixture). The export's Bricks tab runs
+   * Region → Area → Brick (owner, 2026-11-14: "start from the big region … area brick").
+   */
+  areaName?: string | null;
+  regionName?: string | null;
 };
 
 /** Order bricks the way the planner lists them: the biggest pace first, then by name. */
