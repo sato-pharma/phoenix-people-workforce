@@ -423,6 +423,9 @@ pnpm run synthetic:save-report`}
 
           {runs.length > 0 && (
             <AdminTableShell description="Last 20 saved runs" title="Run History">
+              {/* A phone gets cards, as Journey Results above does: at 375px the table's last column was 38px
+                  and its "Viewing" button about 60px, so the card scrolled sideways (14 Nov 2026). */}
+              <div className="hidden md:block">
               <table className="w-full table-fixed border-collapse text-left text-sm">
                 <colgroup>
                   <col className="w-[34%]" />
@@ -461,6 +464,28 @@ pnpm run synthetic:save-report`}
                   ))}
                 </tbody>
               </table>
+              </div>
+              <div className="divide-y divide-slate-100 md:hidden">
+                {runs.map((run) => (
+                  <div key={run.id} className={`min-w-0 space-y-1.5 px-4 py-3 ${run.id === activeRun.id ? "bg-orange-50/60" : ""}`}>
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <p className="min-w-0 break-words text-sm font-black text-slate-900">{formatDateTime(run.createdAt)}</p>
+                      <AdminInsightChip tone={run.overallStatus === "failed" ? "orange" : run.overallStatus === "healthy" ? "emerald" : "slate"} surface="light">{OVERALL_TONE[run.overallStatus].label}</AdminInsightChip>
+                    </div>
+                    <p className="break-words text-xs text-slate-600">
+                      {run.passedCount} passed · {run.failedCount} failed · {run.skippedCount} skipped · {formatDuration(run.durationMs)}
+                    </p>
+                    <button
+                      className="border border-slate-300 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      disabled={run.id === activeRun.id || historyLoading === run.id}
+                      onClick={() => viewRun(run.id)}
+                      type="button"
+                    >
+                      {historyLoading === run.id ? "Loading…" : run.id === activeRun.id ? "Viewing" : "View"}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </AdminTableShell>
           )}
         </>
