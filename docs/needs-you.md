@@ -89,8 +89,8 @@ the identical 14 / 9 / 1 lanes.
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
 `phoenix-crm-decisions` · `orphaned-requests` ·
 `uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
-`office-allocation-drift` · `organogram-seat-drift` · `hire-handoff-gaps` · `vendor-github` · `vendor-whatsapp` ·
-`vendor-telegram`
+`office-allocation-drift` · `organogram-seat-drift` · `hire-handoff-gaps` · `deduction-disputes` ·
+`stopped-approval-emails` · `vendor-github` · `vendor-whatsapp` · `vendor-telegram`
 
 `vendor-github`, `vendor-whatsapp` and `vendor-telegram` joined on 2026-11-03, after GitHub suspended the account on
 2 Nov and Supabase showed outstanding invoices, and neither reached any board. **Three sources, not one**, so one failed
@@ -256,6 +256,28 @@ in one pass — `Execution Time: 3.228 ms`, planning 6.134 ms, 0 drifted rows �
 magnitude inside the 8-second budget, so it joins the light lane. The three name lookups behind it
 (the employee's area, the region names, the two managers) run only when something has drifted.
 Pinned by `tests/needs-you-seat-drift.test.ts`, which is also one of the offline contract gates.
+
+### `deduction-disputes` and `stopped-approval-emails` — joined 2026-11-14
+
+**Two queues that only a badge or a buried list used to show** (enterprise audit REC-031).
+
+- **`deduction-disputes`** — a deduction dispute whose newest line is the employee's, on a deduction
+  still active on the payslip. It counts through `countOpenDeductionsDisputes`, the function behind
+  the Deduction Disputes rail badge, so the board and the badge cannot disagree; but where the badge
+  route settles a failed read at 0, the board shows the source amber. Only the Super Admin answers a
+  dispute, so for anyone else it is not-applicable and costs no read. It links to
+  `/admin/deductions?tab=disputes`.
+- **`stopped-approval-emails`** — an approval email (a durable direct email) that used every outbox
+  retry and will not be tried again until someone presses Send again. It counts through
+  `countExhaustedDurableEmails`, the same filter as the "Approval emails that did not send" list on
+  Email Notifications, gated on `admin` `update` (the permission Send again needs) before the read,
+  and its age is the oldest stopped email's. It is a flag, not an approval: the person usually had
+  the in-app notice already; what was lost is the email. It links to `/admin/email-notifications`.
+
+Both are light — one small read each. The board re-sends nothing and replies to nothing. The audit
+also suggested a daily Telegram digest of the same rows; it was not built, because it would be a new
+outbound message and the board row already carries it. Pinned by
+`tests/needs-you-disputes-and-stopped-emails.test.ts`.
 
 ### `hire-handoff-gaps` — joined 2026-11-13
 

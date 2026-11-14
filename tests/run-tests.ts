@@ -2893,6 +2893,7 @@ import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts
 import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
 import { runApprovalWhatsAppReplyExitTests } from "./approval-whatsapp-reply-exit.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
+import { runNeedsYouDisputesAndStoppedEmailsTests } from "./needs-you-disputes-and-stopped-emails.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
@@ -11495,6 +11496,10 @@ await runTest(
 await runTest(
   "the uncollected-leaver-deduction board source is preventive, not a ledger of gone money (owner 2026-10-07): it surfaces a departed employee with an APPROVED deduction not yet collected on-system ONLY from the closed-cohort floor (2026-09-01) forward — the August cohort settled off-system is never shown — and only inside a rolling window so a leaver already gone and paid drops off, never a standing row; a collected month clears it, an unknown category is treated as uncollected (the safe over-reporting direction), an active employee is never a leaver, and the row carries NO EGP field at all (a structural guarantee) while linking to /admin/deductions where a human can still settle one",
   runNeedsYouUncollectedLeaverDeductionsTests,
+);
+await runTest(
+  "deduction disputes and stopped approval emails are on the Needs You board (REC-031, 14 Nov 2026): the dispute row counts through the rail badge's own counter and is the Super Admin's alone (anyone else is not-applicable and costs no read); the stopped-email row reads exactly what Email Notifications lists (failed direct emails out of retries), is gated on the permission Send again needs before the read, carries the oldest one's age, and a failed read of either is amber, never a zero",
+  runNeedsYouDisputesAndStoppedEmailsTests,
 );
 await runTest(
   "the Office-allocation board row reports a month whose COMMITTED Office spread no longer matches the golden rule — the shares are frozen at the Office commit and nothing re-runs them, so a distributor book written afterwards moves the base underneath them (August 2026 CNS: 3,698 of 109,719 units, 3.37%, across 43 areas, measured on production 2026-10-09) — and because today's side applies today's shares to the line's OWN stored total, both sides hold identical units per line and the published-closing drift check is structurally blind to all of it; the row names its cause in NAMES never codes, ages from the FIRST base move rather than the commit, carries no EGP, drops to worth-knowing once the month is published because re-committing would restate an announced figure, and links to /sales/import where the Office book is actually re-committed",
