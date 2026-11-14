@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { DownloadHistoryPanel } from "./download-history-panel";
 import { formatPayrollDay, formatPayrollMoney, peopleCount } from "./format";
 import { HeldEnteredPanel } from "./held-entered-panel";
+import { HeldPaidOutsidePanel } from "./held-paid-outside-panel";
 import { LateExpensesPanel } from "./late-expenses-panel";
 import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
@@ -196,8 +197,12 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     label: string;
     url: string;
     ok: string;
-    /** Reopen Part 1 / Part 2: refused after a bank-file download unless a reason is given (REC-035). */
+    /** Reopen Part 1 / Part 2 / cancel: refused after a bank-file download unless a reason is given (REC-035). */
     overridable?: boolean;
+    /** The override prompt's reason label; "Why reopen anyway" when unset. */
+    reasonLabel?: string;
+    /** The button that closes the prompt without acting; "Cancel" when unset (reads wrong on a cancel). */
+    dismissLabel?: string;
   } | null>(null);
   /**
    * The reopen the server refused because finance already downloaded a bank file (bank-file-downloads.ts),
@@ -209,6 +214,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     url: string;
     ok: string;
     message: string;
+    reasonLabel?: string;
+    dismissLabel?: string;
   } | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
   // The confirm sits with the page's messages, far above the Part 2 buttons that open it. Measured on
@@ -565,7 +572,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * prompt instead of a plain error; sending it again with a reason (`override`) lets the reopen through.
    */
   const postReopen = async (
-    action: { title: string; label: string; url: string; ok: string },
+    action: { title: string; label: string; url: string; ok: string; reasonLabel?: string; dismissLabel?: string },
     override?: { reason: string },
   ) => {
     setBusy(true);
@@ -1018,6 +1025,32 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         ) : run ? (
           <Badge variant={run.phase === "published" || run.phase === "ready" ? "success" : "neutral"}>{phaseLabel}</Badge>
         ) : null}
+        {/* Cancel (payroll audit 2026-11-14, finding 14): the server has cancelled runs since the
+            carry-forward fix, but no screen offered it, so a run started on the wrong month could
+            only be worked around. Same guard as a reopen: a run whose bank files finance downloaded
+            needs a reason, kept on the cancel's audit row. */}
+        {run && (run.phase === "part1" || run.phase === "part2" || run.phase === "ready") ? (
+          <Button
+            variant="outline"
+            disabled={busy || activeStepDirty}
+            title={activeStepDirty ? "Save or confirm the open step first." : undefined}
+            onClick={() =>
+              setPendingAction({
+                title: `Cancel the ${periodLabel} run?`,
+                body: "The run stops for good: nobody is paid from it, its carry-forward entries and the late trips it set aside go back to where they were, and any held salary it was releasing is owed again. Its figures stay on record. You can then start a new run for this month.",
+                label: "Cancel this run",
+                url: `/api/automated-payroll/runs/${run.id}/cancel`,
+                ok: `The ${periodLabel} run is cancelled. Start a new run when you are ready.`,
+                overridable: true,
+                reasonLabel: "Why cancel anyway",
+                dismissLabel: "Keep the run",
+              })
+            }
+            className="h-10 border-red-300 font-bold text-red-700 hover:bg-red-50"
+          >
+            Cancel run
+          </Button>
+        ) : null}
       </div>
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
@@ -1090,7 +1123,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               {pendingAction.label}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingAction(null)}>
-              Cancel
+              {pendingAction.dismissLabel ?? "Cancel"}
             </Button>
           </div>
         </div>
@@ -1101,7 +1134,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <p className="mt-1 break-words">{downloadOverride.message}</p>
           <FormField
             className="mt-3"
-            label="Why reopen anyway"
+            label={downloadOverride.reasonLabel ?? "Why reopen anyway"}
             required
             htmlFor="payroll-download-override-reason"
             hint={`At least ${OVERRIDE_MIN_REASON} characters. Kept on the run's record with your name.`}
@@ -1131,7 +1164,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 setOverrideReason("");
               }}
             >
-              Cancel
+              {downloadOverride.dismissLabel ?? "Cancel"}
             </Button>
           </div>
         </div>
@@ -1884,6 +1917,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 {activeStep === "p1_held_release" || activeStep === "p2_held_release" ? (
                   <HeldEnteredPanel
                     key={`${run.id}-held-entered-${heldEnteredVersion}`}
+                    runId={run.id}
+                    locked={stepLocked(activeStep)}
+                    stepDirty={activeStepDirty}
+                    onChanged={() => setHeldEnteredVersion((version) => version + 1)}
+                  />
+                ) : null}
+                {activeStep === "p1_held_release" || activeStep === "p2_held_release" ? (
+                  <HeldPaidOutsidePanel
+                    key={`${run.id}-held-paid-outside-${heldEnteredVersion}`}
                     runId={run.id}
                     locked={stepLocked(activeStep)}
                     stepDirty={activeStepDirty}

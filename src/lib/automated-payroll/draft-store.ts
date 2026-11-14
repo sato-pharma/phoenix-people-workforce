@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { groupRowsByColumnSet } from "@/lib/imports/upsert-by-column-set.ts";
 
+import { databaseFailureNote } from "./db-error.ts";
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
 import type {
   DraftCellChange,
@@ -312,9 +313,16 @@ export async function markRunPublished(
           "stand — refresh the page and read where the run is before repeating it.",
       );
     }
+    // Only publish calls this, and only after the salary batch is approved and live, the carry-forward
+    // ledger is settled and the held releases are recorded (payroll audit 2026-11-14, finding 6). Without
+    // "Conflict:" this read as a bare "Failed to publish", and HR, believing nothing had happened, could
+    // reopen or cancel the run and release debts that were really collected. Publishing again is safe:
+    // it finds its own batch and finishes.
     throw new Error(
-      "Could not record who was held this month, so the run was NOT marked published. The payslips already " +
-        `written stay as they are; publish again to finish. (${message})`,
+      "Conflict: the payslips for this run WERE written and are live, and the carry-forward and held-salary " +
+        "releases are recorded, but the run was NOT marked published because who was held this month could " +
+        "not be recorded. Press Publish again to finish. Do NOT reopen or cancel this run: that would release " +
+        `debts this month really collected. (${databaseFailureNote(error, "automated_payroll_mark_published_failed")})`,
     );
   }
   const row = ((Array.isArray(data) ? data : data ? [data] : []) as RunRow[])[0];
@@ -350,8 +358,8 @@ export async function reopenPart1Atomically(
       );
     }
     throw new Error(
-      "Part 1 could not be reopened, so nothing was changed: the first instalment is still frozen and the " +
-        `run is still in Part 2. Try again. (${message})`,
+      "Conflict: Part 1 could not be reopened, so nothing was changed: the first instalment is still frozen " +
+        `and the run is still in Part 2. Try again. (${databaseFailureNote(error, "automated_payroll_reopen_part1_failed")})`,
     );
   }
   const row = ((Array.isArray(data) ? data : data ? [data] : []) as RunRow[])[0];

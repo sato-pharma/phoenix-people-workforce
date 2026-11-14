@@ -104,7 +104,7 @@ export async function readPublishedHoldRecord(runId: string): Promise<PublishedH
   if (runError) throw runError;
   if ((run as { phase?: string } | null)?.phase === "published") {
     throw new Error(
-      "This payroll run is published but its record of who was held is missing, so the held people cannot be " +
+      "Conflict: This payroll run is published but its record of who was held is missing, so the held people cannot be " +
         "shown. Nothing is listed rather than a list that leaves them out. Report this to the payroll owner.",
     );
   }
