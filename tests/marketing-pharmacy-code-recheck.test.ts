@@ -117,6 +117,11 @@ export function runMarketingPharmacyCodeRecheckTests() {
   assert.equal((service.match(/writeRequiredAuditLog\(/g) ?? []).length, 2, "both decisions are audit-logged");
   assert.match(service, /access\.role !== "Super Admin"/, "the list and both decisions are Super Admin only");
 
+  // 14 Nov 2026: the first Confirm match wrote "by Super Admin" and the first Keep stored "b-10" — the
+  // session's hr id is the lowercase comparison key. Both now go through hrIdForStorage.
+  assert.match(service, /const hrId = hrIdForStorage\(access\.hrId\);/, "the confirmer's name is looked up by the stored hr id");
+  assert.match(service, /const keptBy = hrIdForStorage\(/, "who kept a code is stored in canonical casing");
+
   const cron = readFileSync("app/api/cron/marketing-pharmacy-code-sync/route.ts", "utf8");
   assert.ok(
     cron.indexOf("runSalesPharmacyCodeSync({ dryRun })") < cron.indexOf("runMasterRecheck({ dryRun })"),
