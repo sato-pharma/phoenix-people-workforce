@@ -12,9 +12,10 @@
  * did something wrong, and nobody is told anything by it.
  *
  * 🔴 DECLARING "THIS BUILDING HAS NO TIMETABLE" IS A SCREEN MARKER AND NOTHING ELSE (owner, 2026-10-18,
- * City clinic). It writes `timetable_exempt_at` and `timetable_exempt_by_hr_id` on the building. Nothing
- * validates a customer off it: one seated there later is still held for the administrator, whose Approve
- * on that customer is the exception.
+ * City clinic). It writes `timetable_exempt_at` and `timetable_exempt_by_hr_id` on the building, and a
+ * trail row of who declared it or took it back (14 Nov 2026). Nothing validates a customer off either:
+ * one seated there later is still held for the administrator, whose Approve on that customer is the
+ * exception.
  *
  * Pure: no I/O.
  */
