@@ -195,80 +195,91 @@ export function openVacancyReadFailed(): boolean {
   return vacancyReadState().failed;
 }
 
+/**
+ * The open seats, read straight from `position_vacancies` — and a failed read THROWS. The cached
+ * `getOpenVacancies` below turns a timeout into "no vacancies", which is right for a page that
+ * lists seats and wrong for a caller that must decide whether a seat is still open: the joining
+ * form read a timed-out list as "the seat on your offer is filled", refused the candidate and told
+ * HR so (enterprise audit REC-034, 14 Nov 2026). Such a caller reads this one.
+ */
+async function loadOpenVacancyRows(): Promise<VacancyLookupRow[]> {
+  const loadRows = (includeReplacement: boolean) => {
+    const vacancyParams = new URLSearchParams({
+      select: [
+        "id",
+        "vacancy_code",
+        "area_id",
+        "line_id",
+        "position_id",
+        "manager_hr_id",
+        "manager_name",
+        "job_title",
+        "department_id",
+        "region_name",
+        ...(includeReplacement ? ["replacement_for_hr_id"] : []),
+        "status",
+        "lines(name)",
+        "areas(name)",
+        "positions(title)",
+      ].join(","),
+      status: "eq.open",
+    });
+
+    return supabaseRest<Array<{
+    area_id: number | null;
+    areas?: { name: string | null } | null;
+    department_id: number | null;
+    id: number;
+    job_title: string;
+    line_id: number | null;
+    lines?: { name: string | null } | null;
+    manager_hr_id: string | null;
+    manager_name: string | null;
+    position_id: number | null;
+    positions?: { title: string | null } | null;
+    region_name: string | null;
+    replacement_for_hr_id?: string | null;
+    vacancy_code: string;
+    }>>(`position_vacancies?${vacancyParams}`);
+  };
+
+  let vacancies: Awaited<ReturnType<typeof loadRows>>;
+  try {
+    vacancies = await loadRows(true);
+  } catch (error) {
+    const message = vacancyErrorMessage(error).toLowerCase();
+    if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
+      throw error;
+    }
+    vacancies = await loadRows(false);
+  }
+
+  const managerNames = await loadManagerDisplayNames(vacancies.map((v) => v.manager_hr_id));
+
+  return vacancies.map((v) => {
+    const positionTitle = v.positions?.title ?? v.job_title ?? "";
+    return {
+      areaId: v.area_id,
+      areaName: v.areas?.name ?? "Unknown Area",
+      departmentId: v.department_id,
+      jobTitle: v.job_title,
+      lineId: v.line_id,
+      lineName: v.lines?.name ?? "Unknown Line",
+      managerHrId: v.manager_hr_id,
+      managerName: managerNames.get(canonicalHrIdKey(v.manager_hr_id) ?? "") ?? v.manager_name,
+      positionId: v.position_id,
+      positionTitle,
+      regionName: v.region_name,
+      replacementForHrId: v.replacement_for_hr_id ?? null,
+      vacancyCode: v.vacancy_code,
+      vacancyId: v.id,
+    };
+  });
+}
+
 const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
   try {
-    const loadRows = (includeReplacement: boolean) => {
-      const vacancyParams = new URLSearchParams({
-        select: [
-          "id",
-          "vacancy_code",
-          "area_id",
-          "line_id",
-          "position_id",
-          "manager_hr_id",
-          "manager_name",
-          "job_title",
-          "department_id",
-          "region_name",
-          ...(includeReplacement ? ["replacement_for_hr_id"] : []),
-          "status",
-          "lines(name)",
-          "areas(name)",
-          "positions(title)",
-        ].join(","),
-        status: "eq.open",
-      });
-
-      return supabaseRest<Array<{
-      area_id: number | null;
-      areas?: { name: string | null } | null;
-      department_id: number | null;
-      id: number;
-      job_title: string;
-      line_id: number | null;
-      lines?: { name: string | null } | null;
-      manager_hr_id: string | null;
-      manager_name: string | null;
-      position_id: number | null;
-      positions?: { title: string | null } | null;
-      region_name: string | null;
-      replacement_for_hr_id?: string | null;
-      vacancy_code: string;
-      }>>(`position_vacancies?${vacancyParams}`);
-    };
-
-    let vacancies: Awaited<ReturnType<typeof loadRows>>;
-    try {
-      vacancies = await loadRows(true);
-    } catch (error) {
-      const message = vacancyErrorMessage(error).toLowerCase();
-      if (!message.includes("replacement_for_hr_id") && !message.includes("schema cache")) {
-        throw error;
-      }
-      vacancies = await loadRows(false);
-    }
-
-    const managerNames = await loadManagerDisplayNames(vacancies.map((v) => v.manager_hr_id));
-
-    return vacancies.map((v) => {
-      const positionTitle = v.positions?.title ?? v.job_title ?? "";
-      return {
-        areaId: v.area_id,
-        areaName: v.areas?.name ?? "Unknown Area",
-        departmentId: v.department_id,
-        jobTitle: v.job_title,
-        lineId: v.line_id,
-        lineName: v.lines?.name ?? "Unknown Line",
-        managerHrId: v.manager_hr_id,
-        managerName: managerNames.get(canonicalHrIdKey(v.manager_hr_id) ?? "") ?? v.manager_name,
-        positionId: v.position_id,
-        positionTitle,
-        regionName: v.region_name,
-        replacementForHrId: v.replacement_for_hr_id ?? null,
-        vacancyCode: v.vacancy_code,
-        vacancyId: v.id,
-      };
-    });
+    return await loadOpenVacancyRows();
   } catch (error) {
     const message = vacancyErrorMessage(error).toLowerCase();
     if (
@@ -287,6 +298,11 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
 
 export async function getOpenWorkforceVacancies(): Promise<VacancyLookupRow[]> {
   return getOpenVacancies();
+}
+
+/** The open seats, never swallowed and never cached: a failed read throws (see `loadOpenVacancyRows`). */
+export async function getOpenWorkforceVacanciesOrThrow(): Promise<VacancyLookupRow[]> {
+  return loadOpenVacancyRows();
 }
 
 export async function getOpenMedicalRepVacancies(): Promise<VacancyLookupRow[]> {

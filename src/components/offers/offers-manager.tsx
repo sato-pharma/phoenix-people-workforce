@@ -48,6 +48,7 @@ export function OffersManager({
   sender,
   templates: initialTemplates,
   vacancies,
+  vacanciesUnread,
 }: {
   /**
    * `offers:delete` — a narrower grant than `canManage` (`offers:create`). HR Advisory,
@@ -73,6 +74,8 @@ export function OffersManager({
    * screen creates or closes a seat. A hire does that, on the employees screen.
    */
   vacancies: OfferVacancyOption[];
+  /** The open seats could not be read (REC-034) — not the same as none being open. */
+  vacanciesUnread: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("compose");
   const [offers, setOffers] = useState(initialOffers);
@@ -197,6 +200,7 @@ export function OffersManager({
             sender={sender}
             templates={templates}
             vacancies={vacancies}
+            vacanciesUnread={vacanciesUnread}
           />
         ) : null}
         {tab === "design" ? (

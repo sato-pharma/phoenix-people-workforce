@@ -688,6 +688,7 @@ import { runOfferExpiryTests } from "./offer-expiry.test.ts";
 import { runOfferHrManagerApprovalTests } from "./offer-hr-manager-approval.test.ts";
 import { runOfferEmailMessageAndUpdateTests } from "./offer-email-message-and-update.test.ts";
 import { runOfferJoiningFormTests } from "./offer-joining-form.test.ts";
+import { runOfferVacancyReadFailureTests } from "./offer-vacancy-read-failure.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runSourceOfHireTests } from "./source-of-hire.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
@@ -4662,6 +4663,7 @@ await runTest("expire offer (notice to the candidate, withdraw the offer, Send's
 await runTest("job offers wait for the HR Manager's approval before any email reaches the candidate", runOfferHrManagerApprovalTests);
 await runTest("job offers: a Sent by column, HR's own message in the offer email (never the PDF), and an updated offer that keeps the sent version and goes out only through Send", runOfferEmailMessageAndUpdateTests);
 await runTest("the offer joining form — the Accept link, the seat rule, the form's checks, and HR's own new-hire chain", runOfferJoiningFormTests);
+await runTest("a failed seat read is never a filled seat — the joining form, the hire draft and the Offers screen (REC-034)", runOfferVacancyReadFailureTests);
 await runTest("the offer row: Withdraw, and an accepted letter carrying the hire to its vacant seat", runOfferHireBridgeTests);
 await runTest("the offer out on a vacant seat, and the package landing in the NET box", runOfferOutOnSeatsTests);
 await runTest("the accepted-offer alert — recipients, channels, and the accept hook", runAcceptedOfferAlertTests);
