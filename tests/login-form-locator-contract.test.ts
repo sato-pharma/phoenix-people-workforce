@@ -180,6 +180,57 @@ export function runLoginFormLocatorContractTests() {
     );
   }
 
+  // 4. The production smoke test signs in as a SUPER ADMIN (admin-HR), and since 14 Nov 2026 that
+  // account's password sign-in also asks for its authenticator code (docs/security/second-sign-in-step.md).
+  // A setup that stops after "Sign in" sits on the code field until it times out, every journey is
+  // skipped, and the smoke test pages Telegram every three hours. Each end of that chain is pinned.
+  {
+    const SYNTHETIC = "tests/synthetic/helpers/auth.setup.ts";
+    const synthetic = stripComments(read(SYNTHETIC));
+    assert.ok(
+      locatedIds(synthetic).includes("login-second-step-code"),
+      `${SYNTHETIC} no longer types into "#login-second-step-code". Its account is a Super Admin, so the ` +
+        `password alone leaves it on the code field and the whole smoke run fails at sign-in.`,
+    );
+    assert.ok(
+      /totpCode\(\s*totpSecret/.test(synthetic) && synthetic.includes("process.env.SYNTHETIC_ADMIN_TOTP_SECRET"),
+      `${SYNTHETIC} no longer makes the code from SYNTHETIC_ADMIN_TOTP_SECRET with totpCode(). The key is ` +
+        `the account's authenticator; nothing else can produce the code it is asked for.`,
+    );
+    const buttons = [...synthetic.matchAll(/getByRole\(\s*"button",\s*\{\s*name:\s*(\/[^/]+\/[a-z]*)/g)].map((m) => m[1]);
+    const CHECK = "Check the code and sign in";
+    assert.ok(
+      component.includes(`"${CHECK}"`),
+      `${LOGIN_COMPONENT} no longer labels the code step's button "${CHECK}". ${SYNTHETIC} clicks it by that ` +
+        `name — change both in the same commit.`,
+    );
+    const checkPattern = buttons.find((p) => {
+      const re = new RegExp(p.slice(1, p.lastIndexOf("/")), p.slice(p.lastIndexOf("/") + 1));
+      return re.test(CHECK);
+    });
+    assert.ok(checkPattern, `${SYNTHETIC} never clicks the "${CHECK}" button, so the code it typed is never sent.`);
+    assert.ok(
+      checkPattern!.includes("^") && checkPattern!.includes("$"),
+      `${SYNTHETIC} matches the code step's button with ${checkPattern}, which is unanchored.`,
+    );
+    const globalSetup = read("tests/synthetic/helpers/global-setup.ts");
+    assert.ok(
+      globalSetup.includes("!process.env.SYNTHETIC_ADMIN_TOTP_SECRET"),
+      `tests/synthetic/helpers/global-setup.ts no longer refuses to start without SYNTHETIC_ADMIN_TOTP_SECRET, ` +
+        `so a missing key shows up as a sign-in timeout instead of a one-line reason.`,
+    );
+    const workflow = read(".github/workflows/synthetic-journeys.yml");
+    assert.ok(
+      workflow.includes("SYNTHETIC_ADMIN_TOTP_SECRET: ${{ secrets.SYNTHETIC_ADMIN_TOTP_SECRET }}"),
+      `.github/workflows/synthetic-journeys.yml no longer hands SYNTHETIC_ADMIN_TOTP_SECRET to the journeys ` +
+        `step, so the production smoke test cannot make the code and fails at sign-in.`,
+    );
+    assert.ok(
+      workflow.includes('[ -z "$TOTP_SECRET" ] && missing="$missing SYNTHETIC_ADMIN_TOTP_SECRET"'),
+      `.github/workflows/synthetic-journeys.yml no longer checks SYNTHETIC_ADMIN_TOTP_SECRET is present.`,
+    );
+  }
+
   // Each setup must keep its OWN stored session. That is the one property a copy-paste between
   // these files destroys while every locator assertion above still passes — caught for real on
   // 2026-10-07, when a rebase of this very change overwrote tests/e2e/auth.setup.ts with the
