@@ -10,6 +10,7 @@ import {
 import { isRunHoldAction, RUN_HOLD_ACTIONS } from "../src/lib/automated-payroll/transition-claim.ts";
 import { assertSettlementTarget, settlementCeiling } from "../src/lib/automated-payroll/held-settlements.ts";
 import { jsonError } from "../src/lib/automated-payroll/http.ts";
+import { PART2_READY_CHANNELS, part2ReadyChannels } from "../src/lib/automated-payroll/notify.ts";
 import {
   assertPart2FileMatchesStamp,
   compareNonEmployees,
@@ -403,5 +404,34 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     STANDING_LIST_PANEL,
     /This cannot be undone: to bring them back they have to be typed in again\./,
     "the prompt says the delete cannot be undone",
+  );
+
+  // ---- CONFIRM PART 2 CAN GO WITHOUT ITS EMAIL, THIS ONCE (owner, 14 Nov 2026) -----------------------
+  // "make it not email this time when i confirm": the prompt's "Email them too" box, ticked by default.
+  assert.deepEqual(
+    part2ReadyChannels(true),
+    [...PART2_READY_CHANNELS],
+    "left ticked, the confirm sends exactly what it always did",
+  );
+  assert.deepEqual(
+    part2ReadyChannels(false),
+    ["in_app", "telegram", "push"],
+    "unticked, the email is the only thing left out",
+  );
+  const part2Route = readFileSync("app/api/automated-payroll/runs/[runId]/part2/confirm/route.ts", "utf8");
+  assert.match(part2Route, /sendEmail: body\.sendEmail !== false,/, "only an explicit false skips the email");
+  const confirmService = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  assert.match(
+    confirmService,
+    /await notifyPart2Ready\(updated, \{ email: options\.sendEmail !== false \}\);/,
+    "the confirm hands the choice to the notice",
+  );
+  assert.match(confirmService, /emailSent: options\.sendEmail !== false,/, "and records it on the audit row");
+  const part2Wizard = readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8");
+  assert.match(part2Wizard, /sendEmail: part2SendEmailRef\.current,/, "the screen sends the box's state on every attempt");
+  assert.match(
+    part2Wizard,
+    /setPart2SendEmail\(true\);\s*setPendingAction\(\{\s*title: `Confirm Part 2 for/,
+    "the box is ticked again each time the prompt opens, so one untick never carries to the next month",
   );
 }
