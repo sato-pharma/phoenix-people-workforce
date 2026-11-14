@@ -26,13 +26,17 @@
 --   `drop function public.phoenix_crm_customer_stands_on_another_place(uuid, uuid);`
 --   Nothing here writes or removes a row, so there is no data to put back.
 
+begin;
+
+set local lock_timeout = '5s';
+
 create or replace function public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
-as $function$
+set search_path to 'public'
+as $$
   select exists (
     select 1
     from public.phoenix_crm_places o
@@ -63,7 +67,7 @@ as $function$
         )
       )
   );
-$function$;
+$$;
 
 revoke execute on function public.phoenix_crm_customer_stands_on_another_place(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_customer_stands_on_another_place(uuid, uuid) to service_role;
@@ -72,8 +76,8 @@ create or replace function public.phoenix_crm_restore_validation(p jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
-as $function$
+set search_path to 'public'
+as $$
 declare
   v_id uuid := nullif(p ->> 'review_id', '')::uuid;
   v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
@@ -236,7 +240,7 @@ begin
     'renamed', v_renamed
   );
 end;
-$function$;
+$$;
 
 revoke execute on function public.phoenix_crm_restore_validation(jsonb) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_restore_validation(jsonb) to service_role;
@@ -245,8 +249,8 @@ create or replace function public.phoenix_crm_settle_venue_timetable(p jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
-as $function$
+set search_path to 'public'
+as $$
 declare
   v_seat text := nullif(trim(coalesce(p ->> 'seat_id', '')), '');
   v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
@@ -388,7 +392,7 @@ begin
     'kept', v_kept
   );
 end;
-$function$;
+$$;
 
 revoke execute on function public.phoenix_crm_settle_venue_timetable(jsonb) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_settle_venue_timetable(jsonb) to service_role;
@@ -397,8 +401,8 @@ create or replace function public.phoenix_crm_seat_places_in_venue(p jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
-as $function$
+set search_path to 'public'
+as $$
 declare
   v_seat text := nullif(trim(coalesce(p ->> 'seat_id', '')), '');
   v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
@@ -630,7 +634,11 @@ begin
     'timetable_on_file', v_venue.schedule_photo_path is not null
   );
 end;
-$function$;
+$$;
 
 revoke execute on function public.phoenix_crm_seat_places_in_venue(jsonb) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_seat_places_in_venue(jsonb) to service_role;
+
+notify pgrst, 'reload schema';
+
+commit;

@@ -1882,10 +1882,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       })),
       // A turned-down check matters only while he still waits to be validated; once validated it is history.
       locationCheck: ((state) => (state === "not_confirmed" && status !== "pending" ? null : state))(check?.state ?? null),
-      // 🔴 THE SAME ONE-LINER, DELIBERATELY: both of these are "while he still waits", and nothing in
-      // SQL ever clears `reopened_at` — six writers would each need a clearing clause and one of them
-      // would forget. The stamp stays on the row for the owner's board; the LIST simply stops carrying
-      // it once the customer is validated again.
+      // 🔴 THE SAME ONE-LINER, DELIBERATELY: both of these are "while he still waits". Since the
+      // validation audit of 14 Nov 2026 the door, the review's approval, the trusted point, the take-back
+      // and the building's settle clear `reopened_at` when they validate him; four other writers still do
+      // not (docs/phoenix-crm-shared-places.md, "Left as it is"), so the LIST keeps not carrying the stamp
+      // once the customer is validated again, whatever the row holds.
       reopenedAt: status === "pending" ? text(row.reopened_at) : null,
       validateAgainReason: status === "pending" ? (check?.reason ?? null) : null,
       // Unlike the two lines above, a comment is NOT "while he still waits": it was written to him

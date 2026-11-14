@@ -26,7 +26,7 @@ function read(path: string): string {
 function fnOf(sql: string, name: string): string {
   const start = sql.indexOf(`create or replace function public.${name}(`);
   assert.ok(start > -1, `${name} is defined in the owner-decisions migration`);
-  const end = sql.indexOf("\n$function$;", start);
+  const end = sql.indexOf("\n$$;", start);
   assert.ok(end > start, `${name} ends with its dollar quote`);
   return sql.slice(start, end);
 }
