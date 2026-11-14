@@ -17,9 +17,11 @@ import {
   SALES_LINES,
   lineName,
   loadEmployeeEmploymentStatusMap,
+  loadAreaNameMap,
   loadEmployeeNameMap,
   loadProductFamilyMap,
   loadProductNameMap,
+  regionName,
   type AchievementRow,
 } from "@/lib/sales/monthly-targets";
 import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
@@ -112,12 +114,18 @@ export async function buildMakeItHappenWorkspace(
   ]);
   windowLoads.catch(() => {});
   // Employee names name the rep being viewed, the per-rep list AND each brick's rep and District
-  // Manager (the export's tab per District Manager, owner 2026-11-14) — so every bound reads them; the
+  // Manager (the export's District Managers and Medical Reps tabs, owner 2026-11-14) — so every bound reads them; the
   // read is memoised for a minute. A failed read must not blank the planner: names then read unnamed.
   const employeeNamesLoad = boundLoad.then((resolved) =>
     resolved.rows.kind === "none" ? new Map<string, string>() : loadEmployeeNameMap().catch(() => new Map<string, string>()),
   );
   employeeNamesLoad.catch(() => {});
+  // Area names place each brick on the export's Bricks tab (Region → Area → Brick, owner 2026-11-14).
+  // Display text only: a failed read must not blank the planner, the bricks then read "Area not named".
+  const areaNamesLoad = boundLoad.then((resolved) =>
+    resolved.rows.kind === "none" ? new Map<string, string>() : loadAreaNameMap().catch(() => new Map<string, string>()),
+  );
+  areaNamesLoad.catch(() => {});
   // Employment status decides who the per-person list names (team-roster.ts), so it is a team-only
   // read too. A failed read must not blank the planner: every person then reads as still employed.
   const employmentStatusLoad = boundLoad.then((resolved) =>
@@ -158,6 +166,7 @@ export async function buildMakeItHappenWorkspace(
 
   const [[rawRows, publishedKeys, productNames, prices, families], employeeNames, employmentStatuses] =
     await Promise.all([windowLoads, employeeNamesLoad, employmentStatusLoad]);
+  const areaNames = await areaNamesLoad;
 
   const namesByKey = new Map<string, string>();
   for (const [hrId, name] of employeeNames) {
@@ -247,13 +256,13 @@ export async function buildMakeItHappenWorkspace(
   // A rep sits under ONE District Manager: the one on HIS latest row on that line — so a brick that
   // last sold under a former manager still files under the rep's current one. Only a brick with no
   // rep (a vacant seat) keeps its own row's District Manager.
-  const brickCover = new Map<string, { period: string; repHrId: string | null; dmHrId: string | null }>();
+  const brickCover = new Map<string, { period: string; repHrId: string | null; dmHrId: string | null; areaCode: string | null }>();
   const repManager = new Map<string, { period: string; dmHrId: string | null }>();
   for (const row of brickRows) {
     const key = `${row.lineCode ?? ""}|${row.brickId}`;
     const seen = brickCover.get(key);
     if (!seen || seen.period < row.period) {
-      brickCover.set(key, { period: row.period, repHrId: row.repHrId, dmHrId: row.dmHrId });
+      brickCover.set(key, { period: row.period, repHrId: row.repHrId, dmHrId: row.dmHrId, areaCode: row.areaCode });
     }
     const repKeyOfRow = canonicalHrIdKey(row.repHrId);
     if (!repKeyOfRow) continue;
@@ -269,6 +278,27 @@ export async function buildMakeItHappenWorkspace(
     const manager = repManager.get(`${key.slice(0, key.indexOf("|"))}|${repKeyOfCover}`);
     if (manager) cover.dmHrId = manager.dmHrId;
   }
+  // An area's region on each line, from the merged achievement rows — the same areas the brick rows
+  // carry after their own merges (brick-history.ts). Never a code on screen: an area the master does
+  // not name reads "Area not named", a region without one "Region not named".
+  // The latest month wins, as it does for the brick's cover.
+  const areaRegion = new Map<string, { period: string; region: string }>();
+  for (const row of mergedRows) {
+    const area = row.areaCode?.trim().toUpperCase();
+    if (!area || !row.regionCode || !row.lineCode) continue;
+    const key = `${row.lineCode}|${area}`;
+    const seen = areaRegion.get(key);
+    if (!seen || seen.period < row.period) areaRegion.set(key, { period: row.period, region: row.regionCode });
+  }
+  const placeOf = (lineCode: string, areaCode: string | null | undefined) => {
+    const area = areaCode?.trim().toUpperCase();
+    if (!area) return { areaName: null, regionName: null };
+    const region = areaRegion.get(`${lineCode}|${area}`)?.region;
+    return {
+      areaName: areaNames.get(area) || "Area not named",
+      regionName: region ? regionName(region) || "Region not named" : null,
+    };
+  };
   const knownName = (hrId: string | null) => (hrId ? (namesByKey.get(canonicalHrIdKey(hrId) ?? "") ?? "Unnamed employee") : null);
 
   /** One product's bricks on one line, each read from its own closed months (rule 9). */
@@ -301,6 +331,7 @@ export async function buildMakeItHappenWorkspace(
         realisticMaxUnits: trend.realisticMaxUnits,
         repName: knownName(cover?.repHrId ?? null),
         districtManagerName: knownName(cover?.dmHrId ?? null),
+        ...placeOf(lineCode, cover?.areaCode),
       });
     }
     return sortBricks(bricks);
