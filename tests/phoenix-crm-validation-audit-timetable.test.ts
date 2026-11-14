@@ -148,6 +148,14 @@ export async function runPhoenixCrmValidationAuditTimetableTests(): Promise<void
     "a lost call is asked about the door's own photograph; a row nobody read is read against the building's board, as the settle reads it",
   );
   assert.ok(pass.includes("signboardNameIsUsable(name)"), "a name too short to match is never held against a board");
+  // The backlog keeps rows the night can never read (an exempt building, no board, a short name, three
+  // re-reads spent). A single first page would be those same rows every night.
+  assert.ok(pass.includes('if (after) backlog = backlog.gt("id", after);'), "🔴 the night walks PAST the rows it rules out — each page starts after the last row of the one before");
+  assert.ok(pass.includes("after = String(page[page.length - 1].id);"), "the walk moves on from every page, whether or not it held work");
+  assert.ok(pass.includes("pageNumber < LOST_TIMETABLE_BACKLOG_MAX_PAGES && queued < limit && !backlogEnded"), "it stops at its limit of places, at the end of the backlog, or after a fixed number of pages");
+  assert.ok(pass.indexOf("if (queued >= limit) {") > pass.indexOf("signboardNameIsUsable(name)"), "🔴 the limit counts places it WILL read — a row it rules out never uses one up");
+  assert.ok(pass.includes("result.moreWaiting = !backlogEnded;"), "and it says so when it stopped before the end");
+  assert.ok(!pass.includes("result.moreWaiting = page.length >= limit"), "never the first page alone");
   assert.equal((pass.match(/readScheduleBoard\(/g) ?? []).length, 1, "one photograph, one question, however many are seated behind it");
   assert.ok(pass.includes("recordPlaceSchedule(String(row.id), scheduleRereadToKeep(judged, row.schedule_check ?? null))"), "the answer is written on the place's own row");
   for (const forbidden of ["callPhoenixCrm", "settleVenueTimetable", "phoenix_crm_validation_reviews", "notify", "phoenix_crm_customers\")\n      .update"]) {

@@ -167,6 +167,9 @@ export async function addVenueTimetable(viewer: PhoenixCrmViewer, raw: unknown):
 export const LOST_TIMETABLE_REREAD_LIMIT = 200;
 export const LOST_TIMETABLE_REREAD_BUDGET_MS = 60_000;
 export const LOST_TIMETABLE_REREAD_TIMEOUT_MS = 30_000;
+/** Rows the backlog read takes at a time, and how many such pages one night walks looking for work. */
+export const LOST_TIMETABLE_BACKLOG_PAGE = 500;
+export const LOST_TIMETABLE_BACKLOG_MAX_PAGES = 10;
 
 export type LostTimetableRereadResult = {
   /** Seated places whose row now carries a real answer. */
@@ -189,6 +192,13 @@ export type LostTimetableRereadResult = {
  * de-validated by a pass nobody watches, and the building's own settle keeps its one meaning (a board a
  * rep has just photographed). One photograph is read once however many customers are seated behind it,
  * and a reading already stored for it is used instead of a call (`readScheduleBoard`).
+ *
+ * 🔴 THE BACKLOG IS WALKED, NEVER RE-READ FROM ITS FIRST ROWS. A row can sit in the backlog for good and
+ * never be read: its building is exempt from a timetable or has no board yet, his name is too short to
+ * match, or its three re-reads are spent. A single first page would hand the night those same rows every
+ * time, and once they filled it nothing behind them would ever be read, with nothing said. So each page
+ * starts after the last row of the one before, and the night stops at its limit of places to read, at
+ * the end of the backlog, or after `LOST_TIMETABLE_BACKLOG_MAX_PAGES`.
  */
 export async function runLostTimetableRereads(
   options: { limit?: number; budgetMs?: number } = {},
@@ -198,48 +208,63 @@ export async function runLostTimetableRereads(
   const limit = Math.max(1, Math.min(options.limit ?? LOST_TIMETABLE_REREAD_LIMIT, 500));
   const deadline = Date.now() + (options.budgetMs ?? LOST_TIMETABLE_REREAD_BUDGET_MS);
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_places")
-    .select("id, customer_id, seat_id, created_by_hr_id, photo_path, shared_place_id, schedule_check")
-    .eq("status", "active")
-    .eq("is_test", false)
-    .not("shared_place_id", "is", null)
-    .not("photo_path", "is", null)
-    .or(`schedule_check.is.null,and(schedule_check->>verdict.eq.unjudged,schedule_check->>reason.in.(${SCHEDULE_REREAD_REASONS.join(",")}))`)
-    .order("id", { ascending: true })
-    // One page, under PostgREST's 1,000-row ceiling by construction.
-    .limit(limit);
-  throwIfError(error);
-  const page = (data ?? []) as Row[];
-  result.moreWaiting = page.length >= limit;
-  const rows = page.filter((row) => scheduleNeedsReread(row.schedule_check ?? null));
-  if (rows.length === 0) return result;
-
-  const [customers, venues] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name", "id", rows.map((row) => String(row.customer_id))),
-    selectByIds<Row>("phoenix_crm_shared_places", "id, status, timetable_exempt_at, schedule_photo_path", "id", rows.map((row) => String(row.shared_place_id))),
-  ]);
-  const nameOf = new Map(customers.map((row) => [String(row.id), String(row.name ?? "")]));
-  const venueOf = new Map(venues.map((row) => [String(row.id), row]));
-
   // One group per photograph: the question put to it names nobody.
   const groups = new Map<string, Array<{ row: Row; name: string }>>();
-  for (const row of rows) {
-    const venue = venueOf.get(String(row.shared_place_id));
+  let queued = 0;
+  let after: string | null = null;
+  let backlogEnded = false;
+  for (let pageNumber = 0; pageNumber < LOST_TIMETABLE_BACKLOG_MAX_PAGES && queued < limit && !backlogEnded; pageNumber += 1) {
+    let backlog = getSupabaseAdmin()
+      .from("phoenix_crm_places")
+      .select("id, customer_id, seat_id, created_by_hr_id, photo_path, shared_place_id, schedule_check")
+      .eq("status", "active")
+      .eq("is_test", false)
+      .not("shared_place_id", "is", null)
+      .not("photo_path", "is", null)
+      .or(`schedule_check.is.null,and(schedule_check->>verdict.eq.unjudged,schedule_check->>reason.in.(${SCHEDULE_REREAD_REASONS.join(",")}))`);
+    // 🔴 Past the rows already walked, or the rows the night rules out would be all it ever saw.
+    if (after) backlog = backlog.gt("id", after);
+    // Each page is under PostgREST's 1,000-row ceiling by construction.
+    const { data, error } = await backlog.order("id", { ascending: true }).limit(LOST_TIMETABLE_BACKLOG_PAGE);
+    throwIfError(error);
+    const page = (data ?? []) as Row[];
+    backlogEnded = page.length < LOST_TIMETABLE_BACKLOG_PAGE;
+    if (page.length === 0) break;
+    after = String(page[page.length - 1].id);
+    const rows = page.filter((row) => scheduleNeedsReread(row.schedule_check ?? null));
+    if (rows.length === 0) continue;
+
+    const [customers, venues] = await Promise.all([
+      selectByIds<Row>("phoenix_crm_customers", "id, name", "id", rows.map((row) => String(row.customer_id))),
+      selectByIds<Row>("phoenix_crm_shared_places", "id, status, timetable_exempt_at, schedule_photo_path", "id", rows.map((row) => String(row.shared_place_id))),
+    ]);
+    const nameOf = new Map(customers.map((row) => [String(row.id), String(row.name ?? "")]));
+    const venueOf = new Map(venues.map((row) => [String(row.id), row]));
+    for (const row of rows) {
+      const venue = venueOf.get(String(row.shared_place_id));
     // A building declared to have no timetable keeps its door photo here, and a retired one is nobody's.
-    if (!venue || venue.status === "retired" || venue.timetable_exempt_at) continue;
-    // 🔴 A BUILDING WITH NO BOARD HAS NOTHING TO READ. A customer the Super Admin moved into it keeps his
-    // OWN door photo on the row until a board exists; reading that as a timetable would leave a verdict
-    // about a doorway, and the building's first settle would then act on it.
-    if (!venue.schedule_photo_path) continue;
-    const name = nameOf.get(String(row.customer_id)) ?? "";
-    // The door's own guard: a name too short to match is never held against a wall of names.
-    if (!signboardNameIsUsable(name)) continue;
-    // A lost call is asked again about the photograph the door asked about; a row nobody has read is
-    // read against the building's board, exactly as the building's own settle reads it.
-    const photoPath = String(row.schedule_check ? row.photo_path : venue.schedule_photo_path);
-    groups.set(photoPath, [...(groups.get(photoPath) ?? []), { row, name }]);
+      if (!venue || venue.status === "retired" || venue.timetable_exempt_at) continue;
+      // 🔴 A BUILDING WITH NO BOARD HAS NOTHING TO READ. A customer the Super Admin moved into it keeps his
+      // OWN door photo on the row until a board exists; reading that as a timetable would leave a verdict
+      // about a doorway, and the building's first settle would then act on it.
+      if (!venue.schedule_photo_path) continue;
+      const name = nameOf.get(String(row.customer_id)) ?? "";
+      // The door's own guard: a name too short to match is never held against a wall of names.
+      if (!signboardNameIsUsable(name)) continue;
+      // The night's limit counts places it WILL read, never rows it walked past. One left over here is
+      // tomorrow night's, and the count says so.
+      if (queued >= limit) {
+        backlogEnded = false;
+        break;
+      }
+      // A lost call is asked again about the photograph the door asked about; a row nobody has read is
+      // read against the building's board, exactly as the building's own settle reads it.
+      const photoPath = String(row.schedule_check ? row.photo_path : venue.schedule_photo_path);
+      groups.set(photoPath, [...(groups.get(photoPath) ?? []), { row, name }]);
+      queued += 1;
+    }
   }
+  result.moreWaiting = !backlogEnded;
 
   for (const [photoPath, seated] of groups) {
     if (Date.now() >= deadline) {
