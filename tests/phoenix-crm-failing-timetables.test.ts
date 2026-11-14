@@ -155,6 +155,20 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
         migration.indexOf("revoke update, delete on table public.phoenix_crm_shared_place_timetable_marks from service_role;"),
     "🔴 the trail is append-only: after the module's lock, update and delete are taken back from the app too",
   );
+  // And TRUNCATE, which empties the whole trail in one statement and skips row security (owner, 14 Nov 2026:
+  // "fix the truncate grant"). A later file, because the first was already applied on both databases.
+  const noTruncate = stripSqlComments(
+    readFileSync(new URL("supabase/migrations/20261114173756_phoenix_crm_timetable_marks_no_truncate.sql", ROOT), "utf8").replace(/\r\n/g, "\n"),
+  );
+  assert.ok(
+    noTruncate.includes("revoke truncate on table public.phoenix_crm_shared_place_timetable_marks from service_role;"),
+    "🔴 the app cannot empty the trail either",
+  );
+  assert.ok(
+    noTruncate.includes("and privilege_type in ('TRUNCATE', 'UPDATE', 'DELETE');") && noTruncate.includes("raise exception 'phoenix_crm_shared_place_timetable_marks: service_role still holds %'"),
+    "and the migration refuses to commit while the service role still holds any of the three",
+  );
+  assert.ok(!/\bgrant\b/i.test(noTruncate.replace(/role_table_grants/g, "")), "it grants nothing");
   assert.ok(
     !/\.from\("phoenix_crm_shared_place_timetable_marks"\)\s*\.(?:insert|update|upsert|delete)\(/.test(code("src/lib/phoenix-crm/server/shared-places.ts") + server),
     "and no service writes the trail itself: the function is its only writer",
