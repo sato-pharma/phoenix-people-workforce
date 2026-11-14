@@ -42,6 +42,7 @@ const WIZARD = read("../src/components/automated-payroll/automated-payroll-wizar
 const PAID_OUTSIDE_PANEL = read("../src/components/automated-payroll/held-paid-outside-panel.tsx");
 const RECOMMENDATION_STEP = read("../src/components/automated-payroll/recommendation-step.tsx");
 const LATE_EXPENSES_PANEL = read("../src/components/automated-payroll/late-expenses-panel.tsx");
+const STANDING_LIST_PANEL = read("../src/components/automated-payroll/recurring-non-employees-panel.tsx");
 
 /** One exported function's body: from its declaration to the next top-level `export`. */
 function bodyOf(source: string, declaration: string): string {
@@ -373,5 +374,28 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     LATE_EXPENSES_PANEL,
     /The saved Expenses figures of every open run are cleared and its Expenses step reopens/,
     "the prompt says what the change clears",
+  );
+
+  // ---- The standing-list delete asks first (owner: "build the confirm prompt before the standing-list delete") ----
+  // One tap on the bin removed a person from every future month, with no undo. Both bins (the desktop row and
+  // the phone card) now only open a prompt; the prompt's button deletes.
+  assert.ok(
+    !/onClick=\{\(\) => void deleteExisting\(row\.id\)\}/.test(STANDING_LIST_PANEL),
+    "no bin deletes a standing entry on the first tap",
+  );
+  assert.equal(
+    (STANDING_LIST_PANEL.match(/onClick=\{\(\) => setPendingDeleteId\(row\.id\)\}/g) ?? []).length,
+    2,
+    "both bins, the desktop row's and the phone card's, open the prompt",
+  );
+  assert.match(
+    STANDING_LIST_PANEL,
+    /setPendingDeleteId\(null\);\s*void deleteExisting\(row\.id\);/,
+    "the prompt's own button deletes",
+  );
+  assert.match(
+    STANDING_LIST_PANEL,
+    /This cannot be undone: to bring them back they have to be typed in again\./,
+    "the prompt says the delete cannot be undone",
   );
 }
