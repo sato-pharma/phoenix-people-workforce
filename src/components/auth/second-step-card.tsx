@@ -3,6 +3,7 @@
 import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
+import { SecondStepQrCode } from "@/components/auth/second-step-qr-code";
 import { Card } from "@/components/ui/card";
 import { FormError, FormField } from "@/components/ui/form-kit";
 import {
@@ -283,19 +284,27 @@ export function SecondStepCard() {
               Authenticator and Microsoft Authenticator both work. Choose to add an account.
             </li>
             <li>
-              <span className="font-bold text-slate-900">2. Give it this key.</span>
-              <span className="mt-2 block break-words border border-slate-300 bg-white px-3 py-2 font-mono text-base font-bold tracking-[0.08em] text-slate-900">
-                {setup.secretForTyping}
-              </span>
-              <span className="mt-1 block text-slate-500">Account name, if the app asks: {setup.account}</span>
-              <span className="mt-2 flex flex-wrap gap-2">
-                <button className={phxButtonGhostClassName} onClick={() => copy(setup.secret)} type="button">
-                  {copied ? "Copied" : "Copy the key"}
-                </button>
-                <a className={phxButtonGhostClassName} href={setup.otpauthUri}>
-                  Open in the app
-                </a>
-              </span>
+              <span className="font-bold text-slate-900">2. Scan this code with the app, or give it the key.</span> Type
+              the key in, or open it in the app if you are reading this on the phone itself.
+              <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start">
+                <span className="block self-start border border-slate-300">
+                  <SecondStepQrCode otpauthUri={setup.otpauthUri} />
+                </span>
+                <div className="flex-1 [overflow-wrap:anywhere]">
+                  <span className="block break-words border border-slate-300 bg-white px-3 py-2 font-mono text-base font-bold tracking-[0.08em] text-slate-900">
+                    {setup.secretForTyping}
+                  </span>
+                  <span className="mt-1 block text-slate-500">Account name, if the app asks: {setup.account}</span>
+                  <span className="mt-2 flex flex-wrap gap-2">
+                    <button className={phxButtonGhostClassName} onClick={() => copy(setup.secret)} type="button">
+                      {copied ? "Copied" : "Copy the key"}
+                    </button>
+                    <a className={phxButtonGhostClassName} href={setup.otpauthUri}>
+                      Open in the app
+                    </a>
+                  </span>
+                </div>
+              </div>
             </li>
           </ol>
           <FormField htmlFor="second-step-card-code" label="3. The 6-digit code the app now shows" required>

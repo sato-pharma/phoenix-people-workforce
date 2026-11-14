@@ -22,8 +22,10 @@ System Administrator account (no passkey, no person behind it).
 
 1. **The first password sign-in after this ships.** The password is accepted, and instead of the home page
    the sign-in screen shows a key to add to an authenticator app (Google Authenticator, Microsoft
-   Authenticator, 1Password and the like all work). The key can be typed, or opened by a link on a phone.
-   Typing the app's 6-digit code finishes the set-up.
+   Authenticator, 1Password and the like all work). Beside the key is a QR code to scan with the app's
+   camera; the key can also be typed, or opened by a link on a phone. The code and the link carry the same
+   address, and the code is drawn in the page itself — no outside service ever sees the key. Typing the
+   app's 6-digit code finishes the set-up. The profile card's set-up shows the same three ways.
 2. **Ten recovery codes, shown once.** They are on the screen right after the set-up and never again. Each
    works once, in place of a code from the app. Keep them somewhere that is not the phone.
 3. **Every later password sign-in** on a browser that has not passed the step in the last 30 days asks for

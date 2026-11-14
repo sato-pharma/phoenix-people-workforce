@@ -679,12 +679,22 @@ function pnpmAdvice(command, root) {
     .filter((token) => token && !token.startsWith('-'));
   const [first, second] = argv;
 
+  // A library IS added from a worktree (owner, 14 Nov 2026: "install the qr library and allow in
+  // worktrees") — through the manifest and the lockfile, never through this folder's node_modules.
+  // Until then this note said "install in the PRIMARY folder only", which a worktree session cannot
+  // do (primary-write-guard denies it), so a session that needed a package hand-wrote one instead.
+  // `remote-check.mjs lockfile` resolves on GitHub with --lockfile-only and writes the files back.
   if (/^(i|install|add|update|up|remove|rm|prune|dedupe|import|link|rebuild)$/i.test(first ?? '')) {
     return {
       note:
-        'Nothing is installed in a worktree and nothing should be — node_modules here is a ' +
-        'junction to the primary checkout\'s. Install in the PRIMARY folder only; if the junction ' +
-        'itself is broken:\n  node scripts/new-session.mjs --repair',
+        'To add, change or remove a library FROM A WORKTREE: write the exact version into ' +
+        'package.json (dependencies, or devDependencies for a tool), commit and push, then run in ' +
+        'the background:\n  node scripts/remote-check.mjs lockfile\n' +
+        'It regenerates pnpm-lock.yaml on GitHub with --lockfile-only, touching no node_modules ' +
+        'anywhere, and writes the files back here: commit them. CI installs from that lockfile; ' +
+        'this machine can import the library once the primary checkout installs after the merge.\n' +
+        'Nothing else is installed in a worktree — node_modules here is a junction to the primary ' +
+        "checkout's. If the junction itself is broken:\n  node scripts/new-session.mjs --repair",
     };
   }
   if ((first === 'exec' || first === 'dlx') && second) {
