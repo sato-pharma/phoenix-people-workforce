@@ -4,7 +4,6 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
-import { loadReferenceAreas, type ReferenceArea } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +51,8 @@ export type RecheckCodeRow = {
 
 export type MasterMatch = {
   area_code: string | null;
+  /** The master area's name, read by the preview itself (marketing code reads no `areas` of its own). */
+  area_name: string | null;
   code_id: string;
   customer_code: string | null;
   customer_name: string | null;
@@ -250,22 +251,17 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: "Rejected",
 };
 
-async function namesFor(supabase: RecheckClient, codes: readonly RecheckCodeRow[], matches: readonly MasterMatch[]) {
+async function namesFor(supabase: RecheckClient, codes: readonly RecheckCodeRow[]) {
   const pharmacyIds = [...new Set(codes.map((code) => code.pharmacy_id).filter((id): id is string => Boolean(id)))];
   const vendorIds = [...new Set(codes.map((code) => code.distributor_id).filter((id) => id !== null && id !== undefined))];
   const hrIds = [...new Set(codes.map((code) => String(code.validated_by_hr_id ?? "").trim()).filter(Boolean))];
-  const areaCodes = [...new Set(matches.map((match) => String(match.area_code ?? "").trim()).filter(Boolean))];
-  const [pharmacies, vendors, people, areas] = await Promise.all([
+  const [pharmacies, vendors, people] = await Promise.all([
     pharmacyIds.length ? supabase.from("marketing_pharmacies").select("id, display_name").in("id", pharmacyIds) : { data: [], error: null },
     vendorIds.length ? supabase.from("marketing_distributors").select("id, display_name").in("id", vendorIds) : { data: [], error: null },
     hrIds.length ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", hrIds) : { data: [], error: null },
-    // The shared, cached area list (src/lib/reference/reference-lists.ts), never a direct read of `areas`.
-    areaCodes.length ? loadReferenceAreas() : Promise.resolve([] as ReferenceArea[]),
   ]);
   for (const read of [pharmacies, vendors, people]) if (read.error) throw read.error;
-  const wanted = new Set(areaCodes);
   return {
-    area: new Map(areas.filter((row) => row.code && wanted.has(row.code)).map((row) => [String(row.code), row.name])),
     person: new Map(
       ((people.data ?? []) as Array<{ full_name: string; hr_id: string; nickname: string | null }>).map((row) => [
         String(row.hr_id).toUpperCase(),
@@ -285,12 +281,12 @@ export async function listCodesAwaitingConfirmation(access: AccessContext): Prom
   const matches = await previewMatches(supabase, codes.map((code) => code.id));
   const { awaiting } = planMasterRecheck(codes, matches);
   if (awaiting.length === 0) return [];
-  const names = await namesFor(supabase, awaiting.map((entry) => entry.code), awaiting.map((entry) => entry.match));
+  const names = await namesFor(supabase, awaiting.map((entry) => entry.code));
   return awaiting
     .map(({ code, match }) => ({
       codeId: code.id,
       enteredCode: String(code.distributor_pharmacy_code ?? ""),
-      masterAreaName: match.area_code ? names.area.get(match.area_code) ?? null : null,
+      masterAreaName: match.area_name ?? null,
       masterCustomerCode: String(match.customer_code ?? ""),
       masterCustomerName: match.customer_name ?? null,
       masterDistributorCode: String(match.distributor_code ?? ""),

@@ -38,7 +38,7 @@ function code(overrides: Partial<RecheckCodeRow> & { id: string }): RecheckCodeR
 }
 
 function match(id: string, kind = "exact"): MasterMatch {
-  return { area_code: "A1", code_id: id, customer_code: "42850", customer_name: "صيدلية", distributor_code: "EG", match_kind: kind };
+  return { area_code: "A1", area_name: "Area One", code_id: id, customer_code: "42850", customer_name: "صيدلية", distributor_code: "EG", match_kind: kind };
 }
 
 export function runMarketingPharmacyCodeRecheckTests() {
@@ -123,6 +123,13 @@ export function runMarketingPharmacyCodeRecheckTests() {
     "the re-check runs after the sync has refreshed the master's codes",
   );
   assert.match(cron, /pingDeadMansSwitch\(JOB_SLUG, "success", detail\)/, "the night's counts are reported in the heartbeat");
+
+  // The area's name comes back with the match: marketing code reads no `areas` table and no cached
+  // reference list (tests/performance-phase-3.test.ts, tests/reference-list-cache.test.ts).
+  assert.doesNotMatch(service, /from\("areas"\)|reference-lists/, "the list takes the area name from the preview");
+  const nameMigration = readFileSync("supabase/migrations/20261114154921_marketing_pharmacy_code_recheck_area_name.sql", "utf8");
+  assert.match(nameMigration, /area_name text\s*\)/, "the preview returns the area's name");
+  assert.match(nameMigration, /revoke execute on function public\.phx_preview_marketing_pharmacy_code_matches\(uuid\[\]\) from public, anon, authenticated;/);
 
   const route = readFileSync("app/api/marketing-requests/pharmacy-code-recheck/route.ts", "utf8");
   assert.match(route, /assertSameOriginMutation\(request\)/, "a decision is same-origin only");
