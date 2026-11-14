@@ -12,7 +12,7 @@
  */
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
-import { CrmButton, CrmPill } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import type { FailingTimetableRow, FailingTimetablesView } from "@/lib/phoenix-crm/view-types";
 
 function Building({ row }: { row: FailingTimetableRow }) {
@@ -54,50 +54,46 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
         view.capped ? " The window holds more refusals than one read can carry, so this list is a floor." : ""
       }${more > 0 ? ` The first ${view.rows.length} are shown.` : ""}`}
     >
-      {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
-      <div className="hidden xl:block">
-        <table className="w-full table-fixed border-collapse">
-          <colgroup>
-            <col className="w-[30%]" />
-            <col className="w-[38%]" />
-            <col className="w-[16%]" />
-            <col className="w-[16%]" />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-3">Building</th>
-              <th className="px-5 py-3">What happened</th>
-              <th className="px-5 py-3">Last refused</th>
-              <th className="px-5 py-3">
-                <span className="sr-only">Open</span>
-              </th>
+      {/* Desktop: the module's own table. Three columns — the last refusal sits under what happened — so the
+          button's column is wide enough beside the sidebar. */}
+      <CrmTable columns={["32%", "46%", "22%"]}>
+        <thead>
+          <tr>
+            <th className={crmThClassName} scope="col">
+              Building
+            </th>
+            <th className={crmThClassName} scope="col">
+              What happened
+            </th>
+            <th className={crmThClassName} scope="col">
+              <span className="sr-only">Open</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.sharedPlaceId}>
+              <td className={crmTdClassName}>
+                <Building row={row} />
+              </td>
+              <td className={crmTdClassName}>
+                <WhatHappened row={row} />
+                <p className="mt-1.5 break-words text-xs font-normal text-slate-500">Last refused {row.lastRefusedAtText}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <CrmButton disabled={opened === row.sharedPlaceId} onClick={() => onOpen(row.sharedPlaceId)} size="sm">
+                  {opened === row.sharedPlaceId ? "Opened below" : "Open this building"}
+                </CrmButton>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {view.rows.map((row) => (
-              <tr key={row.sharedPlaceId} className="border-b border-slate-100 align-top even:bg-slate-50/60">
-                <td className="px-5 py-4">
-                  <Building row={row} />
-                </td>
-                <td className="px-5 py-4">
-                  <WhatHappened row={row} />
-                </td>
-                <td className="px-5 py-4 text-sm text-slate-700">{row.lastRefusedAtText}</td>
-                <td className="px-5 py-4">
-                  <CrmButton disabled={opened === row.sharedPlaceId} onClick={() => onOpen(row.sharedPlaceId)} size="sm">
-                    {opened === row.sharedPlaceId ? "Opened below" : "Open this building"}
-                  </CrmButton>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </CrmTable>
 
-      {/* Mobile: the same buildings as cards. */}
-      <div className="space-y-3 px-4 py-4 xl:hidden">
+      {/* Phone: the same buildings as cards. */}
+      <CrmCardsOnPhone>
         {view.rows.map((row) => (
-          <div key={row.sharedPlaceId} className="border border-slate-200 bg-white p-4">
+          <div key={row.sharedPlaceId} className="px-4 py-4">
             <Building row={row} />
             <div className="mt-2">
               <WhatHappened row={row} />
@@ -110,7 +106,7 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
             </div>
           </div>
         ))}
-      </div>
+      </CrmCardsOnPhone>
     </AdminTableShell>
   );
 }

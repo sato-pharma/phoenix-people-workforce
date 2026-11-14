@@ -157,6 +157,10 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
 
   const panel = code("src/components/phoenix-crm/failing-timetables-panel.tsx");
   assert.ok(panel.includes("if (view.total === 0) return null;"), "nothing failing, nothing drawn");
-  assert.ok(panel.includes('<table className="w-full table-fixed border-collapse">') && panel.includes("<colgroup>"), "the desktop table fits its screen");
+  assert.ok(
+    panel.includes('<CrmTable columns={["32%", "46%", "22%"]}>') && !panel.includes("<table"),
+    "🔴 the desktop table is the module's own CrmTable, never a table written by hand",
+  );
+  assert.ok(panel.includes("<CrmCardsOnPhone>"), "and the same buildings are cards on a phone");
   assert.ok(!/overflow-x-auto|min-w-\[|rounded/.test(panel), "no sideways scroll and no round corner");
 }
