@@ -78,6 +78,7 @@ function venue(overrides: Partial<SharedPlaceBoardRow>): SharedPlaceBoardRow {
     decidedByName: null,
     decisionNote: null,
     timetableExempt: null,
+    timetableTakenBack: null,
     restorable: false,
     ...overrides,
   };

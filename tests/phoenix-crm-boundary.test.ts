@@ -1131,6 +1131,10 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_share_line_validation, phoenix_crm_decide_request and phoenix_crm_reverse_list_request — and two
   // clean-ups of stale values. It replaces nothing save_visit depends on.
   "supabase/migrations/20261114062049_phoenix_crm_validation_left_items.sql",
+  // Who took a "no timetable" declaration back (owner, 14 Nov 2026): one NEW table,
+  // phoenix_crm_shared_place_timetable_marks, and one NEW function, phoenix_crm_set_shared_place_no_timetable.
+  // It replaces nothing save_visit depends on.
+  "supabase/migrations/20261114155530_phoenix_crm_shared_place_timetable_marks.sql",
 ];
 
 /**
