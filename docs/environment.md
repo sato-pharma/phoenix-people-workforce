@@ -526,8 +526,28 @@ These should never be set in production.
 
 Secrets flow **GitHub → Railway production** automatically: `.github/workflows/sync-railway-production-secrets.yml`
 runs `scripts/sync-railway-production-secrets.mjs` (push a value) then `scripts/validate-railway-production-secrets.mjs`
-(confirm it landed) on every push touching either file, or on manual dispatch. Most of the list below
-only needs setting once, in GitHub — Railway picks it up from there. A number of Railway variables are
+(confirm it landed) on every push touching either file, or on manual dispatch.
+
+🔴 **Since 14 Nov 2026 the sync adds and confirms, and never replaces on its own.** It lists production's
+variables first and decides per name (`scripts/lib/secret-sync-plan.mjs`):
+
+| Production holds | What the sync does |
+| --- | --- |
+| nothing under the name | writes GitHub's value |
+| the same value | leaves it |
+| a different value | **HOLDS it**: writes nothing, ends the run red, and names it on Telegram |
+| a different value a person released | writes GitHub's value |
+
+A held value is released by name, by hand: `gh workflow run sync-railway-production-secrets.yml -f overwrite=NAME,NAME`.
+A push passes no names, so a push can never replace a value. An empty or unreadable list stops the run
+with nothing written. Why: on 13 Nov 2026 a push that only touched the sync script put a GitHub secret
+dated 4 November over the GitHub dispatch token set on Railway alone on 7 November, and the workflow
+watch and the synthetic journeys were stranded for nine hours; the same unconditional write had already
+reverted `HR_NOTIFICATION_EMAILS` and `CRON_SECRET`. Pinned by `tests/railway-secret-policy.test.ts`, section 11.
+
+So a NEW value only needs setting once, in GitHub — Railway picks it up from there. A ROTATED value needs
+GitHub set first and then the release above. A value changed on Railway by hand still goes into the
+GitHub secret in the same turn: the sync will no longer undo it, but GitHub's copy is what a recovery restores. A number of Railway variables are
 not yet mirrored to GitHub at all (no automated backup if Railway ever lost them); the sync script's own
 `variables` array is the authoritative, current list of what's actually covered — treat this doc as a
 map, not the source of truth for that.

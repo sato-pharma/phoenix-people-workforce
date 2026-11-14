@@ -128,9 +128,13 @@ production-ops guidance. They stay in the index.
   `a-partial-cron-secret-rotation-leaves-two-fingerprints`
 - **`CRON_SECRET` lives in TWO stores, and since the sync workflow existed the arrow points one
   way: GitHub Actions -> Railway production.** A half-rotation 401s.
-  `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables, `CRON_SECRET`
-  among them, **unconditionally and without diffing** - on `workflow_dispatch` AND on any push to
-  `main` touching that workflow or `scripts/sync-railway-production-secrets.mjs`.
+  `sync-railway-production-secrets.yml` carries 76 synced names, `CRON_SECRET` among them. Until
+  14 Nov 2026 it rewrote every one **unconditionally and without diffing** - on `workflow_dispatch`
+  AND on any push to `main` touching that workflow or `scripts/sync-railway-production-secrets.mjs`.
+  Since then it reads production first (`scripts/lib/secret-sync-plan.mjs`): it writes a name
+  production lacks, leaves a value production already holds, and HOLDS a value that differs - nothing
+  written, the run red, Telegram naming it - until a person releases it by name:
+  `gh workflow run sync-railway-production-secrets.yml -f overwrite=NAME`.
 
   Measured **2026-08-31**: PR #2820 touched the `.mjs`, which fired run **33407660884** at
   15:18:11Z; its log reads `synced CRON_SECRET` and `completed: updated=48, skipped=7`. A
@@ -695,7 +699,7 @@ and the diagnosis traps that nearly sent each the wrong way — is in
 **Cron and secrets**
 
 - **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is **not** proof of authentication — the grace window hides a 401. The past 401s are RESOLVED: **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
-- **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway.** `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables unconditionally, so **rotating in Railway alone does not stick** — the next push reverts it and every cron-job.org job 401s at once. **Rotate GitHub first.** A nightly-failing cron alerts NOBODY; the 4 OFF iReports360 jobs are DELIBERATE.
+- **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway.** Until 14 Nov 2026 `sync-railway-production-secrets.yml` rewrote every synced variable unconditionally, so a rotation in Railway alone was reverted by the next push and every cron-job.org job 401'd at once. It now HOLDS a production value that differs (red run, Telegram, nothing written) until a person releases it by name. **Rotate GitHub first, then release it:** `gh workflow run sync-railway-production-secrets.yml -f overwrite=CRON_SECRET`. A rotation in Railway alone survives a sync but leaves GitHub's copy stale, and the stale copy is what a recovery would restore. A nightly-failing cron alerts NOBODY; the 4 OFF iReports360 jobs are DELIBERATE.
 - **The cron-job.org REST API allows 100 requests per DAY** — 429 on EVERY endpoint with no `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back.
 
 **Production data**
