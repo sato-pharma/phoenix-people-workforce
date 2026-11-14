@@ -1378,7 +1378,21 @@ measure the customer↔pharmacy distance. A shop metres from the doctor is a typ
 whatever the code says. His own standing rule on the integrity board applies here too — a false
 positive accuses a real person of fraud, which is worse than a missed catch.
 
-### The marketing code resolver runs once, at capture, and nothing re-runs it
+### The marketing code resolver runs once, at capture — the nightly re-check re-runs it only on untouched codes
+
+**Since 14 Nov 2026 (REC-077, owner's choice "pin untouched, list rest")** the 02:47 pharmacy-code
+sync is followed by a re-check (`src/lib/marketing-requests/master-recheck.ts`). It reads every active
+`unresolved` code and asks the read-only `phx_preview_marketing_pharmacy_code_matches` what the master
+would match now, with the resolver's own matching. A code **nobody has decided on** — `reference_status`
+`not_found`, no `validated_by_hr_id`, note blank or exactly "Reference not found." — is resolved by the
+same function, on that code alone, and its note says so. **A person's code is never changed by the night**:
+it is listed in Marketing Control, "Pharmacy codes the sales master now knows", for a Super Admin to
+Confirm match or Keep as decided (`master_recheck_kept_at`), one at a time and audit-logged. The night's
+counts join the sync's heartbeat detail. On the day it shipped: 21 unresolved, 7 untouched pinnable,
+2 person-decided listed (`1536256`, `0001570071` below), 11 ambiguous or still unknown.
+
+What follows is the account from before the re-check; its three "must not" rules still hold for anyone
+resolving a code by hand.
 
 `phx_resolve_marketing_pharmacy_codes` resolves a distributor code against the sales master **at the
 moment the rep saves**, and there is no path that revisits it. The verdict is frozen there.

@@ -182,8 +182,9 @@ async function ireports360Candidates(): Promise<IdentityCandidate[]> {
  *
  * So an UNRESOLVED code is simply not offered as evidence. That is the conservative reading and
  * the owner's standing rule behind it: a false positive is worse than a missed catch. It also
- * matters here because the resolver runs ONCE, at capture, and nothing re-runs it (AGENTS.md §4.1)
- * — a code entered before the master learned that pharmacy stays unresolved for good, and an
+ * matters here because the resolver runs at capture, and the nightly re-check (master-recheck.ts)
+ * re-runs it only on codes nobody has decided on — a person's code stays unresolved until a person
+ * confirms it in Marketing Control, and an
  * `unresolved` row can carry a signed human verdict in `validation_notes` rather than a gap. This
  * module reads; it never re-resolves, and it must never be the thing that acts on one of those.
  *

@@ -1,6 +1,6 @@
 ---
 name: the-marketing-code-resolver-never-re-runs
-description: "A marketing distributor code resolved once at capture keeps that verdict for ever, so a code entered before its pharmacy reaches the sales master reads untrackable long after it became traceable — and validation_notes may carry a signed human verdict that must not be overwritten"
+description: "A marketing distributor code resolved at capture is re-checked nightly only when nobody decided on it (REC-077, 14 Nov 2026); before that it kept its verdict for ever, so a code entered before its pharmacy reaches the sales master reads untrackable long after it became traceable — and validation_notes may carry a signed human verdict that must not be overwritten"
 metadata:
   node_type: memory
   type: project
@@ -8,8 +8,14 @@ metadata:
   modified: 2026-09-29T19:02:01.108Z
 ---
 
-`phx_resolve_marketing_pharmacy_codes` runs **once, at capture**, and nothing re-runs it when the
-sales master later learns the code. The verdict is frozen at the moment the rep pressed save.
+🔴 **UPDATED 14 Nov 2026 (REC-077, owner: "pin untouched, list rest").** A nightly re-check now follows
+the 02:47 pharmacy-code sync (`src/lib/marketing-requests/master-recheck.ts`): a code NOBODY has decided
+on (`not_found`, no validator, note blank or "Reference not found.") is re-resolved by the same function;
+a person's code is never changed by the night and waits in Marketing Control for Confirm match or Keep
+as decided. The rules below still bind anyone resolving a code by hand.
+
+`phx_resolve_marketing_pharmacy_codes` runs **at capture**; before 14 Nov 2026 nothing re-ran it when the
+sales master later learned the code, so the verdict was frozen at the moment the rep pressed save.
 
 **Measured 2026-09-29.** Ibn Sina `421993` («صيدليات لايف - د/ احمد علي حسين», Kafr El-Dawwar):
 

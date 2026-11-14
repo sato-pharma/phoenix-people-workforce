@@ -3117,6 +3117,7 @@ import { runOperatorWatchChannelGuardTests } from "./operator-watch-channel-guar
 import { runMarketingVendorAndCustomerMergeTests } from "./marketing-vendor-and-customer-merge.test.ts";
 import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
 import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
+import { runMarketingPharmacyCodeRecheckTests } from "./marketing-pharmacy-code-recheck.test.ts";
 import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
@@ -12451,6 +12452,7 @@ await runTest("marketing vendors and the customer merge (3 Nov 2026): a merged v
 await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is watched, an overdue one alerts, and being blind fails rather than reading clean", runGithubWorkflowWatchTests);
 await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
 await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);
+await runTest("the nightly pharmacy-code re-check (REC-077, 14 Nov 2026): untouched codes are pinned to the sales master, a code a person decided is only listed, and the preview writes nothing", runMarketingPharmacyCodeRecheckTests);
 await runTest("approved expenses against the payslips (3 Nov 2026): four findings, held is not unpaid, carried is an inference, and the check reads three salary columns and writes nothing", runExpensePayslipReconciliationTests);
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
