@@ -20,7 +20,9 @@
  * server starts no browser; "local" runs the explorer here (for the spare itself, or any machine with
  * the credentials file). Default: spare when this is Windows and the spare scripts exist, else local.
  *
- * Remote use (ChatGPT) is NOT served here: see docs/phoenix-intelligence/CHATGPT_INTERFACE.md.
+ * The same eight tools are served over Streamable HTTP, behind OAuth, by mcp-http.mjs: both doors build
+ * their protocol server with `buildMcpServer` below. Remote use (ChatGPT) is NOT deployed anywhere: see
+ * docs/phoenix-intelligence/CHATGPT_INTERFACE.md.
  * stdout belongs to the protocol; this file logs to stderr only.
  */
 import { spawn } from "node:child_process";
@@ -56,6 +58,9 @@ const MODULE_DOCS = Object.freeze({
 });
 export const MAX_IMAGES_PER_RESULT = 4;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+/** All the images of one result together, before base64 (which adds a third). */
+export const MAX_IMAGE_BYTES_PER_RESULT = 8 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const MAX_TEXT = 60_000;
 const CALL_MINUTES = RUN_BOUNDS.maxMinutesPerToolCall;
 
@@ -142,10 +147,20 @@ function insideRun(outDir, relative) {
   return full.startsWith(path.resolve(outDir) + path.sep) && existsSync(full) ? full : null;
 }
 
-function imageContent(outDir, relative) {
+/**
+ * A shot's MASKED picture as an MCP image block, or null. Only a shot the explorer marked "captured"
+ * (its leak check passed; a failed check deletes the files and records no image), only a PNG under the
+ * run's `shots/` folder, only under the per-image cap, and only when the file starts as a PNG does.
+ */
+function maskedImage(outDir, shot) {
+  if (shot?.outcome !== "captured" || Number(shot.redaction?.leakCount) > 0) return null;
+  const relative = shot.image;
+  if (typeof relative !== "string" || !/^shots\/[^/\\]+\.png$/.test(relative)) return null;
   const full = insideRun(outDir, relative);
   if (!full || statSync(full).size > MAX_IMAGE_BYTES) return null;
-  return { type: "image", data: readFileSync(full).toString("base64"), mimeType: "image/png" };
+  const bytes = readFileSync(full);
+  if (!bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return null;
+  return { block: { type: "image", data: bytes.toString("base64"), mimeType: "image/png" }, bytes: bytes.length };
 }
 
 function shotSummary(shot) {
@@ -165,11 +180,14 @@ function shotSummary(shot) {
 
 /**
  * The tool handler, without the protocol: `call(name, args)` answers an MCP CallTool result. The
- * runner is injected so the tests drive it without a browser.
- * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null }} deps
+ * runner is injected so the tests drive it without a browser. `imageLimits` lowers (never raises) the
+ * per-result image count and byte caps.
+ * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null, imageLimits?: { count?: number, bytes?: number } }} deps
  */
-export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile } = {}) {
+export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile, imageLimits = {} } = {}) {
   const tools = toolDefinitions();
+  const maxImages = Math.min(MAX_IMAGES_PER_RESULT, imageLimits.count ?? MAX_IMAGES_PER_RESULT);
+  const maxImageBytes = Math.min(MAX_IMAGE_BYTES_PER_RESULT, imageLimits.bytes ?? MAX_IMAGE_BYTES_PER_RESULT);
   const limiter = createRateLimiter(RUN_BOUNDS.toolCallsPerMinute, now);
   const flight = createSingleFlight();
   const auditPath = auditFile === undefined ? path.join(repoRoot, ...RUN_ROOT, "mcp-audit.jsonl") : auditFile;
@@ -216,12 +234,14 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     };
     const content = [text(summary)];
     let images = 0;
+    let bytes = 0;
     for (const shot of shots.filter((item) => item.image)) {
-      if (images >= MAX_IMAGES_PER_RESULT) break;
-      const image = imageContent(outDir, shot.image);
-      if (!image) continue;
-      content.push(text(`masked screenshot: ${shot.image}`), image);
+      if (images >= maxImages) break;
+      const image = maskedImage(outDir, shot);
+      if (!image || bytes + image.bytes > maxImageBytes) continue;
+      content.push(text(`masked screenshot: ${shot.image}`), image.block);
       images += 1;
+      bytes += image.bytes;
     }
     return { content, structuredContent: plain(summary), _manifest: manifest, _outDir: outDir };
   }
@@ -296,8 +316,8 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
       };
       const content = [text(detail)];
       if (aria) content.push(text(`masked accessibility snapshot:\n${clip(readFileSync(aria, "utf8"), 20_000)}`));
-      const image = shot.image ? imageContent(result._outDir, shot.image) : null;
-      if (image) content.push(image);
+      const image = maskedImage(result._outDir, shot);
+      if (image && image.bytes <= maxImageBytes) content.push(image.block);
       return { content, structuredContent: plain(detail) };
     },
     phoenix_get_component_map({ module }) {
@@ -329,7 +349,14 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     },
   };
 
-  async function call(name, args) {
+  /**
+   * One tool call. `observe`, when given, receives the same record the audit log gets (validated ids,
+   * outcome, ms; never a refused input) — the HTTP door folds it into its own per-request audit line.
+   * @param {string} name
+   * @param {unknown} [args]
+   * @param {(record: Record<string, unknown>) => void} [observe]
+   */
+  async function call(name, args, observe) {
     const started = now();
     const record = { at: cairoStamp(new Date(started)).text, tool: null, outcome: "refused-input" };
     try {
@@ -358,10 +385,33 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     } finally {
       record.ms = now() - started;
       audit(record);
+      try {
+        observe?.(record);
+      } catch (error) {
+        console.error(`audit observer failed: ${error.message}`);
+      }
     }
   }
 
   return { tools, call };
+}
+
+/**
+ * The MCP protocol server over an inspector: tools/list and tools/call, nothing else. The stdio door
+ * builds one for the process; the HTTP door builds one per request (stateless), sharing the inspector so
+ * the rate limit and the one-capture-at-a-time rule hold across requests.
+ * @param {{ tools: Array<{ name: string, description: string, inputSchema: Record<string, unknown>, annotations: Record<string, unknown> }>, call: (name: string, args?: unknown, observe?: (record: Record<string, unknown>) => void) => Promise<Record<string, unknown>> }} inspector
+ * @param {{ observe?: (record: Record<string, unknown>) => void }} [options]
+ */
+export async function buildMcpServer(inspector, { observe } = {}) {
+  const { Server } = await import("@modelcontextprotocol/sdk/server/index.js");
+  const { CallToolRequestSchema, ListToolsRequestSchema } = await import("@modelcontextprotocol/sdk/types.js");
+  const server = new Server({ name: "phoenix-inspect", version: "0.2.0" }, { capabilities: { tools: {} } });
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: inspector.tools.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })),
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async (request) => inspector.call(request.params.name, request.params.arguments, observe));
+  return server;
 }
 
 /** Runs the explorer in this process (the machine holding the credentials file). */
@@ -411,14 +461,8 @@ async function main() {
   if (!["spare", "local"].includes(mode)) throw new Error("--runner must be spare or local");
   const inspector = createInspector({ runner: mode === "spare" ? spareRunner() : localRunner() });
 
-  const { Server } = await import("@modelcontextprotocol/sdk/server/index.js");
   const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
-  const { CallToolRequestSchema, ListToolsRequestSchema } = await import("@modelcontextprotocol/sdk/types.js");
-  const server = new Server({ name: "phoenix-inspect", version: "0.1.0" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: inspector.tools.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })),
-  }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => inspector.call(request.params.name, request.params.arguments));
+  const server = await buildMcpServer(inspector);
   await server.connect(new StdioServerTransport());
   console.error(`phoenix-inspect MCP server ready (stdio, runner: ${mode}, target: staging only)`);
 }

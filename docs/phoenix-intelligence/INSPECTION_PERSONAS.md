@@ -39,13 +39,17 @@ is public); read that from staging itself when you need it (query below).
 
 ## Where the passwords are
 
-Each password was generated **on the spare laptop** by `scripts/phoenix-inspect/make-persona-secrets.mjs`
-and lives only there, in `%USERPROFILE%\.phoenix-inspect\staging-personas.json`. Only the bcrypt hash
-(cost 12, the app's own) left that machine, and it went straight into staging's
-`app_auth_users.password_hash`. No password is in Git, a chat, a log or this laptop.
+**Since 14 Nov 2026 (about 20:15 Cairo) the passwords live on the owner's MAIN laptop**, in
+`%USERPROFILE%\.phoenix-inspect\staging-personas.json`, outside every repository folder. They were first
+made on the spare laptop; when the spare dropped off the network mid-run (its address answered nothing,
+not even ARP) the browser runs moved to the main laptop, `make-persona-secrets.mjs --rotate` made seven
+new passwords there, and only their bcrypt hashes (cost 12, the app's own) were written to staging's
+`app_auth_users.password_hash` (7 rows, all active, all `$2…$12$`). **The spare's copy is now stale and
+signs in nowhere** — a run started on the spare must first copy this file there, or rotate again.
+No password is in Git, a chat, a log or a screenshot.
 
-Re-run `on-spare.ps1 persona-hashes` to print fresh hashes of the same passwords; add `--rotate` to make
-new ones (then write the new hashes to staging, or the explorer is locked out).
+`node scripts/phoenix-inspect/make-persona-secrets.mjs` prints fresh hashes of the same passwords;
+`--rotate` makes new ones (then write the new hashes to staging, or the explorer is locked out).
 
 ## See who each login mirrors (staging)
 

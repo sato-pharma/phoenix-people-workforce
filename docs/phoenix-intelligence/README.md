@@ -31,7 +31,8 @@ Built on 14 Nov 2026 (Cairo), branch `codex/visual-intelligence`.
 | --- | --- |
 | `explore.mjs` | the explorer: personas × states × viewports, fenced, masked, measured |
 | `modules/kpis.mjs` | the KPIs module spec: personas, states, never-touch controls, source files |
-| `lib/fence.mjs` | the network fence: GET only, staging only, never-touch paths |
+| `lib/fence.mjs` | the network fence: GET only, staging only, never-touch paths, and every address in `generated/side-effect-routes.json` |
+| `side-effect-routes.ts` | rebuilds `generated/side-effect-routes.json` from `app/**` and the access registry: every API route whose GET writes, serves a file or spends a paid quota, and every page whose render writes (`--check` fails when it is stale) |
 | `lib/redact.mjs` | masking before every picture, and the leak check after it |
 | `lib/measure.mjs` | overflow, computed radius, ellipsis, contrast, tap targets, fonts, colours |
 | `lib/capture.mjs` | sign-in, the fenced context, one capture |
@@ -46,13 +47,20 @@ The tests are `tests/phoenix-inspect-*.test.ts`, registered in `tests/run-tests.
 
 ## Run it
 
-Every browser run happens on the spare laptop; this laptop starts no browser.
+The spare laptop was the first home of every browser run. On 14 Nov 2026 it dropped off the network
+mid-run, so runs now also go on the main laptop, under a memory guard: one Chromium, launched lean (no
+GPU, one renderer process), closed and relaunched every 3 pages, and closed while the run waits whenever
+free memory falls under `--min-free-mb`. The manifest is saved after every page and `--resume` carries a
+stopped run on, so a pass stopped from outside loses at most one page.
 
 ```text
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phoenix-inspect/on-spare.ps1 self-check
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phoenix-inspect/on-spare.ps1 explore --module kpi-reports
 node scripts/phoenix-inspect/explore.mjs --plan --module kpi-reports
+node scripts/phoenix-inspect/explore.mjs --module kpi-reports --run-id <id> --resume --max-minutes 45 --min-free-mb 2300 --relaunch-every 3
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/phoenix-inspect/on-spare.ps1 explore --module kpi-reports
 ```
+
+The staging passwords are read from `%USERPROFILE%.phoenix-inspectstaging-personas.json` on the machine
+that runs the browser ([INSPECTION_PERSONAS.md](INSPECTION_PERSONAS.md)).
 
 Output goes to `artifacts/phoenix-inspection/kpi-reports/<run>/` (not in Git): masked PNGs and a
 `manifest.json` with every shot's measurements and source candidates.

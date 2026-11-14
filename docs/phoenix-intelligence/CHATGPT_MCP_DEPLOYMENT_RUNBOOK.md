@@ -1,6 +1,7 @@
 # ChatGPT ⇄ Phoenix Inspect — deployment runbook
 
-**Nothing here has been run.** Each step that deploys, exposes or spends needs the owner's decision
+**Nothing here has been deployed.** Step 1 is built and tested on loopback only; Step 1b and Step 4 are
+not built. Each step that deploys, exposes or spends needs the owner's decision
 first ([CHATGPT_MCP_CONNECTION_READINESS.md](CHATGPT_MCP_CONNECTION_READINESS.md) §5). The steps are written so the
 session that builds it can follow them in order and prove each one before the next.
 
@@ -13,20 +14,52 @@ Target: **staging only**, always. The production host is refused by the explorer
 - [ ] The staging personas exist and are switched on ([INSPECTION_PERSONAS.md](INSPECTION_PERSONAS.md)).
       Their passwords are generated where the browser will run, never in chat or Git.
 
-## Step 1 — Give the tools an HTTP door (code, one PR)
+## Step 1 — Give the tools an HTTP door (code) — BUILT, tested on loopback only
 
-1. Add `scripts/phoenix-inspect/mcp-http.mjs`: the same `createInspector` from `mcp-server.mjs` behind
-   the MCP SDK's `StreamableHTTPServerTransport` on `POST /mcp`. Nothing else is served except the
-   OAuth routes and `GET /healthz`.
-2. Put `requireBearerAuth` (resource-metadata link in the 401) on `/mcp` and serve both metadata
-   documents with `mcpAuthRouter`, reusing `infra/phoenix-mcp/src/oauth.mts` and `policy.mts`. Advertise
-   `S256`, check `resource` = this server's address, one static client id, one redirect.
-3. Keep every tool `readOnlyHint: true`. Keep `structuredContent` beside each image.
-4. Tests: a request without a token gets 401 with `WWW-Authenticate: Bearer resource_metadata=…`. A
-   token for another `resource` is refused. Every refusal the stdio test proves is also refused over
-   HTTP. Prove each by breaking it.
+Done in this branch, not deployed:
 
-**Proof:** the PR's `validate` and `checks`.
+- `scripts/phoenix-inspect/mcp-http.mjs` runs the same `createInspector` from `mcp-server.mjs`, through
+  the new `buildMcpServer`, behind the MCP SDK's `StreamableHTTPServerTransport` on `POST /mcp`. It is
+  stateless and replies in JSON. Besides `/mcp` it serves only `GET /healthz` and the RFC 9728 metadata at
+  `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp`.
+- `scripts/phoenix-inspect/lib/oauth.mjs` is the token check. It is written on `node:http` and
+  `node:crypto`, because `express` and `jose` are not dependencies of the repository root (they belong to
+  `infra/phoenix-mcp`'s own lockfile). The SDK's `mcpAuthRouter` is **not** used: that router is an
+  authorization server, and this process issues no tokens.
+- Every tool stays `readOnlyHint: true`; capture and inspect keep `structuredContent` beside each image.
+- `tests/phoenix-inspect-mcp-http.test.ts` covers these refusals:
+  - no token: 401 with `WWW-Authenticate: Bearer … resource_metadata=…`;
+  - a token for another resource, from another issuer, expired, unsigned or signed with the wrong
+    algorithm: 401;
+  - no scope, or not the owner: 403;
+  - a foreign Host or Origin: 403;
+  - a URL in place of a module id, and an extra `url` key, are refused over HTTP and never reach the
+    browser (the stdio test covers the rest: unknown persona, unknown tool);
+  - one capture at a time and ten tool calls a minute hold across separate HTTP requests;
+  - a failed-privacy shot and an over-cap image are never sent;
+  - a production target refuses to start.
+
+  The audience, owner, Origin, Host, masked-only, byte-cap and production checks were each broken once
+  and the test failed.
+
+**Proof still owed:** the PR's `validate` and `checks`.
+
+## Step 1b — The authorization server — NOT BUILT
+
+ChatGPT needs a server that issues the tokens Step 1 checks:
+- RFC 8414 metadata at `/.well-known/oauth-authorization-server` with an exact `issuer` and
+  `code_challenge_methods_supported: ["S256"]`;
+- authorize and token endpoints;
+- a client: a static id, a client-id metadata document, or Dynamic Client Registration;
+- the redirect ChatGPT shows;
+- short-lived JWT access tokens signed ES256 or RS256, with `aud` equal to `https://<host>/mcp`, scope
+  `phoenix-inspect:read`, and `sub` equal to the value in `PHOENIX_INSPECT_MCP_OWNER_SUBJECTS`;
+- the public key set, given to the door as `PHOENIX_INSPECT_MCP_JWKS` or `PHOENIX_INSPECT_MCP_JWKS_URL`
+  (https, on the issuer's own origin).
+
+`infra/phoenix-mcp/src/oauth.mts` is the nearest existing design. It needs an upstream OpenID provider
+(Step 3) and its own state store. Its live Phoenix session check depends on an endpoint that does not
+exist. Building it is its own PR and its own decision.
 
 ## Step 2A — Railway (if option A)
 
@@ -34,38 +67,62 @@ Target: **staging only**, always. The production host is refused by the explorer
    Playwright image that matches the repo's `playwright` version.
 2. Set `RAILWAY_SHM_SIZE_BYTES` (for example 268435456), or launch Chromium with
    `--disable-dev-shm-usage`. One browser, one capture at a time (the server already enforces this).
-3. Secrets on the service: the persona passwords file's contents, the OAuth signing key and client id,
-   the identity provider's client. **None in Git.**
-4. Health: `GET /healthz` 200, and a log line `target: staging only`.
+3. Start command:
+   `node scripts/phoenix-inspect/mcp-http.mjs --runner local --host 0.0.0.0 --allow-non-loopback --public-url https://<host>/mcp --trust-proxy --port <PORT>`.
+   **The CLI does not read the `PORT` environment variable.** Write the port Railway assigns into
+   `--port`, for example through a shell start command. Railway's edge terminates TLS and sends
+   `X-Forwarded-Proto: https`, which `--trust-proxy` is there to read.
+4. Secrets on the service:
+   - `PHOENIX_INSPECT_MCP_OWNER_SUBJECTS` and `PHOENIX_INSPECT_MCP_ISSUER`;
+   - `PHOENIX_INSPECT_MCP_JWKS_URL` (or `_JWKS`);
+   - `PHOENIX_INSPECT_MCP_CLIENT_ID` and a 32+ character `PHOENIX_INSPECT_MCP_AUDIT_KEY`;
+   - the persona passwords file's contents.
 
-**Proof:** `curl -i https://<service>/mcp` → 401 with the metadata link;
-`curl https://<service>/.well-known/oauth-protected-resource` → JSON whose `resource` is the service
-address; `.../.well-known/oauth-authorization-server` lists `S256`.
+   **None in Git** (the repository is public). Never set `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` or
+   the app's auth secret on this service: the door refuses to start beside them.
+5. Health: the start line ends `target: staging only`. **Known gap:** the Host and https checks run
+   before `/healthz`, so a platform health probe that sends another Host, or plain http, gets 403. Point
+   the health check at the public name, or relax `/healthz` in a reviewed change.
+
+**Proof:**
+- `curl -i https://<host>/mcp -X POST` → 401 with the `resource_metadata` link;
+- `curl https://<host>/.well-known/oauth-protected-resource/mcp` → JSON whose `resource` is
+  `https://<host>/mcp`;
+- `<issuer>/.well-known/oauth-authorization-server` lists `S256`. That document is served by the
+  **authorization server** (Step 1b), not by this door.
 
 ## Step 2B — The spare + a named tunnel (if option B)
 
 1. On the spare: `cloudflared tunnel create phoenix-inspect`, a DNS route to a hostname under
    `satopharma.com`, and a config that sends it only to `http://localhost:<port>`.
-2. Run `node scripts/phoenix-inspect/mcp-http.mjs --runner local` on the spare.
+2. Run on the spare, bound to loopback (the default host), behind the tunnel:
+   `node scripts/phoenix-inspect/mcp-http.mjs --runner local --port <port> --public-url https://<hostname>/mcp --trust-proxy`.
+   `cloudflared` connects to `localhost`, so no `--allow-non-loopback` is needed. The edge terminates
+   TLS; confirm on the first request that `X-Forwarded-Proto` arrives as `https`, or the door answers
+   403 `https_required`.
 3. **No plain Cloudflare Access policy on `/mcp`, `/.well-known/*` or the OAuth routes.** It answers
    ChatGPT's server-to-server calls with a redirect to a login page, so the plugin fails. The sign-in is
    the server's own OAuth.
 4. Never a quick tunnel (`trycloudflare.com`): its address changes on every start, it does not support
    SSE, and it is how the old plugin died.
 
-**Proof:** the same three `curl` reads as 2A, against the tunnel hostname.
+**Proof:** the same three reads as 2A, against the tunnel hostname.
 
 ## Step 3 — Identity provider
 
-Create an OAuth client at the chosen provider, with the server's `/callback` as its redirect. Put its
-id, secret and issuer in the service secrets. The policy admits **only** the owner's subject, and the
+Create an OAuth client at the chosen provider, with the **authorization server's** callback (Step 1b) as
+its redirect. Put its id, secret and issuer in that server's secrets, not the door's. The policy admits **only** the owner's subject, and the
 Phoenix login behind it must still be active.
 
-## Step 4 — Smoke over HTTP
+## Step 4 — Smoke over HTTP — NOT BUILT
 
-`mcp-smoke.mjs` gains `--url` (Streamable HTTP client with a token from step 3). Expected: 8 tools, all
-read-only; a URL, an unknown persona, an extra key and an unknown tool refused; one real capture
-returns `structuredContent` and a masked image.
+`mcp-smoke.mjs` does not yet have `--url`; it speaks stdio only. To build: a Streamable HTTP client with
+a token from Steps 1b and 3. Expected:
+- 8 tools, all read-only;
+- a URL, an unknown persona, an extra key and an unknown tool refused;
+- one real capture returns `structuredContent` and a masked image.
+
+Until then, the loopback test (`tests/phoenix-inspect-mcp-http.test.ts`) is the only HTTP proof.
 
 ## Step 5 — Optional network allow-list
 
@@ -76,8 +133,8 @@ the OAuth routes. Re-read the list monthly, because it changes.
 
 1. chatgpt.com → **Plugins** → **+** → **Add custom MCP server** → **Create as a plugin**.
 2. Name: `Phoenix Inspect`. Address: `https://<host>/mcp`. Authentication: **OAuth**.
-3. Client id: the static id from step 1. If ChatGPT shows its own callback address, copy it into the
-   server's allowed redirect, then save.
+3. Client id: the static id from Step 1b. If ChatGPT shows its own callback address, copy it into the
+   authorization server's allowed redirect, then save.
 4. Sign in when ChatGPT opens the identity provider. Only the owner's account is admitted.
 5. Uninstall the old **Phoenix Playwright** plugin.
 

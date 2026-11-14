@@ -53,6 +53,9 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   .scroller div { height: 600px; }
   .tiny { width: 20px; height: 20px; padding: 0; }
   .wide { width: 2000px; height: 10px; background: #eee; }
+  .band { background: lab(15 0 0); color: rgb(255, 255, 255); padding: 4px; }
+  .faint { color: oklch(0.704 0.04 256.788); }
+  .drawer { position: fixed; left: 0; top: 0; width: 295px; transform: translateX(-100%); }
 </style></head><body><main>
   <h1>Call Rate</h1>
   <button aria-expanded="false" type="button" onclick="this.setAttribute('aria-expanded','true');document.getElementById('panel').hidden=false">Advanced filters</button>
@@ -72,6 +75,9 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>fixture
   <a href="/fixture/rep/Z-9043?month=2026-08">${FAKE.name}</a>
   <form id="f" method="post" action="/api/form"><input name="x" value="1"></form>
   <div class="wide"></div>
+  <h2 id="band" class="band">Standing out</h2>
+  <p id="faint" class="faint">Coverage</p>
+  <nav class="drawer" inert aria-hidden="true"><a id="drawer-link" class="tiny" href="/fixture">.</a></nav>
   <p>Write to hr@example.com</p>
 </main>
 <script>
@@ -156,6 +162,9 @@ try {
   check("measured: rounded corners", desktop.measurements?.roundedElements >= 1, String(desktop.measurements?.roundedElements));
   check("measured: ellipsis cut", desktop.measurements?.ellipsisCuts >= 1, String(desktop.measurements?.ellipsisCuts));
   check("measured: internal scroller", desktop.measurements?.internalScrollers >= 1);
+  const contrastPaths = (desktop.measurementDetail?.contrast?.samples ?? []).map((sample) => sample.path);
+  check("measured: faint oklch() text on white is low contrast", contrastPaths.some((p) => p.includes("p#faint")), contrastPaths.join(" | "));
+  check("white text on a dark lab() band is NOT low contrast", !contrastPaths.some((p) => p.includes("h2#band")), contrastPaths.join(" | "));
   check("the internal scroller was captured expanded", desktop.scrollers?.length >= 1 && existsSync(path.join(outDir, desktop.scrollers[0].file)));
 
   // 2. Mobile: baseline width, tap targets.
@@ -164,6 +173,8 @@ try {
   check("mobile capture succeeds", mobile.outcome === "captured", mobile.error ?? mobile.outcome);
   check("mobile baseline is 390 px wide", Boolean(mobileImage && pngWidth(mobileImage) === 390), mobileImage ? String(pngWidth(mobileImage)) : "no file");
   check("measured: small tap targets on mobile", mobile.measurements?.smallTapTargets >= 1, String(mobile.measurements?.smallTapTargets));
+  const tapPaths = (mobile.measurementDetail?.tapTargets?.samples ?? []).map((sample) => sample.path);
+  check("a closed (inert, off-screen) drawer's link is not a tap target", !tapPaths.some((p) => p.includes("drawer-link")), tapPaths.join(" | "));
 
   // 3. A vetted click opens the panel; a refused control is never clicked.
   const opened = (await capture({ id: "click", label: "click", address: "/fixture", click: { selector: 'button[aria-expanded="false"]', nameIncludes: "Advanced filters" } }, "desktop")).entry;

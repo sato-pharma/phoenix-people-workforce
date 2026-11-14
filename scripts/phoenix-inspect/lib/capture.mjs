@@ -12,7 +12,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { classifyRequest, collectPageStoppedWrites, installFence, sanitizeUrlForLog } from "./fence.mjs";
-import { measurePage, summarizeMeasurements } from "./measure.mjs";
+import { measurePageCall, summarizeMeasurements } from "./measure.mjs";
 import { SAFE_WORDS, findAriaLeaks, maskDocument, maskString, pageCall, sanitizeAriaSnapshot, verifyDocument } from "./redact.mjs";
 import { RUN_BOUNDS, VIEWPORTS, classifyControl } from "./safety.mjs";
 
@@ -308,7 +308,7 @@ export async function captureOne(browser, job) {
 
     // 2. Mask, then measure, then snapshot and shoot.
     const maskStats = await page.evaluate(pageCall(maskDocument, keepList, SAFE_WORDS));
-    const measurements = await page.evaluate(measurePage, { mobile: VIEWPORTS[viewport].mobile });
+    const measurements = await page.evaluate(measurePageCall({ mobile: VIEWPORTS[viewport].mobile }));
     const shotsDir = path.join(outDir, "shots");
     const ariaDir = path.join(outDir, "aria");
     mkdirSync(shotsDir, { recursive: true });

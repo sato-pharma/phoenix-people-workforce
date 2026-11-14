@@ -4,6 +4,16 @@ How the read-only inspector in `scripts/phoenix-inspect/` grows from one module 
 of Phoenix Workforce. Everything here was read from the source on 14 Nov 2026 (Cairo). Anything not read
 says **not verified**.
 
+> **Update, 14 Nov 2026 evening — B3 and B4 are DONE** (branch `codex/visual-intelligence`). The fence's deny
+> list is now built from source: `scripts/phoenix-inspect/side-effect-routes.ts` scans `app/**` and the access
+> registry and writes `generated/side-effect-routes.json` — 275 API routes whose GET writes (35), serves a file
+> (114) or spends the Maps quota (1), plus registry entries classed export, mutation or audit-required
+> access-read — and the 2 pages whose server render writes. `lib/fence.mjs` refuses all of them as a
+> navigation, an RSC fetch and a prefetch, and refuses every `/api` GET if the list cannot be read.
+> `tests/phoenix-inspect-route-fence.test.ts` fails a stale list, fails any scanned address the fence lets
+> through, and fails any registered module whose plan opens one. Every route marked **unfenced** below is
+> now refused; the tables keep the word as the record of what the survey found.
+
 **Ground rules**
 
 - The target is always **staging**. Production is refused, and that refusal is pinned by `lib/fence.mjs:30`
@@ -249,8 +259,8 @@ Ordered. B1 to B9 come before any second module runs.
 | --- | --- | --- | --- |
 | B1 | **A module contract.** Each `modules/<id>.mjs` exports `id`, `personas` (ids only), `states`, `basePathFor`, `statesFor`, `viewportsFor`, `addressFor`, `neverTouch`, `neverOpenPages`, `sourceFiles`, `docs`, and optionally `mocks`, `deniedProbe` and `tabs`. | `scripts/phoenix-inspect/modules/` | `kpis.mjs` passes the contract test unchanged in behaviour. |
 | B2 | **One registry for modules and personas.** Persona ids are defined once, and a module lists only which of them it uses and their matrix. | A new `modules/index.mjs` and `personas.mjs`. Read by `explore.mjs:38`, `make-persona-secrets.mjs:35`, `mcp-server.mjs:34,49` and `on-spare.ps1:98`. | No file outside `modules/` imports `kpis.mjs`. |
-| B3 | **A fence deny list built from source**, not from a hand-kept list. Generate it from `access-registry.ts` (export, mutation and audit-required access-read entries), plus every GET-only route whose handler writes. Widen the patterns for `-export`, `-download`, `/pdf`, `/print`, `/pack`, `bank-file`, `template`, `/cv`, `attachment`, `/file`, `photo`, `/share/` and `contact-numbers`, and name `case-map-basemap`. | `lib/fence.mjs` | A test walks `app/api`, finds every GET route that writes or serves a file, and fails on any one the fence lets through. Today that test would list the 13 unfenced writers marked in §3 and the 78 unfenced file routes counted in §3.1. |
-| B4 | **A never-open page list** for renders that write: the portal incentive page and the marketing-request decision page. | Module spec plus `explore.mjs` | The plan refuses those addresses before a browser opens. |
+| B3 | ✅ **Done 14 Nov 2026.** **A fence deny list built from source**, not from a hand-kept list. Generate it from `access-registry.ts` (export, mutation and audit-required access-read entries), plus every GET-only route whose handler writes. Widen the patterns for `-export`, `-download`, `/pdf`, `/print`, `/pack`, `bank-file`, `template`, `/cv`, `attachment`, `/file`, `photo`, `/share/` and `contact-numbers`, and name `case-map-basemap`. | `lib/fence.mjs` | A test walks `app/api`, finds every GET route that writes or serves a file, and fails on any one the fence lets through. Today that test would list the 13 unfenced writers marked in §3 and the 78 unfenced file routes counted in §3.1. |
+| B4 | ✅ **Done 14 Nov 2026** (built from source with B3, refused for every module, not per module). **A never-open page list** for renders that write: the portal incentive page and the marketing-request decision page. | Module spec plus `explore.mjs` | The plan refuses those addresses before a browser opens. |
 | B5 | **A review of the source literals** for each module before its first run. No person's name may sit in `SOURCE_FILES`, because `redact.mjs` would keep it. | Module spec | A written pass per module, plus a test that fails on a capitalised two-word literal outside an allow-list. |
 | B6 | **A 375 px viewport**, kept beside 390, to match AGENTS.md §7. | `lib/safety.mjs:12` | Plans list both widths. |
 | B7 | **Mocks and the denial probe moved into the spec.** | `lib/capture.mjs:268,279,388-405` | Running capture.mjs on a module with no mocks skips those states and says so. |

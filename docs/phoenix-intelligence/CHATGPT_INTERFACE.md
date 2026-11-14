@@ -12,12 +12,14 @@ what each missing piece would cost.
 | Visual explorer (`scripts/phoenix-inspect/explore.mjs`) | yes | yes — on the spare laptop against staging (see `KPI_REPORTS_VISUAL_AUDIT.md`) | runs on the spare, on demand | no |
 | Browser self-check (`self-check.mjs`) | yes | yes — 31 of 31 checks on the spare | — | — |
 | Local MCP server (`mcp-server.mjs`, stdio) | yes — capture and inspect also return `structuredContent` (plain JSON) beside the text, which ChatGPT's apps read | yes — unit test with a fake runner (`tests/phoenix-inspect-mcp.test.ts`, including the `structuredContent` shape) and a real stdio client (`mcp-smoke.mjs`, 14/14) | no (a local process) | **no — ChatGPT cannot start a local process** |
-| Remote MCP endpoint with sign-in (section 4) | **no** | no | no | no |
+| Streamable HTTP door with token checks (`mcp-http.mjs`, `lib/oauth.mjs`; section 4) | yes — the resource-server half only: it checks tokens, it does not issue them | yes — `tests/phoenix-inspect-mcp-http.test.ts` on an ephemeral 127.0.0.1 port with a fake runner and the SDK's own HTTP client; the real CLI started once on loopback (401 with no token, 8 tools for the owner) | no | no |
+| Authorization server that issues the tokens ChatGPT presents | **no** | no | no | no |
 | Component map, audit, polish plan, second-stage prompt | yes (`docs/phoenix-intelligence/`) | read by the tools | in Git | through the tools, once remote |
 
-**Nothing here is connected to ChatGPT yet.** ChatGPT's custom MCP plugins take an HTTPS address; this
-PR ships the local server and the design for the remote one, priced, for the owner to decide.
-What ChatGPT requires, what already exists, and the two hosting choices are in
+**Nothing here is connected to ChatGPT yet.** ChatGPT's custom MCP plugins take an HTTPS address. This
+branch ships the local server and the HTTP door that checks every token, tested on this laptop only. The
+authorization server, the hosting and the public HTTPS name are not built, and come back to the owner as a
+decision. What ChatGPT requires, what already exists, and the two hosting choices are in
 [CHATGPT_MCP_CONNECTION_READINESS.md](CHATGPT_MCP_CONNECTION_READINESS.md); the steps once he chooses are
 in [CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md](CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md).
 
@@ -70,16 +72,31 @@ Never expose secrets or unredacted screenshots."
 What the fence cannot stop: a write the SERVER makes while answering a GET (a "last seen" stamp, an
 audit row of a page view). That is why the target is staging with staging-only logins.
 
-## 4. The remote endpoint ChatGPT needs (not built — the owner's decision)
+## 4. The remote endpoint ChatGPT needs (the door is built; the authorization server, hosting and TLS are not)
 
-ChatGPT's custom MCP plugins speak Streamable HTTP over HTTPS, with OAuth. The design:
+ChatGPT's custom MCP plugins speak Streamable HTTP over HTTPS, with OAuth.
 
-1. **Transport:** the same eight tools behind the MCP SDK's Streamable HTTP transport.
-2. **Sign-in:** reuse `infra/phoenix-mcp`'s owner-only OAuth: PKCE with an OIDC issuer
-   (`src/oauth.mts`), and a policy that admits exactly one subject whose Phoenix login, role and session
-   version still match (`src/policy.mts`). Not "Authorization: None" — that is what made the old
+1. **Transport — built, not deployed.** `scripts/phoenix-inspect/mcp-http.mjs` serves the same eight
+   tools on `POST /mcp` through the MCP SDK's `StreamableHTTPServerTransport` (stateless, JSON replies),
+   over one shared inspector, so one capture at a time and 10 calls a minute still hold.
+2. **Token checks — built, not deployed.** `lib/oauth.mjs` is the resource-server half of the MCP
+   authorization spec:
+   - RFC 9728 metadata at `/.well-known/oauth-protected-resource/mcp`;
+   - 401 with `WWW-Authenticate: Bearer … resource_metadata="…"`;
+   - a JWT check: ES256/RS256 public keys only, exact issuer, audience equal to this server's `/mcp`
+     address, expiry and at most one hour of life, scope `phoenix-inspect:read`;
+   - 403 for any subject but the owner's, which comes from an environment variable and never from Git.
+
+   It refuses to start against the production host, checks Host and Origin on every request, binds
+   127.0.0.1 unless told otherwise, and writes `artifacts/phoenix-inspection/mcp-http-audit.jsonl` with a
+   keyed hash of the subject and never a token. Not "Authorization: None": that is what made the old
    "Phoenix Playwright" plugin dangerous (CONNECTION_DIAGNOSTICS.md §1).
-3. **Where the browser runs** — two options:
+3. **Sign-in that issues the tokens — not built.** ChatGPT needs an authorization server: S256 PKCE,
+   RFC 8414 metadata, authorize and token endpoints, a client id, and a published key set.
+   `infra/phoenix-mcp`'s owner-only OAuth (`src/oauth.mts`, `src/policy.mts`) is the nearest design. Its
+   live Phoenix role and session check is not part of the door. Details:
+   [CHATGPT_MCP_CONNECTION_READINESS.md](CHATGPT_MCP_CONNECTION_READINESS.md) §3.
+4. **Where the browser runs** — two options:
 
 | | A. A staging-only Railway service | B. The spare laptop behind a named Cloudflare Tunnel |
 | --- | --- | --- |
@@ -89,7 +106,7 @@ ChatGPT's custom MCP plugins speak Streamable HTTP over HTTPS, with OAuth. The d
 | Cost | about **US$5–12 a month** (estimate: Chromium needs ~1 GB while capturing and ~0.2 GB idle; Railway lists $10/GB-month RAM, $20/vCPU-month, $0.15/GB-month volume) | **$0** extra (Cloudflare's free tunnel) |
 | Risk | a new production-grade service to keep patched | the home network gets an inbound path; the spare also runs the dev server and tests |
 
-4. **Connecting it** (RUNBOOK.md, "Exact ChatGPT connection procedure"): in ChatGPT on the web, **Plugins
+5. **Connecting it** (RUNBOOK.md, "Exact ChatGPT connection procedure"): in ChatGPT on the web, **Plugins
    → + → Add custom MCP server**, a name, the HTTPS address, OAuth with the registered callback; then
    check it appears in ChatGPT Desktop on Windows before calling it "available in ChatGPT".
 
@@ -116,6 +133,19 @@ the repository root of a checkout on this laptop:
 browser; `--runner local` runs the browser where the server runs (the spare itself). To check it end to
 end: `node scripts/phoenix-inspect/mcp-smoke.mjs` (lists the tools, reads the module pages, and proves
 a URL and an unknown persona are refused; `--capture` adds one real capture through the spare).
+
+**The HTTP door, on loopback only.** It needs an issuer and its public keys; until the authorization server
+exists, a test can use a throwaway key pair and made-up values. In PowerShell:
+
+```powershell
+$env:PHOENIX_INSPECT_MCP_OWNER_SUBJECTS = 'owner-subject-0001'
+$env:PHOENIX_INSPECT_MCP_ISSUER = 'https://auth.example.test'
+$env:PHOENIX_INSPECT_MCP_JWKS = '{"keys":[ ...the PUBLIC key only... ]}'
+node scripts/phoenix-inspect/mcp-http.mjs --runner spare --port 8787
+```
+
+It answers on `http://127.0.0.1:8787/mcp` and nowhere else. A bare start with no owner subject exits 1;
+an unknown flag exits 2. `tests/phoenix-inspect-mcp-http.test.ts` is the end-to-end check.
 
 ## 6. Clean-up the owner should do in ChatGPT
 

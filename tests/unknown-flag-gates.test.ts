@@ -151,6 +151,7 @@ const PINNED = [
   "scripts/outstation/build-train-fares.mjs",
   "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/phoenix-inspect/make-persona-secrets.mjs",
+  "scripts/phoenix-inspect/mcp-http.mjs",
   "scripts/phoenix-inspect/mcp-server.mjs",
   "scripts/phoenix-inspect/mcp-smoke.mjs",
   "scripts/phoenix-inspect/prune.mjs",
