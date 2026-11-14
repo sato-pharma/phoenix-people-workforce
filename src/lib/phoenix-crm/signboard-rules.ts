@@ -1,7 +1,7 @@
 import { isMatchableName, normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { addressWords, compileArabicWord, type PlaceWord } from "@/lib/geo/arabic-place-match";
 import { jaccardSimilarity, nameTokens } from "@/lib/pharmacy-master/pharmacy-matching";
-import { distinctiveWords } from "@/lib/phoenix-crm/google-place-rules";
+import { distinctiveWords, editDistanceAtMostOne, wordsAreInListing } from "@/lib/phoenix-crm/google-place-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -867,6 +867,49 @@ export function nameMatchesAcrossScripts(input: {
   return misses <= (latinWords.length >= 3 ? 1 : 0);
 }
 
+/**
+ * Words that say a BUILDING is a clinic, a centre or a doctor's — never which one. "عيادات مستشفى العبور"
+ * is the board "CH مستشفى العبور", and "عيادة د. ابراهيم ابو الخير" the board "د. إبراهيم أبوالخير".
+ */
+const BUILDING_KIND_WORDS: ReadonlySet<string> = new Set(
+  distinctiveWords("عيادة عيادات العيادات مركز المركز مجمع المجمع مستوصف د دكتور الدكتور polyclinic clinics dr"),
+);
+/** A Latin kind word typed one letter off ("Alma clinc") is still a kind word. */
+const LATIN_KIND_WORDS = ["clinic", "clinics", "center", "centre", "hospital", "polyclinic"];
+
+/** The words of a building's name that say WHICH building it is. */
+function buildingNameWords(name: string): string[] {
+  return distinctiveWords(name).filter(
+    (word) =>
+      word.length > 1 &&
+      !BUILDING_KIND_WORDS.has(word) &&
+      !(/^[a-z]{4,}$/.test(word) && LATIN_KIND_WORDS.some((kind) => editDistanceAtMostOne(word, kind))),
+  );
+}
+
+/**
+ * Does this sign name the BUILDING (a polyclinic, medical centre or hospital's outpatient suite)?
+ *
+ * 🔴 A BUILDING'S SIGN IS COMPARED BY THE GOOGLE LISTING'S OWN RULE, NOT ONLY A CUSTOMER'S (owner, 14 Nov
+ * 2026, "Fix all three"). Measured that day on production: 23 buildings in use or waiting were
+ * recommended for REJECT as "the sign names a different place", and in 7 of them the sign named the
+ * same building, written the way a board writes it — "مستشفى كفر الدوار العام" for the typed
+ * "مستشفى كفرالدوار العام", "مستشفى الأنبا تكلا" for "الأنباتكلا", "النزهة" for the typo "النرهه",
+ * "مركز د.يس عبد الغفار" for "يس عبدالغفار". `listingIsAccount` has forgiven exactly those shapes on
+ * Google's listings since it was written — one letter off on a word of four letters or more, the
+ * spaces taken out — so a building's name is held to that quorum too, with the words that only say
+ * it is a clinic or a centre left out. It runs only BESIDE the customer rule (a match either way is a
+ * match), never on a person's name: a person's spelling is the owner's own list (`spelledOneWay`).
+ * The six true flags of that day stay flags — a lab's sign, "CAIRO MEDICAL CENTER", a dental
+ * department's plate, one doctor's plate, "العيادات الخارجية" alone, "التخصصي" alone.
+ */
+export function buildingNamedOnSign(name: string | null, sign: PhoenixCrmSign): boolean {
+  if (!name) return false;
+  const wanted = buildingNameWords(name);
+  if (wanted.length === 0) return false;
+  return [...sign.placeNames, ...(sign.text ? [sign.text] : [])].some((candidate) => wordsAreInListing(wanted, candidate));
+}
+
 /** Does THIS sign name the customer — in his own script, or across the two? */
 export function signNamesCustomerOnSign(
   sign: PhoenixCrmSign,
@@ -1141,8 +1184,11 @@ export function judgeSignboards(input: {
   problem?: SignboardPhotoProblem | null;
   /** The brick the photo's GPS resolved to — the town word of an AM name (`signNamesCustomer`). */
   photoBrick?: string | null;
+  /** "building": the name is a polyclinic's, a centre's or a hospital's own (`buildingNamedOnSign`, step 5c). */
+  subject?: "customer" | "building";
 }): PhoenixCrmSignboardCheck {
   const signs = [...input.signs];
+  const building = input.subject === "building";
   const anythingRead = signs.some(signCarriesAName);
 
   const record = (
@@ -1181,7 +1227,7 @@ export function judgeSignboards(input: {
   for (const sign of signs) {
     const { matches, score } = signNamesCustomerOnSign(sign, input);
     if (score !== null) best = best === null ? score : Math.max(best, score);
-    if (matches === true) return paperOnly ? record(sign, "unjudged", "unreadable", score ?? best) : record(sign, "match", null, score ?? best);
+    if (matches === true || (building && buildingNamedOnSign(input.customerName, sign))) return paperOnly ? record(sign, "unjudged", "unreadable", score ?? best) : record(sign, "match", null, score ?? best);
   }
 
   // 3 · Nothing in the frame was read CLEARLY, so nothing in it can hold the place.
@@ -1217,10 +1263,14 @@ export function judgeSignboards(input: {
   //      own name does not pin in Latin letters — "it is not here" and "I cannot write it down" are
   //      different sentences. The first may hold (مستشفى المنشاوى العام against "TANTA GENERAL
   //      HOSPITAL" pins منشاوى and is a true flag); the second never does.
+  //      🔴 A BUILDING IS NEVER FLAGGED ACROSS TWO SCRIPTS AT ALL (owner, 14 Nov 2026, "Fix all three"):
+  //      "مستشفى علاء عزت" against "Alaa Ezzat Hospital" and "نيروسبين" against "Neuro Spine Hospital"
+  //      were both recommended for REJECT on a building in use. A building flag retires every customer
+  //      seated behind its door, so a sign only in the other script is the admin's look, never a reject.
   if (
     answersTheQuestion.length > 0 &&
     answersTheQuestion.every((sign) => !signSharesCustomerScript(sign, input)) &&
-    !nameIsPinnableAcrossScripts(input.customerName, input.listType)
+    (building || !nameIsPinnableAcrossScripts(input.customerName, input.listType))
   ) {
     return record(fallback, "unjudged", "not_comparable", best);
   }
@@ -1806,6 +1856,41 @@ export function signboardRejudge(
     return { check: { ...unread, retake: signboardRetakeRequest(unread, now) }, outcome: "retake" };
   }
   return null;
+}
+
+/**
+ * A BUILDING's stored sign check, judged again by today's rules on the signs already read — no photo is
+ * read, nothing is written. The building board and a new capture both go through it, so a building
+ * captured before a rule was fixed reads the same as one captured after (owner, 14 Nov 2026, "Fix all
+ * three": 23 buildings were still recommended for REJECT on verdicts the rules no longer give).
+ *
+ * 🔴 IT ONLY EVER SOFTENS. A flag may become a match or the admin's look, and an unread sign a match;
+ * a match is never taken back here and nothing becomes a flag here — that stays the reader's own word.
+ * `no_name` is left alone: "no sign at all" leaned on the reader's `sign_present`, which is not stored.
+ */
+export function buildingSignboardNow(
+  stored: PhoenixCrmSignboardCheck,
+  buildingName: string,
+  /** The building's own brick — the town word of its name, exactly as on a customer's place. */
+  brickName: string | null = null,
+): PhoenixCrmSignboardCheck {
+  if (stored.verdict === "match" || stored.verdict === "no_name") return stored;
+  if (!Array.isArray(stored.signs) || stored.signs.length === 0) return stored;
+  const again = judgeSignboards({
+    croppedFraction: stored.croppedFraction ?? 0,
+    customerName: buildingName,
+    listType: "AM",
+    note: stored.note ?? null,
+    photoBrick: brickName,
+    problem: stored.problem ?? null,
+    signPresent: null,
+    signs: stored.signs,
+    subject: "building",
+  });
+  const softer = again.verdict === "match" || (stored.verdict === "other_name" && again.verdict === "unjudged");
+  if (!softer) return stored;
+  // Not a read: the photo's count and the time it was read stay as stored.
+  return { ...stored, ...again, attempts: stored.attempts, checkedAt: stored.checkedAt };
 }
 
 /**

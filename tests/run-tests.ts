@@ -2244,6 +2244,7 @@ import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scan
 import { runPhoenixCrmTimetableUploadTests } from "./phoenix-crm-timetable-upload.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
+import { runPhoenixCrmBuildingSignTests } from "./phoenix-crm-building-sign.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmPlaceChecksOnDemandTests } from "./phoenix-crm-place-checks-on-demand.test.ts";
@@ -8109,6 +8110,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM place checks' SYSTEM RECOMMENDATION on every validation, with its reason (owner, 2026-10-17: \"add system recommendations to approve or no on every validation\", then \"and the reason of system recommendation\"). Pinned: a sign or timetable that names the customer recommends approving and quotes what was read; one read clearly naming somebody else, or plainly no sign or no timetable, recommends rejecting AND opens the Reject on that reason; a photo that could not be read recommends rejecting or looking but NEVER pre-picks a reason, and a board read only in part is always a look, never a reject; a Google hold is answered by the sign at the door with Google named beside it in plain metres; a seated customer is judged on the timetable, a polyclinic on its building's name; no reason is a code, an ellipsis or a banned screen word; every screen draws it only on the Super Admin's board; and the bulk bar ticks the recommended rows without ever answering them",
   runPhoenixCrmPlaceCheckAdviceTests,
+);
+
+await runTest(
+  "the BUILDINGS on the Place checks board (owner, 14 Nov 2026, \"Fix all three\"). Pinned: a building's sign is also held to the Google listing's own quorum — one letter off on a long word, the spaces taken out, the clinic and centre words left out — so \"كفر الدوار\" names \"كفرالدوار\", and only a building, never a customer's place; a sign naming another place stays a flag; a sign only in the other script is never a flag on a building; the board and a new capture judge the stored signs again by today's rules, with the building's brick, and only ever soften; a building is never promised a night read; and a hospital or medical centre is never called a polyclinic",
+  runPhoenixCrmBuildingSignTests,
 );
 
 await runTest(

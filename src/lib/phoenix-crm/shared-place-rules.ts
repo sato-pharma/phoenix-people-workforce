@@ -90,6 +90,18 @@ export function sharedPlaceKindLabel(key: string | null): string | null {
   return SHARED_PLACE_KINDS.find((kind) => kind.key === key)?.label ?? null;
 }
 
+/**
+ * What the building is called inside a sentence: "this polyclinic", "this medical centre", "this
+ * hospital" (owner, 14 Nov 2026, "Fix all three": 78 hospitals and centres were told "The sign names
+ * this polyclinic"). A hospital's outpatient suite is signed by its hospital, so it is the hospital.
+ */
+export function sharedPlaceKindNoun(key: string | null): string {
+  if (key === "polyclinic") return "polyclinic";
+  if (key === "medical_centre") return "medical centre";
+  if (key === "hospital_outpatient") return "hospital";
+  return "building";
+}
+
 /** "One medical centre" — the subject of the cap sentences below. */
 function oneOfThese(kind: SharedPlaceKind): string {
   return SHARED_PLACE_KINDS.find((entry) => entry.key === kind)?.one ?? "One shared place";
