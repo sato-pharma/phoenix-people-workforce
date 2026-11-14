@@ -18861,6 +18861,67 @@ $$;
 ALTER FUNCTION public.phoenix_crm_set_primary_pharmacy(p jsonb) OWNER TO postgres;
 
 --
+-- Name: phoenix_crm_set_shared_place_no_timetable(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_set_shared_place_no_timetable(p jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_id uuid := nullif(p ->> 'shared_place_id', '')::uuid;
+  v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
+  v_declared boolean := case p ->> 'declared' when 'true' then true when 'false' then false else null end;
+  v_place public.phoenix_crm_shared_places%rowtype;
+begin
+  if v_id is null or v_actor is null or v_declared is null then
+    raise exception 'phoenix_crm:bad_input';
+  end if;
+
+  -- The row lock is what stops two clicks from both landing: the second reads the first one's state.
+  select * into v_place from public.phoenix_crm_shared_places sp where sp.id = v_id for update;
+  if not found then
+    return jsonb_build_object('outcome', 'missing');
+  end if;
+  -- A rejected building is never written.
+  if v_place.status not in ('active', 'held') then
+    return jsonb_build_object('outcome', 'retired');
+  end if;
+  if v_declared = (v_place.timetable_exempt_at is not null) then
+    return jsonb_build_object('outcome', 'unchanged');
+  end if;
+
+  if v_declared then
+    update public.phoenix_crm_shared_places sp
+    set timetable_exempt_at = now(), timetable_exempt_by_hr_id = v_actor, updated_at = now()
+    where sp.id = v_id;
+
+    insert into public.phoenix_crm_shared_place_timetable_marks (shared_place_id, action, actor_hr_id, acted_at)
+    values (v_id, 'declared', v_actor, now());
+  else
+    update public.phoenix_crm_shared_places sp
+    set timetable_exempt_at = null, timetable_exempt_by_hr_id = null, updated_at = now()
+    where sp.id = v_id;
+
+    -- Who took it back, and the declaration it ended: the two columns were just cleared.
+    insert into public.phoenix_crm_shared_place_timetable_marks
+      (shared_place_id, action, actor_hr_id, acted_at, declared_at, declared_by_hr_id)
+    values (v_id, 'taken_back', v_actor, now(), v_place.timetable_exempt_at, v_place.timetable_exempt_by_hr_id);
+  end if;
+
+  return jsonb_build_object('outcome', 'written', 'shared_place_id', v_id, 'name', v_place.name, 'declared', v_declared);
+end;
+$$;
+
+ALTER FUNCTION public.phoenix_crm_set_shared_place_no_timetable(p jsonb) OWNER TO postgres;
+
+--
+-- Name: FUNCTION phoenix_crm_set_shared_place_no_timetable(p jsonb); Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON FUNCTION public.phoenix_crm_set_shared_place_no_timetable(p jsonb) IS 'Declare that a polyclinic or centre has no timetable, or take that back, and write the trail row with it. Sets or clears the two marker columns on the building and nothing else. Answers outcome written | missing | retired | unchanged.';
+
+--
 -- Name: phoenix_crm_set_team_start(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -36630,6 +36691,78 @@ $$;
 ALTER FUNCTION public.phx_prevent_terminal_employee_reactivation() OWNER TO postgres;
 
 --
+-- Name: phx_preview_marketing_pharmacy_code_matches(uuid[]); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_preview_marketing_pharmacy_code_matches(p_code_ids uuid[]) RETURNS TABLE(code_id uuid, match_kind text, distributor_code text, customer_code text, customer_name text, area_code text, area_name text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    SET statement_timeout TO '45s'
+    AS $_$
+  with fam as (
+    select md.id as distributor_id,
+           array_agg(distinct ru.sos_distributor_code) as sos_codes
+    from public.marketing_distributors md
+    join public.marketing_roi_distributor_rollup ru
+      on ru.marketing_normalized_name = md.normalized_name
+    group by md.id
+  ),
+  target as (
+    select mpdc.id, mpdc.normalized_pharmacy_code, fam.sos_codes
+    from public.marketing_pharmacy_distributor_codes mpdc
+    left join fam on fam.distributor_id = mpdc.distributor_id
+    where coalesce(cardinality(p_code_ids), 0) > 0
+      and mpdc.id = any(p_code_ids)
+  ),
+  exact_c as (
+    select t.id, cm.distributor_code, cm.customer_code, cm.customer_name, cm.brick_id, cm.area_code
+    from target t
+    join public.source_of_sales_customer_map cm
+      on cm.distributor_code = any(t.sos_codes)
+     and coalesce(cm.active, true)
+     and lower(btrim(cm.customer_code)) = t.normalized_pharmacy_code
+  ),
+  digit_c as (
+    select t.id, cm.distributor_code, cm.customer_code, cm.customer_name, cm.brick_id, cm.area_code
+    from target t
+    join public.source_of_sales_customer_map cm
+      on cm.distributor_code = any(t.sos_codes)
+     and coalesce(cm.active, true)
+     and t.normalized_pharmacy_code ~ '^[0-9]+$'
+     and btrim(cm.customer_code) ~ '^[0-9]+$'
+     and ltrim(btrim(cm.customer_code), '0') = ltrim(t.normalized_pharmacy_code, '0')
+    where not exists (select 1 from exact_c e where e.id = t.id)
+  ),
+  cand as (
+    select 'exact'::text as kind, * from exact_c
+    union all
+    select 'digit_normalized'::text as kind, * from digit_c
+  ),
+  agg as (
+    select c.id, min(c.kind) as kind, count(distinct c.brick_id) as bricks
+    from cand c
+    group by c.id
+  ),
+  pick as (
+    select distinct on (c.id) c.id, c.distributor_code, c.customer_code, c.customer_name, c.area_code
+    from cand c
+    order by c.id, c.distributor_code, c.customer_code, c.brick_id
+  )
+  -- The same verdict the resolver would write: one brick pins the shop, more than one is ambiguous.
+  select a.id,
+         case when a.bricks = 1 then a.kind else 'ambiguous' end,
+         case when a.bricks = 1 then p.distributor_code end,
+         case when a.bricks = 1 then p.customer_code end,
+         case when a.bricks = 1 then p.customer_name end,
+         case when a.bricks = 1 then p.area_code end,
+         case when a.bricks = 1 then (select min(ar.name) from public.areas ar where ar.code = p.area_code) end
+  from agg a
+  join pick p on p.id = a.id;
+$_$;
+
+ALTER FUNCTION public.phx_preview_marketing_pharmacy_code_matches(p_code_ids uuid[]) OWNER TO postgres;
+
+--
 -- Name: phx_project_expense_payroll(integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -47910,6 +48043,7 @@ CREATE TABLE public.source_of_sales_import_batches (
     rows_ignored integer,
     rows_blank integer,
     recognition_engine_version text,
+    file_sha256 text,
     CONSTRAINT source_of_sales_import_batches_failed_rows_non_negative CHECK ((failed_rows >= 0)),
     CONSTRAINT source_of_sales_import_batches_importable_rows_non_negative CHECK ((importable_rows >= 0)),
     CONSTRAINT source_of_sales_import_batches_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'blocked'::text, 'validated'::text]))),
@@ -47936,6 +48070,12 @@ COMMENT ON COLUMN public.source_of_sales_import_batches.rows_blank IS 'C3: rows 
 --
 
 COMMENT ON COLUMN public.source_of_sales_import_batches.recognition_engine_version IS 'C5: recognizer version that produced this batch (lineage).';
+
+--
+-- Name: COLUMN source_of_sales_import_batches.file_sha256; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.source_of_sales_import_batches.file_sha256 IS 'SHA-256 (hex) of the bytes this batch was read from; several sheets in one batch hash their sorted digests. Null before 14 Nov 2026. Read by the duplicate-upload guard.';
 
 --
 -- Name: CONSTRAINT source_of_sales_import_batches_status_check ON source_of_sales_import_batches; Type: COMMENT; Schema: public; Owner: postgres
@@ -62497,6 +62637,8 @@ CREATE TABLE public.marketing_pharmacy_distributor_codes (
     mapped_region_code text,
     master_match_kind text,
     master_resolved_at timestamp with time zone,
+    master_recheck_kept_at timestamp with time zone,
+    master_recheck_kept_by_hr_id text,
     CONSTRAINT marketing_pharmacy_distributor_codes_code_not_blank CHECK ((btrim(distributor_pharmacy_code) <> ''::text)),
     CONSTRAINT marketing_pharmacy_distributor_codes_master_match_kind_check CHECK (((master_match_kind IS NULL) OR (master_match_kind = ANY (ARRAY['exact'::text, 'digit_normalized'::text, 'ambiguous'::text, 'unresolved'::text])))),
     CONSTRAINT marketing_pharmacy_distributor_codes_match_count_non_negative CHECK ((reference_match_count >= 0)),
@@ -62523,6 +62665,18 @@ COMMENT ON COLUMN public.marketing_pharmacy_distributor_codes.master_match_kind 
 --
 
 COMMENT ON COLUMN public.marketing_pharmacy_distributor_codes.master_resolved_at IS 'When phx_resolve_marketing_pharmacy_codes() last evaluated this row. Stamped for EVERY verdict including ambiguous and unresolved, so "checked recently, still no match" is visible. NULL means never evaluated.';
+
+--
+-- Name: COLUMN marketing_pharmacy_distributor_codes.master_recheck_kept_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.marketing_pharmacy_distributor_codes.master_recheck_kept_at IS 'When a person chose to keep this code as decided after the sales master learned it (REC-077). Set, the code leaves the Marketing Control re-check list.';
+
+--
+-- Name: COLUMN marketing_pharmacy_distributor_codes.master_recheck_kept_by_hr_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.marketing_pharmacy_distributor_codes.master_recheck_kept_by_hr_id IS 'Who kept this code as decided after the sales master learned it (REC-077).';
 
 --
 -- Name: marketing_products; Type: TABLE; Schema: public; Owner: postgres
@@ -66840,6 +66994,61 @@ COMMENT ON COLUMN public.phoenix_crm_settings.offplan_weekly_cap IS 'The most DO
 --
 
 COMMENT ON COLUMN public.phoenix_crm_settings.visit_resend_enabled IS 'The visit retry''s off switch. Off, a press behaves as it did before the queue existed and nothing held is sent by itself.';
+
+--
+-- Name: phoenix_crm_shared_place_timetable_marks; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.phoenix_crm_shared_place_timetable_marks (
+    id bigint NOT NULL,
+    shared_place_id uuid NOT NULL,
+    action text NOT NULL,
+    actor_hr_id text NOT NULL,
+    acted_at timestamp with time zone DEFAULT now() NOT NULL,
+    declared_at timestamp with time zone,
+    declared_by_hr_id text,
+    CONSTRAINT phoenix_crm_shared_place_timetable_marks_action_check CHECK ((action = ANY (ARRAY['declared'::text, 'taken_back'::text]))),
+    CONSTRAINT phoenix_crm_shared_place_timetable_marks_ended_check CHECK ((((action = 'taken_back'::text) = (declared_at IS NOT NULL)) AND ((declared_at IS NULL) = (declared_by_hr_id IS NULL))))
+);
+
+ALTER TABLE public.phoenix_crm_shared_place_timetable_marks OWNER TO postgres;
+
+--
+-- Name: TABLE phoenix_crm_shared_place_timetable_marks; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.phoenix_crm_shared_place_timetable_marks IS 'Append-only trail of the "This building has no timetable" declaration on a polyclinic or centre: one row when the Super Admin declares it, one when he takes it back. Written only by phoenix_crm_set_shared_place_no_timetable. Nothing validates a customer off it.';
+
+--
+-- Name: COLUMN phoenix_crm_shared_place_timetable_marks.actor_hr_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_shared_place_timetable_marks.actor_hr_id IS 'Who declared it, or who took it back.';
+
+--
+-- Name: COLUMN phoenix_crm_shared_place_timetable_marks.declared_at; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_shared_place_timetable_marks.declared_at IS 'On a take-back: when the declaration it ended had been made. Null on a declaration.';
+
+--
+-- Name: COLUMN phoenix_crm_shared_place_timetable_marks.declared_by_hr_id; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.phoenix_crm_shared_place_timetable_marks.declared_by_hr_id IS 'On a take-back: who had made the declaration it ended. Null on a declaration.';
+
+--
+-- Name: phoenix_crm_shared_place_timetable_marks_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_shared_place_timetable_marks ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.phoenix_crm_shared_place_timetable_marks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 --
 -- Name: phoenix_crm_shared_places; Type: TABLE; Schema: public; Owner: postgres
@@ -76338,6 +76547,13 @@ ALTER TABLE ONLY public.phoenix_crm_settings
     ADD CONSTRAINT phoenix_crm_settings_pkey PRIMARY KEY (id);
 
 --
+-- Name: phoenix_crm_shared_place_timetable_marks phoenix_crm_shared_place_timetable_marks_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_shared_place_timetable_marks
+    ADD CONSTRAINT phoenix_crm_shared_place_timetable_marks_pkey PRIMARY KEY (id);
+
+--
 -- Name: phoenix_crm_shared_places phoenix_crm_shared_places_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -83953,6 +84169,12 @@ CREATE INDEX phoenix_crm_removed_visits_seat_idx ON public.phoenix_crm_removed_v
 CREATE INDEX phoenix_crm_rep_entry_days_cache_crm_day_idx ON public.phoenix_crm_rep_entry_days_cache USING btree (agent_crm_id, entry_day) WHERE (agent_crm_id IS NOT NULL);
 
 --
+-- Name: phoenix_crm_shared_place_timetable_marks_shared_place_id_fk_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX phoenix_crm_shared_place_timetable_marks_shared_place_id_fk_idx ON public.phoenix_crm_shared_place_timetable_marks USING btree (shared_place_id, acted_at DESC, id DESC);
+
+--
 -- Name: phoenix_crm_shared_places_photo_uidx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -85241,6 +85463,12 @@ CREATE INDEX source_of_sales_fact_rollup_period_idx ON public.source_of_sales_fa
 --
 
 CREATE INDEX source_of_sales_import_batches_created_at_idx ON public.source_of_sales_import_batches USING btree (created_at DESC);
+
+--
+-- Name: source_of_sales_import_batches_file_sha256_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX source_of_sales_import_batches_file_sha256_idx ON public.source_of_sales_import_batches USING btree (file_sha256) WHERE (file_sha256 IS NOT NULL);
 
 --
 -- Name: source_of_sales_import_batches_status_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -89862,6 +90090,13 @@ ALTER TABLE ONLY public.phoenix_crm_plan_items
 
 ALTER TABLE ONLY public.phoenix_crm_refused_readings
     ADD CONSTRAINT phoenix_crm_refused_readings_shared_place_id_fkey FOREIGN KEY (shared_place_id) REFERENCES public.phoenix_crm_shared_places(id) ON DELETE SET NULL;
+
+--
+-- Name: phoenix_crm_shared_place_timetable_marks phoenix_crm_shared_place_timetable_marks_shared_place_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.phoenix_crm_shared_place_timetable_marks
+    ADD CONSTRAINT phoenix_crm_shared_place_timetable_marks_shared_place_id_fkey FOREIGN KEY (shared_place_id) REFERENCES public.phoenix_crm_shared_places(id) ON DELETE CASCADE;
 
 --
 -- Name: phoenix_crm_unplanned_visit_events phoenix_crm_unplanned_visit_events_visit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -95095,6 +95330,12 @@ ALTER TABLE public.phoenix_crm_settings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY phoenix_crm_settings_service_role ON public.phoenix_crm_settings TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: phoenix_crm_shared_place_timetable_marks; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.phoenix_crm_shared_place_timetable_marks ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: phoenix_crm_shared_places; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -99201,6 +99442,13 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_set_primary_pharmacy(p jsonb) FROM PUB
 GRANT ALL ON FUNCTION public.phoenix_crm_set_primary_pharmacy(p jsonb) TO service_role;
 
 --
+-- Name: FUNCTION phoenix_crm_set_shared_place_no_timetable(p jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_set_shared_place_no_timetable(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_set_shared_place_no_timetable(p jsonb) TO service_role;
+
+--
 -- Name: FUNCTION phoenix_crm_set_team_start(p jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -100819,6 +101067,13 @@ GRANT ALL ON FUNCTION public.phx_prevent_employee_hr_id_update() TO service_role
 REVOKE ALL ON FUNCTION public.phx_prevent_terminal_employee_reactivation() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_prevent_terminal_employee_reactivation() TO authenticated;
 GRANT ALL ON FUNCTION public.phx_prevent_terminal_employee_reactivation() TO service_role;
+
+--
+-- Name: FUNCTION phx_preview_marketing_pharmacy_code_matches(p_code_ids uuid[]); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_preview_marketing_pharmacy_code_matches(p_code_ids uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_preview_marketing_pharmacy_code_matches(p_code_ids uuid[]) TO service_role;
 
 --
 -- Name: FUNCTION phx_project_expense_payroll(p_year integer, p_month integer); Type: ACL; Schema: public; Owner: postgres
@@ -105372,6 +105627,18 @@ GRANT ALL ON TABLE public.phoenix_crm_removed_visits TO service_role;
 --
 
 GRANT ALL ON TABLE public.phoenix_crm_settings TO service_role;
+
+--
+-- Name: TABLE phoenix_crm_shared_place_timetable_marks; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT ON TABLE public.phoenix_crm_shared_place_timetable_marks TO service_role;
+
+--
+-- Name: SEQUENCE phoenix_crm_shared_place_timetable_marks_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON SEQUENCE public.phoenix_crm_shared_place_timetable_marks_id_seq TO service_role;
 
 --
 -- Name: TABLE phoenix_crm_shared_places; Type: ACL; Schema: public; Owner: postgres
