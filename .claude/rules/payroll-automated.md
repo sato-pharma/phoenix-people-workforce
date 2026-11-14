@@ -21,6 +21,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **PUBLISH TO PAYSLIPS NEVER EMAILS THE CEO OR FINANCE — PERMANENTLY** (owner, 14 Nov 2026: "make publish to payslips not send email to finance or ceo permentatly"). `notifyPublished` sends `PUBLISHED_CHANNELS` = in-app + push only; never add `email` back or offer a switch for it. Pinned in `tests/automated-payroll-audit-findings-2026-11.test.ts`. Confirm Part 2's email is a separate, per-confirm choice (the prompt's "Email them too" box).
+
 ### Moved out of `payroll` on 2026-11-13 (the pointer split — see scripts/module-memory/modules.mjs)
 
 - 🔴 **A HELD payroll row is DROPPED at publish with no trace** (`publishToPayslips` filters `!onHold`). **HELD = OWED PART 2 ONLY** — validate part 2 against PUBLISHED rows; `payroll_eligible=false` is normal for executives; read `hold_reason`, never re-raise. `a-held-payroll-row-is-dropped-at-publish-and-leaves-no-trace`

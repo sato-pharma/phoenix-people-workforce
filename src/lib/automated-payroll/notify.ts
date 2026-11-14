@@ -229,7 +229,14 @@ export async function notifyPart2Ready(run: MonthlySalaryRun, options: { email?:
   });
 }
 
-/** Published to payslips — light in-app + email confirmation. */
+/**
+ * Published to payslips — in-app and phone only, NEVER email (owner, 14 Nov 2026: "make publish to payslips
+ * not send email to finance or ceo permentatly"). The CEO, Financial Advisor and Finance Manager are told in
+ * Phoenix and on their phones; no switch brings the email back. Pinned in
+ * tests/automated-payroll-audit-findings-2026-11.test.ts.
+ */
+export const PUBLISHED_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "push"];
+
 export async function notifyPublished(run: MonthlySalaryRun): Promise<void> {
   const label = monthLabel(run.month, run.year);
   await fanOut({
@@ -240,6 +247,6 @@ export async function notifyPublished(run: MonthlySalaryRun): Promise<void> {
     // run has reached Publish since the guard's summary-scanning was added).
     title: `${label} Payroll — published`,
     message: `${label} Automated Payroll has been published and is now live for employees.`,
-    channels: ["in_app", "email", "push"],
+    channels: [...PUBLISHED_CHANNELS],
   });
 }
