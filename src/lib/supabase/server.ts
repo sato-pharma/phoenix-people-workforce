@@ -25,6 +25,7 @@ import { logWarning } from "@/lib/observability/log";
 import { scrubSentryPath } from "@/lib/observability/sentry-policy";
 import { recordTiming } from "@/lib/observability/timings";
 import { rowCapFinding, shouldNoteRowCap } from "@/lib/supabase/row-cap-watch";
+import { requestActorHeaders } from "@/lib/supabase/request-actor";
 
 const supabaseRequestTimeoutMs = 15000;
 
@@ -79,6 +80,20 @@ function requestMethod(input: RequestInfo | URL, init: RequestInit | undefined):
   if (typeof fromInit === "string" && fromInit.length > 0) return fromInit.toUpperCase();
   if (typeof Request !== "undefined" && input instanceof Request) return input.method.toUpperCase();
   return "GET";
+}
+
+/**
+ * A write carries the signed-in person of the request being served (./request-actor.ts), so the history
+ * triggers on employees name who changed the row whichever code path wrote it. A header the caller set
+ * itself wins. Reads are sent untouched.
+ */
+async function withRequestActor(input: RequestInfo | URL, init: RequestInit | undefined): Promise<RequestInit | undefined> {
+  if (typeof input !== "string" && !(input instanceof URL)) return init;
+  const actor = Object.entries(await requestActorHeaders());
+  if (actor.length === 0) return init;
+  const merged = new Headers(init?.headers);
+  for (const [name, value] of actor) if (!merged.has(name)) merged.set(name, value);
+  return { ...init, headers: merged };
 }
 
 /**
@@ -217,6 +232,7 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
         fetch: async (input, init) => {
           // A gateway failure is retried only for a read — see IDEMPOTENT_METHODS.
           const mayRetryTransport = IDEMPOTENT_METHODS.has(requestMethod(input, init));
+          if (!mayRetryTransport) init = await withRequestActor(input, init);
 
           // First attempt — no delay.
           let response = await fetchWithTimeout(input, init, requestTimeoutMs);

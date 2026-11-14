@@ -56,6 +56,7 @@ import {
 } from "@/lib/auth/session-bundle-cache";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { rememberRequestActor } from "@/lib/supabase/request-actor";
 import { cookies, headers } from "next/headers";
 
 function isDevHeaderEnabled() {
@@ -775,6 +776,8 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // THE SEAT VIEW WRITE GUARD — the same choke point for the Super Admin's read-only View as Seat:
   // every write is refused except leaving the view, and so are reads that would leave a row behind.
   assertSeatViewMayRun(access, request);
+  // Every database write this request makes now names its person in the history logs.
+  await rememberRequestActor(access);
   return access;
 }
 
@@ -842,6 +845,7 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   // A seat view refuses a server action AND a form posted before the page's script loaded — the same
   // two signals that keep a write off the session copy (pageRequestMayUseRecentCopy).
   if (access.seatView && !pageRequestMayUseRecentCopy(await headers())) assertNotSeatView(access);
+  await rememberRequestActor(access);
   return access;
 }
 

@@ -344,4 +344,53 @@ export async function runEmployeeAndDeductionHistoryTests() {
     [],
     "only the trigger writes employee_change_log; application code reads v_employee_change_log",
   );
+
+  // ---- Every write names its person, whichever code path makes it ---------------------------------
+  // Code review, 14 Nov 2026: only upsertEmployee sent the x-phoenix-actor-* headers, so a manager moved
+  // by a resignation, a probation decision or an import was logged "unattributed".
+  const { rememberActorFor, actorHeadersFor } = await import("../src/lib/supabase/request-actor.ts");
+  const requestA = {};
+  const requestB = {};
+  rememberActorFor(requestA, { source: "session", loginId: "ops:omar", hrId: "B-10" });
+  assert.deepEqual(
+    actorHeadersFor(requestA),
+    { "x-phoenix-actor-login-id": "ops:omar", "x-phoenix-actor-hr-id": "B-10" },
+    "a signed-in request's writes carry its login and HR id",
+  );
+  assert.deepEqual(actorHeadersFor(requestB), {}, "a person is never carried into another request");
+  assert.deepEqual(actorHeadersFor(null), {}, "outside a request nothing is sent: the write stays unattributed");
+  for (const [label, access] of [
+    ["a guest", { source: "guest", hrId: "B-10" }],
+    ["a system job", { source: "system", hrId: "B-10" }],
+    ["a View as Seat", { source: "session", hrId: "C-1", seatView: { hrId: "C-1" } }],
+    ["a test account", { source: "session", hrId: "C-1", testPersona: { loginId: "t" } }],
+  ] as const) {
+    const store = {};
+    rememberActorFor(store, access);
+    assert.deepEqual(actorHeadersFor(store), {}, `${label} is never remembered as the writer`);
+  }
+  const unsafe = {};
+  rememberActorFor(unsafe, { source: "session", loginId: "عمر", hrId: "B-10" });
+  assert.deepEqual(actorHeadersFor(unsafe), { "x-phoenix-actor-hr-id": "B-10" }, "a header value must be ASCII");
+
+  const adminClient = readFileSync("src/lib/supabase/server.ts", "utf8");
+  assert.match(
+    adminClient,
+    /if \(!mayRetryTransport\) init = await withRequestActor\(input, init\);/,
+    "the shared admin client must add the request's person to every write — it is how resignations, " +
+      "probation, imports, photos and CVs reach the employees table",
+  );
+  for (const helper of ["src/lib/employees/employee-directory.ts", "src/lib/employees/vacancy-closer.ts"]) {
+    assert.match(
+      readFileSync(helper, "utf8"),
+      /\.\.\.\(init\.method && init\.method\.toUpperCase\(\) !== "GET" \? await requestActorHeaders\(\) : \{\}\),\s+\.\.\.\(init\.headers \?\? \{\}\),/,
+      `${helper}: its own REST helper writes employees outside the admin client, so it adds the person too`,
+    );
+  }
+  const resolvers = readFileSync("src/lib/auth/server.ts", "utf8");
+  assert.equal(
+    (resolvers.match(/await rememberRequestActor\(access\);\s+return access;/g) ?? []).length,
+    2,
+    "both access resolvers (API routes and pages/server actions) must remember the request's person",
+  );
 }

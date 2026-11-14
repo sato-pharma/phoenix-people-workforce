@@ -197,6 +197,7 @@ import {
   getOpenWorkforceVacancies,
   type VacancyLookupRow,
 } from "@/lib/employees/vacancy-closer";
+import { requestActorHeaders } from "@/lib/supabase/request-actor";
 
 export type EmployeeLookupOption = {
   id?: number;
@@ -1105,6 +1106,8 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
           apikey: serviceRoleKey,
           Authorization: `Bearer ${serviceRoleKey}`,
           "Content-Type": "application/json",
+          // A write names the signed-in person for the history triggers (src/lib/supabase/request-actor.ts).
+          ...(init.method && init.method.toUpperCase() !== "GET" ? await requestActorHeaders() : {}),
           ...(init.headers ?? {}),
         },
         signal: controller.signal,

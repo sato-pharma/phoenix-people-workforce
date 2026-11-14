@@ -5,6 +5,7 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { pickDepartmentSafeVacancy } from "@/lib/employees/vacancy-matching";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { quotedInList } from "@/lib/supabase/search-filter";
+import { requestActorHeaders } from "@/lib/supabase/request-actor";
 
 // Open-vacancy lookups and the hire-time vacancy closer used by
 // src/lib/employees/employee-directory.ts. Kept in its own module (talks to
@@ -71,6 +72,8 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
           apikey: serviceRoleKey,
           Authorization: `Bearer ${serviceRoleKey}`,
           "Content-Type": "application/json",
+          // A write names the signed-in person for the history triggers (src/lib/supabase/request-actor.ts).
+          ...(init.method && init.method.toUpperCase() !== "GET" ? await requestActorHeaders() : {}),
           ...(init.headers ?? {}),
         },
         signal: controller.signal,
