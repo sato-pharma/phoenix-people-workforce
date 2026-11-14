@@ -248,7 +248,7 @@ status, give it its own line.
 - **A duplicate merge STRANDS the desk validation on the retired row.** — `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
 - **The screen that SHOWS a badge is not the screen a rep can OPEN.** — `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
 - **A CROSS-GOVERNORATE DISTRIBUTOR CODE IS A TYPO, NOT A REP GAMING YOU — measure the distance first** (he asked it directly, 2026-09-29). Across all 127 validated links carrying GPS on both sides: median 23 m, max 1,069 m, nothing over 2 km, and both real incidents were 18 m and 59 m from the doctor. — `a-wrong-distributor-code-is-a-typo-not-a-rep-gaming-you` **(inline — load-bearing)**
-- **`phx_resolve_marketing_pharmacy_codes` RUNS ONCE, AT CAPTURE, and nothing re-runs it** — a code entered before the sales master learned its pharmacy reads `unresolved` for good, so any "untraceable codes" count is inflated; never re-resolve in bulk, and read `validation_notes` first because `unresolved` can be a signed human verdict. — `the-marketing-code-resolver-never-re-runs` **(inline — load-bearing)**
+- **`phx_resolve_marketing_pharmacy_codes` RUNS AT CAPTURE, and the nightly re-check re-runs it only on codes nobody has decided on** (REC-077, 14 Nov 2026) — a person's code waits in Marketing Control instead, so an "untraceable codes" count can still hold rows the master now knows; never re-resolve in bulk, and read `validation_notes` first because `unresolved` can be a signed human verdict. — `the-marketing-code-resolver-never-re-runs` **(inline — load-bearing)**
 
 ## 6. Approval rules and git hygiene
 

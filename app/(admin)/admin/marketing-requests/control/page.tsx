@@ -1,4 +1,5 @@
 import { MarketingControlWorkspace } from "@/components/employee-portal/marketing-control-workspace";
+import { MarketingPharmacyCodeRecheckPanel } from "@/components/employee-portal/marketing-pharmacy-code-recheck-panel";
 import { MarketingVendorControlPanel } from "@/components/employee-portal/marketing-vendor-control-panel";
 
 import { assertMarketingAdminPageAccess } from "../admin-access";
@@ -30,6 +31,7 @@ export default async function AdminMarketingControlPage() {
         </div>
       </div>
       <MarketingVendorControlPanel />
+      <MarketingPharmacyCodeRecheckPanel />
       <MarketingControlWorkspace />
     </div>
   );
