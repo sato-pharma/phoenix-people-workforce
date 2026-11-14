@@ -1,5 +1,9 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { computeOverallStatus, isSkippedOnPurpose, skippedOnPurposeNote, type OverallStatus } from "./overall-status";
+
+export type { OverallStatus } from "./overall-status";
+
 export interface JourneyResult {
   journeyId: string;
   journeyName: string;
@@ -12,9 +16,9 @@ export interface JourneyResult {
   networkErrors: string[];
   screenshotPath?: string;
   recommendation?: string;
+  /** The reason a check gave when it skipped itself (tests/synthetic/helpers/skip-reason.ts). */
+  skipReason?: string;
 }
-
-export type OverallStatus = "healthy" | "warning" | "failed" | "no_data";
 
 export interface SyntheticJourneyRunSummary {
   id: string;
@@ -69,13 +73,6 @@ const AUTH_JOURNEY_ROLE = "Super Admin";
 function normalizeJourneyResult(result: JourneyResult): JourneyResult {
   if (result.journeyName !== AUTH_JOURNEY_NAME) return result;
   return { ...result, route: AUTH_JOURNEY_ROUTE, role: AUTH_JOURNEY_ROLE };
-}
-
-function computeOverallStatus(results: JourneyResult[]): OverallStatus {
-  if (results.length === 0) return "no_data";
-  if (results.some((r) => r.status === "failed")) return "failed";
-  if (results.some((r) => r.status === "skipped")) return "warning";
-  return "healthy";
 }
 
 function estimateRunWindow(results: JourneyResult[], meta: IngestSyntheticJourneyReportMeta) {
@@ -195,7 +192,8 @@ export async function ingestSyntheticJourneyReport(
     status: r.status,
     duration_ms: r.durationMs,
     failure_reason: r.errors[0] ?? null,
-    recommendation: r.recommendation ?? null,
+    // A check that skipped itself has no advice to carry; the page prints its own reason in that place.
+    recommendation: r.recommendation ?? (isSkippedOnPurpose(r) && r.skipReason ? skippedOnPurposeNote(r.skipReason) : null),
     screenshot_path: r.screenshotPath ?? null,
     trace_path: null,
     errors: { errors: r.errors, consoleErrors: r.consoleErrors, networkErrors: r.networkErrors },
