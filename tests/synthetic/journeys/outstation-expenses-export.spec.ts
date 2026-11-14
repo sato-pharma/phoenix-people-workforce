@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 
+import { journeyAnnotation } from "../helpers/declared-journey";
 import { runJourney } from "../helpers/run-journey";
+import type { JourneyDefinition } from "../helpers/types";
 
 /**
  * The expenses export, which reads through the SAME function as the queue and the dashboard.
@@ -24,7 +26,18 @@ import { runJourney } from "../helpers/run-journey";
  *
  * To run it: SYNTHETIC_ALLOW_MUTATION=true pnpm run synthetic:test
  */
-test("Outstation Expenses export produces a workbook", async ({ page }, testInfo) => {
+const JOURNEY: JourneyDefinition = {
+  id: "outstation-expenses-export",
+  name: "Outstation Expenses export produces a workbook",
+  route: "/admin/outstation/expenses",
+  role: "Super Admin",
+  mutates: true,
+};
+
+test(JOURNEY.name, async ({ page }, testInfo) => {
+  // Said BEFORE the skip: a check that stops on the next line never reaches runJourney, and without
+  // this the report prints "unknown" where its page belongs (helpers/declared-journey.ts).
+  testInfo.annotations.push(journeyAnnotation(JOURNEY));
   test.skip(
     process.env.SYNTHETIC_ALLOW_MUTATION !== "true",
     "Downloading the export records that an administrator exported expenses, so an hourly run would record 24 exports a day that nobody made.",
@@ -33,13 +46,7 @@ test("Outstation Expenses export produces a workbook", async ({ page }, testInfo
   await runJourney(
     page,
     testInfo,
-    {
-      id: "outstation-expenses-export",
-      name: "Outstation Expenses export produces a workbook",
-      route: "/admin/outstation/expenses",
-      role: "Super Admin",
-      mutates: true,
-    },
+    JOURNEY,
     async (page) => {
       // Fetched from the page so the session cookie travels with it, exactly as a real download does.
       // The body is deliberately NOT read: it is a spreadsheet, and its size is not the assertion.

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 
+import { declaredJourney } from "./declared-journey";
 import { declaredSkipReason } from "./skip-reason";
 import type { JourneyResult } from "./types";
 
@@ -68,7 +69,8 @@ function toMarkdown(results: JourneyResult[]): string {
  * machine-readable + human-readable report. Falls back to a minimal result
  * built from Playwright's own status/duration/screenshot for tests that
  * never reached the attach step (e.g. a skipped setup dependency or a crash
- * inside run-journey.ts itself).
+ * inside run-journey.ts itself). A check that skips itself names its page first
+ * (declared-journey.ts), so that one is reported with its real page and role.
  */
 export default class SyntheticReporter implements Reporter {
   private results: JourneyResult[] = [];
@@ -87,11 +89,15 @@ export default class SyntheticReporter implements Reporter {
     const status: JourneyResult["status"] =
       result.status === "passed" ? "passed" : result.status === "skipped" ? "skipped" : "failed";
 
+    // A check that skipped itself never reached runJourney, but it named its page first.
+    const annotations = [...(result.annotations ?? []), ...test.annotations];
+    const declared = declaredJourney(annotations);
+
     this.results.push({
-      journeyId: test.id,
+      journeyId: declared?.id ?? test.id,
       journeyName: test.title,
-      route: "unknown",
-      role: "unknown",
+      route: declared?.route ?? "unknown",
+      role: declared?.role ?? "unknown",
       status,
       durationMs: result.duration,
       errors: result.errors.map((e) => e.message ?? String(e)),
@@ -101,7 +107,7 @@ export default class SyntheticReporter implements Reporter {
       // A check that skipped itself said why, and a run is not marked down for it. One skipped with
       // no reason — the sign-in step before it failed, say — carries none and still is.
       skipReason:
-        status === "skipped" ? declaredSkipReason([...(result.annotations ?? []), ...test.annotations]) : undefined,
+        status === "skipped" ? declaredSkipReason(annotations) : undefined,
       recommendation:
         status === "failed"
           ? "This step crashed before it could report structured journey results — check the error above (often a login/auth-setup failure)."

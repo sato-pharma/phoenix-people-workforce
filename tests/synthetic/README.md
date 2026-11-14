@@ -178,6 +178,7 @@ function to the real messages production has recorded.
 3. If a journey genuinely must mutate something, gate it explicitly:
 
    ```ts
+   testInfo.annotations.push(journeyAnnotation(JOURNEY)); // helpers/declared-journey.ts
    test.skip(
      process.env.SYNTHETIC_ALLOW_MUTATION !== "true",
      "Mutating journeys are disabled by default; set SYNTHETIC_ALLOW_MUTATION=true to enable.",
@@ -185,7 +186,10 @@ function to the real messages production has recorded.
    ```
 
    and set `mutates: true` in its `JourneyDefinition` for clarity. Always give the reason: a skip
-   with no sentence files the whole run as a warning.
+   with no sentence files the whole run as a warning. Name the page on the line BEFORE the skip: a
+   check that skips itself never reaches `runJourney`, so without that line the report prints the
+   word "unknown" where its page belongs (it did, for the Outstation Expenses export, on every run
+   from 9 September to 14 November 2026). `tests/synthetic-journey-declared-page.test.ts` pins it.
 4. Run `pnpm run synthetic:test` and confirm it shows up in the summary and
    in `tests/synthetic/report/latest.json`.
 
