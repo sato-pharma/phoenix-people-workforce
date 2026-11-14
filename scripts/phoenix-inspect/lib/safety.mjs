@@ -78,7 +78,11 @@ export function classifyControl(control, origin) {
   return { allowed: true, reason: null };
 }
 
-/** A sliding one-minute window. `take()` answers false once the limit is used up. */
+/**
+ * A sliding one-minute window. `take()` answers false once the limit is used up.
+ * @param {number} [limit] calls allowed per minute (default: RUN_BOUNDS.toolCallsPerMinute)
+ * @param {() => number} [now] the clock, injected by the tests
+ */
 export function createRateLimiter(limit = RUN_BOUNDS.toolCallsPerMinute, now = () => Date.now()) {
   const stamps = [];
   return {

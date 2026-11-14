@@ -166,7 +166,7 @@ function shotSummary(shot) {
 /**
  * The tool handler, without the protocol: `call(name, args)` answers an MCP CallTool result. The
  * runner is injected so the tests drive it without a browser.
- * @param {{ runner: (options: object) => Promise<{ outDir: string, manifest: object }>, repoRoot?: string, now?: () => number, auditFile?: string|null }} deps
+ * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null }} deps
  */
 export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile } = {}) {
   const tools = toolDefinitions();
