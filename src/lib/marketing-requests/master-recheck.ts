@@ -89,8 +89,10 @@ export function planMasterRecheck(codes: readonly RecheckCodeRow[], matches: rea
   for (const code of codes) {
     if (code.master_match_kind !== "unresolved") continue;
     const match = matchById.get(String(code.id));
+    // Read before the guard: on its false branch TypeScript narrows `match` to undefined.
+    const kind = match?.match_kind;
     if (!isPinnableMatch(match)) {
-      if (match?.match_kind === "ambiguous") plan.ambiguous += 1;
+      if (kind === "ambiguous") plan.ambiguous += 1;
       else plan.stillUnmatched += 1;
       continue;
     }
