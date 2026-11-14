@@ -351,10 +351,10 @@ export function WeeklySheetView({
             >
               <table className="hidden w-full table-fixed text-left md:table">
                 <colgroup>
-                  <col className="w-[26%]" />
-                  <col className="w-[19%]" />
-                  <col className="w-[19%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[17%]" />
                   <col className="w-[22%]" />
                 </colgroup>
                 <thead>

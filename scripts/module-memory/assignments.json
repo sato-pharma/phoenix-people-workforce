@@ -1185,6 +1185,7 @@
   "resignation-full-pay-rule-is-resignation-only": "payroll",
   "resignation-transactional-rpc-authored": "employees",
   "resignation-vacancy-opened-by-db-trigger": "employees",
+  "restore-drill-kit-and-the-rclone-token-file": "engineering",
   "restoring-env-cannot-undo-a-memoized-client": "phoenix-crm",
   "restricted-skus-are-all-head-office-line": "sales-closing",
   "reusing-a-squash-merged-branch-makes-a-conflicting-pr": "git-worktrees",

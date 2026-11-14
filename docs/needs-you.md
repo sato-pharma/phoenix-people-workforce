@@ -89,7 +89,8 @@ the identical 14 / 9 / 1 lanes.
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
 `phoenix-crm-decisions` · `orphaned-requests` ·
 `uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
-`office-allocation-drift` · `organogram-seat-drift` · `vendor-github` · `vendor-whatsapp` · `vendor-telegram`
+`office-allocation-drift` · `organogram-seat-drift` · `hire-handoff-gaps` · `deduction-disputes` ·
+`stopped-approval-emails` · `vendor-github` · `vendor-whatsapp` · `vendor-telegram`
 
 `vendor-github`, `vendor-whatsapp` and `vendor-telegram` joined on 2026-11-03, after GitHub suspended the account on
 2 Nov and Supabase showed outstanding invoices, and neither reached any board. **Three sources, not one**, so one failed
@@ -256,6 +257,53 @@ magnitude inside the 8-second budget, so it joins the light lane. The three name
 (the employee's area, the region names, the two managers) run only when something has drifted.
 Pinned by `tests/needs-you-seat-drift.test.ts`, which is also one of the offline contract gates.
 
+### `deduction-disputes` and `stopped-approval-emails` — joined 2026-11-14
+
+**Two queues that only a badge or a buried list used to show** (enterprise audit REC-031).
+
+- **`deduction-disputes`** — a deduction dispute whose newest line is the employee's, on a deduction
+  still active on the payslip. It counts through `countOpenDeductionsDisputes`, the function behind
+  the Deduction Disputes rail badge, so the board and the badge cannot disagree; but where the badge
+  route settles a failed read at 0, the board shows the source amber. Only the Super Admin answers a
+  dispute, so for anyone else it is not-applicable and costs no read. It links to
+  `/admin/deductions?tab=disputes`.
+- **`stopped-approval-emails`** — an approval email (a durable direct email) that used every outbox
+  retry and will not be tried again until someone presses Send again. It counts through
+  `countExhaustedDurableEmails`, the same filter as the "Approval emails that did not send" list on
+  Email Notifications, gated on `admin` `update` (the permission Send again needs) before the read,
+  and its age is the oldest stopped email's. It is a flag, not an approval: the person usually had
+  the in-app notice already; what was lost is the email. It links to `/admin/email-notifications`.
+
+Both are light — one small read each. The board re-sends nothing and replies to nothing. The audit
+also suggested a daily Telegram digest of the same rows; it was not built, because it would be a new
+outbound message and the board row already carries it. Pinned by
+`tests/needs-you-disputes-and-stopped-emails.test.ts`.
+
+### `hire-handoff-gaps` — joined 2026-11-13
+
+**A new hire whose hand-off did not finish** (enterprise audit REC-027). After the employee row is
+written, both hiring doors — HR's Add Employee and the candidate's offer joining form — run up to
+seven follow-up steps: the offer letter linked, the candidate marked hired, the portal login, the
+CV, the mailbox task, the offer stamped accepted and the joining form's audit row. Each one only
+logged its failure before, so a joiner with no login was found by a person noticing. Every step now
+leaves a row in `hire_handoff_steps`, the hourly `hire-handoff-reconcile` job retries the failed
+ones, and this source shows what is still failed or was given up after five attempts.
+
+**One item per PERSON**, by name, never an HR id: "Mona Adel: the portal login was not created".
+The note says whether the hourly retry is still trying (and which attempt it is on) or has given up,
+with the short reason. The row links to that person's own record on Employee Master
+(`/employees?edit=<hr id>`) and stops there — **the board never retries anything**. A retry before
+the next hour goes through `POST /api/employees/hire-handoff/retry`, permission-checked with
+`employees:create`, which runs exactly the hourly job's retry and sends nothing the step does not
+already send.
+
+Gated on `employees:create`; a viewer without it gets a true zero. A failed read of the ledger, or
+the table not existing yet, is amber, never "nothing": an empty answer would claim every hire
+finished. **`cost` is light** — one read on a partial index that holds only the unfinished rows,
+normally none, and a name lookup only when something is there. Pinned by
+`tests/hire-handoff-steps.test.ts`; the whole design is in
+[recruitment-offer-hire-sync.md](recruitment-offer-hire-sync.md), "The hire hand-off ledger".
+
 ## Who produces what
 
 🔴 **The adapters are the single producer for the three signals the CEO command centre also shows** —
@@ -273,26 +321,33 @@ for. A test refuses the "simplification".
 
 ## Delivery
 
-**No cron job of its own.** Both digests ride `/api/notifications/daily`, which already fires 06:36
-Cairo. A dedicated schedule would cost a `JOB_SCHEDULES` declaration, a `cronjob-sync` row, a request
-against cron-job.org's **100-per-DAY** cap, and the heartbeat-parity contract — a declared job that
-stops reporting pages every Super Admin every 15 minutes, for ever.
+**Each digest is its own morning job — once the split switch is on.** Both ride
+`/api/notifications/daily`, at 06:36 Cairo, beside about thirty unrelated jobs, and the daily digest is
+awaited alone before the rest start. On 13 Nov 2026 the owner gave every one of those jobs its own
+schedule (enterprise audit F-HR-012 / REC-049), shipped behind `PHOENIX_DAILY_JOBS_SPLIT` and switched
+on after the thirty cron-job.org entries are armed (docs/deployment.md, "Switching the morning jobs
+over"). Then the daily digest is the job
+`needs-you-daily-digest` at **06:36**, first of the morning, on `/api/cron/daily/needs-you-daily-digest`
+with its own heartbeat `phoenix-daily-needs-you-daily-digest`; the Sunday email is `needs-you-weekly-email`
+at 07:25, which does nothing on the other six days and still reports. The list, the order and the times
+are `src/lib/scheduled-jobs/daily-jobs.ts`; what each job calls is
+`app/api/cron/daily/_lib/daily-job-runners.ts`. A schedule carries the heartbeat-parity contract — a
+declared job that stops reporting pages every Super Admin every 15 minutes — so each job's cron-job.org
+entry (`scripts/cronjob-sync.mjs`) has to exist.
 
-🔴 **That route destructures its `Promise.all` positionally, and its own comments record the day a job
-was added without its name**: every later result was captured one position off, and only the
-diagnostic JSON showed it. `totalJobs` is hand-maintained beside it and feeds the run summary and the
-dead man's switch. Those three lists are now pinned against each other by
-`tests/needs-you-daily-digest.test.ts`. **Append, never insert.**
+The fan-out's positional `Promise.all` destructure and its hand-kept `totalJobs` are gone either way: the
+fan-out runs the same per-job runners in the list's order and counts the list, and each per-job request
+runs one job and reports that job's result under that job's name.
 
-### The digest runs outside the fan-out
+### The digest runs on a request of its own
 
-🔴 **The board is awaited on its OWN, before that route's 31-way `Promise.all`, and it has to stay
-there.** The lanes under "The sources" stop the 22 sources starving each other. They cannot stop the
-other 30 sub-jobs of `/api/notifications/daily` starving them — every one of those starts in the same
-instant — so as a passenger the board's sources spent their 8-second budgets queueing rather than
-querying. That is the *same* defect the lanes were built to remove, one level up, and the lanes made
-it likelier rather than less: serialising the heavy sources stretched the board's own wall-clock from
-about 8 s to 12–20 s, which is 12–20 s of overlap with the other 30 instead of 8.
+🔴 **The board is gathered on a request that runs nothing else, and it has to stay that way.** The lanes
+under "The sources" stop the 22 sources starving each other. They could not stop the other 30 sub-jobs of
+the old `/api/notifications/daily` starving them — every one of those started in the same instant — so as a
+passenger the board's sources spent their 8-second budgets queueing rather than querying. That is the
+*same* defect the lanes were built to remove, one level up, and the lanes made it likelier rather than
+less: serialising the heavy sources stretched the board's own wall-clock from about 8 s to 12–20 s, which
+was 12–20 s of overlap with the other 30 instead of 8.
 
 **Measured on production from the digests actually delivered** (`notification_events`,
 `event_key like 'needs-you-daily-digest:%'`, `metadata->>'message'`), 06:36 Cairo:
@@ -305,19 +360,17 @@ about 8 s to 12–20 s, which is 12–20 s of overlap with the other 30 instead 
 | Lost on all 15 | `action-inbox`, `closing-publication-drift` — the two `heavy` ones |
 | Worst run | 23 Oct: 5 lost, `payroll-publish` among them, so that morning carried **no payroll line at all** |
 
-Reading `/admin/needs-you` by hand ambers **0 of 22** throughout. Only the 06:36 run ever failed,
-which is exactly the one context with 30 siblings in it — and it is why the page's own measurements
-said the board was healthy while his morning message was losing a fifth of it.
+Reading `/admin/needs-you` by hand ambers **0 of 22** throughout. Only the 06:36 run ever failed, which is
+exactly the one context with 30 siblings in it — and it is why the page's own measurements said the board
+was healthy while his morning message was losing a fifth of it.
 
-🔴 **`route.ts` hands the settled result to the fan-out at its own position (26)**, so every position
-below keeps its meaning and the positional destructure above is not disturbed a third time.
-`onJobFailure` has already run, so `failures`, the run summary, the dead man's switch and `totalJobs`
-still count the job exactly once — `tests/dead-telegram-link-alert.test.ts` counts passes from
-`onJobFailure`'s definition rather than from the fan-out for that reason. **Never move the call back
-inside, never add a second call beside it, and never answer a returning amber row by widening a lane
-or raising the 8-second budget** — that buys a green digest with the board's honesty, which is the one
-thing this module refuses to sell. Make a heavy source cheaper instead; that changes what it measures
-and is the owner's call. Pinned by `tests/needs-you-digest-runs-outside-the-fanout.test.ts`.
+The first fix (24 Oct 2026) awaited the board on its own inside that route, before the fan-out. Since
+13 Nov 2026 it is simply alone: the digest is the only job at 06:36, the next one starts at 06:38, and
+`/api/cron/daily/[job]` runs exactly one job per request. **Never put another job on its request or its
+minute, and never answer a returning amber row by widening a lane or raising the 8-second budget** — that
+buys a green digest with the board's honesty, which is the one thing this module refuses to sell. Make a
+heavy source cheaper instead; that changes what it measures and is the owner's call. Pinned by
+`tests/needs-you-digest-runs-outside-the-fanout.test.ts` and `tests/daily-jobs-split.test.ts`.
 
 **Daily is Telegram and in-app; weekly is email.** One email to him is already *two* deliveries —
 `send-phoenix-email.ts` mirrors a preview of every email to his Telegram, with no opt-out (it also

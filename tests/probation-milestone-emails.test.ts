@@ -191,16 +191,20 @@ export function runProbationMilestoneEmailsTests() {
   );
 
   // ── Wiring: the sweep actually runs ──
-  const dailyCron = src("app/api/notifications/daily/route.ts");
+  const dailyCron = src("app/api/cron/daily/_lib/daily-job-runners.ts");
   assert.match(
     dailyCron,
     /import \{ processProbationMilestoneEmails \} from "@\/lib\/probation\/intelligence\/milestone-emails"/,
-    "the daily notifications cron imports the sweep",
+    "the morning jobs import the sweep",
   );
   assert.match(dailyCron, /processProbationMilestoneEmails\(\)\.catch\(/, "the sweep is called, with its own failure handler");
-  assert.match(dailyCron, /probationMilestoneEmails,/, "its result is named in the destructure — an unnamed entry is the off-by-one this route has hit twice");
+  assert.match(
+    dailyCron,
+    /"probation-milestone-emails": \{\s*resultName: "probationMilestoneEmails",/,
+    "it is its own morning job, and its answer names the result",
+  );
 
-  // The on-demand trigger, so the backfill does not have to wait for 06:36 Cairo.
+  // The on-demand trigger, so the backfill does not have to wait for the morning job.
   const triggerRoute = src("app/api/cron/probation-milestones/route.ts");
   assert.match(triggerRoute, /assertCronAuthorized\(/, "the manual trigger is CRON_SECRET-authorized, never open");
   assert.match(triggerRoute, /processProbationMilestoneEmails\(\)/, "it runs the milestone sweep");

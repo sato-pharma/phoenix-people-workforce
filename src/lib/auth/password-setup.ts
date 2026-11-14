@@ -23,7 +23,9 @@ import {
   passwordSetupWhatsAppUrl,
   temporaryPasswordExpiryLabel,
 } from "@/lib/auth/password-setup-whatsapp";
+import { LEAKED_PASSWORD_MESSAGE, checkLeakedPassword, leakedPasswordAuditValue } from "@/lib/auth/leaked-password";
 import { passwordWeakness } from "@/lib/auth/password-strength";
+import { forgetTrustedDevices } from "@/lib/auth/second-step-store";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import {
   createReadableTemporaryPassword,
@@ -836,6 +838,12 @@ export async function completePasswordSetup(input: { password: string; token: st
   // And not a password every guessing list tries first (password-strength.ts).
   const weakness = passwordWeakness(password, [tokenRow.login_id, tokenRow.hr_id]);
   if (weakness) throw new Error(weakness);
+  // And not one that already sits in a published breach (leaked-password.ts). Asked BEFORE the link is
+  // spent, so a refused password leaves the link usable; an unreachable service accepts the password and
+  // is named on the audit row below.
+  const leakVerdict = await checkLeakedPassword(password);
+  if (leakVerdict.leaked === true) throw new Error(LEAKED_PASSWORD_MESSAGE);
+  const leakedPasswordCheck = leakedPasswordAuditValue(leakVerdict);
 
   const passwordHash = await bcrypt.hash(password, 12);
   const supabase = getSupabaseAdmin();
@@ -899,6 +907,13 @@ export async function completePasswordSetup(input: { password: string; token: st
     throw userError;
   }
 
+  // A new password ends every "do not ask on this browser" of the second sign-in step (second-step.ts).
+  // Best effort, and named on the audit row: the password is already set.
+  const trustedDevicesForgotten = await forgetTrustedDevices(tokenRow.login_id).then(
+    () => true,
+    () => false,
+  );
+
   // A test account (src/lib/auth/test-persona.ts) has no HR id and no Supabase identity; minting one
   // here would leave a Supabase user whose profile row the employees foreign key refuses.
   if (currentUser.is_test_persona !== true) try {
@@ -942,8 +957,10 @@ export async function completePasswordSetup(input: { password: string; token: st
     newValues: {
       bridgeWarning,
       completedAt: now,
+      leakedPasswordCheck,
       purpose: tokenRow.purpose,
       supabaseWeakPasswordReplaced,
+      trustedDevicesForgotten,
     },
     oldValues: null,
     summary: `Completed password ${tokenRow.purpose} for ${tokenRow.login_id}`,

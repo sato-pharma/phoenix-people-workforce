@@ -103,10 +103,10 @@ export function runProbationOverdueDecisionTrackerTests() {
 
   // 5 — the surfaces
   assert.match(read("app/employee-portals/probation/page.tsx"), /getProbationTrackerRows\(access\)/);
-  const route = read("app/api/probation/[id]/workflow/route.ts");
-  assert.match(route, /trackerRows/, "the workflow route returns the tracker list for the portal dashboard");
   const dashboard = read("src/components/employee-portal/employee-probation-dashboard.tsx");
-  assert.match(dashboard, /payload\.trackerRows \?\? payload\.rows/, "a workflow action refreshes the tracker list");
+  // REC-010 (14 Nov 2026): the dashboard decides nothing (the decision is on the case), so no action
+  // refreshes the list; the legacy workflow route that returned trackerRows was deleted.
+  assert.doesNotMatch(dashboard, /\/api\/probation\//, "the portal dashboard calls no legacy probation route");
   assert.match(dashboard, /classifyProbationRowZone\(row\)/);
   assert.match(dashboard, /overdueDecision:\s*row\.overdue_decision/, "the tiles and chart count the overdue zone");
   assert.match(dashboard, /Boolean\(a\.overdue_decision\) !== Boolean\(b\.overdue_decision\)/, "overdue rows sort first");

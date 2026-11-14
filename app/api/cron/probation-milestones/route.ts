@@ -1,17 +1,19 @@
 // On-demand trigger for the probation Day 30 / 60 / 75 milestone sweep.
 //
-// The sweep already rides the daily notifications cron (06:36 Cairo). This route exists so it can
-// also be run the moment it is needed, without waiting for the next morning.
+// The sweep already runs every morning as its own job, `probation-milestone-emails` (07:28 Cairo,
+// /api/cron/daily/probation-milestone-emails, heartbeat `phoenix-daily-probation-milestone-emails`).
+// This route exists so it can also be run the moment it is needed, without waiting for the next morning.
 //
 // It is how the released catch-up was delivered on 2026-09-29 without waiting for the next
 // morning (owner: "release the held probation milestones").
 //
-// It runs ONLY this sweep. Calling the whole daily route instead would re-fire the other 29
-// sub-jobs, several of which are idempotent per Cairo day and had already run.
+// It runs ONLY this sweep. (Before 13 Nov 2026 the alternative was the whole daily route, which would
+// have re-fired about thirty other jobs; the morning job's own address runs only this sweep too, but
+// under its heartbeat, so a hand run there would be counted as that morning's run.)
 //
-// Deliberately NOT declared in JOB_SCHEDULES: a declaration with no cron job behind it reads to
-// job-heartbeat-assess as a job that has STOPPED and alarms every Super Admin for ever. This is a
-// manual trigger, not a schedule.
+// This route is deliberately NOT declared in JOB_SCHEDULES: a declaration with no cron job behind it
+// reads to job-heartbeat-assess as a job that has STOPPED and alarms every Super Admin for ever. This
+// is a manual trigger, not a schedule; the schedule is the morning job's.
 //
 // Safe to call repeatedly: every email is keyed per (case, milestone), so a second call sends
 // nothing — and a milestone an earlier recipient already received is not sent again.

@@ -295,7 +295,6 @@ import { runProbationCaptureUisTests } from "./probation-capture-uis.test.ts";
 import { runProbationManualScorecardTests } from "./probation-manual-scorecard.test.ts";
 import { runProbationAuditFixesTests } from "./probation-audit-fixes.test.ts";
 import { runProbationAuditFixesRound2Tests } from "./probation-audit-fixes-round2.test.ts";
-import { runProbationLegacyWritesToCasesTests } from "./probation-legacy-writes-to-cases.test.ts";
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
 import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.test.ts";
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
@@ -718,6 +717,7 @@ import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
 import { runProbationRowsOneReadPerRequestTests } from "./probation-rows-one-read-per-request.test.ts";
 import { runProbationOverdueDecisionTrackerTests } from "./probation-overdue-decision-tracker.test.ts";
+import { runProbationOneModelTests } from "./probation-one-model.test.ts";
 import { runLoginPageHardeningTests } from "./login-page-hardening.test.ts";
 import { runCommunicationSourceOfTruthTests } from "./communication-source-of-truth.test.ts";
 import { runCoachingScoringTests } from "./coaching-scoring.test.ts";
@@ -1151,6 +1151,7 @@ import { runNewHireMailboxInvitationTests } from "./new-hire-mailbox-invitation.
 import { runNewHireMailboxInviteInboxTests } from "./new-hire-mailbox-invite-inbox.test.ts";
 import { runNewHireMailboxInviteInboxReaderTests } from "./new-hire-mailbox-invite-inbox-reader.test.ts";
 import { runNewHireMailboxAppPasswordCaptureTests } from "./new-hire-mailbox-app-password-capture.test.ts";
+import { runMailboxEditFormCaptureTests } from "./mailbox-edit-form-capture.test.ts";
 import { runNewHireMailboxAppPasswordRehearsalTests } from "./new-hire-mailbox-app-password-rehearsal.test.ts";
 import { runNewHireMailboxResultSurvivesTests } from "./new-hire-mailbox-result-survives.test.ts";
 import { runNewHireMailboxInitialPasswordStoreTests } from "./new-hire-mailbox-initial-password-store.test.ts";
@@ -1975,6 +1976,7 @@ import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.te
 import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runResignationCancelRestoreTests } from "./resignation-cancel-restore.test.ts";
+import { runResignationCompleteOrderTests } from "./resignation-complete-order.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
@@ -2885,11 +2887,13 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
 import { runNeedsYouSeatDriftTests } from "./needs-you-seat-drift.test.ts";
+import { runHireHandoffStepsTests } from "./hire-handoff-steps.test.ts";
 import { runNeedsYouVendorAccountsTests } from "./needs-you-vendor-accounts.test.ts";
 import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts";
 import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
 import { runApprovalWhatsAppReplyExitTests } from "./approval-whatsapp-reply-exit.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
+import { runNeedsYouDisputesAndStoppedEmailsTests } from "./needs-you-disputes-and-stopped-emails.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
@@ -3111,7 +3115,15 @@ import { runCandidateMergeAtomicTests } from "./candidate-merge-atomic.test.ts";
 import { runDisputeAndDeductionAtomicTests } from "./dispute-and-deduction-atomic.test.ts";
 import { runIntegrationAuditEdgesTests } from "./integration-audit-edges.test.ts";
 import { runIntegrationsRegistryTests } from "./integrations-registry.test.ts";
+import { runSecondSignInStepTests } from "./second-sign-in-step.test.ts";
+import { runPasskeyAddAsksPasswordTests } from "./passkey-add-asks-password.test.ts";
+import { runLeakedPasswordTests } from "./leaked-password.test.ts";
 import { runDurableApprovalEmailsTests } from "./durable-approval-emails.test.ts";
+import { runReportItLifecycleTests } from "./report-it-lifecycle.test.ts";
+import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
+import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
+import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
+import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -3778,7 +3790,6 @@ await runTest("probation capture UIs (C1–C6 feedback/assessment/dev-action wri
 await runTest("probation manual scorecards (open a DV-Day the CRM never produced)", runProbationManualScorecardTests);
 await runTest("probation audit fixes (F1–F13 pre-merge hardening)", runProbationAuditFixesTests);
 await runTest("probation audit fixes round 2 (R1–R10 deep hardening)", runProbationAuditFixesRound2Tests);
-await runTest("probation legacy decision write-through to cases (dashboard/email desync fix)", runProbationLegacyWritesToCasesTests);
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
 await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
@@ -4669,6 +4680,7 @@ await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
 await runTest("probation list is read once per request", runProbationRowsOneReadPerRequestTests);
 await runTest("a probation that ended with no decision stays on the tracker in its own Overdue decision zone, first in every sort, counted in the tiles and chart, with no HR id under the name; the feedback inbox says days, dates and roles in words", runProbationOverdueDecisionTrackerTests);
+await runTest("one probation model: the tracker reads the probation case, nothing writes probation_evaluations, and the old start-review and pass / terminate routes stay deleted", runProbationOneModelTests);
 await runTest("login page hardening", runLoginPageHardeningTests);
 await runTest("communication source of truth", runCommunicationSourceOfTruthTests);
 await runTest("coaching scoring", runCoachingScoringTests);
@@ -5478,6 +5490,13 @@ await runTest(
   + "provisioning sequence and from the scheduled sweep, and shipping it does NOT calibrate the "
   + "clear step — the flag is true only because the live rehearsal of 4 Oct 2026 read all four controls)",
   runNewHireMailboxAppPasswordCaptureTests,
+);
+await runTest(
+  "a leaver's mailbox Edit form is read and left without keeping anything (the System Administrator "
+  + "gate is checked before the body is read, an address that is not a leaver on the register is "
+  + "refused before a driver is built and never by a substring, leaving can press only Close modal, "
+  + "Cancel or Close and then Escape, and the answer carries a text field's length but never its value)",
+  runMailboxEditFormCaptureTests,
 );
 await runTest(
   "the app-password rehearsal mints ONE app password only on Phoenix's own invite inbox, refused "
@@ -7186,6 +7205,11 @@ await runTest(
 await runTest(
   "resignation cancel restores the employee (status, pay, seat, vacancy, login, CRM id) before the row is stamped",
   runResignationCancelRestoreTests,
+);
+
+await runTest(
+  "resignation complete ends the employee FIRST and stamps completed LAST (a failed step leaves it Approved, names the step, and a retry completes cleanly)",
+  runResignationCompleteOrderTests,
 );
 
 await runTest(
@@ -11446,11 +11470,11 @@ await runTest(
   runNeedsYouTier2SummaryTests,
 );
 await runTest(
-  "the needs-you weekly email is the COMPLETE channel and reaches exactly one person: it rides the same 06:36 route and self-gates to one weekday in seven (the gate IS its schedule, so a gate that never matches sends nothing for ever and one that always matches emails him every morning), its body carries every item in every lane AND all sixteen source verdicts because completeness is the only thing it has that the 900-character daily digest does not, the could-not-be-read section still leads even though email never truncates, it never also requests telegram since every Phoenix email already mirrors a preview there, the recipient is resolved by the owner's own hr id and fails CLOSED rather than falling back to everyone holding a role, the subject states the week's verdict instead of a fixed phrase nobody opens, and it sets title rather than subjectHrId - which is a different field naming the person a notification is ABOUT and would change who may receive it",
+  "the needs-you weekly email is the COMPLETE channel and reaches exactly one person: it runs every morning as its own job (07:25 Cairo) and self-gates to one weekday in seven (the gate IS its schedule, so a gate that never matches sends nothing for ever and one that always matches emails him every morning), its body carries every item in every lane AND all sixteen source verdicts because completeness is the only thing it has that the 900-character daily digest does not, the could-not-be-read section still leads even though email never truncates, it never also requests telegram since every Phoenix email already mirrors a preview there, the recipient is resolved by the owner's own hr id and fails CLOSED rather than falling back to everyone holding a role, the subject states the week's verdict instead of a fixed phrase nobody opens, and it sets title rather than subjectHrId - which is a different field naming the person a notification is ABOUT and would change who may receive it",
   runNeedsYouWeeklyEmailTests,
 );
 await runTest(
-  "the needs-you daily digest rides the 06:36 route without under-reporting or bending its host: the could-not-be-read section renders FIRST in a channel that truncates from the END mid-word with no marker, the all-clear sentence is gated on the board's own allClearProvable and never on an empty list, a tier-2 summary can only PREFIX the deterministic render so no model can reassure over a board that did not prove itself, the daily route's destructure names and Promise.all entries and hand-maintained totalJobs all agree (a job added without its name captures every later result one position off, which this route's own comments record happening), a CRASHED job reports skipped with its reason rather than a zero indistinguishable from a quiet morning, the DAILY digest never requests email because one email to him is already three deliveries, the recipient is resolved by his own hr id and fails CLOSED rather than falling back to everyone holding a role, and a board with every lane full still fits Telegram's real budget with no ellipsis",
+  "the needs-you daily digest runs as its own 06:36 morning job without under-reporting: the could-not-be-read section renders FIRST in a channel that truncates from the END mid-word with no marker, the all-clear sentence is gated on the board's own allClearProvable and never on an empty list, a tier-2 summary can only PREFIX the deterministic render so no model can reassure over a board that did not prove itself, it is its own morning job, first, alone on 06:36, and its answer names its result (the old fan-out's positional destructure once put every later result one position off), a CRASHED job reports skipped with its reason rather than a zero indistinguishable from a quiet morning, the DAILY digest never requests email because one email to him is already three deliveries, the recipient is resolved by his own hr id and fails CLOSED rather than falling back to everyone holding a role, and a board with every lane full still fits Telegram's real budget with no ellipsis",
   runNeedsYouDailyDigestTests,
 );
 await runTest(
@@ -11474,12 +11498,20 @@ await runTest(
   runNeedsYouUncollectedLeaverDeductionsTests,
 );
 await runTest(
+  "deduction disputes and stopped approval emails are on the Needs You board (REC-031, 14 Nov 2026): the dispute row counts through the rail badge's own counter and is the Super Admin's alone (anyone else is not-applicable and costs no read); the stopped-email row reads exactly what Email Notifications lists (failed direct emails out of retries), is gated on the permission Send again needs before the read, carries the oldest one's age, and a failed read of either is amber, never a zero",
+  runNeedsYouDisputesAndStoppedEmailsTests,
+);
+await runTest(
   "the Office-allocation board row reports a month whose COMMITTED Office spread no longer matches the golden rule — the shares are frozen at the Office commit and nothing re-runs them, so a distributor book written afterwards moves the base underneath them (August 2026 CNS: 3,698 of 109,719 units, 3.37%, across 43 areas, measured on production 2026-10-09) — and because today's side applies today's shares to the line's OWN stored total, both sides hold identical units per line and the published-closing drift check is structurally blind to all of it; the row names its cause in NAMES never codes, ages from the FIRST base move rather than the commit, carries no EGP, drops to worth-knowing once the month is published because re-committing would restate an announced figure, and links to /sales/import where the Office book is actually re-committed",
   runNeedsYouOfficeAllocationDriftTests,
 );
 await runTest(
   "the organogram seat-drift board row reports an active person whose employees record disagrees with the seat they occupy — the area, the region or the manager — which au_v_employee_seat_drift had been flagging for two days on 2026-10-15 with nothing reading it as an alarm while a new rep was silently missing from her own area's weekly plan; one row per PERSON however many facts disagree, both values side by side with an absent one reading as \"holds no area\" rather than a blank, the person NAMED and no HR id anywhere a reader sees one, no automatic repair because which side is right is a judgement, a clean view producing no row at all, the Super Admin's lane alone, the light lane (3.228 ms over 97 rows on production), and the read selecting on the three drift booleans only — a person with NO seat is not drift and all 16 Head Office people would be on the board for ever if it were widened to that",
   runNeedsYouSeatDriftTests,
+);
+await runTest(
+  "the hire hand-off is complete or self-repairing (REC-027): both hiring doors record every follow-up step — offer link, candidate hired, login, CV, mailbox task, offer stamp, acceptance audit row — in hire_handoff_steps without changing the reply (a thrown step re-throws the same error, a returned one returns the same object, a dead ledger never fails a hire); each retry is idempotent (an existing login, CV, audit row or linked letter is DONE, a letter naming someone else is never overwritten), the hourly run is leased, bounded and backs off, the fifth failure gives up onto the Needs You board by NAME with a link to the record, and a recent active hire with no login and nothing retrying one breaches a reconciliation check",
+  runHireHandoffStepsTests,
 );
 
 await runTest(
@@ -12159,7 +12191,7 @@ await runTest(
   runCsvFormulaNeutraliserTests,
 );
 await runTest(
-  "the Needs You digest is awaited on its own BEFORE the daily route's 31-way Promise.all, exactly once, with its settled result handed to the fan-out at its own position — a passenger in that fan-out lost 1-5 board sources every morning for 15 days",
+  "the Needs You digest is its own morning job, first, at 06:36, alone on its minute and called exactly once, and the morning jobs' route runs one job per request with no Promise.all — a passenger in the old 31-way fan-out lost 1-5 board sources every morning for 15 days",
   runNeedsYouDigestRunsOutsideTheFanoutTests,
 );
 await runTest(
@@ -12340,7 +12372,18 @@ await runTest("a candidate merge is ONE transaction (F-RCT-005, 13 Nov 2026): ev
 await runTest("a dispute decision is all or nothing, one at a time, and a deduction decision never overwrites what it did not see (enterprise audit, 13 Nov 2026): the case is claimed before the first write and a second decide is a Conflict that writes nothing; a failure after the first write puts every line, decision, lock and refund back and writes no decided event; where even that fails the case reads Needs attention; the database refuses a decision on a locked candidate; and a save with a stale revision is a Conflict that writes nothing", runDisputeAndDeductionAtomicTests);
 await runTest("the edges the integration audit found open stay closed (13 Nov 2026): the sales AI goes only to its written-out addresses, the page policy allows no websocket, the notification drain is registered by its two doors, nothing runs on the edge runtime, every named outbound call has a deadline, and the workflows queue and key their browser cache by the runner image", runIntegrationAuditEdgesTests);
 await runTest("the Integrations page: no credential value ever comes back out, the Super Admin gate runs before any read, a failed read says unavailable, and the messaging API version agrees in all seven files", runIntegrationsRegistryTests);
+await runTest("the second sign-in step (integration audit INT-005, 13 Nov 2026): a Super Admin's password sign-in also needs an authenticator code computed as RFC 6238 publishes it, good once and only near now; a browser is remembered for 30 days, for its own account and only once that account is set up; a recovery code is spent by using it; a reset returns the account to not set up; a read that fails refuses the sign-in; the key, the codes and the cookie token are never stored readable; the route asks after the password and before any session, for every caller; and the three tables are server-only", runSecondSignInStepTests);
+await runTest("adding a passkey asks a Super Admin for the password before any challenge exists (the second sign-in step risk review, 13 Nov 2026): a stolen session cannot add a passkey that outlives a reset; every other role adds one as before; only the options route makes a registration challenge; the card sends and asks for the password; and a reset of the second step never removes a passkey", runPasskeyAddAsksPasswordTests);
+await runTest("a password already in a published leak is refused when it is chosen (integration audit INT-006, 13 Nov 2026): only the first five characters of its fingerprint leave, with no header naming who asks; a padded answer's made-up lines are not leaks; a service that cannot be asked is recorded as not checked, never as a pass or a refusal; both places a password is chosen ask before anything is written and before the link is spent; and sign-in never asks", runLeakedPasswordTests);
 await runTest("approval emails survive a provider failure (REC-048, 13 Nov 2026): every leave email and the two background interview emails write their outbox row first under their own key, the drain sends the stored input back through the same sender with the same To, CC, subject and body, a retried request never queues a second email, an email out of retries raises the existing drain alarm, and send again checks the permission before it re-queues", runDurableApprovalEmailsTests);
+await runTest("a safety report is owned by whoever holds Report It read-all access (REC-033, 13 Nov 2026): her new-report notice and email carry no patient data, go to her alone and fire after the reply; a report moves received, under assessment, closed, one step forward, only by a read-all viewer, refused before any write otherwise, with its audit row in the same transaction; and the migration allows exactly the code's statuses", runReportItLifecycleTests);
+await runTest(
+  "the morning jobs move to one schedule each behind PHOENIX_DAILY_JOBS_SPLIT: switched off (what ships) /api/notifications/daily runs every job once, through the shared runners, digest first, and /api/cron/daily/<job> runs none and records no heartbeat; switched on, the reverse; never both and never neither, in the routes, the heartbeat declarations, the Healthchecks check and the re-fire policies; every job has exactly one cron-job.org entry and one heartbeat at the same minute, no two share a minute, the job route runs one job per request, and the jobs run are exactly the thirty the fan-out ran",
+  runDailyJobsSplitTests,
+);
+await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
+await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
+await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

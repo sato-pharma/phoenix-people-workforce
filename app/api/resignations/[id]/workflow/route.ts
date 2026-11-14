@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { ApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   getResignationsDashboardData,
@@ -60,6 +61,11 @@ export async function POST(
     const message = resignationErrorMessage(error);
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 403 });
+    }
+    // A sentence written for HR (Complete stopped at a named step; the resignation is still
+    // Approved and Complete is safe to press again) — never a 500.
+    if (error instanceof ApiError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
     if (isResignationsSchemaMissing(error)) {
       return NextResponse.json({ success: false, error: "Resignations schema is not ready." }, { status: 409 });

@@ -1,11 +1,8 @@
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
-  invalidateEmployeeDirectoryCache,
   isActiveLifecycleStatus,
 } from "@/lib/employees/employee-directory";
-import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { assertProbationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import {
   canSeeEmployee,
   normalizeHrId,
@@ -17,27 +14,19 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
-import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotification } from "@/lib/notifications/system";
 import {
   probationDaysRemaining,
   probationEndDate as canonicalProbationEndDate,
 } from "@/lib/probation/date";
-import {
-  getProbationCaseByEmployee,
-  isMedicalRepresentativeTitle,
-} from "@/lib/probation/intelligence/cases";
-import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
+import { isProbationFieldRoleTitle } from "@/lib/probation/intelligence/cases";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 
 import type {
-  CreateProbationEvaluationInput,
-  ProbationDecision,
   ProbationRow,
   ProbationWorkflowAction,
   ProbationWorkflowRecord,
-  ProbationWorkflowStatus,
 } from "./types";
 
 type EmployeeScopeRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
@@ -54,37 +43,6 @@ type ProbationDbRow = {
   // DV state is read from `probation_dv_days` via intelligence/dv-progress-lookup.ts.
 };
 
-type ProbationEvaluationDbRow = {
-  id: string;
-  employee_hr_id: string;
-  probation_id: string | null;
-  employee_name: string;
-  job_title: string | null;
-  line_name: string | null;
-  area_name: string | null;
-  probation_end_date: string;
-  evaluation_scores: Record<string, number | string | null>;
-  manager_feedback: string | null;
-  hr_recommendation: string | null;
-  decision: ProbationDecision | null;
-  decision_reason: string | null;
-  probation_letter_url: string | null;
-  probation_letter_name: string | null;
-  workflow_notes: string | null;
-  status: string;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-  manager_reviewed_at: string | null;
-  manager_reviewed_by: string | null;
-  hr_reviewed_at: string | null;
-  hr_reviewed_by: string | null;
-  approved_at: string | null;
-  approved_by: string | null;
-  completed_at: string | null;
-  completed_by: string | null;
-};
-
 type ProbationReminderEventDbRow = {
   employee_hr_id: string | null;
   id: string;
@@ -93,15 +51,6 @@ type ProbationReminderEventDbRow = {
   scheduled_for: string | null;
   status: string | null;
   subject: string | null;
-};
-
-type ProbationWorkflowInput = {
-  decisionReason?: string | null;
-  expectedUpdatedAt?: string | null;
-  evaluationScores?: Record<string, number | string | null>;
-  hrRecommendation?: string | null;
-  managerFeedback?: string | null;
-  note?: string | null;
 };
 
 // Governance: probation pass/terminate/evaluation authority is reserved for Super Admin
@@ -166,18 +115,6 @@ export function createProbationRecipientLookups(hrApproverHrIds: string[]): Prob
     // A Super Admin always exists, so an empty list means the read failed — ask again rather than share it.
     hrApproverHrIds: async () => (hrApproverHrIds.length > 0 ? hrApproverHrIds : resolveActiveHrApproverHrIds()),
   };
-}
-
-async function activeHrIdsByRole(roles: string[]): Promise<string[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("app_auth_users")
-    .select("hr_id")
-    .in("role", roles)
-    .eq("is_active", true);
-  if (error) return [];
-  return ((data ?? []) as Array<{ hr_id?: string | null }>)
-    .map((row) => normalizeHrId(row.hr_id))
-    .filter(Boolean) as string[];
 }
 
 export function isProbationAdministrator(access: Pick<AccessContext, "role" | "scope">) {
@@ -292,16 +229,6 @@ function canReadProbationEmployee(
   return canSeeEmployee(access, employee);
 }
 
-function canSubmitManagerFeedback(
-  access: AccessContext,
-  employee: EmployeeScopeRow,
-  viewer: EmployeeScopeRow | null,
-  directory: EmployeeScopeRow[] = [],
-) {
-  if (isProbationAdministrator(access)) return true;
-  return isDirectManagerOrManagerOfManager(directory, viewer, employee);
-}
-
 /**
  * Probation SCORING scope for a set of employees, by HR_ID — who this caller may open a probation
  * scorecard for, for surfaces that work from `probation_cases` rather than from the
@@ -400,33 +327,9 @@ function isInManagerHierarchy(directory: EmployeeScopeRow[], manager: EmployeeSc
   return false;
 }
 
-function isDirectManagerOrManagerOfManager(directory: EmployeeScopeRow[], viewer: EmployeeScopeRow | null, employee: EmployeeScopeRow) {
-  if (!viewer) return false;
-  const viewerHrId = normalizeHrId(viewer.hrId);
-  const directManagerHrId = normalizeHrId(employee.managerHrId);
-  if (!viewerHrId || !directManagerHrId) return false;
-  if (viewerHrId === directManagerHrId) return true;
-  const manager = directory.find((row) => normalizeHrId(row.hrId) === directManagerHrId) ?? null;
-  return Boolean(manager && viewerHrId === normalizeHrId(manager.managerHrId));
-}
-
 function managerOf(employee: EmployeeScopeRow, directory: EmployeeScopeRow[]) {
   const managerHrId = normalizeHrId(employee.managerHrId);
   return managerHrId ? directory.find((row) => normalizeHrId(row.hrId) === managerHrId) ?? null : null;
-}
-
-function actionLabel(action: ProbationWorkflowAction) {
-  return action.replace(/_/g, " ");
-}
-
-function normalizeProbationStatus(
-  evaluationStatus: string | null | undefined,
-  decision: ProbationDecision | null | undefined,
-): ProbationWorkflowStatus {
-  if (decision === "pass") return "passed";
-  if (decision === "terminate") return "terminated";
-  if (evaluationStatus === "completed") return "passed";
-  return "active";
 }
 
 function isFinalWorkflow(row: ProbationWorkflowRecord | null | undefined) {
@@ -446,11 +349,6 @@ export function isProbationDecisionOutstanding(row: Pick<ProbationRow, "workflow
   return !isFinalWorkflow(row.workflow);
 }
 
-function cleanText(value: string | null | undefined) {
-  const text = String(value ?? "").trim();
-  return text ? text : null;
-}
-
 function normalizeDate(value: string | null | undefined) {
   const raw = String(value ?? "").trim();
   return raw ? raw.slice(0, 10) : null;
@@ -458,11 +356,6 @@ function normalizeDate(value: string | null | undefined) {
 
 function addDays(value: string | null | undefined, days: number) {
   return addDaysToDateOnly(normalizeDate(value), days);
-}
-
-function appendWorkflowNote(existing: string | null | undefined, actor: string, action: string, note?: string | null) {
-  const entry = `[${new Date().toISOString()}] ${actor}: ${action}${note ? ` - ${note}` : ""}`;
-  return existing ? `${existing}\n${entry}` : entry;
 }
 
 function errorMessage(error: unknown) {
@@ -528,36 +421,71 @@ function asIso(value: string | null | undefined) {
   return value ? new Date(value).toISOString() : null;
 }
 
-function mapEvaluation(row: ProbationEvaluationDbRow): ProbationWorkflowRecord {
+// ONE PROBATION MODEL (audit item REC-010, 14 Nov 2026). A probationer's review state - the
+// `workflow` on every tracker row, its decision, and whether a decision is still outstanding - is read
+// from their PROBATION CASE (`probation_cases`), the record the case page decides on
+// (src/lib/probation/intelligence/decision.ts). The second model this replaced, `probation_evaluations`,
+// had its own Pass / Terminate door and a best-effort mirror into the case; when the mirror missed, the
+// tracker and the case disagreed about where a person stood. That door, the mirror and the sweep that
+// opened an empty evaluation for every probationer are gone, and nothing writes `probation_evaluations`
+// any more (its rows are left in place: 61 on 14 Nov 2026, every one still "evaluation requested").
+// The record is shaped as the old one so the tracker, the portal, the exports, the command centres and
+// the Needs You row keep reading `row.workflow` unchanged; the fields only the old model held stay null.
+type ProbationCaseWorkflowDbRow = {
+  id: string;
+  employee_hr_id: string;
+  employee_name: string | null;
+  job_title: string | null;
+  line_name: string | null;
+  area_name: string | null;
+  probation_end_date: string | null;
+  decision: string | null;
+  decision_reason: string | null;
+  decision_by: string | null;
+  decision_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const PROBATION_CASE_WORKFLOW_COLUMNS =
+  "id, employee_hr_id, employee_name, job_title, line_name, area_name, probation_end_date, decision, decision_reason, decision_by, decision_at, created_by, created_at, updated_at";
+
+export function mapProbationCaseToWorkflow(row: ProbationCaseWorkflowDbRow): ProbationWorkflowRecord {
+  const decision: ProbationWorkflowRecord["decision"] =
+    row.decision === "pass" || row.decision === "terminate" ? row.decision : null;
+  const decidedAt = decision ? asIso(row.decision_at) : null;
+  const decidedBy = decision ? row.decision_by : null;
   return {
+    allowedActions: [],
+    approvedAt: decidedAt,
+    approvedBy: decidedBy,
     areaName: row.area_name,
-    approvedAt: asIso(row.approved_at),
-    approvedBy: row.approved_by,
-    completedAt: asIso(row.completed_at),
-    completedBy: row.completed_by,
+    completedAt: decidedAt,
+    completedBy: decidedBy,
     createdAt: new Date(row.created_at).toISOString(),
     createdBy: row.created_by,
-    decision: row.decision,
-    decisionReason: row.decision_reason,
+    decision,
+    decisionReason: decision ? row.decision_reason : null,
     employeeHrId: row.employee_hr_id,
-    employeeName: row.employee_name,
-    evaluationScores: row.evaluation_scores ?? {},
-    hrRecommendation: row.hr_recommendation,
-    hrReviewedAt: asIso(row.hr_reviewed_at),
-    hrReviewedBy: row.hr_reviewed_by,
+    employeeName: row.employee_name ?? row.employee_hr_id,
+    evaluationScores: {},
+    hrRecommendation: null,
+    hrReviewedAt: null,
+    hrReviewedBy: null,
     id: row.id,
     jobTitle: row.job_title,
     lineName: row.line_name,
-    managerFeedback: row.manager_feedback,
-    managerReviewedAt: asIso(row.manager_reviewed_at),
-    managerReviewedBy: row.manager_reviewed_by,
-    probationEndDate: row.probation_end_date,
-    probationId: row.probation_id,
-    probationLetterName: row.probation_letter_name,
-    probationLetterUrl: row.probation_letter_url,
-    status: normalizeProbationStatus(row.status, row.decision),
+    managerFeedback: null,
+    managerReviewedAt: null,
+    managerReviewedBy: null,
+    probationEndDate: row.probation_end_date ?? "",
+    probationId: null,
+    probationLetterName: null,
+    probationLetterUrl: null,
+    status: decision === "pass" ? "passed" : decision === "terminate" ? "terminated" : "active",
     updatedAt: new Date(row.updated_at).toISOString(),
-    workflowNotes: row.workflow_notes,
+    workflowNotes: null,
   };
 }
 
@@ -579,59 +507,20 @@ async function loadProbationByHrId() {
   return byHrId;
 }
 
-async function loadEvaluationsByHrId() {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("probation_evaluations")
-    .select("*")
+/** Each probationer's case, keyed by the canonical HR id, shaped as the tracker's workflow record. */
+async function loadCaseWorkflowsByHrId() {
+  const { data, error } = await getSupabaseAdmin()
+    .from("probation_cases")
+    .select(PROBATION_CASE_WORKFLOW_COLUMNS)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   const byHrId = new Map<string, ProbationWorkflowRecord>();
-  for (const row of (data ?? []) as ProbationEvaluationDbRow[]) {
-    if (!byHrId.has(row.employee_hr_id)) {
-      byHrId.set(row.employee_hr_id, mapEvaluation(row));
-    }
+  for (const row of (data ?? []) as ProbationCaseWorkflowDbRow[]) {
+    const key = normalizeHrId(row.employee_hr_id);
+    if (key && !byHrId.has(key)) byHrId.set(key, mapProbationCaseToWorkflow(row));
   }
   return byHrId;
-}
-
-function allowedWorkflowActions(
-  access: AccessContext,
-  row: ProbationWorkflowRecord | null | undefined,
-  employee: EmployeeScopeRow,
-  viewer: EmployeeScopeRow | null,
-  directory: EmployeeScopeRow[] = [],
-): ProbationWorkflowAction[] {
-  const allowed = new Set<ProbationWorkflowAction>();
-  const isHr = isProbationAdministrator(access);
-  const canManagerAct = canSubmitManagerFeedback(access, employee, viewer, directory);
-  if (!row) return Array.from(allowed);
-  if (isFinalWorkflow(row)) return [];
-
-  if (canManagerAct) {
-    allowed.add("manager_feedback");
-  }
-
-  if (!isHr) return Array.from(allowed);
-
-  allowed.add("pass");
-  allowed.add("terminate");
-
-  return Array.from(allowed);
-}
-
-function assertWorkflowActionAllowed(
-  access: AccessContext,
-  row: ProbationWorkflowRecord,
-  action: ProbationWorkflowAction,
-  employee: EmployeeScopeRow,
-  viewer: EmployeeScopeRow | null,
-  directory: EmployeeScopeRow[] = [],
-) {
-  if (!allowedWorkflowActions(access, row, employee, viewer, directory).includes(action)) {
-    throw new Error(`Forbidden: ${access.role} cannot ${actionLabel(action)} for this probation record.`);
-  }
 }
 
 // 🔴 ONE READ PER REQUEST. The admin home asks for this list twice in the same instant: the
@@ -706,32 +595,35 @@ async function buildProbationRows(access: AccessContext): Promise<ProbationRow[]
   const viewerHrId = normalizeHrId(access.hrId);
   const viewer = employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
   let probationByHrId = new Map<string, ProbationDbRow>();
-  let evaluationsByHrId = new Map<string, ProbationWorkflowRecord>();
+  let caseWorkflowsByHrId = new Map<string, ProbationWorkflowRecord>();
 
   try {
-    [probationByHrId, evaluationsByHrId] = await Promise.all([
+    [probationByHrId, caseWorkflowsByHrId] = await Promise.all([
       loadProbationByHrId(),
-      loadEvaluationsByHrId(),
+      loadCaseWorkflowsByHrId(),
     ]);
   } catch (error) {
     if (!isProbationSchemaMissing(error)) throw error;
   }
 
   return employees
-    // MEDICAL-REPRESENTATIVE-ONLY (owner rule 2026-07-17): probation is a med-rep workflow. Managers
-    // (DSM/RSM/NSM) and head-office roles inside their own hire+90 window must never surface in the
-    // tracker/dashboard/exports/portal — deleting their probation_cases was not enough because this
-    // list is built from the employee directory window, not probation_cases. See isMedicalRepresentativeTitle.
-    .filter((employee) => isMedicalRepresentativeTitle(employee.positionTitle ?? employee.jobTitle))
+    // FIELD ROLES ONLY (owner, 13-14 Nov 2026, replacing the 2026-07-17 Medical-Reps-only rule): a Medical
+    // Representative or a District / Regional / National Sales Manager. Office and head-office roles
+    // inside their own hire+90 window must never surface in the tracker/dashboard/exports/portal — this
+    // list is built from the employee directory window, not probation_cases, so it needs its own guard,
+    // the same one the case provisioning uses. See isProbationFieldRoleTitle.
+    .filter((employee) => isProbationFieldRoleTitle(employee.positionTitle ?? employee.jobTitle))
     .filter((employee) => canReadProbationEmployee(access, employee, viewer, employees, viewerAllowedLines))
     .map((employee) => {
       const probation = probationByHrId.get(employee.hrId);
-      const workflow = evaluationsByHrId.get(employee.hrId) ?? null;
+      // The person's probation case is their review state (REC-010): one record, the one the case page decides on.
+      const workflow = caseWorkflowsByHrId.get(normalizeHrId(employee.hrId) ?? "") ?? null;
       const manager = managerOf(employee, employees);
       const managerManager = manager ? managerOf(manager, employees) : null;
       const probationEndDate = canonicalProbationEndDate(employee.hireDate) ?? "";
-      const allowedActions = allowedWorkflowActions(access, workflow, employee, viewer, employees);
-      if (workflow) workflow.allowedActions = allowedActions;
+      // No action is taken on the tracker row any more: a decision is made on the case page and feedback
+      // through the double-visit feedback tasks (REC-010).
+      const allowedActions: ProbationWorkflowAction[] = [];
       return {
         allowedActions,
         area_name: employee.areaName ?? "Unassigned",
@@ -760,114 +652,6 @@ async function buildProbationRows(access: AccessContext): Promise<ProbationRow[]
         workflow,
       };
     });
-}
-
-async function insertHistory(
-  evaluation: ProbationWorkflowRecord,
-  action: string,
-  actor: string,
-  oldStatus?: string | null,
-  details: Record<string, unknown> = {},
-) {
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("probation_history").insert({
-    action,
-    actor,
-    details,
-    employee_hr_id: evaluation.employeeHrId,
-    evaluation_id: evaluation.id,
-    new_status: evaluation.status,
-    old_status: oldStatus ?? null,
-  });
-  if (error && !isProbationSchemaMissing(error)) throw error;
-}
-
-// SCOPE LEAK FIX (owner report 2026-07-19): this used to call createSystemNotification with no
-// explicit recipient, which fell through to the generic cross-module governance resolver. Its
-// "probation.*" policy uses a "permission_based" strategy that treats matching department_id as
-// sufficient organizational scope — but in this org department_id groups the ENTIRE field-sales org
-// (124 employees, every product line) under one id, not per line. Net effect: up to 98 active users
-// company-wide (any role holding probation:read, which is nearly every role) received another line's
-// probationer's case-status notification — e.g. an Anti Infective probationer's update reaching the
-// Pedia and CNS National Sales Managers, District Managers, and Medical Reps.
-//
-// Fixed by resolving an EXPLICIT, line-scoped recipient list ourselves — reusing
-// resolveFeedbackExtraRecipients's NSM management-chain walk (already correct, used by the SLA
-// reminder path below) instead of the generic governance's broad department match — and sending one
-// createSystemNotification per recipient. An explicit recipientHrId never invokes
-// resolveNotificationRecipientsWithGovernance (see system.ts), so this bypasses the leaky path
-// entirely for this call site without touching the shared governance code other modules rely on.
-async function notifyProbationWorkflow(
-  record: ProbationWorkflowRecord,
-  employee: EmployeeScopeRow,
-  directory: EmployeeScopeRow[],
-  employeeDisplayName: string,
-  title: string,
-  tone: "success" | "warning" | "danger",
-) {
-  const manager = managerOf(employee, directory);
-  const dmHrId = normalizeHrId(manager?.hrId);
-  const [{ nsmHrIds }, hrApproverHrIds, ceoHrIds] = await Promise.all([
-    resolveFeedbackExtraRecipients(employee, directory),
-    resolveActiveHrApproverHrIds(),
-    activeHrIdsByRole(["CEO"]),
-  ]);
-  const recipientHrIds = Array.from(
-    new Set([dmHrId, ...nsmHrIds, ...hrApproverHrIds, ...ceoHrIds].filter((hrId): hrId is string => Boolean(hrId))),
-  );
-  if (recipientHrIds.length === 0) return;
-
-  await Promise.all(
-    recipientHrIds.map((recipientHrId) =>
-      createSystemNotification({
-        actionUrl: "/api/probation/redirect",
-        actorId: "system",
-        email: {
-          ctaHref: "/api/probation/redirect",
-          ctaLabel: "Open probation tracker",
-          employeeHrId: record.employeeHrId,
-          metrics: [
-            { label: "Employee", value: `${employeeDisplayName} (${record.employeeHrId})` },
-            { label: "Job Title", value: record.jobTitle ?? "—" },
-            { label: "Line", value: record.lineName ?? "—" },
-            { label: "Area", value: record.areaName ?? "—" },
-            { label: "Probation end date", value: record.probationEndDate ?? "—" },
-            { label: "Status", value: record.status },
-            { label: "Decision", value: record.decision ?? "Pending" },
-          ],
-          notificationType: "probation",
-          subject: `Phoenix ${title} - ${employeeDisplayName}`,
-          summary: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
-          // The admin-editable probation_workflow template renders an employee detail table
-          // ({{line}}/{{jobTitle}}/{{endDate}}); the generic metric→context mapping leaves
-          // those tokens empty. Fill them from the workflow record so the email is not blank.
-          templateContext: {
-            area: record.areaName ?? "—",
-            employeeHrId: record.employeeHrId,
-            employeeName: employeeDisplayName,
-            endDate: record.probationEndDate ?? "—",
-            jobTitle: record.jobTitle ?? "—",
-            line: record.lineName ?? "—",
-          },
-          title,
-          tone,
-        },
-        eventType: "workflow_updated",
-        message: `Probation review for ${employeeDisplayName} is now ${record.status.replace(/_/g, " ")}.`,
-        metadata: {
-          decision: record.decision ?? null,
-          employeeHrId: record.employeeHrId,
-          idempotencyKey: `probation:${record.employeeHrId}:${record.status}:${recipientHrId}`,
-          status: record.status,
-        },
-        module: "probation",
-        priority: tone === "danger" ? "critical" : "high",
-        recipientHrId,
-        subjectHrId: record.employeeHrId,
-        title,
-      }).catch(() => undefined),
-    ),
-  );
 }
 
 export function getProbationReminderSchedule(hireDate: string | null | undefined) {
@@ -1205,41 +989,6 @@ async function loadStoredProbationEventKeys(employeeHrIds: string[]): Promise<Se
   }
 }
 
-async function ensureSystemProbationReview(employee: EmployeeScopeRow, probationEndDate: string) {
-  const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {
-    if (isProbationSchemaMissing(error)) return new Map<string, ProbationWorkflowRecord>();
-    throw error;
-  });
-  const existing = existingEvaluations.get(employee.hrId);
-  if (existing && !isFinalWorkflow(existing)) return existing;
-
-  const now = new Date().toISOString();
-  const { data, error } = await getSupabaseAdmin()
-    .from("probation_evaluations")
-    .insert({
-      area_name: employee.areaName,
-      created_by: "system",
-      employee_hr_id: employee.hrId,
-      employee_name: employee.fullName,
-      evaluation_scores: {},
-      job_title: employee.positionTitle ?? employee.jobTitle,
-      line_name: employee.lineName,
-      manager_feedback: null,
-      probation_end_date: probationEndDate,
-      probation_id: null,
-      status: "evaluation_requested",
-      updated_at: now,
-      workflow_notes: appendWorkflowNote(null, "system", "opened probation review from scheduled reminder", null),
-    })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  const record = mapEvaluation(data as ProbationEvaluationDbRow);
-  await insertHistory(record, "created", "system", null, { source: "probation_reminder" });
-  return record;
-}
-
 function todayDateOnly() {
   return currentCairoDateOnlyIso();
 }
@@ -1348,10 +1097,6 @@ export async function processDueProbationReminderEvents(limit = 25) {
       continue;
     }
 
-    if (!row.workflow) {
-      await ensureSystemProbationReview(employee, row.probation_end_date);
-    }
-
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
     const daysRemainingValue = Number.isFinite(daysRemaining) ? daysRemaining : row.days_remaining;
@@ -1448,327 +1193,4 @@ export async function processDueProbationReminderEvents(limit = 25) {
   }
 
   return { attempted, failed, processedIds, sent };
-}
-
-function assertText(value: string | null | undefined, message: string) {
-  if (!cleanText(value)) throw new Error(message);
-}
-
-function assertExpectedVersion(row: ProbationWorkflowRecord, expectedUpdatedAt: string | null | undefined) {
-  if (!expectedUpdatedAt) return;
-  const current = new Date(row.updatedAt);
-  const expected = new Date(expectedUpdatedAt);
-  if (Number.isNaN(current.getTime()) || Number.isNaN(expected.getTime()) || current.toISOString() !== expected.toISOString()) {
-    throw new Error("Probation workflow was updated by another user. Refresh and try again.");
-  }
-}
-
-function validateWorkflowTransition(row: ProbationWorkflowRecord, action: ProbationWorkflowAction, input: ProbationWorkflowInput) {
-  assertExpectedVersion(row, input.expectedUpdatedAt);
-  if (isFinalWorkflow(row)) {
-    throw new Error(`Invalid probation transition: ${actionLabel(action)} is not allowed after final decision.`);
-  }
-
-  switch (action) {
-    case "manager_feedback":
-      assertText(input.managerFeedback ?? row.managerFeedback, "Manager feedback is required before this transition.");
-      return;
-    case "pass":
-      return;
-    case "terminate":
-      assertText(input.decisionReason, "Termination decision reason is required.");
-      return;
-    default:
-      throw new Error("Unsupported probation workflow action.");
-  }
-}
-
-export async function createProbationEvaluation(input: CreateProbationEvaluationInput, actor: string, access: AccessContext) {
-  if (!isProbationAdministrator(access)) {
-    throw new Error(`Forbidden: ${access.role} cannot create probation evaluations.`);
-  }
-
-  const employeeHrId = normalizeHrId(input.employeeHrId);
-  if (!employeeHrId) throw new Error("Employee HR ID is required.");
-
-  const employees = await getEmployeeDirectoryRows();
-  const viewer = employees.find((row) => normalizeHrId(row.hrId) === normalizeHrId(access.hrId)) ?? null;
-  const employee = employees.find((row) => normalizeHrId(row.hrId) === employeeHrId);
-  if (!employee) throw new Error("Employee was not found in the directory.");
-  if (!canReadProbationEmployee(access, employee, viewer, employees)) {
-    throw new Error("Forbidden: employee is outside your probation scope.");
-  }
-
-  const probationByHrId = await loadProbationByHrId().catch((error) => {
-    if (isProbationSchemaMissing(error)) return new Map<string, ProbationDbRow>();
-    throw error;
-  });
-  const probation = probationByHrId.get(employee.hrId);
-  const probationEndDate = canonicalProbationEndDate(employee.hireDate) ?? "";
-  if (!probationEndDate) throw new Error("Probation end date is required.");
-
-  const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {
-    if (isProbationSchemaMissing(error)) return new Map<string, ProbationWorkflowRecord>();
-    throw error;
-  });
-  const existing = existingEvaluations.get(employee.hrId);
-  if (existing && !isFinalWorkflow(existing)) {
-    throw new Error("An open probation evaluation already exists for this employee.");
-  }
-
-  await assertProbationWorkflowTransition({
-    access,
-    action: "create",
-    status: "new",
-  });
-
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("probation_evaluations")
-    .insert({
-      area_name: employee.areaName,
-      created_by: actor,
-      employee_hr_id: employee.hrId,
-      employee_name: employee.fullName,
-      evaluation_scores: input.evaluationScores ?? {},
-      job_title: employee.positionTitle ?? employee.jobTitle,
-      line_name: employee.lineName,
-      manager_feedback: cleanText(input.managerFeedback),
-      probation_end_date: probationEndDate,
-      probation_id: probation?.id === undefined ? null : String(probation.id),
-      status: input.managerFeedback ? "manager_feedback" : "evaluation_requested",
-      updated_at: new Date().toISOString(),
-      workflow_notes: appendWorkflowNote(null, actor, "created probation evaluation", cleanText(input.workflowNotes)),
-    })
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  const record = mapEvaluation(data as ProbationEvaluationDbRow);
-  await ensureProbationReminderEvents(employee, employees);
-  await insertHistory(record, "created", actor, null, { managerFeedback: cleanText(input.managerFeedback) });
-  // After the reply (afterResponse): the evaluation is saved, and the notice used to be awaited before the
-  // answer left — recipient lookups and a send per recipient. A failed notice is logged, never thrown.
-  await afterResponse("probation_notice:created", async () => {
-    await notifyProbationWorkflow(record, employee, employees, employee.displayName, "Probation Evaluation Created", "warning");
-  });
-  invalidateExecutiveDashboardCache("probation evaluation created", ["probation"]);
-  return record;
-}
-
-export async function runProbationWorkflow(
-  id: string,
-  action: ProbationWorkflowAction,
-  actor: string,
-  access: AccessContext,
-  input: ProbationWorkflowInput = {},
-) {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("probation_evaluations").select("*").eq("id", id).maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-
-  const row = data as ProbationEvaluationDbRow;
-  const current = mapEvaluation(row);
-  const employees = await getEmployeeDirectoryRows();
-  const viewer = employees.find((employee) => normalizeHrId(employee.hrId) === normalizeHrId(access.hrId)) ?? null;
-  const employee = employees.find((employee) => normalizeHrId(employee.hrId) === normalizeHrId(row.employee_hr_id));
-  if (!employee || !canReadProbationEmployee(access, employee, viewer, employees)) {
-    throw new Error("Forbidden: probation workflow is outside your scope.");
-  }
-  assertWorkflowActionAllowed(access, current, action, employee, viewer, employees);
-  validateWorkflowTransition(current, action, input);
-  const expectedNextStatusByAction: Record<ProbationWorkflowAction, string> = {
-    manager_feedback: "probation_manager_feedback",
-    pass: "probation_passed",
-    terminate: "probation_terminated",
-  };
-  await assertProbationWorkflowTransition({
-    access,
-    action,
-    decision: row.decision,
-    expectedNextStatus: expectedNextStatusByAction[action],
-    status: row.status,
-  });
-
-  const now = new Date().toISOString();
-  const note = cleanText(input.note);
-  // Persist the canonical HR_ID (never a login token) for decision attribution.
-  const actorHrId = viewer?.hrId ?? normalizeHrId(access.hrId) ?? actor;
-  const updates: Record<string, unknown> = {
-    updated_at: now,
-    workflow_notes: appendWorkflowNote(row.workflow_notes, actorHrId, action, note),
-  };
-
-  if (input.evaluationScores) updates.evaluation_scores = input.evaluationScores;
-
-  switch (action) {
-    case "manager_feedback":
-      updates.status = "manager_feedback";
-      updates.manager_feedback = cleanText(input.managerFeedback) ?? row.manager_feedback;
-      updates.manager_reviewed_at = now;
-      updates.manager_reviewed_by = actorHrId;
-      break;
-    case "pass":
-    case "terminate":
-      updates.status = "completed";
-      updates.decision = action;
-      updates.decision_reason = cleanText(input.decisionReason);
-      updates.approved_at = now;
-      updates.approved_by = actorHrId;
-      updates.completed_at = now;
-      updates.completed_by = actorHrId;
-      break;
-    default:
-      throw new Error("Unsupported probation workflow action.");
-  }
-
-  let updateQuery = supabase
-    .from("probation_evaluations")
-    .update(updates)
-    .eq("id", id);
-  if (input.expectedUpdatedAt) {
-    updateQuery = updateQuery.eq("updated_at", row.updated_at);
-  }
-  const { data: updatedData, error: updateError } = await updateQuery
-    .select("*")
-    .maybeSingle();
-  if (updateError) throw updateError;
-  if (!updatedData) throw new Error("Probation workflow was updated by another user. Refresh and try again.");
-
-  const updated = mapEvaluation(updatedData as ProbationEvaluationDbRow);
-  if (action === "pass" || action === "terminate") {
-    await applyDecisionSideEffects(updated);
-  }
-  await insertHistory(updated, action, actor, row.status, { decisionReason: cleanText(input.decisionReason), note });
-  // After the reply (afterResponse): the decision is saved and its side effects applied, and the notice
-  // used to be awaited before the answer left — recipient lookups and a send per recipient. A failed
-  // notice is logged, never thrown (it used to turn a saved decision into a false 500).
-  await afterResponse("probation_notice:workflow", async () => {
-    await notifyProbationWorkflow(
-      updated,
-      employee,
-      employees,
-      employee.displayName,
-      action === "pass" || action === "terminate" ? "Probation Decision Recorded" : "Probation Review Updated",
-      updated.decision === "terminate" ? "danger" : action === "pass" ? "success" : "warning",
-    );
-  });
-  invalidateEmployeeDirectoryCache();
-  invalidateExecutiveDashboardCache("probation workflow updated", ["probation", "employees", "vacancies", "payroll"]);
-  return updated;
-}
-
-async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
-  if (!record.decision) return;
-
-  const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const employeeUpdates: Record<string, unknown> = { updated_at: now };
-  const probationUpdates: Record<string, unknown> = { updated_at: now };
-
-  if (record.decision === "pass") {
-    employeeUpdates.employment_status = "active";
-    employeeUpdates.organogram_visible = true;
-    employeeUpdates.payroll_eligible = true;
-    probationUpdates.status = "passed";
-  } else if (record.decision === "terminate") {
-    probationUpdates.status = "terminated";
-  }
-
-  if (Object.keys(employeeUpdates).length > 1) {
-    const { error } = await supabase.from("employees").update(employeeUpdates).eq("hr_id", record.employeeHrId);
-    if (error) throw error;
-  }
-  if (record.probationId && Object.keys(probationUpdates).length > 1) {
-    const { error } = await supabase.from("employee_probation").update(probationUpdates).eq("id", record.probationId);
-    if (error) throw error;
-  }
-  if (record.decision === "terminate") {
-    await resignEmployeeAndOpenVacancy(
-      record.employeeHrId,
-      {
-        effectiveDate: todayDateOnly(),
-        employeeHrId: record.employeeHrId,
-        employeeStatus: "terminated",
-        reason: record.decisionReason ?? "Probation termination.",
-        submittedDate: todayDateOnly(),
-        workflowNotes: `Probation termination from probation review ${record.id}.`,
-      },
-      record.completedBy ?? record.approvedBy ?? "probation",
-      undefined,
-      // A probation termination is a COMPANY decision, not a resignation. Without this the
-      // resignation recipient list also receives a "Resignation Submitted" notice framed as
-      // voluntary, alongside the real probation-decision notice — wrong framing, wrong audience,
-      // duplicated for one event. intelligence/decision.ts:223 already does this on the newer
-      // path, and resignations/service.ts:1247-1250 documents that probation-sourced
-      // terminations must suppress it.
-      { suppressWorkflowNotification: true },
-    );
-  }
-
-  if (record.decision === "pass" || record.decision === "terminate") {
-    const { error } = await supabase
-      .from("notification_events")
-      .update({
-        status: "cancelled",
-        updated_at: now,
-      })
-      .eq("employee_hr_id", record.employeeHrId)
-      .eq("category", "probation")
-      .in("status", ["scheduled", "pending"]);
-    if (error && !isProbationSchemaMissing(error)) throw error;
-  }
-
-  // Write-through to the NEW probation_cases model. The legacy workflow above resolves the employee
-  // (employee_probation + employees), but the CEO Probation Decision Dashboard and the milestone-email
-  // sweep read `probation_cases`. Without this a legacy-decided rep stays a permanently "active" case:
-  // it keeps getting milestone emails and keeps accepting feedback. Best-effort — never let a mirror
-  // failure break the legacy decision that already succeeded.
-  await mirrorLegacyDecisionToProbationCase(record);
-}
-
-/**
- * Mirror a completed LEGACY probation decision into the new `probation_cases` model so the two
- * systems stay in sync. Idempotent and non-overwriting: only the FIRST writer (decision still null,
- * status still active) records the outcome. `side_effects_applied_at` is set so the new module's
- * `decideProbation` will NOT re-drive side effects (resignation/employee update already happened via
- * the legacy path). Best-effort: any failure is recorded to the provisioning-failure monitoring sink
- * and swallowed, never propagated into the legacy decision flow.
- */
-async function mirrorLegacyDecisionToProbationCase(record: ProbationWorkflowRecord) {
-  if (!record.decision) return;
-  try {
-    const probationCase = await getProbationCaseByEmployee(record.employeeHrId);
-    if (!probationCase) return; // non-med-rep / pre-module employee — nothing to mirror
-    if (probationCase.decision || probationCase.status !== "active") return; // already decided elsewhere — never overwrite
-    const now = new Date().toISOString();
-    const { error } = await getSupabaseAdmin()
-      .from("probation_cases")
-      .update({
-        decision: record.decision, // "pass" | "terminate" — same vocabulary, no translation
-        decision_reason: record.decisionReason ?? null,
-        decision_by: record.completedBy ?? record.approvedBy ?? "legacy_probation",
-        decision_at: now,
-        status: "decided",
-        // Load-bearing: tells the NEW module its side effects were already applied via the legacy
-        // path, so decideProbation won't re-drive them (double resignation / employee update).
-        side_effects_applied_at: now,
-        updated_at: now,
-      })
-      .eq("id", probationCase.id)
-      .is("decision", null); // idempotency: only the first writer sets the decision
-    if (error) throw error;
-  } catch (error) {
-    // Best-effort monitoring only — never let mirroring failure break the legacy decision.
-    try {
-      await getSupabaseAdmin().from("probation_provisioning_failures").insert({
-        employee_hr_id: record.employeeHrId,
-        source: "legacy_decision_writethrough",
-        error_message: String((error as { message?: unknown })?.message ?? error),
-      });
-    } catch {
-      /* best-effort */
-    }
-  }
 }

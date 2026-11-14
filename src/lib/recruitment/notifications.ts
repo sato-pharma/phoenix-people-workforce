@@ -1,5 +1,5 @@
-// Recruitment / ATS — scheduled work. Composed into the single daily cron
-// (app/api/notifications/daily) — do NOT add a new Vercel cron (Hobby limit = 2).
+// Recruitment / ATS — scheduled work. Runs every morning as its own job, `recruitment-notifications`
+// (06:52 Cairo, /api/cron/daily/recruitment-notifications; src/lib/scheduled-jobs/daily-jobs.ts).
 //
 // Five jobs run here:
 //   - remind interviewers of interviews scheduled for the next day;

@@ -30,6 +30,7 @@
 
 ## Inbox — new notes land here
 - [four employees are never company-insured](four-employees-are-never-company-insured.md) - Ahmed Farag, Rasha Sabry, Reham Mahmoud, Samaa Mosaad (owner 2026-11-13); correct record = status no, wage empty, SI 0.
+- [restore drill kit + the rclone token file](restore-drill-kit-and-the-rclone-token-file.md) - one command, `~/.claude/scripts/restore-drill/tonight.sh <date>`; a missing `RCLONE_CONFIG` path is CREATED holding the Drive token, name it `notfound`.
 - [S04/S05 owner decisions](s05-owner-decisions-safety-owner-and-field-probation.md) - Report It owner = Samaa Mosaad (in-app + email, her Report It desk); probation = field roles only; daily-jobs split behind a safe switch (13 Nov 2026).
 
 

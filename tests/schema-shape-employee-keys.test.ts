@@ -31,7 +31,8 @@ import {
 // the same PR. Lowering it is removing a guard on whose money a row is — the owner is told first.
 // 110 since 13 Nov 2026: geo_bricks and probation_feedback_comments, both empty and unused, were dropped on
 // the owner's decision (20261113191017), and their two keys went with them. No other table lost one.
-const MIN_EMPLOYEE_KEYS = 110;
+// 111 since 13 Nov 2026: public.hire_handoff_steps.employee_hr_id (20261113201756, REC-027).
+const MIN_EMPLOYEE_KEYS = 111;
 
 // The money, leave and attendance keys REC-037 is about (its three migrations), as schema.table.column.
 const REQUIRED = [

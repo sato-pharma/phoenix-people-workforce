@@ -134,8 +134,8 @@ export async function runRetentionSentFiguresAndRecordingsTests() {
     assert.equal(result.expired, 0);
   });
 
-  // The daily run calls it, with its own catch, and reports it.
-  const daily = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  // The morning job calls it, with its own catch, and its answer names the result.
+  const daily = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
   assert.match(daily, /purgeExpiredTabletRecordings\(\)\.catch\(\s*onJobFailure\("tablet-recording-retention"/, "the daily run purges recordings");
-  assert.match(daily, /\n    tabletRecordingRetention,\n    \/\/ Truthful:/, "and its answer carries the result");
+  assert.match(daily, /"tablet-recording-retention": \{\s*resultName: "tabletRecordingRetention",/, "and its answer carries the result");
 }

@@ -219,6 +219,26 @@ export async function listExhaustedDurableEmails(limit = 50): Promise<ExhaustedD
 }
 
 /**
+ * HOW MANY approval emails are out of retries, and when the oldest was written — for the Needs You
+ * board (REC-031). The same filter as listExhaustedDurableEmails, so the board row and the screen it
+ * links to count the same emails. One read: an exact count and the single oldest row. It THROWS on a
+ * failed read, so the board says it could not read the outbox instead of showing nothing.
+ */
+export async function countExhaustedDurableEmails(): Promise<{ count: number; oldestAt: string | null }> {
+  const { data, count, error } = await getSupabaseAdmin()
+    .from(notificationOutboxTable)
+    .select("created_at", { count: "exact" })
+    .eq("status", "failed")
+    .eq("payload->>kind", "direct_email")
+    .gte("attempts", notificationOutboxMaxAttempts)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (error) throw error;
+  const oldest = ((data ?? []) as Array<{ created_at?: string | null }>)[0]?.created_at ?? null;
+  return { count: count ?? 0, oldestAt: oldest };
+}
+
+/**
  * SEND AGAIN — puts one durable direct email that ran out of retries back in the queue: attempts back
  * to 0, due now. It sends nothing itself; the drain sends it on its next run, through the same sender
  * with the same stored input, and with the full retry budget again.

@@ -2,10 +2,16 @@
 
 import { startRegistration } from "@simplewebauthn/browser";
 import { Fingerprint, Loader2, ShieldCheck, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-kit";
+import {
+  phxButtonGhostClassName,
+  phxButtonPrimaryClassName,
+  phxFieldClassName,
+} from "@/components/ui/form-tokens";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type BiometricDevice = {
@@ -36,8 +42,10 @@ function formatCairo(value: string | null) {
 export function BiometricDevicesCard() {
   const [devices, setDevices] = useState<BiometricDevice[]>([]);
   const [enrolling, setEnrolling] = useState(false);
+  const [askPassword, setAskPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [password, setPassword] = useState("");
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
@@ -98,23 +106,33 @@ export function BiometricDevicesCard() {
     };
   }, []);
 
-  async function handleEnroll() {
+  // A Super Admin's passkey counts as both sign-in steps, so the server asks that account's password
+  // before it issues a challenge; it answers `password_required` and this card asks for it.
+  async function handleEnroll(currentPassword?: string) {
     setError(null);
     setSuccess(null);
     setEnrolling(true);
 
     try {
       const optionsResponse = await fetch("/api/auth/biometric/register/options", {
+        body: JSON.stringify(currentPassword ? { password: currentPassword } : {}),
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
 
       if (!optionsResponse.ok) {
-        const payload = (await optionsResponse.json().catch(() => null)) as { message?: string } | null;
+        const payload = (await optionsResponse.json().catch(() => null)) as { error?: string; message?: string } | null;
+        if (payload?.error === "password_required") {
+          setAskPassword(true);
+          return;
+        }
         setError(payload?.message ?? "Could not start biometric setup. Please try again.");
         return;
       }
+
+      setAskPassword(false);
+      setPassword("");
 
       const { options } = (await optionsResponse.json()) as {
         options: Parameters<typeof startRegistration>[0]["optionsJSON"];
@@ -150,6 +168,11 @@ export function BiometricDevicesCard() {
     } finally {
       setEnrolling(false);
     }
+  }
+
+  async function confirmWithPassword(event: FormEvent) {
+    event.preventDefault();
+    await handleEnroll(password);
   }
 
   async function handleRemove(device: BiometricDevice) {
@@ -248,9 +271,46 @@ export function BiometricDevicesCard() {
         </p>
       )}
 
+      {askPassword && (
+        <form className="mt-4 space-y-3 border border-slate-200 bg-slate-50 p-4" onSubmit={confirmWithPassword}>
+          <p className="text-sm font-bold text-slate-900">Add a device to your account</p>
+          <p className="text-sm text-slate-600">
+            Your password first, so nobody else at this browser can add their own device to your account.
+            This device asks for your fingerprint, face or PIN next.
+          </p>
+          <FormField htmlFor="biometric-card-password" label="Your password" required>
+            <input
+              autoComplete="current-password"
+              className={phxFieldClassName}
+              id="biometric-card-password"
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              value={password}
+            />
+          </FormField>
+          <div className="flex flex-wrap gap-2">
+            <button className={phxButtonPrimaryClassName} disabled={enrolling || !password} type="submit">
+              {enrolling ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Confirm
+            </button>
+            <button
+              className={phxButtonGhostClassName}
+              disabled={enrolling}
+              onClick={() => {
+                setPassword("");
+                setAskPassword(false);
+                setError(null);
+              }}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="flex items-center gap-3 pt-4">
-        {supported ? (
-          <Button className="gap-2" disabled={enrolling} onClick={handleEnroll} type="button">
+        {askPassword ? null : supported ? (
+          <Button className="gap-2" disabled={enrolling} onClick={() => handleEnroll()} type="button">
             {enrolling ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (

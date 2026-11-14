@@ -143,6 +143,8 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `hiring-documents` — Hiring documents, contracts and company papers | `src/lib/{hiring-pack,hiring-documents,contracts,business-cards,email-signature,spotlight,pdf,export}/**` and 4 more |
 | `employee-360` — Employee 360 — one person's report, its figures and who may open it | `src/lib/employee-360/**` and 3 more |
 | `employees` — Employees and the HR lifecycle | `src/lib/{employees,employee-lifecycle,employee-360,hr,hr-reminders,hr-ops-reports,resignations,retention,retention-risk,lifecycle-risk,new-hire-mailbox}/**` and 4 more |
+| `employees-hiring` — Employees — hiring a person: the two doors and the hand-off | `src/lib/employees/{hire-handoff,hire-handoff-reconciler,access-provisioning}.ts` and 6 more |
+| `resignations` — Resignations — completing an exit and the seat it frees | `src/lib/resignations/**` and 4 more |
 | `probation` — Probation and employee milestones | `src/lib/{probation,milestones}/**` and 4 more |
 | `time-off` — Vacations, attendance and calendars | `src/lib/{vacation,attendance,excuses,early-birds,hr-calendar,private-calendar,calendar}/**` and 7 more |
 | `private-calendar` — Private calendar — its sources, tiles, timeline and disputes | `src/lib/private-calendar/**` and 3 more |
@@ -160,8 +162,8 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `devices` — Devices and tablet management (Headwind MDM) | `src/lib/devices/**` and 4 more |
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,system-audit,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 9 more |
 | `platform-system-audit` — Platform — the System Audit board, its daily message and the error screenshots | `src/lib/system-audit/**` and 7 more |
-| `platform-access` — Platform — passwords and access control | `src/lib/auth/{permissions,password-strength,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts` and 2 more |
-| `platform-sessions` — Platform — the login check, the session copy, the heartbeat and the open tab's pulse | `src/lib/auth/{server,session,session-bundle-cache,session-heartbeat,session-lifecycle,session-token,app-sessions,client-session}.ts` and 6 more |
+| `platform-access` — Platform — passwords and access control | `src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts` and 2 more |
+| `platform-sessions` — Platform — the login check, the session copy, the heartbeat and the open tab's pulse | `src/lib/auth/{server,session,session-bundle-cache,session-heartbeat,session-lifecycle,session-token,app-sessions,client-session}.ts` and 13 more |
 | `platform-ai` — Platform — the one door to an AI provider, the second provider and where an AI address comes from | `src/lib/ai/**` and 3 more |
 | `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `platform-observability` — Platform — structured logging, Sentry and the audit trail's own persistence | `src/lib/observability/**` and 17 more |

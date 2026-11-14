@@ -143,6 +143,25 @@ export const needsYouSourceIds = [
   // view omits them because it starts from the seated and joins outward. Widening this to "has no
   // seat" would put all sixteen on the board on every load, for ever.
   "organogram-seat-drift",
+  // Added 2026-11-13 (enterprise audit REC-027). A new employee one of whose hiring follow-up steps —
+  // the offer letter linked, the candidate marked hired, the portal login, the CV, the mailbox task,
+  // the offer stamped accepted, the joining form's audit row — failed and has not been repaired by
+  // the hourly `hire-handoff-reconcile` job, or was given up after five attempts. Each door only
+  // LOGGED these before, so a joiner with no login was found by a person noticing. Read from
+  // `hire_handoff_steps` (src/lib/employees/hire-handoff.ts); one row per person, linked to the
+  // record; the board never retries anything itself.
+  "hire-handoff-gaps",
+  // Added 2026-11-14 (enterprise audit REC-031). A deduction dispute whose newest line is the
+  // employee's (nobody has answered since) on a deduction still active on the payslip — the same count
+  // as the Deduction Disputes rail badge (countOpenDeductionsDisputes). The badge was the only place it
+  // showed, so a dispute waited unseen by anyone who did not open that tab. Super Admin only: a reply
+  // is his alone (isDeductionsDecisionActor).
+  "deduction-disputes",
+  // Added 2026-11-14 (enterprise audit REC-031). An approval email (a durable direct email) that used
+  // every outbox retry and will not be tried again until someone presses "send again" on Email
+  // Notifications — the same rows that screen lists (listExhaustedDurableEmails). The drain alarm sees
+  // them for a week; this keeps each one on the board until it is sent again.
+  "stopped-approval-emails",
   // Added 2026-11-03, after GitHub suspended the account on 2 Nov and no board said so. Three sources rather
   // than one, so one failed read cannot hide another or print a false all-clear (vendor-accounts-rules.ts).
   "vendor-github",
@@ -183,6 +202,9 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "closing-publication-drift": "Published closings that have moved",
   "office-allocation-drift": "Office allocation that no longer matches the rule",
   "organogram-seat-drift": "Employee records that disagree with the organogram",
+  "hire-handoff-gaps": "New hires whose hand-off did not finish",
+  "deduction-disputes": "Deduction disputes waiting for a reply",
+  "stopped-approval-emails": "Approval emails that stopped retrying",
   "vendor-github": "The GitHub account",
   "vendor-whatsapp": "The WhatsApp account",
   "vendor-telegram": "The Telegram bot",
@@ -246,6 +268,14 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // the SEAT — is an organogram change, which is the owner's alone to initiate, so the board never
   // offers it: which side is wrong is a human judgement, and on 2026-10-15 it was the record.
   "organogram-seat-drift": { href: "/employees", screen: "Employee Master" },
+  // Employee Master: each item appends `?edit=<hr id>` and opens that new hire's record, where a
+  // missing login, CV or work email is finished by hand. The board links; it never retries.
+  "hire-handoff-gaps": { href: "/employees", screen: "Employee Master" },
+  // The Disputes tab of Deductions — where the reply is written. The board links; it never replies.
+  "deduction-disputes": { href: "/admin/deductions?tab=disputes", screen: "Deduction Disputes" },
+  // Email Notifications, whose "Approval emails that did not send" list carries the "send again"
+  // button for each one. The board links; it never re-queues anything itself.
+  "stopped-approval-emails": { href: "/admin/email-notifications", screen: "Email Notifications" },
   // An account is settled on the vendor's own site, and no Phoenix screen can do it. System Audit is where the
   // failed runs behind these rows are recorded, so that is where the board sends him to read more.
   "vendor-github": { href: "/admin/system-audit", screen: "System Audit" },

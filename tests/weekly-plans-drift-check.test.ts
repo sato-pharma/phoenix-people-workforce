@@ -7,7 +7,7 @@ export function runWeeklyPlansDriftCheckTests() {
     "supabase/_migrations_archive/pre-baseline-2026-07-11/20260617120000_weekly_plans_drift_rpc.sql",
     "utf8",
   );
-  const dailySrc = readFileSync("app/api/notifications/daily/route.ts", "utf8");
+  const dailySrc = readFileSync("app/api/cron/daily/_lib/daily-job-runners.ts", "utf8");
 
   // ── Migration contract ────────────────────────────────────────────────────────
   assert.match(

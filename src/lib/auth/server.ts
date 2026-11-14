@@ -56,6 +56,7 @@ import {
 } from "@/lib/auth/session-bundle-cache";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { rememberRequestActor } from "@/lib/supabase/request-actor";
 import { cookies, headers } from "next/headers";
 
 function isDevHeaderEnabled() {
@@ -762,6 +763,11 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
   const access = await resolveAccessContextInner(request);
+  // A request that can write names its person in the history logs (src/lib/supabase/request-actor.ts).
+  // A GET or HEAD is a reader: a sync that runs while it is served is logged unattributed, never as hers.
+  // Before the guards below, which must stay the last thing ahead of the return (tests/seat-view.test.ts);
+  // a seat view and a test account are never remembered, so the order changes nothing.
+  if (!mayUseRecentSessionCopy(request)) await rememberRequestActor(access);
   // THE TEST ACCOUNT WRITE GUARD — one choke point for every API route that resolves a caller, before
   // the route runs a line of its own. A test account reads as a real employee, so a save it sent
   // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
@@ -842,6 +848,8 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   // A seat view refuses a server action AND a form posted before the page's script loaded — the same
   // two signals that keep a write off the session copy (pageRequestMayUseRecentCopy).
   if (access.seatView && !pageRequestMayUseRecentCopy(await headers())) assertNotSeatView(access);
+  // A server action or a posted form names its person in the history logs; a page render does not.
+  if (!pageRequestMayUseRecentCopy(await headers())) await rememberRequestActor(access);
   return access;
 }
 

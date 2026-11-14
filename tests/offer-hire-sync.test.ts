@@ -100,7 +100,8 @@ export function runOfferHireSyncTests(): void {
   );
   assert.match(
     hrFlat,
-    /if \(isNewEmployee && payload\.offerId\?\.trim\(\)\) \{ await recordHireFromOfferLetter\(/,
+    // Wrapped in the hire hand-off ledger since 2026-11-13 (REC-027) — still awaited, still the same call.
+    /if \(isNewEmployee && payload\.offerId\?\.trim\(\)\) \{ await handoff\.run\( "offer_link", [^;]*?\(\) => recordHireFromOfferLetter\(/,
     "on a CREATE only, and only when the form was filled from a letter",
   );
 
@@ -146,7 +147,8 @@ export function runOfferHireSyncTests(): void {
   assert.match(joinRoute, /const \{ offerId, \.\.\.visible \} = result;/, "the letter id is taken off before the response");
   assert.match(
     joinRoute,
-    /await recordHireFromOfferLetter\(\{ actorHrId: null, hrId: result\.hrId, offerId \}\); return json\(visible\);/,
+    // Recorded in the hire hand-off ledger since 2026-11-13 (REC-027) — the same call, then the same reply.
+    /await runHandoffStep\(result\.hrId, "joining_form", "offer_link", \{ offerId \}, \(\) => recordHireFromOfferLetter\(\{ actorHrId: null, hrId: result\.hrId, offerId \}\), \{ failureOf: syncOutcomeFailure \}\); return json\(visible\);/,
     "RED the candidate behind the letter is marked hired, and the caller is shown what the form always returned",
   );
 

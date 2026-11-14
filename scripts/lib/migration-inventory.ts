@@ -2386,6 +2386,41 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // real primary key; it creates no function, so there is no prosrc to digest. Read back on BOTH projects: 50 enabled
   // registry rows (7 before), the script reporting count 43 on each. Re-applying is a no-op.
   "20261113151741_recovery_protects_money_and_people_tables.sql",
+  // Applied 14 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route; no ledger row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf: md5(prosrc) equal to this
+  // file's bodies as LF text — recovery.restore_table e0827d99b1cd971bf8f4372514306f0c,
+  // phx_log_deduction_decision_change 4c61a46c152b5a6c6f9fd549ec2a73be, phx_log_employee_change
+  // 897ab4df6b29b78c1868565ca9472a1e (all SECURITY DEFINER, executable by postgres and service_role only); the trigger
+  // phx_deductions_decisions_history_delete; v_employee_change_log joining app_auth_users, security_invoker, no browser
+  // grant. Rehearsed on staging in rolled-back transactions: a placeholder delete and re-insert wrote no audit row, a
+  // real change and its delete wrote decision_changed and decision_deleted; a residence_city change was named and not
+  // valued; the view named the login's person; deductions_candidates, deductions_decisions, automated_payroll_runs,
+  // au.line_area_map and employee_salary_structure all restored, and a corrupted hr_note came back. Re-applying is a
+  // no-op (`create or replace`, drop-and-create of the new trigger).
+  "20261114020715_history_and_undo_log_review_fixes.sql",
+  // Applied 14 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the same
+  // route; no ledger row. Read back on BOTH projects: md5(prosrc) of phx_refuse_audit_trail_change
+  // 930f076852c9167b189b272acf36c03c, equal to this file's body as LF text, its search_path = public, pg_temp kept;
+  // employee_change_log_no_update, _no_delete and _no_truncate all on that function and enabled ALWAYS (A);
+  // phx_refuse_history_change gone (0 rows in pg_proc). Rehearsed on staging in a rolled-back transaction: an UPDATE
+  // under replica mode, a DELETE and a TRUNCATE of employee_change_log each refused, and a deductions_audit DELETE
+  // still refused. Re-applying is a no-op (`create or replace`, `drop function if exists`).
+  "20261114021603_employee_change_log_shares_the_audit_trail_refusal.sql",
+  // Applied 14 Nov 2026 at about 02:55 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1
+  // pooler), the same route; no ledger row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf:
+  // md5(prosrc) equal to this file's bodies as LF text — recovery.restore_table 674956be9c97f4bcd6347daf9289962a,
+  // phx_log_deduction_decision_change e0177d363bb1894cc03cdfa9c1b6d220, phx_log_employee_change
+  // e0f6d0fc3084bacaa8f261dcab4813fa (all SECURITY DEFINER, executable by service_role, not by anon or
+  // authenticated). Rehearsed on staging in rolled-back transactions. A throwaway table with a unique code swapped
+  // between two rows, a guard that refuses the locked row, a trigger stamping updated_at, a trigger writing a log
+  // row and a child on ON DELETE CASCADE: restored as service_role, the table equalled its snapshot, updated_at
+  // was the snapshot's, 0 log rows, both children still there, session_replication_role back to origin; with a
+  // child on a row the snapshot lacks it raised 23503 naming the key and changed nothing. The real
+  // deductions_decisions (135 ms) and employees (116 keys checked, 1,034 ms) restored with no deductions_audit and no
+  // employee_change_log row written. A note edited with no request actor was audited with no actor, with the
+  // header as B-10, and with decided_at moved as the row's decided_by. An exit_reason and bank_name change was
+  // named in masked_fields with no value. Re-applying is a no-op (`create or replace`).
+  "20261114024807_restore_without_triggers_and_actor_from_the_request.sql",
   // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
   // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
   // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all
@@ -2460,6 +2495,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // the MCP). Evidence, production: public.activity_events keeps exactly activity_events_created_idx,
   // activity_events_hr_created_idx and its primary key, its indexes down to 33 MB. Indexes only; re-applying is a no-op.
   "20261113192416_drop_three_unused_activity_log_indexes.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs with the aws-1 pooler (the production MCP declined it;
+  // staging took it through the MCP). Evidence, production: public.hire_handoff_steps exists with row security on,
+  // only service_role is granted, and hire_handoff_steps_unfinished_idx is present. A new empty table; re-applying
+  // is a no-op (create if not exists, drop policy if exists).
+  "20261113201756_hire_handoff_steps.sql",
+  // Applied 13 Nov 2026 through scripts/apply-sql-file.mjs with the aws-1 pooler (the production MCP declined it;
+  // staging took it through the MCP). Evidence, production: report_it_reports carries the five lifecycle columns,
+  // status defaults to 'received', report_it_reports_status_check, idx_report_it_open_due and the trigger
+  // report_it_reports_lifecycle_defaults are present, and phx_report_it_set_status is executable by service_role
+  // only (proacl {postgres=X,service_role=X}, not security definer). 0 reports existed, so no row changed;
+  // re-applying is a no-op.
+  "20261113202407_report_it_lifecycle.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

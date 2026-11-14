@@ -1224,6 +1224,49 @@ export const MODULES = [
     keywords: ["employee master", "employee 360", "resignation", "resignations", "leaver", "leavers", "new hire", "hire date", "last working date", "retention", "hr command", "test account", "موظف"],
     tables: ["employees", "employee_", "exit_record", "resignation", "retention", "app_auth_users"],
   },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` RECORDS: `employees` measured a 4,071-byte
+  // pointer against the 4,000 margin the moment the hire hand-off ledger (REC-027) taught its rule. HIRING
+  // A PERSON — the two doors (Add Employee and the offer joining form), the follow-up chain they share and
+  // the ledger that retries it — is one family, so its rules move together. `employees` KEEPS EVERY GLOB
+  // IT HAD, so a hiring file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "employees-hiring",
+    title: "Employees — hiring a person: the two doors and the hand-off",
+    scope: "HR's Add Employee and the candidate's offer joining form, the follow-up chain both run (offer link, candidate hired, login, CV, mailbox task, offer stamp, audit row), the hire hand-off ledger and its hourly retry.",
+    globs: [
+      "src/lib/employees/{hire-handoff,hire-handoff-reconciler,access-provisioning}.ts",
+      "src/lib/offers/joining-form-service.ts",
+      "app/api/employees/route.ts",
+      "app/api/employees/hire-handoff/**",
+      "app/api/cron/hire-handoff-reconcile/**",
+      "app/api/public/offer-acceptance/**",
+      "tests/{hire-handoff-steps,offer-joining-form,employee-access-provisioning}*",
+    ],
+    keywords: ["hire hand-off", "hire handoff", "add employee", "joining form", "new hire login", "hand-off ledger"],
+    tables: ["hire_handoff_steps"],
+  },
+  // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `employees` measured a
+  // 3,984-byte pointer against the 4,000 margin `tests/module-memory.test.ts` holds, and the rule that
+  // completing a resignation ends the employee first (REC-028) took it to 4,065. The resignation
+  // workflow's own mechanics — the order Complete runs in, the date the seat falls vacant, the
+  // clearance trigger that was stopped — are one family, read while editing the resignation code, so
+  // their rules move together. Cancelling a resignation stays in `employees` beside the seat transfer it
+  // routes to (the safe half stays where the broad glob is). `employees` KEEPS EVERY GLOB IT HAD, so a
+  // resignation file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "resignations",
+    title: "Resignations — completing an exit and the seat it frees",
+    scope: "The resignation workflow's own mechanics: the order Complete runs in and what a failed step leaves, the date a resigner's seat falls vacant, and the clearance checklist a resignation no longer opens.",
+    globs: [
+      "src/lib/resignations/**",
+      "src/components/resignations/**",
+      "app/**/resignations/**",
+      "tests/*resignation*",
+      "supabase/migrations/*resignation*",
+    ],
+    keywords: ["complete the resignation", "resignation completed", "resignation workflow", "complete resignation", "vacate the seat", "resign_occupant", "clearance checklist"],
+    tables: ["employee_resignations"],
+  },
   {
     id: "probation",
     title: "Probation and employee milestones",
@@ -1529,11 +1572,11 @@ export const MODULES = [
     title: "Platform — passwords and access control",
     scope: "A password a person chooses and a reset code, the permission matrix and what it serves on a cold start, the per-seat page fences, the signed-out refusal, and the retired seats.",
     globs: [
-      "src/lib/auth/{permissions,password-strength,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
+      "src/lib/auth/{permissions,password-strength,leaked-password,change-password,password-setup,password-setup-no-script,password-setup-whatsapp,password-reset-code,temporary-password,seat-page-fences,seat-page-guard,signed-out-refusal}.ts",
       "app/api/auth/{change-password,password-reset,password-setup}/**",
-      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,seat-fence,signed-out}*",
+      "tests/*{permission-matrix-cold-start,password-reset,password-setup,temporary-password,weak-password,leaked-password,seat-fence,signed-out}*",
     ],
-    keywords: ["password", "password reset", "reset code", "weak password", "permission matrix", "seat fence", "signed out", "retired seat"],
+    keywords: ["password", "password reset", "reset code", "weak password", "leaked password", "permission matrix", "seat fence", "signed out", "retired seat"],
     tables: ["role_permission_overrides", "app_auth_users"],
   },
   // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
@@ -1553,13 +1596,22 @@ export const MODULES = [
       // routed here rather than to `platform`, whose pointer was at its margin.
       "src/lib/auth/{credentials,staging-test-sign-in}.ts",
       "tests/staging-test-sign-in*",
+      // The second sign-in step (2026-11-13): asked by the login route, so it loads with it.
+      "src/lib/auth/{second-step,second-step-store,second-step-management}.ts",
+      "src/components/auth/second-step-card.tsx",
+      "app/api/auth/second-step/**",
+      "tests/second-sign-in-step*",
+      // Adding a passkey asks a Super Admin's password (2026-11-14): the second step's rule binds it.
+      "app/api/auth/biometric/register/**",
+      "src/components/auth/biometric-devices-card.tsx",
+      "tests/passkey-add-asks-password*",
       "src/lib/session-pulse-store.ts",
       "src/components/auth/session-security-guard.tsx",
       "app/api/auth/{pulse,heartbeat,login,logout}/**",
       "tests/*{session,pulse}*",
     ],
-    keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out"],
-    tables: ["app_sessions"],
+    keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out", "second sign-in step", "authenticator", "recovery code", "trusted device"],
+    tables: ["app_sessions", "app_auth_second_step", "app_auth_second_step_recovery_codes", "app_auth_trusted_devices"],
   },
   // 🔴 SPLIT 2026-11-13, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 30
   // rules and its injected pointer measured 3,973 bytes; the rule that an AI address is written out in

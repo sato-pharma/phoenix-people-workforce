@@ -24,12 +24,17 @@ import {
   describeField,
   describePage,
   describeShape,
+  BOT_CHECK_SOURCES,
+  describeSignInMeasurement,
   describeSignInStall,
+  exchangeTarget,
+  isTellingExchange,
   LOGIN_SUBMIT_WORDINGS,
   MAILBOX_EMAIL_FIELD,
   MAILBOX_LOGIN_URL,
   readSignInBlockersInPage,
   recordSignInNotices,
+  watchSignInExchanges,
   SIGN_IN_LANDING_TIMEOUT_MS,
   SIGN_IN_MINIMUM_WAIT_MS,
   TurbifyJoinerStepError,
@@ -1394,11 +1399,111 @@ async function runSignInLandingCases(): Promise<void> {
     assert.equal(quietPage.captcha, false);
     g.document = { querySelector: (selector: string) => (selector.includes("recaptcha") ? {} : null) };
     assert.equal(readSignInBlockersInPage().captcha, true, "a reCAPTCHA frame on the page must be seen");
+
+    // 11. An INVISIBLE bot check draws no widget, so it is read from the scripts the page loads: by
+    //     host (a look-alike path on another host is not one), query never kept.
+    const scripts = (sources: string[]) => ({
+      querySelector: () => null,
+      querySelectorAll: () => sources.map((src) => ({ getAttribute: (name: string) => (name === "src" ? src : null) })),
+    });
+    g.document = scripts([
+      "https://www.google.com/recaptcha/enterprise.js?render=SITEKEY123",
+      "https://client.px-cloud.net/PXabc/main.min.js",
+      "/static/app.js",
+      "https://evil.example/recaptcha.net/fake.js",
+      "https://notdatadome.co.example/x.js",
+    ]);
+    const hidden = readSignInBlockersInPage();
+    assert.deepEqual(hidden.botChecks, ["www.google.com/recaptcha", "px-cloud.net"], "known bot checks by host, look-alikes ignored");
+    assert.ok(!JSON.stringify(hidden).includes("SITEKEY123"), "a script's query must never be kept");
+    g.document = scripts(["/static/app.js", "https://login.turbify.com/main.js"]);
+    assert.deepEqual(readSignInBlockersInPage().botChecks, [], "the page's own scripts are not a bot check");
   } finally {
     g.document = saved.document;
     g.window = saved.window;
     g.MutationObserver = saved.MutationObserver;
   }
+
+  // 12. The in-page list is a copy (module constants do not exist inside the page): held equal.
+  const inPage = source.slice(source.indexOf("export function readSignInBlockersInPage("));
+  for (const entry of BOT_CHECK_SOURCES) {
+    assert.ok(inPage.slice(0, inPage.indexOf("const botChecks")).includes(`"${entry}"`), `the in-page list must carry ${entry}`);
+  }
+
+  // 13. A request's host and path only — never its query or fragment, where a credential can ride.
+  assert.equal(exchangeTarget("https://login.turbify.com/api/login?password=S3cretPass!&u=a#frag"), "login.turbify.com/api/login");
+  assert.equal(exchangeTarget("data:text/plain,hello"), null);
+  assert.equal(exchangeTarget("not a url"), null);
+  assert.equal(isTellingExchange("POST", "image"), true, "anything that is not a GET is kept");
+  assert.equal(isTellingExchange("GET", "document"), true);
+  assert.equal(isTellingExchange("GET", "xhr"), true);
+  assert.equal(isTellingExchange("GET", "image"), false, "a static file says nothing about a refusal");
+  assert.equal(isTellingExchange("GET", "script"), false);
+
+  // 14. The watcher only LISTENS, records the answers to the press, and lets go when stopped.
+  {
+    const listeners = new Map<string, Set<(payload: unknown) => void>>();
+    const page = {
+      off: (event: string, fn: (payload: unknown) => void) => listeners.get(event)?.delete(fn),
+      on: (event: string, fn: (payload: unknown) => void) => {
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event)!.add(fn);
+      },
+    };
+    const emit = (event: string, payload: unknown) => { for (const fn of listeners.get(event) ?? []) fn(payload); };
+    const request = (method: string, type: string, url: string, failure: string | null = null) => ({
+      failure: () => (failure ? { errorText: failure } : null), method: () => method, resourceType: () => type, url: () => url,
+    });
+    const response = (method: string, type: string, url: string, status: number) => ({
+      request: () => request(method, type, url), status: () => status, url: () => url,
+    });
+    const watch = watchSignInExchanges(page as never, 3);
+    emit("response", response("POST", "xhr", `https://login.turbify.com/api/login?pw=${secret}`, 403));
+    emit("response", response("GET", "image", "https://login.turbify.com/logo.png", 200));
+    emit("requestfailed", request("POST", "fetch", "https://px.example/collector", "net::ERR_BLOCKED_BY_CLIENT"));
+    emit("response", response("GET", "document", "https://login.turbify.com/login", 200));
+    emit("response", response("GET", "xhr", "https://login.turbify.com/over-the-limit", 200));
+    const answered = watch.stop();
+    assert.deepEqual(answered, [
+      { failed: null, method: "POST", status: 403, target: "login.turbify.com/api/login" },
+      { failed: "net::ERR_BLOCKED_BY_CLIENT", method: "POST", status: null, target: "px.example/collector" },
+      { failed: null, method: "GET", status: 200, target: "login.turbify.com/login" },
+    ], "telling answers only, in order, capped, no query");
+    assert.ok(!JSON.stringify(answered).includes(secret), "the password in a query must never be recorded");
+    assert.equal([...listeners.values()].reduce((n, set) => n + set.size, 0), 0, "stop must remove every listener");
+    emit("response", response("POST", "xhr", "https://login.turbify.com/late", 500));
+    assert.equal(watch.stop().length, 3, "nothing is recorded after stop");
+    assert.deepEqual(watchSignInExchanges({} as never).stop(), [], "a page with no events records nothing");
+  }
+
+  // 15. The measurement is printed, redacted, and says plainly when the press never left the page.
+  const none = describeSignInMeasurement({ botChecks: [], captcha: false, exchanges: [], notices: [], webdriver: true }, []);
+  assert.match(none, /made no request at all, so the press never reached Turbify/);
+  assert.match(none, /loads no known hidden bot check/);
+  assert.match(none, /navigator\.webdriver is true/);
+  const some = describeSignInMeasurement({
+    botChecks: ["www.google.com/recaptcha"],
+    captcha: false,
+    exchanges: [{ failed: null, method: "POST", status: 403, target: `login.turbify.com/${secret}` }],
+    notices: [],
+    webdriver: false,
+  }, [secret]);
+  assert.match(some, /made 1 request\(s\): \[POST login\.turbify\.com\/.* -> 403\]/);
+  assert.match(some, /hidden bot check from \[www\.google\.com\/recaptcha\]/);
+  assert.ok(!some.includes(secret), "a measured line must pass through the secret redaction");
+  assert.ok(!/automated/.test(some), "webdriver false must not be reported as automated");
+  assert.equal(describeSignInMeasurement({ captcha: false, notices: [] }, []), "", "an unmeasured stall prints nothing extra");
+  assert.match(
+    describeSignInStall("the administrator", 30_000, { captcha: false, exchanges: [], notices: [] }, "url x", []),
+    /never reached Turbify\. The page it was on/,
+    "the stall carries the measurement before the page description",
+  );
+
+  // 16. Wiring: the watcher starts BEFORE the press, stops on every path, and its answers reach the refusal.
+  const watchAt = signIn.indexOf("watchSignInExchanges(target)");
+  assert.ok(watchAt > -1 && watchAt < press, "the watcher must be installed before the sign-in press");
+  assert.match(signIn, /finally \{\s*answered = exchanges\.stop\(\);\s*\}/, "the watcher must be stopped on every path");
+  assert.match(signIn, /exchanges: answered/, "the answers must reach the stall description");
 }
 
 export async function runNewHireMailboxRobotTests(): Promise<void> {
