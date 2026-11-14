@@ -173,7 +173,7 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
   );
   assert.ok(done.includes('waiting_building: { text: "Approved, waits for the building", tone: "good" },'), "the saved mark says he waits");
   assert.ok(
-    done.includes('export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once his building is approved.";'),
+    done.includes('export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once the building is approved.";'),
     "🔴 and one plain sentence says when he counts — never \"Approved\" over a customer still under To validate",
   );
   assert.ok(read("src/components/place-review-deck/review-deck.tsx").includes('waiting_building: "Approved, waits for the building",'), "the one-by-one review names it in its summary");

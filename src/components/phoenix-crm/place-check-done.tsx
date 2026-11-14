@@ -56,7 +56,7 @@ export function approvalOutcome(answer: unknown, plain: "approved" | "restored")
 }
 
 /** Under an approval that waits for its building. */
-export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once his building is approved.";
+export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once the building is approved.";
 
 /**
  * 🔴 "ALREADY DECIDED" IS AN ANSWER, NOT AN ERROR (owner, 2026-11-08: "places checks is stale … many
