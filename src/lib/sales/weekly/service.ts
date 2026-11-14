@@ -6,6 +6,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { recordTiming } from "@/lib/observability/timings";
+import { yieldToEventLoop } from "@/lib/platform/yield-to-event-loop";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   applyWeeklyAccessScope,
@@ -28,6 +29,7 @@ import {
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
 import { bumpWeeklyRowsGeneration, getOrLoadWeeklyRows, weeklyRowCacheKey } from "@/lib/sales/weekly/row-cache";
+import { shareDerivedWeeklyRows, weeklyPriceFingerprint } from "@/lib/sales/weekly/derived-rows";
 import {
   decumulateProductNet,
   decumulateRows,
@@ -1446,9 +1448,12 @@ export async function loadWeeklyDashboard(filters: {
   // product_code -> family NAME. Deliberately the name, not family_code: the code is NOT unique —
   // "DO" is shared by both Dopaminict and Dolabactin, so grouping on it would merge two families.
   const familyByCode = new Map<string, string>();
+  // What the re-pricing below reads, as one string — the derived rows are shared only while it is the same.
+  let priceFingerprint = weeklyPriceFingerprint(null, null);
   try {
     const reference = await liveReferenceLoad;
     priceMap = livePriceMap(reference.products);
+    priceFingerprint = weeklyPriceFingerprint(reference.products, reference.productPriceOverrides ?? []);
     datedPrices = productPeriodPricesFromRows(reference.products, reference.productPriceOverrides ?? []);
     for (const masterProduct of reference.products) {
       const code = normalizeCode(masterProduct.productCode);
@@ -1460,30 +1465,41 @@ export async function loadWeeklyDashboard(filters: {
   } catch {
     // Best-effort: if the master can't be read, keep stored values rather than failing the load.
   }
-  if (priceMap.size > 0) {
-    for (const row of allRows) {
-      row.salesValue = liveSalesValue(
-        {
-          distributorCode: row.distributorCode,
-          productCode: row.productCode,
-          netQty: row.netQty,
-          storedValue: row.salesValue,
-          period: weeklyRowPeriod(row.cycleMonth, row.weekStart),
-        },
-        priceMap,
-        datedPrices,
-      );
+  // Re-price and de-cumulate. Neither depends on the viewer — only on these rows and the prices — so it
+  // runs ONCE per cached load and price list, and every viewer gets copies (derived-rows.ts). Nine reps
+  // opening Weekly Stock together used to do it nine times over the same 66,526 rows and froze the
+  // server for 3.1 s (12 Nov 2026). The pauses let the server answer everyone else between the steps.
+  const derived = await shareDerivedWeeklyRows<FactRow>(rawRows.source, priceFingerprint, async () => {
+    await yieldToEventLoop();
+    if (priceMap.size > 0) {
+      for (const row of allRows) {
+        row.salesValue = liveSalesValue(
+          {
+            distributorCode: row.distributorCode,
+            productCode: row.productCode,
+            netQty: row.netQty,
+            storedValue: row.salesValue,
+            period: weeklyRowPeriod(row.cycleMonth, row.weekStart),
+          },
+          priceMap,
+          datedPrices,
+        );
+      }
     }
-  }
-
-  // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
-  // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
-  const realRows = decumulateRows(allRows);
-  // Read over every loaded row, before any scope or filter, because that is the set decumulateRows
-  // subtracted from: a depot's week spans a gap only when the depot sent no sheet at all for the week
-  // before it, whatever lines or regions this viewer may see.
-  const depotGaps = depotWeekGaps(allRows);
+    await yieldToEventLoop();
+    // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
+    // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
+    const realRows = decumulateRows(allRows);
+    // Read over every loaded row, before any scope or filter, because that is the set decumulateRows
+    // subtracted from: a depot's week spans a gap only when the depot sent no sheet at all for the week
+    // before it, whatever lines or regions this viewer may see.
+    const depotGaps = depotWeekGaps(allRows);
+    return { realRows, depotGaps };
+  });
+  const realRows = derived.realRows;
+  const depotGaps = derived.depotGaps;
   const depotGapKeys = depotWeekGapKeys(depotGaps);
+  await yieldToEventLoop();
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
@@ -1532,6 +1548,7 @@ export async function loadWeeklyDashboard(filters: {
     return true;
   };
   const scopedRows = trackedRows.filter(passesRowFilters);
+  await yieldToEventLoop();
   // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
   // NOT by region/product/line — so selecting one value never removes the others from their own
   // dropdown (which would make multi-select impossible). Distributor options come from the batch list.
@@ -1626,6 +1643,7 @@ export async function loadWeeklyDashboard(filters: {
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
+  await yieldToEventLoop();
   // Zero-sales branches: stock on hand this week but no sales, each product checked on its own and
   // ranked by stock value at the price covering each row's month (weeklyZeroSalesBranches, live-price.ts).
   const zeroSalesBranches = weeklyZeroSalesBranches(weekRowsAdj, (productCode, period) => liveUnitPrice(productCode, period, priceMap, datedPrices) ?? undefined);
@@ -1634,8 +1652,17 @@ export async function loadWeeklyDashboard(filters: {
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
   // Checking rows.length avoids falsely dropping weeks where returns exceed sales (net-negative
   // salesValue/salesUnits) which a >0 value filter would incorrectly discard.
+  // One pass groups the rows by week, in their own order, so each week's sums add the same rows in the
+  // same order as filtering per week did — once over the rows, not once per week (every week of history
+  // on Weekly Stock: ~40 passes over ~55,000 rows per viewer, 14 Nov 2026).
+  const scopedRowsByWeek = new Map<string, FactRow[]>();
+  for (const row of scopedRows) {
+    const bucket = scopedRowsByWeek.get(row.weekStart);
+    if (bucket) bucket.push(row);
+    else scopedRowsByWeek.set(row.weekStart, [row]);
+  }
   const rawTrend = trendWeeks.flatMap((week) => {
-    const rows = scopedRows.filter((row) => row.weekStart === week);
+    const rows = scopedRowsByWeek.get(week) ?? [];
     if (rows.length === 0) return [];
     const distMap = new Map<string, { name: string; value: number }>();
     for (const row of rows) {

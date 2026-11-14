@@ -34,7 +34,7 @@ export const WEEKLY_ROW_CACHE_MAX_ROWS_TOTAL = 120_000;
 type CacheEntry<Row> = { rows: Row[]; pages: number; storedAt: number; generation: number };
 
 const entries = new Map<string, CacheEntry<unknown>>();
-const inFlight = new Map<string, Promise<{ rows: unknown[]; pages: number }>>();
+const inFlight = new Map<string, Promise<{ rows: unknown[]; pages: number; source: object }>>();
 let generation = 0;
 
 /** Called by every app path that writes weekly rows or batches. */
@@ -62,7 +62,16 @@ export function weeklyRowCacheKey(input: {
   return `${stamps.join(";")}#${distributors}`;
 }
 
-export type WeeklyRowCacheResult<Row> = { rows: Row[]; pages: number; cache: "hit" | "miss" };
+export type WeeklyRowCacheResult<Row> = {
+  rows: Row[];
+  pages: number;
+  cache: "hit" | "miss";
+  /**
+   * Which load these rows are copies of — the same object for every read of one cache entry, a new one
+   * whenever the entry is replaced. derived-rows.ts keys its once-per-load work on it. Never handed out.
+   */
+  source: object;
+};
 
 /**
  * Serve the rows for `key` from memory when fresh, else run `load` once — concurrent callers with the
@@ -79,34 +88,37 @@ export async function getOrLoadWeeklyRows<Row extends object>(
     // Re-insert so the Map's order stays least-recently-used first.
     entries.delete(fullKey);
     entries.set(fullKey, cached);
-    return { rows: copyRows(cached.rows), pages: 0, cache: "hit" };
+    return { rows: copyRows(cached.rows), pages: 0, cache: "hit", source: cached.rows };
   }
   if (cached) entries.delete(fullKey);
 
-  let pending = inFlight.get(fullKey) as Promise<{ rows: Row[]; pages: number }> | undefined;
+  let pending = inFlight.get(fullKey) as Promise<{ rows: Row[]; pages: number; source: object }> | undefined;
   if (!pending) {
     const startedGeneration = generation;
     pending = load().then((result) => {
       // A write that landed while this load ran may not be in these rows — serve them, never keep them.
       if (startedGeneration === generation && result.rows.length <= WEEKLY_ROW_CACHE_MAX_ROWS_TOTAL) {
-        entries.set(fullKey, { rows: copyRows(result.rows), pages: result.pages, storedAt: now(), generation });
+        const stored = copyRows(result.rows);
+        entries.set(fullKey, { rows: stored, pages: result.pages, storedAt: now(), generation });
         // Least-recently-used first, until both the entry count and the row budget fit.
         while (entries.size > WEEKLY_ROW_CACHE_MAX_ENTRIES || cachedRowCount() > WEEKLY_ROW_CACHE_MAX_ROWS_TOTAL) {
           const oldest = entries.keys().next().value;
           if (oldest === undefined) break;
           entries.delete(oldest);
         }
+        // The stored copy is the entry later hits read, so it is the source every reader of this entry shares.
+        return { ...result, source: stored };
       }
-      return result;
+      return { ...result, source: result.rows };
     });
-    inFlight.set(fullKey, pending as Promise<{ rows: unknown[]; pages: number }>);
+    inFlight.set(fullKey, pending as Promise<{ rows: unknown[]; pages: number; source: object }>);
     pending.then(
       () => inFlight.delete(fullKey),
       () => inFlight.delete(fullKey),
     );
   }
   const result = await pending;
-  return { rows: copyRows(result.rows), pages: result.pages, cache: "miss" };
+  return { rows: copyRows(result.rows), pages: result.pages, cache: "miss", source: result.source };
 }
 
 function cachedRowCount(): number {

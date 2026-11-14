@@ -158,8 +158,17 @@ export function narrowStockRowsToGovernorate<T extends BranchGovernorateInput>(
   viewerGovs: ReadonlySet<GovernorateKey>,
 ): T[] {
   if (viewerGovs.size === 0) return [...rows];
+  // A depot reads the same on every row (its name and area), and a stock load holds tens of thousands
+  // of rows over a few hundred depots, each read running the whole place table over its name: read
+  // each depot once. Kept per call, so nothing outlives the request (14 Nov 2026, the 3.1 s freeze).
+  const byDepot = new Map<string, BranchGovernorateScope>();
   return rows.filter((row) => {
-    const scope = resolveBranchGovernorates(row);
+    const depot = `${row.areaCode ?? ""}\u0000${row.branchName ?? ""}`;
+    let scope = byDepot.get(depot);
+    if (scope === undefined) {
+      scope = resolveBranchGovernorates(row);
+      byDepot.set(depot, scope);
+    }
     if (scope === "ALL" || scope === "FLOOR") return true;
     for (const gov of scope) if (viewerGovs.has(gov)) return true;
     return false;

@@ -15,6 +15,7 @@ import { unstable_cache } from "next/cache.js";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
 import { WEEKLY_STOCK_CACHE_TAG } from "@/lib/dashboard/invalidation";
+import { yieldToEventLoop } from "@/lib/platform/yield-to-event-loop";
 import { resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { narrowStockRowsToGovernorate, viewerGovernorates } from "@/lib/sales/weekly/branch-governorate-scope";
@@ -304,6 +305,9 @@ export async function loadWeeklyStockDashboard(
       loadWeeklyScopeRegionNames(accessScope),
     ]);
 
+    // Each step below walks every stock row; pause between them so nine reps opening at once take turns
+    // with everyone else instead of holding the server end to end (yield-to-event-loop.ts).
+    await yieldToEventLoop();
     const liftedStockRows =
       liftGrain && accessScope.tier === "territory"
         ? admitWeeklyStockRows(data.stockRows ?? [], { bound: accessScope, ownAreaKeys, areaSplit })
@@ -317,8 +321,10 @@ export async function loadWeeklyStockDashboard(
       liftedStockRows,
       viewerGovernorates(accessScope, ownAreaKeys),
     );
+    await yieldToEventLoop();
     const stockRows = productFilterInLoad ? scopedStockRows : scopedStockRows.filter(weeklyStockProductPredicate(filters));
 
+    await yieldToEventLoop();
     const view = buildWeeklyStockView(stockRows, areaNames, {
       asOfWeekStart: filters.asOfWeekStart,
       areaCodes: filters.areaCodes,
