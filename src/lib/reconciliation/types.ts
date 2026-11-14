@@ -99,8 +99,8 @@ export type ReconciliationCheck = {
   /** Required when `expectation` is "known-open": the evidence that it is a real open defect. */
   openDefect?: string;
   /**
-   * Checks that share a lane never run at the same time as each other: the lane takes ONE of the
-   * runner's slots and runs its checks one after another, while the other slots carry on. For checks
+   * Checks that share a lane never run at the same time as each other, nor beside any check without a
+   * lane: lanes run one check after another, only once every other check has finished (runner.ts). For checks
    * too heavy to run side by side — the monthly sales truth checks each load three closings per line,
    * and three at once took 25-60 s each against 10-14 s alone (14 Nov 2026). Each check keeps its own
    * time limit, timed from when it starts, never from when the lane reached the runner.
