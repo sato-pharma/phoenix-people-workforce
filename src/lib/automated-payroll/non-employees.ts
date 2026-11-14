@@ -286,7 +286,25 @@ export async function updateNonEmployeePayrollEntry(
   );
   if (error) throw error;
   if (!data) throw new Error("Not found: non-employee entry does not exist on this run.");
-  return mapRow(data as Row);
+  const row = mapRow(data as Row);
+  // Audited like add and remove (payroll audit 2026-11-14, finding 12): a changed salary or bank account
+  // left only `updated_at` and the 72-hour recovery log behind it.
+  const fields = ["fullNameAr", "fullNameEn", "totalSalary", "bankName", "bankAccount", "part"] as const;
+  const changed = fields.filter((field) => existing[field] !== row[field]);
+  if (changed.length > 0) {
+    await writeAutomatedPayrollAudit({
+      runId,
+      actorHrId: actorId(access),
+      action: "non_employee_updated",
+      detail: {
+        id,
+        fullNameEn: row.fullNameEn,
+        before: Object.fromEntries(changed.map((field) => [field, existing[field]])),
+        after: Object.fromEntries(changed.map((field) => [field, row[field]])),
+      },
+    });
+  }
+  return row;
 }
 
 export async function deleteNonEmployeePayrollEntry(

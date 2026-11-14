@@ -170,7 +170,7 @@ export async function runAutomatedPayrollRecurringNonEmployeesTests() {
     "startOrResumeRun must seed the standing roster — without this call the register exists but nothing reads it, which is exactly the state that left the August 2026 run with zero non-employees",
   );
 
-  const createIndex = RUN_SERVICE_SOURCE.indexOf("const run = await createRun({");
+  const createIndex = RUN_SERVICE_SOURCE.indexOf("run = await createRun({");
   const seedIndex = RUN_SERVICE_SOURCE.indexOf("seedRunFromRecurring({ runId: run.id");
   assert.ok(createIndex > 0, "startOrResumeRun must still create the run");
   assert.ok(seedIndex > createIndex, "the seed must happen AFTER the run exists, not before");

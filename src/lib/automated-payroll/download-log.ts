@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { BANK_FILE_DOWNLOADED_ACTION } from "./bank-file-downloads.ts";
+import { databaseFailureNote } from "./db-error.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
 
 /**
@@ -81,7 +82,12 @@ export async function listRunDownloads(access: AccessContext, runId: string): Pr
     .in("action", [PAYROLL_FILE_DOWNLOADED, BANK_FILE_DOWNLOADED_ACTION])
     .order("created_at", { ascending: false })
     .limit(200);
-  if (error) throw new Error(`Failed to read the download history: ${error.message}`);
+  if (error) {
+    throw new Error(
+      "Conflict: the download history could not be read. Try again in a moment. " +
+        `(${databaseFailureNote(error, "automated_payroll_download_history_read_failed")})`,
+    );
+  }
   const rows = (data ?? []) as Array<{
     id: string;
     actor_hr_id: string | null;

@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { getRunById } from "./draft-store.ts";
+import { validateNonEmployeePayrollInput } from "./non-employees.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
 import type {
   MonthlySalaryRun,
@@ -74,15 +75,18 @@ function isMissingRecurringColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || (message.includes("recurring_id") && message.includes("column"));
 }
 
+/**
+ * The per-run entry's own rule (payroll audit 2026-11-14, finding 11). The standing list kept its own copy
+ * without the bank check, so a paid entry with no bank or account was accepted here and copied into every
+ * new run, where the sheet counted the person as paid and no bank file carried them.
+ */
 function validateInput(input: RecurringNonEmployeeInput): void {
-  if (!input.fullNameAr?.trim()) throw new Error("Validation: Arabic name is required.");
-  if (!input.fullNameEn?.trim()) throw new Error("Validation: English name is required.");
-  if (!Number.isFinite(input.totalSalary) || input.totalSalary < 0) {
-    throw new Error("Validation: Total Salary must be a non-negative number.");
-  }
-  if (input.part !== undefined && !isNonEmployeePart(input.part)) {
-    throw new Error("Validation: part must be either first or second.");
-  }
+  validateNonEmployeePayrollInput(input);
+}
+
+/** True when an entry would be refused by the per-run rule — a paid entry with nowhere to send the money. */
+function paidWithNoBank(entry: { totalSalary: number; bankName: string | null; bankAccount: string | null }): boolean {
+  return entry.totalSalary > 0 && (!entry.bankName?.trim() || !entry.bankAccount?.trim());
 }
 
 /**
@@ -285,7 +289,7 @@ export async function seedRunFromRecurring(input: {
   client?: SeedClient;
 }): Promise<RecurringSeedResult> {
   const client = input.client ?? getSupabaseAdmin();
-  const empty: RecurringSeedResult = { inserted: 0, skipped: 0, skippedAsDuplicate: [], heldBackPartClosed: [] };
+  const empty: RecurringSeedResult = { inserted: 0, skipped: 0, skippedAsDuplicate: [], heldBackPartClosed: [], heldBackNoBank: [] };
   const roster = await activeRecurringRows(client);
   if (roster.length === 0) return empty;
 
@@ -326,8 +330,15 @@ export async function seedRunFromRecurring(input: {
 
   const skippedAsDuplicate: string[] = [];
   const heldBackPartClosed: string[] = [];
+  const heldBackNoBank: string[] = [];
   const pending = roster.filter((entry) => {
     if (alreadySeeded.has(entry.id)) return false;
+    // An entry saved before the bank check (finding 11) is not copied in: the sheet would count the
+    // person as paid while no bank file carried them. Named, so somebody adds the bank.
+    if (paidWithNoBank(entry)) {
+      heldBackNoBank.push(entry.fullNameEn || entry.fullNameAr || entry.id);
+      return false;
+    }
     if (input.phase && !partStillOpen(entry.part, input.phase)) {
       heldBackPartClosed.push(entry.fullNameEn || entry.fullNameAr || entry.id);
       return false;
@@ -340,9 +351,10 @@ export async function seedRunFromRecurring(input: {
     return true;
   });
 
-  const skipped = roster.length - pending.length - skippedAsDuplicate.length - heldBackPartClosed.length;
+  const skipped =
+    roster.length - pending.length - skippedAsDuplicate.length - heldBackPartClosed.length - heldBackNoBank.length;
   if (pending.length === 0) {
-    return { inserted: 0, skipped, skippedAsDuplicate, heldBackPartClosed };
+    return { inserted: 0, skipped, skippedAsDuplicate, heldBackPartClosed, heldBackNoBank };
   }
 
   const { error } = await admin.from(RUN_TABLE).insert(
@@ -376,10 +388,11 @@ export async function seedRunFromRecurring(input: {
       // month unless a human looks. A count alone reads as housekeeping.
       skippedAsDuplicate,
       heldBackPartClosed,
+      heldBackNoBank,
     },
   }, input.client);
 
-  return { inserted: pending.length, skipped, skippedAsDuplicate, heldBackPartClosed };
+  return { inserted: pending.length, skipped, skippedAsDuplicate, heldBackPartClosed, heldBackNoBank };
 }
 
 /**

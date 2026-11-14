@@ -2302,6 +2302,7 @@ import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-distric
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
 import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-excluded-members.test.ts";
+import { runAutomatedPayrollAuditFindings202611Tests } from "./automated-payroll-audit-findings-2026-11.test.ts";
 import { runDirectOrderEvidenceVisibilityTests } from "./direct-orders-evidence-visibility.test.ts";
 import { runDirectOrderHoldReleaseTests } from "./direct-orders-hold-release.test.ts";
 import { runDirectOrderDuplicateCleanupTests } from "./direct-orders-duplicate-cleanup.test.ts";
@@ -8831,6 +8832,10 @@ await runTest(
 await runTest(
   "automated payroll run-scoped exclusion (excludeEmployeeFromRun's population filter)",
   runAutomatedPayrollExcludedMembersTests,
+);
+await runTest(
+  "automated payroll audit 2026-11-14, findings 6-16 (publish half-done, refusals as 409, population lock, paid outside payroll, save order, import commit, cancel, start)",
+  runAutomatedPayrollAuditFindings202611Tests,
 );
 await runTest(
   "direct order pharmacy evidence visibility (requester never sees the AI note, the read path stays ungated, both approval screens share one renderer)",

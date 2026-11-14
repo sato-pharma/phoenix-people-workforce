@@ -883,6 +883,11 @@ export type RecurringSeedResult = {
    * then never be edited or removed.
    */
   heldBackPartClosed: string[];
+  /**
+   * Paid entries the sync left out because they name no bank or no account (payroll audit 2026-11-14,
+   * finding 11): copied in, the sheet would count them as paid while no bank file carried them.
+   */
+  heldBackNoBank: string[];
 };
 
 /**

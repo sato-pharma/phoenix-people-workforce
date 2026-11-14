@@ -258,10 +258,27 @@ export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange
       if (!res.ok) throw new Error(data.error ?? "Failed to sync the standing list.");
       const inserted = Number(data.inserted ?? 0);
       const skipped = Number(data.skipped ?? 0);
+      // Named, never counted: each is a person who is not paid this month unless somebody acts.
+      const leftOut: string[] = [
+        ...(Array.isArray(data.heldBackNoBank) && data.heldBackNoBank.length > 0
+          ? [`Not added — no bank or account on the standing list: ${data.heldBackNoBank.join(", ")}.`]
+          : []),
+        ...(Array.isArray(data.heldBackPartClosed) && data.heldBackPartClosed.length > 0
+          ? [`Not added — that part is already confirmed: ${data.heldBackPartClosed.join(", ")}.`]
+          : []),
+        ...(Array.isArray(data.skippedAsDuplicate) && data.skippedAsDuplicate.length > 0
+          ? [`Not added — already on this run under another entry: ${data.skippedAsDuplicate.join(", ")}.`]
+          : []),
+      ];
       setSyncNote(
-        inserted === 0
-          ? `Already up to date — all ${skipped} standing entries are on this run.`
-          : `Added ${inserted} ${inserted === 1 ? "person" : "people"} from the standing list${skipped > 0 ? `, ${skipped} already here` : ""}.`,
+        [
+          inserted === 0
+            ? leftOut.length > 0
+              ? "Nobody was added from the standing list."
+              : `Already up to date — all ${skipped} standing entries are on this run.`
+            : `Added ${inserted} ${inserted === 1 ? "person" : "people"} from the standing list${skipped > 0 ? `, ${skipped} already here` : ""}.`,
+          ...leftOut,
+        ].join(" "),
       );
       await load();
     } catch (syncError) {

@@ -41,6 +41,11 @@ import { fakeSupabaseClient } from "./fixtures/fake-supabase-table.ts";
 
 const RUN = "run-september";
 
+// Every paid entry carries an account since the standing list took the per-run bank rule (payroll audit
+// 2026-11-14, finding 11), so the fixtures give each person one, derived from the name so that the same
+// person on the roster and on the run is recognised by it, as in production.
+const accountFor = (overrides: Record<string, unknown>) => `ACC-${String(overrides.full_name_en ?? "Roster Person")}`;
+
 function rosterEntry(overrides: Record<string, unknown>) {
   return {
     id: `rec-${String(overrides.full_name_en ?? "x")}-${String(overrides.part ?? "first")}`,
@@ -49,7 +54,7 @@ function rosterEntry(overrides: Record<string, unknown>) {
     full_name_en: "Roster Person",
     total_salary: 1000,
     bank_name: "CIB",
-    bank_account: null,
+    bank_account: accountFor(overrides),
     active: true,
     note: null,
     created_by: "B-10",
@@ -68,7 +73,7 @@ function runEntry(overrides: Record<string, unknown>) {
     full_name_en: "Roster Person",
     total_salary: 1000,
     bank_name: "CIB",
-    bank_account: null,
+    bank_account: accountFor(overrides),
     ...overrides,
   };
 }
@@ -252,9 +257,10 @@ export async function runAutomatedPayrollNonEmployeeSeedingTests() {
 
   // ---- A row with nothing to identify it is seeded, not guessed at ---------------------------------
   // Refusing on a blank name and a blank account would drop a real payment on no evidence.
+  // Unpaid (0) so the bank rule below does not hold it back: this case is about identity alone.
   const nameless = world(
-    [rosterEntry({ full_name_en: "", full_name_ar: "", bank_account: null, id: "rec-blank" })],
-    [runEntry({ full_name_en: "", full_name_ar: "", bank_account: null })],
+    [rosterEntry({ full_name_en: "", full_name_ar: "", bank_account: null, total_salary: 0, id: "rec-blank" })],
+    [runEntry({ full_name_en: "", full_name_ar: "", bank_account: null, total_salary: 0 })],
   );
   const afterNameless = await seedRunFromRecurring({
     runId: RUN,
@@ -263,4 +269,34 @@ export async function runAutomatedPayrollNonEmployeeSeedingTests() {
     client: nameless as never,
   });
   assert.equal(afterNameless.inserted, 1, "an unidentifiable row cannot be proven a duplicate, so it is paid");
+
+  // ---- A PAID ENTRY WITH NOWHERE TO SEND THE MONEY IS HELD BACK, AND NAMED (finding 11) ------------
+  // The standing list did not check the bank until 2026-11-14, so an older entry can still lack one.
+  // Copied into a run, the sheet counted the person as paid while no bank file carried them.
+  const noBank = world(
+    [
+      rosterEntry({ full_name_en: "No Account", bank_account: null, total_salary: 5000 }),
+      rosterEntry({ full_name_en: "No Bank Name", bank_name: "  ", total_salary: 4000 }),
+      rosterEntry({ full_name_en: "Unpaid This Month", bank_account: null, total_salary: 0 }),
+      rosterEntry({ full_name_en: "Fully Set Up", total_salary: 3000 }),
+    ],
+    [],
+  );
+  const afterNoBank = await seedRunFromRecurring({ runId: RUN, actorHrId: "B-10", phase: "part1", client: noBank as never });
+  assert.deepEqual(
+    afterNoBank.heldBackNoBank.sort(),
+    ["No Account", "No Bank Name"],
+    "a paid standing entry with no bank or no account must not be copied into the run — no bank file can carry it",
+  );
+  assert.deepEqual(
+    rowsOn(noBank),
+    ["Fully Set Up|first", "Unpaid This Month|first"],
+    "an entry paying nothing needs no bank, and a fully set-up entry seeds as before",
+  );
+  assert.equal(afterNoBank.skipped, 0, "held back is reported as held back, not folded into the skipped count");
+  assert.deepEqual(
+    (noBank.rows("automated_payroll_audit")[0]?.detail as { heldBackNoBank?: unknown }).heldBackNoBank,
+    ["No Account", "No Bank Name"],
+    "and the audit row names who was held back",
+  );
 }

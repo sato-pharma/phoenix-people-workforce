@@ -286,7 +286,10 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
       (error: Error) =>
         /^Conflict: the reason to (cancel|reopen Part [12]) after finance downloaded its files could not be recorded/.test(error.message) &&
         /Nothing was changed/.test(error.message) &&
-        /forced insert failure/.test(error.message) &&
+        // The database's own text goes to the log, never the screen (payroll audit 2026-11-14, finding 15);
+        // the refusal names it as a database error.
+        /\(database error[^)]*\)\.?$/.test(error.message) &&
+        !/forced insert failure/.test(error.message) &&
         !error.message.includes(DOWNLOAD_REFUSAL_OPENING),
       `HEADLINE: ${action} is refused (409) when its override cannot be recorded`,
     );
@@ -401,7 +404,12 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
   const wizard = stripComments(readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8"));
   assert.ok(wizard.includes(`const DOWNLOAD_REFUSAL_OPENING = "${DOWNLOAD_REFUSAL_OPENING}";`), "the page matches the server's refusal words");
   assert.ok(wizard.includes(`const OVERRIDE_MIN_REASON = ${UNDO_AFTER_DOWNLOAD_MIN_REASON};`), "and its shortest reason");
-  assert.equal((wizard.match(/overridable: true,/g) ?? []).length, 2, "HEADLINE: Reopen Part 1 and Reopen Part 2 both offer the override");
+  // Three since 2026-11-14: the Cancel run button (payroll audit, finding 14) offers it too.
+  assert.equal(
+    (wizard.match(/overridable: true,/g) ?? []).length,
+    3,
+    "HEADLINE: Reopen Part 1, Reopen Part 2 and Cancel run all offer the override",
+  );
   assert.ok(wizard.includes("res.status === 409 && message.startsWith(DOWNLOAD_REFUSAL_OPENING)"), "only a download refusal opens the prompt");
   assert.ok(wizard.includes("overrideDownloaded: true, reason: override.reason"), "the prompt sends the override with its reason");
   assert.ok(wizard.includes("overrideReason.trim().length < OVERRIDE_MIN_REASON"), "the button waits for a real reason");

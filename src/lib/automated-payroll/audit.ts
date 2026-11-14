@@ -1,6 +1,7 @@
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { databaseFailureNote } from "./db-error.ts";
 import type { StepKey } from "./types.ts";
 
 type AuditClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from">;
@@ -78,7 +79,8 @@ export async function writeRequiredAutomatedPayrollAudit(input: {
   });
   if (error) {
     throw new Error(
-      `Could not record "${input.action}" on this payroll run, so nothing was confirmed. Try again in a moment. (${error.message})`,
+      `Conflict: Could not record "${input.action}" on this payroll run, so nothing was confirmed. Try again in a moment. ` +
+        `(${databaseFailureNote(error, "automated_payroll_audit_write_failed")})`,
     );
   }
 }
