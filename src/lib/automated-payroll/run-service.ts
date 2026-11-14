@@ -2578,15 +2578,16 @@ async function previousMonthRoster(period: PayrollPeriod): Promise<PreviousRoste
   // Anyone whose resignation had already taken effect by the end of last month
   // is legitimately absent now — that is "left", not "disappeared".
   const { end } = periodBoundsFor(prev);
-  const { data: leavers, error: leaversError } = await getSupabaseAdmin()
-    .from("employee_resignations")
-    .select("employee_hr_id")
-    .lte("last_working_date", end);
   // A failed read used to leave this set empty, which turned every legitimate leaver into
-  // "disappeared" (audit finding 46). A refusal beats a panel of false alarms.
-  if (leaversError) throw leaversError;
+  // "disappeared" (audit finding 46). A refusal beats a panel of false alarms: fetchAllRows throws.
+  // Paged (payroll audit 2026-11-14, S2): every leaver ever is read, and past PostgREST's 1,000-row cap
+  // the rest would have come back as "disappeared" instead of "left".
+  const leavers = await fetchAllRows<{ employee_hr_id: string | null }>(
+    () => getSupabaseAdmin().from("employee_resignations").select("employee_hr_id").lte("last_working_date", end),
+    "id",
+  );
   const leaverCompacts = new Set(
-    ((leavers ?? []) as Array<{ employee_hr_id: string | null }>)
+    leavers
       .map((row) => compactHrKey(row.employee_hr_id ?? ""))
       .filter(Boolean),
   );

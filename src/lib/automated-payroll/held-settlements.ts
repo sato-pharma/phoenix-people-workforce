@@ -4,6 +4,7 @@ import { isUuid } from "@/lib/http/uuid";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
@@ -1099,13 +1100,18 @@ export async function heldMonthsWithoutRoster(currentRunId: string): Promise<Hel
 
 /** Every employee record, any status, named — for the picker and to check the person exists. */
 async function loadHeldEntryEmployees(): Promise<HeldEntryEmployee[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select("hr_id,full_name,employment_status")
-    .order("full_name", { ascending: true });
-  if (error) throw error;
+  // Paged (payroll audit 2026-11-14, S2): PostgREST answers at most 1,000 rows, and a person past the
+  // cap would be missing from the picker AND refused as "not an employee" when HR entered them.
+  const data = await fetchAllRows<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("employees")
+        .select("hr_id,full_name,employment_status")
+        .order("full_name", { ascending: true }),
+    "hr_id",
+  );
   const employees: HeldEntryEmployee[] = [];
-  for (const row of (data ?? []) as Row[]) {
+  for (const row of data) {
     const hrId = String(row.hr_id ?? "").trim();
     const compact = compactHrKey(hrId);
     const name = String(row.full_name ?? "").trim();

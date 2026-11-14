@@ -7,6 +7,7 @@ import {
   databaseFailureNote,
   isPlainDatabaseError,
 } from "../src/lib/automated-payroll/db-error.ts";
+import { isRunHoldAction, RUN_HOLD_ACTIONS } from "../src/lib/automated-payroll/transition-claim.ts";
 import { assertSettlementTarget, settlementCeiling } from "../src/lib/automated-payroll/held-settlements.ts";
 import { jsonError } from "../src/lib/automated-payroll/http.ts";
 
@@ -192,5 +193,43 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     start,
     /\?\.code === "23505"\s*\?\s*await findActiveRun\(period\.month, period\.year\)/,
     "finding 16: a second press refused by the one-active-run index returns the run the first press started",
+  );
+
+  // ---- S1: every non-employee write holds the run, like a step save ---------------------------------------
+  // The phase was read once before the write, so an add racing Confirm Part 2 landed after the stamp and
+  // the bank file carried an amount nobody confirmed.
+  assert.match(
+    NON_EMPLOYEES,
+    /holdRun\(\{ runId, expected: \[EDITABLE_PHASE\[part\]\], action: RUN_HOLD_ACTIONS\.nonEmployee \}, async \(\) => \{\s*await requireEditableRun\(runId, part\);\s*return work\(\);/,
+    "S1: the hold re-checks the part is still open before the write",
+  );
+  for (const declaration of [
+    "export async function addNonEmployeePayrollEntry(",
+    "export async function updateNonEmployeePayrollEntry(",
+    "export async function deleteNonEmployeePayrollEntry(",
+  ]) {
+    const body = bodyOf(NON_EMPLOYEES, declaration);
+    const heldAt = body.indexOf("holdForPart(runId,");
+    const writeAt = body.search(/getSupabaseAdmin\(\)\.from\(TABLE\)\.(insert|update|delete)\(/);
+    assert.ok(heldAt > 0 && writeAt > heldAt, `S1: ${declaration} writes only inside the run's hold`);
+  }
+  assert.match(
+    bodyOf(RECURRING, "export async function syncRunFromRecurring("),
+    /holdRun\(\{ runId, expected: \[phase\], action: RUN_HOLD_ACTIONS\.nonEmployeeSync \}, \(\) =>\s*seedRunFromRecurring\(/,
+    "S1: pulling in the standing list holds the run too",
+  );
+  assert.equal(isRunHoldAction(RUN_HOLD_ACTIONS.nonEmployee), true, "S1: a transition waits a non-employee write out");
+  assert.equal(isRunHoldAction(RUN_HOLD_ACTIONS.nonEmployeeSync), true, "S1: and the sync");
+
+  // ---- S2: the two reads that could pass PostgREST's 1,000-row cap are paged -----------------------------
+  assert.match(
+    RUN_SERVICE,
+    /fetchAllRows<\{ employee_hr_id: string \| null \}>\(\s*\(\) => getSupabaseAdmin\(\)\.from\("employee_resignations"\)/,
+    "S2: every leaver is read, so none past the cap reads as 'disappeared'",
+  );
+  assert.match(
+    HELD_SETTLEMENTS,
+    /async function loadHeldEntryEmployees\(\)[\s\S]{0,400}?fetchAllRows<Row>\(\s*\(\) =>\s*getSupabaseAdmin\(\)\s*\.from\("employees"\)/,
+    "S2: every employee is in the held-entry picker",
   );
 }
