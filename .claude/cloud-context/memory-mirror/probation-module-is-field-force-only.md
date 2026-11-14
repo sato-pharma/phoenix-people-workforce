@@ -1,11 +1,13 @@
 ---
 name: probation-module-is-field-force-only
-description: "The probation Decision Intelligence module is MEDICAL-REPRESENTATIVES-ONLY (owner corrected 2026-07-17; NOT DMs/managers); fingerprint attendance is head-office-only and is NOT a probation input"
+description: "SUPERSEDED ON SCOPE 2026-11-14: automatic probation now covers the FIELD ROLES (Medical Reps + District/Regional/National Sales Managers; REC-074). History of the 2026-07-17 Medical-Reps-only rule; fingerprint attendance is head-office-only and is NOT a probation input"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 8c826290-3610-4c5c-80f9-d84104d12c1c
 ---
+
+**🔴 SUPERSEDED 2026-11-14 (owner, REC-074: "Field roles only", then "All sales managers"): automatic probation covers Medical Reps AND District, Senior District, Regional and National Sales Managers; office roles never. One list, `PROBATION_FIELD_ROLE_TITLES` in `cases.ts`, and the hire trigger (migration 20261114021245). The rest of this note is the July history.**
 
 **SCOPE CORRECTED 2026-07-17: MEDICAL REPRESENTATIVES ONLY.** The owner flagged that the live
 module had enrolled non-reps. Root cause: provisioning had NO job-title filter — the AFTER INSERT

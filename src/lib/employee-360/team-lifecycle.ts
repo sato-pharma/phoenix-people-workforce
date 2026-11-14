@@ -29,7 +29,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadManagerPlansInRange } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { probationDaysRemaining } from "@/lib/probation/date";
-import { isMedicalRepresentativeTitle } from "@/lib/probation/intelligence/cases";
+import { isProbationFieldRoleTitle } from "@/lib/probation/intelligence/cases";
 import { ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -150,12 +150,14 @@ export async function getEmployee360TeamLifecycle(input: {
     fetchFieldDiscipline([...compactToKey.keys()], months, compactToKey),
   ]);
 
-  // Probation — the tracker's rule (probation/service.ts): Medical Reps only (owner, 2026-07-17), days left counted
-  // on the Cairo calendar by the canonical helper. A hand-rolled UTC count here read 5 for Dina where the tracker reads 2.
+  // Probation — the tracker's rule (probation/service.ts): the field roles, Medical Reps and the District,
+  // Regional and National Sales Managers (owner, 13-14 Nov 2026), so a manager on the team who is still in
+  // their first 90 days is listed too. Days left counted on the Cairo calendar by the canonical helper. A
+  // hand-rolled UTC count here read 5 for Dina where the tracker reads 2.
   const today = input.now ? new Date(input.now) : new Date();
   const probationReps: TeamProbationRep[] = [];
-  for (const e of teamReps) {
-    if (!isMedicalRepresentativeTitle(e.positionTitle ?? e.jobTitle)) continue;
+  for (const e of teamPeople) {
+    if (!isProbationFieldRoleTitle(e.positionTitle ?? e.jobTitle)) continue;
     const daysRemaining = probationDaysRemaining(e.hireDate, today);
     if (daysRemaining != null && daysRemaining > 0) {
       probationReps.push({ hrId: e.hrId, name: e.displayName || e.fullName || e.hrId, daysRemaining });
