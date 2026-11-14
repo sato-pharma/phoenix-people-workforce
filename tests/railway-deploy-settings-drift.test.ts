@@ -11,7 +11,12 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { compareDeploySettings, parseAuthoringFile } from "../scripts/check-railway-deploy-settings.mjs";
+import {
+  AWAITING_CREATION,
+  compareDeploySettings,
+  parseAuthoringFile,
+  servicesAwaitingCreation,
+} from "../scripts/check-railway-deploy-settings.mjs";
 
 /** What parseAuthoringFile returns — the script is plain JavaScript, so the shape is stated here. */
 type Declared = {
@@ -122,6 +127,26 @@ export function runRailwayDeploySettingsDriftTests() {
   delete gone.services.tablets;
   assert.match(compareDeploySettings(declared, gone).join("\n"), /tablets: declared in \.railway\/railway\.ts but not found on Railway/);
 
+  // 🔴 A service declared AHEAD of its creation is not drift (14 Nov 2026: the robot service's block was
+  // merged a day before the service existed, and the daily run reported a dashboard edit nobody made).
+  const awaiting = new Map([["tablets", "the steps"]]);
+  assert.deepEqual(compareDeploySettings(declared, gone, awaiting), [], "a service named as awaiting creation was reported as drift");
+  assert.deepEqual(servicesAwaitingCreation(declared, gone, awaiting), { pending: ["tablets"], created: [] });
+
+  // …and only that one: another declared service missing beside it is still reported.
+  const bothGone = liveMatching();
+  delete bothGone.services.tablets;
+  delete bothGone.services.app;
+  const bothDrift = compareDeploySettings(declared, bothGone, awaiting);
+  assert.equal(bothDrift.length, 1);
+  assert.match(bothDrift[0], /^app: declared in \.railway\/railway\.ts but not found on Railway/);
+
+  // Once it exists it is compared in full, listed or not, and is named as due off the list.
+  const createdWrong = liveMatching();
+  createdWrong.services.tablets.restartPolicyType = "ALWAYS";
+  assert.match(compareDeploySettings(declared, createdWrong, awaiting).join("\n"), /tablets: restartPolicyType is "ALWAYS"/);
+  assert.deepEqual(servicesAwaitingCreation(declared, createdWrong, awaiting), { pending: [], created: ["tablets"] });
+
   // The real authoring file: every service and every volume must be read out of it, or the scheduled
   // check would compare nothing and report OK.
   const real = parseAuthoringFile(readFileSync(resolve(".railway/railway.ts"), "utf8")) as Declared;
@@ -132,4 +157,13 @@ export function runRailwayDeploySettingsDriftTests() {
   assert.equal(real.services["phoenix-people-workforce"].healthcheckPath, "/api/readyz");
   assert.ok((real.services["phoenix-people-workforce"].healthcheckTimeout ?? 0) >= 600, "the app's window was not read as the release gate needs it");
   assert.ok(real.volumes.includes("headwind-db-eu-volume"), "the parser did not read the Headwind database volume");
+
+  // A name on the real list must be a service the real file declares, or the entry excuses nothing and
+  // is never cleared. The services people use are never on it: their absence is always drift.
+  for (const name of (AWAITING_CREATION as Map<string, string>).keys()) {
+    assert.ok(names.includes(name), `AWAITING_CREATION names ${name}, which .railway/railway.ts does not declare`);
+  }
+  for (const name of ["phoenix-people-workforce", "phoenix-workforce-worker", "phoenix-headwind"]) {
+    assert.equal((AWAITING_CREATION as Map<string, string>).has(name), false, `${name} is live and must never be excused as awaiting creation`);
+  }
 }
