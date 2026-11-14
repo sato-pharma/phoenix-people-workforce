@@ -2,6 +2,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { hrIdForStorage } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -319,7 +320,9 @@ async function readListedCode(supabase: RecheckClient, codeId: string): Promise<
 }
 
 async function actorName(supabase: RecheckClient, access: AccessContext): Promise<string> {
-  const hrId = String(access.hrId ?? "").trim();
+  // AccessContext.hrId is the lowercase comparison key; the employee row is stored as "B-10", so an
+  // .eq on the raw key finds nothing and the note read "by Super Admin" (14 Nov 2026).
+  const hrId = hrIdForStorage(access.hrId);
   if (!hrId) return "Super Admin";
   const { data } = await supabase.from("employees").select("hr_id, full_name, nickname").eq("hr_id", hrId).maybeSingle();
   const row = data as { full_name: string; hr_id: string; nickname: string | null } | null;
@@ -365,7 +368,8 @@ export async function keepCodeAsDecided(access: AccessContext, input: { codeId: 
   const { code, match } = await readListedCode(supabase, String(input.codeId ?? "").trim());
 
   const now = new Date().toISOString();
-  const keptBy = access.hrId ?? access.loginId ?? null;
+  // Stored canonical ("B-10"), never the lowercase comparison key (src/lib/hr-id.ts, hrIdForStorage).
+  const keptBy = hrIdForStorage(access.hrId ?? access.loginId ?? null);
   const write = await supabase
     .from("marketing_pharmacy_distributor_codes")
     .update({ master_recheck_kept_at: now, master_recheck_kept_by_hr_id: keptBy })
