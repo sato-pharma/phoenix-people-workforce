@@ -98,6 +98,14 @@ export type ReconciliationCheck = {
   expectation: ReconciliationExpectation;
   /** Required when `expectation` is "known-open": the evidence that it is a real open defect. */
   openDefect?: string;
+  /**
+   * Checks that share a lane never run at the same time as each other: the lane takes ONE of the
+   * runner's slots and runs its checks one after another, while the other slots carry on. For checks
+   * too heavy to run side by side — the monthly sales truth checks each load three closings per line,
+   * and three at once took 25-60 s each against 10-14 s alone (14 Nov 2026). Each check keeps its own
+   * time limit, timed from when it starts, never from when the lane reached the runner.
+   */
+  lane?: string;
   run: () => Promise<ReconciliationOutcome>;
 };
 
@@ -106,7 +114,7 @@ export type ReconciliationCheck = {
  * breached   — they disagree and were expected to agree. This is the one that pages a human.
  * known-open — they disagree exactly as documented; reported, not paged.
  * errored    — the check itself failed. Recorded as a result, never thrown: one broken check
- *              must not blind the others (23 are registered in checks/index.ts).
+ *              must not blind the others (every check in checks/index.ts).
  */
 export type ReconciliationStatus = "holds" | "breached" | "known-open" | "errored";
 

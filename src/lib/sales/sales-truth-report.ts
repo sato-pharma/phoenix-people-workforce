@@ -65,10 +65,11 @@ import {
   closingAreaTotals,
   reconcileAreaTotals,
 } from "@/lib/sales/sales-truth-reconciliation";
+import { SURFACE_VS_TARGET } from "@/lib/sales/sales-truth-declared";
 import { loadAchievementRange } from "@/lib/sales/vs-target";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
-export const SURFACE_VS_TARGET = "Sales vs Target";
+export { SURFACE_VS_TARGET };
 export const SURFACE_SOURCE_OF_SALES = "Source of Sales";
 
 /**
@@ -256,6 +257,21 @@ function applyMergesToTotals(totals: SalesAreaTotals, period: string): SalesArea
 export async function loadSalesTruthReport(period?: string | null): Promise<SalesTruthReport> {
   const periods = await listMonthlyClosingPeriods();
   return loadSalesTruthReportForPeriod(period && periods.includes(period) ? period : periods[0] ?? null);
+}
+
+/**
+ * One named month, or null when that month has no closing at all. Unlike loadSalesTruthReport it never
+ * falls back to the newest month: the daily check asks about one month by name, and an answer about a
+ * different month would be filed under the wrong one.
+ */
+export async function loadSalesTruthReportForMonth(period: string): Promise<SalesTruthReport | null> {
+  const periods = await listMonthlyClosingPeriods();
+  return periods.includes(period) ? loadSalesTruthReportForPeriod(period) : null;
+}
+
+/** Every month that has a closing, newest first, exactly as the closing lists them. */
+export async function listSalesTruthMonths(): Promise<string[]> {
+  return listMonthlyClosingPeriods();
 }
 
 /**

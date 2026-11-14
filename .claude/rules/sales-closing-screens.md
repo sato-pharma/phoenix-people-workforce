@@ -5,14 +5,17 @@ paths:
   - "src/lib/reports/empty-seats.ts"
   - "src/components/reports/empty-seats-board.tsx"
   - "tests/vacancies-empty-seats*"
-  - "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete}.ts"
+  - "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete,sales-truth}.ts"
+  - "src/lib/sales/sales-truth-{declared,reconciliation,report}.ts"
+  - "src/lib/reconciliation/checks/sales-truth.ts"
+  - "tests/sales-truth-*"
   - "tests/closing-{deep-link-silent-substitution,details-span-notice,load-gate,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*"
   - "tests/{needs-you-board,sos-dashboard-packed-cache,sos-month-complete,source-coverage}*"
 ---
 
 # Module memory — Monthly Closing — the screens, the deep links and the drift detectors
 
-**Scope:** The surfaces a closing is READ on and the checks that report on it, none of which decides a number: the matrix screen's head, filter and Details tab, the publish email's one link and the stale-deep-link notice, the publication-drift and Office-allocation-drift detectors, the month-completeness gate and the coverage banner, and the SoS dashboard cache. What a number IS stays in `sales-closing`.
+**Scope:** The surfaces a closing is READ on and the checks that report on it, none of which decides a number: the matrix screen's head, filter and Details tab, the publish email's one link and the stale-deep-link notice, the publication-drift and Office-allocation-drift detectors, the nightly sales truth check and its declared differences, the month-completeness gate and the coverage banner, and the SoS dashboard cache. What a number IS stays in `sales-closing`.
 
 This file is loaded because this session opened a file of this module (or the module-memory hook matched the work to it). **It binds exactly like AGENTS.md.** First the module's rules, then every memory note filed under it: each note line is the cue, and the whole note is `.claude/cloud-context/memory-mirror/<name>.md` (identical to the laptop memory folder). **Before acting on a line that bears on your change, open its note.**
 
@@ -53,6 +56,7 @@ This file is loaded because this session opened a file of this module (or the mo
 - 🔴 **The SoS dashboard cache stores PACKED rows — never hand `unstable_cache` the raw rows.** Raw, a CNS cross-line month was 2.08 MB, over Next's 2 MB entry: production silently stopped caching it, dev crashes. `packSosRows` (gzip + base64, the `packAchievementRows` precedent) returns null on a failed RPC or over `SOS_DASHBOARD_CACHE_MAX_BYTES`, and null reads live. 🔒 **The CEO / Super Admin view is cached too** (owner, 2026-10-04) — never restore the `canSeeCrossLineGeography` bypass. Pinned by `tests/sos-dashboard-packed-cache.test.ts`.
 - 🔴 **ONE PUBLISHED LINE AND PERIOD IS RECOMPUTED ONCE — `phx_closing_drift_overview` IS THE ONLY DOOR FOR A DRIFT READ, AND `phx_closing_publication_drift` HAS EXACTLY ONE CALL SITE.** `phx_closing_drift_status` used to pay for `phx_closing_publication_snapshot` twice (the fingerprint, then its own count) and the per-area read paid for it again, so three published lines cost nine recomputes of the whole month: measured on production 2026-10-23, the status call alone 3,635 ms over 77,339 buffers against the overview's 1,808 ms over 39,602. That is what crossed the 8-second cap at 06:36 Cairo and took four Needs You sources amber with it. 🔴 **Never answer an amber drift row by widening a lane or raising the board's budget** — make the source cheaper. Pinned by `tests/closing-drift-acknowledgement.test.ts`, which counts the call sites and re-pins the fingerprint formula on the live migration.
 - 🔴 **THE PUBLISHED-CLOSING SNAPSHOT RESOLVES EACH PRODUCT'S PERIOD PRICE ONCE, NOT ONCE PER ROLLUP ROW — `phx_factory_price` IS SECURITY DEFINER, SO THE PLANNER CANNOT INLINE IT AND EVERY ROW-LEVEL MENTION IS A REAL INVOCATION.** `phx_closing_publication_snapshot` called it 18,558 times for CNS 2026-09 to resolve 15 products — 1,645 ms over 38,963 buffers against 177 ms / 702 without the `value` aggregate — which is what timed the board drift source out on 12 of the 15 mornings 9-23 Oct 2026. A distinct-product CTE took it to 241 ms / 969 and the three-line board read to 747 ms against 8 s, byte-identical over 14 line × period pairs (Head Office and both price-override months included). Its column is `period_price`, never `factory_price` — the master's FLAT column. 🔴 **21 other functions still call it per row**, and fixing those means dropping SECURITY DEFINER, which needs its own review. Pinned by `tests/closing-snapshot-prices-once.test.ts`; account in the migration header.
+- 🔴 **THE SALES TRUTH CHECK RUNS NIGHTLY; ONLY `sales-truth-declared.ts` IS QUIET** (owner, 2026-11-14). The reconciliation cron carries one check per month (`sales-truth-<YYYY-MM>` from 2026-01, plus `sales-truth-other-months`) in one lane, one month at a time (`reconciliation/checks/sales-truth.ts`); a difference reaches him through System Audit. Declared, each as narrow as its fact: no Sales vs Target before 2026-01 (missing areas only); Jan–Jun 2026 area moves while the line total agrees within 1 EGP; March 2026 CNS 520.10 EGP short (12 CP units of Tebofortine 40 mg the closing books as Tebofortin 120 mg Intens); September 2026's four Assuit rows by line, area and amount. Never widen one to quiet a red check — find what moved and ask him. Pinned by `tests/sales-truth-declared.test.ts`.
 
 <!-- module-memory:rules:end -->
 
