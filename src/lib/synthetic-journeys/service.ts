@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { computeOverallStatus, isSkippedOnPurpose, skippedOnPurposeNote, type OverallStatus } from "./overall-status";
+import { normalizeSignInStep } from "./sign-in-step";
 
 export type { OverallStatus } from "./overall-status";
 
@@ -64,15 +65,6 @@ export interface IngestSyntheticJourneyReportMeta {
   finishedAt?: string;
   createdBy?: string | null;
   environment?: string | null;
-}
-
-const AUTH_JOURNEY_NAME = "authenticate as synthetic admin";
-const AUTH_JOURNEY_ROUTE = "/login";
-const AUTH_JOURNEY_ROLE = "Super Admin";
-
-function normalizeJourneyResult(result: JourneyResult): JourneyResult {
-  if (result.journeyName !== AUTH_JOURNEY_NAME) return result;
-  return { ...result, route: AUTH_JOURNEY_ROUTE, role: AUTH_JOURNEY_ROLE };
 }
 
 function estimateRunWindow(results: JourneyResult[], meta: IngestSyntheticJourneyReportMeta) {
@@ -157,7 +149,8 @@ export async function ingestSyntheticJourneyReport(
     throw new Error("baseUrl is required.");
   }
 
-  const normalized = journeyResults.map(normalizeJourneyResult);
+  // The sign-in step never names itself; it gets its code, page and role here (sign-in-step.ts).
+  const normalized = journeyResults.map(normalizeSignInStep);
   const { startedAt, finishedAt } = estimateRunWindow(normalized, meta);
   const durationMs = normalized.reduce((sum, r) => sum + r.durationMs, 0);
   const overallStatus = computeOverallStatus(normalized);
