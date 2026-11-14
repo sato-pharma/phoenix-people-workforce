@@ -187,9 +187,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   });
   const [busy, setBusy] = useState(false);
   /**
-   * The one in-page "are you sure" for the three moves that cannot be taken back quietly: publish,
-   * unconfirm Part 1 and reopen Part 2. A browser confirm() is a grey box HR clicks through; publish
-   * had none at all, and it writes every payslip and tells the whole company.
+   * The one in-page "are you sure" for the moves that cannot be taken back quietly: Confirm Part 1,
+   * Confirm Part 2, publish, unconfirm Part 1, reopen Part 2 and cancel. A browser confirm() is a grey
+   * box HR clicks through; publish had none at all, and it writes every payslip and tells the whole
+   * company. The two confirms had none either until 2026-11-14 (payroll audit): one click froze real
+   * money and told finance to pay it.
    */
   const [pendingAction, setPendingAction] = useState<{
     title: string;
@@ -197,6 +199,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     label: string;
     url: string;
     ok: string;
+    /**
+     * Run this instead of posting to `url`: the two confirms have their own acknowledgement gates
+     * (missing data, overpayment, roster) that a plain post would skip. `url` still names the endpoint.
+     */
+    onConfirm?: () => Promise<void>;
     /** Reopen Part 1 / Part 2 / cancel: refused after a bank-file download unless a reason is given (REC-035). */
     overridable?: boolean;
     /** The override prompt's reason label; "Why reopen anyway" when unset. */
@@ -1116,7 +1123,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               onClick={() => {
                 const action = pendingAction;
                 setPendingAction(null);
-                if (action.overridable) void postReopen(action);
+                if (action.onConfirm) void action.onConfirm();
+                else if (action.overridable) void postReopen(action);
                 else void post(action.url, action.ok);
               }}
             >
@@ -1600,7 +1608,16 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 size="sm"
                 className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                 disabled={busy || !part1AllConfirmed || run.phase !== "part1"}
-                onClick={() => void confirmPart1WithDataGate(run.id)}
+                onClick={() =>
+                  setPendingAction({
+                    title: `Confirm Part 1 for ${periodLabel}?`,
+                    body: "This freezes every employee's first instalment and the Part 1 non-employee entries, and tells finance the Part 1 bank files are ready to pay. After this, changing a Part 1 figure means unconfirming Part 1.",
+                    label: "Confirm Part 1",
+                    url: `/api/automated-payroll/runs/${run.id}/part1/confirm`,
+                    ok: "Part 1 confirmed. Finance roles notified.",
+                    onConfirm: () => confirmPart1WithDataGate(run.id),
+                  })
+                }
               >
                 Confirm Part 1
               </Button>
@@ -1667,7 +1684,16 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                         size="sm"
                         className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                         disabled={busy || !part2AllConfirmed || run.phase !== "part2"}
-                        onClick={() => void confirmPart2WithOverpaidGate(run.id)}
+                        onClick={() =>
+                          setPendingAction({
+                            title: `Confirm Part 2 for ${periodLabel}?`,
+                            body: "This locks the full sheet, every step and the Part 2 non-employee entries, records the totals finance will pay, and tells finance the Part 2 bank files are ready to pay. After this, changing any figure means reopening Part 2.",
+                            label: "Confirm Part 2",
+                            url: `/api/automated-payroll/runs/${run.id}/part2/confirm`,
+                            ok: "Part 2 confirmed. Finance roles notified.",
+                            onConfirm: () => confirmPart2WithOverpaidGate(run.id),
+                          })
+                        }
                       >
                         Confirm Part 2
                       </Button>
