@@ -85,7 +85,6 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "contract_renewal", eventType: "renewal_reminder", label: "An employee's contract is due for renewal", sentFrom: ["app/api/notifications/contract-renewals/route.ts"] },
   { module: "contract_renewal", eventType: "workflow_updated", label: "A contract renewal moved to its next step", sentFrom: ["src/lib/contracts/service.ts"] },
   { module: "probation", eventType: "reminder_due", label: "A probation review is due for your team member", sentFrom: ["src/lib/probation/service.ts"] },
-  { module: "probation", eventType: "workflow_updated", label: "A probation review moved to its next step", sentFrom: ["src/lib/probation/service.ts"] },
   // `milestone_day${m.day}` over PROBATION_MILESTONES — days 30, 60 and 75.
   { module: "probation", eventType: "milestone_day30", label: "A new hire reached Day 30 of probation", sentFrom: ["src/lib/probation/intelligence/milestone-emails.ts"] },
   { module: "probation", eventType: "milestone_day60", label: "A new hire reached Day 60 of probation", sentFrom: ["src/lib/probation/intelligence/milestone-emails.ts"] },

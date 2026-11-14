@@ -111,7 +111,9 @@ export function runTransactionWorkflowAuditTests() {
   assert.match(bulkEmployeeRoute, /provisionNewHireAccess/);
 
   const resignationsService = source("src/lib/resignations/service.ts");
-  const probationService = source("src/lib/probation/service.ts");
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow left probation/service.ts; a
+  // probation is decided on its case, in probation/intelligence/decision.ts.
+  const probationService = source("src/lib/probation/intelligence/decision.ts");
   assert.match(resignationsService, /phx_resign_employee_and_open_vacancy/);
   assert.match(probationService, /resignEmployeeAndOpenVacancy/);
   assert.match(probationService, /employeeStatus: "terminated"/);

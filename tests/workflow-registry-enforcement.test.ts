@@ -104,9 +104,10 @@ export function runWorkflowRegistryEnforcementTests() {
   const resignationService = source("src/lib/resignations/service.ts");
   assert.match(resignationService, /assertResignationWorkflowTransition\(\{[\s\S]*action: "submit"/);
   assert.match(resignationService, /expectedNextStatusByAction/);
-  const probationService = source("src/lib/probation/service.ts");
-  assert.match(probationService, /assertProbationWorkflowTransition\(\{[\s\S]*action: "create"/);
-  assert.match(probationService, /assertProbationWorkflowTransition\(\{[\s\S]*expectedNextStatus: expectedNextStatusByAction\[action\]/);
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow (create / pass / terminate through
+  // assertProbationWorkflowTransition) was retired; a probation is decided on its case, and
+  // tests/probation-one-model.test.ts keeps the old door shut.
+  assert.doesNotMatch(source("src/lib/probation/service.ts"), /assertProbationWorkflowTransition\(/);
   const contractService = source("src/lib/contracts/service.ts");
   assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*action: "create"/);
   assert.match(contractService, /assertContractWorkflowTransition\(\{[\s\S]*expectedNextStatus: expectedNextStatusByAction\[action\]/);
