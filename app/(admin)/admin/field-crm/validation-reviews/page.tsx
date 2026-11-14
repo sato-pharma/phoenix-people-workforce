@@ -15,6 +15,7 @@ import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/ser
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
 import { keepPlaceChecksForTheClick, placeChecksHandoffKey } from "@/lib/phoenix-crm/server/place-checks-handoff";
+import { loadFailingTimetables } from "@/lib/phoenix-crm/server/failing-timetables";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
 import {
   canDecideValidationReviews,
@@ -68,9 +69,11 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     loadValidatedPlaces(viewer),
     loadSharedPlaceBoard(viewer),
   ]);
-  const [[reviews, validatedRead, sharedRead], reopenedRead, heldFullNames, [notes, integrity]] = await Promise.all([
+  const [[reviews, validatedRead, sharedRead], reopenedRead, failingTimetables, heldFullNames, [notes, integrity]] = await Promise.all([
     subjectReads,
     loadReopenedCustomers(viewer),
+    // Buildings whose timetable was refused on two or more days (owner, 14 Nov 2026) — one small read.
+    loadFailingTimetables(viewer),
     // Doctors' full names that matched their board under 60% (owner, 2026-11-07).
     loadHeldFullNames(viewer),
     // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
@@ -194,6 +197,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
         <PlaceChecksWithDeck
           capped={capped}
           decided={recentDecided}
+          failingTimetables={failingTimetables}
           noteIndex={noteIndex}
           onDemand={onDemand}
           openOn={openOn}

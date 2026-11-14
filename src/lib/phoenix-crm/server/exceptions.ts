@@ -50,6 +50,8 @@ import {
   buildExceptions,
   isWorkingDay,
   lastFinishedWorkingDay,
+  NO_VISIT_STREAK_LOOKBACK_DAYS,
+  noVisitStreak,
   type ExceptionsBoard,
   type TerritoryFacts,
 } from "@/lib/phoenix-crm/exceptions";
@@ -94,11 +96,13 @@ export type ExceptionsView = ExceptionsBoard & {
 };
 
 /**
- * How far back the holiday lookup reaches. The window walks back six WORKING days, which is nine
- * calendar days of ordinary weeks and more across a holiday run — 45 days covers the longest Eid
- * plus both weekends with room to spare, and costs at most two reads (the lookup is per month).
+ * How far back the holiday lookup reaches. The call-rate window walks back six WORKING days, which is
+ * nine calendar days of ordinary weeks; the no-visit run (owner, 14 Nov 2026) walks back
+ * NO_VISIT_STREAK_LOOKBACK_DAYS working days, which is a month of ordinary weeks and more across a
+ * holiday run. 60 days covers that with the longest Eid inside it, and costs at most three reads (the
+ * lookup is per month). The run never counts a day older than this read, whatever the calendar says.
  */
-const HOLIDAY_LOOKBACK_DAYS = 45;
+const HOLIDAY_LOOKBACK_DAYS = 60;
 
 /** The working days the window covers, counting back from the last finished one. */
 function windowDays(lastDay: string, count: number, holidays: CallRateHolidays): string[] {
@@ -234,6 +238,38 @@ async function loadVisitTallies(
 }
 
 /**
+ * The days each of these territories has a visit on, over the run's lookback — the same visits, by the
+ * same three tests, that `loadVisitTallies` counts. Read only for the territories whose last working
+ * day is empty, which is a handful, so it is one small read after the tallies and not a wider window
+ * for every territory on the board.
+ */
+async function loadVisitDays(seatIds: string[], isTest: boolean, from: string, to: string): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (seatIds.length === 0) return out;
+  const rows = await readSeatGroups(seatIds, 150, (part) =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select("id, seat_id, visit_date")
+          .eq("is_test", isTest)
+          .eq("customer_validated", true)
+          .is("imported_from_ireports360_at", null)
+          .gte("visit_date", from)
+          .lte("visit_date", to)
+          .in("seat_id", part),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    ),
+  );
+  for (const row of rows) {
+    const seatId = String(row.seat_id);
+    if (!out.has(seatId)) out.set(seatId, new Set<string>());
+    (out.get(seatId) as Set<string>).add(String(row.visit_date));
+  }
+  return out;
+}
+
+/**
  * Readiness for every territory, shared with a caller asking for the same territories AT THE SAME
  * MOMENT — the reports pack opens this board and the adoption report together, and both open with
  * this call (`shareInFlight`; nothing is kept once it lands). `loadReadiness` answers territory by
@@ -282,9 +318,13 @@ export async function gatherExceptions(input: {
 
   // 🔴 THE HOLIDAYS COME FIRST, because they decide which days the window is even made of. Read
   // over the whole lookback rather than the window, since the window's own length depends on them.
-  const holidays = await loadCallRateHolidays(addDaysIso(input.cairoToday, -HOLIDAY_LOOKBACK_DAYS), input.cairoToday);
+  const holidaysFrom = addDaysIso(input.cairoToday, -HOLIDAY_LOOKBACK_DAYS);
+  const holidays = await loadCallRateHolidays(holidaysFrom, input.cairoToday);
   const lastDay = lastFinishedWorkingDay(input.cairoToday, holidays.dates);
   const window = lastDay ? windowDays(lastDay, input.windowWorkingDays, holidays.dates) : [];
+  // The working days the no-visit run may reach back over (owner, 14 Nov 2026), oldest first. Never a
+  // day older than the holiday read: past it a public holiday would be counted as a day he owed.
+  const streakLookback = lastDay ? windowDays(lastDay, NO_VISIT_STREAK_LOOKBACK_DAYS, holidays.dates).filter((day) => day >= holidaysFrom) : [];
 
   // 🔴 THE FIELD WEEK'S OWN WORKING DAYS — Saturday to Wednesday minus holidays, the same rule as
   // the window, never a bare seven days. This is what "signed off all week" has to be measured
@@ -301,8 +341,9 @@ export async function gatherExceptions(input: {
 
   // 🔴 A FAILED LEAVE READ MUST NEVER READ AS "nobody is on leave" — that is the one direction that
   // invents an accusation. `loadApprovedLeaveDays` throws, so it is caught and the failure travels
-  // as `leaveUnread` for the board to say out loud, exactly as `holidaysUnread` does.
-  const leaveSpan = [...window, ...weekWorkingDays, input.cairoToday].sort();
+  // as `leaveUnread` for the board to say out loud, exactly as `holidaysUnread` does. The read covers
+  // the no-visit run's days too: a day of approved leave inside the run is skipped, never counted.
+  const leaveSpan = [...window, ...streakLookback, ...weekWorkingDays, input.cairoToday].sort();
   let leaveRows: Array<{ hrId: string; day: string; fullDay: boolean }> = [];
   let leaveUnread = false;
   try {
@@ -333,18 +374,39 @@ export async function gatherExceptions(input: {
 
   const openedOn = new Map(config.lineRollout.map((line) => [line.lineCode, line.opensOn]));
 
+  const awayOf = (seat: OrgSeat): Set<string> => fullLeave.get(String(seat.occupantHrId ?? "").trim().toLowerCase()) ?? new Set<string>();
+  // 🔴 THE RUN IS COUNTED ONLY WHERE THE LEAVE AND HOLIDAY CALENDARS WERE BOTH READ. Without the first a
+  // rep signed off for a week would read "no visit for 5 working days in a row", without the second a
+  // public holiday would be a day he owed; the row keeps its one-day words instead.
+  const streakSeats =
+    lastDay && !leaveUnread && holidays.complete
+      ? seats.filter((seat) => seat.occupantHrId && (visits.get(seat.seatId)?.lastDay ?? 0) === 0 && !awayOf(seat).has(lastDay)).map((seat) => seat.seatId)
+      : [];
+  const visitDays = await loadVisitDays(streakSeats, isTest, streakLookback[0] ?? "", lastDay ?? "");
+  const streakSeatSet = new Set(streakSeats);
+
   const facts: TerritoryFacts[] = seats.map((seat) => {
     const list = readiness.get(seat.seatId) ?? null;
     const plan = plans.get(seat.seatId) ?? null;
     const tally = visits.get(seat.seatId) ?? { am: 0, pm: 0, lastDay: 0 };
-    const away = fullLeave.get(String(seat.occupantHrId ?? "").trim().toLowerCase()) ?? new Set<string>();
+    const away = awayOf(seat);
+    const opened = (seat.lineCode ? openedOn.get(seat.lineCode) : null) ?? null;
     return {
+      noVisitStreak: streakSeatSet.has(seat.seatId)
+        ? noVisitStreak({
+            // Never a day before the line opened in Phoenix CRM: nobody owed a visit here then.
+            workingDaysNewestFirst: [...streakLookback].reverse().filter((day) => !opened || day >= opened),
+            visitDays: visitDays.get(seat.seatId) ?? new Set<string>(),
+            leaveDays: away,
+            completeHistory: Boolean(opened && streakLookback.length > 0 && opened >= (streakLookback[0] as string)),
+          })
+        : null,
       seatId: seat.seatId,
       territoryName: territoryName(seat),
       lineName: seat.lineName,
       repName: seat.occupantHrId ? nameOf(names, seat.occupantHrId) : null,
       hasRep: Boolean(seat.occupantHrId),
-      lineOpenedOn: (seat.lineCode ? openedOn.get(seat.lineCode) : null) ?? null,
+      lineOpenedOn: opened,
       readiness: list
         ? { total: list.total, validated: list.validated, dropped: list.dropped, dropPending: list.dropPending, ready: list.ready }
         : null,

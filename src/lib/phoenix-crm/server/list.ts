@@ -37,6 +37,7 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
+  approvalNeedsFullName,
   boardNamesOf,
   doctorNeedsFullName,
   fullNameMatchPercent,
@@ -3339,7 +3340,17 @@ export async function retakePlaceSignboard(
       .limit(1);
     const reviewId = text(((reviews ?? []) as Row[])[0]?.id);
     if (confirmed && reviewId) {
-      if ((await approveHeldSignboardBySystem(reviewId)) && !isTest) await withdrawValidationNotConfirmed(customerId);
+      if (await approveHeldSignboardBySystem(reviewId)) {
+        if (!isTest) await withdrawValidationNotConfirmed(customerId);
+        return;
+      }
+      // 🔴 A CONFIRMED SIGN ON A SHORT-NAMED CLINIC CUSTOMER IS HANDED OVER NOW (owner, 14 Nov 2026, the
+      // items the audit left). The system never approves one or two names (`approveHeldSignboardBySystem`),
+      // so the review stays waiting, and nobody was told until the hourly re-read met it. The Super Admin is
+      // told here, with the notice the hold itself raises; one key per review, so the re-read adds no second.
+      if (!isTest && approvalNeedsFullName({ listType, customerName })) {
+        await notifyValidationReviewWaiting({ customerName, seat, repHrId: viewer.hrId, reviewId });
+      }
       return;
     }
     // Another clear name on a place nobody is holding goes to the Super Admin's board, as the night files it.

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand}.ts"
+  - "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand,waiting-rules}.ts"
   - "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts"
   - "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx"
   - "app/**/field-crm/validation-reviews/**"
@@ -10,7 +10,7 @@ paths:
   - "src/components/crm-integrity/integrity-review-slide.tsx"
   - "app/api/admin/phoenix-crm/integrity/cases/**"
   - "tests/place-review-deck*"
-  - "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks,place-checks-on-demand}*"
+  - "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks,place-checks-on-demand,waiting-oldest-first,validation-left-items}*"
   - "src/lib/phoenix-crm/master-list.ts"
   - "src/lib/phoenix-crm/server/master-list.ts"
   - "src/components/phoenix-crm/master-list-board.tsx"
@@ -33,6 +33,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **WHAT IS WAITING ON PLACE CHECKS IS LISTED OLDEST FIRST AND SAYS ITS WAIT; WHAT IS DECIDED KEEPS NEWEST FIRST** (owner, 14 Nov 2026; the oldest of 84 waiting rows had waited 11.6 days at the bottom of the last page). `waitingOldestFirst` (`src/lib/phoenix-crm/waiting-rules.ts`) re-orders only the waiting rows inside the one list, a building with something to decide is ordered by `compareOldestFirst`, and each waiting review, held building and waiting seated customer carries `waitingText` / `waitingLong` (warning tone from 72 hours). A broken stamp goes LAST; the rep's picker row carries no wait. Pinned by `tests/phoenix-crm-waiting-oldest-first.test.ts`. Account: `docs/phoenix-crm-shared-places.md`, "The validation enhancements".
+- 🔴 **AN APPROVAL BEHIND A BUILDING STILL BEING CHECKED IS KEPT AND THE CUSTOMER WAITS — "Approved, waits for the building", NEVER A VALIDATION — AND THE BUILDING'S APPROVAL RELEASES HIM** (owner, 14 Nov 2026, the left items; nobody behind a held building counts, 2026-10-14). The database answers `waiting_for_building`; `approvalOutcome` draws it on the queue, the take-back and the one-by-one deck, and the "Validate again" bell is withdrawn either way. 🔴 A review left pending on a place NOT in use is nobody's to decide: `reviewStillToDecide` filters the page AND `countValidationReviewsWaiting` (read whole and paged, throws when capped), so the Needs you figure and the page cannot disagree. The bulk approve still draws plain "Approved". Pinned by `tests/phoenix-crm-validation-left-items.test.ts`. Account: same doc, "The left items".
 - 🔴 **THE PAGE SENDS WHAT NEEDS YOU DRAWS; EVERY PLACE IN USE AND EVERY OLDER DECISION WAIT FOR THE CLICK** (owner, 2026-11-14, "Load lists on demand"; the 12.5 MB page froze the server 1.08 s on 11 Nov). The page still READS every row, counts the scorecard, the Not confirmed count and the filter lists with the board's own functions (`placeChecksSummary`, `src/lib/phoenix-crm/place-checks-on-demand.ts`), sends `validated={seatedInUse}` and `decided={recentDecided}`, and leaves the rest for the click (`place-checks-handoff.ts`, one entry per person, taken once, two minutes). The board reads `/api/phoenix-crm/validation-reviews/everything` on Not confirmed, any filter, a decider or the review, and draws no tab from part of its rows (`reading`). Never hand the board every row again. Pinned by `tests/phoenix-crm-place-checks-on-demand.test.ts`.
 - 🔴 **ONE RE-READ FOR A RUN OF DECISIONS, NEVER ONE EACH** (2026-11-01, "fix the portal home slow opens"). `usePlaceCheckDone` asks `placeCheckReread` (`src/components/phoenix-crm/place-check-reread.ts`), which waits for 30 quiet seconds; closing the one-by-one review reads at once. Sunday 1 Nov 2026, 10:45 to 10:50 Cairo: 14 approvals were 14 overlapping builds of this page, each 250+ reads and 9 to 28 seconds. In the minutes with builds, every read in the company had a median of 382 ms against 140 ms without, and the portal home's typical open was 5.0 s against 3.9 s. **Never put a `router.refresh()` back on the decision path.** A comment, a recommendation and the bulk action still refresh at once, because those are rare.
 

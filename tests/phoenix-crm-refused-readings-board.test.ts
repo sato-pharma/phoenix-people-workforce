@@ -254,6 +254,10 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
     assert.deepEqual(
       namers.sort(),
       [
+        // Timetables that keep failing (owner, 14 Nov 2026, "List + declare"): the two timetable refusals
+        // only, listed by building, read for the Super Admin and the SFE Manager
+        // only (`canDecideValidationReviews`), on Place checks.
+        "src/lib/phoenix-crm/server/failing-timetables.ts",
         // The places worth a second look (2026-11-11): far refusals from one spot, read for the Super Admin and
         // the SFE Manager only (`canDecideFarVisitHolds`), on the held-visits page.
         "src/lib/phoenix-crm/server/places-to-recheck.ts",

@@ -92,6 +92,7 @@ const KIND_LABELS: Record<DeckKind, string> = { both: "Both", places: "Places", 
 
 const OUTCOME_WORDS: Record<PlaceCheckOutcome, string> = {
   approved: "Approved",
+  waiting_building: "Approved, waits for the building",
   rejected: "Rejected",
   refused: "Refused",
   restored: "Approved after all",

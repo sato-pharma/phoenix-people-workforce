@@ -9997,6 +9997,8 @@ begin
         set status = 'active',
             validated_at = now(),
             validated_by_hr_id = v_request.requested_by_hr_id,
+            -- 2026-11-14 (left items): validated, so nothing waits to be captured again.
+            reopened_at = null,
             grade = coalesce(v_request.approved_grade, v_approved_in, v_request.proposed_grade),
             potential_grade = coalesce(v_request.potential_grade, v_potential_in),
             dropped_reason = null,
@@ -10047,7 +10049,12 @@ begin
       set status = case when c.validated_at is not null and v_has_place then 'active' else 'pending' end,
           validated_at = case when v_has_place then c.validated_at else null end,
           validated_by_hr_id = case when v_has_place then c.validated_by_hr_id else null end,
-          reopened_at = case when c.validated_at is not null and not v_has_place then now() else c.reopened_at end,
+          -- 2026-11-14 (left items): back in use with his place, so the stamp of an old refusal goes.
+          reopened_at = case
+            when c.validated_at is not null and not v_has_place then now()
+            when c.validated_at is not null and v_has_place then null
+            else c.reopened_at
+          end,
           dropped_reason = null,
           dropped_note = null,
           status_changed_at = now(),
@@ -10260,17 +10267,32 @@ begin
       where pl.shared_place_id = v_id and pl.status = 'active' and c.status = 'pending'
       order by pl.created_at
     loop
-      if v_venue.schedule_photo_path is null
-        or (v_seated.schedule_check ->> 'verdict') in ('other_name', 'no_schedule')
-        or exists (
+      -- 2026-11-14 (left items), two changes to the three holds above and nothing else:
+      --   * a review still waiting holds him only while the place it is about is ACTIVE. A place retired with
+      --     its building leaves its review pending, and that review is nobody's to decide.
+      --   * the first two holds (no timetable on file; a timetable read as another name or as no schedule) do
+      --     not hold a seat A PERSON ALREADY APPROVED. Those are the very customers a review is held for, and
+      --     phoenix_crm_decide_validation_review now leaves them waiting for this building: without this they
+      --     would stay pending with nothing left to decide.
+      if exists (
           select 1 from public.phoenix_crm_validation_reviews r
           where r.customer_id = v_seated.customer_id and r.status = 'pending'
+            and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
+        )
+        or (
+          (v_venue.schedule_photo_path is null or (v_seated.schedule_check ->> 'verdict') in ('other_name', 'no_schedule'))
+          and not exists (
+            select 1 from public.phoenix_crm_validation_reviews r
+            where r.place_id = v_seated.place_id and r.status = 'approved'
+          )
         ) then
         continue;
       end if;
 
       update public.phoenix_crm_customers c
-      set status = 'active', validated_at = now(), validated_by_hr_id = v_actor, status_changed_at = now(), updated_at = now()
+      -- 2026-11-14 (left items): validated, so nothing waits to be captured again.
+      set status = 'active', validated_at = now(), validated_by_hr_id = v_actor, reopened_at = null,
+          status_changed_at = now(), updated_at = now()
       where c.id = v_seated.customer_id and c.status = 'pending';
       if found then
         insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
@@ -10487,6 +10509,9 @@ declare
   v_place public.phoenix_crm_places%rowtype;
   v_validated boolean := false;
   v_reopened boolean := false;
+  -- 2026-11-14 (left items): the building the place is seated in, and whether the approval waits for it.
+  v_building_status text;
+  v_waiting boolean := false;
 begin
   if v_id is null or v_actor is null or v_decision not in ('approve', 'reject')
     or (v_note is not null and char_length(v_note) > 500) then
@@ -10510,6 +10535,15 @@ begin
     raise exception 'phoenix_crm:review_decided';
   end if;
 
+  -- 2026-11-14 (left items): the building this place is seated in, read under a share lock and BEFORE the
+  -- customer's row is locked. phoenix_crm_decide_shared_place holds the building's row for the whole of its
+  -- decision and then writes the customers seated in it, so the two can neither miss each other nor wait on
+  -- each other in a ring. No row, and so null, for a place of the customer's own.
+  select sp.status into v_building_status
+  from public.phoenix_crm_shared_places sp
+  where sp.id = (select pl.shared_place_id from public.phoenix_crm_places pl where pl.id = v_review.place_id)
+  for share;
+
   select c.* into v_customer from public.phoenix_crm_customers c where c.id = v_review.customer_id for update;
   select pl.* into v_place from public.phoenix_crm_places pl where pl.id = v_review.place_id for update;
 
@@ -10518,7 +10552,14 @@ begin
     set status = 'approved', decided_by_hr_id = v_actor, decided_at = now(), decision_note = v_note
     where id = v_id;
 
-    if v_review.kind = 'validation' and v_customer.status = 'pending' and v_place.status = 'active' then
+    -- 🔴 2026-11-14 (left items): NOBODY BEHIND A BUILDING STILL BEING CHECKED COUNTS YET (owner, 2026-10-14:
+    -- "until the admin confirm the polyclinic and the doctors in it"). This approval used to validate the
+    -- customer at once, building held or not. The review is approved all the same; the customer is validated
+    -- when the building is (phoenix_crm_decide_shared_place reads this approval), or goes back to To validate
+    -- if the building is rejected.
+    v_waiting := v_review.kind = 'validation' and v_customer.status = 'pending' and v_place.status = 'active'
+      and v_place.shared_place_id is not null and coalesce(v_building_status, '') = 'held';
+    if v_review.kind = 'validation' and v_customer.status = 'pending' and v_place.status = 'active' and not v_waiting then
       update public.phoenix_crm_customers c
       set status = 'active',
           validated_at = now(),
@@ -10557,7 +10598,7 @@ begin
     insert into public.phoenix_crm_list_events (seat_id, customer_id, place_id, event_type, actor_hr_id, details, is_test)
     values (
       v_review.seat_id, v_customer.id, v_review.place_id, 'validation_review_approved', v_actor,
-      jsonb_build_object('review_id', v_id, 'note', v_note, 'validated', v_validated), v_review.is_test
+      jsonb_build_object('review_id', v_id, 'note', v_note, 'validated', v_validated, 'waiting_for_building', v_waiting), v_review.is_test
     );
   else
     update public.phoenix_crm_validation_reviews
@@ -10611,6 +10652,7 @@ begin
     'customer_id', v_customer.id,
     'is_test', v_review.is_test,
     'validated', v_validated,
+    'waiting_for_building', v_waiting,
     'reopened', v_reopened,
     -- so the service notifies the rep without a second read. rep_hr_id is the rep who VALIDATED,
     -- never the person deciding: he is the one whose photo this is.
@@ -13614,9 +13656,13 @@ begin
   ) then
     raise exception 'phoenix_crm:already_has_place';
   end if;
+  -- 2026-11-14 (left items): only while the place that review is about is still ACTIVE, the test every other
+  -- door makes since the validation audit. A customer with an active place was already refused just above,
+  -- so this can no longer fire; it is kept so the doors read alike if that order ever changes.
   if exists (
     select 1 from public.phoenix_crm_validation_reviews r
     where r.customer_id = v_customer.id and r.status = 'pending'
+      and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
   ) then
     raise exception 'phoenix_crm:location_in_review';
   end if;
@@ -15870,11 +15916,20 @@ begin
     -- the approve branch, never widened — bringing the building back must not confirm a doctor the
     -- building itself cannot answer for.
     if v_seated.customer_status = 'pending' then
-      if v_venue.schedule_photo_path is null
-        or (v_seated.schedule_check ->> 'verdict') in ('other_name', 'no_schedule')
-        or exists (
+      -- 2026-11-14 (left items): the same two changes as the approve branch of phoenix_crm_decide_shared_place,
+      -- which this rule is lifted from — a waiting review holds only while its place is active, and a seat a
+      -- person already approved is not held by the timetable.
+      if exists (
           select 1 from public.phoenix_crm_validation_reviews r
           where r.customer_id = v_seated.customer_id and r.status = 'pending'
+            and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
+        )
+        or (
+          (v_venue.schedule_photo_path is null or (v_seated.schedule_check ->> 'verdict') in ('other_name', 'no_schedule'))
+          and not exists (
+            select 1 from public.phoenix_crm_validation_reviews r
+            where r.place_id = v_seated.place_id and r.status = 'approved'
+          )
         ) then
         v_still_waiting := v_still_waiting || jsonb_build_array(jsonb_build_object(
           'customer_id', v_seated.customer_id, 'customer_name', v_seated.customer_name
@@ -15948,6 +16003,9 @@ declare
   v_place public.phoenix_crm_places%rowtype;
   v_validated boolean := false;
   v_renamed boolean := false;
+  -- 2026-11-14 (left items): the building the place is seated in, and whether the approval waits for it.
+  v_building_status text;
+  v_waiting boolean := false;
 begin
   -- 🔴 THE NOTE IS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"). It used to raise
   -- bad_input on a null note; the four events and the review row this writes all accept one, and
@@ -16049,7 +16107,17 @@ begin
 
   -- The rejection sent him back to To validate when this was his only place; the restore undoes that,
   -- in the REP's own name — he validated it, and a reversal does not take that away from him.
-  if v_customer.status = 'pending' then
+  -- 🔴 2026-11-14 (left items): the same wait as phoenix_crm_decide_validation_review. A place brought back
+  -- into a building still being checked validates nobody until the building is approved; the review is
+  -- approved all the same, and the building's approval reads it. The building's row is share-locked, so a
+  -- decision on the building made at the same moment is seen whole or not at all.
+  select sp.status into v_building_status
+  from public.phoenix_crm_shared_places sp
+  where sp.id = v_place.shared_place_id
+  for share;
+  v_waiting := v_customer.status = 'pending' and v_place.shared_place_id is not null and coalesce(v_building_status, '') = 'held';
+
+  if v_customer.status = 'pending' and not v_waiting then
     update public.phoenix_crm_customers c
     set status = 'active',
         validated_at = now(),
@@ -16083,7 +16151,7 @@ begin
   values (
     v_review.seat_id, v_customer.id, v_place.id, 'validation_review_approved', v_actor,
     jsonb_build_object('review_id', v_id, 'note', v_note, 'validated', v_validated, 'why', 'restored_after_rejection',
-      'renamed', v_renamed),
+      'renamed', v_renamed, 'waiting_for_building', v_waiting),
     v_review.is_test
   );
 
@@ -16095,6 +16163,7 @@ begin
     'place_id', v_place.id,
     'is_test', v_review.is_test,
     'validated', v_validated,
+    'waiting_for_building', v_waiting,
     'renamed', v_renamed
   );
 end;
@@ -16377,7 +16446,12 @@ begin
     set status = case when c.validated_at is not null and v_has_place then 'active' else 'pending' end,
         validated_at = case when v_has_place then c.validated_at else null end,
         validated_by_hr_id = case when v_has_place then c.validated_by_hr_id else null end,
-        reopened_at = case when c.validated_at is not null and not v_has_place then now() else c.reopened_at end,
+        -- 2026-11-14 (left items): back in use with his place, so the stamp of an old refusal goes.
+        reopened_at = case
+          when c.validated_at is not null and not v_has_place then now()
+          when c.validated_at is not null and v_has_place then null
+          else c.reopened_at
+        end,
         dropped_reason = null,
         dropped_note = null,
         status_changed_at = now(),
@@ -19336,6 +19410,8 @@ begin
   set status = 'active',
       validated_at = now(),
       validated_by_hr_id = coalesce(v_validated_by, v_actor),
+      -- 2026-11-14 (left items): validated, so nothing waits to be captured again.
+      reopened_at = null,
       dropped_reason = null,
       dropped_note = null,
       status_changed_at = now(),
@@ -60756,6 +60832,39 @@ CREATE TABLE public.hr_retention_themes (
 ALTER TABLE public.hr_retention_themes OWNER TO postgres;
 
 --
+-- Name: incentive_shown_figures; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.incentive_shown_figures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    hr_id text NOT NULL,
+    semester_label text NOT NULL,
+    periods text[] DEFAULT '{}'::text[] NOT NULL,
+    line text,
+    sales_scope text,
+    achievement_percent numeric NOT NULL,
+    semester_sales numeric NOT NULL,
+    semester_target numeric NOT NULL,
+    basic_salary numeric NOT NULL,
+    payout_egp numeric NOT NULL,
+    payout_percentage numeric,
+    pedia_split jsonb,
+    window_notice text,
+    fingerprint text NOT NULL,
+    app_revision text,
+    first_shown_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_shown_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.incentive_shown_figures OWNER TO postgres;
+
+--
+-- Name: TABLE incentive_shown_figures; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.incentive_shown_figures IS 'Each distinct incentive figure a person''s own Incentive tab showed them, with its inputs (REC-066). The figure columns are never rewritten; only last_shown_at moves. Written only from the person''s own tab, never from a manager''s, a test account''s, a seat view or a preview session. Read by the Super Admin on Employee 360. Nothing pays from it. Service role only.';
+
+--
 -- Name: internal_messages; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -74662,6 +74771,20 @@ ALTER TABLE ONLY public.hr_retention_themes
     ADD CONSTRAINT hr_retention_themes_theme_key_key UNIQUE (theme_key);
 
 --
+-- Name: incentive_shown_figures incentive_shown_figures_person_figure_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.incentive_shown_figures
+    ADD CONSTRAINT incentive_shown_figures_person_figure_key UNIQUE (hr_id, fingerprint);
+
+--
+-- Name: incentive_shown_figures incentive_shown_figures_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.incentive_shown_figures
+    ADD CONSTRAINT incentive_shown_figures_pkey PRIMARY KEY (id);
+
+--
 -- Name: internal_messages internal_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -81694,6 +81817,12 @@ CREATE INDEX idx_v2_excuse_requests_manager_status ON public.v2_excuse_requests 
 CREATE INDEX idx_v2_excuse_requests_status_date ON public.v2_excuse_requests USING btree (status, excuse_date DESC);
 
 --
+-- Name: incentive_shown_figures_person_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX incentive_shown_figures_person_idx ON public.incentive_shown_figures USING btree (hr_id, first_shown_at DESC);
+
+--
 -- Name: internal_messages_recipient_hr_created_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -88559,6 +88688,13 @@ ALTER TABLE ONLY public.hr_retention_conversations
     ADD CONSTRAINT hr_retention_conversations_resignation_id_fkey FOREIGN KEY (resignation_id) REFERENCES public.employee_resignations(id) ON DELETE SET NULL;
 
 --
+-- Name: incentive_shown_figures incentive_shown_figures_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.incentive_shown_figures
+    ADD CONSTRAINT incentive_shown_figures_hr_id_fkey FOREIGN KEY (hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+--
 -- Name: ireports360_crm_customer_brick_resolutions ireports360_crm_customer_brick_resolutions_brick_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -93163,6 +93299,12 @@ ALTER TABLE public.hr_retention_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hr_retention_themes ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: incentive_shown_figures; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.incentive_shown_figures ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: internal_messages; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -95503,6 +95645,12 @@ CREATE POLICY phx_hr_reminder_comments_service_role ON public.hr_reminder_commen
 --
 
 CREATE POLICY phx_hr_reminders_service_role ON public.hr_reminders TO service_role USING (true) WITH CHECK (true);
+
+--
+-- Name: incentive_shown_figures phx_incentive_shown_figures_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_incentive_shown_figures_service_role ON public.incentive_shown_figures TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: internal_messages phx_internal_messages_service_role; Type: POLICY; Schema: public; Owner: postgres
@@ -104041,6 +104189,12 @@ GRANT ALL ON TABLE public.hr_retention_conversations TO service_role;
 --
 
 GRANT ALL ON TABLE public.hr_retention_themes TO service_role;
+
+--
+-- Name: TABLE incentive_shown_figures; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.incentive_shown_figures TO service_role;
 
 --
 -- Name: TABLE internal_messages; Type: ACL; Schema: public; Owner: postgres

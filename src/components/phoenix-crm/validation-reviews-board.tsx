@@ -44,6 +44,7 @@ import { PlaceCheckScorecard, type ScoreTarget } from "@/components/phoenix-crm/
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
 import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-board";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
+import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -78,7 +79,7 @@ import {
 } from "@/lib/phoenix-crm/place-checks-on-demand";
 import { narrowVenueGroups, seatedCustomersByVenue, venueNeedsDecision, withoutSeated } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
-import type { PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import type { FailingTimetablesView, PlaceNoteIndex, ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
 // Types only: this board is also a district manager's portal page, and the review is not his.
 import type { PlaceReviewDeckInput } from "@/lib/place-review-deck/slides";
 
@@ -229,6 +230,7 @@ export function ValidationReviewsBoard({
   reopened: reopenedRows,
   sharedPlaces: venueRows,
   capped,
+  failingTimetables,
   mode,
   noteIndex,
   onDemand,
@@ -245,6 +247,11 @@ export function ValidationReviewsBoard({
   reopened: ReopenedCustomerRow[];
   /** Every polyclinic and centre in use, waiting for a decision, or rejected and still restorable. */
   sharedPlaces: SharedPlaceBoardRow[];
+  /**
+   * The buildings whose timetable keeps being refused (owner, 14 Nov 2026), drawn above the Polyclinics
+   * list. The deciders' page alone hands it in; a district manager's board never does.
+   */
+  failingTimetables?: FailingTimetablesView;
   /** Which reads stopped at their ceiling, so the page says "showing the newest" instead of lying. */
   capped: { reviews: boolean; validated: boolean; reopened: boolean; sharedPlaces: boolean };
   /**
@@ -268,6 +275,8 @@ export function ValidationReviewsBoard({
   const [view, setView] = useState<PlaceCheckView>("needs");
   const [chip, setChip] = useState<UnconfirmedChip>("open");
   const [showRejectedBuildings, setShowRejectedBuildings] = useState(false);
+  // The one building a row of "Timetables that keep failing" opened, or null for the whole list.
+  const [onlyBuilding, setOnlyBuilding] = useState<string | null>(null);
   // The comparison reads every validated place, so it starts on the tab's first opening and then stays
   // mounted — switching tabs must not read it again.
   const [samePlaceOpened, setSamePlaceOpened] = useState(false);
@@ -401,6 +410,16 @@ export function ValidationReviewsBoard({
     [filteredVenueGroups, showRejectedBuildings, filters.outcome],
   );
   const rejectedBuildings = filteredVenueGroups.length - filteredVenueGroups.filter((group) => group.venue.status !== "retired").length;
+  // 🔴 A BUILDING OPENED FROM "TIMETABLES THAT KEEP FAILING" IS READ PAST THE FILTERS: the list named it,
+  // so a rep, line or period filter left on the bar must not answer "no building matches".
+  const openedBuilding = useMemo(
+    () =>
+      onlyBuilding
+        ? narrowVenueGroups({ venues: sharedPlaces.filter((venue) => venue.sharedPlaceId === onlyBuilding), seated, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null })
+        : null,
+    [onlyBuilding, sharedPlaces, seated],
+  );
+  const listedBuildings = openedBuilding ?? buildingGroups;
   const needsGroups = useMemo(() => filteredVenueGroups.filter((group) => venueNeedsDecision(group)), [filteredVenueGroups]);
 
   // The scorecard reads every rep's places through the same filters, the clinics and the seated alike.
@@ -778,29 +797,54 @@ export function ValidationReviewsBoard({
 
         {!reading && view === "polyclinics" ? (
           <div aria-labelledby="vr-tab-polyclinics" className="space-y-3" id="vr-panel-polyclinics" role="tabpanel">
-            {rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
+            {!team && failingTimetables ? (
+              <FailingTimetablesPanel
+                onOpen={(sharedPlaceId) => {
+                  setOnlyBuilding(sharedPlaceId);
+                  window.setTimeout(() => document.getElementById("vr-building-list")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                }}
+                opened={onlyBuilding}
+                view={failingTimetables}
+              />
+            ) : null}
+            {openedBuilding ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="break-words text-sm text-slate-700">Showing the one building you opened, whatever the filters say.</span>
+                <CrmButton onClick={() => setOnlyBuilding(null)} size="sm">
+                  Show every building
+                </CrmButton>
+              </div>
+            ) : null}
+            {!openedBuilding && rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
               <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
                 {team
                   ? `Show the ${rejectedBuildings} ${rejectedBuildings === 1 ? "building" : "buildings"} no longer in use`
                   : `Show the ${rejectedBuildings} rejected ${rejectedBuildings === 1 ? "building" : "buildings"}, which can be brought back`}
               </CrmCheck>
             ) : null}
+            <div className="scroll-mt-4" id="vr-building-list" />
             <AdminTableShell
-              title={`Polyclinics and hospitals (${buildingGroups.length})`}
+              title={`Polyclinics and hospitals (${listedBuildings.length})`}
               description={
                 team
                   ? "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it against the building's one timetable. Each building is one card: its name and where it is, the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. The buildings with something open or wrong come first."
                   : "A polyclinic, medical centre or hospital outpatient suite is validated ONCE, at its own door — a live photo of the sign on the building and both readings inside the place line — and every customer who receives behind that door is then seated in it against the building's one timetable. Each building is one card: its name and where it is, the sign on its door and its timetable, then the customers seated in it with what that timetable says about each. The buildings with something open or wrong come first. Rejecting a building retires it, retires everybody seated in it, and sends each of them back to To validate. A customer the timetable does not name is rejected on their own row, which leaves the building and everybody else seated in it alone."
               }
             >
-              {buildingGroups.length === 0 ? (
+              {listedBuildings.length === 0 ? (
                 <div className="px-4 py-4">
                   <AdminCallout tone="neutral">
-                    <span>{anyFilter || filters.outcome !== "all" ? "No polyclinic or hospital matches these filters." : "No polyclinic or centre has been captured yet."}</span>
+                    <span>
+                      {openedBuilding
+                        ? "This building is no longer on the board. Show every building to see the rest."
+                        : anyFilter || filters.outcome !== "all"
+                          ? "No polyclinic or hospital matches these filters."
+                          : "No polyclinic or centre has been captured yet."}
+                    </span>
                   </AdminCallout>
                 </div>
               ) : (
-                <Paged key={`${filterKey}|${showRejectedBuildings}`} noun="buildings" rows={buildingGroups} size={PAGE_BUILDINGS}>
+                <Paged key={`${filterKey}|${showRejectedBuildings}|${onlyBuilding ?? ""}`} noun="buildings" rows={listedBuildings} size={PAGE_BUILDINGS}>
                   {(groups) => <SharedPlaceList groups={groups} mode={mode} noteIndex={noteIndex} />}
                 </Paged>
               )}

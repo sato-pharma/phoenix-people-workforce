@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import { decisionStamp } from "../src/lib/phoenix-crm/decision-stamp.ts";
 import {
   narrowVenueGroups,
+  waitingSinceOf,
   seatedCustomersByVenue,
   seatedPassesOutcome,
   venueHasProblem,
@@ -341,6 +342,38 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
     "🔴 a building with something open comes first (held, then a waiting customer), then the newest",
   );
   assert.equal(venueNeedsDecision(everything[0]), true);
+
+  // What is waiting for a decision is listed OLDEST first (owner, 14 Nov 2026).
+  const heldNewer = venue({ sharedPlaceId: "venue-held-new", name: "Zamalek Centre", status: "held", capturedAt: "2026-10-09T08:00:00.000Z" });
+  const heldOlder = venue({ sharedPlaceId: "venue-held-old", name: "Abbassia Centre", status: "held", capturedAt: "2026-09-20T08:00:00.000Z" });
+  assert.deepEqual(
+    narrowVenueGroups({ venues: [heldNewer, heldPoly, heldOlder, quiet], seated: new Map(), filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null }).map((group) => group.venue.name),
+    ["Abbassia Centre", "Maadi Hospital", "Zamalek Centre", "Quiet Centre"],
+    "🔴 held buildings: the one that has waited longest is read first",
+  );
+  // A building with a customer waiting is ordered by that CUSTOMER's wait, not by when the building was captured.
+  const lateBuilding = venue({ sharedPlaceId: "venue-late", name: "Late Building", capturedAt: "2026-10-20T08:00:00.000Z" });
+  const earlyBuilding = venue({ sharedPlaceId: "venue-early", name: "Early Building", capturedAt: "2026-09-01T08:00:00.000Z" });
+  const waitingBehind = seatedCustomersByVenue({
+    pending: [
+      review({ reviewId: "r-late-old", placeId: "p-late-old", customerName: "Waited Longest", sharedPlaceId: "venue-late", createdAt: "2026-10-21T08:00:00.000Z", waitingText: "Waiting 24 days", waitingLong: true }),
+      review({ reviewId: "r-early-new", placeId: "p-early-new", customerName: "Waited Least", sharedPlaceId: "venue-early", createdAt: "2026-11-13T08:00:00.000Z", waitingText: "Waiting 22 hours", waitingLong: false }),
+    ],
+    decided: [],
+    validated: [],
+    reopened: [],
+    venueIds: new Set(["venue-late", "venue-early"]),
+  });
+  const byWait = narrowVenueGroups({ venues: [earlyBuilding, lateBuilding, quiet], seated: waitingBehind, filters: EMPTY_VALIDATION_REVIEW_FILTERS, cutoff: null });
+  assert.deepEqual(
+    byWait.map((group) => group.venue.name),
+    ["Late Building", "Early Building", "Quiet Centre"],
+    "🔴 the building whose customer has waited longest is first, whenever the building itself was captured",
+  );
+  assert.deepEqual(waitingSinceOf(byWait[0]), { at: "2026-10-21T08:00:00.000Z", id: "venue-late" });
+  assert.equal(byWait[0].customers[0].waitingText, "Waiting 24 days", "the waiting customer carries his review's wait onto the building's card");
+  assert.equal(byWait[0].customers[0].waitingLong, true);
+  assert.deepEqual(waitingSinceOf({ venue: heldOlder, customers: [] }), { at: "2026-09-20T08:00:00.000Z", id: "venue-held-old" }, "a held building's wait is its own capture");
   assert.equal(venueNeedsDecision(everything[3]), false, "a rejected building with the customers sent back has nothing to decide");
   const quietGroup = everything.find((group) => group.venue.name === "Quiet Centre");
   assert.equal(quietGroup?.total, 0);

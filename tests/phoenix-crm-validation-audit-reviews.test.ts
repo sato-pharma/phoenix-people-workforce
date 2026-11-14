@@ -71,8 +71,16 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
   {
     const decide = fn(reviews, "export async function decideValidationReview(");
     const decided = decide.indexOf('callPhoenixCrm<Row>("phoenix_crm_decide_validation_review"');
-    const answered = decide.indexOf('if (decision === "approve" && result.validated === true) await withdrawValidationNotConfirmed(String(result.customer_id));');
+    // 14 Nov 2026 (the items the audit left): an approval behind a building still being checked accepts the
+    // photo too and leaves the customer waiting for the building, so it answers the bell as well.
+    const answered = decide.indexOf(
+      'if (decision === "approve" && (result.validated === true || waitingForBuilding)) await withdrawValidationNotConfirmed(String(result.customer_id));',
+    );
     assert.ok(answered > decided && decided > 0, "🔴 an approval that validates the customer answers the bell, after the decision landed");
+    assert.ok(
+      decide.includes('const waitingForBuilding = decision === "approve" && result.waiting_for_building === true;'),
+      "and waiting for the building is the database's own answer, on an approve only",
+    );
 
     const confirm = fn(reviews, "export async function approveValidatedPlace(");
     assert.ok(

@@ -17,7 +17,7 @@ import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
@@ -87,6 +87,7 @@ function Who({ row }: { row: ValidationReviewRow }) {
       <p className="break-words text-sm text-slate-700">{row.repName}</p>
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Captured {row.createdAtText}</p>
+      {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
       {/* A door signboard hold the system is still re-reading (owner, 2026-10-17); it may still be decided now. */}
       {row.systemStillReading ? <CrmPill tone="info">The system is still reading this sign</CrmPill> : null}
       {row.isTest ? <CrmPill>Test entry</CrmPill> : null}
@@ -340,12 +341,12 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     setSaving(decision);
     setProblem(null);
     try {
-      await crmPost<unknown>(
+      const decided = await crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews",
         { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      markSaved(done(decision === "approve" ? "approved" : "rejected"));
+      markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));
       setSaving(null);
     } catch (error) {
       if (isAlreadyDecided(error)) {

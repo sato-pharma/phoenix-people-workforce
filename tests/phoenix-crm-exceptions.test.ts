@@ -284,9 +284,12 @@ export function runPhoenixCrmExceptionsTests(): void {
     // to be counted — a company's week was ten thousand rows for one number per plan.
     assert.equal(
       (service.match(/getSupabaseAdmin\(\)/g) ?? []).length,
-      2,
-      "two direct queries — plans and visits — plus the readiness and item-count functions, and none of them per territory",
+      3,
+      "three direct queries — plans, visits, and the visit days of the few territories whose last working day is empty — plus the readiness and item-count functions, and none of them per territory",
     );
+    // The third (owner, 14 Nov 2026, "Add days in a row") is asked only for the territories that already
+    // have a no-visit row coming, never for the whole board.
+    assert.ok(service.includes("const visitDays = await loadVisitDays(streakSeats, isTest,"), "the run's visit days are read for the empty-day territories alone");
     assert.ok(service.includes('callPhoenixCrm<unknown>("phoenix_crm_plan_item_counts", { p_plan_ids: part })'), "the items are counted per plan, in the database");
     assert.equal(service.includes('from("phoenix_crm_plan_items")'), false, "and never read row by row to be counted here");
     assert.ok(service.includes("loadReadiness(seatIds)"), "readiness is asked for every seat in one call");
