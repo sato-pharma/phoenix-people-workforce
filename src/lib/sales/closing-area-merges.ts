@@ -135,15 +135,20 @@ const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
  * A picker, an organogram or a territory tree is not "as of" anything — it is the state now — so
  * `null` means now rather than "unknown". Read live rather than captured at import time, or a
  * long-lived server process would keep answering with the month it booted in.
+ *
+ * The FORMATTER is built once; only the date is read live. Building an Intl.DateTimeFormat costs
+ * about 0.1 ms, and the canonical sales dashboard asks this once per row through
+ * getMergedAreaName (no period), so a new one per call held the server for 1.3 s in one SFE
+ * Manager overview build, with every other request waiting behind it (13 Nov 2026, 12:33 Cairo).
  */
+const CAIRO_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Africa/Cairo",
+  year: "numeric",
+  month: "2-digit",
+});
+
 function currentClosingPeriod(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-    month: "2-digit",
-  })
-    .format(new Date())
-    .slice(0, 7);
+  return CAIRO_MONTH_FORMAT.format(new Date()).slice(0, 7);
 }
 
 /**
