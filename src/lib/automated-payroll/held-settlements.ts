@@ -3,6 +3,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeAutomatedPayrollAudit } from "./audit.ts";
@@ -143,6 +144,59 @@ function validate(input: HeldSettlementInput): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.paidOn ?? ""))) {
     throw new Error("Validation: the transfer date is required, as YYYY-MM-DD.");
   }
+  // A real calendar day, and one that has happened: this records a transfer already made.
+  const day = new Date(`${input.paidOn}T00:00:00Z`);
+  if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== input.paidOn) {
+    throw new Error("Validation: the transfer date is not a real date.");
+  }
+  if (input.paidOn > cairoToday()) {
+    throw new Error("Validation: the transfer date is in the future — record a transfer once it has been made.");
+  }
+}
+
+/** Today in Cairo, "YYYY-MM-DD". */
+function cairoToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
+}
+
+/**
+ * WHAT A BY-HAND TRANSFER MAY BE RECORDED AGAINST (payroll audit 2026-11-14, finding 9). The route took any
+ * run id, any person and any amount, and an amount above what was withheld silently wiped the debt, since
+ * what is still owed is floored at zero. Now: a published month, a person that month held, and no more
+ * than it withheld less what payroll has already released of it. Returns that person's balance.
+ */
+export async function assertSettlementTarget(runId: string, compact: string, amount: number): Promise<HeldBalance> {
+  if (!isUuid(runId)) throw new Error("Not found: that payroll month does not exist.");
+  const { data: run, error } = await getSupabaseAdmin()
+    .from("automated_payroll_runs")
+    .select("phase,month,year")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!run) throw new Error("Not found: that payroll month does not exist.");
+  const { phase, month, year } = run as { phase?: string; month?: number; year?: number };
+  const label = monthNameAndYear(Number(month), Number(year));
+  if (phase !== "published") {
+    throw new Error(`Conflict: ${label} is not published, so nobody is owed held salary from it yet.`);
+  }
+  const balance = (await loadHeldBalances()).find((entry) => entry.runId === runId && entry.compact === compact);
+  if (!balance) throw new Error(`Validation: that person was not held in ${label}.`);
+  const ceiling = settlementCeiling(balance);
+  if (amount > ceiling) {
+    throw new Error(
+      `Validation: ${balance.name} is owed at most ${ceiling.toFixed(2)} from ${label} once what payroll has ` +
+        `already released is taken off, so ${amount.toFixed(2)} cannot be recorded as paid outside payroll.`,
+    );
+  }
+  return balance;
+}
+
+/**
+ * The most a by-hand transfer may say was paid for one held month: what is still owed plus what an earlier
+ * by-hand record already says (a correction replaces it). Pure; exported for the test.
+ */
+export function settlementCeiling(balance: Pick<HeldBalance, "outstanding" | "settled">): number {
+  return roundCurrency(balance.outstanding + (balance.settled?.amount ?? 0));
 }
 
 /** Settlements recorded against one run, keyed by compact HR id. */
@@ -172,11 +226,13 @@ export async function recordHeldSettlement(
   runId: string,
   input: HeldSettlementInput,
 ): Promise<HeldSettlement> {
+  assertRealSessionForDecision(access, "record held salary as paid outside payroll");
   assertAutomatedPayrollHrActor(access);
   validate(input);
 
   const compact = compactHrKey(input.hrId);
   if (!compact) throw new Error("Validation: that employee id is not usable.");
+  await assertSettlementTarget(runId, compact, roundCurrency(input.amount));
 
   const payload = {
     run_id: runId,
@@ -222,9 +278,11 @@ export async function deleteHeldSettlement(
   runId: string,
   hrId: string,
 ): Promise<void> {
+  assertRealSessionForDecision(access, "withdraw a held salary transfer recorded outside payroll");
   assertAutomatedPayrollHrActor(access);
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: that employee id is not usable.");
+  if (!isUuid(runId)) throw new Error("Not found: that payroll month does not exist.");
 
   const { error } = await getSupabaseAdmin()
     .from(TABLE)
@@ -524,8 +582,10 @@ export function assertEveryPublishedRunRecorded(
   const months = missing
     .map((run) => monthNameAndYear(run.month, run.year))
     .join(", ");
+  // "Conflict:" so the route answers 409 with this sentence (payroll audit 2026-11-14, finding 7): without
+  // it HR saw "request failed" on both Part confirms, Reopen Part 1, publish and Held Salary Release.
   throw new Error(
-    `Held salary cannot be shown: the payroll for ${months} is published but its record of who was held is ` +
+    `Conflict: Held salary cannot be shown: the payroll for ${months} is published but its record of who was held is ` +
       "missing. Nothing is listed rather than a list that silently leaves those people out. Report this to " +
       "the payroll owner; no amount has been changed.",
   );

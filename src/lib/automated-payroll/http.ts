@@ -4,6 +4,7 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { logError } from "@/lib/observability/log";
 import { ApiRateLimitError } from "@/lib/security/api-rate-limit";
 
+import { isPlainDatabaseError } from "./db-error.ts";
 import { describeBankCoverage, type BankCoverage } from "./exports/bank-coverage.ts";
 
 /**
@@ -28,6 +29,19 @@ function classifyRouteError(error: unknown, fallback: string): { status: number;
       status: 429,
       clientMessage: `Too many payroll files downloaded in the last hour. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
     };
+  }
+  // A PostgREST error thrown as it came back is a plain object (payroll audit 2026-11-14, finding 7): it
+  // read as "[object Object]" and ended in the generic fallback. An id that is not a uuid (22P02) is the
+  // caller's mistake, said as one; anything else keeps the fallback and gains its code.
+  if (isPlainDatabaseError(error)) {
+    if (error.code === "22P02") {
+      return { status: 400, clientMessage: "That link names a run or an entry that does not exist. Reload the page." };
+    }
+    logError("Automated payroll: unhandled database error", {
+      labels: { event: "automated_payroll_route_database_error", code: error.code },
+      error,
+    });
+    return { status: 500, clientMessage: `${fallback} (database error ${error.code})` };
   }
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();

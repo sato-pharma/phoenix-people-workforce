@@ -6,6 +6,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { databaseFailureNote } from "./db-error.ts";
 import { clearDraftExpenses, listDraftRows, listStepStates, upsertStepState } from "./draft-store.ts";
 import { findDuplicateExpenseHolds } from "./duplicate-expense-hold.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
@@ -272,7 +273,7 @@ function money(value: number): string {
 function conflict(what: string, error?: { message?: string } | null): Error {
   return new Error(
     `Conflict: ${what}, so the approved expenses not yet in a run cannot be shown. Nothing was changed; ` +
-      `try again in a moment.${error?.message ? ` (${error.message})` : ""}`,
+      `try again in a moment.${error ? ` (${databaseFailureNote(error, "automated_payroll_late_expenses_read_failed")})` : ""}`,
   );
 }
 
@@ -313,7 +314,7 @@ export async function getCarryLateExpensesSetting(client?: LateExpenseDb): Promi
   if (error) {
     throw new Error(
       "Conflict: the payroll switch for expenses approved after their month was paid could not be read. " +
-        `Nothing was changed; try again in a moment. (${error.message})`,
+        `Nothing was changed; try again in a moment. (${databaseFailureNote(error, "automated_payroll_late_expense_switch_read_failed")})`,
     );
   }
   return (data as { carry_late_expenses?: boolean } | null)?.carry_late_expenses === true;
@@ -348,7 +349,7 @@ export async function setCarryLateExpenses(
   if (busyError) {
     throw new Error(
       "Conflict: could not check whether a payroll run is in Part 2, so the switch was not changed. " +
-        `Try again in a moment. (${busyError.message})`,
+        `Try again in a moment. (${databaseFailureNote(busyError, "automated_payroll_late_expense_switch_runs_read_failed")})`,
     );
   }
   const open = (openRuns ?? []) as Array<{ id?: string; month?: number; year?: number; phase?: string }>;
@@ -381,7 +382,10 @@ export async function setCarryLateExpenses(
       );
   const { error: writeError } = await write(on);
   if (writeError) {
-    throw new Error(`Could not save the payroll switch, so nothing was changed. (${writeError.message})`);
+    throw new Error(
+      "Conflict: Could not save the payroll switch, so nothing was changed. " +
+        `(${databaseFailureNote(writeError, "automated_payroll_late_expense_switch_write_failed")})`,
+    );
   }
 
   const { error: auditError } = await db.from("automated_payroll_audit").insert({
@@ -398,12 +402,13 @@ export async function setCarryLateExpenses(
       throw new Error(
         `Conflict: the payroll switch WAS changed to ${on ? "ON" : "OFF"}, but no record of the change could be ` +
           "written and putting the old setting back also failed. Set it back by hand and tell the payroll " +
-          `administrator. (record: ${auditError.message}; put back: ${restoreError.message})`,
+          `administrator. (record: ${databaseFailureNote(auditError, "automated_payroll_late_expense_switch_audit_failed")}; ` +
+          `put back: ${databaseFailureNote(restoreError, "automated_payroll_late_expense_switch_restore_failed")})`,
       );
     }
     throw new Error(
-      `Could not record the change to the payroll switch, so it was not changed. Try again in a moment. ` +
-        `(${auditError.message})`,
+      `Conflict: Could not record the change to the payroll switch, so it was not changed. Try again in a moment. ` +
+        `(${databaseFailureNote(auditError, "automated_payroll_late_expense_switch_audit_failed")})`,
     );
   }
   return { carryLateExpenses: on };
@@ -1419,7 +1424,7 @@ export async function reserveLateExpenses(
     }
     throw new Error(
       "Conflict: the carried outstation trips could not be reserved for this run, so nothing was confirmed. " +
-        `Confirm Part 2 again in a moment. (${error.message})`,
+        `Confirm Part 2 again in a moment. (${databaseFailureNote(error, "automated_payroll_late_expense_reserve_failed")})`,
     );
   }
 }
@@ -1444,7 +1449,7 @@ export async function releaseLateExpenseReservations(
   if (error) {
     throw new Error(
       "Conflict: the late-approved trips this run had set aside could not be released, so nothing was changed. " +
-        `Try again in a moment. (${error.message})`,
+        `Try again in a moment. (${databaseFailureNote(error, "automated_payroll_late_expense_release_failed")})`,
     );
   }
 }

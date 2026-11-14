@@ -18,6 +18,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
 import { writeAutomatedPayrollAudit, writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import { databaseFailureNote } from "./db-error.ts";
 import { assertPayrollDownloadAllowed, recordPayrollFileDownload } from "./download-log.ts";
 import { guardUndoAfterDownloads, recordBankFileDownloaded } from "./bank-file-downloads.ts";
 import { holdRun } from "./run-hold.ts";
@@ -470,6 +471,8 @@ function writesAFigure(patch: DraftRowPatch): boolean {
 }
 
 async function requireRun(runId: string): Promise<MonthlySalaryRun> {
+  // An id that is not a uuid comes back from the database as 22P02, which http.ts answers as a 400
+  // naming the link (payroll audit 2026-11-14, finding 16) rather than a generic 500.
   const run = await getRunById(runId);
   if (!run) throw new Error("Not found: payroll run does not exist.");
   return run;
@@ -478,6 +481,19 @@ async function requireRun(runId: string): Promise<MonthlySalaryRun> {
 function assertActiveRun(run: MonthlySalaryRun): void {
   if (run.phase === "published") throw new Error("Conflict: this run is already published.");
   if (run.phase === "cancelled") throw new Error("Conflict: this run was cancelled.");
+}
+
+/**
+ * Who the run pays can change only while a part is open (payroll audit 2026-11-14, finding 8). Once Part 2
+ * is confirmed every step is locked and the totals are stamped; an exclusion then moved the totals off the
+ * stamp, so publish and the Part 2 bank files refused and only Reopen Part 2 got the run moving again.
+ */
+function assertPopulationOpen(run: MonthlySalaryRun, verb: string): void {
+  if (run.phase === "ready") {
+    throw new Error(
+      `Conflict: Part 2 is confirmed, so nobody can be ${verb} this run now. Reopen Part 2 first.`,
+    );
+  }
 }
 
 /**
@@ -542,6 +558,14 @@ export async function startOrResumeRun(
 ): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "start or resume a payroll run");
   assertAutomatedPayrollHrActor(access);
+  // The run table's own checks (month 1-12, year 2000-2100), said before they fire as a generic 500
+  // (payroll audit 2026-11-14, finding 16).
+  if (!Number.isInteger(period.month) || period.month < 1 || period.month > 12) {
+    throw new Error("Validation: the month must be from 1 to 12.");
+  }
+  if (!Number.isInteger(period.year) || period.year < 2000 || period.year > 2100) {
+    throw new Error("Validation: the year must be from 2000 to 2100.");
+  }
 
   const existing = await findActiveRun(period.month, period.year);
   if (existing) return existing;
@@ -597,7 +621,20 @@ export async function startOrResumeRun(
     );
   }
 
-  const run = await createRun({ month: period.month, year: period.year, createdBy: actorId(access) });
+  let run: MonthlySalaryRun;
+  try {
+    run = await createRun({ month: period.month, year: period.year, createdBy: actorId(access) });
+  } catch (createError) {
+    // Start pressed twice: both requests passed findActiveRun, and the one-active-run-per-month index
+    // refused the second (23505). The run the first press started is the answer, not "Failed to start"
+    // (payroll audit 2026-11-14, finding 16).
+    const raced =
+      (createError as { code?: unknown } | null)?.code === "23505"
+        ? await findActiveRun(period.month, period.year)
+        : null;
+    if (raced) return raced;
+    throw createError;
+  }
   await writeAutomatedPayrollAudit({ runId: run.id, actorHrId: actorId(access), action: "run_started" });
 
   // Copy the standing Non-Employees Payroll roster in (owner request 2026-08-30:
@@ -1378,8 +1415,12 @@ export async function saveStep(
   // The revision is checked under the same hold as the write, so two saves cannot both pass it.
   const saved = await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.saveStep }, async () => {
     await assertStepUnchangedSince(runId, stepKey, options?.expectedRevision, options?.revisionSource ?? "screen");
+    // The step goes back to "pending" BEFORE its figures are written (payroll audit 2026-11-14, finding
+    // 10). The rows go in one statement per column set, so a failure part-way leaves some written; written
+    // after them, a confirmed step then showed as confirmed over figures nobody had confirmed.
+    const state = await upsertStepState({ runId, stepKey, status: "pending", inputMode });
     await upsertDraftRows(runId, patches);
-    return upsertStepState({ runId, stepKey, status: "pending", inputMode });
+    return state;
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -2151,8 +2192,9 @@ async function readPart2ConfirmedStamp(
     .limit(1);
   if (error) {
     throw new Error(
-      "Could not read what this run confirmed at Part 2, so publishing cannot prove it is writing " +
-        `the same month finance was given. Nothing was published. (${error.message})`,
+      "Conflict: Could not read what this run confirmed at Part 2, so publishing cannot prove it is writing " +
+        `the same month finance was given. Nothing was published. ` +
+        `(${databaseFailureNote(error, "automated_payroll_part2_stamp_read_failed")})`,
     );
   }
   const newest = (data ?? [])[0] as { detail?: unknown } | undefined;
@@ -2725,14 +2767,22 @@ export async function excludeEmployeeFromRun(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
+  assertPopulationOpen(run, "excluded from");
   assertNoTransitionInProgress(run);
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
   const trimmedReason = reason.trim();
   if (!trimmedReason) throw new Error("Validation: a reason is required to exclude an employee from this run.");
 
+  // Only someone this run pays can be excluded from it (payroll audit 2026-11-14, finding 8): an id from
+  // nowhere used to leave a draft row for a person who is not on this month's payroll.
+  const { members, draftRows } = await loadRunContext({ month: run.month, year: run.year }, runId);
+  const draft = draftRows.find((row) => row.employeeHrIdCompact === compact);
+  if (!draft?.excluded && !members.some((member) => member.compact === compact)) {
+    throw new Error("Validation: that person is not on this month's payroll, so there is nothing to exclude.");
+  }
+
   if (run.part1ConfirmedAt) {
-    const draft = (await listDraftRows(runId)).find((row) => row.employeeHrIdCompact === compact);
     const refusal = exclusionRefusal({ part1ConfirmedAt: run.part1ConfirmedAt, firstPartFrozen: draft?.firstPartFrozen });
     if (refusal) throw new Error(refusal);
   }
@@ -2762,9 +2812,13 @@ export async function includeEmployeeInRun(access: AccessContext, runId: string,
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
+  assertPopulationOpen(run, "put back into");
   assertNoTransitionInProgress(run);
   const compact = compactHrKey(hrId);
   if (!compact) throw new Error("Validation: a valid HR ID is required.");
+  // Only an exclusion can be undone; anything else would write a draft row for someone never excluded.
+  const draft = (await listDraftRows(runId)).find((row) => row.employeeHrIdCompact === compact);
+  if (!draft?.excluded) throw new Error("Validation: that person is not excluded from this run.");
 
   await holdRun({ runId, expected: [run.phase], action: RUN_HOLD_ACTIONS.include }, () =>
     upsertDraftRows(runId, [
@@ -3631,10 +3685,16 @@ export async function importStepUpload(
     return diffStepUpload({ stepKey, edits, current: before, invalidHrIds, recalculated });
   }
 
-  await saveStep(access, runId, stepKey, edits, "xlsx", { recalculateMoney: recalculated, ...revisionCheck });
+  // The commit writes exactly what the preview accepted (payroll audit 2026-11-14, finding 13): an HR id
+  // the preview called invalid — not on this month's payroll — used to be written anyway as a draft row
+  // for someone not on payroll, and counted as applied.
+  const known = new Set(before.map((row) => row.hrId.toLowerCase()));
+  const accepted = edits.filter((edit) => known.has(String(edit.hrId ?? "").toLowerCase()));
+  const notOnPayroll = edits.length - accepted.length;
+  await saveStep(access, runId, stepKey, accepted, "xlsx", { recalculateMoney: recalculated, ...revisionCheck });
   const { rows: current } = await getStepRecommendation(access, runId, stepKey);
-  const preview = diffStepUpload({ stepKey, edits, current, invalidHrIds });
-  return { mode: "commit", applied: edits.length, invalid: preview.invalid, diffs: preview.diffs };
+  const preview = diffStepUpload({ stepKey, edits: accepted, current, invalidHrIds: invalidHrIds + notOnPayroll });
+  return { mode: "commit", applied: accepted.length, invalid: preview.invalid, diffs: preview.diffs };
 }
 
 // ---- Finance download (finance actor) ---------------------------------------

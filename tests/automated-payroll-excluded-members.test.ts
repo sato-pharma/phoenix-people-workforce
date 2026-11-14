@@ -97,5 +97,10 @@ export function runAutomatedPayrollExcludedMembersTests() {
   assert.ok(guardAt > 0, "excludeEmployeeFromRun must consult exclusionRefusal: the rule protects nothing if the only writer never asks it");
   assert.ok(writeAt > guardAt, "the refusal must be checked BEFORE the exclusion is written");
   assert.ok(body.includes("throw new Error(refusal)"), "a refusal must stop the exclusion, not merely be computed");
-  assert.ok(body.includes("listDraftRows(runId)"), "the frozen amount must be read from this run's own draft rows");
+  // Read through loadRunContext since 2026-11-14 (finding 8), which also proves the person is on this
+  // month's payroll; its draftRows are this run's own.
+  assert.ok(
+    /listDraftRows\(runId\)|loadRunContext\(\{ month: run\.month, year: run\.year \}, runId\)/.test(body),
+    "the frozen amount must be read from this run's own draft rows",
+  );
 }

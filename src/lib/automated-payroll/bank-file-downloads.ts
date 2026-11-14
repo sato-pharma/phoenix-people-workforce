@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { writeRequiredAutomatedPayrollAudit } from "./audit.ts";
+import { databaseFailureNote } from "./db-error.ts";
 
 /**
  * ONCE FINANCE HAS A BANK FILE, CANCELLING THE RUN IS NO LONGER A QUIET UNDO (F-PAY-016).
@@ -100,7 +101,7 @@ export async function recordBankFileDownloaded(
       client,
     );
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = databaseFailureNote(error, "automated_payroll_bank_file_download_record_failed");
     throw new Error(
       `Conflict: the ${FILE_LABEL[input.file]} could not be recorded as downloaded, so it was not handed out — ` +
         `a file nobody recorded could be paid a second time if this run were later cancelled. Try again. (${reason})`,
@@ -119,8 +120,9 @@ export async function listBankFileDownloads(runId: string, client?: AuditClient)
     .order("created_at", { ascending: true });
   if (error) {
     throw new Error(
-      "Could not read whether finance has already downloaded this run's bank files, so the run was " +
-        `not cancelled, reopened or cleared. Nothing was changed. (${error.message})`,
+      "Conflict: Could not read whether finance has already downloaded this run's bank files, so the run was " +
+        `not cancelled, reopened or cleared. Nothing was changed. ` +
+        `(${databaseFailureNote(error, "automated_payroll_bank_file_downloads_read_failed")})`,
     );
   }
   return ((data ?? []) as Array<{ actor_hr_id?: unknown; detail?: unknown; created_at?: unknown }>).map((row) => {
@@ -238,7 +240,7 @@ export async function guardUndoAfterDownloads(
     );
   } catch (error) {
     const { verb, done } = UNDO_WORDING[input.action];
-    const why = error instanceof Error ? error.message : String(error);
+    const why = databaseFailureNote(error, "automated_payroll_undo_override_record_failed");
     throw new Error(
       `Conflict: the reason to ${verb} after finance downloaded its files could not be recorded, so the run was ` +
         `not ${done}. Nothing was changed. Try again. (${why})`,
