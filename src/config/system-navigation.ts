@@ -1834,7 +1834,7 @@ const employeePortalNavigationSectionSeeds = [
       // role here with no resolvable territory still fails closed to an empty scope.
       { href: "/employee-portals/sales-vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Make It Happen — roles mirror showMakeItHappenTab; the enforcing gate is canUseMakeItHappen.
-      { href: "/employee-portals/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal counterpart of /business-review, scoped per viewer. The Medical Rep is included since
       // 2026-09-30 (owner) — the module was opened to a rep on 2026-09-26, own list only and
       // downward-only, and this surfaces the sidebar link. CEO/SFE Manager/Super Admin reach it
