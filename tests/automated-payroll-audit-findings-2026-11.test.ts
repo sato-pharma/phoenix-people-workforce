@@ -41,6 +41,7 @@ const RECURRING = read("../src/lib/automated-payroll/non-employee-recurring.ts")
 const WIZARD = read("../src/components/automated-payroll/automated-payroll-wizard.tsx");
 const PAID_OUTSIDE_PANEL = read("../src/components/automated-payroll/held-paid-outside-panel.tsx");
 const RECOMMENDATION_STEP = read("../src/components/automated-payroll/recommendation-step.tsx");
+const LATE_EXPENSES_PANEL = read("../src/components/automated-payroll/late-expenses-panel.tsx");
 
 /** One exported function's body: from its declaration to the next top-level `export`. */
 function bodyOf(source: string, declaration: string): string {
@@ -349,5 +350,28 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     WIZARD,
     /setPendingAction\(null\);\s*if \(action\.onConfirm\) void action\.onConfirm\(\);\s*else if \(action\.overridable\) void postReopen\(action\);/,
     "the prompt's own button runs the confirm, never a plain post that would skip the acknowledgement gates",
+  );
+
+  // ---- The late-expenses switch asks first (owner: "build the confirm prompt before the late-expenses switch") ----
+  // Either way it clears every open run's saved Expenses figures and reopens that step, and ON adds money to
+  // the run — on one tap. The switch now only opens a prompt; the prompt's button makes the change.
+  assert.ok(
+    !/onChange=\{\(checked\) => void flip\(checked\)\}/.test(LATE_EXPENSES_PANEL),
+    "the late-expenses switch no longer changes the setting on the first tap",
+  );
+  assert.match(
+    LATE_EXPENSES_PANEL,
+    /onChange=\{\(checked\) => \{\s*if \(busy \|\| stepDirty\) return;\s*setPendingSwitch\(checked\);\s*\}\}/,
+    "the switch opens the prompt instead",
+  );
+  assert.match(
+    LATE_EXPENSES_PANEL,
+    /const next = pendingSwitch;\s*setPendingSwitch\(null\);\s*void flip\(next\);/,
+    "the prompt's own button makes the change",
+  );
+  assert.match(
+    LATE_EXPENSES_PANEL,
+    /The saved Expenses figures of every open run are cleared and its Expenses step reopens/,
+    "the prompt says what the change clears",
   );
 }
