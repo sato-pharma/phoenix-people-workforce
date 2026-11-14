@@ -388,9 +388,16 @@ export async function runEmployeeAndDeductionHistoryTests() {
     );
   }
   const resolvers = readFileSync("src/lib/auth/server.ts", "utf8");
-  assert.equal(
-    (resolvers.match(/await rememberRequestActor\(access\);\s+return access;/g) ?? []).length,
-    2,
-    "both access resolvers (API routes and pages/server actions) must remember the request's person",
+  // In the API resolver it sits BEFORE the write guards: tests/seat-view.test.ts pins those as the last
+  // thing ahead of the return.
+  assert.match(
+    resolvers,
+    /const access = await resolveAccessContextInner\(request\);\s+(?:\/\/[^\n]*\s+)*await rememberRequestActor\(access\);/,
+    "the API resolver must remember the request's person",
+  );
+  assert.match(
+    resolvers,
+    /assertNotSeatView\(access\);\s+await rememberRequestActor\(access\);\s+return access;/,
+    "the page and server-action resolver must remember the request's person",
   );
 }

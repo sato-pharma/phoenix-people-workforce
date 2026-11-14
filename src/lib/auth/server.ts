@@ -763,6 +763,10 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
   const access = await resolveAccessContextInner(request);
+  // Every database write this request makes now names its person in the history logs. Before the
+  // guards below, which must stay the last thing ahead of the return (tests/seat-view.test.ts); a seat
+  // view and a test account are never remembered, so the order changes nothing.
+  await rememberRequestActor(access);
   // THE TEST ACCOUNT WRITE GUARD — one choke point for every API route that resolves a caller, before
   // the route runs a line of its own. A test account reads as a real employee, so a save it sent
   // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
@@ -776,8 +780,6 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // THE SEAT VIEW WRITE GUARD — the same choke point for the Super Admin's read-only View as Seat:
   // every write is refused except leaving the view, and so are reads that would leave a row behind.
   assertSeatViewMayRun(access, request);
-  // Every database write this request makes now names its person in the history logs.
-  await rememberRequestActor(access);
   return access;
 }
 
