@@ -283,3 +283,23 @@ Both writers store exactly the rows and totals the door returns. A Monthly Impor
 The same sheet sent through either writer stores identical rows, totals and duplicate check. `tests/sales-import-one-door.test.ts` proves that parity, and it also proves that no other code path deducts, checks the lock or looks for a duplicate on its own.
 
 Not changed in this step: the parsers still each refuse a sheet whose numbers can be read two ways, in three places. The customer matcher is a later step (REC-009).
+
+## One refresh when a closing is published or withdrawn (14 Nov 2026, audit REC-030)
+
+Publishing and unpublishing a closing are the only two writes to `monthly_closing_publications`. Each one used to refresh the screens that show the closing's figures with its own list of four calls, so a cache added to one list could be missed by the other.
+
+Both now call `onClosingPublicationChanged` (`src/lib/sales/closing-publication-refresh.ts`). It refreshes:
+
+- the Closing Matrix's store-split overlay, which reads which months are frozen;
+- Phoenix CRM's daily forecast, which reads the published achievement;
+- every cache keyed on the achievement stamp: Sales vs Target, its page, the platform tile and the Business Review bundle. The stamp does not change when a month is published, so these need the refresh;
+- Customer 360, which shows only published months.
+
+The audit asked whether two more caches go stale on a publish. Both were checked against the code and are not refreshed:
+
+- **Weekly Stock** reads weekly distributor stock and never reads the closing.
+- **The Source of Sales dashboard** caches the imported rows, which a publish does not change. Which months a viewer may see is read on every request, outside the cache, so a withdrawn month disappears at once.
+
+Brick coverage works the same way as the dashboard. `tests/closing-publication-refresh.test.ts` checks every cached read in the app that reads the publication. Each must either carry one of the refreshed tags or read the publication outside its cache; a new cache that does neither fails the test.
+
+Nothing a viewer sees changed in this step: the same four refreshes run at the same moments.
