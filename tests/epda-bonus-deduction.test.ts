@@ -224,20 +224,32 @@ export function runEpdaBonusDeductionTests() {
   // 9. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
   //    here without a database, and a route that skipped it would announce the undeducted figure.
   {
+    // Since REC-008 (14 Nov 2026) the deduction runs in the one door both writers call
+    // (import-store-rules.ts), before any total is taken.
+    const rules = readFileSync("src/lib/sales/import-store-rules.ts", "utf8");
+    const door = rules.slice(rules.indexOf("export async function applyImportStoreRules<"));
+    const applied = door.indexOf("const rows = input.countsAsSales ? applyEpdaBonusDeduction(input.sheetRows, input.deductionMonthOf)");
+    assert.ok(applied > 0, "the one door deducts, on a batch that will count");
+    assert.ok(applied < door.indexOf("const totals ="), "before its totals");
+    assert.match(door, /totalQtyAt: \(atPeriod\) =>/, "and its duplicate check crosses the start month");
+
     const normalized = readFileSync("src/lib/sales/normalizer/service.ts", "utf8");
-    const applied = normalized.indexOf("const rows = applyEpdaBonusDeduction(");
-    assert.ok(applied > 0, "persistNormalizedBatch deducts");
-    assert.ok(applied < normalized.indexOf("const totalQty = rows.reduce", applied), "before its totals");
-    assert.match(normalized, /totalQtyAt: \(atPeriod\) =>/, "and its duplicate check crosses the start month");
+    const step = normalized.slice(normalized.indexOf("export async function persistNormalizedBatch"));
+    assert.ok(step.indexOf("applyImportStoreRules(") > 0, "persistNormalizedBatch deducts through the door");
+    assert.ok(step.indexOf("const rows = stored.rows;") > step.indexOf("applyImportStoreRules("), "and stores its rows");
+    assert.ok(step.indexOf("const totalQty = stored.totalQty;") > 0, "and its totals");
+    assert.match(step.slice(step.indexOf("applyImportStoreRules(")), /^applyImportStoreRules\(\{[\s\S]*?countsAsSales: true,/, "every committed Normalizer batch counts");
 
     const older = readFileSync("src/lib/sales/monthly-distributor-import.ts", "utf8");
     const route = older.slice(older.indexOf("export async function persistDistributorSalesUpload"));
-    assert.ok(route.indexOf("applyEpdaBonusDeduction(sheetRows") > 0, "persistDistributorSalesUpload deducts");
+    assert.ok(route.indexOf("applyImportStoreRules(") > 0, "persistDistributorSalesUpload deducts through the door");
     assert.ok(
-      route.indexOf("applyEpdaBonusDeduction(sheetRows") < route.indexOf("total_qty: storedTotals.totalQty"),
+      route.indexOf("applyImportStoreRules(") < route.indexOf("total_qty: storedTotals.totalQty"),
       "before the batch's totals",
     );
-    assert.match(route, /totalQtyAt: \(period\) =>/, "and its duplicate check crosses the start month");
+    assert.match(route, /countsAsSales: result\.status === "validated",/, "only on a batch that will count");
+    assert.ok(route.indexOf("const parsedRows = stored.rows;") > 0, "and keeps the deducted rows");
     assert.ok(route.indexOf("insertSourceOfSalesRows(supabase, batchId, parsedRows)") > 0, "and stores the deducted rows");
+    assert.equal(/applyEpdaBonusDeduction\(/.test(route + step), false, "neither writer deducts on its own");
   }
 }
