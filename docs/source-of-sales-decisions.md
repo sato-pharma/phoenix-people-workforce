@@ -262,3 +262,24 @@ window": `OFFICE_RESPREAD_START_PERIOD` is `2026-01`, so every 2026 month's CNS 
 spread by today's area shares on every read, and the address remap's moves reach the Office half of
 each month too. Nothing was published or locked when he ruled (0 live publication rows, 0 locks of
 38). The stored attribution net for January to September is rewritten once after the deploy.
+
+## One door for the import's money rules (14 Nov 2026, audit REC-008)
+
+Three screens load a distributor's sales: Monthly Import (`/sales/import`), the Sales Upload (`/sales/upload`) and the Source Normalizer (`/sales/normalizer`). They reach two writers:
+
+- `persistDistributorSalesUpload` (`src/lib/sales/monthly-distributor-import.ts`): Monthly Import, the Office upload and the Normalizer's one-click import;
+- `persistNormalizedBatch` (`src/lib/sales/normalizer/service.ts`): the Sales Upload's commit.
+
+Each writer used to apply the import's money rules itself, so a rule wired into one and missed in the other changed the figures of only some uploads. One had been missed: the Normalizer writer never checked the month lock before writing. A locked month's rows were written, and only the database's own lock stopped them, which left an orphaned pending batch behind.
+
+`applyImportStoreRules` (`src/lib/sales/import-store-rules.ts`) is now the only place those rules run. It works in this order, before a batch row exists:
+
+1. **EPDA's bonus deduction.** This applies only to a batch that will count as sales; a blocked batch is kept as the sheet said.
+2. **A locked month is refused** with a 409. A month whose lock cannot be read is refused with a 503.
+3. **The same workbook already stored under another month is refused.** Each stored batch is compared on its own month's price and deduction.
+
+Both writers store exactly the rows and totals the door returns. A Monthly Import batch with nothing deducted keeps the sheet's own totals, as before. The lock check still answers at its old address in `monthly-distributor-import.ts`; deleting an upload checks it there too.
+
+The same sheet sent through either writer stores identical rows, totals and duplicate check. `tests/sales-import-one-door.test.ts` proves that parity, and it also proves that no other code path deducts, checks the lock or looks for a duplicate on its own.
+
+Not changed in this step: the parsers still each refuse a sheet whose numbers can be read two ways, in three places. The customer matcher is a later step (REC-009).

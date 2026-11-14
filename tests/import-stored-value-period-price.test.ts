@@ -242,13 +242,19 @@ export async function runImportStoredValuePeriodPriceTests() {
     /productPeriodPricesFromRows\(refs\.products, refs\.productPriceOverrides/,
     "the Normalizer's crosswalks carry the period prices the engine values rows with",
   );
-  for (const [file, signature] of [
-    ["monthly-distributor-import.ts", "export async function persistDistributorSalesUpload("],
-    ["normalizer/service.ts", "export async function persistNormalizedBatch("],
+  // Since REC-008 (14 Nov 2026) both writers compare through the one door (import-store-rules.ts).
+  const door = sourceOf("import-store-rules.ts", "export async function applyImportStoreRules<");
+  assert.match(door, /totalValueAt: \(atPeriod\) => totalValueAtPeriod\(repriceableAt\(atPeriod\), prices, atPeriod\)/, "the door compares stored batches on their own month's price");
+  assert.match(door, /repriceableUploadRow\(\{\s*distributorCode:/, "and lets Direct and Office rows keep their value");
+  assert.match(door, /isDirect: Boolean\(row\.isDirect\)/, "a Direct row is never repriced");
+  for (const [file, signature, month, distributor] of [
+    ["monthly-distributor-import.ts", "export async function persistDistributorSalesUpload(", /priceMonthOf: \(row\) => row\.invoicePeriod,/, /priceDistributorOf: \(row\) => row\.distributorCode,/],
+    ["normalizer/service.ts", "export async function persistNormalizedBatch(", /priceMonthOf: \(r\) => r\.invoiceDate,/, /priceDistributorOf: \(\) => input\.distributorCode,/],
   ] as const) {
     const step = sourceOf(file, signature);
-    assert.match(step, /totalValueAt:/, `${signature} compares stored batches on their own month's price`);
-    assert.match(step, /repriceableUploadRow\(\{\s*distributorCode:/, `${signature} lets Direct and Office rows keep their value`);
+    assert.match(step, /applyImportStoreRules\(/, `${signature} compares stored batches on their own month's price`);
+    assert.match(step, month, `${signature} prices each row by its own month`);
+    assert.match(step, distributor, `${signature} prices each row as its distributor`);
   }
   const upload = readFileSync(new URL("../src/lib/sales/sales-upload.ts", import.meta.url), "utf8");
   assert.equal(

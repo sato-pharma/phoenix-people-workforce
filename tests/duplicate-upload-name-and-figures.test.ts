@@ -170,35 +170,82 @@ function propertyExpression(block: string, key: string): string | null {
 }
 
 function testEverySaveStepComparesTheFiguresItStores() {
-  const saves = [
-    { file: "src/lib/sales/monthly-distributor-import.ts", signature: "export async function persistDistributorSalesUpload(" },
-    { file: "src/lib/sales/normalizer/service.ts", signature: "export async function persistNormalizedBatch(" },
-  ];
-  for (const { file, signature } of saves) {
-    const body = functionBody(read(file), signature);
-    const callAt = body.indexOf("assertNotADuplicateUpload(");
-    assert.ok(callAt >= 0, `${signature} must check for the same workbook under another period`);
-    const insertAt = body.indexOf(".insert(");
-    assert.ok(insertAt > callAt, `${signature} must check before the batch row is written`);
+  // Since REC-008 (14 Nov 2026) the comparison runs in ONE place, `applyImportStoreRules`
+  // (import-store-rules.ts), and both save steps store exactly what it compared. Two links prove it:
+  // the door compares the figures it returns, and each save step hands the door the name, month and
+  // row count its insert stores, and stores the door's totals.
+  const door = functionBody(read("src/lib/sales/import-store-rules.ts"), "export async function applyImportStoreRules<");
+  const callAt = door.indexOf("?? assertNotADuplicateUpload)({");
+  assert.ok(callAt >= 0, "the one door must check for the same workbook under another period");
+  const call = door.slice(callAt, door.indexOf("});", callAt));
+  for (const [argument, expression] of [
+    ["fileName", "input.fileName"],
+    ["period", "input.period"],
+    ["totalRows", "input.totalRows"],
+    ["totalQty", "totals.totalQty"],
+    ["totalValue", "totals.totalValue"],
+  ] as const) {
+    assert.equal(propertyExpression(call, argument), expression, `the door must compare ${argument} as ${expression}`);
+  }
+  assert.match(
+    door,
+    /return \{ rows, deducted, totalQty: totals\.totalQty, totalValue: totals\.totalValue \};/,
+    "the door must return exactly the totals it compared",
+  );
 
-    const call = body.slice(callAt, body.indexOf("});", callAt));
+  const saves = [
+    {
+      file: "src/lib/sales/monthly-distributor-import.ts",
+      signature: "export async function persistDistributorSalesUpload(",
+      // The receipt keeps the sheet's totals when nothing was deducted — the door then returns those same totals.
+      totals: /const storedTotals = stored\.deducted\s*\? \{ \.\.\.result\.totals, totalQty: stored\.totalQty, totalValue: stored\.totalValue \}\s*: result\.totals;/,
+      sheetTotals: /sheetTotals: \{ totalQty: result\.totals\.totalQty, totalValue: result\.totals\.totalValue \}/,
+      rowCount: null,
+    },
+    {
+      file: "src/lib/sales/normalizer/service.ts",
+      signature: "export async function persistNormalizedBatch(",
+      totals: /const totalQty = stored\.totalQty;[\s\S]*const totalValue = stored\.totalValue;/,
+      sheetTotals: null,
+      // The door is handed the sheet's rows and returns the same number of rows (EPDA reduces a quantity,
+      // never drops a row — the behaviour is exercised in tests/sales-import-one-door.test.ts).
+      rowCount: { call: "sheetRows.length", insert: "rows.length", alias: "const rows = stored.rows;" },
+    },
+  ];
+  for (const save of saves) {
+    const body = functionBody(read(save.file), save.signature);
+    const doorAt = body.indexOf("applyImportStoreRules(");
+    assert.ok(doorAt >= 0, `${save.signature} must pass its rows through the one door`);
+    const insertAt = body.indexOf(".insert(");
+    assert.ok(insertAt > doorAt, `${save.signature} must check before the batch row is written`);
+    const doorCall = body.slice(doorAt, body.indexOf("});", doorAt));
     const insert = body.slice(insertAt, body.indexOf("})", insertAt));
     for (const [argument, column] of [
       ["fileName", "file_name"],
       ["period", "period"],
       ["totalRows", "total_rows"],
-      ["totalQty", "total_qty"],
-      ["totalValue", "total_value"],
     ] as const) {
-      const passed = propertyExpression(call, argument);
-      assert.ok(passed, `${signature} must pass ${argument}`);
-      assert.equal(
-        passed,
-        propertyExpression(insert, column),
-        `${signature} must compare ${argument} with exactly what the insert stores as ${column}`,
-      );
+      const passed = propertyExpression(doorCall, argument);
+      assert.ok(passed, `${save.signature} must pass ${argument}`);
+      const storedAs = propertyExpression(insert, column);
+      if (argument === "totalRows" && save.rowCount) {
+        assert.equal(passed, save.rowCount.call, `${save.signature} must count the rows it hands the door`);
+        assert.equal(storedAs, save.rowCount.insert, `${save.signature} must store the count of the door's rows`);
+        assert.ok(body.includes(save.rowCount.alias), `${save.signature} must store the door's rows`);
+        continue;
+      }
+      assert.equal(passed, storedAs, `${save.signature} must compare ${argument} with exactly what the insert stores as ${column}`);
     }
+    assert.match(body, save.totals, `${save.signature} must store the totals the door compared`);
+    if (save.sheetTotals) assert.match(body, save.sheetTotals, `${save.signature} must hand the door the totals it would store`);
+    assert.equal(body.includes("assertNotADuplicateUpload("), false, `${save.signature} must not run a second comparison of its own`);
   }
+  const monthly = functionBody(read("src/lib/sales/monthly-distributor-import.ts"), "export async function persistDistributorSalesUpload(");
+  assert.match(propertyExpression(monthly.slice(monthly.indexOf(".insert(")), "total_qty") ?? "", /^storedTotals\.totalQty$/);
+  assert.match(propertyExpression(monthly.slice(monthly.indexOf(".insert(")), "total_value") ?? "", /^storedTotals\.totalValue$/);
+  const normalizer = functionBody(read("src/lib/sales/normalizer/service.ts"), "export async function persistNormalizedBatch(");
+  assert.equal(propertyExpression(normalizer.slice(normalizer.indexOf(".insert(")), "total_qty"), "Number(totalQty.toFixed(6))");
+  assert.equal(propertyExpression(normalizer.slice(normalizer.indexOf(".insert(")), "total_value"), "Number(totalValue.toFixed(6))");
 }
 
 function testTheLookupReadsEveryFigureItCompares() {
