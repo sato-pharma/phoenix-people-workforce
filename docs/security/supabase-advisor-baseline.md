@@ -150,7 +150,36 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (284 as of 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (298 as of 2026-11-14; 284 on 2026-11-13; 280 on 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 284 to 298 on 2026-11-14 — eight new server-only tables and six clean-up pre-images.** The
+daily check of 14 Nov read 297 at 15:54 Cairo and went red (run 43602048772); production read 298 ten
+minutes later. The fourteen that join are, by oid, the newest fourteen, every one above oid 720000, and
+each has row security on, no policy and no grant to `anon` or `authenticated`:
+
+| Table | oid | Where it came from |
+| --- | --- | --- |
+| `public.phoenix_crm_pharmacy_distributor_links` | 720670 | `20261113181501`, PR 329: a Phoenix CRM pharmacy and the distributor customer that is the same shop |
+| `public.dispute_case_decision_claims` | 721068 | `20261113162318`, PR 333: one row while a dispute is being decided |
+| `public.automated_payroll_settings` | 721366 | `20261113190100`, PR 337: the Automated Payroll switches, one row |
+| `public.automated_payroll_carried_expenses` | 721376 | `20261113190100`, PR 337: late-approved outstation trips a run recorded as carried |
+| `public.app_auth_second_step` | 722478 | `20261113213439`, PR 364: the second sign-in step of an account, key sealed |
+| `public.app_auth_second_step_recovery_codes` | 722492 | `20261113213439`, PR 364: one-time recovery codes, stored as fingerprints |
+| `public.app_auth_trusted_devices` | 722508 | `20261113213439`, PR 364: browsers that passed the second step, 30 days |
+| `public.phoenix_crm_shared_place_timetable_marks` | 729329 | ledger `20261114135818`, PR 408: the append-only trail of the "this building has no timetable" declaration |
+| `phoenix_crm_backup_20261114.left_items_reopen_stamps` | 725437 | pre-image of the 14 Nov validation clean-ups |
+| `phoenix_crm_backup_20261114.left_items_copied_pins` | 725440 | the same |
+| `phoenix_crm_backup_20261114.stray_seat_customer` | 725594 | the same |
+| `phoenix_crm_backup_20261114.stray_seat_place` | 725599 | the same |
+| `phoenix_crm_backup_20261114.stray_seat_review` | 725604 | the same |
+| `phoenix_crm_backup_20261114.stray_seat_visits` | 725609 | the same |
+
+`phoenix_crm_shared_place_timetable_marks` was applied to production at 15:58 Cairo, four minutes after
+the check ran, which is why the check read 297 and not 298; its migration file is in PR 408, which was
+open when this was written. The six pre-images sit in a dated schema that neither `anon` nor `authenticated`
+has USAGE on (`docs/phoenix-crm-shared-places.md`), and they leave the count by themselves when
+`audit-backup-schemas.mjs` retires that schema at the 90-day line. Re-proved live the same day: 0 of all
+298 are selectable, insertable, updatable or deletable by `anon` or `authenticated`.
 
 **Raised 280 to 284 on 2026-11-13 — the employee change log, and three from other work.** Production
 read 284; the four that join are, by oid, the newest four. `public.employee_change_log`
