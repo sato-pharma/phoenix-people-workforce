@@ -9,6 +9,9 @@ exits when done. Railway's schedule has no setting in `.railway/railway.ts`, so 
 Its watch pattern, `infra/code-backup/**`, means only a change in this folder rebuilds it; every other merge
 shows as skipped. A rebuild does not start a backup.
 
+Since 14 Nov 2026 the night runs as an unprivileged user (`phoenix`, uid 10001), never as root. It needs no
+root: both backups write only under `mktemp -d`. The rehearsal fails if the image runs as root again.
+
 Each night it makes one file on the app's Drive, `phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age`:
 a verified `git bundle` of every repository the token can see on the two owners (`sato-pharma`, which holds Phoenix since 6 Nov 2026, and the personal account `Omar-3-xx`, which holds the launcher and the website), the `hmdm-android` release files, and a
 `manifest.tsv` listing each repository's refs and size, with `releases.tsv` listing each release file and its size. It keeps 7 daily and 4 weekly files.
