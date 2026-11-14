@@ -1,8 +1,8 @@
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
 import type { MarketAwarenessActivity, MarketAwarenessDecision } from "@/lib/market-awareness/types";
-import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -305,8 +305,7 @@ export async function notifyDecisionPending(input: {
       .filter(Boolean)
       .join(", ");
 
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ module: "market_awareness", step: "waiting" }, { via: "notices", notice: {
         module: MARKET_AWARENESS_NOTIFICATION_MODULE,
         eventType: "market_awareness_decision_pending",
         category: "market_awareness",
@@ -328,9 +327,7 @@ export async function notifyDecisionPending(input: {
           ...(input.notificationKey ? { idempotencyKey: input.notificationKey } : {}),
         },
         telegram: { ctaLabel: "Open the approvals inbox", ctaUrl: input.actionUrl },
-      },
-      recipientHrIds,
-    );
+      }, recipientHrIds: recipientHrIds });
 
     return { notified: recipientHrIds.length };
   } catch (error) {
@@ -374,8 +371,7 @@ export async function notifyActivityReturned(input: {
     const verb = input.rejected ? "was not approved" : "was sent back for changes";
     const note = input.comment?.trim();
 
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval((input.rejected ? { decision: "rejected", module: "market_awareness", step: "decided" } : { decision: "returned", module: "market_awareness", step: "returned" }), { via: "notices", notice: {
         module: MARKET_AWARENESS_NOTIFICATION_MODULE,
         eventType: input.rejected
           ? "market_awareness_activity_rejected"
@@ -393,9 +389,7 @@ export async function notifyActivityReturned(input: {
           rejected: input.rejected,
         },
         telegram: { ctaLabel: "Open the activity", ctaUrl: input.actionUrl },
-      },
-      [activity.requesterHrId],
-    );
+      }, recipientHrIds: [activity.requesterHrId] });
 
     return { notified: 1 };
   } catch (error) {
@@ -437,8 +431,7 @@ export async function notifyActivityHeld(input: {
     const holder = input.holderName?.trim() || "One of your approvers";
     const reason = input.reason?.trim();
 
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ module: "market_awareness", step: "fyi" }, { via: "notices", notice: {
         module: MARKET_AWARENESS_NOTIFICATION_MODULE,
         eventType: "market_awareness_activity_held",
         category: "market_awareness",
@@ -455,9 +448,7 @@ export async function notifyActivityHeld(input: {
           heldBy: activity.heldByHrId,
         },
         telegram: { ctaLabel: "Open the activity", ctaUrl: input.actionUrl },
-      },
-      [activity.requesterHrId],
-    );
+      }, recipientHrIds: [activity.requesterHrId] });
 
     return { notified: 1 };
   } catch (error) {
@@ -498,8 +489,7 @@ export async function notifyActivityApproved(input: {
       .filter(Boolean)
       .join(", ");
 
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ decision: "approved", module: "market_awareness", step: "decided" }, { via: "notices", notice: {
         module: MARKET_AWARENESS_NOTIFICATION_MODULE,
         eventType: "market_awareness_activity_approved",
         category: "market_awareness",
@@ -522,9 +512,7 @@ export async function notifyActivityApproved(input: {
           startDate: activity.startDate,
         },
         telegram: { ctaLabel: "Open the activity", ctaUrl: input.actionUrl },
-      },
-      audience.recipientHrIds,
-    );
+      }, recipientHrIds: audience.recipientHrIds });
 
     return { notified: audience.recipientHrIds.length };
   } catch (error) {

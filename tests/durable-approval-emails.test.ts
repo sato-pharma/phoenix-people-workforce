@@ -77,8 +77,18 @@ function testEveryInScopeCallSiteGoesThroughTheDurableHelper() {
     "export async function sendVacationReturnedEmail(",
   ]) {
     const body = functionBody(vacationEmail, sender);
-    assert.equal(count(body, "sendDurableEmail("), 2, `${sender} must send both its template and its fallback through sendDurableEmail`);
-    assert.equal(count(body, "{ dedupeKey:"), 2, `${sender} must pass its own dedupe key on both sends`);
+    // REC-032: the approval emails reach sendDurableEmail through the door (`via: "durable-email"`).
+    assert.equal(
+      count(body, "sendDurableEmail(") + count(body, 'via: "durable-email"'),
+      2,
+      `${sender} must send both its template and its fallback through sendDurableEmail`,
+    );
+    // REC-032: through the door the key rides in the delivery, `} }, dedupeKey: …`.
+    assert.equal(
+      count(body, "{ dedupeKey:") + count(body, "} }, dedupeKey:"),
+      2,
+      `${sender} must pass its own dedupe key on both sends`,
+    );
     assert.ok(body.includes('sender: "templated"') && body.includes('sender: "phoenix"'), `${sender} keeps its own two senders`);
   }
 

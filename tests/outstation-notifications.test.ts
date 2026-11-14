@@ -245,7 +245,7 @@ export function runOutstationNotificationsTests() {
   );
   assert.match(
     slaSlice,
-    /createSystemNotificationForRecipients\(/,
+    /createSystemNotificationForRecipients\(|raiseApproval\(\{ module: "outstation", step: "reminder" \}, \{ via: "notices"/,
     "the SLA reminder must send ONE consolidated email to all approvers, not one send per recipient",
   );
 }

@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { countOf } from "@/lib/i18n/format";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free threshold module (it says so at the top of the file, and the plain-TS test loader
@@ -37,7 +38,7 @@ import {
   parseVenueContactId,
   type VenueContactOption,
 } from "@/lib/direct-orders/venue-contact-options";
-import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
+import type { SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
@@ -379,8 +380,7 @@ async function notifyDirectOrder(input: {
   // createSystemNotificationForRecipients consolidates email into ONE To/Cc envelope and
   // suffixes the idempotency key per recipient itself — looping createSystemNotification here
   // is exactly the per-recipient-copies bug it was built to close (2026-07-22).
-  await createSystemNotificationForRecipients(
-    {
+  await raiseApproval(approvalIdentity("direct_order", input.eventType), { via: "notices", notice: {
       channels: input.channels ?? NOTIFY_CHANNELS,
       actionUrl: href,
       category: "direct_order_request",
@@ -400,9 +400,7 @@ async function notifyDirectOrder(input: {
       priority: "high",
       subjectHrId: input.subjectHrId,
       title: input.title,
-    },
-    recipientHrIds,
-  );
+    }, recipientHrIds: recipientHrIds });
 }
 
 // ── Approval chain resolution (requester's actual managers → CEO) ─────────────

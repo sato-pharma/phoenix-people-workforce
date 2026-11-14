@@ -1,4 +1,5 @@
 ﻿
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import {
   normalizeHrId,
   normalizeHrIdForAccess,
@@ -201,7 +202,7 @@ import {
   resolveOutstationRecipientAddresses,
   resolveOutstationSubmitRouting,
 } from "@/lib/outstation/submit-recipients";
-import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { describeExpenseResyncNotApplied, type ExpenseResyncOutcome } from "@/lib/automated-payroll/expense-resync";
 import { logError, logInfo } from "@/lib/observability/log";
@@ -2025,7 +2026,7 @@ async function notifyOutstationSubmitted(
       ...(employeeNote ? [`Note: ${employeeNote.split("\n").join(" ")}`] : []),
     ];
 
-    await createSystemNotification({
+    await raiseApproval({ module: "outstation", step: "waiting" }, { via: "notice", notice: {
       actionUrl,
       category: "general",
       channels: ["in_app", "email", "telegram", "push"],
@@ -2066,7 +2067,7 @@ async function notifyOutstationSubmitted(
       title: heldForReview
         ? `${request.employeeName}'s outstation expense request needs review — ${claimedAmount}`
         : `${request.employeeName} submitted an outstation expense request — ${claimedAmount}`,
-    });
+    } });
   } catch (error) {
     logError("Outstation submitted notification dispatch failed (non-blocking)", { labels: { event: "outstation_submitted_notification_dispatch_failed" }, error });
   }
@@ -2087,7 +2088,7 @@ async function notifyOutstationDecision(input: {
     const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
     const reason = text(input.comment);
     await Promise.allSettled([
-      createSystemNotification({
+      raiseApproval({ decision: "rejected", module: "outstation", step: "decided" }, { via: "notice", notice: {
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
         category: "general",
         channels: ["in_app", "telegram", "push"],
@@ -2126,7 +2127,7 @@ async function notifyOutstationDecision(input: {
         subjectHrId: r.employeeHrId,
         telegram: { buttons: [{ label: "Open Phoenix", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
         title: "Your expense request was rejected",
-      }),
+      } }),
     ]);
   } catch (error) {
     logError("Outstation decision notification dispatch failed (non-blocking)", { labels: { event: "outstation_decision_notification_dispatch_failed" }, error });
@@ -5476,8 +5477,7 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
       String(row.employee_name ?? ""),
     );
     try {
-      await createSystemNotificationForRecipients(
-        {
+      await raiseApproval({ module: "outstation", step: "reminder" }, { via: "notices", notice: {
           // in_app added 2026-09-06 on the owner decision, alongside the departure-photo reminder.
           channels: ["in_app", "email", "push"],
           eventType: "outstation_sla_reminder",
@@ -5501,9 +5501,7 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
             templateKey: "general",
             tone: "warning" as const,
           },
-        },
-        approverHrIds,
-      );
+        }, recipientHrIds: approverHrIds });
       processed += approverHrIds.length;
     } catch (error) {
       logError("Outstation SLA reminder failed for recipients", { labels: { event: "outstation_sla_reminder_failed", cron: "outstation-sla-reminder", requestId: String(row.id) }, error });
