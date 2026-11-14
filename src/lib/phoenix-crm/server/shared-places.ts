@@ -49,7 +49,7 @@ import {
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { refuseReadingsApart } from "@/lib/phoenix-crm/server/far-visit-safeguards";
-import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
+import { shareAcrossLinesQuietly, withdrawValidateAgainNoticeQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -57,6 +57,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { countTimetableRefusalsByVenue, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
+import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseSeatedPlaceDraft,
@@ -789,10 +790,23 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   // Each customer an approval validated is validated on the other two lines of his area too (owner,
   // 2026-11-12; line-twins.ts), after the reply.
   const validatedNow = Array.isArray(result.validated) ? (result.validated as Row[]).map((row) => text(row.customer_id)) : [];
+  // Phoenix CRM validation audit, 14 Nov 2026: a customer an approval validates no longer needs a new
+  // photo, so the "validate again" notice an earlier refusal left in his rep's bell is answered.
+  for (const customerId of validatedNow) await withdrawValidateAgainNoticeQuietly(customerId);
   if (validatedNow.length > 0) {
     await afterResponse("phoenix-crm: share venue validations across the lines", async () => {
       for (const customerId of validatedNow) await shareAcrossLinesQuietly(customerId);
     });
+  }
+  // Phoenix CRM validation audit, 14 Nov 2026: a rejected building retires every place seated in it,
+  // and every visit to those customers was measured against one of them. Refusing a single place
+  // measures the customer's visits again (`decideValidationReview`); refusing a whole building did not,
+  // so its visits kept a distance from a place that no longer counts. After the reply: a building can
+  // seat many customers.
+  if (decision === "reject") {
+    await afterResponse("phoenix-crm: measure a rejected venue's visits again", () =>
+      restampSeatedCustomersQuietly(viewer, String(result.shared_place_id), "retired"),
+    );
   }
   return {
     sharedPlaceId: String(result.shared_place_id),
@@ -805,6 +819,40 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
       repHrId: text(row.rep_hr_id),
     })),
   };
+}
+
+/**
+ * Measure again every visit to the customers seated in one venue, after the venue's places were retired
+ * (`retired`, a rejection) or brought back (`active`, a rejection taken back).
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026. The function that decides a venue returns only the
+ * customers whose STATUS changed; a customer who kept another place of his own lost or regained a
+ * measuring point all the same, so the seated places are read here and each customer is measured once.
+ * After a rejection the read also meets a seating retired earlier on its own, whose customer is simply
+ * measured again to the same answer. Never throws: the decision it follows is already committed.
+ */
+async function restampSeatedCustomersQuietly(viewer: PhoenixCrmViewer, sharedPlaceId: string, seated: "active" | "retired"): Promise<void> {
+  try {
+    const places = await selectByIds<Row>("phoenix_crm_places", "id, customer_id, seat_id, is_test", "shared_place_id", [sharedPlaceId], (query) =>
+      query.eq("status", seated),
+    );
+    const measured = new Set<string>();
+    for (const place of places) {
+      const customerId = text(place.customer_id);
+      if (!customerId || measured.has(customerId)) continue;
+      measured.add(customerId);
+      await restampVisitLocationsQuietly({
+        seatId: String(place.seat_id),
+        isTest: place.is_test === true,
+        customerId,
+        actorHrId: viewer.hrId,
+        settings: viewer.config.settings,
+        scope: "all",
+      });
+    }
+  } catch (error) {
+    logError("Phoenix CRM venue visits not measured again", { error, labels: { event: "phoenix_crm_shared_place_restamp_failed" } });
+  }
 }
 
 /**
@@ -988,11 +1036,27 @@ export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown)
 
   await tellDecisionComment(viewer, "shared_place", String(result.shared_place_id), body.note);
 
+  // Phoenix CRM validation audit, 14 Nov 2026: bringing a building back did none of the three things
+  // taking back ONE rejected place does (`restoreValidation`), so a restored building left its
+  // customers' bells asking for a new photo, their visits unmeasured against the places that came back,
+  // and their rows on the other two lines waiting. The paragraph above says the notice "is withdrawn by
+  // the customer's own validation": that validation is this one, and nothing withdrew it.
+  const validated = people(result.validated);
+  // 1. The bell that asked for the photo again goes, for each customer this restore validated.
+  for (const person of validated) await withdrawValidateAgainNoticeQuietly(person.customerId);
+  // 2 and 3, after the reply (a building can seat many customers): every visit to a customer whose place
+  // came back is measured again, and each customer validated now is validated on the other lines of his
+  // area too (line-twins.ts).
+  await afterResponse("phoenix-crm: follow a restored venue's customers", async () => {
+    await restampSeatedCustomersQuietly(viewer, String(result.shared_place_id), "active");
+    for (const person of validated) await shareAcrossLinesQuietly(person.customerId);
+  });
+
   return {
     sharedPlaceId: String(result.shared_place_id),
     name: String(result.name),
     placesRestored: numberOrNull(result.places_restored) ?? 0,
-    validated: people(result.validated),
+    validated,
     stillWaiting: people(result.still_waiting),
   };
 }

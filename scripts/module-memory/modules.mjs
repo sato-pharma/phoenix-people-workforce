@@ -690,6 +690,27 @@ export const MODULES = [
     keywords: ["signboard reader", "unreadable sign", "re-read", "one read per photo", "short form", "quorum", "new photo asked", "sign advice"],
     tables: [],
   },
+  // 🔴 SPLIT, 2026-11-14, FOR THE SAME REASON A THIRD TIME: `phoenix-crm-validation` sat at about 3,990 of
+  // its 4,000-byte pointer margin, and the four rules of the validation audit took it to 4,335. The
+  // building a rep captures once and seats customers in — one timetable for it, the read at the door and
+  // at night, a held or exempt building, the Super Admin's seating, and a customer kept in on a place of
+  // his own — is one family, so it moves together. `phoenix-crm-validation` KEEPS EVERY GLOB IT HAD, so a
+  // polyclinic file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "phoenix-crm-polyclinic",
+    title: "Phoenix CRM — the polyclinic: one building, one timetable, and seating in it",
+    scope: "The shared place a rep captures once and seats customers in — one building and one timetable, the timetable read at the door and again at night, a held or exempt building, the Super Admin's seating, who sees a building, and a customer who stays in on a place of his own.",
+    globs: [
+      "src/lib/phoenix-crm/{schedule-rules,shared-place-rules}.ts",
+      "src/lib/phoenix-crm/server/{venue-timetable,schedule-check,shared-places}.ts",
+      "src/components/phoenix-crm/{seat-in-venue-screen,venue-timetable-screen,shared-place-screens}.tsx",
+      "app/api/phoenix-crm/shared-places/**",
+      "app/api/phoenix-crm/list/places/seat/**",
+      "tests/phoenix-crm-{seat-in-venue,shared-place,validation-audit}*",
+    ],
+    keywords: ["seat in a building", "building timetable", "held building", "no timetable", "timetable photo", "seated customer"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-09, FOR THE SAME REASON AS THE THREE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,064 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
   // moment the pharmacy's own pin added its rule. The manager-facing reports and boards and the ARITHMETIC

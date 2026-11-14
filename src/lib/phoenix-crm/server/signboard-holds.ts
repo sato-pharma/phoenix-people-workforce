@@ -29,12 +29,18 @@
 import { hasAiApiKey } from "@/lib/ai/openai-client";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
+import { approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { recordPlaceSignboard, rereadHeldPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
-import { notifyValidationReviewWaiting, withdrawValidationReviewWaiting } from "@/lib/phoenix-crm/server/validation-reviews";
+import {
+  heldReviewNeedsFullName,
+  notifyValidationReviewWaiting,
+  withdrawValidationNotConfirmed,
+  withdrawValidationReviewWaiting,
+} from "@/lib/phoenix-crm/server/validation-reviews";
 import {
   heldSignboardCheckToKeep,
   heldSignboardLostReadToKeep,
@@ -90,10 +96,17 @@ export type HeldSignboardSettlement = "approved" | "again" | "done" | "lost" | "
  * `phoenix_crm_decide_validation_review` approve the Super Admin's own button runs. False when it did not
  * land: he decided it first (`review_decided`), or the review is gone, and his decision stands. One
  * approve for the hourly re-read, the one-off read of the old places and the rep's new photo alike.
+ * False too for a clinic customer still short of three names, who is left waiting (14 Nov 2026, below).
  */
 export async function approveHeldSignboardBySystem(reviewId: string): Promise<boolean> {
   let approved: Row;
   try {
+    // Phoenix CRM validation audit, 14 Nov 2026: Place checks never approves a clinic customer with one
+    // or two names (owner, 2026-11-07: "Send them back to the rep"), and the two deciders' approve is
+    // refused for one — but this approve called the function directly and asked nothing. It asks the
+    // same gate now. A short name is left WAITING, never rejected: the system only ever says yes, and
+    // the rejection with `short_name` is a decider's press. A gate that cannot be read approves nothing.
+    if (await heldReviewNeedsFullName(reviewId)) return false;
     approved = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
       p: {
         review_id: reviewId,
@@ -114,6 +127,11 @@ export async function approveHeldSignboardBySystem(reviewId: string): Promise<bo
   await withdrawValidationReviewWaiting(reviewId);
   // Validated, so validated on the other two lines of his area too (owner, 2026-11-12; line-twins.ts).
   const customerId = typeof approved?.customer_id === "string" ? approved.customer_id : null;
+  // Phoenix CRM validation audit, 14 Nov 2026: and the "validate again" notice an earlier refusal left
+  // in the rep's bell is answered. The two callers in the rep's own save withdrew it themselves; the
+  // hourly re-read and the one-off read of the old places did not, so a customer the system approved
+  // overnight kept a bell asking for a photo already accepted. Never throws.
+  if (customerId && approved?.validated === true) await withdrawValidationNotConfirmed(customerId);
   await afterResponse("phoenix-crm: share a system-approved validation across the lines", () => shareAcrossLinesQuietly(customerId));
   return true;
 }
@@ -142,6 +160,23 @@ export async function settleHeldSignboard(
     if (!heldSignboardReadHappened(read)) return "unread";
     const reads = place.readsSoFar + 1;
     const outcome = heldSignboardOutcome(read, reads);
+    // Phoenix CRM validation audit, 14 Nov 2026: a confirmed sign on a clinic customer with one or two
+    // names is not the system's to approve (`approveHeldSignboardBySystem` refuses it). Left as an
+    // ordinary "approved or lost", it would be re-read every hour to the same answer and then drop out
+    // of the queue with nobody told. So it is handed over the way a place that lost its reads is: the
+    // reading is kept as it is, every read is recorded as spent, and the Super Admin is told now.
+    if (outcome === "approve" && approvalNeedsFullName({ listType: place.listType, customerName: place.customerName })) {
+      await recordPlaceSignboard(place.placeId, heldSignboardCheckToKeep(read, SIGNBOARD_HELD_MAX_READS, "done"));
+      if (!place.isTest && context.seat) {
+        await notifyValidationReviewWaiting({
+          customerName: place.customerName,
+          repHrId: place.repHrId,
+          reviewId: place.reviewId,
+          seat: context.seat,
+        });
+      }
+      return "done";
+    }
     await recordPlaceSignboard(place.placeId, heldSignboardCheckToKeep(read, reads, outcome));
 
     if (outcome === "approve") return (await approveHeldSignboardBySystem(place.reviewId)) ? "approved" : "lost";

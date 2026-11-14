@@ -1822,6 +1822,17 @@ export function signboardRetakeIsAtThePlace(distanceMeters: number, accuracyMete
   return distanceMeters <= SIGNBOARD_RETAKE_MAX_METERS + slack;
 }
 
+/**
+ * What the rep reads when a retaken signboard photo was not taken at the place.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: the refusal used to print how far the photo was from the
+ * place, in metres. Golden Rule #1 — a rep is never shown the line or his own distance. So the sentence
+ * is fixed, about his own work and the way out, in the words `VISIT_AWAY_FROM_PLACE` and
+ * `SEATING_AWAY_FROM_BUILDING` already use, and it carries no number.
+ */
+export const SIGNBOARD_RETAKE_AWAY_FROM_PLACE =
+  "A new signboard photo can be saved only at the customer's place, and your location now is not there. If you are at the place, step outside, wait a moment for the location to settle, then take the photo again.";
+
 /** Is this place waiting on a new signboard photo from its rep? */
 export function signboardRetakeWaiting(stored: unknown): SignboardRetakeRequest | null {
   if (!stored || typeof stored !== "object") return null;
@@ -1835,4 +1846,42 @@ export function signboardRetakeWaiting(stored: unknown): SignboardRetakeRequest 
     problem: parseSignboardPhotoProblem(raw.problem),
     requestedAt: typeof raw.requestedAt === "string" ? raw.requestedAt : "",
   };
+}
+
+/**
+ * The check kept on a place whose rep has just retaken its signboard photo: the door's read of the NEW
+ * photo, counted as that photo's first read, with the request for a photo answered.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: the retake carried the OLD photo's count forward
+ * (`signboardNextAttempt` over the stored `attempts`). A held place whose reads were already spent then
+ * stored its new photo at or past `SIGNBOARD_HELD_MAX_READS`, so the hourly re-read never took it and the
+ * night pass leaves held places alone — nothing read the new photo again while the rep was told the
+ * system was checking it. A new photo is new evidence: its count starts at the door's own read.
+ * `signboardNextAttempt` cannot say that (it counts a place read before, so its lowest answer is 2).
+ *
+ * The strong reader's "unreadable" is still final at once, for this photo only (owner, 2026-10-18): on a
+ * place nobody holds, no night pass reads the same photo again. A held place keeps its one re-read, as a
+ * place held at the door does.
+ */
+export function signboardRetakeCheckToKeep(read: PhoenixCrmSignboardCheck): PhoenixCrmSignboardCheck {
+  const final = read.strongRead === true && read.verdict === "unjudged" && read.reason === "unreadable";
+  return { ...read, attempts: 1, reason: final ? "unreadable_final" : read.reason, retake: null };
+}
+
+/**
+ * A reading that would put a name on the Super Admin's board, held against a second reading of the same
+ * photo: the first reading when the two agree, and otherwise `unjudged` / `unconfirmed` KEEPING the first
+ * reading's text and signs — the shape the night pass writes — so the night reads the place again and
+ * nothing is filed. A reading that names nobody (`match`, `unjudged`) comes back as it is.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: the retake door filed its flag on ONE reading, against the
+ * module's rule that nothing reaches the integrity board unless two readings agree.
+ */
+export function signboardAfterSecondReading(
+  first: PhoenixCrmSignboardCheck,
+  second: PhoenixCrmSignboardCheck,
+): PhoenixCrmSignboardCheck {
+  if (first.verdict !== "other_name" && first.verdict !== "no_name") return first;
+  if (second.verdict === first.verdict) return first;
+  return { ...first, reason: "unconfirmed", verdict: "unjudged" };
 }
