@@ -393,10 +393,11 @@ export function runUnpublishedSalesNeverShownTests() {
   pin("app/api/sales/monthly-closing/rep-ranking-export/route.ts", "availablePeriods: released", "and the trend is built from this list, so a published month cannot carry an unpublished one");
   before("app/api/sales/monthly-closing/premium-export/pdf/route.ts", "isSalesPeriodReleased(", "await renderRepCardPdf(", "the PDF beside the workbook must refuse too");
   assert.equal(
-    source("src/lib/sales/monthly-closing-publication.ts").split("invalidateAchievementStampedCaches(").length - 1,
+    source("src/lib/sales/monthly-closing-publication.ts").split("onClosingPublicationChanged(").length - 1,
     2,
     "publishing and withdrawing must both reach the stamped caches, which cannot see a publication",
   );
+  pin("src/lib/sales/closing-publication-refresh.ts", "invalidateAchievementStampedCaches(reason);", "and the one refresh reaches them");
   before("app/api/sales/monthly-closing/consolidated-export/route.ts", "isSalesPeriodReleased(", "buildConsolidatedClosingWorkbook({", "every month in the consolidated workbook must be published");
   before("app/api/sales/monthly-closing/consolidated-premium-export/route.ts", "isSalesPeriodReleased(", "buildConsolidatedPremiumClosing({", "and in its premium twin");
   before("app/api/sales/sos-dashboard/email-report/route.ts", "isSalesPeriodReleasedCompanyWide(", "buildAndEmailSosBiReport({ period })", "the by-hand send reads as the system, so nothing further down asks");

@@ -1069,6 +1069,7 @@ import { runOutstationExpenseExportTests } from "./outstation-expense-export.tes
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runBrowserStorageOwnerScopedTests } from "./browser-storage-owner-scoped.test.ts";
 import { runCacheAuditFixesTests } from "./cache-audit-fixes.test.ts";
+import { runClosingPublicationRefreshTests } from "./closing-publication-refresh.test.ts";
 import { runCacheAuditP3Tests } from "./cache-audit-p3.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
@@ -5277,6 +5278,7 @@ await runTest(
   runPageTimingsTests,
 );
 await runTest("a cache never keeps a failed read, a write expires the screen it moves, and a private file is kept no longer than its link", runCacheAuditFixesTests);
+await runTest("a closing published or withdrawn refreshes every cache that holds its figures, through one helper (REC-030)", runClosingPublicationRefreshTests);
 await runTest("every download says never keep me, a degraded answer is served once and never kept, and browser storage never takes a page down", runCacheAuditP3Tests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
 await runTest(
