@@ -25,7 +25,7 @@ import { logWarning } from "@/lib/observability/log";
 import { scrubSentryPath } from "@/lib/observability/sentry-policy";
 import { recordTiming } from "@/lib/observability/timings";
 import { rowCapFinding, shouldNoteRowCap } from "@/lib/supabase/row-cap-watch";
-import { requestActorHeaders } from "@/lib/supabase/request-actor";
+import { requestActorHeaders, withActorHeaders } from "@/lib/supabase/request-actor";
 
 const supabaseRequestTimeoutMs = 15000;
 
@@ -83,17 +83,16 @@ function requestMethod(input: RequestInfo | URL, init: RequestInit | undefined):
 }
 
 /**
- * A write carries the signed-in person of the request being served (./request-actor.ts), so the history
- * triggers on employees name who changed the row whichever code path wrote it. A header the caller set
- * itself wins. Reads are sent untouched.
+ * A database write carries the signed-in person of the request being served (./request-actor.ts), so
+ * the history triggers name who changed the row whichever code path wrote it. Only a /rest/v1 write that
+ * named no actor of its own takes it; reads, storage, auth and edge functions are sent untouched.
  */
 async function withRequestActor(input: RequestInfo | URL, init: RequestInit | undefined): Promise<RequestInit | undefined> {
   if (typeof input !== "string" && !(input instanceof URL)) return init;
-  const actor = Object.entries(await requestActorHeaders());
-  if (actor.length === 0) return init;
-  const merged = new Headers(init?.headers);
-  for (const [name, value] of actor) if (!merged.has(name)) merged.set(name, value);
-  return { ...init, headers: merged };
+  return withActorHeaders(
+    init,
+    await requestActorHeaders({ method: init?.method, url: String(input), headers: init?.headers }),
+  );
 }
 
 /**

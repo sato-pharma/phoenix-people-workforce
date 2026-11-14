@@ -2406,6 +2406,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // under replica mode, a DELETE and a TRUNCATE of employee_change_log each refused, and a deductions_audit DELETE
   // still refused. Re-applying is a no-op (`create or replace`, `drop function if exists`).
   "20261114021603_employee_change_log_shares_the_audit_trail_refusal.sql",
+  // Applied 14 Nov 2026 at about 02:55 Cairo by scripts/apply-sql-file.mjs (staging, then production with the aws-1
+  // pooler), the same route; no ledger row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf:
+  // md5(prosrc) equal to this file's bodies as LF text — recovery.restore_table 674956be9c97f4bcd6347daf9289962a,
+  // phx_log_deduction_decision_change e0177d363bb1894cc03cdfa9c1b6d220, phx_log_employee_change
+  // e0f6d0fc3084bacaa8f261dcab4813fa (all SECURITY DEFINER, executable by service_role, not by anon or
+  // authenticated). Rehearsed on staging in rolled-back transactions. A throwaway table with a unique code swapped
+  // between two rows, a guard that refuses the locked row, a trigger stamping updated_at, a trigger writing a log
+  // row and a child on ON DELETE CASCADE: restored as service_role, the table equalled its snapshot, updated_at
+  // was the snapshot's, 0 log rows, both children still there, session_replication_role back to origin; with a
+  // child on a row the snapshot lacks it raised 23503 naming the key and changed nothing. The real
+  // deductions_decisions (135 ms) and employees (116 keys checked, 1,034 ms) restored with no deductions_audit and no
+  // employee_change_log row written. A note edited with no request actor was audited with no actor, with the
+  // header as B-10, and with decided_at moved as the row's decided_by. An exit_reason and bank_name change was
+  // named in masked_fields with no value. Re-applying is a no-op (`create or replace`).
+  "20261114024807_restore_without_triggers_and_actor_from_the_request.sql",
   // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
   // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
   // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all

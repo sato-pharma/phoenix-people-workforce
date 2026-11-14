@@ -73,7 +73,7 @@ async function supabaseRest<T>(path: string, init: RequestInit = {}): Promise<T>
           Authorization: `Bearer ${serviceRoleKey}`,
           "Content-Type": "application/json",
           // A write names the signed-in person for the history triggers (src/lib/supabase/request-actor.ts).
-          ...(init.method && init.method.toUpperCase() !== "GET" ? await requestActorHeaders() : {}),
+          ...(await requestActorHeaders({ method: init.method, headers: init.headers })),
           ...(init.headers ?? {}),
         },
         signal: controller.signal,

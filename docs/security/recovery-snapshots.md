@@ -299,9 +299,34 @@ select * from recovery.restore_table('public', 'salary_records', timestamptz '20
 
 Applying takes a **pre-image of the current contents first**, into `recovery.restore_preimages` —
 mandatory, because there is no PITR behind a restore that turns out to be the wrong call. Then, in
-one transaction: `set constraints all deferred`, delete **only the rows the snapshot does not hold**,
-and put every other row back in place by its primary key (an upsert over the named, non-generated
-columns that touches only rows that differ).
+one transaction and with the table's own triggers held off: remove **every row the snapshot does
+not hold, or holds differently**, insert the snapshot's rows that are not there (named,
+non-generated columns; a row already equal is never touched), and check every foreign key that
+touches the table.
+
+🔴 **A restore puts rows back — it is not a business event** (`20261114024807`). What that means
+when you run one:
+
+- **No trigger of the table fires.** No guard refuses it (the reactivation guard on `employees`,
+  the `*_immutable` triggers on `attendance_settlements` and `attendance_annual_balance_charges`,
+  the closed-month guard on `salary_records`), nothing is written elsewhere (a vacancy, a probation
+  case, a CRM person, a `deductions_audit` or `employee_change_log` row), and no `updated_at` is
+  stamped: the table ends **equal to the snapshot**, timestamps included. The record of the
+  restore is its row in `recovery.restore_preimages`. Anything derived from the table needs its
+  own sync afterwards.
+- **Nothing cascades, and nothing is orphaned.** The foreign keys are held off with the triggers,
+  so the function checks every key that touches the table itself, in both directions, and refuses
+  the whole restore (`23503`, naming the key, nothing changed) if a row would be left pointing at
+  nothing. When it refuses, restore the other table to the same moment **in the same
+  transaction**, parent first — each call checks only its own table's keys once it is done.
+- **Never turn it back into an update in place.** 36 of the 50 protected tables have a unique
+  index besides the primary key; restoring row by row collides with a row not yet restored the
+  moment a unique value moved between two surviving rows.
+- **How the triggers are held off:** `set local session_replication_role = 'replica'` inside the
+  function, put back before it returns. It must stay a `SET` statement — `set_config()` is refused
+  for this parameter on Supabase (read on staging, 14 Nov 2026). An `ENABLE ALWAYS` trigger still
+  fires; no protected table has one (read on production the same day), and the append-only trails
+  that do are not protected tables.
 
 🔴 **Never put the empty-and-refill back** (`20261114020715`). Until then a restore deleted the
 whole table first, and that failed on its first statement for every table another table points at
@@ -311,7 +336,8 @@ deferrable. Read live on 2026-11-14 that was `deductions_candidates`, `deduction
 `automated_payroll_audit`), `deductions_decisions` and `attendance_settlements`; and `select *`
 failed on the five with a generated column. Rehearsed on staging the same day, rolled back: all of
 them restore, and a corrupted decision note came back. A row that must go and is still referenced
-now refuses by name — right, because it cannot vanish without its children.
+now refuses by name — right, because it cannot vanish without its children. (`20261114024807`
+replaced the upsert of that fix with the remove-then-insert above; the empty-and-refill stays gone.)
 
 ### Proven end to end, on production, 2026-09-29
 
@@ -354,6 +380,8 @@ which is the stronger of the two answers. Re-run this probe after any grant chan
 - **Schema drift.** A column added after a snapshot restores as `NULL`, not its default. If it is
   `NOT NULL` the restore fails loudly — correct, but it means a snapshot older than the last schema
   change may need hand-editing.
+- **A restore fires no trigger and writes no history.** See "Restoring": rollups and other derived
+  rows are not rebuilt by it, and the only record that it happened is `recovery.restore_preimages`.
 - **Identity sequences are not reset.** After restoring a table with a generated key, check
   `setval` before the next insert.
 - **Detection latency.** `scripts/check-schema-shape.ts` reads `public.phx_ci_recovery_health()` on
