@@ -1,6 +1,6 @@
 ---
 name: github-personal-account-no-ghas-oss-scanning
-description: "Phoenix-HR is a personal GitHub User account (GitHub Pro), not an Organization -- GitHub Advanced Security (code scanning + secret scanning alerts) is not purchasable, so the repo uses OSS tooling (gitleaks; Semgrep was dropped) instead. secret-scan still RUNS but stopped being required on 2026-09-29: the gate is TWO as of 2026-10-01, validate and checks -- the count in this file has rotted four times, so read the protection API and never quote it."
+description: "Phoenix-HR is a personal GitHub User account (GitHub Pro), not an Organization -- GitHub Advanced Security (code scanning + secret scanning alerts) is not purchasable, so the repo uses OSS tooling (gitleaks, and Semgrep daily over main and on demand — restored 2026-09-08, never on a pull request; re-read 2026-11-14) instead. secret-scan still RUNS but stopped being required on 2026-09-29: the gate is TWO as of 2026-10-01, validate and checks -- the count in this file has rotted four times, so read the protection API and never quote it."
 metadata:
   type: project
   originSessionId: 719a274c-ca69-4ea1-8208-da5b96a3cf57
