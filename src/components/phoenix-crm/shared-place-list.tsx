@@ -555,6 +555,8 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     takes: (row) => !row.restorable,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place", { sharedPlaceId: row.sharedPlaceId, decision: "approve", note: answer.note }, "decided"),
+    // The row's own control: a held building is approved, one already standing is kept.
+    outcomeOf: (_answer, row) => (row.status === "held" ? "approved" : "kept"),
   },
   {
     key: "reject",
@@ -571,6 +573,7 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
         { sharedPlaceId: row.sharedPlaceId, decision: "reject", note: answer.note, refusalReason: answer.reason },
         "decided",
       ),
+    outcomeOf: () => "rejected",
   },
   {
     key: "restore",
@@ -581,6 +584,7 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     takes: (row) => row.restorable,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/restore", { sharedPlaceId: row.sharedPlaceId, note: answer.note }, "restored"),
+    outcomeOf: () => "restored",
   },
 ];
 

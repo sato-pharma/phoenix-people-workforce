@@ -59,6 +59,24 @@ export function approvalOutcome(answer: unknown, plain: "approved" | "restored")
 export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once the building is approved.";
 
 /**
+ * What a bulk run did, in the words each row's own control says (owner, 14 Nov 2026: "fix the bulk approve
+ * wording"). 🔴 The bar used to read only whether each request threw, so ticking twelve rows said nothing
+ * about the three customers whose building was still being checked: those approvals settle the review and
+ * the customer waits, exactly as one pressed alone. Each outcome is counted once, in the order it first came.
+ */
+export function bulkOutcomeSummary(outcomes: ReadonlyArray<PlaceCheckOutcome>): string {
+  const counts = new Map<PlaceCheckOutcome, number>();
+  for (const outcome of outcomes) counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
+  const said = [...counts].map(([outcome, count]) => `${SAVED_LABEL[outcome].text}: ${count}`).join(" · ");
+  const waiting = counts.get("waiting_building") ?? 0;
+  const notes = [
+    counts.has("approved") || counts.has("restored") ? PLACE_APPROVED_NOT_A_LIST_ADD : "",
+    waiting === 0 ? "" : waiting === 1 ? "The customer waiting is counted once the building is approved." : `The ${waiting} customers waiting are each counted once their building is approved.`,
+  ].filter((note) => note !== "");
+  return [`Saved. ${said}.`, ...notes].join(" ");
+}
+
+/**
  * 🔴 "ALREADY DECIDED" IS AN ANSWER, NOT AN ERROR (owner, 2026-11-08: "places checks is stale … many
  * error"). The SFE Manager met "This place was already decided. Reload the page." and "This name was
  * already decided" three times in one morning, each on a row the database had already settled — his own

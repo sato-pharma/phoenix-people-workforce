@@ -245,10 +245,11 @@ function checkBulkDecide(): void {
 
   // No route of its own, and no decision of its own: each action is handed in by the screen.
   assert.doesNotMatch(bulk, /\/api\//, "the bulk bar names no route — each action is the screen's own request");
-  assert.match(bulk, /run: \(row: Row, answer: BulkAnswer\) => Promise<unknown>/, "an action IS the one row request the page already makes — `crmPost` hands back a value, and the bar reads only whether it threw");
+  assert.match(bulk, /run: \(row: Row, answer: BulkAnswer\) => Promise<unknown>/, "an action IS the one row request the page already makes — `crmPost` hands back a value");
+  assert.match(bulk, /outcomeOf: \(answer: unknown, row: Row\) => PlaceCheckOutcome;/, "and the action says what that value means, in the row control's own words (14 Nov 2026)");
 
   // One answer, N times, in order.
-  assert.match(bulk, /for \(const row of targets\) \{[\s\S]*?await action\.run\(row, \{ note, reason \}\);/, "it runs them one at a time, each with the reason and note typed once");
+  assert.match(bulk, /for \(const row of targets\) \{[\s\S]*?landed\.push\(action\.outcomeOf\(await action\.run\(row, \{ note, reason \}\), row\)\);/, "it runs them one at a time, each with the reason and note typed once, and keeps what each did");
   assert.match(bulk, /const targets = picked\.filter\(action\.takes\)/, "and only on the picked rows that action can answer");
 
   // 🔴 A ROW THAT FALLS OUT OF THE LIST FALLS OUT OF THE SELECTION — ids in state, rows the authority.

@@ -26,6 +26,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { messageOf } from "@/components/phoenix-crm/api";
+import { bulkOutcomeSummary, type PlaceCheckOutcome } from "@/components/phoenix-crm/place-check-done";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCheck, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
@@ -54,9 +55,15 @@ export type BulkAction<Row> = {
   takes: (row: Row) => boolean;
   /**
    * The ONE row request the page already makes. It answers `unknown` because that is what `crmPost`
-   * hands back (`body[key]`, the value) and the bar never reads it — only whether it threw.
+   * hands back (`body[key]`, the value); `outcomeOf` reads it.
    */
   run: (row: Row, answer: BulkAnswer) => Promise<unknown>;
+  /**
+   * What the server's answer says was done, in the row control's own words — `approvalOutcome` for an
+   * approval, so a customer behind a building still being checked reads "Approved, waits for the
+   * building" here too, never a plain "Approved" (owner, 14 Nov 2026).
+   */
+  outcomeOf: (answer: unknown, row: Row) => PlaceCheckOutcome;
 };
 
 /** What one section's tick boxes hand its bar. Written out, so the bar takes it as a plain prop. */
@@ -149,6 +156,7 @@ export function BulkDecideBar<Row>({
   const [running, setRunning] = useState<string | null>(null);
   const [done, setDone] = useState(0);
   const [failures, setFailures] = useState<ReadonlyArray<{ name: string; problem: string }>>([]);
+  const [summary, setSummary] = useState<string | null>(null);
 
   const picked = picks.picked;
   const needsReason = actions.some((action) => action.needsReason);
@@ -164,16 +172,19 @@ export function BulkDecideBar<Row>({
     setRunning(action.key);
     setDone(0);
     setFailures([]);
+    setSummary(null);
     const failed: Array<{ name: string; problem: string }> = [];
+    const landed: PlaceCheckOutcome[] = [];
     for (const row of targets) {
       try {
-        await action.run(row, { note, reason });
+        landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));
       } catch (error) {
         failed.push({ name: nameOf(row), problem: messageOf(error) });
       }
       setDone((current) => current + 1);
     }
     setFailures(failed);
+    setSummary(landed.length > 0 ? bulkOutcomeSummary(landed) : null);
     setRunning(null);
     // Whatever landed, the page is re-read: the rows that settled leave their section, and the ones
     // that failed stay where they are with their reason beside them.
@@ -272,15 +283,22 @@ export function BulkDecideBar<Row>({
             ) : null,
           )}
           {needsReason && reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED}</p> : null}
-          {failures.length > 0 ? (
-            <CrmNote tone="bad">
-              <span className="break-words">
-                {failures.length === 1 ? "One was not answered" : `${failures.length} were not answered`}:{" "}
-                {failures.map((failure) => `${failure.name} — ${failure.problem}`).join(" · ")}
-              </span>
-            </CrmNote>
-          ) : null}
         </>
+      ) : null}
+      {/* What the last run did stays under the bar after it clears the ticks, the way a row's own control
+          keeps its saved outcome; inside the picked block, a run that landed anything hid both lines. */}
+      {summary !== null && running === null ? (
+        <p className="break-words text-xs font-semibold text-slate-700" role="status">
+          {summary}
+        </p>
+      ) : null}
+      {failures.length > 0 ? (
+        <CrmNote tone="bad">
+          <span className="break-words">
+            {failures.length === 1 ? "One was not answered" : `${failures.length} were not answered`}:{" "}
+            {failures.map((failure) => `${failure.name} — ${failure.problem}`).join(" · ")}
+          </span>
+        </CrmNote>
       ) : null}
     </div>
   );
