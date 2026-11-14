@@ -5,7 +5,7 @@ import { AlertCircle, Bell, BellRing, CheckCircle2, Link2, Mail, Send, Smartphon
 
 import { useHydrated } from "@/hooks/use-hydrated";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
+import { onesignalAppId, pushUnsupportedMessage, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
 // The one connect path — Phoenix CRM's "Get Phoenix CRM messages on Telegram" card goes through it too.
 import { requestTelegramConnectLink, telegramActionErrorMessage } from "@/components/notifications/telegram-connect";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
@@ -181,6 +181,9 @@ export function NotificationSettingsPanel() {
       if (result.optedIn) {
         setMessage("Push permission granted. This device is now enabled — it can take a few seconds to appear below.");
         window.setTimeout(() => void loadSettings(), 2000);
+      } else if (result.unsupported) {
+        // No site setting can help here (an iPhone tab, an in-app browser) — say what will.
+        setError(pushUnsupportedMessage(result.unsupported));
       } else if (!result.permission) {
         setError("Your browser didn't grant notification permission, so push wasn't enabled on this device. Check your browser's site settings for phoenix-hr.satopharma.com and allow notifications, then try again.");
       } else {

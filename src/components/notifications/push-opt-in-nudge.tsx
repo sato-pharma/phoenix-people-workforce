@@ -5,7 +5,7 @@ import { BellRing, X } from "lucide-react";
 
 import { readHomeNotificationSettings } from "@/components/notifications/home-notification-settings";
 import { useHydrated } from "@/hooks/use-hydrated";
-import { onesignalAppId, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
+import { onesignalAppId, pushUnsupportedMessage, requestOneSignalPermission } from "@/lib/notifications/onesignal-client";
 // From the pure rules module, NOT from settings.ts — that file pulls in getSupabaseAdmin,
 // writeAuditLog and the `crypto` node built-in, none of which may reach a "use client" bundle.
 // See push-opt-in-nudge-rules.ts for the full story (an UnhandledSchemeError on "node:crypto" is
@@ -87,7 +87,9 @@ export function PushOptInNudge() {
       } else {
         setStatus("visible");
         setError(
-          !result.permission
+          result.unsupported
+            ? pushUnsupportedMessage(result.unsupported)
+            : !result.permission
             ? "Your browser didn't grant notification permission. You can try again anytime from Profile → Notification Settings."
             : "Your browser allowed notifications, but couldn't finish registering with the push service. You can try again from Profile → Notification Settings.",
         );

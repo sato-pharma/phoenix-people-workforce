@@ -67,7 +67,65 @@ export function detectDeviceType(): "desktop" | "mobile" | "unknown" {
 export type EnablePushResult = {
   optedIn: boolean;
   permission: boolean;
+  // Set only when this browser cannot receive web push at all, so no site setting can help —
+  // the caller must say what to do instead (pushUnsupportedMessage), never "check site settings".
+  unsupported?: PushUnsupportedReason;
 };
+
+// Why a browser cannot take web push, which decides what the person is told to do.
+//  - "ios-home-screen": an iPhone or iPad with Phoenix open in a browser tab. iOS gives web push
+//    ONLY to a site opened from its Home Screen icon (iOS 16.4+), and a tab has no Notification API
+//    at all. Seen on the owner's own iPhone, 14 Nov 2026: a Safari tab, no push row ever written,
+//    and the old message sent him to Safari's site settings, which hold no such switch.
+//  - "ios-update": opened from the Home Screen, but iOS is older than 16.4 (still no Notification).
+//  - "browser": any other browser with no Notification API, typically an in-app browser inside
+//    another app (a link opened from WhatsApp, Telegram, Outlook).
+export type PushUnsupportedReason = "ios-home-screen" | "ios-update" | "browser";
+
+export type PushEnvironment = {
+  userAgent: string;
+  maxTouchPoints: number;
+  standalone: boolean;
+  hasNotification: boolean;
+};
+
+export function pushUnsupportedReason(env: PushEnvironment): PushUnsupportedReason | null {
+  // iPadOS asks for the desktop site by default and then reports itself as a Mac; the touch
+  // points are what give it away (a real Mac reports 0).
+  const ios = /iPhone|iPad|iPod/i.test(env.userAgent) || (/Macintosh/i.test(env.userAgent) && env.maxTouchPoints > 1);
+  if (ios && !env.standalone) return "ios-home-screen";
+  if (!env.hasNotification) return ios ? "ios-update" : "browser";
+  return null;
+}
+
+export function pushUnsupportedMessage(reason: PushUnsupportedReason): string {
+  switch (reason) {
+    case "ios-home-screen":
+      return "On iPhone and iPad, notifications only work when Phoenix is opened from its Home Screen icon, not from a browser tab. In Safari, tap Share → Add to Home Screen → Add, open Phoenix from the new icon, sign in, then press \"Enable push on this device\" and tap Allow.";
+    case "ios-update":
+      return "This iPhone or iPad is too old for web notifications. Update it to iOS 16.4 or later in Settings → General → Software Update, then open Phoenix from its Home Screen icon and try again.";
+    case "browser":
+      return "This browser can't receive notifications. It may be a browser inside another app (a link opened from WhatsApp, Telegram or email). Open phoenix-hr.satopharma.com in Chrome, Edge, Firefox or Safari, then try again.";
+  }
+}
+
+function currentPushEnvironment(): PushEnvironment {
+  const nav = (globalThis as { navigator?: { userAgent?: string; maxTouchPoints?: number; standalone?: boolean } }).navigator;
+  let standalone = nav?.standalone === true;
+  try {
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      standalone = standalone || window.matchMedia("(display-mode: standalone)").matches;
+    }
+  } catch {
+    // A browser that cannot answer the media query is treated as a tab.
+  }
+  return {
+    userAgent: nav?.userAgent ?? "",
+    maxTouchPoints: nav?.maxTouchPoints ?? 0,
+    standalone,
+    hasNotification: typeof Notification !== "undefined",
+  };
+}
 
 // Activates push for this browser. Must be called from a user gesture (button click) —
 // browsers silently ignore or auto-block a permission request that fires without one.
@@ -127,6 +185,13 @@ export function requestOneSignalPermission(timeoutMs = ENABLE_PUSH_TIMEOUT_MS): 
   // { optedIn: false, permission: false }, so returning that shape immediately turns a
   // permanent freeze into instant, accurate feedback — and avoids queueing onto a dead
   // queue in the first place.
+  //
+  // A browser that cannot take push at all (an iPhone tab, an in-app browser) answers the same
+  // way at once, carrying the reason so the caller can say what to do instead.
+  const unsupported = pushUnsupportedReason(currentPushEnvironment());
+  if (unsupported) {
+    return Promise.resolve({ optedIn: false, permission: false, unsupported });
+  }
   if (notificationsBlockedByBrowser()) {
     return Promise.resolve({ optedIn: false, permission: false });
   }

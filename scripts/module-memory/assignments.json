@@ -677,6 +677,7 @@
   "git-ref-colon-path-is-mangled-by-msys-returns-empty": "git-worktrees",
   "git-rerere-replays-a-resolution-onto-a-conflict-that-grew": "engineering",
   "git-show-of-a-dotclaude-path-is-mangled-in-msys": "sessions",
+  "git-to-github-is-pinned-to-the-france-edge": "sessions",
   "git-worktree-remove-can-timeout-and-partially-delete": "git-worktrees",
   "github-account-suspended-2026-11-02": "engineering",
   "github-actions-cron-secret-went-stale-after-a-railway-rotation": "platform",

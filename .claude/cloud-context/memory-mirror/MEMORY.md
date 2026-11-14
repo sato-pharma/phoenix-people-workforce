@@ -30,6 +30,7 @@
 
 ## Inbox — new notes land here
 - [the spare has a browser guard](the-spare-has-a-browser-guard.md) - 14 Nov 2026 ("Yes, guard it", after the 19:07-19:23 freeze): automated browsers on the spare are stopped under 1,200 MB free; source `~/.claude/scripts/spare-browser-guard.ps1`, installed by the 10-minute follow task; not live on the spare until its log says "installed".
+- [git goes to GitHub through France](git-to-github-is-pinned-to-the-france-edge.md) - 14 Nov 2026 ("fix those"): global `http.curloptResolve` pins github.com git traffic to the France entry point (Frankfurt was losing packets), and a stalled git call now gives up after 30 s; a sudden git connection or certificate error → unset the pin first. The WEBSITE too since 22:51 (hosts lines tagged `phoenix-github-france`, `-Undo` in `~/.claude/scripts/github-hosts-france.ps1`).
 
 
 
