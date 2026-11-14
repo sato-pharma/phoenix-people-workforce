@@ -29,11 +29,12 @@
 
 
 ## Inbox — new notes land here
-- [REC-032 owner decisions](rec-032-owner-decisions-same-notices-and-expense-batch.md) - same notices only (gaps listed, not wired); Expense Approvals keeps its batch save in the shared row (14 Nov 2026).
-- [four employees are never company-insured](four-employees-are-never-company-insured.md) - Ahmed Farag, Rasha Sabry, Reham Mahmoud, Samaa Mosaad (owner 2026-11-13); correct record = status no, wage empty, SI 0.
-- [restore drill kit + the rclone token file](restore-drill-kit-and-the-rclone-token-file.md) - one command, `~/.claude/scripts/restore-drill/tonight.sh <date>`; a missing `RCLONE_CONFIG` path is CREATED holding the Drive token, name it `notfound`.
-- [the enterprise refuses a GitHub token with no expiry](the-enterprise-refuses-a-github-token-with-no-expiry.md) - sato-pharma-phoenix answers 403 over 366 days; stranded the workflow watch and synthetic journeys 13 Nov 2026. New tokens need an expiry of a year or less.
-- [S04/S05 owner decisions](s05-owner-decisions-safety-owner-and-field-probation.md) - Report It owner = Samaa Mosaad (in-app + email, her Report It desk); probation = field roles only; daily-jobs split behind a safe switch (13 Nov 2026).
+- [CRM validation audit: his four decisions](crm-validation-audit-owner-decisions-2026-11-14.md) - 14 Nov 2026: approve-after-all stops and says why; validated at his own clinic he stays in; the night re-read records only; three clean-ups run, pre-image in `phoenix_crm_backup_20261114`.
+- [DR-02 one plan store = Phoenix CRM](dr-02-phoenix-crm-is-the-one-plan-store.md) - owner 14 Nov 2026: the older weekly Plans tab (employee_plan_*) becomes read-only history; every plan reader goes through Phoenix CRM plans.
+- [the secrets sync put the old GitHub dispatch token back](the-secrets-sync-put-the-old-github-dispatch-token-back.md) - 13 Nov 2026: the sync copied a stale GitHub secret over production, stranding the workflow watch and synthetic journeys. GitHub's 403 lifetime message was a symptom; check the sync run first.
+- [Maps Static cap = 300 a day](maps-static-daily-cap-is-300-on-phoenix-hr-2026.md) - set 14 Nov 2026 on Google project phoenix-hr-2026 (his choice); no longer "his click"; read it back with gcloud.
+- [Groq Inference Zero Data Retention is ON](groq-inference-zero-data-retention-is-on.md) - turned on 14 Nov 2026 on the account holding `phoenix-crm-voice` (his choice); Global, Batch and Fine-tuning left as they were; the integrations list still says "Not verified".
+- [the spare laptop changes address, it is not off](the-spare-laptop-changes-address-it-is-not-off.md) - `.53` ↔ `.60` (8 and 14 Nov 2026); the spare scripts now find it themselves (`~/.claude/scripts/spare-address.ps1`, by host key); never write its address anywhere, and "it is off" is only true when the finder exits 1.
 
 
 

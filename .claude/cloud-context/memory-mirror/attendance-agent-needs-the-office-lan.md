@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d0007173-7b15-4def-a4c3-f0d0670c67f0
-  modified: 2026-09-20T23:33:53.100Z
+  modified: 2026-11-14T02:01:19.543Z
 ---
 
 Fingerprint punch ingestion runs from a **local .NET agent on the owner's laptop**
@@ -105,6 +105,28 @@ last punch for old ids. Use `zoneinfo("Africa/Cairo")`, never a fixed UTC+3: Egy
 winter, so a fixed offset silently shifts every Jan-Mar timestamp by an hour.
 
 Do not chase it as an outage — the LAN is the usual cause.
+
+🔴 **14 Nov 2026 — "the office LAN" is ONE Wi-Fi name, `605`, and being in the building is not
+enough.** Matched every scheduled run since 16 Oct 2026 to the Wi-Fi the laptop was on at that
+minute: `605` read the device on 38 of 41 runs; `606` failed 15 of 15, `GEO` 2 of 2, and every home
+or phone network failed. So a day on `GEO` or `606` is a day with no punches, even though it looks
+like an office day. **The one read that answers "why did day X not arrive":** event 10000 in
+`Microsoft-Windows-NetworkProfile/Operational` (the log goes back about a month) names each network
+joined and when; no `605` row on that day is the whole answer. The Task Scheduler log keeps only a
+couple of hours, so it cannot answer for a past day.
+
+The case: Thursday 12 Nov 2026 had zero punches in production. The laptop was on home Wi-Fi until
+11:28, then on `GEO` until 20:16, and never joined `605`; it also slept or was off at four of the
+five sync slots. The last good read was Wed 11 Nov 18:17 on `605`, so Wednesday's evening punches
+(after 17:42) were missing too. Nothing was lost (the device held 6,954 records from 1 Jan) and
+nothing was charged: a working day with zero punches is skipped by `getCompanyWideOutageDates`.
+A PARTIAL day is not protected the same way — Wednesday had two unreleased, unticked "short hours"
+review lines that could be artefacts of the missing evening punches; the twice-daily review sync
+re-reads them once the punches arrive.
+
+The agent's "Phoenix is not reachable" line is a 5-second probe (`Program.cs`,
+`CanReachHttpAsync`), so a slow answer reads as unreachable. It appeared on all four runs of
+Fri 13 Nov while production was serving normally. Read it as slow, not down.
 
 🔴 **CORRECTED 2026-09-21: POWER SETTINGS *ARE* A CAUSE. The old line here said they were not, and
 it read the wrong flag.** Measured live 2026-09-21 02:30 Cairo, all three
