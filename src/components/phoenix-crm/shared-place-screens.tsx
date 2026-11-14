@@ -65,6 +65,7 @@ import {
   SEATED_PLACE_PHOTO_HINT,
   SEATED_PLACE_PHOTO_ON_FILE,
   SEATED_PLACE_PHOTO_REPLACE,
+  SHARED_PLACE_JUNK_NAME,
   SHARED_PLACE_KINDS,
   SHARED_PLACE_NAME_LABEL,
   SHARED_PLACE_NAME_MAX,
@@ -72,6 +73,7 @@ import {
   SHARED_PLACE_NO_NAME,
   SHARED_PLACE_NO_PHOTO,
   SHARED_PLACE_TITLE,
+  sharedPlaceNameIsJunk,
   type SharedPlaceKind,
 } from "@/lib/phoenix-crm/shared-place-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
@@ -181,6 +183,7 @@ function emptyVenueDraft(): VenueDraft {
 function venueProblem(draft: VenueDraft): string | null {
   const name = draft.name.replace(/\s+/g, " ").trim();
   if (name.length < 3) return SHARED_PLACE_NO_NAME;
+  if (sharedPlaceNameIsJunk(name)) return SHARED_PLACE_JUNK_NAME;
   if (!draft.kind) return SHARED_PLACE_NO_KIND;
   if (!draft.photo) return SHARED_PLACE_NO_PHOTO;
   if (!draft.pin) return "Press Capture location while you stand at the building.";

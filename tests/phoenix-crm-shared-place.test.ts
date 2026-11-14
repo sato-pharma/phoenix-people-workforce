@@ -11,10 +11,12 @@ import {
   SEATED_PLACE_NO_VENUE,
   SHARED_PLACE_DAILY_CAP_DEFAULT,
   SHARED_PLACE_DAY_FULL_CODE,
+  SHARED_PLACE_JUNK_NAME,
   SHARED_PLACE_KIND_KEYS,
   SHARED_PLACE_NO_KIND,
   SHARED_PLACE_NO_NAME,
   SHARED_PLACE_NO_PHOTO,
+  sharedPlaceNameIsJunk,
   sharedPlanCapRefusal,
   type SharedPlaceNamed,
 } from "../src/lib/phoenix-crm/shared-place-rules.ts";
@@ -118,6 +120,34 @@ export function runPhoenixCrmSharedPlaceTests(): void {
 
   const noKind = parseSharedPlaceDraft({ ...atTheDoor(), name: VENUE.name, photoPath: VENUE.photoPath });
   assert.equal(noKind.ok === false ? noKind.error : null, SHARED_PLACE_NO_KIND);
+
+  // 🔴 A KEYBOARD MASH IS NO BUILDING'S NAME (owner, 2026-11-14: "fix the junk polyclinic names", then
+  // "Refuse junk at the door"). The two held buildings that day, and the retired "Djkl", are refused at
+  // the door; every real name production held is not.
+  for (const junk of ["ىىوزنخ", "FEFEFFE", "Djkl", "sdfg hospital", "OOOOOOOOOOOO", "1234", "... ---", "ىوؤف"]) {
+    assert.equal(sharedPlaceNameIsJunk(junk), true, `"${junk}" is refused as no name`);
+    const refused = parseSharedPlaceDraft({ ...atTheDoor(), ...VENUE, name: junk });
+    assert.equal(refused.ok === false ? refused.error : null, SHARED_PLACE_JUNK_NAME, `and the rep is told to write it as the sign spells it ("${junk}")`);
+  }
+  for (const real of [
+    VENUE.name,
+    "CMC",
+    "NMC Royal",
+    "Clinic 2",
+    "حسام محمد",
+    "عيادة د. ابراهيم ابو الخير",
+    "صيدلية العيـــن",
+    "تاون جاااس",
+    "مكةالمكرمة",
+    "مستشفى الأنباتكلا التخصصي",
+    "NOUR EL MOHAMDY",
+    "EL MATRYA EL 3AM",
+    "Tayseer",
+  ]) {
+    assert.equal(sharedPlaceNameIsJunk(real), false, `🔴 a real name is never refused: "${real}"`);
+  }
+  const venueForm = readFileSync(new URL("../src/components/phoenix-crm/shared-place-screens.tsx", import.meta.url), "utf8");
+  assert.ok(venueForm.includes("if (sharedPlaceNameIsJunk(name)) return SHARED_PLACE_JUNK_NAME;"), "the rep's form says it before Save, with the same words");
 
   const noFix = parseSharedPlaceDraft({ ...VENUE });
   assert.equal(noFix.ok, false, "🔴 a venue with no location at all is refused — his own words");
