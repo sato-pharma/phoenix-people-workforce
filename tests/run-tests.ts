@@ -1439,6 +1439,7 @@ import { runBadgeCountsViewerCacheTests } from "./badge-counts-viewer-cache.test
 import { runBadgePollStaysLightTests } from "./badge-poll-stays-light.test.ts";
 import { runWeeklyRowCacheTests } from "./weekly-row-cache.test.ts";
 import { runWeeklySharedDerivationTests } from "./weekly-shared-derivation.test.ts";
+import { runExecutiveLandingRenderCostTests } from "./executive-landing-render-cost.test.ts";
 import { runWeeklyProductUnitsTests } from "./weekly-product-units.test.ts";
 import { runOutboundDeadlinesTests } from "./outbound-deadlines.test.ts";
 import { runCandidateListSlimCallersTests } from "./candidate-list-slim-callers.test.ts";
@@ -6188,6 +6189,7 @@ await runTest(
 );
 await runTest("weekly row cache: 60 s lifetime, dropped by every weekly write, shared loads, copies on read, bounded", runWeeklyRowCacheTests);
 await runTest("weekly rows are re-priced and de-cumulated once per load and price list, so nine reps opening Weekly Stock cannot freeze the server (12 Nov 2026)", runWeeklySharedDerivationTests);
+await runTest("the SFE overview names each sales row's territory without building a date formatter per row, and the sales dashboard groups in place (13 Nov 2026 freeze)", runExecutiveLandingRenderCostTests);
 await runTest("weekly products by month: one shared product axis, no row total, an unuploaded month is not a zero, the residue is reported", runWeeklyProductUnitsTests);
 await runTest(
   "every outbound Google Maps and reCAPTCHA call carries a deadline, a timed-out Maps call is never retried over node:https, and a timed-out route lookup stops instead of asking three more variants",

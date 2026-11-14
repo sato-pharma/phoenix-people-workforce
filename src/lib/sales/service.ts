@@ -355,11 +355,18 @@ function sumSalesValues(items: ScopedRecord[]) {
   return sum(items, (item) => item.salesValue);
 }
 
+/**
+ * Group items by key, each group in input order. Appends IN PLACE: this copied the whole group on
+ * every item, so grouping the ~9,000 canonical rows by line or by month made millions of copies and
+ * held the server for over half a second inside every executive landing build (14 Nov 2026).
+ */
 function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
   const map = new Map<string, T[]>();
   items.forEach((item) => {
     const key = keyBuilder(item) || "Unassigned";
-    map.set(key, [...(map.get(key) ?? []), item]);
+    const group = map.get(key);
+    if (group) group.push(item);
+    else map.set(key, [item]);
   });
   return map;
 }
