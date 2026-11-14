@@ -53,6 +53,7 @@ import { runPhoenixInspectFenceTests } from "./phoenix-inspect-fence.test.ts";
 import { runPhoenixInspectRedactionTests } from "./phoenix-inspect-redaction.test.ts";
 import { runPhoenixInspectSafetyTests } from "./phoenix-inspect-safety.test.ts";
 import { runPhoenixInspectMcpTests } from "./phoenix-inspect-mcp.test.ts";
+import { runPhoenixInspectRouteFenceTests } from "./phoenix-inspect-route-fence.test.ts";
 import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
 import { runSystemAuditPeriodCountsTests } from "./system-audit-period-counts.test.ts";
 import { runSystemAuditAppErrorFoldTests } from "./system-audit-app-error-fold.test.ts";
@@ -3366,6 +3367,7 @@ await runTest("the visual explorer's fence lets only GET to staging through and 
 await runTest("the visual explorer masks every name, id, phone, email, Arabic run and digit while keeping source literals, and its leak check refuses unmasked text", runPhoenixInspectRedactionTests);
 await runTest("the visual explorer targets staging only, refuses clicks that change records, bounds a run, takes ids only, and plans a denied persona as a check", runPhoenixInspectSafetyTests);
 await runTest("the visual explorer's MCP server takes ids only, refuses a state off the persona's board, bounds each call, runs one capture at a time, returns masked images from inside the run only, and audits ids, never inputs", runPhoenixInspectMcpTests);
+await runTest("the visual explorer never requests an address that acts when read: every GET route that writes, serves a file or spends a quota, and every page whose render writes, is found from source and refused, and no module may plan one", runPhoenixInspectRouteFenceTests);
 await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
 await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
 await runTest("the app-error detector folds bursts into operations, writes at most 500 at a time, and a re-run changes nothing", runSystemAuditAppErrorFoldTests);

@@ -156,6 +156,7 @@ const PINNED = [
   "scripts/phoenix-inspect/prune.mjs",
   "scripts/phoenix-inspect/route-inventory.ts",
   "scripts/phoenix-inspect/self-check.mjs",
+  "scripts/phoenix-inspect/side-effect-routes.ts",
   "scripts/pin-coverage-report.mjs",
   "scripts/post-deploy-errors.mjs",
   "scripts/probe-weekly-xlsx.ts",

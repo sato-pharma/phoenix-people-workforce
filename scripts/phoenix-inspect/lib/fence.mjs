@@ -26,10 +26,18 @@
  * staging-only logins. 🔴 The test accounts' server-side dry run does NOT cover this: it marks
  * writes only, and GET, HEAD and OPTIONS are never marked (`src/lib/auth/test-dry-run-rules.ts`,
  * `READ_METHODS`), so a GET that writes writes for real even for a `TEST-` login. For GET, this
- * file's path list is the only guard: a module whose pages write on GET must name those paths in
- * NEVER_TOUCH_PATHS before it is walked. The KPIs board has none (no write in its pages or domain
- * files, 14 Nov 2026; staging's audit log holds only the two sign-ins of the first run).
+ * file is the only guard, and since 14 Nov 2026 its list is BUILT FROM SOURCE, not typed:
+ * scripts/phoenix-inspect/side-effect-routes.ts scans app/** and the access registry and writes
+ * generated/side-effect-routes.json — every API route whose GET writes, serves a file or spends a paid
+ * quota, and every page whose server render writes. Those are refused here as a navigation, an RSC
+ * fetch and a prefetch alike; if that file cannot be read the fence fails CLOSED and refuses every
+ * /api GET. tests/phoenix-inspect-route-fence.test.ts fails when the file is stale against today's
+ * source, and fails any registered module whose plan opens an address the fence refuses — the gate
+ * before a sensitive module is enabled. The KPIs board opens none (no write in its pages or domain
+ * files; staging's audit log held only the sign-ins of the first run).
  */
+
+import { readFileSync } from "node:fs";
 
 /** Hosts the explorer must never reach, by any method. */
 export const PRODUCTION_HOSTS = Object.freeze(["phoenix-hr.satopharma.com"]);
@@ -54,6 +62,54 @@ export const NEVER_TOUCH_PATHS = Object.freeze([
   /(?:^|\/)webhooks?(?:\/|$)/i,
   /(?:^|\/)unsubscribe(?:\/|$)/i,
 ]);
+
+/**
+ * Under /api/ only (never a page or a static asset): the shapes of routes that hand over a file or act
+ * when read, from the universal-inspection roadmap's B3 (docs/phoenix-intelligence/
+ * PHOENIX_UNIVERSAL_INSPECTION_ROADMAP.md §5). A belt to the source-built list below, so a route added
+ * after the list was generated is still refused when its name says what it does.
+ */
+export const NEVER_TOUCH_API_SHAPES = Object.freeze([
+  /-(?:export|download)(?:\/|$)/i,
+  /\/(?:pdf|print|pack|cv|file|files|attachments?|photos?|images?|certificate|template|templates)(?:\/|$)/i,
+  /-(?:template|pdf|file|photo|attachment)(?:\/|$)/i,
+  /(?:^|\/)bank-file(?:\/|$)/i,
+  /\/(?:cib|fab)-download(?:\/|$)/i,
+  /\/contact-numbers(?:\/|$)/i,
+  /\/case-map-basemap(?:\/|$)/i,
+  /^\/api\/share\//i,
+  /^\/api\/public\//i,
+]);
+
+/** `/api/foo/:id/bar` or `/api/foo/**` (the access registry's pattern syntax) as an anchored path regex. */
+export function routePatternToRegex(pattern) {
+  let source = "";
+  for (const segment of String(pattern).split("/").slice(1)) {
+    if (segment === "**") source += "(?:/.*)?";
+    else if (segment === "*" || segment.startsWith(":")) source += "/[^/]+";
+    else source += `/${segment.replace(/[|\\{}()[\]^$+?.*]/g, "\\$&")}`;
+  }
+  return new RegExp(`^${source || "/"}/?$`);
+}
+
+/**
+ * Built from source (scripts/phoenix-inspect/side-effect-routes.ts → generated/side-effect-routes.json):
+ * every API route whose GET writes, serves a file or spends a quota, and every page whose server render
+ * writes. A missing or unreadable file fails CLOSED: the fence then refuses every /api/ GET.
+ */
+function loadSideEffectRoutes() {
+  try {
+    const list = JSON.parse(readFileSync(new URL("../generated/side-effect-routes.json", import.meta.url), "utf8"));
+    return {
+      ok: true,
+      api: Object.freeze(list.apiRoutes.map((route) => routePatternToRegex(route.pattern))),
+      pages: Object.freeze(list.renderWriterPages.map((route) => routePatternToRegex(route.pattern))),
+    };
+  } catch {
+    return { ok: false, api: Object.freeze([]), pages: Object.freeze([]) };
+  }
+}
+export const SIDE_EFFECT_ROUTES = Object.freeze(loadSideEffectRoutes());
 
 const READ_METHODS = new Set(["GET", "HEAD"]);
 
@@ -91,6 +147,16 @@ export function classifyRequest(request, policy) {
   }
   if (NEVER_TOUCH_PATHS.some((pattern) => pattern.test(target.pathname))) {
     return { allow: false, reason: "never-touch-path" };
+  }
+  // A page whose server render writes: refused as a navigation AND as the RSC fetch or prefetch of the
+  // same path, because either one makes the server render it.
+  if (SIDE_EFFECT_ROUTES.pages.some((pattern) => pattern.test(target.pathname))) {
+    return { allow: false, reason: "render-writer-page" };
+  }
+  if (target.pathname === "/api" || target.pathname.startsWith("/api/")) {
+    if (!SIDE_EFFECT_ROUTES.ok) return { allow: false, reason: "side-effect-list-unreadable" };
+    if (SIDE_EFFECT_ROUTES.api.some((pattern) => pattern.test(target.pathname))) return { allow: false, reason: "side-effect-route" };
+    if (NEVER_TOUCH_API_SHAPES.some((pattern) => pattern.test(target.pathname))) return { allow: false, reason: "never-touch-api-shape" };
   }
   return { allow: true };
 }

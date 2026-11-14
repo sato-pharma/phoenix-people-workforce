@@ -18,6 +18,15 @@
  *   --no-prune             keep every earlier run (default: the newest 5, none older than 14 days)
  *   --source-commit <sha>  the git commit the module's source files were read from (on-spare.ps1 passes
  *                          it; "+dirty" when they differ from it); recorded in the manifest
+ *   --min-free-mb <n>      memory guard for a small machine: before each page, when free memory is under
+ *                          n MB the browser is closed and the run waits (up to 30 minutes) for n + 350 MB,
+ *                          then starts a fresh browser with the same in-memory sessions (no new sign-in)
+ *   --relaunch-every <n>   with --min-free-mb: a fresh browser every n pages (default 3), because one
+ *                          browser grows with every page it opens (14 Nov 2026: 441 MB after one page,
+ *                          621 MB after three, on the owner's 16 GB laptop)
+ *   --resume               carry on an earlier run of the same --run-id: its manifest is kept and every
+ *                          page it already captured is skipped. The manifest is saved after every page,
+ *                          so a run stopped from outside loses at most the page it was on.
  *
  * Read-only toward the app: the browsing contexts send GET and nothing else (lib/fence.mjs); the one
  * request that is not a GET is each persona's sign-in POST, made from a throwaway context. Passwords
@@ -29,7 +38,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { captureOne, launchBrowser, probeDenied, signIn } from "./lib/capture.mjs";
-import { STAGING_ORIGIN } from "./lib/fence.mjs";
+import { STAGING_ORIGIN, classifyRequest } from "./lib/fence.mjs";
 import { buildKeepIndex, sourceCandidatesFor } from "./lib/redact.mjs";
 import { RUN_BOUNDS, VIEWPORTS, assertTargetOrigin } from "./lib/safety.mjs";
 import { KPIS_MODULE, addressFor, statesFor, viewportsFor } from "./modules/kpis.mjs";
@@ -138,19 +147,77 @@ export async function runExplorer(options) {
     totals: {},
   };
   const networkLog = [];
-  const browser = await launchBrowser();
+  const manifestFile = path.join(outDir, "manifest.json");
+  const networkFile = path.join(outDir, "network.jsonl");
+  const jobKey = (personaId, stateId, viewport) => `${personaId}|${stateId}|${viewport}`;
+  const done = new Set();
+  let n = 0;
+  if (options.resume && existsSync(manifestFile)) {
+    const earlier = JSON.parse(readFileSync(manifestFile, "utf8"));
+    if (earlier.module !== manifest.module || earlier.origin !== manifest.origin) throw new Error("--resume: the earlier run is for another module or origin");
+    manifest.startedAt = earlier.startedAt;
+    manifest.resumedAt = [...(earlier.resumedAt ?? []), stamp.text];
+    manifest.personas = earlier.personas ?? [];
+    manifest.shots = (earlier.shots ?? []).filter((shot) => shot.outcome === "captured" || shot.outcome === "deleted-privacy-check-failed");
+    manifest.denied = earlier.denied ?? [];
+    for (const shot of manifest.shots) done.add(jobKey(shot.persona, shot.state, shot.viewport));
+    for (const denied of manifest.denied) done.add(jobKey(denied.persona, denied.state, denied.viewport));
+    n = Math.max(0, ...[...manifest.shots, ...manifest.denied].map((item) => Number(String(item.id ?? "").slice(0, 3)) || 0));
+    if (existsSync(networkFile)) for (const line of readFileSync(networkFile, "utf8").split("\n").filter(Boolean)) networkLog.push(JSON.parse(line));
+  }
+  // Saved after every page, so a run stopped from outside (the laptop's memory watchdog) loses at most
+  // the page it was on, and --resume carries on from there.
+  const save = () => {
+    writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+    writeFileSync(networkFile, networkLog.map((item) => JSON.stringify(item)).join("\n") + "\n");
+  };
+
+  // The memory guard (--min-free-mb). os.freemem() is the machine's available physical memory.
+  const freeMb = () => Math.round(os.freemem() / 1_048_576);
+  const guard = options.minFreeMb ? { pauseBelow: options.minFreeMb, resumeAt: options.minFreeMb + 350, relaunchEvery: options.relaunchEvery ?? 3 } : null;
+  manifest.memoryGuard = guard ? { ...guard, pauses: 0, relaunches: 0 } : null;
+  let browser = await launchBrowser();
+  let sinceLaunch = 0;
+  const makeRoom = async () => {
+    if (!guard) return;
+    if (sinceLaunch < guard.relaunchEvery && freeMb() >= guard.pauseBelow) return;
+    await browser.close().catch(() => {});
+    if (freeMb() < guard.resumeAt) {
+      manifest.memoryGuard.pauses += 1;
+      process.stdout.write(`  memory guard: ${freeMb()} MB free, waiting for ${guard.resumeAt} MB\n`);
+      const until = Date.now() + 30 * 60_000;
+      while (freeMb() < guard.resumeAt) {
+        if (Date.now() > until) throw new Error(`memory guard: free memory stayed under ${guard.resumeAt} MB for 30 minutes`);
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+      }
+    }
+    browser = await launchBrowser();
+    manifest.memoryGuard.relaunches += 1;
+    sinceLaunch = 0;
+  };
   try {
     const byPersona = new Map();
     for (const job of plan.jobs) byPersona.set(job.persona.id, [...(byPersona.get(job.persona.id) ?? []), job]);
-    let n = 0;
-    for (const [personaId, jobs] of byPersona) {
-      const persona = jobs[0].persona;
+    for (const [personaId, allJobs] of byPersona) {
+      const persona = allJobs[0].persona;
+      // A page the fence refuses is never opened: its address writes or hands over a file when read
+      // (generated/side-effect-routes.json). Refused here, before any browser opens it.
+      const jobs = [];
+      for (const job of allJobs) {
+        if (done.has(jobKey(personaId, job.state.id, job.viewport))) continue;
+        const verdict = classifyRequest({ method: "GET", url: new URL(job.address, origin).href }, { origin });
+        if (verdict.allow) jobs.push(job);
+        else manifest.notRun.push({ persona: personaId, state: job.state.id, viewport: job.viewport, reason: `the fence refuses this address (${verdict.reason}); it is never opened` });
+      }
+      if (jobs.length === 0) continue;
       const password = credentials[persona.login];
+      manifest.personas = manifest.personas.filter((item) => item.id !== personaId);
       if (!password) {
         manifest.personas.push({ id: personaId, role: persona.role, signIn: { ok: false, code: "no-credentials-on-this-machine" } });
         for (const job of jobs) manifest.notRun.push({ persona: personaId, state: job.state.id, viewport: job.viewport, reason: "persona could not sign in: no credentials on this machine" });
         continue;
       }
+      await makeRoom();
       const session = await signIn(browser, origin, persona.login, password);
       manifest.personas.push({ id: personaId, role: persona.role, signIn: { ok: session.ok, status: session.status, code: session.code } });
       if (!session.ok) {
@@ -162,12 +229,15 @@ export async function runExplorer(options) {
           manifest.notRun.push({ persona: personaId, state: job.state.id, viewport: job.viewport, reason: "run time limit reached" });
           continue;
         }
+        await makeRoom();
+        sinceLaunch += 1;
         n += 1;
         const shotId = `${String(n).padStart(3, "0")}-${personaId}-${job.state.id}-${job.viewport}`;
         if (job.denied) {
           const result = await probeDenied(browser, { origin, persona, address: job.address, keepList, storageState: session.state, outDir, shotId });
-          manifest.denied.push({ ...result, viewport: job.viewport });
+          manifest.denied.push({ id: shotId, ...result, state: job.state.id, viewport: job.viewport });
           process.stdout.write(`  ${shotId}: ${result.outcome}\n`);
+          save();
           continue;
         }
         const { entry, network } = await captureOne(browser, {
@@ -186,6 +256,7 @@ export async function runExplorer(options) {
         manifest.shots.push(entry);
         for (const item of network) networkLog.push({ shot: shotId, ...item });
         process.stdout.write(`  ${shotId}: ${entry.outcome}${entry.error ? ` (${entry.error})` : ""} ${entry.ms}ms\n`);
+        save();
       }
     }
   } finally {
@@ -193,6 +264,9 @@ export async function runExplorer(options) {
   }
   manifest.finishedAt = cairoStamp().text;
   const shots = manifest.shots;
+  // On a resumed run, `notRun` lists only this pass's refusals; a job captured in an earlier pass is
+  // in `shots`, never in both.
+  manifest.notRun = manifest.notRun.filter((item) => !done.has(jobKey(item.persona, item.state, item.viewport)) && !shotsHave(manifest, item));
   manifest.totals = {
     planned: plan.jobs.length,
     truncatedByBounds: plan.truncated,
@@ -203,10 +277,13 @@ export async function runExplorer(options) {
     notRun: manifest.notRun.length,
     writesStopped: shots.reduce((sum, shot) => sum + shot.writesStopped.length, 0) + manifest.denied.reduce((sum, d) => sum + d.writesStopped.length, 0),
   };
-  writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  writeFileSync(path.join(outDir, "network.jsonl"), networkLog.map((item) => JSON.stringify(item)).join("\n") + "\n");
+  save();
   if (!options.noPrune) prune(path.dirname(path.dirname(outDir)), { keep: 5, days: 14 });
   return { outDir, manifest };
+}
+
+function shotsHave(manifest, item) {
+  return manifest.shots.some((shot) => shot.outcome === "captured" && shot.persona === item.persona && shot.state === item.state && shot.viewport === item.viewport);
 }
 
 function parseArgs(argv) {
@@ -234,7 +311,14 @@ function parseArgs(argv) {
     } else if (flag === "--max-minutes") {
       options.maxMinutes = Math.min(Number(next()), RUN_BOUNDS.maxMinutesPerRun);
       if (!(options.maxMinutes > 0)) throw new Error("--max-minutes must be a positive number");
-    } else throw new Error(`unknown option ${flag}`);
+    } else if (flag === "--min-free-mb") {
+      options.minFreeMb = Number(next());
+      if (!(options.minFreeMb >= 500 && options.minFreeMb <= 16_000)) throw new Error("--min-free-mb must be between 500 and 16000");
+    } else if (flag === "--relaunch-every") {
+      options.relaunchEvery = Number(next());
+      if (!(Number.isInteger(options.relaunchEvery) && options.relaunchEvery >= 1 && options.relaunchEvery <= 50)) throw new Error("--relaunch-every must be a whole number from 1 to 50");
+    } else if (flag === "--resume") options.resume = true;
+    else throw new Error(`unknown option ${flag}`);
   }
   options.module ??= "kpi-reports";
   return options;

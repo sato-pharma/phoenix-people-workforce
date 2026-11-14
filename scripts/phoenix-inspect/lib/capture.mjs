@@ -26,12 +26,29 @@ async function shootFullPage(page, file, width, options) {
   await page.screenshot({ path: file, fullPage: true, clip: { x: 0, y: 0, width, height }, ...options });
 }
 
+/**
+ * Flags that keep the browser small enough for a 16 GB laptop that freezes near 1,800 MB free
+ * (14 Nov 2026: the spare laptop went dark and the run moved to the owner's laptop). One renderer
+ * process for every tab, no GPU process, no site-per-process split, nothing in the background. None
+ * of them changes how a page lays out or what a screenshot shows.
+ */
+export const LEAN_BROWSER_ARGS = Object.freeze([
+  "--disable-gpu",
+  "--renderer-process-limit=1",
+  "--disable-features=site-per-process,IsolateOrigins,Translate,MediaRouter,OptimizationHints",
+  "--disable-extensions",
+  "--disable-background-networking",
+  "--disable-component-update",
+  "--disable-default-apps",
+  "--no-first-run",
+]);
+
 export async function launchBrowser() {
   const { chromium } = await import("playwright");
   const tried = [];
   for (const channel of [undefined, "msedge", "chrome"]) {
     try {
-      return await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
+      return await chromium.launch({ headless: true, args: [...LEAN_BROWSER_ARGS], ...(channel ? { channel } : {}) });
     } catch (error) {
       tried.push(`${channel ?? "bundled chromium"}: ${String(error.message).split("\n")[0]}`);
     }
