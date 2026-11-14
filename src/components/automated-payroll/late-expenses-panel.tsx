@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { LateExpensesOverview } from "@/lib/automated-payroll/late-expenses";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,12 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * THE SWITCH ASKS FIRST (payroll audit 2026-11-14). Either way it clears the saved Expenses figures of
+   * every open run and reopens that step, and ON adds money to this run — one stray tap did all of that.
+   * Holds the position the switch was asked to move to, until HR confirms or cancels.
+   */
+  const [pendingSwitch, setPendingSwitch] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,7 +126,10 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
           <Switch
             checked={on}
             label="Add these trips to this run's Expenses step"
-            onChange={(checked) => void flip(checked)}
+            onChange={(checked) => {
+              if (busy || stepDirty) return;
+              setPendingSwitch(checked);
+            }}
           />
           <span className="text-sm font-semibold text-slate-800">
             {busy ? "Saving…" : on ? "ON — added to this run's Expenses step" : "OFF — listed only"}
@@ -127,6 +137,41 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
         </div>
       </div>
 
+      {pendingSwitch !== null ? (
+        <div
+          role="alertdialog"
+          aria-labelledby="late-expenses-switch-title"
+          className="border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+        >
+          <div id="late-expenses-switch-title" className="font-black">
+            {pendingSwitch ? "Add the late-approved trips to this run?" : "Take the late-approved trips out of this run?"}
+          </div>
+          <p className="mt-1 break-words">
+            {pendingSwitch
+              ? `The ${trips.length} trip${trips.length === 1 ? "" : "s"} listed here (${money(total)}) are added to this run's Expenses step for the people in it. `
+              : "The trips listed here leave this run's Expenses step and are only listed again. "}
+            The saved Expenses figures of every open run are cleared and its Expenses step reopens, so it has to be
+            confirmed again.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+              disabled={busy || stepDirty}
+              onClick={() => {
+                const next = pendingSwitch;
+                setPendingSwitch(null);
+                void flip(next);
+              }}
+            >
+              {pendingSwitch ? "Turn the switch ON" : "Turn the switch OFF"}
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingSwitch(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
       {stepDirty ? (
         <div className="border-l-4 border-amber-400 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
