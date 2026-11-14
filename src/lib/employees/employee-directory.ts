@@ -27,6 +27,7 @@ import { isMissingRequiredManager } from "./hierarchy-governance";
 import { isMissingColumnError } from "./missing-column";
 import { resolveEmployeeDisplayName } from "./display-name";
 import { storedPayFlagsFromRow, type StoredPayFlags } from "./salary-blind-pay-flags";
+import { blankedStoredAreaRefusal } from "./stored-area-guard";
 import { readTotalExperienceByHrId, totalExperienceFor } from "./total-experience";
 import { parseTotalExperienceYears } from "./total-experience-rules";
 
@@ -2730,9 +2731,11 @@ async function employeePayload(
     health_card_number: compact(input.healthCardNumber),
     health_card_received_date: compact(input.healthCardReceivedDate),
     // The HR record fields the Employee Master carries. Written the same way as everything else
-    // here, which on an UPDATE means a field the caller did not send is FILTERED OUT rather than
-    // nulled (see the `isUpdate` filter above) — so a flow that saves an employee without these,
-    // the way the resignation and offer flows do, leaves them exactly as HR typed them.
+    // here, which on an UPDATE means a field the caller did not send is written as NULL: only the
+    // pay columns are held back when they are not sent (`employeeCompensationColumns`, above). A
+    // caller that saves part of a record must carry the rest through from the row on file, the way
+    // the hiring pack's facts save does. This comment used to say the opposite, and an area was
+    // emptied that way on 3 November 2026 (`stored-area-guard.ts`).
     birth_place: compact(input.birthPlace),
     qualification: compact(input.qualification),
     university_name: compact(input.universityName),
@@ -3119,6 +3122,67 @@ async function assertActiveCanonicalArea(areaId: number | null | undefined): Pro
   }
 }
 
+/**
+ * Whether this person holds a seat in the organogram today: an open span in the seat model, one
+ * that has not started yet included (somebody who accepted and has not joined holds their seat).
+ *
+ * `null` when the seat model could not be read. The caller treats that as "may hold one": a failed
+ * read is never allowed to say a seat is free.
+ */
+async function readHoldsOrganogramSeat(hrId: string): Promise<boolean | null> {
+  const keys = hrIdLookupKeys(hrId);
+  if (keys.length === 0) return null;
+  try {
+    // Either spelling of the occupant: the id as the seat model stores it, or its canonical form
+    // for a person who holds two ids. Missing one of them would read as "holds no seat".
+    const occupant = textInFilter(keys);
+    const params = new URLSearchParams({
+      effective_to: "is.null",
+      limit: "1",
+      or: `(occupant_hr_id.${occupant},occupant_canonical_hr_id.${occupant})`,
+      select: "seat_id",
+    });
+    const rows = await supabaseRest<Array<{ seat_id: string | null }>>(
+      `au_v_seat_occupancy_all?${params.toString()}`,
+    );
+    return rows.length > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An edit never empties the area of someone who holds a seat (`stored-area-guard.ts`).
+ *
+ * Costs nothing on an ordinary save: the two reads below run only when the record holds an area
+ * and this save would write none.
+ */
+async function assertStoredAreaIsNotBlanked(input: {
+  hrId: string;
+  employeeName: string | null;
+  storedAreaId: number | null;
+  incomingAreaId: number | null;
+}): Promise<void> {
+  if (input.storedAreaId === null || input.incomingAreaId !== null) return;
+
+  const [holdsSeat, storedAreaName] = await Promise.all([
+    readHoldsOrganogramSeat(input.hrId),
+    supabaseRest<Array<{ name: string | null }>>(`areas?id=eq.${input.storedAreaId}&select=name`)
+      .then((rows) => rows[0]?.name ?? null)
+      // A lost name costs the message one word. It must never cost the refusal.
+      .catch(() => null),
+  ]);
+
+  const refusal = blankedStoredAreaRefusal({
+    employeeName: input.employeeName,
+    holdsSeat,
+    incomingAreaId: input.incomingAreaId,
+    storedAreaId: input.storedAreaId,
+    storedAreaName,
+  });
+  if (refusal) throw new Error(refusal);
+}
+
 // The acting user, threaded down to the `employees` write so the salary-change
 // audit trigger can attribute the edit. It travels as request headers on the
 // PostgREST call; the trigger reads them back via current_setting('request.headers').
@@ -3145,6 +3209,7 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
   const isUpdate = Boolean(originalHrId);
   let previousManagerHrId: string | null = null;
   let previousHireDate: string | null = null;
+  let previousAreaId: number | null = null;
 
   if (isUpdate) {
     if (!hrId) {
@@ -3155,14 +3220,17 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
       throw new Error("HR_ID is immutable after employee creation. Use a governed HR_ID rename workflow.");
     }
 
-    const existing = await supabaseRest<Array<{ hr_id: string; manager_hr_id: string | null; hire_date: string | null }>>(
-      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id,hire_date`,
+    const existing = await supabaseRest<
+      Array<{ hr_id: string; manager_hr_id: string | null; hire_date: string | null; area_id: number | null }>
+    >(
+      `employees?hr_id=eq.${encodeURIComponent(originalHrId as string)}&select=hr_id,manager_hr_id,hire_date,area_id`,
     );
     if (existing.length === 0) {
       throw new Error(`Employee ${originalHrId} was not found.`);
     }
     previousManagerHrId = normalizeHrId(existing[0].manager_hr_id);
     previousHireDate = existing[0].hire_date ?? null;
+    previousAreaId = numberOrNull(existing[0].area_id);
   } else if (hrId) {
     const existing = await supabaseRest<Array<{ hr_id: string }>>(
       `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
@@ -3174,6 +3242,14 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
 
   const payload = await employeePayload(input, isUpdate, previousManagerHrId);
   await assertActiveCanonicalArea(payload.area_id);
+  if (isUpdate) {
+    await assertStoredAreaIsNotBlanked({
+      employeeName: payload.full_name,
+      hrId: payload.hr_id,
+      incomingAreaId: payload.area_id,
+      storedAreaId: previousAreaId,
+    });
+  }
   const params = new URLSearchParams({
     on_conflict: "hr_id",
   });

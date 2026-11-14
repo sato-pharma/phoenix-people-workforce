@@ -62,6 +62,7 @@ import type {
   EmployeeSalaryDetailValueType,
 } from "@/lib/employees/employee-directory";
 import { lineIdAfterAreaPick, operatingAreaOptions } from "@/lib/employees/area-line-options";
+import { AREA_PICKER_EMPTY_VALUE, withStoredAreaOption } from "@/lib/employees/stored-area-guard";
 import {
   getMissingEmployeeRecordFields,
   hasMissingEmployeeRecordData,
@@ -1319,6 +1320,43 @@ export function EmployeeManagement({
 
     return vacancyLines.length ? vacancyLines : lookups.lines;
   }, [filteredWorkforceVacancies, lookups.lines, selectedPositionRequiresVacancy]);
+
+  // The area the record being edited already holds. The vacancy list below offers OPEN seats only,
+  // and this person's own seat is filled, so without it their area is neither shown nor choosable
+  // (`stored-area-guard.ts`). Nothing for a new record.
+  const storedAreaOnRecord = React.useMemo(() => {
+    if (!editingHrId) return null;
+    const record = employees.find((employee) => hrIdsMatch(employee.hrId, editingHrId));
+    if (!record?.areaId) return null;
+    return { areaId: record.areaId, areaName: record.areaName, lineId: record.lineId };
+  }, [editingHrId, employees]);
+
+  const operatingAreaPickerOptions = React.useMemo(() => {
+    if (!selectedPositionRequiresVacancy) return operatingAreaOptions(lookups.areas);
+
+    const vacancyOptions =
+      filteredWorkforceVacancies.length > 0
+        ? filteredWorkforceVacancies.map((vacancy) => ({
+            label: formatVacancyOptionLabel(vacancy, {
+              omitPositionTitle: vacancyPositionsAgree,
+              leadWithRegion: vacancyRowsAreManagerSeats,
+            }),
+            value: String(vacancy.areaId),
+          }))
+        : form.lineId
+          ? [{ label: "No open vacancy for this position and line", value: AREA_PICKER_EMPTY_VALUE }]
+          : [];
+
+    return withStoredAreaOption(vacancyOptions, storedAreaOnRecord, form.lineId);
+  }, [
+    filteredWorkforceVacancies,
+    form.lineId,
+    lookups.areas,
+    selectedPositionRequiresVacancy,
+    storedAreaOnRecord,
+    vacancyPositionsAgree,
+    vacancyRowsAreManagerSeats,
+  ]);
 
   const filteredTeamOptions = React.useMemo(() => {
     return (lookups.teams ?? []).filter(
@@ -3859,7 +3897,7 @@ export function EmployeeManagement({
                     disabled={selectedPositionRequiresVacancy && !form.lineId}
                     label="Operating Area"
                     onChange={(value) => {
-                      if (value === "empty") return;
+                      if (value === AREA_PICKER_EMPTY_VALUE) return;
                       if (selectedPositionRequiresVacancy) {
                         applyVacancySelection(value);
                       } else {
@@ -3878,21 +3916,7 @@ export function EmployeeManagement({
                         }
                       }
                     }}
-                    options={
-                      selectedPositionRequiresVacancy
-                        ? filteredWorkforceVacancies.length > 0
-                          ? filteredWorkforceVacancies.map((v) => ({
-                              label: formatVacancyOptionLabel(v, {
-                                omitPositionTitle: vacancyPositionsAgree,
-                                leadWithRegion: vacancyRowsAreManagerSeats,
-                              }),
-                              value: String(v.areaId),
-                            }))
-                          : form.lineId
-                            ? [{ label: "No open vacancy for this position and line", value: "empty" }]
-                            : []
-                        : operatingAreaOptions(lookups.areas)
-                    }
+                    options={operatingAreaPickerOptions}
                     placeholder={selectedPositionRequiresVacancy && !form.lineId ? "Select line first" : "Select area"}
                     value={form.areaId}
                   />
