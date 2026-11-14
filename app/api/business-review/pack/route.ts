@@ -35,6 +35,7 @@ import { renderPackPdf } from "@/lib/business-review/pack/pdf";
 import { renderPackPptx } from "@/lib/business-review/pack/pptx";
 import { renderPackWorkbook } from "@/lib/business-review/pack/workbook";
 import { packContentDisposition, packFileName } from "@/lib/business-review/pack/filename";
+import { packRequestKey, shareInFlight } from "@/lib/business-review/pack/single-flight";
 import { peopleForReviewFilter } from "@/lib/business-review/people-view";
 import { applyRepScope, applySeatScope, loadReviewPortalScope } from "@/lib/business-review/portal-scope";
 import {
@@ -83,10 +84,33 @@ function packFormat(value: string | null): PackFormat {
 }
 
 
+type PackAccess = Awaited<ReturnType<typeof resolveAccessContext>>;
+
+/**
+ * 🔴 ONE BUILD PER IDENTICAL REQUEST (14 Nov 2026). A second ask for the same pack, by the same person, while
+ * the first is still building, waits for that build instead of starting another — see single-flight.ts for
+ * the 12 Nov burst of 188 requests from one browser that froze the server. The key is the session and the
+ * whole query string, so nothing is ever shared across people, roles or different packs. A caller the
+ * session cannot name is never shared with anybody: it builds alone.
+ */
 export async function GET(request: Request) {
+  let access: PackAccess;
   try {
-    const access = await resolveAccessContext(request);
-    if (!access.role) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    access = await resolveAccessContext(request);
+  } catch (error) {
+    logError("business-review.pack failed", { error });
+    return NextResponse.json({ error: "Failed to build the pack" }, { status: 500 });
+  }
+  if (!access.role) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const identity = resolveEmployeeIdentityId(access) ?? access.loginId ?? null;
+  if (!identity) return buildPackResponse(request, access);
+  const key = packRequestKey({ identity, role: access.role, url: request.url });
+  return shareInFlight(key, () => buildPackResponse(request, access));
+}
+
+async function buildPackResponse(request: Request, access: PackAccess): Promise<Response> {
+  try {
 
     const params = new URL(request.url).searchParams;
     const format = packFormat(params.get("format"));
