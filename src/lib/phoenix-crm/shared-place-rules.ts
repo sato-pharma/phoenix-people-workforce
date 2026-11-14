@@ -116,6 +116,51 @@ export type SharedPlaceDraft = CapturedFix & {
 export const SHARED_PLACE_NO_PHOTO = "Take a live photo of the sign on the building.";
 export const SHARED_PLACE_NO_NAME = "Write the name on the building.";
 export const SHARED_PLACE_NO_KIND = "Choose what this place is.";
+export const SHARED_PLACE_JUNK_NAME = "This does not read as a name. Write the name exactly as the sign on the building spells it.";
+
+/** A word of Latin letters, and of Arabic letters — the two scripts a building's sign is written in. */
+const LATIN_WORD = /^[a-z]+$/i;
+const ARABIC_LETTER = /[ء-ي]/;
+
+/**
+ * Whether a typed building name is a keyboard mash rather than a name (owner, 2026-11-14: "fix the junk
+ * polyclinic names" — he chose "refuse junk at the door"). Two held buildings that day were named
+ * "ىىوزنخ" and "FEFEFFE"; the photo under each showed no sign at all, so the reviewer had no name to judge.
+ *
+ * 🔴 IT REFUSES ONLY WHAT NO REAL NAME CAN BE, never what merely looks unusual: an acronym ("CMC", "NMC"),
+ * a doctor's name, a number in a name ("Clinic 2"), a stretched letter ("العيـــن", "جاااس") and a
+ * missing space ("مكةالمكرمة") all pass. Measured against every name on production the day it landed: of
+ * 336 buildings it refuses "ىىوزنخ", "FEFEFFE" and the retired "Djkl", and of 18,330 customer names only
+ * "OOOOOOOOOOOO", "ىوؤف" and two whose word starts with "ى"/"ة" for a missing space ("ىالامريكان"),
+ * which the rep retypes as the sign spells it. A name that passes is still read against the sign by the
+ * door reader, and a building is never approved by the system — this is the cheap first line, not the
+ * judgement.
+ *
+ *   1. no letter at all ("1234", "...");
+ *   2. an Arabic word that STARTS with "ى" or "ة" — no word can ("ىىوزنخ"); the tatweel "ـ" is ignored;
+ *   3. one Latin letter three times running ("OOOO", "xxx") — Arabic is exempt: a stretched "جاااس" is
+ *      how some signs are written;
+ *   4. a Latin word of five letters or more made of two letters only ("FEFEFFE", "asasa");
+ *   5. a lower- or mixed-case Latin word of four letters or more with no vowel ("sdfg", "Djkl") — an
+ *      all-capital one is an acronym and passes.
+ */
+export function sharedPlaceNameIsJunk(name: string | null | undefined): boolean {
+  const text = String(name ?? "").replace(/ـ/g, "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (!/\p{L}/u.test(text)) return true;
+  if (/([a-z])\1\1/i.test(text)) return true;
+  for (const word of text.split(/[\s\-_.,/()]+/).filter(Boolean)) {
+    if (ARABIC_LETTER.test(word)) {
+      if (/^[ىة]/.test(word.replace(/[^ء-ي]/g, ""))) return true;
+      continue;
+    }
+    if (!LATIN_WORD.test(word)) continue;
+    const lower = word.toLowerCase();
+    if (lower.length >= 5 && new Set(lower).size <= 2) return true;
+    if (lower.length >= 4 && word !== word.toUpperCase() && !/[aeiouy]/.test(lower)) return true;
+  }
+  return false;
+}
 
 /**
  * 🔴 BOTH READINGS, AT THE DOOR, EVEN THOUGH NO GOOGLE CHECK RUNS ON A VENUE (owner, 2026-10-09,
@@ -130,6 +175,7 @@ export function parseSharedPlaceDraft(raw: unknown): EntryRuleResult<SharedPlace
   if (!photoPath) return { ok: false, error: SHARED_PLACE_NO_PHOTO };
   const name = cleanText(body.name, SHARED_PLACE_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: SHARED_PLACE_NO_NAME };
+  if (sharedPlaceNameIsJunk(name)) return { ok: false, error: SHARED_PLACE_JUNK_NAME };
   const kind = parseSharedPlaceKind(body.kind);
   if (!kind) return { ok: false, error: SHARED_PLACE_NO_KIND };
   const fix = parseCapturedFix(body);
