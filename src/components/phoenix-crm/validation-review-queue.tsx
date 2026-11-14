@@ -448,6 +448,7 @@ const WAITING_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     // Never a clinic customer with one or two names: he is sent back for all three (owner, 2026-11-07).
     takes: (row) => row.status === "pending" && !approvalNeedsFullName(row),
     run: (row, answer) => bulkDecide(row, "approve", answer.note, ""),
+    outcomeOf: (answer) => approvalOutcome(answer, "approved"),
   },
   {
     key: "reject",
@@ -459,6 +460,7 @@ const WAITING_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
       `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one goes back to To validate, told what is wrong with the photo and nothing else.`,
     takes: (row) => row.status === "pending",
     run: (row, answer) => bulkDecide(row, "reject", answer.note, answer.reason),
+    outcomeOf: () => "rejected",
   },
 ];
 
@@ -473,6 +475,7 @@ const DECIDED_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
       `This takes back ${count === 1 ? "an approval" : `${count} approvals`} and retires the place each one let stand; a customer left without one goes back to To validate.`,
     takes: (row) => row.refusable,
     run: (row, answer) => bulkDecide(row, "reject", answer.note, answer.reason),
+    outcomeOf: () => "rejected",
   },
   {
     key: "approve-after-all",
@@ -484,6 +487,7 @@ const DECIDED_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     // short name: his approval goes through as it stands (owner, 2026-11-10, "the administrator is never blocked").
     takes: (row) => row.restorable,
     run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", restoreRequest(row.reviewId, answer.note), "restored"),
+    outcomeOf: (answer) => approvalOutcome(answer, "restored"),
   },
 ];
 
