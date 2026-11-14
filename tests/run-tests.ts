@@ -2234,6 +2234,7 @@ import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.te
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
+import { runPhoenixCrmPlaceChecksOnDemandTests } from "./phoenix-crm-place-checks-on-demand.test.ts";
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommentReadingTests } from "./phoenix-crm-comment-reading.test.ts";
@@ -8092,6 +8093,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM place checks' REP SCORECARD — each rep's captures on one line, worst first (owner, 2026-10-17: \"is this a report that really shows me data? or it's a bunch of chaos\"; the board drew every row and summed nothing, 104,455 px tall on its Clinics tab). Pinned: every place sits in exactly one of six columns so a line adds up to its own Places figure; a place waiting for a decision is counted there once, never again among the places in use, and a place listed twice is one place; a customer sent back sits beside the sum; a seated customer is judged on the timetable and never on a signboard reading; a lost call is 'not read', never a bad photograph; reps sort by the SHARE of photographs that went wrong, then the count, then the name; the total reads every count a line carries; the phone cards come before the table and the header is mapped from the same columns; a manager's line says 'Being checked', never 'Waiting for you'; and tapping a rep narrows the whole board through its own Rep filter",
   runPhoenixCrmPlaceCheckScorecardTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks OPEN ON WHAT NEEDS YOU DRAWS, and the rest waits for the click (owner, 2026-11-14, \"Load lists on demand\"; the page sent 12.5 MB and building it froze the server — the 11 Nov 1.08 s stall). Pinned: the scorecard, the Not confirmed count and the filter lists are counted on the server from every row by the board's own functions, never from the few the page sends; Decided by lists every decider; the page hands only the seated places and the last 14 days' decisions; the older decisions merge back in the read's own order and once; no tab draws part of its list while the rest is on its way; the route asks approve and the decider before a row is read; the review opens only on every row; and a district manager's board is untouched",
+  runPhoenixCrmPlaceChecksOnDemandTests,
 );
 
 await runTest(

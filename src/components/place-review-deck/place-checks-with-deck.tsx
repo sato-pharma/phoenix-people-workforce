@@ -17,5 +17,7 @@ import type { DeckTab } from "@/lib/place-review-deck/slides";
 type BoardProps = Omit<ComponentProps<typeof ValidationReviewsBoard>, "mode" | "reviewDeck">;
 
 export function PlaceChecksWithDeck({ openOn, ...board }: BoardProps & { openOn: DeckTab | null }) {
-  return <ValidationReviewsBoard {...board} mode="company" reviewDeck={(input) => <PlaceReviewDeckButton input={input} openOn={openOn} />} />;
+  return (
+    <ValidationReviewsBoard {...board} mode="company" reviewDeck={(input, rows) => <PlaceReviewDeckButton input={input} openOn={openOn} rows={rows} />} />
+  );
 }
