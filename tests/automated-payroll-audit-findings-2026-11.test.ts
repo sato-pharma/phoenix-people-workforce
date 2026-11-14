@@ -10,6 +10,13 @@ import {
 import { isRunHoldAction, RUN_HOLD_ACTIONS } from "../src/lib/automated-payroll/transition-claim.ts";
 import { assertSettlementTarget, settlementCeiling } from "../src/lib/automated-payroll/held-settlements.ts";
 import { jsonError } from "../src/lib/automated-payroll/http.ts";
+import {
+  assertPart2FileMatchesStamp,
+  compareNonEmployees,
+  PART2_NON_EMPLOYEES_KEY,
+  part2NonEmployees,
+  readConfirmedNonEmployees,
+} from "../src/lib/automated-payroll/publish-guard.ts";
 
 /**
  * THE AUTOMATED PAYROLL AUDIT OF 14 NOVEMBER 2026, FINDINGS 6 TO 16 (owner: "build the remaining audit
@@ -231,5 +238,92 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     HELD_SETTLEMENTS,
     /async function loadHeldEntryEmployees\(\)[\s\S]{0,400}?fetchAllRows<Row>\(\s*\(\) =>\s*getSupabaseAdmin\(\)\s*\.from\("employees"\)/,
     "S2: every employee is in the held-entry picker",
+  );
+
+  // ---- Confirm Part 2 holds the non-employees it pays (owner, "Close that gap") ----------------------------
+  // The stamp was built from employee rows only, while the Part 2 FAB and CIB files also carry every Part 2
+  // non-employee entry read live — so an entry changed after the confirm's read went to the bank unconfirmed.
+  const entry = (over: Partial<{ id: string; part: string; fullNameEn: string; totalSalary: number; bankName: string | null; bankAccount: string | null }> = {}) => ({
+    id: "ne-1",
+    part: "second",
+    fullNameEn: "Mona Adel",
+    totalSalary: 5000,
+    bankName: "CIB",
+    bankAccount: "100200300",
+    ...over,
+  });
+  const confirmed = part2NonEmployees("run-1", [entry(), entry({ id: "ne-2", part: "first", totalSalary: 900 })]);
+  assert.deepEqual(Object.keys(confirmed), ["ne-1"], "only the entries paid with the second instalment are stamped");
+  assert.ok(!JSON.stringify(confirmed).includes("100200300"), "the stamp holds a fingerprint, never the account number");
+  assert.deepEqual(compareNonEmployees(confirmed, part2NonEmployees("run-1", [entry()])), [], "the same entry matches");
+  for (const [what, moved] of [
+    ["the amount", entry({ totalSalary: 5000.5 })],
+    ["the account", entry({ bankAccount: "100200301" })],
+    ["the bank", entry({ bankName: "FAB" })],
+    ["the name", entry({ fullNameEn: "Mona Adel Hassan" })],
+  ] as const) {
+    assert.deepEqual(compareNonEmployees(confirmed, part2NonEmployees("run-1", [moved])), ["ne-1"], `a change to ${what} is caught`);
+  }
+  assert.deepEqual(
+    compareNonEmployees(confirmed, part2NonEmployees("run-1", [entry(), entry({ id: "ne-3" })])),
+    ["ne-3"],
+    "an entry added after the confirm is caught",
+  );
+  assert.deepEqual(compareNonEmployees(confirmed, {}), ["ne-1"], "an entry removed after the confirm is caught");
+  assert.deepEqual(readConfirmedNonEmployees({ [PART2_NON_EMPLOYEES_KEY]: confirmed }), confirmed, "the stamp reads back");
+  assert.equal(readConfirmedNonEmployees({ confirmedTotals: {} }), null, "a stamp from before this carries none");
+
+  const totals = { employees: 1, firstPart: 1, secondPart: 1, monthSalary: 2, net: 2 };
+  const readyRun = { phase: "ready", part2ConfirmedAt: "2026-11-14T10:00:00Z" };
+  const fileCheck = (stamp: Record<string, string> | null, current: Record<string, string>, run = readyRun) => () =>
+    assertPart2FileMatchesStamp(run, totals, totals, undefined, {
+      confirmed: stamp,
+      current,
+      nameOf: (id) => (id === "ne-1" ? "Mona Adel" : "an entry no longer on Non-Employees Payroll"),
+    });
+  assert.doesNotThrow(fileCheck(confirmed, confirmed), "an unchanged month downloads");
+  assert.throws(
+    fileCheck(confirmed, part2NonEmployees("run-1", [entry({ totalSalary: 7000 })])),
+    /Conflict: The Part 2 non-employee entry for Mona Adel has changed since Part 2 was confirmed\. .*No file was produced/,
+    "a Part 2 bank file refuses an entry that moved, naming it",
+  );
+  assert.doesNotThrow(fileCheck(null, {}), "a stamp written before this keeps today's behaviour");
+  assert.doesNotThrow(
+    fileCheck(confirmed, {}, { phase: "published", part2ConfirmedAt: readyRun.part2ConfirmedAt }),
+    "a published month is a record, never held to the stamp",
+  );
+
+  const confirmPart2 = bodyOf(RUN_SERVICE, "export async function confirmPart2(");
+  const firstRead = confirmPart2.indexOf(
+    'const confirmedNonEmployees = part2NonEmployees(runId, await getNonEmployeePayrollRows(runId, "second"));',
+  );
+  const claimAt = confirmPart2.indexOf('await claimTransition(runId, ["part2"], "Confirming Part 2")');
+  assert.ok(firstRead > 0 && claimAt > firstRead, "Confirm Part 2 reads the Part 2 non-employees before its claim");
+  assert.match(
+    confirmPart2.slice(claimAt),
+    /compareNonEmployees\(\s*confirmedNonEmployees,\s*part2NonEmployees\(runId, await getNonEmployeePayrollRows\(runId, "second"\)\),\s*\)/,
+    "and re-reads them under the claim",
+  );
+  assert.match(confirmPart2, /nonEmployeesMovedWhileConfirming\.length > 0\s*\)\s*\{\s*throw new Error\(/, "a difference refuses the confirm");
+  assert.equal(
+    confirmPart2.match(/\[PART2_NON_EMPLOYEES_KEY\]: confirmedNonEmployees,/g)?.length,
+    2,
+    "both the stamp row and the part2_confirmed row carry the fingerprints (the newest of the two is read)",
+  );
+  assert.match(
+    RUN_SERVICE,
+    /nonEmployees: readConfirmedNonEmployees\(newest\.detail\),/,
+    "the stamp reader returns them",
+  );
+  const fileGuard = bodyOf(RUN_SERVICE, "async function assertFileMatchesPart2Confirm(");
+  assert.match(
+    fileGuard,
+    /confirmed: stamp\.nonEmployees,\s*current: part2NonEmployees\(run\.id, nonEmployees\),/,
+    "the Part 2 file check compares the live entries with the stamp",
+  );
+  assert.equal(
+    RUN_SERVICE.match(/await assertFileMatchesPart2Confirm\(run, rows, draftRows, (allNonEmployees|nonEmployees)\);/g)?.length,
+    3,
+    "the full finance sheet, the Part 2 FAB file and the Part 2 CIB file all pass in the entries they carry",
   );
 }
