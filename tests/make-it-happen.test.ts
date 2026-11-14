@@ -906,10 +906,10 @@ export async function runMakeItHappenTests() {
   );
 
   // ── Scope ──
-  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {
-    assert.equal(canUseMakeItHappen(role), true, `${role} is one of the eight owner-named roles`);
+  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {
+    assert.equal(canUseMakeItHappen(role), true, `${role} is one of the nine owner-named roles (Regional Manager added 2026-11-14, own region only)`);
   }
-  for (const role of ["CEO", "Regional Manager", "Employee", "HR Operations", null]) {
+  for (const role of ["CEO", "Employee", "HR Operations", null]) {
     assert.equal(canUseMakeItHappen(role), false, `${role ?? "no role"} was not named`);
   }
 
@@ -923,6 +923,11 @@ export async function runMakeItHappenTests() {
   const selfScoped = applyMakeItHappenBound(rows, { rows: { kind: "self", hrId: "M-1" } as never, productCodes: null, label: "You" });
   assert.ok(selfScoped.every((item) => item.repHrId === "M-1"), "a medical rep never plans another rep's rows");
   assert.equal(isTeamBound({ rows: { kind: "self", hrId: "M-1" } as never, productCodes: null, label: "" }), false);
+  // A Regional Manager plans his own region only: his seat's areas (vs-target-scope.ts), never the line.
+  const regionRows = [row({ productCode: "P1", areaCode: "A1" }), row({ productCode: "P1", areaCode: "A2" }), row({ productCode: "P1", areaCode: "B9" })];
+  const regionBound = { rows: { kind: "areas", areaCodes: new Set(["A1", "A2"]), lineCodes: new Set(["cns"]) } as never, productCodes: null, label: "Your region" };
+  assert.deepEqual(applyMakeItHappenBound(regionRows, regionBound).map((item) => item.areaCode), ["A1", "A2"], "a Regional Manager sees his own region's areas and no other region's");
+  assert.equal(isTeamBound(regionBound), true, "and gets the per-rep team view, like a District Manager");
   assert.equal(isTeamBound({ rows: { kind: "company" }, productCodes: null, label: "" }), true);
   assert.equal(makeItHappenBoundLabel({ kind: "line", lineCodes: new Set(["PD"]) }), "Your line");
   assert.equal(
