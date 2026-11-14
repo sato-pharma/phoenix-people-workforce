@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ebde92b2-65e2-4c59-a969-c5bbf6ee89cb
-  modified: 2026-11-04T04:56:19.328Z
+  modified: 2026-11-14T00:31:00.778Z
 ---
 
 His words, 4 Nov 2026 about 02:25 Cairo: "migrate new github account Omar-3-xx". This extends the 2 Nov exception in [[github-account-suspended-2026-11-02]] to this one account, by his word only. He signs in himself; a session never does.
@@ -46,7 +46,7 @@ Website moved, read 4 Nov 04:20 Cairo: he ran the three connects; web, api and p
 
 Code backup back 4 Nov 04:42 Cairo on his new token (expires 3 Nov 2027; read answers 200, write answers 403): `done`, `code-backup-2026-11-04.tar.age`, 435,746,872 bytes, 3 repositories. 🔴 A stored variable does not reach the job until the service redeploys: `--skip-deploys` then a run still uses the old copy. The 3 Nov file, the last holding the repositories not moved, is copied to `frozen-2026-11-03/` on Drive, because the daily prune keeps only 7.
 
-Earlier: a run at 03:07 Cairo ended CRASHED, `curl: (22) ... 403`, on the suspended account's token. Read 4 Nov 04:29 Cairo: `hmdm-android` is there, `CODE_BACKUP_MIN_REPOS` lowered from 5 to 3 with `--skip-deploys` on "fix the code backup for Omar-3-xx" (raise it if the app repositories arrive). The only thing missing is his new read-only token, saved over `F:\GitHub-move-backup\code-backup-github-token.txt`; store it without printing, then start a run with `deploymentInstanceExecutionCreate` (a rebuild does not run the job) and restore-compare 3 repositories and 3 release files.
+Earlier: a run at 03:07 Cairo ended CRASHED, `curl: (22) ... 403`, on the suspended account's token. Read 4 Nov 04:29 Cairo: `hmdm-android` is there, `CODE_BACKUP_MIN_REPOS` lowered from 5 to 3 with `--skip-deploys` on "fix the code backup for Omar-3-xx" (raise it if the app repositories arrive). The only thing missing is his new read-only token, saved over `C:\Users\satoh\.secrets\code-backup\code-backup-github-token.txt` (moved off the F: root on 14 Nov 2026; the `F:\GitHub-move-backup` folder is empty now); store it without printing, then start a run with `deploymentInstanceExecutionCreate` (a rebuild does not run the job) and restore-compare 3 repositories and 3 release files.
 
 Workflows back on 4 Nov 04:14 Cairo on "turn the workflows back on once PR 1 is live": production read `8e61d1047`, readyz 200, `release-gate` success; then 15 enabled one at a time and read back, 22 active, only the two frozen ones off. Apps Script check-only run success: all three scripts "already current", so the new Google grant works. Production's `GITHUB_ACTIONS_DISPATCH_TOKEN` updated 4 Nov 04:57 Cairo on "update production's GitHub token": the old value answered 403. GitHub secrets cannot be read back and `sync-railway-production-secrets` rewrites about 80 variables, so a one-off workflow on a throwaway branch (`on: push` gets secrets; branch deleted after) wrote this one variable from `PHOENIX_ACTIONS_DISPATCH_TOKEN` and redeployed once. Non-starting test: a dispatch to a branch that does not exist answers 422 (allowed), 403 would be refused. On the Free plan, `deploy-drift-check` alone runs 48 times a day: watch the minutes.
 
