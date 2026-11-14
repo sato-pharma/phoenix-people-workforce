@@ -32,6 +32,20 @@ const REFUSALS: Record<string, Refusal> = {
   // Approving after a rejection (owner, 2026-10-03: "add the option to approve after reject").
   review_not_rejected: { status: 409, message: "This place was not rejected, so there is nothing to bring back. Reload the page." },
   place_not_retired: { status: 409, message: "This place is not retired any more. Reload the page." },
+  // "Approve it after all" stops and says why (owner, 14 Nov 2026). Read by the Super Admin alone, so
+  // each one names what is in the way and what clears it.
+  restore_customer_dropped: {
+    status: 409,
+    message: "This customer was dropped from the list after the refusal, so the place cannot come back. Bring the customer back to the list first, then approve.",
+  },
+  restore_building_retired: {
+    status: 409,
+    message: "The polyclinic or centre this place sits in was retired after the refusal. Bring the building back first, then approve.",
+  },
+  restore_door_captured_again: {
+    status: 409,
+    message: "This customer already has an active place at this door, captured after the refusal, so there is nothing to bring back.",
+  },
   same_name: {
     status: 409,
     message: "A customer with this name is already on the list. If this is a different person, confirm it and save again.",

@@ -98,6 +98,8 @@ export type PhoenixCrmScheduleCheck = {
   problem?: ScheduleProblem | null;
   /** On a seating the scanner HELD: how many photographs of this board were tried that day. */
   tries?: number;
+  /** How many times the night has read this photograph again after the door got no answer (`scheduleNeedsReread`). */
+  rereads?: number;
   /**
    * The photo was chosen from the phone's files on the last try, not taken with the camera (owner,
    * 2026-11-02). It wears the same stamp, so this record is the only thing that tells them apart.
@@ -326,6 +328,87 @@ export function scheduleDoorAction(check: PhoenixCrmScheduleCheck, earlierTries:
     message: `${retakeAdvice(check)} Try ${nextTry} of ${SCHEDULE_MAX_TRIES}.`,
     nextTry,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A read the door never got an answer to is read again at night (Phoenix CRM validation audit, 14 Nov 2026).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The absences of an answer. 🔴 NEVER `unreadable`: there the reader answered, and the door's three tries
+ * or the administrator's own eye are what settle it. `held_elsewhere` made no call on purpose.
+ */
+export const SCHEDULE_REREAD_REASONS: readonly ScheduleCheckReason[] = ["call_failed", "no_bytes", "no_api_key"];
+
+/** Nights a lost read is tried again before it is left as it stands, for the administrator's eye. */
+export const SCHEDULE_MAX_REREADS = 3;
+
+/** The night's re-reads already spent on a stored check. Anything unrecognised is none. */
+export function scheduleRereadsRecorded(check: unknown): number {
+  if (!check || typeof check !== "object") return 0;
+  const value = (check as { rereads?: unknown }).rereads;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * 🔴 A LOST CALL STILL SAVES AT THE DOOR, AND IS READ AGAIN AT NIGHT. The door's rule stands — no key, a
+ * lost call or no bytes never refuses and never holds a seating (`scheduleDoorAction`) — but until this
+ * date nothing ever read that photograph again: the customer stayed validated on a board nobody had read,
+ * for good (two real seatings of 21 Oct 2026 were found that way). The night now asks the same question
+ * of the same photograph, up to `SCHEDULE_MAX_REREADS` times, and only WRITES THE ANSWER on the row. It
+ * validates nobody, holds nobody and tells nobody: Place checks shows what the board says, and the
+ * decision on a customer it does not name stays a person's.
+ *
+ * A row with no check at all is one nobody has read yet, and is read the same way.
+ */
+export function scheduleNeedsReread(check: unknown): boolean {
+  if (check === null || check === undefined) return true;
+  if (typeof check !== "object") return false;
+  const stored = check as { verdict?: unknown; reason?: unknown };
+  if (stored.verdict !== "unjudged") return false;
+  if (!(SCHEDULE_REREAD_REASONS as readonly unknown[]).includes(stored.reason)) return false;
+  return scheduleRereadsRecorded(check) < SCHEDULE_MAX_REREADS;
+}
+
+/**
+ * What the night keeps after reading a photograph again: the new verdict, the count of its re-reads, and
+ * the one fact about the photograph a fresh reading cannot know — that it was an upload.
+ */
+export function scheduleRereadToKeep(read: PhoenixCrmScheduleCheck, stored: unknown): PhoenixCrmScheduleCheck {
+  const kept: PhoenixCrmScheduleCheck = { ...read, rereads: scheduleRereadsRecorded(stored) + 1 };
+  const wasUploaded = !!stored && typeof stored === "object" && (stored as { uploaded?: unknown }).uploaded === true;
+  return wasUploaded ? { ...kept, uploaded: true } : kept;
+}
+
+/** The words a rep reads when the photograph he sent as a building's timetable shows no timetable at all. */
+export const VENUE_TIMETABLE_NOT_A_TIMETABLE =
+  "This photo does not show the building's timetable. Photograph the timetable on the wall, with the names in the frame.";
+
+/**
+ * 🔴 THE BUILDING'S OWN DOOR REFUSES A PHOTOGRAPH THAT IS NOT A TIMETABLE, BEFORE ANYTHING IS WRITTEN
+ * (Phoenix CRM validation audit, 14 Nov 2026). "Photograph the timetable" used to store whatever it was
+ * sent as the building's board and only then read it — and a board read as "no timetable" sends every
+ * customer seated behind it out of the KPIs (`phoenix_crm_settle_venue_timetable`), with nobody told. The
+ * seating door has refused that same photograph since 2026-10-17 (`scheduleDoorAction`), so one wrong
+ * picture could un-validate a whole building at one door and nobody at the other.
+ *
+ * Only the reader's CONFIDENT "no timetable here" with nothing transcribed is refused — the first branch
+ * of `judgeSchedule`, word for word. Everything else is kept exactly as it was: a board nobody could read
+ * is still stored (the administrator reads it by eye, and `unjudged` never holds), a timetable on a screen
+ * is still stored (owner, 2026-10-28: "Save it"), and a reader that never answered refuses nobody. No try
+ * is counted: there is no seating here to hold on a third one.
+ */
+export function venueTimetableRefusal(reading: {
+  schedulePresent: boolean | null;
+  scheduleText: string | null;
+  personNames: readonly string[];
+  problem?: ScheduleProblem | null;
+}): string | null {
+  const nothingRead = reading.personNames.length === 0 && !reading.scheduleText;
+  if (nothingRead && (reading.schedulePresent === false || reading.problem === "not_a_timetable")) {
+    return VENUE_TIMETABLE_NOT_A_TIMETABLE;
+  }
+  return null;
 }
 
 /**

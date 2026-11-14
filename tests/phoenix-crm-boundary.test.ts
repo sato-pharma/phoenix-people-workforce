@@ -1115,6 +1115,14 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_share_line_validation and the trigger function phoenix_crm_places_line_twin_follow — a 'line_twin'
   // point source and an index. It replaces nothing save_visit depends on.
   "supabase/migrations/20261112221819_phoenix_crm_line_twin_validation.sql",
+  // The validation audit of 14 Nov 2026: phoenix_crm_validate_customer, phoenix_crm_decide_validation_review,
+  // phoenix_crm_place_on_trusted_point and phoenix_crm_insert_place REPLACED, each from the body production held
+  // that morning. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261114050048_phoenix_crm_validation_audit_fixes.sql",
+  // The owner's decisions on that audit, the same day: phoenix_crm_restore_validation,
+  // phoenix_crm_settle_venue_timetable and phoenix_crm_seat_places_in_venue REPLACED, and one NEW function —
+  // phoenix_crm_customer_stands_on_another_place. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261114051314_phoenix_crm_validation_owner_decisions.sql",
 ];
 
 /**

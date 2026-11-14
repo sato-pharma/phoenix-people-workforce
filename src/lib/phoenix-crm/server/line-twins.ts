@@ -22,6 +22,7 @@
  * Account: docs/phoenix-crm-line-twins.md.
  */
 
+import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
 import { logError } from "@/lib/observability/log";
 import {
   LINE_TWIN_MOVE_REASON,
@@ -57,6 +58,35 @@ const CUSTOMER_COLUMNS = "id, seat_id, line_code, list_type, name, speciality, s
 const PLACE_COLUMNS = "id, customer_id, seat_id, point_source, lat, lon, accuracy_meters, captured_at";
 const LOCATION_COLUMNS =
   "id, status, lat, lon, accuracy_meters, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name";
+
+/**
+ * Every "validate this one again" notice ever raised about one customer, by key prefix.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026. The word belongs to `validationNotConfirmedKeyPrefix` in
+ * server/validation-reviews.ts, which imports this file — so it is restated here rather than imported
+ * back, and `tests/phoenix-crm-validation-audit-reviews.test.ts` holds the two equal.
+ */
+function validateAgainNoticeKeyPrefix(customerId: string): string {
+  return `phoenix_crm:validation_not_confirmed:${customerId}:`;
+}
+
+/**
+ * Answer the rep's "validate again" notice about a customer the system has just validated without him.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: a customer validated from another line (a share), or
+ * brought back with his building (server/shared-places.ts, which imports this file and so asks here),
+ * kept a bell asking for a photo nobody needs any more. In-app only, like the notice itself; nothing is
+ * sent and nobody is told. Never throws: the validation it follows has already happened.
+ */
+export async function withdrawValidateAgainNoticeQuietly(customerId: string | null | undefined): Promise<void> {
+  const id = text(customerId);
+  if (!id) return;
+  try {
+    await withdrawInAppNotificationsByEventKeyPrefix(validateAgainNoticeKeyPrefix(id));
+  } catch (error) {
+    logError("Phoenix CRM validate-again notice not withdrawn", { labels: { event: "phoenix_crm_validate_again_withdraw_failed" }, error });
+  }
+}
 
 /** Where to look: one world (real or test), the whole country or the seats of one area. */
 type WorldScope = { isTest: boolean; seatIds: string[] | null };
@@ -204,6 +234,9 @@ export async function applyLineTwinShares(plan: LineTwinSharePlan, settings: Set
       }
       outcome.validated += 1;
       outcome.validatedShares.push(share);
+      // Phoenix CRM validation audit, 14 Nov 2026: validated from another line, so the bell that asked
+      // his own rep for a new photo is answered. A share was the one validation that left it standing.
+      await withdrawValidateAgainNoticeQuietly(share.customerId);
       // His visits from before he had a place are measured now, as after any validation.
       await restampVisitLocationsQuietly({ seatId: share.seatId, isTest: share.isTest, customerId: share.customerId, actorHrId: SIGNBOARD_SYSTEM_ACTOR, settings, scope: "unplaced" });
     } catch (error) {

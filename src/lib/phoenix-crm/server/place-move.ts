@@ -16,6 +16,7 @@
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -229,8 +230,15 @@ export async function seatPlacesInVenue(viewer: PhoenixCrmViewer, raw: unknown):
 
   // The building's board, read for each of them and settled — silently, after the commit. Where the
   // building has none, the database already held them out of the KPIs. `unjudged` NEVER holds.
+  // 🔴 The move is saved by now, so a settle that fails is logged, never answered as an error (Phoenix
+  // CRM validation audit, 14 Nov 2026): the retry was refused as "already in a building" and the visits
+  // below were never measured again.
   if (timetableOnFile) {
-    await settleVenueTimetable({ viewer, seatId: seat.seatId, isTest, sharedPlaceId: venue.sharedPlaceId, schedulePhotoPath: venue.schedulePhotoPath });
+    try {
+      await settleVenueTimetable({ viewer, seatId: seat.seatId, isTest, sharedPlaceId: venue.sharedPlaceId, schedulePhotoPath: venue.schedulePhotoPath });
+    } catch (error) {
+      logError("Phoenix CRM move into a building was saved but not settled", { error, labels: { event: "phoenix_crm_seat_in_venue_settle_failed" } });
+    }
   }
   for (const entry of seated) {
     await restampVisitLocationsQuietly({

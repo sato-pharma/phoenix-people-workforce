@@ -2177,6 +2177,11 @@ import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmSeatInVenueTests } from "./phoenix-crm-seat-in-venue.test.ts";
+import { runPhoenixCrmValidationAuditDecisionsTests } from "./phoenix-crm-validation-audit-decisions.test.ts";
+import { runPhoenixCrmValidationAuditDoorTests } from "./phoenix-crm-validation-audit-door.test.ts";
+import { runPhoenixCrmValidationAuditReviewsTests } from "./phoenix-crm-validation-audit-reviews.test.ts";
+import { runPhoenixCrmValidationAuditSqlTests } from "./phoenix-crm-validation-audit-sql.test.ts";
+import { runPhoenixCrmValidationAuditTimetableTests } from "./phoenix-crm-validation-audit-timetable.test.ts";
 import { runPhoenixCrmSfePlaceChecksTests } from "./phoenix-crm-sfe-place-checks.test.ts";
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
@@ -8403,6 +8408,28 @@ await runTest(
 await runTest(
   "Phoenix CRM moves a standalone customer into a validated polyclinic only for the Super Admin (owner, 2026-10-10): one statement seats the place and frees its photo, the place takes the building's point exactly, a building with no timetable holds the customer out of the KPIs through validated_at while his visits still count, an unjudged read never holds, and a customer already in a building is never seated twice",
   runPhoenixCrmSeatInVenueTests,
+);
+
+// The Phoenix CRM validation audit of 14 Nov 2026 — one file per part of it.
+await runTest(
+  "Phoenix CRM validation audit, the building's timetable: a photo is read before it becomes the board and a confident 'no timetable' is refused; a saved board or a saved move never answers an error; a seating saved on a lost call is read again at night and only its verdict is written",
+  runPhoenixCrmValidationAuditTimetableTests,
+);
+await runTest(
+  "Phoenix CRM validation audit, the door: the building's board on file costs the rep no try and one photo is counted once; the signboard retake prints no metres, starts its own read count and files a flag only on two agreeing readings",
+  runPhoenixCrmValidationAuditDoorTests,
+);
+await runTest(
+  "Phoenix CRM validation audit, reviews and notices: 'validate again' is withdrawn wherever a customer ends validated; a review counts only on an active place; a refused place keeps its earlier evidence; the system never approves a clinic customer short of three names",
+  runPhoenixCrmValidationAuditReviewsTests,
+);
+await runTest(
+  "Phoenix CRM validation audit, the database: location-in-review counts only an active place; the trusted point withdraws an open drop request; a seated place carries no pin of its own; a validated customer carries no old refusal's stamp",
+  runPhoenixCrmValidationAuditSqlTests,
+);
+await runTest(
+  "Phoenix CRM validation audit, the owner's decisions (14 Nov 2026): 'Approve it after all' stops and says why for a dropped customer, a retired building or a door captured again; a customer validated at his own clinic stays in when a polyclinic's board does not name him",
+  runPhoenixCrmValidationAuditDecisionsTests,
 );
 
 await runTest(

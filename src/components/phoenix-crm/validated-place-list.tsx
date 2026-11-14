@@ -15,10 +15,11 @@
  * OPTIONAL since 2026-10-15 ("admin comment is optional"), and since 2026-11-01 the rep and their manager
  * read it, from the System Administrator and with no name on it (`tellDecisionComment`).
  *
- * 🔴 REFUSING A PLACE THAT WAS APPROVED IN THE QUEUE ABOVE IS BETTER DONE THERE. This path upserts the
- * review row's `google` column wholesale to `refused_by_admin`, so the evidence the system held it on
- * is lost; the queue's own "Reject it after all" keeps it. This control is for the places that never
- * reached the queue at all, which is what it was built for.
+ * 🔴 REFUSING A PLACE THAT WAS APPROVED IN THE QUEUE ABOVE IS BETTER DONE THERE. This path rewrites the
+ * review row's `google` column as `refused_by_admin`; since the validation audit of 14 Nov 2026 the
+ * evidence the system held it on is kept under `before` (`evidenceToKeep`), one level deep, where the
+ * queue's own "Reject it after all" leaves the record untouched. This control is for the places that
+ * never reached the queue at all, which is what it was built for.
  *
  * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
  * scroller); a phone draws the same rows as cards. Square corners throughout.

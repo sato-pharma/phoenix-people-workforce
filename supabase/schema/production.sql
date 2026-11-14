@@ -9005,6 +9005,48 @@ ALTER FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id text, p_i
 COMMENT ON FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id text, p_is_test boolean, p_product_max integer) IS 'The visits of a seat that can change its doctors'' pharmacy cards: per stored pharmacy name and per answered product, the rows of the earliest and latest second, plus every row over the answer cap; `visits` carries each name''s whole count on its newest row. Read by loadCustomerPharmacies. See supabase/migrations/20261016180201_phoenix_crm_customer_pharmacy_feedback.sql.';
 
 --
+-- Name: phoenix_crm_customer_stands_on_another_place(uuid, uuid); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (
+    select 1
+    from public.phoenix_crm_places o
+    where o.customer_id = p_customer_id
+      and o.id <> p_place_id
+      and o.status = 'active'
+      -- A place somebody still has to decide on validates nobody yet.
+      and not exists (
+        select 1 from public.phoenix_crm_validation_reviews r
+        where r.place_id = o.id and r.status = 'pending'
+      )
+      and (
+        -- A place of his own.
+        o.shared_place_id is null
+        -- Or a seat in a building that is itself active, which its board names or a person approved.
+        or (
+          exists (
+            select 1 from public.phoenix_crm_shared_places sp
+            where sp.id = o.shared_place_id and sp.status = 'active'
+          )
+          and (
+            o.schedule_check ->> 'verdict' = 'match'
+            or exists (
+              select 1 from public.phoenix_crm_validation_reviews r
+              where r.place_id = o.id and r.status = 'approved'
+            )
+          )
+        )
+      )
+  );
+$$;
+
+ALTER FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) OWNER TO postgres;
+
+--
 -- Name: phoenix_crm_customers_clear_import_mark(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -10481,6 +10523,8 @@ begin
       set status = 'active',
           validated_at = now(),
           validated_by_hr_id = v_review.created_by_hr_id,
+          -- 2026-11-14 (validation audit): validated, so nothing waits to be captured again.
+          reopened_at = null,
           dropped_reason = null,
           dropped_note = null,
           status_changed_at = now(),
@@ -11975,9 +12019,12 @@ begin
     (p_place ->> 'device_skew_minutes')::integer,
     upper(trim(p_actor_hr_id)),
     p_is_test,
-    coalesce((p_place ->> 'pin_lat')::double precision, (p_place ->> 'lat')::double precision),
-    coalesce((p_place ->> 'pin_lon')::double precision, (p_place ->> 'lon')::double precision),
-    coalesce((p_place ->> 'pin_accuracy_meters')::numeric, (p_place ->> 'accuracy_meters')::numeric),
+    -- 2026-11-14 (validation audit): a seating has NO reading of its own. The building's point is already in
+    -- lat/lon above; copied into the pin as well, it read as a second reading taken at this customer's own
+    -- place. Null, exactly as the Super Admin's move leaves it (phoenix_crm_seat_places_in_venue).
+    case when v_source = 'shared_place' then null else coalesce((p_place ->> 'pin_lat')::double precision, (p_place ->> 'lat')::double precision) end,
+    case when v_source = 'shared_place' then null else coalesce((p_place ->> 'pin_lon')::double precision, (p_place ->> 'lon')::double precision) end,
+    case when v_source = 'shared_place' then null else coalesce((p_place ->> 'pin_accuracy_meters')::numeric, (p_place ->> 'accuracy_meters')::numeric) end,
     (p_place ->> 'photo_lat')::double precision,
     (p_place ->> 'photo_lon')::double precision,
     (p_place ->> 'photo_accuracy_meters')::numeric,
@@ -13525,7 +13572,7 @@ CREATE FUNCTION public.phoenix_crm_place_on_trusted_point(p jsonb) RETURNS jsonb
     AS $$
 declare
   v_seat text := nullif(trim(coalesce(p ->> 'seat_id', '')), '');
-  v_actor text := nullif(trim(coalesce(p ->> 'actor_hr_id', '')), '');
+  v_actor text := upper(nullif(trim(coalesce(p ->> 'actor_hr_id', '')), ''));
   v_is_test boolean := coalesce((p ->> 'is_test')::boolean, false);
   v_loc jsonb := p -> 'location';
   v_basis jsonb := p -> 'basis';
@@ -13611,9 +13658,34 @@ begin
     set status = 'active',
         validated_at = now(),
         validated_by_hr_id = v_actor,
+        reopened_at = null,
         status_changed_at = now(),
         updated_at = now()
     where c.id = v_customer.id;
+
+    -- 2026-11-14 (validation audit): a drop request still open on him is withdrawn, exactly as the rep's own
+    -- validation and the approval of a held one withdraw it. This door validated him and left it standing.
+    with withdrawn as (
+      update public.phoenix_crm_list_requests q
+      set status = 'withdrawn',
+          stage = null,
+          decided_at = now(),
+          decided_by_hr_id = v_actor,
+          decision_note = 'Validated instead of dropped'
+      where q.seat_id = v_seat
+        and q.is_test = v_is_test
+        and q.kind = 'drop'
+        and q.status = 'pending'
+        and (
+          q.customer_id = v_customer.id
+          or (q.customer_id is null and v_customer.reference_contact_crm_id is not null and q.reference_contact_crm_id = v_customer.reference_contact_crm_id)
+        )
+      returning q.id
+    )
+    insert into public.phoenix_crm_list_events (seat_id, customer_id, request_id, event_type, actor_hr_id, details, is_test)
+    select v_seat, v_customer.id, w.id, 'request_withdrawn', v_actor, jsonb_build_object('why', 'validated'), v_is_test
+    from withdrawn w;
+
     v_event := 'customer_validated';
   else
     v_event := 'place_added';
@@ -15903,6 +15975,40 @@ begin
     raise exception 'phoenix_crm:place_not_retired';
   end if;
 
+  -- 🔴 "APPROVE IT AFTER ALL" STOPS AND SAYS WHY (owner, 14 Nov 2026: "Stop and say why"). It used to
+  -- bring the place back whatever had happened since the refusal, and 15 customers ended with two active
+  -- places at one door, one with an active seat in a retired building. Each of the three is refused by
+  -- name before anything is written; he clears what is in the way, then approves.
+  if v_customer.status = 'dropped' then
+    raise exception 'phoenix_crm:restore_customer_dropped';
+  end if;
+  if v_place.shared_place_id is not null and exists (
+    select 1 from public.phoenix_crm_shared_places sp
+    where sp.id = v_place.shared_place_id and sp.status = 'retired'
+  ) then
+    raise exception 'phoenix_crm:restore_building_retired';
+  end if;
+  -- The same door, captured again since: another active place of this customer in the same building, or
+  -- within 150 m of this one (the line the Google check draws round a door).
+  if exists (
+    select 1 from public.phoenix_crm_places o
+    where o.customer_id = v_place.customer_id
+      and o.id <> v_place.id
+      and o.status = 'active'
+      and (
+        (v_place.shared_place_id is not null and o.shared_place_id = v_place.shared_place_id)
+        or (
+          v_place.lat is not null and v_place.lon is not null and o.lat is not null and o.lon is not null
+          and 6371000 * 2 * asin(least(1, sqrt(
+            power(sin(radians(o.lat - v_place.lat) / 2), 2)
+            + cos(radians(v_place.lat)) * cos(radians(o.lat)) * power(sin(radians(o.lon - v_place.lon) / 2), 2)
+          ))) <= 150
+        )
+      )
+  ) then
+    raise exception 'phoenix_crm:restore_door_captured_again';
+  end if;
+
   -- The corrected name first, so everything below reads the customer as he now is. The rep's own rename:
   -- the name key, the contact's name row and the history move exactly as when he saves a name himself, and
   -- a second customer of the same name is the administrator's to judge, never a refusal.
@@ -15948,6 +16054,8 @@ begin
     set status = 'active',
         validated_at = now(),
         validated_by_hr_id = v_review.created_by_hr_id,
+        -- A validated customer carries no stamp of an old refusal (validation audit, 14 Nov 2026).
+        reopened_at = null,
         dropped_reason = null,
         dropped_note = null,
         status_changed_at = now(),
@@ -18291,7 +18399,10 @@ begin
     -- `reopened_at` is deliberately NOT set, unlike the rejected-venue path: he is not being asked to
     -- photograph this doctor's own door again — that would undo the seating. What is waiting is the
     -- BUILDING's timetable.
-    if v_venue.schedule_photo_path is null then
+    -- 🔴 UNLESS HE IS VALIDATED AT A PLACE OF HIS OWN (owner, 14 Nov 2026: "Stay in on his clinic") — then
+    -- only this seat waits for the building's timetable, and he stays in the KPIs.
+    if v_venue.schedule_photo_path is null
+       and not public.phoenix_crm_customer_stands_on_another_place(v_place.customer_id, v_place.id) then
       update public.phoenix_crm_customers c
       set status = 'pending',
           validated_at = null,
@@ -18955,6 +19066,7 @@ declare
   v_verdict text;
   v_validated jsonb := '[]'::jsonb;
   v_held jsonb := '[]'::jsonb;
+  v_kept jsonb := '[]'::jsonb;
 begin
   if v_seat is null or v_actor is null or nullif(p ->> 'shared_place_id', '') is null then
     raise exception 'phoenix_crm:bad_input';
@@ -18992,6 +19104,16 @@ begin
       where r.place_id = v_row.place_id and r.status = 'approved'
     ) then
       null;
+    elsif (v_venue.schedule_photo_path is null or v_verdict in ('other_name', 'no_schedule'))
+      and public.phoenix_crm_customer_stands_on_another_place(v_row.customer_id, v_row.place_id) then
+      -- 🔴 HE STAYS IN ON HIS OWN CLINIC (owner, 14 Nov 2026: "Stay in on his clinic"). A customer this
+      -- board does not name, who is also validated at a place of his own, keeps his validation: only the
+      -- seat is in doubt, and Place checks shows it for a person to decide. Nothing is written on him.
+      if v_row.customer_status = 'active' then
+        v_kept := v_kept || jsonb_build_array(jsonb_build_object(
+          'customer_id', v_row.customer_id, 'customer_name', v_row.customer_name, 'place_id', v_row.place_id
+        ));
+      end if;
     elsif v_venue.schedule_photo_path is null or v_verdict in ('other_name', 'no_schedule') then
       -- Out of the KPIs: either the building has no board at all, or its board was read and does not
       -- name him. His visits are still planned, sent and recorded — that is his ruling.
@@ -19038,6 +19160,8 @@ begin
         set status = 'active',
             validated_at = now(),
             validated_by_hr_id = v_actor,
+            -- A validated customer carries no stamp of an old refusal (validation audit, 14 Nov 2026).
+            reopened_at = null,
             status_changed_at = now(),
             updated_at = now()
         where c.id = v_row.customer_id
@@ -19070,7 +19194,8 @@ begin
     'shared_place_name', v_venue.name,
     'timetable_on_file', v_venue.schedule_photo_path is not null,
     'validated', v_validated,
-    'held', v_held
+    'held', v_held,
+    'kept', v_kept
   );
 end;
 $$;
@@ -19790,9 +19915,13 @@ begin
     end if;
     -- His location is already with the Super Admin: a second validation would add a second place
     -- beside the one being checked.
+    -- 2026-11-14 (validation audit): only while that place is still ACTIVE. A rejected building retires the
+    -- place and leaves its review pending, and this door then answered location_in_review to the very
+    -- capture it had asked for.
     if v_ref.customer_id is not null and exists (
       select 1 from public.phoenix_crm_validation_reviews r
       where r.customer_id = v_ref.customer_id and r.status = 'pending'
+        and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
     ) then
       raise exception 'phoenix_crm:location_in_review';
     end if;
@@ -19805,6 +19934,9 @@ begin
         set status = 'active',
             validated_at = now(),
             validated_by_hr_id = v_actor,
+            -- 2026-11-14 (validation audit): validated, so nothing waits to be captured again. Left standing,
+            -- the stamp of an old refusal came back with its age the next time he was sent to To validate.
+            reopened_at = null,
             dropped_reason = null,
             dropped_note = null,
             status_changed_at = now(),
@@ -19878,9 +20010,12 @@ begin
     if v_customer.status <> 'pending' then
       raise exception 'phoenix_crm:already_validated';
     end if;
+    -- 2026-11-14 (validation audit): as at the reference door above, a review of a place that is no longer
+    -- active holds nobody.
     if exists (
       select 1 from public.phoenix_crm_validation_reviews r
       where r.customer_id = v_customer.id and r.status = 'pending'
+        and exists (select 1 from public.phoenix_crm_places pl where pl.id = r.place_id and pl.status = 'active')
     ) then
       raise exception 'phoenix_crm:location_in_review';
     end if;
@@ -19890,6 +20025,7 @@ begin
       set status = 'active',
           validated_at = now(),
           validated_by_hr_id = v_actor,
+          reopened_at = null,
           status_changed_at = now(),
           phone = coalesce(v_phone, c.phone),
           updated_at = now()
@@ -31483,44 +31619,76 @@ declare
     'applied_value', 'applied_amount', 'applied_dates', 'decided_by'
   ];
   o       jsonb := '{}'::jsonb;
-  n       jsonb := to_jsonb(new);
+  n       jsonb := '{}'::jsonb;
+  r       jsonb;
   col     text;
   fields  text[] := '{}';
   before_ jsonb := '{}'::jsonb;
   after_  jsonb := '{}'::jsonb;
+  v_actor text;
 begin
-  if tg_op = 'UPDATE' then
+  if tg_op in ('UPDATE', 'DELETE') then
     o := to_jsonb(old);
   end if;
+  if tg_op in ('INSERT', 'UPDATE') then
+    n := to_jsonb(new);
+  end if;
+  r := case when tg_op = 'DELETE' then o else n end;
 
   foreach col in array deciding loop
-    after_ := after_ || jsonb_build_object(col, n -> col);
+    if tg_op <> 'INSERT' then before_ := before_ || jsonb_build_object(col, o -> col); end if;
+    if tg_op <> 'DELETE' then after_  := after_  || jsonb_build_object(col, n -> col); end if;
     if tg_op = 'UPDATE' then
-      before_ := before_ || jsonb_build_object(col, o -> col);
       if (o -> col) is distinct from (n -> col) then
         fields := array_append(fields, col);
       end if;
-    elsif jsonb_typeof(n -> col) <> 'null' then
+    -- An insert or a delete counts only what a person filled in. The placeholder service.ts
+    -- inserts for every new candidate — Pending, '' reason, '' note, nothing else — is not a
+    -- decision, and logging it would hold every candidate by deductions_audit's RESTRICT key.
+    elsif coalesce(jsonb_typeof(r -> col), 'null') <> 'null'
+          and (r -> col) not in ('""'::jsonb, '[]'::jsonb)
+          and not (col = 'decision_status' and r ->> col = 'Pending') then
       fields := array_append(fields, col);
     end if;
   end loop;
 
-  if tg_op = 'UPDATE' and array_length(fields, 1) is null then
+  if array_length(fields, 1) is null then
     return null;
+  end if;
+
+  -- WHO made THIS write: the person the request names, exactly as the employee and salary logs
+  -- read it.
+  begin
+    v_actor := nullif(nullif(current_setting('request.headers', true), '')::json ->> 'x-phoenix-actor-hr-id', '');
+  exception when others then
+    v_actor := null;
+  end;
+  -- The row's own decided_by is whoever decided LAST, not whoever is writing now. It stands in
+  -- only when this write is what set it: an insert, or an update that moved decided_by or
+  -- decided_at. A note edited by someone the request does not name is recorded with no actor,
+  -- never under the decider's name.
+  if v_actor is null
+     and (tg_op = 'INSERT'
+          or (tg_op = 'UPDATE'
+              and ((o -> 'decided_by') is distinct from (n -> 'decided_by')
+                   or (o -> 'decided_at') is distinct from (n -> 'decided_at')))) then
+    v_actor := nullif(r ->> 'decided_by', '');
   end if;
 
   insert into public.deductions_audit (candidate_id, actor_hr_id, action, detail)
   values (
-    new.candidate_id,
-    new.decided_by,
-    case when tg_op = 'INSERT' then 'decision_recorded' else 'decision_changed' end,
+    (r ->> 'candidate_id')::uuid,
+    v_actor,
+    case tg_op when 'INSERT' then 'decision_recorded'
+               when 'UPDATE' then 'decision_changed'
+               else 'decision_deleted' end,
     jsonb_build_object(
-      'decision_id', new.id,
+      'decision_id', r -> 'id',
       'changed_fields', to_jsonb(fields),
       'before', case when tg_op = 'INSERT' then null else before_ end,
-      'after', after_,
-      'decided_at', new.decided_at,
-      'actor_role_at_decision', new.actor_role_at_decision
+      'after', case when tg_op = 'DELETE' then null else after_ end,
+      'decided_at', r -> 'decided_at',
+      'actor_role_at_decision', r -> 'actor_role_at_decision'
     )
   );
 
@@ -31534,7 +31702,7 @@ ALTER FUNCTION public.phx_log_deduction_decision_change() OWNER TO postgres;
 -- Name: FUNCTION phx_log_deduction_decision_change(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_log_deduction_decision_change() IS 'AFTER INSERT OR UPDATE ROW trigger on public.deductions_decisions: appends the decision before and after to the append-only public.deductions_audit (actions decision_recorded, decision_changed).';
+COMMENT ON FUNCTION public.phx_log_deduction_decision_change() IS 'AFTER INSERT, UPDATE and DELETE row trigger on public.deductions_decisions: appends the decision before and after to the append-only public.deductions_audit (decision_recorded, decision_changed, decision_deleted). An untouched Pending placeholder is not logged. The actor is the person the request names; the row''s decided_by only when this write set it.';
 
 --
 -- Name: phx_log_employee_change(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -31552,7 +31720,11 @@ declare
     'social_insurance', 'taxes', 'social_insurance_wage',
     'bank_account', 'national_id', 'social_insurance_number', 'medical_insurance_number',
     'health_card_number', 'kaab_elamaal_number', 'mobile_number', 'personal_email',
-    'residence_address', 'birth_date'
+    'residence_address', 'birth_date',
+    'residence_city', 'residence_area', 'birth_place',
+    'kaab_elamaal_issuer', 'kaab_elamaal_issue_date', 'kaab_elamaal_refund',
+    'cv_path', 'cv_file_name', 'photo_path',
+    'exit_reason', 'bank_name'
   ];
   o        jsonb := '{}'::jsonb;
   n        jsonb := '{}'::jsonb;
@@ -38999,12 +39171,12 @@ CREATE FUNCTION public.phx_refuse_audit_trail_change() RETURNS trigger
     AS $$
 begin
   raise exception
-    'The % decision trail is append-only. % is refused.',
+    'The % history is append-only. % is refused.',
     tg_table_name, tg_op
     using hint =
-      'These rows are the record behind real payments, and held settlements are '
-      'reconstructed from them. Supersede a wrong decision with a NEW row. To '
-      'remove one, drop this trigger deliberately in a migration.';
+      'A history row records what happened, and payroll''s and deductions'' trails are the record '
+      'behind real payments. Supersede a wrong one with a NEW row. To remove one, drop this '
+      'trigger deliberately in a migration, with the owner told first.';
   return null;  -- unreachable; kept so the row-level signature stays honest
 end;
 $$;
@@ -39015,31 +39187,7 @@ ALTER FUNCTION public.phx_refuse_audit_trail_change() OWNER TO postgres;
 -- Name: FUNCTION phx_refuse_audit_trail_change(); Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON FUNCTION public.phx_refuse_audit_trail_change() IS 'Refuses UPDATE, DELETE and TRUNCATE on an append-only decision trail. Binds the table owner, which a REVOKE does not.';
-
---
--- Name: phx_refuse_history_change(); Type: FUNCTION; Schema: public; Owner: postgres
---
-
-CREATE FUNCTION public.phx_refuse_history_change() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-begin
-  raise exception 'The % history is append-only. % is refused.', tg_table_name, tg_op
-    using hint = 'A history row records what happened. To remove one, drop this trigger '
-                 'deliberately in a migration, with the owner told first.';
-  return null;
-end;
-$$;
-
-ALTER FUNCTION public.phx_refuse_history_change() OWNER TO postgres;
-
---
--- Name: FUNCTION phx_refuse_history_change(); Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON FUNCTION public.phx_refuse_history_change() IS 'Refuses UPDATE, DELETE and TRUNCATE on an append-only history table. Binds the table owner, which a REVOKE does not.';
+COMMENT ON FUNCTION public.phx_refuse_audit_trail_change() IS 'Refuses UPDATE, DELETE and TRUNCATE on an append-only history: automated_payroll_audit, deductions_audit and employee_change_log. Binds the table owner, which a REVOKE does not.';
 
 --
 -- Name: phx_refuse_publication_delete(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -40065,6 +40213,59 @@ end;
 $$;
 
 ALTER FUNCTION public.phx_report_it_set_dashboard_access(p_hr_id text, p_grant boolean, p_actor_hr_id text, p_metadata jsonb) OWNER TO postgres;
+
+--
+-- Name: phx_report_it_set_status(uuid, text, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb DEFAULT '{}'::jsonb) RETURNS text
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_number text;
+begin
+  if p_report_id is null then
+    raise exception 'Validation: a report is required.' using errcode = '22023';
+  end if;
+  if nullif(btrim(p_actor_hr_id), '') is null then
+    raise exception 'Validation: the person making the change is required.' using errcode = '22023';
+  end if;
+  if not (
+    (p_from = 'received' and p_to = 'under_assessment')
+    or (p_from = 'under_assessment' and p_to = 'closed')
+  ) then
+    raise exception 'Validation: a report cannot move from % to %.', p_from, p_to using errcode = '22023';
+  end if;
+
+  update public.report_it_reports
+     set status = p_to,
+         assessment_started_at = case when p_to = 'under_assessment' then now() else assessment_started_at end,
+         assessed_by_hr_id = case when p_to = 'under_assessment' then p_actor_hr_id else assessed_by_hr_id end,
+         closed_at = case when p_to = 'closed' then now() else closed_at end,
+         closed_by_hr_id = case when p_to = 'closed' then p_actor_hr_id else closed_by_hr_id end
+   where id = p_report_id
+     and status = p_from
+  returning report_number into v_number;
+
+  -- Not found, or someone else already moved it: nothing changed, so nothing is logged.
+  if v_number is null then
+    return null;
+  end if;
+
+  insert into public.report_it_audit_logs (report_id, actor_hr_id, action, metadata)
+  values (
+    p_report_id,
+    p_actor_hr_id,
+    'status_changed',
+    coalesce(p_metadata, '{}'::jsonb) || jsonb_build_object('from', p_from, 'to', p_to, 'reportNumber', v_number)
+  );
+
+  return v_number;
+end;
+$$;
+
+ALTER FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) OWNER TO postgres;
 
 --
 -- Name: phx_reserve_offer_employee_hr_id(uuid); Type: FUNCTION; Schema: public; Owner: postgres
@@ -44615,21 +44816,37 @@ declare
   v_line_name text;
   v_area_name text;
 begin
+  -- Which path provisioned this case. INSERT keeps the original label so existing rows and any
+  -- reader keying on it are unaffected; a later correction is labelled distinctly so the audit
+  -- trail never claims the hire trigger produced it.
   v_source := case when tg_op = 'INSERT' then 'hire_trigger' else 'hire_update_trigger' end;
 
+  -- Guard: need identity + a hire date to anchor the window.
   if new.hr_id is null or new.hire_date is null then
     return new;
   end if;
+  -- Guard: skip already-exited employees.
   if lower(coalesce(new.employment_status, 'active')) in ('terminated', 'resigned', 'inactive') then
     return new;
   end if;
-  if position('medical rep' in lower(coalesce(new.job_title, ''))) = 0 then
+  -- Guard: FIELD ROLES ONLY (owner, 13-14 Nov 2026, replacing the 2026-07-17 Medical-Reps-only rule):
+  -- a Medical Representative or a District / Senior District / Regional / National Sales Manager.
+  -- Office and head-office roles never get a case automatically. Substring match, so title variants
+  -- ("Senior Medical Representative", "Senior District Manager") are covered. Same list as
+  -- PROBATION_FIELD_ROLE_TITLES in src/lib/probation/intelligence/cases.ts.
+  if lower(coalesce(new.job_title, '')) !~ '(medical rep|district manager|district sales manager|regional sales manager|national sales manager)' then
     return new;
   end if;
+  -- Guard: only provision hires still inside the 90-day window (protects bulk imports of
+  -- long-tenured staff from spawning spurious cases). Compared against Cairo's calendar day,
+  -- not the DB session's (UTC) - see 20260725130000.
   if (new.hire_date + interval '90 days')::date <= (now() at time zone 'Africa/Cairo')::date then
     return new;
   end if;
 
+  -- The line and the area are LINKS on the employee row (line_id, area_id); the name columns that
+  -- used to sit beside them were dropped. Read the name through the link - a missing link yields a
+  -- NULL name, never an error.
   select l.name into v_line_name from public.lines l where l.id = new.line_id;
   select a.name into v_area_name from public.areas a where a.id = new.area_id;
 
@@ -44644,11 +44861,12 @@ begin
     )
     on conflict (employee_hr_id) do nothing;
   exception when others then
+    -- Provisioning must NEVER block a hire, or an ordinary employee edit. Record and continue.
     begin
       insert into public.probation_provisioning_failures (employee_hr_id, source, error_message)
       values (new.hr_id, v_source, sqlerrm);
     exception when others then
-      null;
+      null; -- even the failure-log insert must not break the write
     end;
   end;
 
@@ -44748,6 +44966,28 @@ END;
 $$;
 
 ALTER FUNCTION public.protect_base_salary() OWNER TO postgres;
+
+--
+-- Name: report_it_lifecycle_defaults(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.report_it_lifecycle_defaults() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+begin
+  if new.status is null or new.status = 'submitted' then
+    new.status := 'received';
+  end if;
+  if new.due_at is null then
+    new.due_at := coalesce(new.created_at, now())
+      + case when new.is_serious then interval '15 days' else interval '90 days' end;
+  end if;
+  return new;
+end;
+$$;
+
+ALTER FUNCTION public.report_it_lifecycle_defaults() OWNER TO postgres;
 
 --
 -- Name: report_it_set_updated_at(); Type: FUNCTION; Schema: public; Owner: postgres
@@ -47219,8 +47459,19 @@ declare
   v_snap     record;
   v_pk       text[];
   v_now_rows integer;
-  v_sql      text;
   v_pre      jsonb;
+  v_rel      regclass;
+  v_cols     text;   -- every column a row can be given: not dropped, not generated
+  v_t_cols   text;   -- the same, read from the live row
+  v_s_cols   text;   -- the same, read from the snapshot row
+  v_pk_list  text;
+  v_pk_t     text;
+  v_pk_s     text;
+  v_removed  integer;
+  v_inserted integer;
+  v_role     text;
+  v_fk       record;
+  v_orphans  bigint;
 begin
   select pt.pk_columns into v_pk
   from recovery.protected_tables pt
@@ -47248,8 +47499,10 @@ begin
 
   if p_dry_run then
     return query select v_snap.id, v_snap.taken_at, v_now_rows, v_snap.row_count, false,
-      format('DRY RUN. Would replace %s live row(s) with %s row(s) from %s. '
-             'Re-run with p_dry_run => false to apply. A pre-image is taken automatically.',
+      format('DRY RUN. Would put %s live row(s) back to the %s row(s) of %s: a row the snapshot does '
+             'not hold, or holds differently, is removed and the snapshot''s row inserted, with the '
+             'table''s triggers held off. Refused if a row elsewhere would be left pointing at '
+             'nothing. Re-run with p_dry_run => false to apply. A pre-image is taken automatically.',
              v_now_rows, v_snap.row_count, v_snap.taken_at)::text;
     return;
   end if;
@@ -47259,18 +47512,87 @@ begin
   insert into recovery.restore_preimages (source_schema, source_table, payload, restored_to_snapshot_id)
   values (p_schema, p_table, v_pre, v_snap.id);
 
-  -- DELETE, not TRUNCATE: TRUNCATE ignores deferred foreign keys, and check-migrations.mjs
-  -- refuses an unannotated one.
-  set constraints all deferred;
-  execute format('delete from %I.%I', p_schema, p_table);
+  v_rel := format('%I.%I', p_schema, p_table)::regclass;
+  select string_agg(quote_ident(a.attname), ', ' order by a.attnum),
+         string_agg('t.' || quote_ident(a.attname), ', ' order by a.attnum),
+         string_agg('s.' || quote_ident(a.attname), ', ' order by a.attnum)
+    into v_cols, v_t_cols, v_s_cols
+    from pg_attribute a
+   where a.attrelid = v_rel and a.attnum > 0 and not a.attisdropped and a.attgenerated = '';
+  select string_agg(quote_ident(c), ', '),
+         string_agg('t.' || quote_ident(c), ', '),
+         string_agg('s.' || quote_ident(c), ', ')
+    into v_pk_list, v_pk_t, v_pk_s
+    from unnest(v_pk) as c;
+
+  -- A restore puts rows back; it is not a business event. Replica mode holds off the table's own
+  -- triggers and the foreign-key actions for the two statements below: no guard refuses them, no
+  -- trigger writes elsewhere or stamps updated_at, nothing cascades. It is a SET LOCAL statement
+  -- because set_config() is refused for this parameter on Supabase; a failure anywhere below
+  -- rolls the setting back with everything else.
+  v_role := current_setting('session_replication_role');
+  set local session_replication_role = 'replica';
+
+  -- Never an empty-and-refill, and never an update in place. A row the snapshot does not hold, or
+  -- holds differently, goes first — every one of them before any row is put back, so a unique
+  -- value that moved between two surviving rows cannot collide with a row not yet restored.
   execute format(
-    'insert into %I.%I select * from jsonb_populate_recordset(null::%I.%I, $1)',
-    p_schema, p_table, p_schema, p_table) using v_snap.payload;
+    'delete from %I.%I t where not exists ('
+    'select 1 from jsonb_populate_recordset(null::%I.%I, $1) s '
+    'where (%s) = (%s) and row(%s)::text is not distinct from row(%s)::text)',
+    p_schema, p_table, p_schema, p_table, v_pk_t, v_pk_s, v_t_cols, v_s_cols) using v_snap.payload;
+  get diagnostics v_removed = row_count;
+
+  -- The snapshot's rows that are not there now. A row left alone above is skipped by its key.
+  execute format(
+    'insert into %I.%I as t (%s) overriding system value '
+    'select %s from jsonb_populate_recordset(null::%I.%I, $1) s on conflict (%s) do nothing',
+    p_schema, p_table, v_cols, v_s_cols, p_schema, p_table, v_pk_list) using v_snap.payload;
+  get diagnostics v_inserted = row_count;
+
+  execute format('set local session_replication_role = %L', v_role);
+
+  -- The foreign keys were held off, so they are checked here, by hand, in both directions: this
+  -- table's rows pointing out, and every other table's rows pointing in. MATCH SIMPLE checks a
+  -- row only when all its key columns are set; MATCH FULL when any is.
+  for v_fk in
+    select c.conname,
+           format('%I.%I', cn.nspname, cc.relname) as child,
+           format('%I.%I', pn.nspname, pc.relname) as parent,
+           (select string_agg(format('c.%I = p.%I', ca.attname, pa.attname), ' and ' order by k.ord)
+              from unnest(c.conkey, c.confkey) with ordinality as k(child_att, parent_att, ord)
+              join pg_attribute ca on ca.attrelid = c.conrelid and ca.attnum = k.child_att
+              join pg_attribute pa on pa.attrelid = c.confrelid and pa.attnum = k.parent_att) as same_key,
+           (select string_agg(format('c.%I is not null', ca.attname),
+                              case when c.confmatchtype = 'f' then ' or ' else ' and ' end order by k.ord)
+              from unnest(c.conkey) with ordinality as k(child_att, ord)
+              join pg_attribute ca on ca.attrelid = c.conrelid and ca.attnum = k.child_att) as key_is_set
+      from pg_constraint c
+      join pg_class cc on cc.oid = c.conrelid
+      join pg_namespace cn on cn.oid = cc.relnamespace
+      join pg_class pc on pc.oid = c.confrelid
+      join pg_namespace pn on pn.oid = pc.relnamespace
+     where c.contype = 'f' and (c.conrelid = v_rel or c.confrelid = v_rel)
+     order by c.conname
+  loop
+    execute format(
+      'select count(*) from %s c where (%s) and not exists (select 1 from %s p where %s)',
+      v_fk.child, v_fk.key_is_set, v_fk.parent, v_fk.same_key) into v_orphans;
+    if v_orphans > 0 then
+      raise exception
+        'recovery.restore_table: putting %.% back to % would leave % row(s) of % pointing at a row of % that is not there (key %). Nothing was changed.',
+        p_schema, p_table, v_snap.taken_at, v_orphans, v_fk.child, v_fk.parent, v_fk.conname
+        using errcode = 'foreign_key_violation',
+              hint = 'Restore the other table to the same moment in the same transaction, or choose another time.';
+    end if;
+  end loop;
 
   return query select v_snap.id, v_snap.taken_at, v_now_rows, v_snap.row_count, true,
-    format('APPLIED. %s row(s) replaced by %s row(s) from %s. Pre-image kept in '
-           'recovery.restore_preimages. Check any identity sequence before inserting again.',
-           v_now_rows, v_snap.row_count, v_snap.taken_at)::text;
+    format('APPLIED. %s live row(s) put back to the %s row(s) of %s: %s removed, %s inserted. The '
+           'table''s triggers were held off, so nothing was logged, stamped or written elsewhere: '
+           'this restore is recorded in recovery.restore_preimages, and anything derived from the '
+           'table needs its own sync. Check any identity sequence before inserting again.',
+           v_now_rows, v_snap.row_count, v_snap.taken_at, v_removed, v_inserted)::text;
 end;
 $_$;
 
@@ -49824,6 +50146,83 @@ ALTER TABLE public.app_auth_credentials OWNER TO postgres;
 COMMENT ON TABLE public.app_auth_credentials IS 'WebAuthn/passkey public keys for biometric sign-in. Contains NO biometric data — the fingerprint/face never leaves the device. Revoke by setting revoked_at, never by deleting, so an audit can still explain how a past login succeeded.';
 
 --
+-- Name: app_auth_second_step; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.app_auth_second_step (
+    login_id text NOT NULL,
+    secret_sealed text,
+    pending_secret_sealed text,
+    pending_created_at timestamp with time zone,
+    enrolled_at timestamp with time zone,
+    last_used_step bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.app_auth_second_step OWNER TO postgres;
+
+--
+-- Name: TABLE app_auth_second_step; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.app_auth_second_step IS 'The second sign-in step (authenticator app) of a sign-in account. One row per account that set it up or started to. The key is sealed, never plain. Server only: RLS on, no policy. Deleting a row returns the account to "not set up".';
+
+--
+-- Name: COLUMN app_auth_second_step.secret_sealed; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.app_auth_second_step.secret_sealed IS 'The authenticator key in use, sealed with AES-256-GCM (secret-box.ts, PHOENIX_AUTH_SECRET). NULL until set-up is finished.';
+
+--
+-- Name: COLUMN app_auth_second_step.last_used_step; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON COLUMN public.app_auth_second_step.last_used_step IS 'The newest 30-second step a code was accepted for; a code is good once.';
+
+--
+-- Name: app_auth_second_step_recovery_codes; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.app_auth_second_step_recovery_codes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    login_id text NOT NULL,
+    code_hash text NOT NULL,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.app_auth_second_step_recovery_codes OWNER TO postgres;
+
+--
+-- Name: TABLE app_auth_second_step_recovery_codes; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.app_auth_second_step_recovery_codes IS 'One-time recovery codes for the second sign-in step, ten per account, stored as keyed fingerprints. used_at marks a spent code. Server only: RLS on, no policy.';
+
+--
+-- Name: app_auth_trusted_devices; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.app_auth_trusted_devices (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    login_id text NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
+);
+
+ALTER TABLE public.app_auth_trusted_devices OWNER TO postgres;
+
+--
+-- Name: TABLE app_auth_trusted_devices; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.app_auth_trusted_devices IS 'Browsers that passed the second sign-in step and are not asked again until expires_at (30 days). Holds the fingerprint of the cookie token, never the token. Server only: RLS on, no policy.';
+
+--
 -- Name: app_auth_users; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -50697,7 +51096,7 @@ COMMENT ON COLUMN public.ats_cv_folders.name_key IS 'Normalised name (lower-case
 
 CREATE TABLE public.ats_cv_lifecycle_share_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    token text NOT NULL,
+    token text,
     surface text DEFAULT 'feed'::text NOT NULL,
     label text,
     created_by_hr_id text NOT NULL,
@@ -50709,6 +51108,8 @@ CREATE TABLE public.ats_cv_lifecycle_share_links (
     access_count integer DEFAULT 0 NOT NULL,
     refused_count integer DEFAULT 0 NOT NULL,
     last_refused_at timestamp with time zone,
+    token_hash text NOT NULL,
+    token_preview text NOT NULL,
     CONSTRAINT ats_cv_lifecycle_share_links_surface_check CHECK ((surface = 'feed'::text))
 );
 
@@ -59556,6 +59957,35 @@ ALTER SEQUENCE public.headwind_enrollment_template_id_seq OWNER TO postgres;
 --
 
 ALTER SEQUENCE public.headwind_enrollment_template_id_seq OWNED BY public.headwind_enrollment_template.id;
+
+--
+-- Name: hire_handoff_steps; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.hire_handoff_steps (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    employee_hr_id text NOT NULL,
+    source text NOT NULL,
+    step text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT hire_handoff_steps_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT hire_handoff_steps_source_check CHECK ((source = ANY (ARRAY['add_employee'::text, 'joining_form'::text]))),
+    CONSTRAINT hire_handoff_steps_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'done'::text, 'failed'::text, 'gave_up'::text]))),
+    CONSTRAINT hire_handoff_steps_step_check CHECK ((step = ANY (ARRAY['offer_link'::text, 'candidate_hired'::text, 'login'::text, 'cv'::text, 'mailbox_task'::text, 'offer_stamp'::text, 'acceptance_audit'::text])))
+);
+
+ALTER TABLE public.hire_handoff_steps OWNER TO postgres;
+
+--
+-- Name: TABLE hire_handoff_steps; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.hire_handoff_steps IS 'One row per new employee and hand-off step (REC-027). Both hiring doors write it; the hourly hire-handoff-reconcile job retries failed and stale pending rows and gives up after five attempts; failed and gave_up rows reach the Needs You board. context holds ids only, never a password, token, salary or national id. Service role only.';
 
 --
 -- Name: hiring_document_definitions; Type: TABLE; Schema: public; Owner: postgres
@@ -68408,9 +68838,15 @@ CREATE TABLE public.report_it_reports (
     suspected_medicines text[] DEFAULT '{}'::text[] NOT NULL,
     reactions_summary text[] DEFAULT '{}'::text[] NOT NULL,
     report_payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    status text DEFAULT 'submitted'::text NOT NULL,
+    status text DEFAULT 'received'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    assessment_started_at timestamp with time zone,
+    assessed_by_hr_id text,
+    closed_at timestamp with time zone,
+    closed_by_hr_id text,
+    due_at timestamp with time zone,
+    CONSTRAINT report_it_reports_status_check CHECK ((status = ANY (ARRAY['received'::text, 'under_assessment'::text, 'closed'::text])))
 );
 
 ALTER TABLE public.report_it_reports OWNER TO postgres;
@@ -70716,9 +71152,10 @@ CREATE VIEW public.v_employee_change_log WITH (security_invoker='true') AS
     l.masked_fields,
     l.old_values,
     l.new_values
-   FROM ((public.employee_change_log l
+   FROM (((public.employee_change_log l
      LEFT JOIN public.employees e ON ((e.hr_id = l.employee_hr_id)))
-     LEFT JOIN public.employees a ON ((a.hr_id = COALESCE(l.actor_hr_id, l.actor_login_id))));
+     LEFT JOIN public.app_auth_users u ON (((l.actor_hr_id IS NULL) AND (u.login_id = l.actor_login_id))))
+     LEFT JOIN public.employees a ON ((a.hr_id = COALESCE(l.actor_hr_id, u.hr_id))));
 
 ALTER VIEW public.v_employee_change_log OWNER TO postgres;
 
@@ -72158,6 +72595,41 @@ ALTER TABLE ONLY public.app_auth_credentials
 
 ALTER TABLE ONLY public.app_auth_credentials
     ADD CONSTRAINT app_auth_credentials_pkey PRIMARY KEY (id);
+
+--
+-- Name: app_auth_second_step app_auth_second_step_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_second_step
+    ADD CONSTRAINT app_auth_second_step_pkey PRIMARY KEY (login_id);
+
+--
+-- Name: app_auth_second_step_recovery_codes app_auth_second_step_recovery_codes_login_id_code_hash_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_second_step_recovery_codes
+    ADD CONSTRAINT app_auth_second_step_recovery_codes_login_id_code_hash_key UNIQUE (login_id, code_hash);
+
+--
+-- Name: app_auth_second_step_recovery_codes app_auth_second_step_recovery_codes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_second_step_recovery_codes
+    ADD CONSTRAINT app_auth_second_step_recovery_codes_pkey PRIMARY KEY (id);
+
+--
+-- Name: app_auth_trusted_devices app_auth_trusted_devices_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_trusted_devices
+    ADD CONSTRAINT app_auth_trusted_devices_pkey PRIMARY KEY (id);
+
+--
+-- Name: app_auth_trusted_devices app_auth_trusted_devices_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_trusted_devices
+    ADD CONSTRAINT app_auth_trusted_devices_token_hash_key UNIQUE (token_hash);
 
 --
 -- Name: app_auth_users app_auth_users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -73950,6 +74422,20 @@ ALTER TABLE ONLY public.headwind_enrollment_template
 
 ALTER TABLE ONLY public.headwind_enrollment_template
     ADD CONSTRAINT headwind_enrollment_template_pkey PRIMARY KEY (id);
+
+--
+-- Name: hire_handoff_steps hire_handoff_steps_employee_step_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.hire_handoff_steps
+    ADD CONSTRAINT hire_handoff_steps_employee_step_key UNIQUE (employee_hr_id, step);
+
+--
+-- Name: hire_handoff_steps hire_handoff_steps_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.hire_handoff_steps
+    ADD CONSTRAINT hire_handoff_steps_pkey PRIMARY KEY (id);
 
 --
 -- Name: hiring_document_definitions hiring_document_definitions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
@@ -77494,6 +77980,12 @@ CREATE INDEX app_auth_credentials_login_id_idx ON public.app_auth_credentials US
 CREATE INDEX app_auth_credentials_revoked_at_idx ON public.app_auth_credentials USING btree (revoked_at);
 
 --
+-- Name: app_auth_trusted_devices_login_id_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX app_auth_trusted_devices_login_id_idx ON public.app_auth_trusted_devices USING btree (login_id);
+
+--
 -- Name: app_auth_users_auth_email_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -77888,6 +78380,12 @@ CREATE INDEX ats_cv_lifecycle_share_links_creator_idx ON public.ats_cv_lifecycle
 --
 
 CREATE INDEX ats_cv_lifecycle_share_links_last_refused_idx ON public.ats_cv_lifecycle_share_links USING btree (last_refused_at DESC) WHERE (last_refused_at IS NOT NULL);
+
+--
+-- Name: ats_cv_lifecycle_share_links_token_hash_key; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE UNIQUE INDEX ats_cv_lifecycle_share_links_token_hash_key ON public.ats_cv_lifecycle_share_links USING btree (token_hash);
 
 --
 -- Name: ats_files_content_md5_idx; Type: INDEX; Schema: public; Owner: postgres
@@ -80158,6 +80656,12 @@ CREATE INDEX geo_locations_address_idx ON public.geo_locations USING btree (addr
 CREATE UNIQUE INDEX geo_locations_source_key_idx ON public.geo_locations USING btree (source_type, source_key);
 
 --
+-- Name: hire_handoff_steps_unfinished_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX hire_handoff_steps_unfinished_idx ON public.hire_handoff_steps USING btree (status, updated_at) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text, 'gave_up'::text]));
+
+--
 -- Name: hiring_document_definitions_active_name_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -81026,6 +81530,12 @@ CREATE INDEX idx_report_it_created_at ON public.report_it_reports USING btree (c
 --
 
 CREATE INDEX idx_report_it_is_serious ON public.report_it_reports USING btree (is_serious);
+
+--
+-- Name: idx_report_it_open_due; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_report_it_open_due ON public.report_it_reports USING btree (due_at) WHERE (status = ANY (ARRAY['received'::text, 'under_assessment'::text]));
 
 --
 -- Name: idx_report_it_status; Type: INDEX; Schema: public; Owner: postgres
@@ -85525,7 +86035,7 @@ CREATE TRIGGER email_templates_updated_at BEFORE UPDATE ON public.email_template
 -- Name: employee_change_log employee_change_log_no_delete; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
-CREATE TRIGGER employee_change_log_no_delete BEFORE DELETE ON public.employee_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_history_change();
+CREATE TRIGGER employee_change_log_no_delete BEFORE DELETE ON public.employee_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
 
 ALTER TABLE public.employee_change_log ENABLE ALWAYS TRIGGER employee_change_log_no_delete;
 
@@ -85533,7 +86043,7 @@ ALTER TABLE public.employee_change_log ENABLE ALWAYS TRIGGER employee_change_log
 -- Name: employee_change_log employee_change_log_no_truncate; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
-CREATE TRIGGER employee_change_log_no_truncate BEFORE TRUNCATE ON public.employee_change_log FOR EACH STATEMENT EXECUTE FUNCTION public.phx_refuse_history_change();
+CREATE TRIGGER employee_change_log_no_truncate BEFORE TRUNCATE ON public.employee_change_log FOR EACH STATEMENT EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
 
 ALTER TABLE public.employee_change_log ENABLE ALWAYS TRIGGER employee_change_log_no_truncate;
 
@@ -85541,7 +86051,7 @@ ALTER TABLE public.employee_change_log ENABLE ALWAYS TRIGGER employee_change_log
 -- Name: employee_change_log employee_change_log_no_update; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
-CREATE TRIGGER employee_change_log_no_update BEFORE UPDATE ON public.employee_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_history_change();
+CREATE TRIGGER employee_change_log_no_update BEFORE UPDATE ON public.employee_change_log FOR EACH ROW EXECUTE FUNCTION public.phx_refuse_audit_trail_change();
 
 ALTER TABLE public.employee_change_log ENABLE ALWAYS TRIGGER employee_change_log_no_update;
 
@@ -85852,6 +86362,12 @@ CREATE TRIGGER phoenix_crm_visits_shared_place_cap BEFORE INSERT ON public.phoen
 CREATE TRIGGER phx_deductions_decisions_history AFTER INSERT OR UPDATE ON public.deductions_decisions FOR EACH ROW EXECUTE FUNCTION public.phx_log_deduction_decision_change();
 
 --
+-- Name: deductions_decisions phx_deductions_decisions_history_delete; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER phx_deductions_decisions_history_delete AFTER DELETE ON public.deductions_decisions FOR EACH ROW EXECUTE FUNCTION public.phx_log_deduction_decision_change();
+
+--
 -- Name: deductions_decisions phx_deductions_decisions_refuse_locked; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -85958,6 +86474,12 @@ CREATE TRIGGER phx_prevent_terminal_employee_reactivation BEFORE UPDATE ON publi
 --
 
 CREATE TRIGGER record_conversation_comments_no_update BEFORE UPDATE ON public.record_conversation_comments FOR EACH ROW EXECUTE FUNCTION public.phx_record_conversation_comments_no_update();
+
+--
+-- Name: report_it_reports report_it_reports_lifecycle_defaults; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER report_it_reports_lifecycle_defaults BEFORE INSERT ON public.report_it_reports FOR EACH ROW EXECUTE FUNCTION public.report_it_lifecycle_defaults();
 
 --
 -- Name: report_it_reports report_it_reports_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
@@ -86418,6 +86940,27 @@ ALTER TABLE ONLY au.sos_area_crosswalk
 
 ALTER TABLE ONLY au.sos_official_line_map
     ADD CONSTRAINT sos_official_line_map_line_code_fkey FOREIGN KEY (line_code) REFERENCES au.lines(line_code) ON DELETE RESTRICT;
+
+--
+-- Name: app_auth_second_step app_auth_second_step_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_second_step
+    ADD CONSTRAINT app_auth_second_step_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_users(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: app_auth_second_step_recovery_codes app_auth_second_step_recovery_codes_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_second_step_recovery_codes
+    ADD CONSTRAINT app_auth_second_step_recovery_codes_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_second_step(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+--
+-- Name: app_auth_trusted_devices app_auth_trusted_devices_login_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_auth_trusted_devices
+    ADD CONSTRAINT app_auth_trusted_devices_login_id_fkey FOREIGN KEY (login_id) REFERENCES public.app_auth_second_step(login_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 --
 -- Name: app_auth_users app_auth_users_auth_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -87895,6 +88438,13 @@ ALTER TABLE ONLY public.field_workforce_compliance_decisions
 
 ALTER TABLE ONLY public.field_workforce_compliance_monthly_summary
     ADD CONSTRAINT field_workforce_compliance_monthly_summary_import_id_fkey FOREIGN KEY (import_id) REFERENCES public.field_workforce_compliance_imports(id) ON DELETE CASCADE;
+
+--
+-- Name: hire_handoff_steps hire_handoff_steps_employee_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.hire_handoff_steps
+    ADD CONSTRAINT hire_handoff_steps_employee_hr_id_fkey FOREIGN KEY (employee_hr_id) REFERENCES public.employees(hr_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 --
 -- Name: hiring_document_employee_notes hiring_document_employee_notes_employee_hr_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
@@ -90203,6 +90753,24 @@ ALTER TABLE public.app_auth_credentials ENABLE ROW LEVEL SECURITY;
 CREATE POLICY app_auth_credentials_service_role_all ON public.app_auth_credentials TO service_role USING (true) WITH CHECK (true);
 
 --
+-- Name: app_auth_second_step; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.app_auth_second_step ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: app_auth_second_step_recovery_codes; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.app_auth_second_step_recovery_codes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: app_auth_trusted_devices; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.app_auth_trusted_devices ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: app_auth_users; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
@@ -92461,6 +93029,12 @@ CREATE POLICY geo_locations_write_update ON public.geo_locations FOR UPDATE TO a
 --
 
 ALTER TABLE public.headwind_enrollment_template ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: hire_handoff_steps; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.hire_handoff_steps ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: hiring_document_definitions; Type: ROW SECURITY; Schema: public; Owner: postgres
@@ -94875,6 +95449,12 @@ CREATE POLICY phx_employee_probation_service_role ON public.employee_probation T
 --
 
 CREATE POLICY phx_employee_resignations_service_role ON public.employee_resignations TO service_role USING ((( SELECT auth.role() AS role) = 'service_role'::text)) WITH CHECK ((( SELECT auth.role() AS role) = 'service_role'::text));
+
+--
+-- Name: hire_handoff_steps phx_hire_handoff_steps_service_role; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY phx_hire_handoff_steps_service_role ON public.hire_handoff_steps TO service_role USING (true) WITH CHECK (true);
 
 --
 -- Name: hiring_document_definitions phx_hiring_document_definitions_service_role; Type: POLICY; Schema: public; Owner: postgres
@@ -97790,6 +98370,13 @@ REVOKE ALL ON FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id t
 GRANT ALL ON FUNCTION public.phoenix_crm_customer_pharmacy_feedback(p_seat_id text, p_is_test boolean, p_product_max integer) TO service_role;
 
 --
+-- Name: FUNCTION phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phoenix_crm_customer_stands_on_another_place(p_customer_id uuid, p_place_id uuid) TO service_role;
+
+--
 -- Name: FUNCTION phoenix_crm_customers_clear_import_mark(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -100311,13 +100898,6 @@ GRANT ALL ON FUNCTION public.phx_refuse_audit_trail_change() TO service_role;
 GRANT ALL ON FUNCTION public.phx_refuse_audit_trail_change() TO authenticated;
 
 --
--- Name: FUNCTION phx_refuse_history_change(); Type: ACL; Schema: public; Owner: postgres
---
-
-REVOKE ALL ON FUNCTION public.phx_refuse_history_change() FROM PUBLIC;
-GRANT ALL ON FUNCTION public.phx_refuse_history_change() TO service_role;
-
---
 -- Name: FUNCTION phx_refuse_publication_delete(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -100400,6 +100980,13 @@ GRANT ALL ON FUNCTION public.phx_replace_salary_batch(p_batch_id uuid, p_expecte
 
 REVOKE ALL ON FUNCTION public.phx_report_it_set_dashboard_access(p_hr_id text, p_grant boolean, p_actor_hr_id text, p_metadata jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.phx_report_it_set_dashboard_access(p_hr_id text, p_grant boolean, p_actor_hr_id text, p_metadata jsonb) TO service_role;
+
+--
+-- Name: FUNCTION phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.phx_report_it_set_status(p_report_id uuid, p_from text, p_to text, p_actor_hr_id text, p_metadata jsonb) TO service_role;
 
 --
 -- Name: FUNCTION phx_reserve_offer_employee_hr_id(p_offer_id uuid); Type: ACL; Schema: public; Owner: postgres
@@ -100934,6 +101521,13 @@ GRANT ALL ON FUNCTION public.probation_reanchor_on_hire_date_change() TO service
 REVOKE ALL ON FUNCTION public.protect_base_salary() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.protect_base_salary() TO authenticated;
 GRANT ALL ON FUNCTION public.protect_base_salary() TO service_role;
+
+--
+-- Name: FUNCTION report_it_lifecycle_defaults(); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.report_it_lifecycle_defaults() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.report_it_lifecycle_defaults() TO service_role;
 
 --
 -- Name: FUNCTION report_it_set_updated_at(); Type: ACL; Schema: public; Owner: postgres
@@ -101555,6 +102149,24 @@ GRANT ALL ON TABLE public.api_rate_limit_buckets TO service_role;
 --
 
 GRANT ALL ON TABLE public.app_auth_credentials TO service_role;
+
+--
+-- Name: TABLE app_auth_second_step; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.app_auth_second_step TO service_role;
+
+--
+-- Name: TABLE app_auth_second_step_recovery_codes; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.app_auth_second_step_recovery_codes TO service_role;
+
+--
+-- Name: TABLE app_auth_trusted_devices; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.app_auth_trusted_devices TO service_role;
 
 --
 -- Name: TABLE app_auth_users; Type: ACL; Schema: public; Owner: postgres
@@ -103285,6 +103897,12 @@ GRANT ALL ON TABLE public.headwind_enrollment_template TO service_role;
 --
 
 GRANT ALL ON SEQUENCE public.headwind_enrollment_template_id_seq TO service_role;
+
+--
+-- Name: TABLE hire_handoff_steps; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.hire_handoff_steps TO service_role;
 
 --
 -- Name: TABLE hiring_document_definitions; Type: ACL; Schema: public; Owner: postgres

@@ -683,3 +683,76 @@ This amends his 2026-10-09 "no location when a customer is seated". The point on
 - **A manager validating beside the rep, and the Super Admin's move, are not asked,** as a manager's own visit is not.
 
 **Expected.** Over the 30 days before: 427 seatings, 315 with a visit reading within 20 minutes; 299 of those (95%) within 300 m, median 34 m; 16 beyond it (10 at 300 to 1,000 m, 6 over 1 km). That reading can be up to 20 minutes from the seating, so it is a rough proxy. Pinned by `tests/phoenix-crm-seat-at-building.test.ts`.
+
+
+## The validation audit — 14 Nov 2026
+
+The owner asked for a deep audit of how a doctor and a polyclinic are validated, and for every finding to be closed. Each finding below was checked against production rows that morning (read-only), then fixed in one change. Pinned by `tests/phoenix-crm-validation-audit-timetable.test.ts`, `-door.test.ts`, `-reviews.test.ts`, `-sql.test.ts` and `-decisions.test.ts`.
+
+### The building's timetable
+
+- **"Photograph the timetable" read the photo after storing it.** A picture of a wall replaced a good board, every customer behind it was read again as "no timetable", and the settle sent the whole building out of the KPIs with nobody told. The seating door had refused that same picture since 17 Oct. The photo is now read first, and a confident "no timetable here" with nothing transcribed is refused in the retake words (`venueTimetableRefusal`). Everything else is stored as before: a board nobody could read, a timetable on a screen (his 28 Oct "Save it"), a reader that never answered. No try is counted, because nothing is seated here to hold.
+- **A saved board, or a saved move, could answer an error.** The settle after the commit threw; the rep's retry was then refused as a photo already used, and the Super Admin's move was refused as "already in a building" with its visits never measured again. Both settles are now caught and logged.
+- **A seating saved on a lost call was never read again.** The door's rule stands (no key, a lost call or no bytes never refuses and never holds). The night now reads that photograph again, up to three nights (`runLostTimetableRereads`, after the signboard pass). Found live: two customers of 21 Oct in مجمع السلام الطبي, validated on a board nobody had read. The pass walks its backlog page by page, each page starting after the last row of the one before: the backlog also keeps rows the night can never read (a building exempt from a timetable or with no board yet, a name too short to match, three re-reads spent), and a single first page would have been those same rows every night once they filled it. Its limit of 200 counts places it will read, never rows it walked past. Measured the same day: 5 rows in the backlog, 1 of them in an exempt building, so nothing had been stuck.
+  - 🔴 **It only writes the verdict on the place's own row.** No settle, no review, no notice. A customer the board does not name shows on Place checks for a person to decide.
+  - `unreadable` is an answer and is never read again by the night. A building with no board, a building declared to have no timetable, a retired building and a name too short to match are skipped.
+  - A lost call is asked about the photograph the door asked about; a row nobody has read is read against the building's board, as the building's own settle reads it. 179 of 537 seated places carry their own photograph rather than the building's board, so the two are not the same thing.
+
+### The door and the signboard retake
+
+- **The building's board on file cost the rep a try.** A reused board read as unreadable was filed like one of his own photographs, so he stood at "Try 2 of 3" before opening the camera. It is still refused with the retake words, but not filed and not counted.
+- **One photograph sent twice was counted twice.** Seven rep, building and day groups, of 387 refusals. The same photo of the same building by the same rep on the same day is now filed once.
+- **The signboard retake printed the rep's own distance in metres.** It is one fixed sentence now (`SIGNBOARD_RETAKE_AWAY_FROM_PLACE`). The Google refusal still names "within 150 m": that is the rule the reps were sent on 3 Oct, pinned by `tests/phoenix-crm-google-place-check.test.ts`.
+- **A retaken photo inherited the old photo's read count,** so a held place whose reads were spent was never read again. A new photo starts its own count (`signboardRetakeCheckToKeep`).
+- **The retake filed an integrity flag on one reading.** The stored photo is now read a second time after the reply, and the flag is filed only when the two agree (`signboardAfterSecondReading`).
+
+### Reviews and notices
+
+- **"Validate again" stayed in the bell after the customer was validated.** Only the door and the take-back of one rejection withdrew it. It is now withdrawn wherever a customer ends validated: an approval on Place checks (`decideValidationReview`, `approveValidatedPlace`), an approved building, a building brought back, and a validation shared from another line (`withdrawValidateAgainNoticeQuietly`). Found live: 105 bells on 96 customers validated after the bell.
+- **A review left pending on a retired place held the customer for ever.** Rejecting a building, or retiring a place, retires the place and leaves its review pending. The rep's row then read "checking" with no way out and his requests waited on Place checks. A pending review counts only while its place is active (`activePlaceIds`), in `loadLocationChecks`, `pendingLocationReview` and `pendingLocationReviewCustomers`. Latent: none of the 49 pending reviews that morning sat on a place that was not active.
+- **His latest answer is the row decided last, not the row created last.** A place has one review row for all time, so refusing a place approved weeks ago decides an old row today, and a newer approval of another place hid the refusal. `decidedLater` is the one comparison, used by the rep's list and by the reopened list.
+- **A second refusal of the same place reached nobody.** It raised its notice on the first refusal's key, and a key that already reached him is never delivered twice. The refusal's instant now rides on the end of the key (`attempt`); the prefix a withdrawal clears by is unchanged.
+- **A reopened customer was shown under the wrong refusal.** A customer whose own place was refused once, and whose building was refused later, showed the old reason, rep and date. Both refusals are read and the later one is shown.
+- **The waiting reviews shared one ceiling with every decision ever made.** The wide read cut the oldest rows first, which is where a review still waiting sits. Waiting rows are read on their own (ceiling 50,000); only decided rows meet the 5,000 ceiling.
+- **Refusing a validated place threw away what it was once held on.** The row's `google` record was replaced whole. The earlier record is kept under `before`, one level deep (`evidenceToKeep`). Every reader reads the top level, so nothing on a screen changes.
+- **The system's own approval asked nothing about a short name.** It now asks the same three-names gate the two deciders' button asks, and leaves the review waiting when the gate refuses (`heldReviewNeedsFullName`).
+- **A rejected or restored building left its visits unmeasured.** Refusing one place measures the customer's visits again; refusing or bringing back a whole building did not. Both now do, after the reply (`restampSeatedCustomersQuietly`). A restored building also shares each validation across the lines of the area, as one restored place does.
+
+### The database — `20261114050048_phoenix_crm_validation_audit_fixes.sql`
+
+Four functions replaced, each from the body production held that morning. No table, column, constraint, index or grant changed, and the file writes no row.
+
+- `phoenix_crm_validate_customer`: its two `location_in_review` refusals count a pending review only while that review's place is active. Without this, the door refused the very capture it had just asked for.
+- `phoenix_crm_validate_customer`, `phoenix_crm_decide_validation_review`, `phoenix_crm_place_on_trusted_point`: validating a customer clears `reopened_at`. The stamp of an old refusal used to come back, with its age, the next time he was sent to To validate by a path that stamps nothing.
+- `phoenix_crm_place_on_trusted_point`: it withdraws a drop request still open on the customer it validates, as the review's approval does, and upper-cases the actor as its siblings do.
+- `phoenix_crm_insert_place`: a seated place is written with no pin of its own. The building's point used to be copied into the pin columns, where it read as a second reading taken at that customer's place.
+
+### The owner's four decisions, 14 Nov 2026 — `20261114051314_phoenix_crm_validation_owner_decisions.sql`
+
+Asked as four questions that morning, about 05:10 Cairo. Pinned by `tests/phoenix-crm-validation-audit-decisions.test.ts`.
+
+- **"Stop and say why."** "Approve it after all" is refused, by name, when the customer was dropped (`restore_customer_dropped`), when the place sits in a retired building (`restore_building_retired`), or when the customer already has another active place at the same door, meaning the same building or within 150 m (`restore_door_captured_again`). Each has its own sentence in `server/db.ts`. Before this, 15 of 57 take-backs left a customer with two active places at one door, and one left an active seat in a retired building.
+- **"Stay in on his clinic."** A customer a building's board does not name is no longer sent out of the KPIs when he stands validated on another place: an active place of his own, or a seat in an active building that its board names or a person approved, with no decision waiting on it (`phoenix_crm_customer_stands_on_another_place`). The settle returns him under `kept` and writes nothing on him. The Super Admin's move into a building with no board follows the same rule. No live case that morning.
+- **"Record only."** The night's re-read of a timetable the door lost writes its verdict on the place's own row and nothing else. See "The building's timetable" above.
+- **The three clean-ups** he chose are recorded below.
+
+### How the two files reached the databases
+
+Both files were applied to staging with `scripts/apply-sql-file.mjs`. 🔴 **Production took them earlier than planned.** A rehearsal meant to roll back ran the files inside its own transaction, and the first file's own `commit;` committed it. Nothing was lost by it: the eight functions were read back the same morning and are the same on staging, on production and in the two files (md5 of `pg_proc.prosrc`, recorded in `ACKNOWLEDGED_EXCEPTIONS`), and each is executable by postgres and the service role only. The behaviour was then proved on production inside a transaction that did roll back, 19 checks of 19, with 0 rehearsal rows kept. Staging held 0 validation reviews and 0 buildings that day, so it could not rehearse these functions. A rehearsal script must never be handed a file that carries its own `commit`.
+
+### What was done to the data (production, 14 Nov 2026)
+
+On his three answers. Each row was copied first into `phoenix_crm_backup_20261114` (anon and authenticated revoked), and the copy was counted before anything ran: 105 notice states, 1 review, 15 pairs, 30 places, 100 visits, 5 plan lines.
+
+- **105 "Validate again" bells archived,** on 96 customers validated after the bell was raised. All 105 had been read, and none had a review waiting. After: 0 standing on a validated customer; the 264 on customers still to validate were not touched.
+- **One review corrected.** فادى عاصم الشفاء at مستشفى الشفاء التخصصي still read "rejected" from 18 Oct, though the owner seated him there on 8 Nov. It is "approved", dated to that seating, with a note and a `validation_review_approved` event that carries what it was. After: 0 rejected reviews on an active place of a validated customer.
+- **15 same-door twins merged,** found through the `place_restored` events whose reason is `validation_restored`. The older place was retired through `phoenix_crm_update_place` in his name, the newer one kept, and the older one's 30 visits moved to it through `phoenix_crm_restamp_visit_locations`. 5 plan lines followed. No visit was judged again: 0 flags changed (29 ok, 1 far before and after), and 10 distances changed, by 76 m at most, because 4 of the pairs stood 2 to 84 m apart. After: each of the 15 customers is validated with exactly one active place.
+
+### Left as it is
+
+- "Approve a review while its building is held" is not built. It needs the building's release changed in the same file (`phoenix_crm_decide_shared_place` and `phoenix_crm_restore_shared_place`); 3 of the 9 reviews pending that morning in a held building would otherwise be left pending with nothing to decide.
+- `reopened_at` is still not cleared by `phoenix_crm_decide_shared_place`, `phoenix_crm_share_line_validation`, `phoenix_crm_decide_request` and `phoenix_crm_reverse_list_request`. 237 active customers keep an old stamp; no reader shows it while they are validated.
+- The "any pending review" test is unchanged in `loadTwinWorld`, `countValidationReviewsWaiting`, `phoenix_crm_place_on_trusted_point`, `phoenix_crm_decide_shared_place` and `phoenix_crm_restore_shared_place`.
+- The seated places that already carry a copied pin keep it (no backfill).
+- One seat stands in a retired building: حضانه احمد محروس, validated, 3 visits. Reported to the owner, not changed.
+- The Google refusal still names "within 150 m", and a retake on a short-named customer raises no "waiting for you" notice.

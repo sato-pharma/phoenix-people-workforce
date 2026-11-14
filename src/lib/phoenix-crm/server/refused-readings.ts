@@ -332,6 +332,29 @@ export async function recordTimetableRefusal(input: TimetableRefusalInput): Prom
   if (!input.sharedPlaceId) return null;
   try {
     const refusedAt = new Date();
+    // Phoenix CRM validation audit, 14 Nov 2026: one photograph sent twice was filed twice and so cost
+    // two of the rep's three tries (7 rep, building and day groups held the same photo refused more than
+    // once, of 387 refusals). A try is a photograph, so the same photo of the same building by the same
+    // rep on the same Cairo visit day is filed once, and the row already there answers for it. A read
+    // that fails files as before: a count the door cannot check is never a reason to lose the refusal.
+    if (input.photoPath) {
+      const { data: filed, error: readError } = await getSupabaseAdmin()
+        .from("phoenix_crm_refused_readings")
+        .select("id")
+        .eq("shared_place_id", input.sharedPlaceId)
+        .eq("rep_hr_id", input.repHrId.toUpperCase())
+        .eq("visit_date", cairoBusinessDay(refusedAt))
+        .eq("photo_path", input.photoPath)
+        .in("reason", ["timetable_unreadable", "timetable_missing"])
+        .eq("is_test", input.isTest)
+        .limit(1);
+      if (readError) {
+        console.error("[phoenix-crm] timetable refusal not checked for a repeat", { seatId: input.seatId, message: readError.message });
+      } else {
+        const already = ((filed ?? []) as Array<{ id?: unknown }>)[0];
+        if (already && already.id) return String(already.id);
+      }
+    }
     const { data, error } = await getSupabaseAdmin()
       .from("phoenix_crm_refused_readings")
       .insert({

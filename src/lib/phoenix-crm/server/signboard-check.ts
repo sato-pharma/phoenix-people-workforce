@@ -931,6 +931,11 @@ export async function readPlaceSignboard(input: {
  *
  * `downloadPhoto` is legitimate here and only here: the sweep runs as the system over rows it found
  * itself, which is the one case that function's own doc permits.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: the rep's signboard retake (`retakePlaceSignboard`) asks
+ * this too, once, after its reply — the second reading a flag needs before it is filed. The path it
+ * hands over is the one the server has just written on the place row, after the door's scoped read of
+ * the same photo, so it is still the system reading a stored place photo.
  */
 export async function readStoredPlaceSignboard(
   input: {

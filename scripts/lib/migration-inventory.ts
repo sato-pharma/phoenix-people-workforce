@@ -2507,6 +2507,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // only (proacl {postgres=X,service_role=X}, not security definer). 0 reports existed, so no row changed;
   // re-applying is a no-op.
   "20261113202407_report_it_lifecycle.sql",
+  // Applied 14 Nov 2026 through scripts/apply-sql-file.mjs: staging first, then production with the aws-1 pooler.
+  // No ledger row on either. 🔴 Production took it earlier than planned: a rehearsal meant to roll back ran this
+  // file inside its transaction, and the file's own `commit;` committed it. Read back the same morning on BOTH
+  // projects, md5(prosrc): phoenix_crm_validate_customer 840e6dd3a80a0f9bb88b1d5acc8a1464,
+  // phoenix_crm_decide_validation_review 69ffc695771d1894e25c49ef68d762e2, phoenix_crm_place_on_trusted_point
+  // 8d2b86912b0c8213750d198025117307, phoenix_crm_insert_place 3e91888ef7e42d084516534ce8b3e89a — the four
+  // digests the file's header says pg_proc must answer. Functions only, no row written; re-applying is a no-op.
+  "20261114050048_phoenix_crm_validation_audit_fixes.sql",
+  // Applied 14 Nov 2026 through scripts/apply-sql-file.mjs: staging first, then production with the aws-1 pooler,
+  // in the same run as the file above. No ledger row on either. Read back on BOTH projects, md5(prosrc):
+  // phoenix_crm_customer_stands_on_another_place ec430b2dafcca7d7e76a5713543f8c32, phoenix_crm_restore_validation
+  // 45a6d5b94c9f2bd3cb496126f6cb7fd1, phoenix_crm_settle_venue_timetable d2fc33965779a3e61aef37f3ca284f1d,
+  // phoenix_crm_seat_places_in_venue cd15cb34ee45f907a1e726015b99fb11; each is executable by postgres and
+  // service_role only. Proven on production inside a rolled-back transaction, 19 checks of 19 (docs/
+  // phoenix-crm-shared-places.md, "The validation audit"). Functions only; re-applying is a no-op.
+  "20261114051314_phoenix_crm_validation_owner_decisions.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

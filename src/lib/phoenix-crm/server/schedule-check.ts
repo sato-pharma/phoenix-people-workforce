@@ -219,6 +219,8 @@ export async function readScheduleBoard(input: {
   repHrId: string;
   isTest: boolean;
   reusedTimetable?: boolean;
+  /** Only the night's re-read sets it: nobody is waiting, so the reader gets longer than the door's 8 s. */
+  timeoutMs?: number;
 }): Promise<ScheduleBoardReading> {
   if (input.reusedTimetable) {
     const stored = await storedBoardReading(input.photoPath, input.isTest);
@@ -237,7 +239,7 @@ export async function readScheduleBoard(input: {
   ).catch(() => null);
   if (!bytes) return { kind: "unread", check: unjudged("no_bytes") };
 
-  return readScheduleBytes(bytes);
+  return readScheduleBytes(bytes, input.timeoutMs ? { timeoutMs: input.timeoutMs } : {});
 }
 
 /**

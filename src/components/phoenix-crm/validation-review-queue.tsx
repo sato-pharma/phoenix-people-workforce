@@ -213,8 +213,9 @@ function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
  * 🔴 IT POSTS THE SAME DECISION THE PENDING ROW POSTS, to the same route: the database lets a REJECT
  * through on an approved review since migration 20261015212903, so this is one reject path and one
  * audit shape, and the review row KEEPS the evidence the system originally held it on. The other way
- * round — refusing the same place from "Validations the system did not question" — overwrites that
- * evidence with `refused_by_admin`, which is exactly why this control exists here.
+ * round — refusing the same place from "Validations the system did not question" — rewrites the record
+ * as `refused_by_admin` and keeps that evidence one level down, under `before` (14 Nov 2026), which is
+ * why this control exists here.
  */
 function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: string }) {
   const done = usePlaceCheckDone();

@@ -36,6 +36,7 @@ import { resolvePlaceLocation } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { canDecideSharedPlaces } from "@/lib/phoenix-crm/server/shared-places";
 import { shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
+import { withdrawValidationNotConfirmed } from "@/lib/phoenix-crm/server/validation-reviews";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import {
   findTrustedPoint,
@@ -268,6 +269,10 @@ export async function applyTrustedPointFor(customerId: string, actorHrId: string
     settings: config.settings,
     scope: "unplaced",
   });
+  // Phoenix CRM validation audit, 14 Nov 2026: a customer validated here needs no new photo, so the
+  // "validate again" notice an earlier refusal left in the rep's bell is answered. This door validated
+  // him and left the bell asking. Never throws.
+  await withdrawValidationNotConfirmed(preview.customerId);
   // Validated on a trusted point, so validated on the other two lines of his area too (line-twins.ts).
   await shareAcrossLinesQuietly(preview.customerId);
   return { placeId: String(result.place_id), customerId: String(result.customer_id), event: String(result.event ?? ""), preview };
