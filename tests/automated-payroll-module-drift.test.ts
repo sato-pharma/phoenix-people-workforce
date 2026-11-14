@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  chargedFieldFor,
   columnLabel,
   describeModuleDrift,
   describeModuleDriftBlock,
@@ -12,8 +13,10 @@ import {
   RECOMMENDED_AT_CONFIRM_KEY,
   snapshotFromSummary,
   snapshotRecommendations,
+  stepsWhereModuleMoved,
   takeCurrentModuleFigures,
 } from "../src/lib/automated-payroll/module-drift.ts";
+import { stepOpenDuringPart2 } from "../src/lib/automated-payroll/module-sourced-steps.ts";
 import type { StepRow } from "../src/lib/automated-payroll/types.ts";
 
 /**
@@ -744,5 +747,78 @@ export function runAutomatedPayrollModuleDriftTests() {
   assert.ok(
     !wizardSource.includes("stepDefinition(row.stepKey).title"),
     "and neither may go back to naming the step alone",
+  );
+
+  // ---- A LEAVER'S UNPAID VACATION IS CHARGED FROM unpaidVacations (live October 2026, 14 Nov) -----
+  // Part 1 Unpaid Vacation keeps a leaver's figure in `unpaidVacations`, so `p1odVacationValue` is
+  // empty however much is charged. Reading the empty column said 0.00 and blocked Part 2 on Esraa
+  // Awad Hemida Maatouq's 241.94, which the run already charged.
+  const leaverVacation = (lifecycle: string) =>
+    detectModuleDrift({
+      stepKey: "p1_unpaid_vacation",
+      rows: [
+        row({
+          hrId: "PD-0017",
+          lifecycle: lifecycle as StepRow["lifecycle"],
+          recommended: { p1odVacationDays: 0, p1odVacationValue: 241.94 },
+          values: { p1odVacationDays: 0, p1odVacationValue: 241.94 },
+        }),
+      ],
+      snapshot: {},
+      chargedByCompact: { pd0017: { unpaidVacations: 241.94 } },
+      part1Confirmed: true,
+    });
+  const leaverReport = leaverVacation("leaver");
+  assert.equal(leaverReport.staleCharges, 0, "a leaver already charged the module's figure does not block Part 2");
+  const leaverRow = leaverReport.rows.find((entry) => entry.field === "p1odVacationValue");
+  assert.equal(leaverRow?.charged, 241.94, "the charge is read from the leaver's real column");
+  assert.equal(leaverRow?.chargedField, "unpaidVacations", "and the row says which column, for the cell history");
+  assert.equal(
+    leaverVacation("regular").staleCharges,
+    1,
+    "a two-part employee's p1odVacationValue IS the charged column, so an empty one still blocks",
+  );
+  assert.equal(chargedFieldFor("p1_unpaid_vacation", "p1odVacationValue", "leaver"), "unpaidVacations");
+  assert.equal(chargedFieldFor("p1_unpaid_vacation", "p1odVacationValue", "regular"), "p1odVacationValue");
+  assert.equal(chargedFieldFor("p1_crm", "p1odCrmValue", "leaver"), "p1odCrmValue", "only Unpaid Vacation is remapped");
+
+  // ---- THE DRIFT BLOCK'S "CONFIRM IT AGAIN" HAS A LIVE BUTTON ----------------------------------
+  // The step was confirmed, so it was not "re-opened", and it stayed locked during Part 2.
+  const confirmedStates = [{ stepKey: "p1_unpaid_vacation" as const, status: "confirmed" }];
+  assert.equal(stepOpenDuringPart2("p1_unpaid_vacation", confirmedStates), false, "unmoved: locked");
+  assert.deepEqual(stepsWhereModuleMoved(leaverVacation("regular")), ["p1_unpaid_vacation"]);
+  assert.equal(
+    stepOpenDuringPart2("p1_unpaid_vacation", confirmedStates, stepsWhereModuleMoved(leaverVacation("regular"))),
+    true,
+    "a confirmed Part 1 step whose module figure moved is open during Part 2",
+  );
+  assert.equal(
+    stepOpenDuringPart2("p1_holds", [{ stepKey: "p1_holds", status: "confirmed" }], ["p1_holds"]),
+    false,
+    "never a Part 1 step the module does not feed",
+  );
+  assert.equal(
+    stepOpenDuringPart2("p2_crm", [{ stepKey: "p2_crm", status: "confirmed" }], ["p2_crm"]),
+    false,
+    "and never a Part 2 step — this rule is about Part 1 only",
+  );
+  const unbackedOnly = detectModuleDrift({
+    stepKey: "p1_other_deductions",
+    rows: [row({ hrId: "B-9", recommended: { p1odOtherValue: 0 }, values: { p1odOtherValue: 500 } })],
+    snapshot: {},
+    chargedByCompact: { b9: { p1odOtherValue: 500 } },
+    part1Confirmed: true,
+  });
+  assert.deepEqual(stepsWhereModuleMoved(unbackedOnly), [], "a module that never moved re-opens nothing");
+  const serviceSource = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  assert.ok(
+    serviceSource.includes("const moved = await moduleMovedOnStep(access, run, stepKey, states);"),
+    "the server opens the same steps the screen does, or the button saves into a refusal",
+  );
+  assert.ok(
+    readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8").includes(
+      "stepOpenDuringPart2(stepKey, stepStates, moduleDrift ? stepsWhereModuleMoved(moduleDrift) : [])",
+    ),
+    "the wizard unlocks a moved step",
   );
 }

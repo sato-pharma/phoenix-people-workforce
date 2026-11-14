@@ -10,6 +10,7 @@ import {
   isUnbackedCharge,
   MODULE_SOURCED_STEP_KEYS,
   pricedMoneyField,
+  stepsWhereModuleMoved,
 } from "./module-sourced-steps.ts";
 import type { DraftRow, StepKey, StepRow } from "./types.ts";
 
@@ -50,6 +51,7 @@ export {
   isUnbackedCharge,
   MODULE_SOURCED_STEP_KEYS,
   pricedMoneyField,
+  stepsWhereModuleMoved,
 };
 
 /**
@@ -82,6 +84,8 @@ export type ModuleDriftRow = {
   proposedNow: number;
   /** What the run will actually charge — the figure on its own row. */
   charged: number;
+  /** The DraftRow key `charged` was read from, when it is not `field` (a leaver's Unpaid Vacation). */
+  chargedField?: string;
   /**
    * True when the charged figure is not the one the module proposed at confirm. It still stands and
    * never blocks; this row is context, not a problem.
@@ -114,6 +118,22 @@ export type ChargeSource = {
 /** The draft column a step field is stored in — a step field's key IS its DraftRow key, camelCase. */
 export function draftColumnForField(field: string): string {
   return field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+/**
+ * The DraftRow key a step field is really charged from for this employee.
+ *
+ * Normally the field's own key. The one exception is a LEAVER on Part 1 Unpaid Vacation: that step
+ * reads and writes a leaver's figure in `unpaidVacations` (recommendP1UnpaidVacation, and the remap in
+ * run-service's saveStep), so `p1odVacationValue` stays empty for them however much is charged.
+ * Reading the empty column reported a charge of 0.00 and blocked Part 2 on a deduction the run already
+ * took: Esraa Awad Hemida Maatouq, October 2026, 241.94 sitting in `unpaid_vacations` (14 Nov 2026).
+ */
+export function chargedFieldFor(stepKey: StepKey, field: string, lifecycle: StepRow["lifecycle"]): string {
+  if (stepKey === "p1_unpaid_vacation" && field === "p1odVacationValue" && lifecycle === "leaver") {
+    return "unpaidVacations";
+  }
+  return field;
 }
 
 /** Classify a history entry's reason into who set the figure. */
@@ -273,9 +293,11 @@ export function detectModuleDrift(input: {
       // number is NULL, which the sheet pays as 0.00 — it is not an invitation to fall back to the
       // recommendation. Without the draft (an older caller omits the map) the previous reading stands.
       const draftFields = compact ? input.chargedByCompact?.[compact] : undefined;
+      // A leaver's Unpaid Vacation lives in another column — see `chargedFieldFor`.
+      const chargedField = chargedFieldFor(input.stepKey, field, row.lifecycle);
       const charged = draftFields
-        ? typeof draftFields[field] === "number" && Number.isFinite(draftFields[field])
-          ? draftFields[field]
+        ? typeof draftFields[chargedField] === "number" && Number.isFinite(draftFields[chargedField])
+          ? draftFields[chargedField]
           : 0
         : typeof row.values?.[field] === "number"
           ? (row.values[field] as number)
@@ -329,6 +351,7 @@ export function detectModuleDrift(input: {
         proposedAtConfirm: atConfirm,
         proposedNow: now,
         charged,
+        ...(chargedField !== field ? { chargedField } : {}),
         overridden: charged !== atConfirm,
       });
     }
