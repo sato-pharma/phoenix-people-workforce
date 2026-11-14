@@ -175,9 +175,11 @@ export async function runReconciliationCheckList(
   const startedAt = clock.now();
   const deadline = startedAt + Math.max(1_000, options.runBudgetMs ?? DEFAULT_RUN_BUDGET_MS);
 
-  // A lane is one unit of work: its checks run one after another in a single slot. Lanes start first —
-  // they are the longest units, and starting the longest job first is what keeps the whole night
-  // inside the run budget. Results still come back in registry order.
+  // A lane is one unit of work: its checks run one after another in a single slot. Lanes run AFTER every
+  // other check has finished, never beside one (owner, 14 Nov 2026: "Run sales months last"). The first
+  // night the sales months started first, the two in-app notification checks — 43-45 s on a quiet night —
+  // ran out their 60 s while the months loaded closings beside them. Results still come back in registry
+  // order.
   const lanes = new Map<string, number[]>();
   const singles: number[][] = [];
   checks.forEach((check, index) => {
@@ -190,9 +192,11 @@ export async function runReconciliationCheckList(
     lanes.set(check.lane, lane);
   });
   const results = new Array<ReconciliationCheckResult>(checks.length);
-  await mapWithConcurrency([...lanes.values(), ...singles], concurrency, async (unit) => {
+  const runUnit = async (unit: number[]) => {
     for (const index of unit) results[index] = await runOne(checks[index], timeoutMs, deadline, clock);
-  });
+  };
+  await mapWithConcurrency(singles, concurrency, runUnit);
+  await mapWithConcurrency([...lanes.values()], concurrency, runUnit);
 
   const counts = summarizeReconciliationResults(results);
   return {

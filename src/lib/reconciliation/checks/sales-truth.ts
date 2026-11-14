@@ -23,7 +23,7 @@ import {
 //
 // ONE CHECK PER MONTH, because one month costs three closing loads per line (10-14 s measured from
 // the laptop on 14 Nov 2026) and the runner abandons a check after 60 s. They share one lane, so they
-// never load closings side by side. Twelve months in one check
+// never load closings side by side, and the lane runs only after every other check has finished. Twelve months in one check
 // would never finish. A month's check keeps its id for ever (`sales-truth-2026-09`), so a difference is
 // filed against the month it is about, night after night.
 //
@@ -36,8 +36,9 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * One lane, so the months run one after another in one of the runner's slots while the other checks
- * carry on (types.ts, `lane`). Three months at once took 25-60 s each from the laptop, October past the
+ * One lane, so the months run one after another, after every other check has finished (types.ts, `lane`;
+ * owner, 14 Nov 2026). On the first night, run beside them, they pushed the two in-app notification
+ * checks past their 60 s. Three months at once took 25-60 s each from the laptop, October past the
  * 60 s limit; one at a time they take 10-14 s.
  */
 export const SALES_TRUTH_LANE = "sales-truth";
@@ -200,7 +201,7 @@ const ownMonths = salesTruthOwnMonths();
 
 /**
  * Newest month first, so that if a night's run ever reaches its overall time budget it is the oldest,
- * long-settled months that wait for tomorrow. The lane starts at the beginning of the run (runner.ts).
+ * long-settled months that wait for tomorrow. The lane runs once every other check is done (runner.ts).
  */
 export const salesTruthReconciliationChecks: ReconciliationCheck[] = [
   ...[...ownMonths].reverse().map(monthCheck),

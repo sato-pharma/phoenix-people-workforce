@@ -196,9 +196,13 @@ export async function runSalesTruthDeclaredTests(): Promise<void> {
     assert.deepEqual(all.slice(-ids.length), ids, "the sales truth checks run last, after every payroll check");
   }
 
-  // A lane runs its checks one at a time, in one slot, while the other slots carry on.
+  // A lane runs its checks one at a time, and only once every other check has finished: on 14 Nov 2026
+  // the months, run beside the others, pushed the two in-app notification checks past their 60 s.
   {
     let active = 0;
+    const singleDone: number[] = [];
+    let laneStart = Number.POSITIVE_INFINITY;
+    let clockTick = 0;
     let most = 0;
     const order: string[] = [];
     const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -212,11 +216,13 @@ export async function runSalesTruthDeclaredTests(): Promise<void> {
       async run() {
         order.push(`start ${id}`);
         if (lane) {
+          laneStart = Math.min(laneStart, clockTick++);
           active += 1;
           most = Math.max(most, active);
         }
         await tick();
         if (lane) active -= 1;
+        else singleDone.push(clockTick++);
         return { left: { source: "a", value: "1" }, right: { source: "b", value: "1" }, holds: true, detail: "agrees" };
       },
     });
@@ -224,7 +230,12 @@ export async function runSalesTruthDeclaredTests(): Promise<void> {
     const ran = await runReconciliationCheckList(checks, { concurrency: 3 });
     assert.equal(most, 1, "two checks of one lane never run at the same time");
     assert.deepEqual(ran.results.map((result) => result.id), ["one", "two", "m1", "m2", "m3", "three"], "results come back in registry order");
-    assert.equal(order[0], "start m1", "the lane starts first — it is the longest unit of the night");
+    assert.deepEqual(
+      order.slice(-3),
+      ["start m1", "start m2", "start m3"],
+      "the lane starts only after every other check — it never loads closings beside one",
+    );
+    assert.ok(singleDone.every((done) => done < laneStart), "no check without a lane is still running when the lane starts");
     assert.ok(ran.results.every((result) => result.status === "holds"));
   }
 }

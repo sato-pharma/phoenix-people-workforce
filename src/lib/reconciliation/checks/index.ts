@@ -21,6 +21,6 @@ export const reconciliationChecks: ReconciliationCheck[] = [
   ...recruitmentReconciliationChecks,
   ...directOrdersReconciliationChecks,
   ...phoenixCrmPlacesReconciliationChecks,
-  // One lane, one month at a time; the runner starts it first (sales-truth.ts, runner.ts).
+  // One lane, one month at a time, after every other check has finished (sales-truth.ts, runner.ts).
   ...salesTruthReconciliationChecks,
 ];
