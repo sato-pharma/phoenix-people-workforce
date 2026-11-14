@@ -11,6 +11,7 @@ import {
   enteredOnThisStepAmount,
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
+import { STALE_STEP_OPENING } from "@/lib/automated-payroll/imports/step-file-revision";
 import { computeSettlementSummary } from "@/lib/automated-payroll/settlement-summary";
 import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration";
 import {
@@ -490,6 +491,12 @@ export function RecommendationStep({
   const [filter, setFilter] = useState<RowFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  /**
+   * The step's revision when it was loaded here (payroll audit 2026-11-14, finding 1). Sent with every
+   * save and upload: if somebody saved the step since, the server refuses rather than writing this
+   * screen's older figures over theirs. `undefined` until the first load answers.
+   */
+  const revisionRef = useRef<string | null | undefined>(undefined);
   const [preview, setPreview] = useState<StepImportPreview | null>(null);
   /**
    * The workbook the preview describes (audit finding 27). It CANNOT be read back off the file
@@ -521,6 +528,7 @@ export function RecommendationStep({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load step.");
       setRows(data.rows as StepRow[]);
+      revisionRef.current = (data.state as { updatedAt?: string } | null | undefined)?.updatedAt || null;
       setCandidates((data.candidates ?? []) as ManualRowCandidate[]);
       setRemovedManual([]);
       const run = data.run as { month?: number; year?: number } | undefined;
@@ -811,10 +819,12 @@ export function RecommendationStep({
       const res = await fetch(`/api/automated-payroll/runs/${runId}/steps/${stepKey}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ edits: toEdits(), inputMode: "inline" }),
+        body: JSON.stringify({ edits: toEdits(), inputMode: "inline", revision: revisionRef.current }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save.");
+      // This save is now the latest; the next one is judged against it.
+      revisionRef.current = typeof data.revision === "string" ? data.revision : null;
       setDirty(false);
       // The zeros have landed; re-sending them on the next save is pointless.
       setRemovedManual([]);
@@ -858,6 +868,8 @@ export function RecommendationStep({
     try {
       const form = new FormData();
       form.set("file", file);
+      // "" = the step had never been saved when it was loaded; left out until the first load answers.
+      if (revisionRef.current !== undefined) form.set("revision", revisionRef.current ?? "");
       const res = await fetch(
         `/api/automated-payroll/runs/${runId}/steps/${stepKey}/import?commit=${commit}`,
         { method: "POST", body: form },
@@ -1062,14 +1074,16 @@ export function RecommendationStep({
             size="sm"
             disabled={busy}
             onClick={async () => {
-              if (dirty) await save();
+              // The sheet is read from the SAVED figures. A refused save used to download anyway, so
+              // HR edited a file that did not hold what was on screen; it stops here, its error shown.
+              if (dirty && !(await save())) return;
               downloadFromApiRoute(`/api/automated-payroll/runs/${runId}/steps/${stepKey}/export`);
             }}
           >
-            Download xlsx
+            Download Excel
           </Button>
           <Button variant="outline" size="sm" disabled={locked || busy} onClick={() => fileRef.current?.click()}>
-            Upload edited xlsx
+            Upload edited Excel
           </Button>
           <input
             ref={fileRef}
@@ -1090,7 +1104,24 @@ export function RecommendationStep({
       </div>
 
       {error ? (
-        <div role="alert" className="break-words border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div>
+        <div role="alert" className="flex flex-col gap-2 break-words border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          {/* Somebody saved this step after it was opened here: the only way on is the newer figures. */}
+          {error.includes(STALE_STEP_OPENING) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => {
+                setPreview(null);
+                setPendingUpload(null);
+                void load();
+              }}
+            >
+              Reload the step
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {conflictRows.length > 0 && conflictKey ? (

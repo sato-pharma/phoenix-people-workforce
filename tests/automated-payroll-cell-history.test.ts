@@ -64,16 +64,25 @@ export function runAutomatedPayrollCellHistoryTests() {
     "an expense resync is recorded as the system, never as the row's last editor",
   );
 
-  // Every call to upsertDraftRows in the run service names its reason. Six writers, six reasons.
+  // Every call to upsertDraftRows in the run service names its reason. Five writers, five reasons.
+  // Reopen Part 1 writes through phx_reopen_automated_payroll_part1 (payroll audit 2026-11-14), which
+  // names its reason and its person in the SQL itself.
   const upsertCalls = runService.match(/upsertDraftRows\(/g)?.length ?? 0;
   const reasons = [
     'patch.writeReason = "step_saved"',
     'patch.writeReason = "step_confirmed"',
     'writeReason: "part1_confirmed"',
-    'writeReason: "part1_reopened"',
     'writeReason: "employee_excluded"',
     'writeReason: "employee_included"',
   ];
+  const reopenSql = readFileSync(
+    new URL("../supabase/migrations/20261114170804_automated_payroll_reopen_part1_atomically.sql", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    reopenSql.includes("write_reason = 'part1_reopened'") && reopenSql.includes("edited_by = p_actor_hr_id"),
+    "Reopen Part 1 records each cleared cell as part1_reopened, under the person who reopened it",
+  );
   for (const reason of reasons) {
     assert.ok(runService.includes(reason), `run-service must set ${reason}`);
   }

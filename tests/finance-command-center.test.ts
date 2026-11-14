@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { financeDownloadScope } from "../src/lib/automated-payroll/finance-links.ts";
+import {
+  financeDownloadScope,
+  isRealCalendarDate,
+  parseBankFileScope,
+  parseFinanceSheetScope,
+} from "../src/lib/automated-payroll/finance-links.ts";
 import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
 import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests/invoice-obligation.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
@@ -424,7 +429,8 @@ function testLandingAndNavAgree() {
 
 /**
  * 6. EACH DOWNLOAD IN ITS OWN WORDS. The finance sheet reads `part1 | full`; the FAB and CIB routes
- *    read `part1 | part2` and turn anything else into `part1`. One shared `scope=full` handed
+ *    read `part1 | part2`, and each route now REFUSES any other word (it used to read it as `part1`,
+ *    the default behind the incident below). One shared `scope=full` handed
  *    finance the PART 1 bank files under "Ready to pay" once Part 2 was confirmed (10 Aug – Nov 2026):
  *    every First Part paid a second time, never checked against the Part 2 stamp.
  */
@@ -435,10 +441,29 @@ function testReadyToPayBankFilesAskForPartTwo() {
   for (const kind of ["finance", "fab", "cib"] as const) {
     assert.equal(financeDownloadScope(kind, false), "part1", `before Part 2 is confirmed ${kind} offers Part 1`);
   }
+  // The server half (14 Nov 2026): a word the route does not know is REFUSED, never read as Part 1.
+  assert.equal(parseBankFileScope("part2"), "part2");
+  assert.equal(parseBankFileScope("part1"), "part1");
+  for (const word of ["full", "Part2", "", null, "part2 "]) {
+    assert.equal(parseBankFileScope(word), null, `HEADLINE: a bank route refuses scope=${String(word)} instead of handing out the Part 1 file`);
+  }
+  assert.equal(parseFinanceSheetScope("full"), "full");
+  assert.equal(parseFinanceSheetScope("part1"), "part1");
+  assert.equal(parseFinanceSheetScope("part2"), null, "the finance sheet has no part2 — it is refused, not read as the whole month");
+  assert.equal(isRealCalendarDate("2026-11-25"), true);
+  assert.equal(isRealCalendarDate("2028-02-29"), true, "a leap day is a real day");
+  for (const bad of ["2026-13-45", "2026-02-30", "2026-11-5", "25/11/2026"]) {
+    assert.equal(isRealCalendarDate(bad), false, `a FAB value date of ${bad} is refused`);
+  }
   for (const route of ["fab-download", "cib-download"]) {
     const source = stripComments(readFileSync(`app/api/automated-payroll/finance/${route}/route.ts`, "utf8"));
-    assert.match(source, /searchParams\.get\("scope"\) === "part2" \? "part2" : "part1"/, `${route} still reads part1 | part2`);
+    assert.match(source, /const scope = parseBankFileScope\(url\.searchParams\.get\("scope"\)\);\s*if \(!scope\) \{/, `HEADLINE: ${route} refuses a scope it does not know`);
+    assert.doesNotMatch(source, /: "part1";/, `${route} never falls back to Part 1`);
   }
+  const sheetRoute = stripComments(readFileSync("app/api/automated-payroll/finance/download/route.ts", "utf8"));
+  assert.match(sheetRoute, /const scope = parseFinanceSheetScope\(url\.searchParams\.get\("scope"\)\);\s*if \(!scope\) \{/, "the finance sheet refuses a scope it does not know");
+  const fabRoute = stripComments(readFileSync("app/api/automated-payroll/finance/fab-download/route.ts", "utf8"));
+  assert.match(fabRoute, /!isRealCalendarDate\(valueDateParam\)/, "the FAB route refuses an impossible value date");
   const dashboard = stripComments(readFileSync("src/components/admin/finance-command-center.tsx", "utf8"));
   assert.match(dashboard, /financeDownloadScope\(sheet\.key, part2Confirmed\)/, "every command-center link asks the shared rule for its scope");
   assert.doesNotMatch(dashboard, /&scope=\$\{scope\}/, "and no single scope is shared across the three downloads again");

@@ -89,14 +89,21 @@ export async function runAutomatedPayrollRunIntegrityTests() {
 
   // ---- (20) reopening Part 1 clears what confirming Part 1 stamped -------------------------------
   const reopenPart1 = bounded(runService, "export async function unconfirmPart1");
-  for (const column of ["baseForMonth: null", "ecolPaid: null", "fuelPaid: null", "daysWorked: null"]) {
+  // The clearing is done by phx_reopen_automated_payroll_part1, in one transaction (payroll audit
+  // 2026-11-14, finding 3).
+  assert.ok(reopenPart1.includes("reopenPart1Atomically("), "Reopen Part 1 goes through the one all-or-nothing call");
+  const reopenSql = readFileSync(
+    "supabase/migrations/20261114170804_automated_payroll_reopen_part1_atomically.sql",
+    "utf8",
+  );
+  for (const column of ["base_for_month = null", "ecol_paid = null", "fuel_paid = null", "days_worked = null"]) {
     assert.ok(
-      reopenPart1.includes(column),
-      `reopening Part 1 must clear ${column.split(":")[0]} — a stored figure beats the employee ` +
+      reopenSql.includes(column),
+      `reopening Part 1 must clear ${column.split(" ")[0]} — a stored figure beats the employee ` +
         "record, so leaving it refreezes the exact wrong answer the reopen was meant to correct",
     );
   }
-  assert.ok(reopenPart1.includes("firstPartFrozen: null"), "and still clear the frozen figure itself");
+  assert.ok(reopenSql.includes("first_part_frozen = null"), "and still clear the frozen figure itself");
   assert.match(reopenPart1, /stampedBasisCleared/, "the audit row says how many rows were re-derived");
 
   // ---- (18c) publish re-runs the gates against what it is about to write -------------------------

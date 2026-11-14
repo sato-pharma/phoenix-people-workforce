@@ -1,4 +1,5 @@
 import { downloadError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
+import { parseFinanceSheetScope } from "@/lib/automated-payroll/finance-links";
 import { buildFinanceSheet } from "@/lib/automated-payroll/run-service";
 
 export const runtime = "nodejs";
@@ -14,7 +15,11 @@ export async function GET(request: Request) {
     if (!Number.isInteger(month) || !Number.isInteger(year)) {
       return downloadError(request, new Error("Validation: month and year are required."));
     }
-    const scope = url.searchParams.get("scope") === "part1" ? "part1" : "full";
+    // Its own vocabulary, part1 | full — and any other word is refused rather than guessed.
+    const scope = parseFinanceSheetScope(url.searchParams.get("scope"));
+    if (!scope) {
+      return downloadError(request, new Error("Validation: scope must be part1 or full."));
+    }
     const { buffer, coverage, fileName } = await buildFinanceSheet(access, { month, year }, scope);
     // Coverage travels with the download: this workbook's TOTALS row counts money the bank files
     // may not carry, so the answer has to arrive with the file rather than be looked for.

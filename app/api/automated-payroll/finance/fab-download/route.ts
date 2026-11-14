@@ -1,4 +1,5 @@
 import { downloadError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
+import { isRealCalendarDate, parseBankFileScope } from "@/lib/automated-payroll/finance-links";
 import { buildFabSheet } from "@/lib/automated-payroll/run-service";
 
 export const runtime = "nodejs";
@@ -14,10 +15,14 @@ export async function GET(request: Request) {
     if (!Number.isInteger(month) || !Number.isInteger(year)) {
       return downloadError(request, new Error("Validation: month and year are required."));
     }
-    const scope = url.searchParams.get("scope") === "part2" ? "part2" : "part1";
+    // An unknown word is refused, never read as Part 1 — that default once paid every First Part twice.
+    const scope = parseBankFileScope(url.searchParams.get("scope"));
+    if (!scope) {
+      return downloadError(request, new Error("Validation: scope must be part1 or part2."));
+    }
     const valueDateParam = url.searchParams.get("valueDate");
-    if (valueDateParam && !/^\d{4}-\d{2}-\d{2}$/.test(valueDateParam)) {
-      return downloadError(request, new Error("Validation: valueDate must be YYYY-MM-DD."));
+    if (valueDateParam && !isRealCalendarDate(valueDateParam)) {
+      return downloadError(request, new Error("Validation: valueDate must be a real date, YYYY-MM-DD."));
     }
     const { buffer, coverage, fileName } = await buildFabSheet(access, { month, year }, scope, valueDateParam ?? undefined);
     // Coverage travels with the download: a file missing people used to arrive completely clean.
