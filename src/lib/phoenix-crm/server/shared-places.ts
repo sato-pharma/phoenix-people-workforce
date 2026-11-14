@@ -60,7 +60,7 @@ import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { countTimetableRefusalsByVenue, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import { signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
+import { buildingSignboardNow, signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseSeatedPlaceDraft,
   parseSharedPlaceDraft,
@@ -399,7 +399,7 @@ export async function createSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   await refuseReadingsApart({ place: draft.value, seatId: seat.seatId, repHrId: viewer.hrId, customerId: null, isTest });
 
   const point = placePoint(draft.value);
-  const [issuedAt, located, signboard] = await Promise.all([
+  const [issuedAt, located, signRead] = await Promise.all([
     photoSlotIssuedAt(draft.value.photoPath),
     // The one resolver a validation and a move already share, so `brick_lookup` keeps its pessimistic
     // default and a venue can never disagree with a place about which brick a point is in.
@@ -412,6 +412,9 @@ export async function createSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
       seatId: seat.seatId,
     }),
   ]);
+  // The building's own name rule on top of the reader's (owner, 14 Nov 2026, "Fix all three"): a board
+  // writing "مستشفى كفر الدوار العام" names "مستشفى كفرالدوار العام", and the brick answers for the town.
+  const signboard = buildingSignboardNow(signRead, draft.value.name, text(located.brick_name));
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_create_shared_place", {
     p: {
@@ -668,9 +671,15 @@ function readingOf(lat: unknown, lon: unknown, accuracy: unknown): SharedPlaceRe
   return latitude === null || longitude === null ? null : { lat: latitude, lon: longitude, accuracyMeters: numberOrNull(accuracy) };
 }
 
-function signboardOf(value: unknown): SharedPlaceBoardRow["signboard"] {
-  const check = value && typeof value === "object" ? (value as Row) : null;
-  if (!check || typeof check.verdict !== "string") return null;
+/**
+ * The building's sign as the board shows it: the stored check, judged again by today's building rule
+ * (`buildingSignboardNow`) so a building captured before a rule was fixed is not still recommended for
+ * REJECT on a verdict the rules no longer give. Nothing is written.
+ */
+function signboardOf(value: unknown, buildingName: string, brickName: string | null): SharedPlaceBoardRow["signboard"] {
+  const stored = value && typeof value === "object" ? (value as Row) : null;
+  if (!stored || typeof stored.verdict !== "string") return null;
+  const check = buildingSignboardNow(stored as unknown as PhoenixCrmSignboardCheck, buildingName, brickName) as unknown as Row;
   return {
     verdict: check.verdict,
     reason: text(check.reason),
@@ -781,7 +790,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         mapsLink: `https://www.google.com/maps/search/?api=1&query=${base.point.lat},${base.point.lon}`,
         photo: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
         pin: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
-        signboard: signboardOf(row.signboard_check),
+        signboard: signboardOf(row.signboard_check, String(row.name ?? ""), text(row.brick_name)),
         decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
         decidedByName: decides && text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "The administrator") : null,
         decisionNote: decides ? text(row.decision_note) : null,

@@ -130,7 +130,7 @@ export function stemWord(word: string): string {
   return stem;
 }
 
-function editDistanceAtMostOne(left: string, right: string): boolean {
+export function editDistanceAtMostOne(left: string, right: string): boolean {
   if (left === right) return true;
   if (Math.abs(left.length - right.length) > 1) return false;
   let i = 0;
@@ -168,7 +168,15 @@ export function distinctiveWords(name: string): string[] {
  * with no distinctive word at all matches nothing: "مستشفى" alone names no account.
  */
 export function listingIsAccount(customerName: string, listingName: string): boolean {
-  const wanted = distinctiveWords(customerName);
+  return wordsAreInListing(distinctiveWords(customerName), listingName);
+}
+
+/**
+ * The quorum `listingIsAccount` counts, on words already chosen (`distinctiveWords` or a narrower set).
+ * Shared with a building's own sign (`buildingNamedOnSign` in signboard-rules.ts), so the two can never
+ * disagree about what "one letter off" or "the spaces taken out" means.
+ */
+export function wordsAreInListing(wanted: readonly string[], listingName: string): boolean {
   if (wanted.length === 0) return false;
   const listingWords = normalizeName(listingName).split(" ").filter(Boolean).map(stemWord);
   const compact = normalizeName(listingName).replace(/\s+/g, "");
