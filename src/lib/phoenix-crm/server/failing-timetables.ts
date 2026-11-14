@@ -6,8 +6,9 @@
  * The list is the deciders' (the Super Admin and the SFE Manager, `canDecideValidationReviews`), on the
  * Polyclinics tab of Place checks. A district manager's board is never handed it.
  *
- * 🔴 THE DECLARATION IS THE SUPER ADMIN'S ALONE (`canDecideSharedPlaces`), and it is one guarded UPDATE
- * of the two marker columns. It validates nobody, settles nothing and tells nobody.
+ * 🔴 THE DECLARATION IS THE SUPER ADMIN'S ALONE (`canDecideSharedPlaces`), and it is one database function
+ * that writes the two marker columns and the trail row of who did it. It validates nobody, settles
+ * nothing and tells nobody.
  */
 
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -22,7 +23,7 @@ import {
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { selectByIds, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, selectByIds, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { canDecideSharedPlaces } from "@/lib/phoenix-crm/server/shared-places";
@@ -145,8 +146,11 @@ export type NoTimetableDeclaration = { sharedPlaceId: string; name: string; decl
 /**
  * Declare that one building has no timetable, or take that back.
  *
- * One UPDATE, guarded by the state it expects, so two clicks cannot both land and a building rejected
- * in the meantime is refused. Nothing else is written: no customer, no review, no notice.
+ * ONE database function, `phoenix_crm_set_shared_place_no_timetable`: it locks the building's row, sets
+ * or clears the two marker columns and writes the trail row in the same transaction (owner, 14 Nov 2026:
+ * "Record who took back"). So two clicks cannot both land, a building rejected in the meantime is
+ * refused, and a take-back keeps who took it back and whose declaration it ended. Nothing else is
+ * written: no customer, no review, no notice.
  */
 export async function setSharedPlaceNoTimetable(viewer: PhoenixCrmViewer, raw: unknown): Promise<NoTimetableDeclaration> {
   if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin declares that a building has no timetable.");
@@ -156,26 +160,17 @@ export async function setSharedPlaceNoTimetable(viewer: PhoenixCrmViewer, raw: u
   const sharedPlaceId = String(body.sharedPlaceId).toLowerCase();
   const declared = body.declared;
 
-  const stamp = new Date().toISOString();
-  const guarded = getSupabaseAdmin()
-    .from("phoenix_crm_shared_places")
-    .update(
-      declared
-        ? { timetable_exempt_at: stamp, timetable_exempt_by_hr_id: viewer.hrId, updated_at: stamp }
-        : { timetable_exempt_at: null, timetable_exempt_by_hr_id: null, updated_at: stamp },
-    )
-    .eq("id", sharedPlaceId)
-    .in("status", ["active", "held"]);
-  const { data, error } = await (declared ? guarded.is("timetable_exempt_at", null) : guarded.not("timetable_exempt_at", "is", null)).select("id, name");
-  throwIfError(error);
-  const written = ((data ?? []) as Row[])[0];
-  if (written) return { sharedPlaceId, name: String(written.name ?? ""), declared };
+  const answer = await callPhoenixCrm<Row | null>("phoenix_crm_set_shared_place_no_timetable", {
+    p: { shared_place_id: sharedPlaceId, actor_hr_id: viewer.hrId, declared },
+  });
+  const outcome = String(answer?.outcome ?? "");
+  if (outcome === "written") return { sharedPlaceId, name: String(answer?.name ?? ""), declared };
 
-  // Nothing was written: say which of the three it was, from the row as it stands now.
-  const current = await getSupabaseAdmin().from("phoenix_crm_shared_places").select("id, status, timetable_exempt_at").eq("id", sharedPlaceId).maybeSingle();
-  throwIfError(current.error);
-  const row = (current.data ?? null) as Row | null;
-  if (!row) throw notFoundError("This polyclinic or centre is no longer there. Reload the page.");
-  if (row.status === "retired") throw conflictError("This building was rejected, so there is nothing to declare on it. Reload the page.");
-  throw conflictError(declared ? "This building is already declared to have no timetable. Reload the page." : "This building is not declared to have no timetable. Reload the page.");
+  // Nothing was written, and the function says which of the three it was.
+  if (outcome === "missing") throw notFoundError("This polyclinic or centre is no longer there. Reload the page.");
+  if (outcome === "retired") throw conflictError("This building was rejected, so there is nothing to declare on it. Reload the page.");
+  if (outcome === "unchanged") {
+    throw conflictError(declared ? "This building is already declared to have no timetable. Reload the page." : "This building is not declared to have no timetable. Reload the page.");
+  }
+  throw new Error(`phoenix_crm_set_shared_place_no_timetable answered an outcome this code does not know: "${outcome}"`);
 }

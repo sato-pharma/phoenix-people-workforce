@@ -598,12 +598,13 @@ function checkAManagersPayloadCarriesNoDecider(): void {
     ["loadValidationReviews", reviews, ["decidedByName", "decisionNote"]],
     ["loadValidatedPlaces", reviews, ["decidedByName"]],
     ["loadReopenedCustomers", reviews, ["refusedByName"]],
-    ["loadSharedPlaceBoard", buildings, ["decidedByName", "decisionNote", "byName"]],
+    // `byName` twice: who declared a building has no timetable, and who took that back (14 Nov 2026).
+    ["loadSharedPlaceBoard", buildings, ["decidedByName", "decisionNote", "byName", "byName", "declaredByName"]],
   ] as const;
   for (const [name, source, fields] of loaders) {
     const body = functionBody(source, name);
     assert.match(body, /const decides = canDecideValidationReviews\(viewer\);/, `${name} asks the one predicate that decides who may read a decider`);
-    const written = [...body.matchAll(/\b(decidedByName|refusedByName|decisionNote|byName): ([^\n]*)/g)];
+    const written = [...body.matchAll(/\b(decidedByName|refusedByName|decisionNote|byName|declaredByName): ([^\n]*)/g)];
     assert.deepEqual(written.map((match) => match[1]).sort(), [...fields].sort(), `${name} writes exactly these decider fields`);
     for (const [line, field, value] of written) {
       assert.match(value, /^decides(?: \?| &&)/, `${name} sends ${field} to a viewer who decides nothing: ${line}`);

@@ -10,7 +10,7 @@ import {
   NO_TIMETABLE_DECLARE_EXPLAINER,
   type TimetableRefusal,
 } from "../src/lib/phoenix-crm/failing-timetable-rules.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Timetables that keep failing, and the Super Admin's "This building has no timetable" (owner, 14 Nov
@@ -108,17 +108,63 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     declare.includes('if (!canDecideSharedPlaces(viewer)) throw forbiddenError("Only the Super Admin declares that a building has no timetable.");'),
     "🔴 the Super Admin alone, checked before anything is read",
   );
-  assert.ok(declare.indexOf("canDecideSharedPlaces(viewer)") < declare.indexOf("getSupabaseAdmin()"), "the gate comes first");
-  assert.ok(declare.includes('.in("status", ["active", "held"])'), "🔴 a rejected building is never written");
+  assert.ok(declare.indexOf("canDecideSharedPlaces(viewer)") < declare.indexOf("callPhoenixCrm"), "the gate comes first");
+  // Owner, 14 Nov 2026: "Record who took back". The marker and its trail row are one transaction, so the
+  // app no longer writes the two columns itself: it calls the one function, and names who is doing it.
   assert.ok(
-    declare.includes('declared ? guarded.is("timetable_exempt_at", null) : guarded.not("timetable_exempt_at", "is", null)'),
-    "the update is guarded by the state it expects, so two clicks cannot both land",
+    declare.includes('callPhoenixCrm<Row | null>("phoenix_crm_set_shared_place_no_timetable", {\n    p: { shared_place_id: sharedPlaceId, actor_hr_id: viewer.hrId, declared },'),
+    "🔴 the declaration and its take-back go through the ONE database function, with who is doing it",
   );
-  assert.ok(declare.includes("{ timetable_exempt_at: stamp, timetable_exempt_by_hr_id: viewer.hrId, updated_at: stamp }"), "the two marker columns are set together");
-  assert.ok(declare.includes("{ timetable_exempt_at: null, timetable_exempt_by_hr_id: null, updated_at: stamp }"), "and cleared together");
-  for (const never of ["phoenix_crm_places", "phoenix_crm_customers", "phoenix_crm_validation_reviews", "callPhoenixCrm", "notify", "sendEmail"]) {
-    assert.ok(!declare.includes(never), `🔴 the declaration writes the marker and nothing else — it never touches ${never}`);
+  assert.equal(declare.split("callPhoenixCrm").length - 1, 1, "and that one call is the only thing it runs");
+  assert.ok(declare.includes('if (outcome === "written") return { sharedPlaceId, name: String(answer?.name ?? ""), declared };'));
+  assert.ok(declare.includes('if (outcome === "missing") throw notFoundError('), "a building that is gone is said so");
+  assert.ok(declare.includes('if (outcome === "retired") throw conflictError('), "🔴 a rejected building is refused, in words");
+  assert.ok(declare.includes('if (outcome === "unchanged") {'), "a second click is told the first one landed");
+  for (const never of ["getSupabaseAdmin", ".update(", ".insert(", "phoenix_crm_places", "phoenix_crm_customers", "phoenix_crm_validation_reviews", "notify", "sendEmail"]) {
+    assert.ok(!declare.includes(never), `🔴 the declaration writes the marker and its trail and nothing else — it never touches ${never}`);
   }
+
+  // ── The function, and the trail it writes ─────────────────────────────────────────────────────
+  const migration = stripSqlComments(
+    readFileSync(new URL("supabase/migrations/20261114155530_phoenix_crm_shared_place_timetable_marks.sql", ROOT), "utf8").replace(/\r\n/g, "\n"),
+  );
+  const fn = migration.slice(migration.indexOf("create or replace function public.phoenix_crm_set_shared_place_no_timetable(p jsonb)"), migration.indexOf("$$;"));
+  assert.ok(fn.length > 0, "the migration defines the function");
+  assert.ok(fn.includes("from public.phoenix_crm_shared_places sp where sp.id = v_id for update;"), "🔴 the building's row is locked, so two clicks cannot both land");
+  assert.ok(fn.includes("if v_place.status not in ('active', 'held') then\n    return jsonb_build_object('outcome', 'retired');"), "🔴 a rejected building is never written");
+  assert.ok(
+    fn.includes("if v_declared = (v_place.timetable_exempt_at is not null) then\n    return jsonb_build_object('outcome', 'unchanged');"),
+    "a building already in the state asked for is left as it is, with no trail row",
+  );
+  assert.ok(fn.indexOf("for update;") < fn.indexOf("update public.phoenix_crm_shared_places sp"), "every check is made under the lock, before the first write");
+  assert.ok(fn.includes("set timetable_exempt_at = now(), timetable_exempt_by_hr_id = v_actor, updated_at = now()"), "the two marker columns are set together");
+  assert.ok(fn.includes("set timetable_exempt_at = null, timetable_exempt_by_hr_id = null, updated_at = now()"), "and cleared together");
+  assert.ok(
+    fn.includes("values (v_id, 'taken_back', v_actor, now(), v_place.timetable_exempt_at, v_place.timetable_exempt_by_hr_id);"),
+    "🔴 a take-back records who took it back, and keeps whose declaration it ended and when — the building's two columns are cleared at that moment",
+  );
+  assert.ok(fn.includes("values (v_id, 'declared', v_actor, now());"), "a declaration leaves its own row too");
+  assert.equal(fn.split("update public.").length - 1, 2, "the building is the only row it updates, once on each side");
+  assert.equal(fn.split("insert into public.phoenix_crm_shared_place_timetable_marks").length - 1, 2, "and the trail is the only table it inserts into");
+  for (const never of ["phoenix_crm_places", "phoenix_crm_customers", "phoenix_crm_validation_reviews", "delete from", "outbox", "notif"]) {
+    assert.ok(!fn.includes(never), `🔴 the function validates nobody and tells nobody — it never touches ${never}`);
+  }
+  assert.ok(
+    migration.indexOf("grant all on table public.phoenix_crm_shared_place_timetable_marks to service_role;") >= 0 &&
+      migration.indexOf("grant all on table public.phoenix_crm_shared_place_timetable_marks to service_role;") <
+        migration.indexOf("revoke update, delete on table public.phoenix_crm_shared_place_timetable_marks from service_role;"),
+    "🔴 the trail is append-only: after the module's lock, update and delete are taken back from the app too",
+  );
+  assert.ok(
+    !/\.from\("phoenix_crm_shared_place_timetable_marks"\)\s*\.(?:insert|update|upsert|delete)\(/.test(code("src/lib/phoenix-crm/server/shared-places.ts") + server),
+    "and no service writes the trail itself: the function is its only writer",
+  );
+  assert.ok(migration.includes("alter table public.phoenix_crm_shared_place_timetable_marks enable row level security;"));
+  assert.ok(
+    migration.includes("revoke execute on function public.phoenix_crm_set_shared_place_no_timetable(jsonb) from public, anon, authenticated;") &&
+      migration.includes("grant execute on function public.phoenix_crm_set_shared_place_no_timetable(jsonb) to service_role;"),
+    "the function is the server's alone",
+  );
 
   const route = code("app/api/phoenix-crm/validation-reviews/shared-place/no-timetable/route.ts");
   assert.ok(route.includes('await assertPermission(access, "phoenix_crm", "update");'), "the route's first gate is `update`, which the SFE Manager does not hold");
@@ -138,12 +184,43 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     places.includes("noTimetableControl: noTimetableControl({ canDeclare, status: base.status, exempt: text(row.timetable_exempt_at) !== null }),"),
     "and every row says what this viewer may do",
   );
+  // The last take-back, on the building's own row (owner, 14 Nov 2026: "Record who took back").
+  assert.ok(
+    places.includes("const takeBacks = decides ? await loadTimetableTakeBacks() : new Map<string, Row>();"),
+    "🔴 the trail is read for the deciders alone — a manager's board never learns who took anything back",
+  );
+  assert.ok(
+    places.includes('.from("phoenix_crm_shared_place_timetable_marks")') && places.includes('.eq("action", "taken_back")'),
+    "it reads the take-backs from the trail",
+  );
+  assert.ok(
+    places.includes('.order("acted_at", { ascending: false })\n        .order("id", { ascending: false }),\n    { maxRows: 5_000,') && places.includes("if (!latest.has(building)) latest.set(building, row);"),
+    "newest first, and the first one met for a building is its latest",
+  );
+  assert.ok(
+    places.includes("const takenBack = text(row.timetable_exempt_at) ? null : (takeBacks.get(String(row.id)) ?? null);"),
+    "🔴 a building declared again shows its declaration, never the take-back before it",
+  );
+  assert.ok(
+    places.includes('byName: decides ? nameOf(names, text(takenBack.actor_hr_id), "The administrator") : null,') &&
+      places.includes('declaredByName: decides ? nameOf(names, text(takenBack.declared_by_hr_id), "The administrator") : null,'),
+    "both people are named, never shown as a code",
+  );
 
   const list = code("src/components/phoenix-crm/shared-place-list.tsx");
   assert.ok(list.includes('{mode === "team" ? null : <NoTimetableDeclaration row={row} />}'), "🔴 a district manager's board never draws the declaration");
   assert.ok(list.includes("const control = row.noTimetableControl ?? null;"), "the button is the row's own answer");
   assert.ok(list.includes("if (!control) return null;"));
   assert.ok(list.includes('{ sharedPlaceId: row.sharedPlaceId, declared: control === "declare" }'), "it posts the building and which of the two");
+  assert.ok(
+    list.includes('{mode === "team" || !row.timetableTakenBack ? null : ('),
+    "🔴 the take-back line is drawn only where there is one, and never on a district manager's board",
+  );
+  assert.ok(
+    list.includes("was taken back by {row.timetableTakenBack.byName}, {row.timetableTakenBack.atText}.") &&
+      list.includes("{row.timetableTakenBack.declaredByName}, {row.timetableTakenBack.declaredAtText}."),
+    "it says who took it back and when, and whose declaration that was",
+  );
 
   const board = code("src/components/phoenix-crm/validation-reviews-board.tsx");
   assert.ok(board.includes("{!team && failingTimetables ? ("), "🔴 the list is drawn on the deciders' board only");

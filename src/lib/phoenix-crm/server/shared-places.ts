@@ -646,6 +646,14 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
    */
   timetableExempt: { atText: string; byName: string | null } | null;
   /**
+   * The last time this building's "no timetable" declaration was TAKEN BACK (owner, 14 Nov 2026: "Record
+   * who took back"): who took it back and when, and whose declaration that ended. Read from the
+   * append-only trail, and only on a building that is NOT declared now.
+   * 🔴 Null for a viewer who decides nothing, and so is each name in it, like `decidedByName`: a
+   * manager's board never says who.
+   */
+  timetableTakenBack: { atText: string; byName: string | null; declaredAtText: string; declaredByName: string | null } | null;
+  /**
    * Whether this venue's REJECTION can still be taken back (owner, 2026-10-15: "make me able to
    * approve validation after rejection") — the same pair of tests the database makes: still retired,
    * and with the `retired_at` the rejection stamped, which is how the restore finds the places it
@@ -669,6 +677,31 @@ function signboardOf(value: unknown): SharedPlaceBoardRow["signboard"] {
     signText: text(check.signText ?? check.sign_text),
     note: text(check.note),
   };
+}
+
+/**
+ * The latest take-back of each building's "no timetable" declaration, by building, from the trail the
+ * declaration's own function writes (`phoenix_crm_shared_place_timetable_marks`). A take-back is rare, so
+ * all of them are one read, newest first, and the first one met for a building is its latest.
+ */
+async function loadTimetableTakeBacks(): Promise<Map<string, Row>> {
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_shared_place_timetable_marks")
+        .select("id, shared_place_id, actor_hr_id, acted_at, declared_at, declared_by_hr_id")
+        .eq("action", "taken_back")
+        .order("acted_at", { ascending: false })
+        .order("id", { ascending: false }),
+    { maxRows: 5_000, whenFull: "stop", what: "The no-timetable declarations taken back", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(read.error);
+  const latest = new Map<string, Row>();
+  for (const row of read.rows) {
+    const building = String(row.shared_place_id);
+    if (!latest.has(building)) latest.set(building, row);
+  }
+  return latest;
 }
 
 /**
@@ -710,13 +743,19 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
   const rows = read.rows;
   if (rows.length === 0) return { rows: [], capped: false };
 
-  const [counts, names] = await Promise.all([
+  const [counts, { takeBacks, names }] = await Promise.all([
     seatedCounts(rows.map((row) => String(row.id))),
-    loadPeopleNames([
-      ...rows.map((row) => text(row.created_by_hr_id)),
-      ...rows.map((row) => text(row.decided_by_hr_id)),
-      ...rows.map((row) => text(row.timetable_exempt_by_hr_id)),
-    ]),
+    (async () => {
+      // 🔴 The deciders alone are read the trail: a manager's board never learns who took anything back.
+      const takeBacks = decides ? await loadTimetableTakeBacks() : new Map<string, Row>();
+      const names = await loadPeopleNames([
+        ...rows.map((row) => text(row.created_by_hr_id)),
+        ...rows.map((row) => text(row.decided_by_hr_id)),
+        ...rows.map((row) => text(row.timetable_exempt_by_hr_id)),
+        ...[...takeBacks.values()].flatMap((mark) => [text(mark.actor_hr_id), text(mark.declared_by_hr_id)]),
+      ]);
+      return { takeBacks, names };
+    })(),
   ]);
 
   const now = new Date();
@@ -727,6 +766,8 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
       const base = mapSharedPlace(row, counts.get(String(row.id)) ?? 0);
       const seat = viewer.org.seats.get(String(row.seat_id));
       const held = base.status === "held";
+      // A building declared now shows its declaration; the take-back is of one that is not.
+      const takenBack = text(row.timetable_exempt_at) ? null : (takeBacks.get(String(row.id)) ?? null);
       return {
         ...base,
         // A building is held at its capture, so that instant is when its wait began.
@@ -748,6 +789,14 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
           ? {
               atText: formatPhoenixDateTime(String(row.timetable_exempt_at)),
               byName: decides ? nameOf(names, text(row.timetable_exempt_by_hr_id), "The administrator") : null,
+            }
+          : null,
+        timetableTakenBack: takenBack
+          ? {
+              atText: formatPhoenixDateTime(String(takenBack.acted_at)),
+              byName: decides ? nameOf(names, text(takenBack.actor_hr_id), "The administrator") : null,
+              declaredAtText: formatPhoenixDateTime(String(takenBack.declared_at)),
+              declaredByName: decides ? nameOf(names, text(takenBack.declared_by_hr_id), "The administrator") : null,
             }
           : null,
         noTimetableControl: noTimetableControl({ canDeclare, status: base.status, exempt: text(row.timetable_exempt_at) !== null }),

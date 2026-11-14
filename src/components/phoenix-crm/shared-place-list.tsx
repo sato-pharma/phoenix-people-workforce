@@ -241,6 +241,13 @@ function TimetablePhoto({
           </span>
         </div>
       )}
+      {/* The declaration that was taken back, and by whom (owner, 14 Nov 2026) — never on a manager's board. */}
+      {mode === "team" || !row.timetableTakenBack ? null : (
+        <p className="break-words text-xs text-slate-500">
+          &ldquo;This building has no timetable&rdquo; was taken back by {row.timetableTakenBack.byName}, {row.timetableTakenBack.atText}. It had been declared by{" "}
+          {row.timetableTakenBack.declaredByName}, {row.timetableTakenBack.declaredAtText}.
+        </p>
+      )}
     </div>
   );
 }
