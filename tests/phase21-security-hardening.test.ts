@@ -6,8 +6,7 @@ export function runPhase21SecurityHardeningTests() {
   const bulkActionRoute = readFileSync("app/api/admin/users/bulk-action/route.ts", "utf8");
   const notificationTestRoute = readFileSync("app/api/notifications/test/route.ts", "utf8");
   const emailReplyRoute = readFileSync("app/api/admin/email-reply/send/route.ts", "utf8");
-  const probationRoute = readFileSync("app/api/probation/route.ts", "utf8");
-  const probationWorkflowRoute = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
+  const probationDecisionRoute = readFileSync("app/api/probation/cases/[caseId]/decision/route.ts", "utf8");
   const publicViewsMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527150831_secure_public_views_security_invoker.sql", "utf8");
   const criticalRlsMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527152621_critical_public_rls_closure.sql", "utf8");
   const triggerExecuteMigration = readFileSync("supabase/_migrations_archive/pre-baseline-2026-07-11/20260527153731_revoke_terminal_vacancy_trigger_execute.sql", "utf8");
@@ -29,8 +28,10 @@ export function runPhase21SecurityHardeningTests() {
   assert.match(emailReplyRoute, /assertPermission\(access, "communication", "update"\)/);
   assert.doesNotMatch(emailReplyRoute, /assertPermission\(access, "admin", "read"\)/);
 
-  assert.match(probationRoute, /assertPermission\(access, "probation", "update"\)/);
-  assert.match(probationWorkflowRoute, /assertPermission\(access, "probation", action === "pass" \|\| action === "terminate" \? "approve" : "update"\)/);
+  // REC-010 (14 Nov 2026): the legacy create/workflow routes were deleted; a probation is decided on
+  // its case, behind the permission matrix and decideProbation's own authority check.
+  assert.match(probationDecisionRoute, /assertPermission\(access, "probation", "read"\)/);
+  assert.match(probationDecisionRoute, /decideProbation\(access, caseId,/);
 
   assert.match(proxySource, /PHOENIX_PREVIEW_READ_ONLY/);
   assert.match(proxySource, /APP_ENV === "preview"/);

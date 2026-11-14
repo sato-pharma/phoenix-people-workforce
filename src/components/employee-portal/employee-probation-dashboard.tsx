@@ -16,7 +16,6 @@ import {
 } from "@/lib/lifecycle-risk/metrics";
 import type {
   ProbationRow,
-  ProbationWorkflowAction,
   ProbationZone,
 } from "@/lib/probation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -24,7 +23,7 @@ import {
   phxFieldClassName,
   phxLabelTextClassName,
 } from "@/components/ui/form-tokens";
-import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { adminControlDepthClassName, adminPanelDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
 /* ------------------------------------------------------------------ */
@@ -37,11 +36,6 @@ type EmployeeProbationDashboardProps = {
   // contains only the rows getProbationRows returns for this viewer (their own subtree), not the
   // company-wide list the admin tracker exports.
   canExport?: boolean;
-  /**
-   * Gates the `manager_feedback` WORKFLOW action only. It no longer gates a feedback form: the
-   * legacy per-cycle feedback panel was retired 2026-09-01 (see the note further down).
-   */
-  canSubmitManagerFeedback: boolean;
   initialData: ProbationRow[];
 };
 
@@ -52,18 +46,6 @@ type SortKey =
   | "hire-desc"
   | "name-asc"
   | "name-desc";
-
-type SelectedWorkflowAction = {
-  action: ProbationWorkflowAction;
-  row: ProbationRow;
-};
-
-type ActionFormState = {
-  decisionReason: string;
-  managerFeedback: string;
-  terminationHrId: string;
-  workflowNote: string;
-};
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -82,15 +64,6 @@ const cardShadow = adminPanelDepthClassName;
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
-
-function emptyActionForm(): ActionFormState {
-  return {
-    decisionReason: "",
-    managerFeedback: "",
-    terminationHrId: "",
-    workflowNote: "",
-  };
-}
 
 function formatDate(value: string) {
   return formatDateOnly(value, "en", {
@@ -125,15 +98,6 @@ function daysCellText(row: ProbationRow) {
   return late === 0 ? "Ended today" : `${late}d late`;
 }
 
-function actionLabel(action: ProbationWorkflowAction) {
-  const labels: Record<ProbationWorkflowAction, string> = {
-    manager_feedback: "Feedback",
-    pass: "Pass",
-    terminate: "Terminate",
-  };
-  return labels[action];
-}
-
 function workflowStatusLabel(status: string | null | undefined) {
   return status ? humanizeCode(status) : "Not requested";
 }
@@ -151,7 +115,6 @@ function workflowBadgeColors(status: string | null | undefined) {
 
 export function EmployeeProbationDashboard({
   canExport = false,
-  canSubmitManagerFeedback,
   initialData,
 }: EmployeeProbationDashboardProps) {
   /* State */
@@ -161,11 +124,7 @@ export function EmployeeProbationDashboard({
   const [jobFilter, setJobFilter] = useState(ALL_VALUE);
   const [trafficFilter, setTrafficFilter] = useState<"all" | ProbationZone>("all");
   const [sortBy, setSortBy] = useState<SortKey>("days-asc");
-  const [rows, setRows] = useState<ProbationRow[]>(initialData);
-  const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
-  const [actionForm, setActionForm] = useState<ActionFormState>(() => emptyActionForm());
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
+  const [rows] = useState<ProbationRow[]>(initialData);
 
   /* Filter options */
   const filterOptions = useMemo(
@@ -248,72 +207,11 @@ export function EmployeeProbationDashboard({
     setSortBy("days-asc");
   }
 
-  /* Workflow actions */
-  function openWorkflowAction(row: ProbationRow, action: ProbationWorkflowAction) {
-    if (!row.workflow) return;
-    setSelectedAction({ action, row });
-    setActionForm({
-      ...emptyActionForm(),
-      managerFeedback: row.workflow.managerFeedback ?? "",
-    });
-    setMessage(null);
-  }
-
-  async function runWorkflow() {
-    if (!selectedAction?.row.workflow) return;
-    const { action, row } = selectedAction;
-    const workflow = row.workflow!;
-
-    if (action === "terminate" && actionForm.terminationHrId.trim().toUpperCase() !== row.hr_id.toUpperCase()) {
-      setMessage({ tone: "danger", text: "Type the employee HR ID to confirm termination." });
-      return;
-    }
-
-    const actionKey = `${workflow.id}:${action}`;
-    setPendingAction(actionKey);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/probation/${workflow.id}/workflow`, {
-        body: JSON.stringify({
-          action,
-          decisionReason: actionForm.decisionReason,
-          expectedUpdatedAt: workflow.updatedAt,
-          managerFeedback: actionForm.managerFeedback,
-          note: actionForm.workflowNote,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.error ?? "Probation action failed.");
-      }
-      setRows(payload.trackerRows ?? payload.rows);
-      setSelectedAction(null);
-      setActionForm(emptyActionForm());
-      setMessage({ tone: "success", text: "Probation review updated." });
-    } catch (error) {
-      setMessage({
-        tone: "danger",
-        text: error instanceof Error ? error.message : "Probation action failed.",
-      });
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
   /* Zone distribution percentages */
   const overduePercent = summary.total > 0 ? Math.round((summary.overdue / summary.total) * 100) : 0;
   const safePercent = summary.total > 0 ? Math.round((summary.safe / summary.total) * 100) : 0;
   const warningPercent = summary.total > 0 ? Math.round((summary.warning / summary.total) * 100) : 0;
   const criticalPercent = summary.total > 0 ? Math.max(0, 100 - overduePercent - safePercent - warningPercent) : 0;
-
-  /* Allowed actions helper */
-  function getAllowedActions(row: ProbationRow): ProbationWorkflowAction[] {
-    const actions = row.workflow?.allowedActions ?? row.allowedActions ?? [];
-    return actions.filter((a) => canSubmitManagerFeedback || a !== "manager_feedback");
-  }
 
   return (
     <div className="space-y-5" dir="auto">
@@ -458,22 +356,6 @@ export function EmployeeProbationDashboard({
           )}
         </Card>
       </WorkspaceErrorBoundary>
-
-      {/* ---- Message ---- */}
-      {message && (
-        <div
-          className={`rounded border px-4 py-3 text-sm ${
-            message.tone === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-rose-200 bg-rose-50 text-rose-800"
-          }`}
-        >
-          <p className="font-semibold">
-            {message.tone === "success" ? "Probation update" : "Action failed"}
-          </p>
-          <p className="mt-0.5">{message.text}</p>
-        </div>
-      )}
 
       {/* ---- Filters ---- */}
       <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
@@ -625,7 +507,7 @@ export function EmployeeProbationDashboard({
           breakpoint="lg"
           cols={
             <colgroup>
-              <col className="w-[13%]" />
+              <col className="w-[18%]" />
               <col className="w-[11%]" />
               <col className="w-[12%]" />
               <col className="w-[9%]" />
@@ -633,8 +515,7 @@ export function EmployeeProbationDashboard({
               <col className="w-[8%]" />
               <col className="w-[8%]" />
               <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
+              <col className="w-[15%]" />
             </colgroup>
           }
         >
@@ -650,7 +531,6 @@ export function EmployeeProbationDashboard({
                   "Progress",
                   "Zone",
                   "Review",
-                  "Actions",
                 ].map((col, idx, arr) => (
                   <th
                     className={`px-3 py-3 text-phx-xs font-semibold uppercase tracking-wider text-slate-400 sm:px-4 ${
@@ -678,7 +558,6 @@ export function EmployeeProbationDashboard({
                   const traffic = classifyProbationRowZone(row);
                   const progress = calculateProbationProgress(row.days_remaining);
                   const colors = zoneColor(traffic);
-                  const allowed = getAllowedActions(row);
 
                   return (
                     <tr
@@ -750,39 +629,13 @@ export function EmployeeProbationDashboard({
                         </span>
                       </td>
 
-                      {/* Review */}
-                      <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
+                      {/* Review: the case status. The decision is taken on the case, not here (REC-010). */}
+                      <td className="px-3 py-3 sm:px-4">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
                         >
                           {workflowStatusLabel(row.workflow?.status)}
                         </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-3 py-3 sm:px-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {row.workflow && allowed.map((action) => (
-                            <button
-                              className={`px-2.5 py-1.5 text-phx-xs font-semibold transition disabled:opacity-50 ${
-                                action === "terminate"
-                                  ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                                  : action === "pass"
-                                    ? "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                    : `border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`
-                              }`}
-                              disabled={Boolean(pendingAction)}
-                              key={action}
-                              onClick={() => openWorkflowAction(row, action)}
-                              type="button"
-                            >
-                              {actionLabel(action)}
-                            </button>
-                          ))}
-                          {!row.workflow && !canSubmitManagerFeedback && (
-                            <span className="text-phx-xs text-slate-400">No review</span>
-                          )}
-                        </div>
                       </td>
                     </tr>
                   );
@@ -804,7 +657,6 @@ export function EmployeeProbationDashboard({
               const traffic = classifyProbationRowZone(row);
               const progress = calculateProbationProgress(row.days_remaining);
               const colors = zoneColor(traffic);
-              const allowed = getAllowedActions(row);
 
               return (
                 <div
@@ -862,34 +714,13 @@ export function EmployeeProbationDashboard({
                     <span>{progress}%</span>
                   </div>
 
-                  {/* Review + actions */}
+                  {/* Review: the case status */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                     <span
                       className={`inline-flex items-center rounded px-2 py-0.5 text-phx-sm font-semibold ${workflowBadgeColors(row.workflow?.status)}`}
                     >
                       {workflowStatusLabel(row.workflow?.status)}
                     </span>
-                    {row.workflow && allowed.length > 0 && (
-                      <>
-                        {allowed.map((action) => (
-                          <button
-                            className={`rounded px-2 py-1 text-phx-sm font-semibold transition disabled:opacity-50 ${
-                              action === "terminate"
-                                ? "border border-rose-200 bg-rose-50 text-rose-700"
-                                : action === "pass"
-                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                                  : `border border-slate-200 bg-white text-slate-600 ${adminSoftDepthClassName}`
-                            }`}
-                            disabled={Boolean(pendingAction)}
-                            key={action}
-                            onClick={() => openWorkflowAction(row, action)}
-                            type="button"
-                          >
-                            {actionLabel(action)}
-                          </button>
-                        ))}
-                      </>
-                    )}
                   </div>
                 </div>
               );
@@ -917,116 +748,6 @@ export function EmployeeProbationDashboard({
         view. Do not re-add a second feedback surface here.
       */}
 
-      {/* ---- Workflow Action Form ---- */}
-      {selectedAction && (
-        <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
-          <div className="mb-4">
-            <h3 className="text-sm font-bold text-slate-800">
-              {actionLabel(selectedAction.action)}: {selectedAction.row.full_name}
-            </h3>
-            <p className="mt-0.5 text-phx-xs text-slate-400">
-              {workflowStatusLabel(selectedAction.row.workflow?.status)} | ends {formatDate(selectedAction.row.probation_end_date)}
-            </p>
-          </div>
-
-          <div className="grid gap-3 lg:grid-cols-3">
-            {selectedAction.action === "manager_feedback" && (
-              <label className="block lg:col-span-3">
-                <span className={`mb-1.5 block ${labelClassName}`}>
-                  Manager Feedback
-                </span>
-                <input
-                  className={inputClassName}
-                  onChange={(e) =>
-                    setActionForm((f) => ({ ...f, managerFeedback: e.target.value }))
-                  }
-                  placeholder="Manager evaluation feedback"
-                  type="text"
-                  value={actionForm.managerFeedback}
-                />
-              </label>
-            )}
-
-            {(selectedAction.action === "pass" || selectedAction.action === "terminate") && (
-              <label className="block lg:col-span-2">
-                <span className={`mb-1.5 block ${labelClassName}`}>
-                  Decision Reason
-                </span>
-                <input
-                  className={inputClassName}
-                  onChange={(e) =>
-                    setActionForm((f) => ({ ...f, decisionReason: e.target.value }))
-                  }
-                  placeholder={
-                    selectedAction.action === "terminate"
-                      ? "Termination reason"
-                      : "Optional HR note"
-                  }
-                  type="text"
-                  value={actionForm.decisionReason}
-                />
-              </label>
-            )}
-
-            {selectedAction.action === "terminate" && (
-              <label className="block lg:col-span-3">
-                <span className="mb-1.5 block text-phx-xs font-semibold uppercase tracking-wider text-rose-600">
-                  Type HR ID to confirm termination
-                </span>
-                <input
-                  className={inputClassName}
-                  onChange={(e) =>
-                    setActionForm((f) => ({ ...f, terminationHrId: e.target.value }))
-                  }
-                  placeholder={selectedAction.row.hr_id}
-                  type="text"
-                  value={actionForm.terminationHrId}
-                />
-              </label>
-            )}
-
-            <label className="block lg:col-span-3">
-              <span className={`mb-1.5 block ${labelClassName}`}>
-                Review Note
-              </span>
-              <input
-                className={inputClassName}
-                onChange={(e) =>
-                  setActionForm((f) => ({ ...f, workflowNote: e.target.value }))
-                }
-                placeholder="Optional note for this action"
-                type="text"
-                value={actionForm.workflowNote}
-              />
-            </label>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              className={`rounded px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 ${
-                selectedAction.action === "terminate"
-                  ? "bg-rose-600 hover:bg-rose-700"
-                  : "bg-orange-500 hover:bg-orange-600"
-              }`}
-              disabled={Boolean(pendingAction)}
-              onClick={runWorkflow}
-              type="button"
-            >
-              {pendingAction ? "Submitting..." : actionLabel(selectedAction.action)}
-            </button>
-            <button
-              className={`rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 ${adminControlDepthClassName}`}
-              onClick={() => {
-                setSelectedAction(null);
-                setActionForm(emptyActionForm());
-              }}
-              type="button"
-            >
-              Close
-            </button>
-          </div>
-        </Card>
-      )}
     </div>
   );
 }

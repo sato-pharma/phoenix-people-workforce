@@ -7,7 +7,7 @@ export function runPhase25StagingRlsMutationSmokeTests() {
   const vacationService = readFileSync("src/lib/vacation/service.ts", "utf8");
   const expenseImportRoute = readFileSync("app/api/admin/outstation/expenses/import/route.ts", "utf8");
   const employeesRoute = readFileSync("app/api/employees/route.ts", "utf8");
-  const probationWorkflowRoute = readFileSync("app/api/probation/[id]/workflow/route.ts", "utf8");
+  const probationDecisionRoute = readFileSync("app/api/probation/cases/[caseId]/decision/route.ts", "utf8");
 
   assert.match(smoke, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
   // The approved staging target must come from the environment and fail closed when absent.
@@ -60,6 +60,6 @@ export function runPhase25StagingRlsMutationSmokeTests() {
   assert.match(expenseImportRoute, /assertSystemAdministratorWorkspaceAccess\(access,\s*"payroll expenses administration"\)/);
   assert.match(employeesRoute, /resolveAccessContext\(request\)/);
   assert.match(employeesRoute, /assertPermission\(access, "employees", "update"\)/);
-  assert.match(probationWorkflowRoute, /resolveAccessContext\(request\)/);
-  assert.match(probationWorkflowRoute, /assertPermission\(access, "probation"/);
+  assert.match(probationDecisionRoute, /resolveAccessContext\(request\)/);
+  assert.match(probationDecisionRoute, /assertPermission\(access, "probation"/);
 }

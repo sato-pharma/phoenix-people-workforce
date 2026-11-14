@@ -37,10 +37,12 @@ export function runPhase15DisposableFixtureSmokeTests() {
     /importApprovedExpensesToPayroll/,
     "Phase 15 smoke must use the existing approved-expense import service.",
   );
-  assert.match(
+  // REC-010 (14 Nov 2026): the legacy probation evaluation workflow was retired; a probation is
+  // decided on its case, so this smoke no longer drives a probation termination.
+  assert.doesNotMatch(
     phase15SmokeSource,
-    /probation termination fixture skipped because schema\/RPC is not ready/,
-    "Phase 15 smoke must report probation schema readiness as an explicit skipped gap.",
+    /runProbationWorkflow/,
+    "Phase 15 smoke must not call the retired probation evaluation workflow.",
   );
   assert.match(
     phase15LoaderSource,

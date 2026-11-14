@@ -113,7 +113,8 @@ export async function getProbationCaseByEmployee(
 /**
  * Defense-in-depth cross-check for the legacy-decision desync bug.
  *
- * The LEGACY probation workflow (runProbationWorkflow → applyDecisionSideEffects) resolves an
+ * The LEGACY probation workflow (runProbationWorkflow → applyDecisionSideEffects, retired in REC-010 on
+ * 14 Nov 2026 — this filter stays for the people it decided before then) resolved an
  * employee by writing `employee_probation.status` and `employees.employment_status`, but historically
  * never mirrored the outcome into `probation_cases`. That leaves a `probation_cases` row stranded at
  * status='active' / decision=null, so the CEO dashboard and the milestone-email sweep (both of which
