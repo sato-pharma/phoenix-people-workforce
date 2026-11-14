@@ -5,10 +5,9 @@ import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
-import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
-import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
+import { applyImportStoreRules } from "@/lib/sales/import-store-rules";
 import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
@@ -20,7 +19,6 @@ import { PHOENIX_TEMPLATE_CODE, PHOENIX_TEMPLATE_NAME } from "@/lib/sales/normal
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
-import { applyEpdaBonusDeduction } from "@/lib/sales/import-epda-bonus-deduction";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview, type RecognizeOptions } from "@/lib/sales/recognize";
 import { decodeFileRow } from "@/lib/sales/sales-upload-files";
@@ -512,41 +510,26 @@ export async function persistNormalizedBatch(input: {
   const { coded } = input.result;
   const period = input.period ?? dominantPeriod(coded);
   // only rows in the chosen period are imported (one batch = one month, like the importer)
-  // 🔴 EPDA's bonus deduction comes off here, before any total is taken, so the batch, its summaries and
-  // every report read the same whole units (import-epda-bonus-deduction.ts). `raw_row` keeps the sheet's.
   const sheetRows = coded.filter((r) => r.invoiceDate === period);
-  const rows = applyEpdaBonusDeduction(sheetRows, (r) => r.invoiceDate);
-  const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
-  const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
-  const totalValue = rows.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0);
-
-  // The same workbook already loaded under another period: refuse before the batch row exists, with
-  // exactly the figures the insert below stores (see import-duplicate-guard.ts). Each stored batch is
-  // compared on its own month's price basis, so a file re-dated across a reprice still matches.
-  const prices = await loadProductPeriodPrices();
-  // Each stored batch is compared as the file would have been stored in ITS month: on that month's
-  // price, and with EPDA's deduction only if that month carries it.
-  const rowsStoredAt = (atPeriod: string | null) => applyEpdaBonusDeduction(sheetRows, () => atPeriod);
-  const repriceableAt = (atPeriod: string | null) =>
-    rowsStoredAt(atPeriod).map((r) =>
-      repriceableUploadRow({
-        distributorCode: input.distributorCode,
-        isDirect: r.isDirect,
-        period: r.invoiceDate,
-        productCode: r.productCode,
-        value: r.value,
-      }),
-    );
-  await assertNotADuplicateUpload({
+  // 🔴 THE IMPORT'S MONEY RULES RUN IN ONE PLACE (import-store-rules.ts, REC-008): EPDA's bonus deduction
+  // before any total is taken (`raw_row` keeps the sheet's), the locked-month refusal — which this writer
+  // never ran before 14 Nov 2026, so a locked month's rows were written and left pending — and the
+  // same-workbook-under-another-month refusal, each before the batch row exists.
+  const stored = await applyImportStoreRules({
+    period,
     distributorCode: input.distributorCode,
     fileName: input.fileName,
-    period,
-    totalRows: rows.length,
-    totalQty: Number(totalQty.toFixed(6)),
-    totalValue: Number(totalValue.toFixed(6)),
-    totalValueAt: (atPeriod) => totalValueAtPeriod(repriceableAt(atPeriod), prices, atPeriod),
-    totalQtyAt: (atPeriod) => rowsStoredAt(atPeriod).reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0),
+    sheetRows,
+    countsAsSales: true,
+    deductionMonthOf: (r) => r.invoiceDate,
+    priceMonthOf: (r) => r.invoiceDate,
+    priceDistributorOf: () => input.distributorCode,
+    totalRows: sheetRows.length,
   });
+  const rows = stored.rows;
+  const totalQty = stored.totalQty;
+  const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
+  const totalValue = stored.totalValue;
 
   const batchInsert = await supabase
     .from("source_of_sales_import_batches")

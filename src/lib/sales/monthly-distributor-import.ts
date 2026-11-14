@@ -20,8 +20,9 @@ import {
 } from "@/lib/sales/closing-organogram-regions";
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
-import { applyEpdaBonusDeduction } from "@/lib/sales/import-epda-bonus-deduction";
+import { applyImportStoreRules, assertPeriodNotLocked } from "@/lib/sales/import-store-rules";
+// The lock check moved to import-store-rules.ts (REC-008); this address keeps working for every caller.
+export { assertPeriodNotLocked, type PeriodLockReader } from "@/lib/sales/import-store-rules";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -34,7 +35,6 @@ import { misplacedComma, needsAGuess, normalizeNumberText } from "@/lib/sales/no
 import { numberProblem } from "@/lib/sales/normalizer/row-messages";
 import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import {
-  loadProductPeriodPrices,
   productPeriodPricesFromRows,
   type ProductPriceOverrideRow,
 } from "@/lib/sales/product-period-price";
@@ -3316,56 +3316,6 @@ async function insertSourceOfSalesRows(
   }
 }
 
-/** The slice of the client the lock read uses — structural, so a test can hand it a fake. */
-type PeriodLockReader = {
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (column: string, value: unknown) => {
-        eq: (column: string, value: unknown) => {
-          maybeSingle: () => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
-        };
-      };
-    };
-  };
-};
-
-// PostgREST answers a missing table with PGRST205 and Postgres with 42P01 — the only two errors
-// that mean "this deployment has no lock table", which is the one case read as "not locked".
-const MISSING_TABLE_CODES = new Set(["PGRST205", "42P01"]);
-
-// Period lock guard — once a Monthly Sales period is locked, all uploads/deletes for that period are
-// rejected until it is re-opened. Tolerant of a missing lock table (pre-migration = not locked) so it
-// never blocks a normal upload before the Monthly Sales migration is applied.
-//
-// 🔴 ANY OTHER READ ERROR REFUSES, with a 503 (audit S-SAL-09, 2026-10-23). It used to return as
-// "not locked" on every error, so a timeout let an upload for a LOCKED month write its rows; the SQL
-// lock caught it only after the rows were inserted, leaving an orphan pending batch behind. A month
-// whose lock cannot be read is not a month known to be open.
-export async function assertPeriodNotLocked(period: string | null, client?: PeriodLockReader): Promise<void> {
-  if (!period) return;
-  const supabase = client ?? (getSupabaseAdmin() as unknown as PeriodLockReader);
-  const { data, error } = await supabase
-    .from("monthly_sales_period_lock")
-    .select("locked")
-    .eq("period", period)
-    .eq("locked", true)
-    .maybeSingle();
-  if (error) {
-    if (MISSING_TABLE_CODES.has(String(error.code ?? ""))) return;
-    throw new SalesWorkflowError(
-      "period_lock_unreadable",
-      `Could not check whether ${period} is locked, so nothing was changed. Try again in a minute.`,
-      503,
-    );
-  }
-  if (data) {
-    throw new SalesWorkflowError(
-      "period_locked",
-      `${period} is locked. Re-open the Monthly Sales closing for ${period} before changing its uploads.`,
-      409,
-    );
-  }
-}
 
 // Shared persist step: insert the batch + its rows + summaries. Used by both the File-based upload and
 // the in-memory buffer-based upload (the Normalizer's validated import).
@@ -3374,57 +3324,28 @@ export async function persistDistributorSalesUpload(
   uploadedBy: string,
 ) {
   const { parsedRows: sheetRows, ...result } = parsed;
-  // 🔴 EPDA's bonus deduction, on this route too: the Normalizer's one-click import lands here
-  // (import-epda-bonus-deduction.ts). A blocked batch never counts, so it stays as the sheet said.
-  const parsedRows =
-    result.status === "validated" ? applyEpdaBonusDeduction(sheetRows, (row) => row.invoicePeriod ?? result.period) : sheetRows;
+  // 🔴 THE IMPORT'S MONEY RULES RUN IN ONE PLACE (import-store-rules.ts, REC-008): EPDA's bonus deduction
+  // (only on a batch that will count — a blocked one stays as the sheet said), the locked-month refusal
+  // (covers normal, normalizer-buffer and Office paths) and the same-workbook-under-another-month refusal.
+  const stored = await applyImportStoreRules({
+    period: result.period,
+    distributorCode: result.distributor.code,
+    fileName: result.fileName,
+    sheetRows,
+    countsAsSales: result.status === "validated",
+    deductionMonthOf: (row) => row.invoicePeriod ?? result.period,
+    priceMonthOf: (row) => row.invoicePeriod,
+    priceDistributorOf: (row) => row.distributorCode,
+    totalRows: result.rowCount,
+    sheetTotals: { totalQty: result.totals.totalQty, totalValue: result.totals.totalValue },
+  });
+  const parsedRows = stored.rows;
   // The batch stores what its rows hold. `result` stays the sheet's: it is the receipt, whose every
   // breakdown is the sheet's, and the per-line summaries inserted below are rebuilt from the stored
   // rows by the tail's phx_refresh_sos_import_summaries.
-  const storedTotals =
-    parsedRows === sheetRows
-      ? result.totals
-      : {
-          ...result.totals,
-          totalQty: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0).toFixed(6)),
-          totalValue: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.value) ? row.value : 0), 0).toFixed(6)),
-        };
-
-  // Locked period: reject before writing anything (covers normal, normalizer-buffer, and Office paths).
-  await assertPeriodNotLocked(result.period);
-
-  // The same workbook already loaded under another period: refuse before writing anything, with
-  // exactly the figures the insert below stores (see import-duplicate-guard.ts). Only a batch that
-  // will become sales is checked; a blocked one is kept for its reasons and never counts.
-  if (result.status === "validated") {
-    // Each stored batch is compared on ITS month's price basis, so a file re-dated across a reprice
-    // (September's file loaded again as October) still reads as the same file — see totalValueAtPeriod.
-    // Office rows arrive here too, valued at the master price in every month, so they keep their value.
-    // EPDA's deduction is re-run for each stored batch's month, so a file re-dated across its start
-    // still reads as the same file.
-    const prices = await loadProductPeriodPrices();
-    const rowsStoredAt = (period: string | null) => applyEpdaBonusDeduction(sheetRows, () => period);
-    const repriceableAt = (period: string | null) =>
-      rowsStoredAt(period).map((row) =>
-        repriceableUploadRow({
-          distributorCode: row.distributorCode,
-          isDirect: row.isDirect,
-          period: row.invoicePeriod,
-          productCode: row.productCode,
-          value: row.value,
-        }),
-      );
-    await assertNotADuplicateUpload({
-      distributorCode: result.distributor.code,
-      fileName: result.fileName,
-      period: result.period,
-      totalRows: result.rowCount,
-      totalQty: storedTotals.totalQty,
-      totalValue: storedTotals.totalValue,
-      totalValueAt: (period) => totalValueAtPeriod(repriceableAt(period), prices, period),
-      totalQtyAt: (period) => rowsStoredAt(period).reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0),
-    });
-  }
+  const storedTotals = stored.deducted
+    ? { ...result.totals, totalQty: stored.totalQty, totalValue: stored.totalValue }
+    : result.totals;
 
   const supabase = getSupabaseAdmin();
 
