@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { DM_PLANS_IN_PHOENIX_CRM, dmPlansInPhoenixCrm } from "@/lib/phoenix-crm/server/manager-plan-switch";
+import { LEGACY_PLANS_CLOSED, LEGACY_PLANS_CLOSED_MESSAGE } from "@/lib/weekly-planning/legacy-closed";
 import {
   canonicalPlanningRegionName,
   planningAreaBelongsToRegion,
@@ -27,7 +27,9 @@ export type WeeklyPlanRpcErrorCode =
   | "revision_conflict"
   | "invalid_transition"
   | "not_found"
-  | "duplicate_period";
+  | "duplicate_period"
+  /** The legacy form is closed: plans are made in Phoenix CRM (DR-02, 14 Nov 2026). */
+  | "plans_moved";
 
 export class WeeklyPlanRpcError extends Error {
   code: WeeklyPlanRpcErrorCode;
@@ -439,8 +441,8 @@ export type EmployeePlansWorkspace = {
   canSubmitPlans: boolean;
   hasMorePlans: boolean;
   /**
-   * His week is planned in Phoenix CRM now (`dmPlansInPhoenixCrm`), so this page is his HISTORY: every plan
-   * he filed on this form before, to read only (owner, 2026-10-17). False for everyone else.
+   * Every week is planned in Phoenix CRM now (DR-02, 14 Nov 2026 — legacy-closed.ts), so this page is
+   * HISTORY for everyone: every plan he filed on this form before, to read only. True for every employee.
    */
   plansInPhoenixCrm: boolean;
   /** Who a Marketing Double Visit can be with: active PMs, GPMs and the Marketing Manager, never the owner. */
@@ -2578,6 +2580,7 @@ export async function addPlanComment(access: AccessContext, planId: string, inpu
   itemId?: string | null;
   parentId?: string | null;
 }): Promise<EmployeePlanComment> {
+  assertLegacyPlansOpen();
   const body = String(input.body ?? "").trim();
   if (!body) throw new Error("Comment cannot be empty.");
   // Posting is gated on PARTICIPATION (canViewPlan below), not on weekly_plans:update.
@@ -2643,7 +2646,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   // A manager whose Phoenix CRM team is live plans his week THERE now (owner, 2026-10-16), so this form
   // offers him no new plan — it is his history, to read only (owner, 2026-10-17: "make them only able to
   // see their historical plans, which they submitted on the old module").
-  const movedToPhoenixCrm = employee ? await plansInPhoenixCrm(access) : false;
+  const movedToPhoenixCrm = employee ? plansInPhoenixCrm() : false;
   const canSubmitPlans = Boolean(
     employee &&
       !movedToPhoenixCrm &&
@@ -3668,17 +3671,18 @@ function formatPlanDayLabel(date: string): string {
 }
 
 /**
- * A district manager whose own Phoenix CRM team is live plans his week in Phoenix CRM, not here (owner,
- * 2026-10-16: "replace the old DM plan"; Mohamed Alaa stays on this form until his team starts). Each
- * one switches by himself the day his team starts. A failed read keeps this form open rather than
- * stranding a manager with no form at all.
+ * 🔴 EVERYONE PLANS IN PHOENIX CRM NOW — THIS FORM IS HISTORY (owner, 14 Nov 2026, DR-02: "Phoenix CRM").
+ * Until then a district, regional or national manager switched the day his team started, and a product
+ * manager filed both. Every one of them was planning in Phoenix CRM by 13 Nov, so the form refuses every
+ * write (`assertLegacyPlansOpen`) and shows each person every plan he filed here, to read.
  */
-async function plansInPhoenixCrm(access: AccessContext): Promise<boolean> {
-  return dmPlansInPhoenixCrm(access.hrId).catch(() => false);
+function plansInPhoenixCrm(): boolean {
+  return LEGACY_PLANS_CLOSED;
 }
 
-async function assertPlansOnThisForm(access: AccessContext): Promise<void> {
-  if (await plansInPhoenixCrm(access)) throw new Error(DM_PLANS_IN_PHOENIX_CRM);
+/** The first line of every function that writes the legacy plan tables. Never remove one. */
+function assertLegacyPlansOpen(): void {
+  if (LEGACY_PLANS_CLOSED) throw new WeeklyPlanRpcError("plans_moved", LEGACY_PLANS_CLOSED_MESSAGE);
 }
 
 /** Every plan one person filed on this form, newest first — a switched manager's history. */
@@ -3752,8 +3756,8 @@ export async function createEmployeePlan(access: AccessContext, input: {
   planKind: EmployeePlanKind;
   submit?: boolean;
 }) {
+  assertLegacyPlansOpen();
   await assertPermission(access, "weekly_plans", "create");
-  await assertPlansOnThisForm(access);
   const employee = await currentEmployee(access);
   if (!employee || !canSubmitFromEmployee(employee, access.role)) {
     throw new Error("Forbidden: this position is not eligible to submit weekly/monthly plans.");
@@ -3861,10 +3865,10 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
   items: EmployeePlanItemInput[];
   submit?: boolean;
 }) {
+  assertLegacyPlansOpen();
   await assertPermission(access, "weekly_plans", "update");
   const existing = await loadPlanRow(planId);
   assertPlanOwner(access, existing);
-  await assertPlansOnThisForm(access);
 
   if (isClosedEmployeePlanStatus(existing.status)) {
     // Revising a closed plan: edit the revision already open for it, or spawn a new draft
@@ -4036,6 +4040,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   comment?: string | null;
   returnNotes?: EmployeePlanReturnNoteInput[];
 }) {
+  assertLegacyPlansOpen();
   const plan = await loadPlanRow(planId);
   // The submitter's District-Manager-ness by title OR app role — an acting DM keeps a Medical
   // Representative title (isDistrictManagerPlanSubmitter). Resolved once: the guards below and the
@@ -4191,6 +4196,7 @@ export async function reassignWeeklyPlanManager(
   access: AccessContext,
   input: { planId: string; newManagerHrId: string },
 ) {
+  assertLegacyPlansOpen();
   // Two-part gate, mirroring vacation's assertVacationAdminManagement: the standing weekly_plans
   // approve grant AND Super-Admin (isHrReviewer). Neither alone is sufficient.
   await assertPermission(access, "weekly_plans", "approve");
@@ -4291,6 +4297,7 @@ export async function moveWeeklyPlanToPeriod(
   access: AccessContext,
   input: { planId: string; targetAnchorDate: string },
 ) {
+  assertLegacyPlansOpen();
   // Same two-part gate as reassignWeeklyPlanManager: the standing weekly_plans approve grant AND
   // HR/Super-Admin. Neither alone is sufficient.
   await assertPermission(access, "weekly_plans", "approve");
@@ -4476,6 +4483,7 @@ async function autoAcknowledgeFinalApprovedPlan(access: AccessContext, plan: Pla
 }
 
 export async function acknowledgeEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
+  assertLegacyPlansOpen();
   const employee = await currentEmployee(access);
   if (!isHrReviewer(access, employee)) {
     throw new Error("Forbidden: only HR Manager/Admin HR can acknowledge approved plans.");
@@ -4552,6 +4560,7 @@ async function notifyVisitDetailsRequested(plan: PlanHeaderRow) {
 }
 
 export async function requestVisitDetails(access: AccessContext, planId: string) {
+  assertLegacyPlansOpen();
   const plan = await loadPlanRow(planId);
   await assertManagerReviewer(access, plan);
   const hasFieldItems = (plan.employee_plan_items ?? []).some((item) => item.activity_type === "Field");
@@ -4580,7 +4589,7 @@ export async function requestVisitDetails(access: AccessContext, planId: string)
 }
 
 export async function submitVisitDetails(access: AccessContext, planId: string, details: VisitDetailInput[]) {
-  await assertPlansOnThisForm(access);
+  assertLegacyPlansOpen();
   const plan = await loadPlanRow(planId);
   if (!hrIdsMatch(access.hrId, plan.employee_hr_id) && access.role !== "Super Admin") {
     throw new Error("Forbidden: only the employee can submit visit details.");
@@ -4612,8 +4621,8 @@ export async function submitVisitDetails(access: AccessContext, planId: string, 
 }
 
 export async function cancelEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
+  assertLegacyPlansOpen();
   await assertPermission(access, "weekly_plans", "update");
-  await assertPlansOnThisForm(access);
   const plan = await loadPlanRow(planId);
   assertPlanOwner(access, plan);
   await rpcCancelPlan({ access, comment, expectedRevision: plan.revision, planId });
@@ -4641,6 +4650,7 @@ export async function bulkDecideEmployeePlans(
   planIds: string[],
   action: "manager_approve",
 ): Promise<Array<{ planId: string; ok: boolean; message?: string }>> {
+  assertLegacyPlansOpen();
   const results: Array<{ planId: string; ok: boolean; message?: string }> = [];
   // Each plan's notices are collected while the decisions run and sent ONE AFTER ANOTHER once the reply
   // has gone, as they were before — never all at once, which a long selection would turn into a burst.
@@ -4744,8 +4754,8 @@ async function notifyEmployeeEditRequestDecision(
 }
 
 export async function requestEditEmployeePlan(access: AccessContext, planId: string) {
+  assertLegacyPlansOpen();
   await assertPermission(access, "weekly_plans", "update");
-  await assertPlansOnThisForm(access);
   const plan = await loadPlanRow(planId);
   assertPlanOwner(access, plan);
   if (plan.status !== "submitted") {
@@ -4770,6 +4780,7 @@ export async function decideEditRequest(
   planId: string,
   input: { decision: "approve" | "reject"; comment?: string | null },
 ) {
+  assertLegacyPlansOpen();
   const plan = await loadPlanRow(planId);
   if (plan.status !== "edit_requested") {
     throw new Error("This plan does not have a pending edit request.");

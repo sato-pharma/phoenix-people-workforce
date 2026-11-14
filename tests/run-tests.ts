@@ -503,6 +503,7 @@ import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.
 import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-by-day.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
+import { runWeeklyPlansOneStoreTests } from "./weekly-plans-one-store.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
@@ -4360,6 +4361,10 @@ await runTest(
 await runTest(
   "daily deductions no-weekly-plan connector (head office only, one day on that Monday, NEVER an automatic month collector)",
   runDailyDeductionsNoWeeklyPlanTests,
+);
+await runTest(
+  "one plan store, Phoenix CRM (owner, 14 Nov 2026, DR-02): the legacy Weekly Plans form refuses every write and keeps its history readable, and the no-weekly-plan deduction finds a week sent on time in Phoenix CRM",
+  runWeeklyPlansOneStoreTests,
 );
 await runTest(
   "deductions exempt employees (Samaa Mosaad and Reham Mahmoud are dropped from every automated deduction writer; manual HR entries are spared)",

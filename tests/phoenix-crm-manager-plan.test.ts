@@ -667,10 +667,12 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // ── 6. The legacy form, the nav and the old address ──────────────────────────────────────────
 
   const legacy = source("src/lib/weekly-planning/service.ts");
-  assert.match(functionBody(legacy, "export async function createEmployeePlan("), /await assertPlansOnThisForm\(access\)/, "a switched district manager cannot create a legacy plan");
-  assert.match(functionBody(legacy, "export async function updateEmployeePlan("), /await assertPlansOnThisForm\(access\)/, "nor revise or send one");
-  assert.match(functionBody(legacy, "async function plansInPhoenixCrm("), /dmPlansInPhoenixCrm\(access\.hrId\)/, "the switch is the live-team rule");
-  assert.match(functionBody(legacy, "export async function getEmployeePlansWorkspace("), /movedToPhoenixCrm = employee \? await plansInPhoenixCrm\(access\) : false;[\s\S]*employee &&\s*!movedToPhoenixCrm &&/, "the legacy workspace offers him no new plan");
+  // DR-02 (owner, 14 Nov 2026): the legacy form is closed for EVERYONE, not only a switched manager —
+  // tests/weekly-plans-one-store.test.ts pins every writer. These keep the switched manager's view.
+  assert.match(functionBody(legacy, "export async function createEmployeePlan("), /assertLegacyPlansOpen\(\);/, "a switched district manager cannot create a legacy plan");
+  assert.match(functionBody(legacy, "export async function updateEmployeePlan("), /assertLegacyPlansOpen\(\);/, "nor revise or send one");
+  assert.match(functionBody(legacy, "function plansInPhoenixCrm("), /return LEGACY_PLANS_CLOSED;/, "everyone plans in Phoenix CRM now");
+  assert.match(functionBody(legacy, "export async function getEmployeePlansWorkspace("), /movedToPhoenixCrm = employee \? plansInPhoenixCrm\(\) : false;[\s\S]*employee &&\s*!movedToPhoenixCrm &&/, "the legacy workspace offers him no new plan");
 
   const navArgs = ["District Manager", "District Manager", "Anti Infective", "Sales", "B-12", false, false, true, false, false, false] as const;
   // The nav no longer takes the plan-switch answer at all (2026-10-23): legacy or switched, a district
@@ -692,7 +694,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   }
   assert.match(functionBody(legacy, "export async function getEmployeePlansWorkspace("), /loadOwnPlanRows\(employee\.hrId\)/, "his history is every plan he filed, not only the company-wide window");
   for (const writer of ["export async function cancelEmployeePlan(", "export async function requestEditEmployeePlan(", "export async function submitVisitDetails("]) {
-    assert.match(functionBody(legacy, writer), /await assertPlansOnThisForm\(access\)/, `${writer} refuses a switched manager`);
+    assert.match(functionBody(legacy, writer), /assertLegacyPlansOpen\(\);/, `${writer} refuses a switched manager`);
   }
 
   // ── 7. The old "My own visit" is refused for a district manager ──────────────────────────────
