@@ -71,6 +71,10 @@ const EXEMPT = new Map([
     "scripts/delta-landed.mjs",
     "pure exports, imported by repo-doctor, repo-doctor-unpushed, branch-pr-state and the worktree-exit guard",
   ],
+  [
+    "scripts/phoenix-inspect/lib/capture.mjs",
+    "pure exports (launchBrowser, signIn, openFencedContext, captureOne, probeDenied) of the visual explorer, imported only by explore.mjs and self-check.mjs, which refuse an unknown flag themselves",
+  ],
 ]);
 
 const WRITES =
