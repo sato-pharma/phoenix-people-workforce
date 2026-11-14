@@ -206,6 +206,9 @@ export async function runHrIdStorageCasingTests() {
     "src/lib/sales/weekly/access.ts",
     // loginId FIRST by design - a LOGIN id field, the same contract as the audit log's actorLoginId.
     "src/lib/hiring-documents/service.ts",
+    // Compared, never stored: the identity only keys the in-flight sharing map, so the same person's
+    // identical download requests share one build (single-flight.ts). Nothing writes it anywhere.
+    "app/api/business-review/pack/route.ts",
   ]);
   const RAW_ACTOR = /resolveEmployeeIdentityId\(\s*(?:access|accessContext|ctx)\s*\)\s*\?\?/;
 

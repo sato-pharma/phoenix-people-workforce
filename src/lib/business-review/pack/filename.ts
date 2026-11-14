@@ -29,3 +29,22 @@ export function packContentDisposition(name: string): string {
   const ascii = name.replace(/[^\x20-\x7E]/g, "-").replace(/"/g, "'");
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
+
+/**
+ * Read the download name back out of `packContentDisposition`'s header — the page fetches the pack itself
+ * (so it can say "Preparing…" and refuse a second click), which means the page, not the browser, names the
+ * saved file. Prefers the real UTF-8 name, falls back to the ASCII one, and answers null for anything else.
+ */
+export function packFileNameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header)?.[1];
+  if (star) {
+    try {
+      return decodeURIComponent(star.trim());
+    } catch {
+      // A malformed escape falls through to the plain name.
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(header)?.[1];
+  return plain ? plain : null;
+}

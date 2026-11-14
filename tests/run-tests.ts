@@ -937,6 +937,7 @@ import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test
 import { runBusinessReviewPackLeaverMarkTests } from "./business-review-pack-leaver-mark.test.ts";
 import { runBusinessReviewPackFullDataTests } from "./business-review-pack-full-data.test.ts";
 import { runBusinessReviewPackFilenameTests } from "./business-review-pack-filename.test.ts";
+import { runBusinessReviewPackSingleFlightTests } from "./business-review-pack-single-flight.test.ts";
 import { runBusinessReviewFieldLinkTests } from "./business-review-field-link.test.ts";
 import { runBusinessReviewCrmKpisTests } from "./business-review-crm-kpis.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
@@ -6822,6 +6823,10 @@ await runTest(
 await runTest(
   "business review pack filename (the Content-Disposition header that 500d every export in production: an em/en dash in the filename is > 255 and an HTTP header is a ByteString, so new Response threw AFTER the pack built; the header now carries an ASCII filename and a filename*=UTF-8 that round-trips, proven by constructing a real Response)",
   runBusinessReviewPackFilenameTests,
+);
+await runTest(
+  "business review pack single flight (12 Nov 2026: one browser sent 188 pack requests in five minutes and the server built them all and froze; identical requests from one person in flight now share ONE build, a finished or failed build is never reused, and the Download buttons fetch once, say Preparing and ignore clicks until the file lands)",
+  runBusinessReviewPackSingleFlightTests,
 );
 await runTest(
   "business review closing detail (the customer-grain source: a direct order is direct whoever bought it, a warehouse buying from a distributor is a wholesaler row decided by the one channel authority, El Qema is masked on the RAW rows before anything is derived from them, the load is cut to the figure window, and the module reads the closing's own aggregate RPC rather than re-grouping raw import rows)",
