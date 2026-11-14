@@ -2219,6 +2219,9 @@ export type MedicalRepPortalData = {
      * never "0.0%" — one is a fact about the data, the other is an accusation. */
     incentiveSemesterSales: number;
     incentiveSemesterTarget: number;
+    /** The months of that semester the figures counted, "YYYY-MM" — what the stored figure records
+     * (REC-066, src/lib/incentives/shown-figures.ts). Absent on the empty and preview payloads. */
+    incentiveSemesterPeriods?: string[];
     /** Non-null when that semester is not fully loaded — names the months, so a rep can never read
      * a partial figure as their settled payout. See describeIncompleteWindow. */
     incentiveWindowNotice: string | null;
@@ -4295,6 +4298,7 @@ export async function getMedicalRepPortalData(
       incentiveSemesterLabel: incentiveWindow?.semesterLabel ?? null,
       incentiveSemesterSales: semesterSales,
       incentiveSemesterTarget: semesterTarget,
+      incentiveSemesterPeriods: [...(incentiveWindow?.present ?? [])],
       incentiveWindowNotice: closingUnavailable
         ? "The published closing could not be read for your reach, so no incentive figure is shown."
         : describeIncompleteWindow(incentiveWindow),

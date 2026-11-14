@@ -9,6 +9,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getEmployeePortalIncentiveData } from "@/lib/employee-portal/service";
+import { recordShownIncentive } from "@/lib/incentives/shown-figures-store";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export default async function EmployeePortalIncentivePageRoute() {
     );
     data = null;
   }
+  // The figure this tab shows the person is stored the first time, and again only when it changes
+  // (REC-066). Best-effort: it never costs the person their tab.
+  await recordShownIncentive(access, data);
 
   if (!data) {
     return (

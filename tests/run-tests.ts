@@ -1856,6 +1856,7 @@ import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.tes
 import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
 
 import { runNsmIncentiveClosingTests } from "./nsm-incentive-closing.test.ts";
+import { runIncentiveShownFiguresTests } from "./incentive-shown-figures.test.ts";
 
 import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
 import { runPediaPolicyExamplesTests } from "./pedia-policy-examples.test.ts";
@@ -6777,6 +6778,7 @@ await runTest("incentive semester window (the CALENDAR semester, the same one fo
 await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it reduces exactly to the single rule when the two achievements agree; outsource is never scored on its own; the locked 2026 curve is called, not copied)", runPediaSplitIncentiveTests);
 
 await runTest("NSM incentive closing (a manager scored on a line or region reads the PUBLISHED closing, direct orders and vacant seats included, so the tab equals Monthly Closing; the notice and the gap copy read as sentences)", runNsmIncentiveClosingTests);
+await runTest("the incentive figure a person was shown is stored the first time and reads back unchanged, only from their own tab, read by the Super Admin alone (REC-066)", runIncentiveShownFiguresTests);
 
 await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
 
