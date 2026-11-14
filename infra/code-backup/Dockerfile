@@ -11,4 +11,13 @@ COPY db-backup.sh /usr/local/bin/db-backup
 COPY run.sh /usr/local/bin/nightly-backup
 RUN chmod +x /usr/local/bin/code-backup /usr/local/bin/db-backup /usr/local/bin/nightly-backup
 
+# The night runs as an unprivileged user (14 Nov 2026), never as root. Nothing here needs root: both backups
+# write only under mktemp -d, and every credential reaches git, psql and rclone through the environment.
+# The user has a real home because rclone and git look for one, and the scripts above stay root-owned, so
+# the night can run them and cannot change them. ci/rehearse.sh fails if this image ever runs as root again.
+RUN adduser -D -u 10001 -h /home/phoenix phoenix
+USER phoenix
+ENV HOME=/home/phoenix
+WORKDIR /home/phoenix
+
 CMD ["/usr/local/bin/nightly-backup"]
