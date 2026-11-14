@@ -1505,8 +1505,19 @@ personnel-record layout had changed) and nobody knew for three and a half days. 
 `tests/synthetic-telegram-alert.test.ts`.
 
 The "Outstation Expenses export" journey is **always skipped, deliberately**: the export writes a
-record, so it runs only with `SYNTHETIC_ALLOW_MUTATION=true`, which the workflow never sets. That is
-why a fully passing run reads `warning` (amber) on the dashboard rather than `healthy`.
+record, so it runs only with `SYNTHETIC_ALLOW_MUTATION=true`, which the workflow never sets.
+
+**A run where every check passed reads `healthy`, that skip included** (owner, 14 November 2026). Until
+then any skipped check filed the run as `warning`, so from 9 September 2026 not one run read healthy —
+936 read warning, 148 failed — and amber meant "everything passed". The rule now
+(`src/lib/synthetic-journeys/overall-status.ts`): failed if a check failed; `warning` if a check was
+skipped **without saying why**, or if nothing passed at all; otherwise `healthy`. A check that skips
+itself gives its reason in the same call (`test.skip(condition, "why")`), the reporter copies it into
+`skipReason` (`tests/synthetic/helpers/skip-reason.ts`), and the page prints it under the check as
+"Skipped on purpose: …". A check switched off with no sentence still turns the run amber. A check that
+never ran because the sign-in step failed is not reported at all, and that run is `failed`. Runs saved
+before the change keep the word they were filed under. Pinned by
+`tests/synthetic-journey-run-status.test.ts`.
 
 ## Error tracking and the edge runtime
 
