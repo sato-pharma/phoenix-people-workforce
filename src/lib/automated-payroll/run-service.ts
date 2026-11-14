@@ -2260,6 +2260,8 @@ export async function confirmPart2(
     acknowledgeOverpaidToken?: string | null;
     acknowledgeDataIssuesToken?: string | null;
     acknowledgePopulationDiffToken?: string | null;
+    /** False: the finance notice goes without its email this once (notifyPart2Ready). Default true. */
+    sendEmail?: boolean;
   } = {},
 ): Promise<MonthlySalaryRun> {
   assertRealSessionForDecision(access, "confirm Part 2 of a payroll run");
@@ -2539,6 +2541,8 @@ export async function confirmPart2(
     action: "part2_confirmed",
     detail: {
       employees: rows.length,
+      // Whether the finance notice went with its email this time (the prompt's "Email them too").
+      emailSent: options.sendEmail !== false,
       // Record WHAT was accepted, not just that someone clicked twice — an
       // overpayment acknowledgment is a money decision and must be auditable.
       overpaidAcknowledged: totals.overpaid.length,
@@ -2561,7 +2565,7 @@ export async function confirmPart2(
       [LATE_EXPENSES_NOT_COVERED_KEY]: lateExpenses.notCovered,
     },
   });
-  await notifyPart2Ready(updated);
+  await notifyPart2Ready(updated, { email: options.sendEmail !== false });
   return updated;
 }
 

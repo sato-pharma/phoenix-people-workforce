@@ -27,12 +27,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
       acknowledgeOverpaidToken?: unknown;
       acknowledgeDataIssuesToken?: unknown;
       acknowledgePopulationDiffToken?: unknown;
+      sendEmail?: unknown;
     };
     const token = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
     const run = await confirmPart2(access, runId, {
       acknowledgeOverpaidToken: token(body.acknowledgeOverpaidToken),
       acknowledgeDataIssuesToken: token(body.acknowledgeDataIssuesToken),
       acknowledgePopulationDiffToken: token(body.acknowledgePopulationDiffToken),
+      // Only an explicit false skips the email; anything else sends it, as before.
+      sendEmail: body.sendEmail !== false,
     });
     return NextResponse.json({ success: true, run });
   } catch (error) {

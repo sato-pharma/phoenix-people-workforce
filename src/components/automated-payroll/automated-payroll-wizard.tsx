@@ -11,7 +11,7 @@ import {
 import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-kit";
+import { CheckTile, FormField } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
 import { stepDefinition } from "@/lib/automated-payroll/step-definitions";
 import type {
@@ -215,7 +215,22 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     reasonLabel?: string;
     /** The button that closes the prompt without acting; "Cancel" when unset (reads wrong on a cancel). */
     dismissLabel?: string;
+    /** Confirm Part 2 only: show the "Email them too" tick box (see part2SendEmail). */
+    emailToggle?: boolean;
   } | null>(null);
+  /**
+   * Whether this Confirm Part 2 emails the CEO, Financial Advisor and Finance Manager as well (owner,
+   * 14 Nov 2026: "make it not email this time when i confirm"). Ticked each time the prompt opens, so a
+   * confirm sends what it always sent unless HR unticks it; the in-app, Telegram and phone notices go
+   * either way. A ref as well as state: the gates' retries (overpaid, data, roster) run from closures
+   * made before the tick changed, and must send the choice HR actually left on the prompt.
+   */
+  const [part2SendEmail, setPart2SendEmailState] = useState(true);
+  const part2SendEmailRef = useRef(true);
+  const setPart2SendEmail = (next: boolean) => {
+    part2SendEmailRef.current = next;
+    setPart2SendEmailState(next);
+  };
   /**
    * The reopen the server refused because finance already downloaded a bank file (bank-file-downloads.ts),
    * waiting for the reason that lets it through. The server keeps the reason on the reopen's audit row.
@@ -642,6 +657,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           acknowledgeOverpaidToken: acks.overpaid ?? null,
           acknowledgeDataIssuesToken: acks.dataQuality ?? null,
           acknowledgePopulationDiffToken: acks.populationDiff ?? null,
+          sendEmail: part2SendEmailRef.current,
         }),
       });
       const data = await readJson(res);
@@ -675,7 +691,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setOverpaidPrompt(null);
       setDataIssuePrompt(null);
       setPopulationPrompt(null);
-      setNotice("Part 2 confirmed. Finance roles notified.");
+      setNotice(
+        part2SendEmailRef.current
+          ? "Part 2 confirmed. Finance roles notified."
+          : "Part 2 confirmed. Finance roles notified in Phoenix, on Telegram and on their phones; no email this time.",
+      );
       await loadRun(month, year);
     } catch (actionError) {
       // A transport failure (dropped connection, timeout, non-JSON body) answers nothing:
@@ -1126,6 +1146,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         <div id="payroll-pending-action" tabIndex={-1} role="alertdialog" aria-labelledby="payroll-pending-title" className="outline-none border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <div id="payroll-pending-title" className="font-black">{pendingAction.title}</div>
           <p className="mt-1 break-words">{pendingAction.body}</p>
+          {pendingAction.emailToggle ? (
+            <CheckTile className="mt-3" checked={part2SendEmail} onChange={setPart2SendEmail}>
+              <span>
+                Email them too. Untick to tell the CEO, Financial Advisor and Finance Manager only in Phoenix,
+                on Telegram and on their phones this time.
+              </span>
+            </CheckTile>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               size="sm"
@@ -1695,16 +1723,18 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                         size="sm"
                         className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                         disabled={busy || !part2AllConfirmed || run.phase !== "part2"}
-                        onClick={() =>
+                        onClick={() => {
+                          setPart2SendEmail(true);
                           setPendingAction({
                             title: `Confirm Part 2 for ${periodLabel}?`,
+                            emailToggle: true,
                             body: "This locks the full sheet, every step and the Part 2 non-employee entries, records the totals finance will pay, and tells finance the Part 2 bank files are ready to pay. After this, changing any figure means reopening Part 2.",
                             label: "Confirm Part 2",
                             url: `/api/automated-payroll/runs/${run.id}/part2/confirm`,
                             ok: "Part 2 confirmed. Finance roles notified.",
                             onConfirm: () => confirmPart2WithOverpaidGate(run.id),
-                          })
-                        }
+                          });
+                        }}
                       >
                         Confirm Part 2
                       </Button>
