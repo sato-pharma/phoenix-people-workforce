@@ -189,11 +189,19 @@ export function assertPart2FileMatchesStamp(
     current: BankDetailsStamp;
     nameOf: (compact: string) => string;
   },
+  nonEmployees?: {
+    confirmed: NonEmployeesStamp | null;
+    current: NonEmployeesStamp;
+    nameOf: (id: string) => string;
+  },
 ): void {
   if (run.phase !== "ready") return;
   if (!stamp && confirmedBeforeStampExisted(run.part2ConfirmedAt)) return;
   assertMatchesPart2Confirm(stamp, current, "bank_file");
   if (bank) assertBankDetailsMatchPart2Confirm(bank.confirmed, bank.current, bank.nameOf);
+  if (nonEmployees) {
+    assertNonEmployeesMatchPart2Confirm(nonEmployees.confirmed, nonEmployees.current, nonEmployees.nameOf);
+  }
 }
 
 /**
@@ -275,6 +283,100 @@ export function assertBankDetailsMatchPart2Confirm(
   if (!confirmed) return;
   const moved = compareBankDetails(confirmed, current);
   if (moved.length > 0) throw new Error(`Conflict: ${describeBankDetailsDrift(moved.map(nameOf))}`);
+}
+
+/**
+ * THE NON-EMPLOYEES PART 2 PAYS, STAMPED BESIDE THE EMPLOYEES (payroll audit 2026-11-14, owner: "Close
+ * that gap").
+ *
+ * The totals and the bank fingerprints above are built from employee rows only, but the Part 2 FAB and
+ * CIB files also carry every Part 2 non-employee entry, read live at download. So the confirmed month
+ * held nothing about them: an entry added, removed or changed by any route after the confirm's first
+ * read went to the bank in a file nobody had confirmed, and the confirm itself never looked. Each Part 2
+ * entry is now fingerprinted at confirm — who, how much, which bank and account — re-read under the
+ * claim, and a Part 2 file refuses when any of them moved.
+ *
+ * A FINGERPRINT, NEVER THE ACCOUNT, for the same reason as the bank details: the audit trail keeps it
+ * for ever. A stamp written before this existed carries none, and keeps today's behaviour.
+ */
+export const PART2_NON_EMPLOYEES_KEY = "confirmedNonEmployees";
+
+/** Non-employee entry id → fingerprint of the name, amount, bank and account a Part 2 file pays. */
+export type NonEmployeesStamp = Record<string, string>;
+
+type NonEmployeeSource = {
+  id: string;
+  part: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName: string | null;
+  bankAccount: string | null;
+};
+
+/** The same reading the files make: the English name, the amount, the bank route and the trimmed account. */
+function nonEmployeeFingerprint(runId: string, entry: NonEmployeeSource): string {
+  const name = (entry.fullNameEn ?? "").trim();
+  const amount = roundCurrency(Number(entry.totalSalary ?? 0)).toFixed(2);
+  const bankName = (entry.bankName ?? "").trim().toUpperCase();
+  const bankAccount = (entry.bankAccount ?? "").trim();
+  return createHash("sha256")
+    .update(`${runId}\n${entry.id}\n${name}\n${amount}\n${bankName}\n${bankAccount}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+/** The fingerprints stamped at Part 2 confirm: one per entry paid with the second instalment. */
+export function part2NonEmployees(runId: string, entries: readonly NonEmployeeSource[]): NonEmployeesStamp {
+  const stamp: NonEmployeesStamp = {};
+  for (const entry of entries) {
+    if (entry.part !== "second") continue;
+    stamp[entry.id] = nonEmployeeFingerprint(runId, entry);
+  }
+  return stamp;
+}
+
+/** Read the fingerprints back out of an audit row's `detail`, or null when the stamp predates them. */
+export function readConfirmedNonEmployees(detail: unknown): NonEmployeesStamp | null {
+  if (!detail || typeof detail !== "object") return null;
+  const raw = (detail as Record<string, unknown>)[PART2_NON_EMPLOYEES_KEY];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const stamp: NonEmployeesStamp = {};
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string") return null;
+    stamp[id] = value;
+  }
+  return stamp;
+}
+
+/** Which Part 2 entries differ from the confirm — one added or removed counts too. */
+export function compareNonEmployees(confirmed: NonEmployeesStamp, current: NonEmployeesStamp): string[] {
+  const ids = new Set([...Object.keys(confirmed), ...Object.keys(current)]);
+  return [...ids].filter((id) => confirmed[id] !== current[id]).sort();
+}
+
+/** What the person downloading reads. Names the entries, because the fix is to look at them. */
+export function describeNonEmployeesDrift(names: readonly string[]): string {
+  const who =
+    names.length === 1
+      ? `The Part 2 non-employee entry for ${names[0]} has`
+      : `${names.length} Part 2 non-employee entries have`;
+  const listed = names.length === 1 ? "" : ` (${names.join(", ")})`;
+  return (
+    `${who} changed since Part 2 was confirmed${listed}. This bank file is rebuilt from today's data, so ` +
+    "downloading it now would pay an amount or an account nobody confirmed. No file was produced. Reopen " +
+    "Part 2, check Non-Employees Payroll, and confirm again."
+  );
+}
+
+/** The non-employee half of the Part 2 file check. Quiet on a stamp that predates it (null). */
+export function assertNonEmployeesMatchPart2Confirm(
+  confirmed: NonEmployeesStamp | null,
+  current: NonEmployeesStamp,
+  nameOf: (id: string) => string,
+): void {
+  if (!confirmed) return;
+  const moved = compareNonEmployees(confirmed, current);
+  if (moved.length > 0) throw new Error(`Conflict: ${describeNonEmployeesDrift(moved.map(nameOf))}`);
 }
 
 /**

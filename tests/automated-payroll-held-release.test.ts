@@ -436,7 +436,7 @@ export function runAutomatedPayrollHeldReleaseTests() {
     `${path}: every Part 2 bank file refuses a release a by-hand transfer has since paid`,
   );
   assert.equal(
-    (source.match(/assertFileMatchesPart2Confirm\(run, rows, draftRows\)/g) ?? []).length,
+    (source.match(/assertFileMatchesPart2Confirm\(run, rows, draftRows, (?:allNonEmployees|nonEmployees)\)/g) ?? []).length,
     3,
     `${path}: the finance, FAB and CIB files all pass the drafts to that check`,
   );

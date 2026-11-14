@@ -92,15 +92,20 @@ import {
   assertPart2FileMatchesStamp,
   compareConfirmedTotals,
   compareBankDetails,
+  compareNonEmployees,
   confirmedBeforeStampExisted,
   PART2_BANK_DETAILS_KEY,
+  PART2_NON_EMPLOYEES_KEY,
   PART2_TOTALS_KEY,
   part2BankDetails,
+  part2NonEmployees,
   part2Totals,
   readConfirmedBankDetails,
+  readConfirmedNonEmployees,
   readConfirmedTotals,
   type BankDetailsStamp,
   type ConfirmedTotals,
+  type NonEmployeesStamp,
 } from "./publish-guard.ts";
 import {
   describePartSplitConflicts,
@@ -143,7 +148,7 @@ import {
   recordHeldReleases,
   recordPart1Corrections,
 } from "./held-settlements.ts";
-import { getNonEmployeePayrollRows } from "./non-employees.ts";
+import { getNonEmployeePayrollRows, nonEmployeesForPart } from "./non-employees.ts";
 import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import { heldDraftHrIds, readPublishedHoldRecord } from "./published-holds.ts";
 import {
@@ -2179,6 +2184,7 @@ async function readPart2ConfirmedStamp(
 ): Promise<{
   totals: ConfirmedTotals | null;
   bankDetails: BankDetailsStamp | null;
+  nonEmployees: NonEmployeesStamp | null;
   lateExpensesCarried: LateExpenseCarriedEntry[];
 }> {
   // The stamp row written inside the confirm's claim, and the older `part2_confirmed` row that
@@ -2198,10 +2204,12 @@ async function readPart2ConfirmedStamp(
     );
   }
   const newest = (data ?? [])[0] as { detail?: unknown } | undefined;
-  if (!newest) return { totals: null, bankDetails: null, lateExpensesCarried: [] };
+  if (!newest) return { totals: null, bankDetails: null, nonEmployees: null, lateExpensesCarried: [] };
   return {
     totals: readConfirmedTotals(newest.detail),
     bankDetails: readConfirmedBankDetails(newest.detail),
+    // The Part 2 non-employee entries this confirm paid (2026-11-14); null on an older stamp.
+    nonEmployees: readConfirmedNonEmployees(newest.detail),
     // The late-approved trips this confirm recorded as carried (late-expenses.ts); none on an older stamp.
     lateExpensesCarried: parseLateExpensesCarried(newest.detail),
   };
@@ -2396,6 +2404,9 @@ export async function confirmPart2(
   const carryForwardPendingRecovery = rows.filter(
     (entry) => entry.carriedForwardApplied > 0 && !entry.onHold && Boolean(entry.compact),
   ).length;
+  // THE PART 2 NON-EMPLOYEES THIS CONFIRM PAYS (payroll audit 2026-11-14). The Part 2 bank files carry
+  // them beside the employees, read live, so they are read here with the sheet and re-read under the claim.
+  const confirmedNonEmployees = part2NonEmployees(runId, await getNonEmployeePayrollRows(runId, "second"));
   // Recorded and confirmed under one claim (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Confirming Part 2");
   const confirmedTotals = part2Totals(rows.length, totals);
@@ -2429,10 +2440,18 @@ export async function confirmPart2(
       confirmedBankDetails,
       part2BankDetails(runId, rowsUnderClaim),
     );
-    if (movedWhileConfirming.length > 0 || bankMovedWhileConfirming.length > 0) {
+    const nonEmployeesMovedWhileConfirming = compareNonEmployees(
+      confirmedNonEmployees,
+      part2NonEmployees(runId, await getNonEmployeePayrollRows(runId, "second")),
+    );
+    if (
+      movedWhileConfirming.length > 0 ||
+      bankMovedWhileConfirming.length > 0 ||
+      nonEmployeesMovedWhileConfirming.length > 0
+    ) {
       throw new Error(
-        "Conflict: this run changed while Part 2 was being confirmed (a step was saved or a deduction or " +
-          "expense decision reached it). Nothing was confirmed; confirm Part 2 again.",
+        "Conflict: this run changed while Part 2 was being confirmed (a step was saved, a non-employee entry " +
+          "changed, or a deduction or expense decision reached it). Nothing was confirmed; confirm Part 2 again.",
       );
     }
     // LATE-APPROVED TRIPS THIS RUN CARRIES (REC-029 / F-PAY-012, late-expenses.ts). Only while the switch
@@ -2451,6 +2470,7 @@ export async function confirmPart2(
       detail: {
         [PART2_TOTALS_KEY]: confirmedTotals,
         [PART2_BANK_DETAILS_KEY]: confirmedBankDetails,
+        [PART2_NON_EMPLOYEES_KEY]: confirmedNonEmployees,
         [LATE_EXPENSES_CARRIED_KEY]: lateExpenses.carried,
         [LATE_EXPENSES_NOT_COVERED_KEY]: lateExpenses.notCovered,
       },
@@ -2496,6 +2516,8 @@ export async function confirmPart2(
       // Carried here too: readPart2ConfirmedStamp takes the NEWEST of the two rows, and this one is
       // written after the stamp row, so without the fingerprints it would switch the bank check off.
       [PART2_BANK_DETAILS_KEY]: confirmedBankDetails,
+      // And the non-employee fingerprints, for the same reason: the newest row is the one read.
+      [PART2_NON_EMPLOYEES_KEY]: confirmedNonEmployees,
       // The same reason: publish reads the carried late trips from whichever of the two rows is newest.
       [LATE_EXPENSES_CARRIED_KEY]: lateExpenses.carried,
       // Late trips HR saw but the confirmed figure does not cover: not recorded, still on the list.
@@ -3713,11 +3735,16 @@ export async function importStepUpload(
  *
  * Since 2026-10-23 the destination is held too, not only the amount: a bank or account changed on the
  * employee record after the confirm refuses the file (owner, "block it"), naming whose changed.
+ *
+ * Since 2026-11-14 the Part 2 non-employee entries are held too (payroll audit, "Close that gap"): the
+ * files carry them beside the employees, read live, and an entry added, removed or changed since the
+ * confirm refuses the file, naming it. A stamp written before then carries none and is not held to them.
  */
 async function assertFileMatchesPart2Confirm(
   run: MonthlySalaryRun,
   rows: AssembledRow[],
   draftRows: DraftRow[],
+  nonEmployees: Parameters<typeof part2NonEmployees>[1],
 ): Promise<void> {
   // The rule is assertPart2FileMatchesStamp's; the phase test here only saves a read for a month that
   // is not held to the stamp.
@@ -3733,6 +3760,12 @@ async function assertFileMatchesPart2Confirm(
     // Someone on the confirmed sheet who has since left the population has no row today; the
     // confirmed month still knew them, so the refusal says so rather than printing an id.
     nameOf: (compact) => names.get(compact) ?? "a person no longer on this month's sheet",
+  }, {
+    confirmed: stamp.nonEmployees,
+    current: part2NonEmployees(run.id, nonEmployees),
+    // An entry removed since the confirm has no row today; the refusal still says one is missing.
+    nameOf: (id) =>
+      nonEmployees.find((entry) => entry.id === id)?.fullNameEn || "an entry no longer on Non-Employees Payroll",
   });
 }
 
@@ -3776,18 +3809,19 @@ export async function buildFinanceSheet(
   // ONE assembly path — see buildFabSheet. The finance sheet is the document the month is executed
   // from, and it used to re-assemble without the carry-forward ledger.
   const { rows, draftRows } = await assembleForRun(run);
-  if (scope === "full") await assertFileMatchesPart2Confirm(run, rows, draftRows);
+  // One read of the entries: the check below and the sheet must see the same list.
+  const allNonEmployees = await getNonEmployeePayrollRows(run.id);
+  if (scope === "full") await assertFileMatchesPart2Confirm(run, rows, draftRows, allNonEmployees);
   const buffer = await buildFinanceSheetWorkbook({
     run,
     rows,
     scope,
     // Mirrors buildRunSheet exactly: the Part 1 scope pays first-installment
     // entries, the full scope shows the month's whole picture.
-    nonEmployees: await getNonEmployeePayrollRows(run.id, scope === "part1" ? "first" : undefined),
+    nonEmployees: scope === "part1" ? nonEmployeesForPart(allNonEmployees, "first") : allNonEmployees,
   });
   // Coverage is per instalment, because the bank files are. The Part 1 scope answers for Part 1
   // only; the full sheet answers for both, so a Part 2 gap cannot hide behind a covered Part 1.
-  const allNonEmployees = await getNonEmployeePayrollRows(run.id);
   const coverage =
     scope === "part1"
       ? [buildBankCoverage({ rows, nonEmployees: allNonEmployees, scope: "part1" })]
@@ -3866,8 +3900,8 @@ export async function buildFabSheet(
   // ONE assembly path — the same call publish makes. This used to re-assemble by hand WITHOUT the
   // carry-forward ledger, so a recovery that the payslip carried reached neither bank file.
   const { rows, draftRows } = await assembleForRun(run);
-  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows, nonEmployees);
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
   // them, so they'd silently be missing from the real bank file without this
@@ -3922,8 +3956,8 @@ export async function buildCibSheet(
 
   // ONE assembly path — see buildFabSheet. Carry-forward recoveries reached neither bank file.
   const { rows, draftRows } = await assembleForRun(run);
-  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows);
   const nonEmployees = await getNonEmployeePayrollRows(run.id);
+  if (scope === "part2") await assertFileMatchesPart2Confirm(run, rows, draftRows, nonEmployees);
   // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
   // source that cibRowsForScope never sees on its own.
   const cibRows = [...cibRowsForScope(rows, scope), ...cibRowsForNonEmployees(nonEmployees, scope)];
