@@ -12,7 +12,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { PharmacyProfile } from "./types";
@@ -81,7 +81,7 @@ export async function saveDiscoveredPharmacy(options: {
   // Cache the geocode so the next lookup of this pharmacy costs nothing. Best-effort: a failure
   // here must not fail the save the user just asked for.
   let geocodeCached = false;
-  const normalizedName = normalizeArabicPharmacyName(profile.name);
+  const normalizedName = foldCustomerName(profile.name);
   if (normalizedName && profile.coordinates) {
     const { error: cacheError } = await supabase.from("geo_locations").upsert(
       {

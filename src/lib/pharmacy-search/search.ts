@@ -17,7 +17,7 @@
  * billed Google Places call being told so.
  */
 
-import { normalizeArabicPharmacyName, removeStopWords } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName, removeCustomerStopWords } from "@/lib/customer-master/name-key";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
@@ -122,7 +122,7 @@ const CUSTOMER_MAP_COLUMNS = "distributor_code, customer_code, customer_name, ad
  * The whole active registry is read on every search, not a filtered slice of it.
  *
  * That is a deliberate trade, and the reason is the Arabic. Matching a typed name against a
- * stored one needs `normalizeArabicPharmacyName` on BOTH sides, and PostgREST cannot call a
+ * stored one needs `foldCustomerName` on BOTH sides, and PostgREST cannot call a
  * function inside a filter — the direct-order picker solves the same problem by moving the whole
  * search into a `plpgsql` function (`phx_search_direct_order_customers`) so `phx_normalize_arabic`
  * can run in SQL. Here the table is small enough that reading it whole and matching in memory is
@@ -169,7 +169,7 @@ export type RegistryPharmacy = {
  * Names are compared with the generic words removed from BOTH sides, which is what makes the
  * production case work: the owner typed "صيدلية الإنسانية" and the registry holds "الإنسانية",
  * so a plain substring test fails in the direction nobody checks — the QUERY is the longer
- * string. `removeStopWords` drops "صيدلية" from the query and the two meet. It never strips a
+ * string. `removeCustomerStopWords` drops "صيدلية" from the query and the two meet. It never strips a
  * name down to nothing, so a pharmacy called only "صيدلية" stays findable.
  */
 function matchRegistryPharmacy(
@@ -184,9 +184,9 @@ function matchRegistryPharmacy(
   if (raw && pharmacy.codes.some((code) => code.customerCode.toLowerCase().includes(raw))) return "customer_code";
 
   if (!query.normalized) return null;
-  const name = normalizeArabicPharmacyName(pharmacy.name);
+  const name = foldCustomerName(pharmacy.name);
   if (name.includes(query.normalized)) return "name";
-  return removeStopWords(name).includes(removeStopWords(query.normalized)) ? "name" : null;
+  return removeCustomerStopWords(name).includes(removeCustomerStopWords(query.normalized)) ? "name" : null;
 }
 
 /**
@@ -367,7 +367,7 @@ function collapseByPharmacy(hits: PharmacySearchHit[]): PharmacySearchHit[] {
   const seenDistributors = new Map<string, Set<string>>();
 
   for (const hit of hits) {
-    const normalized = normalizeArabicPharmacyName(hit.name);
+    const normalized = foldCustomerName(hit.name);
     // Same name in two different bricks is genuinely two pharmacies (4 brick names are known to
     // repeat across areas), so the brick is part of the identity key, not just the name. It cuts
     // both ways for the registry: "الإسعاف" is registered once and sits in 20 separate bricks in
@@ -417,8 +417,8 @@ function collapseByPharmacy(hits: PharmacySearchHit[]): PharmacySearchHit[] {
 /** Exact-prefix and shorter names first — "الصيدلية الحديثة" should beat a 90-character name. */
 function rankHits(hits: PharmacySearchHit[], normalizedQuery: string): PharmacySearchHit[] {
   return [...hits].sort((a, b) => {
-    const aName = normalizeArabicPharmacyName(a.name);
-    const bName = normalizeArabicPharmacyName(b.name);
+    const aName = foldCustomerName(a.name);
+    const bName = foldCustomerName(b.name);
     const aExact = aName === normalizedQuery ? 0 : aName.startsWith(normalizedQuery) ? 1 : 2;
     const bExact = bName === normalizedQuery ? 0 : bName.startsWith(normalizedQuery) ? 1 : 2;
     if (aExact !== bExact) return aExact - bExact;
@@ -447,9 +447,9 @@ export async function searchPharmacies(rawQuery: string, viewer: SourceMaskViewe
   // Which distributor, if any, is the person naming? Matched against our 20 distributors before
   // anything else, because "Ibn Sina" as a query means "show me Ibn Sina's pharmacies", not
   // "find a pharmacy called Ibn Sina".
-  const normalizedQuery = normalizeArabicPharmacyName(safe);
+  const normalizedQuery = foldCustomerName(safe);
   const matchedDistributor = [...reference.distributorNames.entries()].find(([code, name]) => {
-    const normalizedName = normalizeArabicPharmacyName(name);
+    const normalizedName = foldCustomerName(name);
     return normalizedName === normalizedQuery || code.toLowerCase() === safe.toLowerCase();
   }) ?? null;
 

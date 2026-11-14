@@ -5,7 +5,7 @@
  * has bought, where it is, and who practises nearby. Read-only — nothing in this file writes.
  */
 
-import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import {
   isSalesPeriodReleasedCompanyWide,
@@ -326,7 +326,7 @@ export async function loadPharmacyProfile(
   }
 
   const name = String(baseRow.customer_name ?? "").trim();
-  const normalizedName = normalizeArabicPharmacyName(name);
+  const normalizedName = foldCustomerName(name);
   const territory = resolveTerritory(reference, {
     areaCode: baseRow.area_code,
     brickId: baseRow.brick_id,
@@ -354,7 +354,7 @@ export async function loadPharmacyProfile(
   }
 
   for (const row of siblings) {
-    if (normalizeArabicPharmacyName(row.customer_name) !== normalizedName) continue;
+    if (foldCustomerName(row.customer_name) !== normalizedName) continue;
     const distributorCode = row.distributor_code?.trim();
     const customerCode = row.customer_code?.trim();
     if (!distributorCode || !customerCode) continue;

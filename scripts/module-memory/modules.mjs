@@ -761,7 +761,7 @@ export const MODULES = [
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",
     scope: "The vendor CRM sync (iReports360), visits and call rates, coverage and frequency, Reps List, Reps Plans, KPIs, double visits, doctor lists, field activity.",
     globs: [
-      "src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**",
+      "src/lib/{crm,crm-integrity,customer-360,customer-identity,customer-master,double-visit-analytics,visits-report,field-activity,weekly-planning}/**",
       "src/components/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,double-visit-report,field-activity,weekly-planning}/**",
       "app/**/{crm,crm-integrity,crm-tools,field-crm,customer-360,double-visit-analytics,double-visit-data-integrity,double-visit-report,dv-planner,doctor-coverage,doctor-coverage-settings,doctor-list,doctor-list-changes,rep-doctor-lists,reps-list,reps-plans,kpis,field-activity,visit-entry,visits,plan-verification,weekly-plans,plans,my-list,contact-review}/**",
       "tests/*{crm,ireports,visit,reps-list,reps-plans,kpi,double-visit,doctor-list,coverage}*",
