@@ -9,10 +9,12 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import { placeChecksSummary, seatedPlacesInUse, withoutDecisionNotesThatAreComments } from "@/lib/phoenix-crm/place-checks-on-demand";
 import { canRestoreValidation, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { canCorrectHeldFullName, loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
+import { keepPlaceChecksForTheClick, placeChecksHandoffKey } from "@/lib/phoenix-crm/server/place-checks-handoff";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
 import {
   canDecideValidationReviews,
@@ -93,9 +95,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   const noteIndex = { ...notes, integrity };
   // A comment written with a decision is on the row as a comment too (`tellDecisionComment`), so it is
   // drawn there, under "The rep can read this", and not a second time beside the decision.
-  const rows = reviews.rows.map((row) =>
-    decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("place", row.placeId)] ?? []) ? { ...row, decisionNote: null } : row,
-  );
+  const rows = withoutDecisionNotesThatAreComments(reviews.rows, notes.notes);
   const sharedPlaces = sharedRead.rows.map((row) =>
     decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("shared_place", row.sharedPlaceId)] ?? []) ? { ...row, decisionNote: null } : row,
   );
@@ -117,6 +117,20 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // `?review=<tab>` opens the one-by-one review on that tab — the Location integrity page links here so.
   const review = (await searchParams).review;
   const openOn = parseDeckTab(typeof review === "string" ? review : null);
+  // 🔴 THE BOARD OPENS ON WHAT NEEDS YOU DRAWS, AND THE REST WAITS FOR THE CLICK (owner, 2026-11-14, "Load
+  // lists on demand"; `place-checks-on-demand.ts`). The 5,807 places in use and the decisions older than 14
+  // days were 8.7 of the page's 12.5 MB and froze the server building it. Every figure counted over them is
+  // counted here, by the board's own functions, and the board reads the rows themselves from
+  // `PLACE_CHECKS_EVERYTHING_ROUTE` when he opens Not confirmed, picks a filter, or opens the review.
+  // Never hand the board `validated` or every decision again.
+  const recentDecided = decided.filter((row) => row.recent);
+  // What it read and does not send waits two minutes for the click, so the click reads nothing again.
+  keepPlaceChecksForTheClick(placeChecksHandoffKey(viewer), { validated, olderDecided: reviews.rows.filter((row) => !row.recent) });
+  const seatedInUse = seatedPlacesInUse(validated, sharedPlaces);
+  const onDemand = {
+    summary: placeChecksSummary({ team: false, pending: waiting, decided, validated, reopened, sharedPlaces }),
+    readAt: new Date().toISOString(),
+  };
 
   return (
     <div className="space-y-5">
@@ -179,13 +193,14 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
       <PlaceCheckRestoreProvider canRestore={canRestoreValidation(viewer)}>
         <PlaceChecksWithDeck
           capped={capped}
-          decided={decided}
+          decided={recentDecided}
           noteIndex={noteIndex}
+          onDemand={onDemand}
           openOn={openOn}
           pending={waiting}
           reopened={reopened}
           sharedPlaces={sharedPlaces}
-          validated={validated}
+          validated={seatedInUse}
         />
       </PlaceCheckRestoreProvider>
     </div>

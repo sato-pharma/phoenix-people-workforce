@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters}.ts"
-  - "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews}.ts"
+  - "src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters,place-checks-on-demand}.ts"
+  - "src/lib/phoenix-crm/server/{place-match-groups,customer-match-groups,validation-reviews,place-checks-handoff}.ts"
   - "src/components/phoenix-crm/{place-match-board,customer-match-board,shared-place-customers,shared-place-list,validated-place-list,validation-review-queue,validation-reviews-board,reopened-customer-list,place-check-done,place-check-restore}.tsx"
   - "app/**/field-crm/validation-reviews/**"
   - "app/api/phoenix-crm/validation-reviews/**"
@@ -10,7 +10,7 @@ paths:
   - "src/components/crm-integrity/integrity-review-slide.tsx"
   - "app/api/admin/phoenix-crm/integrity/cases/**"
   - "tests/place-review-deck*"
-  - "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks}*"
+  - "tests/phoenix-crm-{place-match-groups,customer-match-groups,shared-place-groups,refuse-validation,validation-review-filters,place-checks-in-overflow,sfe-place-checks,place-checks-on-demand}*"
   - "src/lib/phoenix-crm/master-list.ts"
   - "src/lib/phoenix-crm/server/master-list.ts"
   - "src/components/phoenix-crm/master-list-board.tsx"
@@ -33,6 +33,7 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **THE PAGE SENDS WHAT NEEDS YOU DRAWS; EVERY PLACE IN USE AND EVERY OLDER DECISION WAIT FOR THE CLICK** (owner, 2026-11-14, "Load lists on demand"; the 12.5 MB page froze the server 1.08 s on 11 Nov). The page still READS every row, counts the scorecard, the Not confirmed count and the filter lists with the board's own functions (`placeChecksSummary`, `src/lib/phoenix-crm/place-checks-on-demand.ts`), sends `validated={seatedInUse}` and `decided={recentDecided}`, and leaves the rest for the click (`place-checks-handoff.ts`, one entry per person, taken once, two minutes). The board reads `/api/phoenix-crm/validation-reviews/everything` on Not confirmed, any filter, a decider or the review, and draws no tab from part of its rows (`reading`). Never hand the board every row again. Pinned by `tests/phoenix-crm-place-checks-on-demand.test.ts`.
 - 🔴 **ONE RE-READ FOR A RUN OF DECISIONS, NEVER ONE EACH** (2026-11-01, "fix the portal home slow opens"). `usePlaceCheckDone` asks `placeCheckReread` (`src/components/phoenix-crm/place-check-reread.ts`), which waits for 30 quiet seconds; closing the one-by-one review reads at once. Sunday 1 Nov 2026, 10:45 to 10:50 Cairo: 14 approvals were 14 overlapping builds of this page, each 250+ reads and 9 to 28 seconds. In the minutes with builds, every read in the company had a median of 382 ms against 140 ms without, and the portal home's typical open was 5.0 s against 3.9 s. **Never put a `router.refresh()` back on the decision path.** A comment, a recommendation and the bulk action still refresh at once, because those are rare.
 
 - 🔴 **A DECIDED ROW STAYS DECIDED ON SCREEN, AND "ALREADY DECIDED" IS AN ANSWER, NEVER A RED ERROR** (owner, 2026-11-08: "places checks is stale and slow and many error"; the SFE Manager met "already decided" three times that morning). `useSavedOutcome` keeps its mark in the tab-wide `SAVED_MARKS`, so a remounted list (tab, filter, Show more) never brings a decided row's buttons back; every decision control and the PM full names settle on `isAlreadyDecided` (`place-check-done.tsx`). The full names decide through `placeCheckReread`, never a `router.refresh()` per press. The admin page starts its notes and evidence on `subjectReads`, never after all five reads. Pinned by `tests/place-review-deck.test.ts` (4c).

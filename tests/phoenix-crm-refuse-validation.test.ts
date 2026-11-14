@@ -332,7 +332,9 @@ function checkScreens(): void {
   assert.match(page, /loadValidatedPlaces\(viewer\)/, "and now also loads the validations the system did not question");
   // The prop names rather than one literal line: the sixth set (the polyclinics, 2026-10-09) made the
   // call multi-line, and a single-line fingerprint would go red on formatting alone.
-  for (const prop of ["pending={waiting}", "decided={decided}", "validated={validated}", "reopened={reopened}", "capped={capped}"]) {
+  // Since 2026-11-14 the page hands the recent decisions and the seated places in use, and the board reads
+  // the rest on the click (`place-checks-on-demand.ts`) — so those two props are the narrower sets.
+  for (const prop of ["pending={waiting}", "decided={recentDecided}", "validated={seatedInUse}", "onDemand={onDemand}", "reopened={reopened}", "capped={capped}"]) {
     assert.ok(page.includes(prop), `the Place checks board is handed ${prop}`);
   }
   // Since 2026-10-18 the page draws the board through the one-by-one review's wrapper, which hands

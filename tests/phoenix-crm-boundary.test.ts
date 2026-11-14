@@ -227,6 +227,10 @@ const ROUTE_GATES: RouteGate[] = [
   // The fourth tab (owner, 2026-10-26): one customer several reps validated at places that do not agree.
   // A read only, the deciders alone — the loader refuses everyone else before a row is read.
   get("validation-reviews/same-customer"),
+  // The part of Place checks that waits for the click (owner, 2026-11-14, "Load lists on demand"): every
+  // place in use and every decision older than 14 days. `approve` at the route — it is the deciders' own
+  // board — and `canDecideValidationReviews` refuses everyone else before a row is read.
+  get("validation-reviews/everything", "approve"),
   // The venues themselves: the list a rep standing in one picks from, and the capture at its door.
   // `read` and `create`, the same pair a place has, and `territoryForValidation` narrows the capture
   // in the service exactly as it narrows `list/places`.
