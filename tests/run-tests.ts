@@ -503,6 +503,7 @@ import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.
 import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-by-day.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
+import { runWeeklyPlansOneStoreTests } from "./weekly-plans-one-store.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
@@ -2239,6 +2240,7 @@ import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.te
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
+import { runPhoenixCrmPlaceChecksOnDemandTests } from "./phoenix-crm-place-checks-on-demand.test.ts";
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommentReadingTests } from "./phoenix-crm-comment-reading.test.ts";
@@ -3140,6 +3142,7 @@ import { runNotificationTypeRegistryTests } from "./notification-type-registry.t
 import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.ts";
 import { runSyntheticJourneyRunStatusTests } from "./synthetic-journey-run-status.test.ts";
 import { runSyntheticJourneyDeclaredPageTests } from "./synthetic-journey-declared-page.test.ts";
+import { runSyntheticJourneySignInStepTests } from "./synthetic-journey-sign-in-step.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4364,6 +4367,10 @@ await runTest(
 await runTest(
   "daily deductions no-weekly-plan connector (head office only, one day on that Monday, NEVER an automatic month collector)",
   runDailyDeductionsNoWeeklyPlanTests,
+);
+await runTest(
+  "one plan store, Phoenix CRM (owner, 14 Nov 2026, DR-02): the legacy Weekly Plans form refuses every write and keeps its history readable, and the no-weekly-plan deduction finds a week sent on time in Phoenix CRM",
+  runWeeklyPlansOneStoreTests,
 );
 await runTest(
   "deductions exempt employees (Samaa Mosaad and Reham Mahmoud are dropped from every automated deduction writer; manual HR entries are spared)",
@@ -8097,6 +8104,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM place checks' REP SCORECARD — each rep's captures on one line, worst first (owner, 2026-10-17: \"is this a report that really shows me data? or it's a bunch of chaos\"; the board drew every row and summed nothing, 104,455 px tall on its Clinics tab). Pinned: every place sits in exactly one of six columns so a line adds up to its own Places figure; a place waiting for a decision is counted there once, never again among the places in use, and a place listed twice is one place; a customer sent back sits beside the sum; a seated customer is judged on the timetable and never on a signboard reading; a lost call is 'not read', never a bad photograph; reps sort by the SHARE of photographs that went wrong, then the count, then the name; the total reads every count a line carries; the phone cards come before the table and the header is mapped from the same columns; a manager's line says 'Being checked', never 'Waiting for you'; and tapping a rep narrows the whole board through its own Rep filter",
   runPhoenixCrmPlaceCheckScorecardTests,
+);
+
+await runTest(
+  "the Phoenix CRM place checks OPEN ON WHAT NEEDS YOU DRAWS, and the rest waits for the click (owner, 2026-11-14, \"Load lists on demand\"; the page sent 12.5 MB and building it froze the server — the 11 Nov 1.08 s stall). Pinned: the scorecard, the Not confirmed count and the filter lists are counted on the server from every row by the board's own functions, never from the few the page sends; Decided by lists every decider; the page hands only the seated places and the last 14 days' decisions; the older decisions merge back in the read's own order and once; no tab draws part of its list while the rest is on its way; the route asks approve and the decider before a row is read; the review opens only on every row; and a district manager's board is untouched",
+  runPhoenixCrmPlaceChecksOnDemandTests,
 );
 
 await runTest(
@@ -12440,6 +12452,7 @@ await runTest("notification type registry (every sent type registered, every ent
 await runTest("smoke-test advice on the Synthetic Journeys page (a failed assertion is never 'the page did not respond'; a cancelled prefetch and another host's refusal are not the app's failure; the app's own 401, 403, 404 and 500 are named)", runSyntheticJourneyAdviceTests);
 await runTest("smoke-test run status on the Synthetic Journeys page (every check passed and the one skip said why is healthy; a skip with no reason is still a warning; a skip never hides a failure or stands in for a pass)", runSyntheticJourneyRunStatusTests);
 await runTest("smoke check that skips itself shows its real page (the Outstation Expenses export reads /admin/outstation/expenses, not the word unknown; a check that named no page still reads unknown)", runSyntheticJourneyDeclaredPageTests);
+await runTest("smoke-suite sign-in step is saved under its own code (sign-in, not the test runner's internal hash), with its /login page and Super Admin role; every other check keeps its own code", runSyntheticJourneySignInStepTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

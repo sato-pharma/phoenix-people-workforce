@@ -163,7 +163,7 @@ export function runPhoenixCrmValidationReviewFiltersTests(): void {
   assert.match(page, /realDecided = real\(decided\)\.filter\(\(row\) => row\.recent\)/, "the 14-day cards still count only the recent decisions");
   assert.match(board, /filters\.decider \? everyDecided : everyDecided\.filter\(\(row\) => row\.recent\)/, "the older decisions show only while a decider is chosen");
   assert.match(board, /\{team \? null : \(\s*<CrmField htmlFor="vr-decider"/, "the Decided by box is the company board's alone");
-  for (const prop of ["capped={capped}", "decided={decided}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={validated}"]) {
+  for (const prop of ["capped={capped}", "decided={recentDecided}", "onDemand={onDemand}", "pending={waiting}", "reopened={reopened}", "sharedPlaces={sharedPlaces}", "validated={seatedInUse}"]) {
     assert.ok(page.includes(prop), `the board is handed ${prop}`);
   }
 }
