@@ -1336,12 +1336,12 @@ export function EmployeeManagement({
 
     const vacancyOptions =
       filteredWorkforceVacancies.length > 0
-        ? filteredWorkforceVacancies.map((vacancy) => ({
-            label: formatVacancyOptionLabel(vacancy, {
+        ? filteredWorkforceVacancies.map((v) => ({
+            label: formatVacancyOptionLabel(v, {
               omitPositionTitle: vacancyPositionsAgree,
               leadWithRegion: vacancyRowsAreManagerSeats,
             }),
-            value: String(vacancy.areaId),
+            value: String(v.areaId),
           }))
         : form.lineId
           ? [{ label: "No open vacancy for this position and line", value: AREA_PICKER_EMPTY_VALUE }]
