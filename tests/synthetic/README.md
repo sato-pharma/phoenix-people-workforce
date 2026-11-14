@@ -102,7 +102,7 @@ Synthetic User Journeys — summary
 [PASS] People Management loads (/employees) — 1204ms
 [FAIL] Leave Management (Vacation Control) loads (/leave-management/vacation-control) — 10032ms
    error: Timeout 10000ms exceeded waiting for locator('heading[level=1]:has-text("Vacation Control")') to be visible
-   next: The page did not respond in time. Check that SYNTHETIC_BASE_URL is reachable and the target server is running.
+   next: The page opened, but something this check looks for never appeared on it. Either that part of the screen is broken or missing, or it was renamed or moved and the check is out of date.
 [PASS] Payroll Report loads (/payroll) — 950ms
 [PASS] Sales Upload loads (/sales/upload) — 1101ms
 [PASS] Sales Normalizer loads (/sales/normalizer) — 980ms
@@ -111,6 +111,30 @@ Synthetic User Journeys — summary
 6 passed, 1 failed, 0 skipped
 Full report: tests/synthetic/report/latest.md
 ```
+
+### The `next:` line — what a failed journey is told to do
+
+The same sentence is stored with the run and printed under the failure on the Synthetic Journeys
+page. It is chosen by `helpers/recommend.ts`, first match wins:
+
+| What the run recorded | The advice says |
+| --- | --- |
+| `page.goto` timed out, or the connection failed | The page did not open in time |
+| The app itself answered 401 or 403 | A request was rejected as unauthorized/forbidden |
+| The app itself answered 404 | A route or an API it depends on moved or was removed |
+| Any other failed call to the app | One or more API calls failed |
+| An assertion found two where it expects one (strict mode violation) | The screen gained a second copy; the check is out of date |
+| An assertion's element was never found | Something the check looks for never appeared |
+| An assertion found a different value (Expected / Received) | The page showed something else |
+| A click or fill timed out | A control never became ready |
+| The test's own time limit, naming no step | The check ran out of time |
+
+"Timeout: 10000ms" is printed on every failed assertion and means only how long it waited. Until
+14 November 2026 that word alone chose "The page did not respond in time", so every failed
+assertion was reported as a server that was down. Two things are never counted as the app failing:
+a request the browser cancelled itself on navigation (`net::ERR_ABORTED`, a dozen prefetches per
+admin page), and an answer from another host. `tests/synthetic-journey-advice.test.ts` holds the
+function to the real messages production has recorded.
 
 ## How to add a new journey
 

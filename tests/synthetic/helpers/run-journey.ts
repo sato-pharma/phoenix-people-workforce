@@ -1,26 +1,7 @@
 import type { Page, TestInfo } from "@playwright/test";
 
+import { recommendNextStep } from "./recommend";
 import type { JourneyDefinition, JourneyResult } from "./types";
-
-function recommend(message: string, consoleErrors: string[], networkErrors: string[]): string {
-  const lower = message.toLowerCase();
-  if (lower.includes("timeout") || lower.includes("net::err")) {
-    return "The page did not respond in time. Check that SYNTHETIC_BASE_URL is reachable and the target server is running.";
-  }
-  if (networkErrors.some((e) => / 401 | 403 /.test(e))) {
-    return "A request was rejected as unauthorized/forbidden. Check SYNTHETIC_ADMIN_HR_ID/SYNTHETIC_ADMIN_PASSWORD and that the account has Super Admin access.";
-  }
-  if (networkErrors.some((e) => / 404 /.test(e))) {
-    return "A request returned 404. The route or an API it depends on may have moved or been removed.";
-  }
-  if (networkErrors.length > 0) {
-    return "One or more API calls failed. Review the network errors listed for this journey and the server logs.";
-  }
-  if (consoleErrors.length > 0) {
-    return "The page logged a JavaScript error to the console. Inspect the console errors listed for this journey.";
-  }
-  return "Review the error message and the failure screenshot above.";
-}
 
 /**
  * Shared runner for every journey spec: navigates to the route, captures
@@ -72,7 +53,13 @@ export async function runJourney(
     result.status = "failed";
     result.errors.push(message);
     result.durationMs = Date.now() - start;
-    result.recommendation = recommend(message, consoleErrors, networkErrors);
+    // The sentence the Synthetic Journeys page prints under the failure — see helpers/recommend.ts.
+    result.recommendation = recommendNextStep({
+      baseUrl: process.env.SYNTHETIC_BASE_URL,
+      consoleErrors,
+      message,
+      networkErrors,
+    });
     await testInfo.attach("journey-result", {
       body: JSON.stringify(result, null, 2),
       contentType: "application/json",

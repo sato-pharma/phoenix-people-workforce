@@ -3124,6 +3124,7 @@ import { runDailyJobsSplitTests } from "./daily-jobs-split.test.ts";
 import { runOutboundTimeLimitsTests } from "./outbound-time-limits.test.ts";
 import { runWorkflowRegistryCoverageTests } from "./workflow-registry-coverage.test.ts";
 import { runNotificationTypeRegistryTests } from "./notification-type-registry.test.ts";
+import { runSyntheticJourneyAdviceTests } from "./synthetic-journey-advice.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -12384,6 +12385,7 @@ await runTest(
 await runTest("every call to an outside service has a time limit (REC-050): the repo-wide scan finds no outbound fetch without a deadline, and fetchWithTimeout times out naming only the host, passes the caller's abort through, retries a GET on a 5xx and never retries a write", runOutboundTimeLimitsTests);
 await runTest("every transition table in code has a registry row and a Workflow Control map entry (REC-005, 13 Nov 2026): a new *_TRANSITIONS or *Transitions table, claimTransition site or registry-helper call with no seeded module or no map subflow fails naming its file; weekly plans, employee plans, market awareness and the automated payroll run are seeded as exact copies of their code tables, the payroll table equals the six claim sites, and with no registry row the code table decides alone", runWorkflowRegistryCoverageTests);
 await runTest("notification type registry (every sent type registered, every entry sent, every policy row named)", runNotificationTypeRegistryTests);
+await runTest("smoke-test advice on the Synthetic Journeys page (a failed assertion is never 'the page did not respond'; a cancelled prefetch and another host's refusal are not the app's failure; the app's own 401, 403, 404 and 500 are named)", runSyntheticJourneyAdviceTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
