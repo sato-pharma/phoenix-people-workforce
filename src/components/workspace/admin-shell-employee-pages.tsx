@@ -60,6 +60,7 @@ import {
   getPayslipPortalData,
   getDsmTeamPerformance,
 } from "@/lib/employee-portal/service";
+import { recordShownIncentive } from "@/lib/incentives/shown-figures-store";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductionLedger } from "@/lib/deductions/portal.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -393,6 +394,8 @@ export async function WorkspaceIncentivePage() {
     return null;
   });
   if (!data) return employeeDataUnavailable("Incentive Unavailable");
+  // The same store as the portal's Incentive tab (REC-066): the person's own figure, first time shown.
+  await recordShownIncentive(access, data);
   return (
     <WorkspaceFrame
       access={access}
