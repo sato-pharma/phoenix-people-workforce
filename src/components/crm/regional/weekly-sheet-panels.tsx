@@ -269,11 +269,11 @@ export function WeeklySheetAccountsPanel({ sheet }: { sheet: WeeklySheet }) {
       <KpiSection description={weeklySheetSpecialityGapLine(team) ?? "Every account with doctors written has 3 of each"} title="Doctors of each speciality">
         <table className="hidden w-full table-fixed text-left md:table">
           <colgroup>
-            <col className="w-[32%]" />
+            <col className="w-[27%]" />
+            <col className="w-[13%]" />
             <col className="w-[12%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[15%]" />
+            <col className="w-[13%]" />
             <col className="w-[20%]" />
           </colgroup>
           <thead>
