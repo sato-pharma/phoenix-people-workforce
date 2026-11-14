@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import type {
   NonEmployeePart,
   RecurringNonEmployeeInput,
@@ -65,6 +66,12 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * THE DELETE ASKS FIRST (payroll audit 2026-11-14). One tap on the bin removed a person from every future
+   * month for good — there is no undo, only typing them in again. Holds the entry HR asked to delete until
+   * they confirm or cancel.
+   */
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,6 +165,43 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
     }
   };
 
+  /** The confirm box for one entry, shown beside the bin that opened it (a table row on desktop, the card on a phone). */
+  const deletePrompt = (row: RecurringNonEmployeeRow) => {
+    const name = row.fullNameEn.trim() || row.fullNameAr.trim() || "This person";
+    return (
+      <div
+        role="alertdialog"
+        aria-labelledby={`standing-delete-title-${row.id}`}
+        className="border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+      >
+        <div id={`standing-delete-title-${row.id}`} className="break-words font-black">
+          Delete {name} from the standing list?
+        </div>
+        <p className="mt-1 break-words">
+          {name} ({money(row.totalSalary)}, paid with {partLabel(row.part)}) stops being added to new months. Months
+          already built keep their entry. This cannot be undone: to bring them back they have to be typed in again. To
+          pause them instead, switch them Off and Save.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            className="border border-rose-600 bg-rose-600 text-white hover:bg-rose-700"
+            disabled={busyId === row.id}
+            onClick={() => {
+              setPendingDeleteId(null);
+              void deleteExisting(row.id);
+            }}
+          >
+            Delete from the standing list
+          </Button>
+          <Button size="sm" variant="outline" disabled={busyId === row.id} onClick={() => setPendingDeleteId(null)}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   const addNewRowSlot = () => {
     setNewRows((prev) => [...prev, { ...emptyDraft, tempId: `new-${Date.now()}-${prev.length}` }]);
   };
@@ -244,7 +288,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
           <tbody>
             {rows.map((row, index) => {
               const draft = edits[row.id] ?? emptyDraft;
-              return (
+              return [
                 <tr
                   key={row.id}
                   className={cn("align-top", !row.active ? "bg-slate-100/80" : index % 2 ? "bg-slate-50/60" : "bg-white")}
@@ -321,18 +365,24 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                       </Button>
                       <Button
                         aria-label="Delete this entry"
+                        {...rowDetailToggleProps(`standing-delete-${row.id}`, pendingDeleteId === row.id)}
                         size="sm"
                         variant="ghost"
                         disabled={busyId === row.id}
-                        onClick={() => void deleteExisting(row.id)}
+                        onClick={() => setPendingDeleteId(row.id)}
                         className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                       >
                         <Trash2 className="size-4" />
                       </Button>
                     </div>
                   </td>
-                </tr>
-              );
+                </tr>,
+                pendingDeleteId === row.id ? (
+                  <TableRowDetail key={`${row.id}-delete`} id={`standing-delete-${row.id}`} colSpan={5}>
+                    {deletePrompt(row)}
+                  </TableRowDetail>
+                ) : null,
+              ];
             })}
 
             {newRows.map((row) => (
@@ -438,12 +488,13 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                   size="sm"
                   variant="ghost"
                   disabled={busyId === row.id}
-                  onClick={() => void deleteExisting(row.id)}
+                  onClick={() => setPendingDeleteId(row.id)}
                   className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                 >
                   <Trash2 className="size-4" />
                 </Button>
               </div>
+              {pendingDeleteId === row.id ? <div className="mb-2">{deletePrompt(row)}</div> : null}
               <div className="flex flex-col gap-2">
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
