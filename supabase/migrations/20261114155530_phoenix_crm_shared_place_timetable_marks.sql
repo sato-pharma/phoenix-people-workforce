@@ -68,10 +68,14 @@ create index if not exists phoenix_crm_shared_place_timetable_marks_shared_place
   on public.phoenix_crm_shared_place_timetable_marks (shared_place_id, acted_at desc, id desc);
 
 alter table public.phoenix_crm_shared_place_timetable_marks enable row level security;
--- Append-only for the app too: a new table is born with every privilege for service_role, so they are
--- taken away first and only read and insert are given back.
-revoke all on table public.phoenix_crm_shared_place_timetable_marks from public, anon, authenticated, service_role;
-grant select, insert on table public.phoenix_crm_shared_place_timetable_marks to service_role;
+-- The module's lock, as every Phoenix CRM table carries it: the service role alone.
+drop policy if exists phoenix_crm_shared_place_timetable_marks_service_role on public.phoenix_crm_shared_place_timetable_marks;
+create policy phoenix_crm_shared_place_timetable_marks_service_role
+  on public.phoenix_crm_shared_place_timetable_marks for all to service_role using (true) with check (true);
+revoke all on table public.phoenix_crm_shared_place_timetable_marks from public, anon, authenticated;
+grant all on table public.phoenix_crm_shared_place_timetable_marks to service_role;
+-- And append-only for the app too: rewriting a row and deleting one are taken back from the service role.
+revoke update, delete on table public.phoenix_crm_shared_place_timetable_marks from service_role;
 
 -- The trail starts with what is already true: every building declared today gets its declaration row,
 -- from its own two columns. Safe to re-apply: a building that already has a row is left alone.

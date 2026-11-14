@@ -150,9 +150,14 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     assert.ok(!fn.includes(never), `🔴 the function validates nobody and tells nobody — it never touches ${never}`);
   }
   assert.ok(
-    migration.includes("revoke all on table public.phoenix_crm_shared_place_timetable_marks from public, anon, authenticated, service_role;") &&
-      migration.includes("grant select, insert on table public.phoenix_crm_shared_place_timetable_marks to service_role;"),
-    "🔴 the trail is append-only: nobody holds update or delete on it, the app included",
+    migration.indexOf("grant all on table public.phoenix_crm_shared_place_timetable_marks to service_role;") >= 0 &&
+      migration.indexOf("grant all on table public.phoenix_crm_shared_place_timetable_marks to service_role;") <
+        migration.indexOf("revoke update, delete on table public.phoenix_crm_shared_place_timetable_marks from service_role;"),
+    "🔴 the trail is append-only: after the module's lock, update and delete are taken back from the app too",
+  );
+  assert.ok(
+    !/\.from\("phoenix_crm_shared_place_timetable_marks"\)\s*\.(?:insert|update|upsert|delete)\(/.test(code("src/lib/phoenix-crm/server/shared-places.ts") + server),
+    "and no service writes the trail itself: the function is its only writer",
   );
   assert.ok(migration.includes("alter table public.phoenix_crm_shared_place_timetable_marks enable row level security;"));
   assert.ok(
