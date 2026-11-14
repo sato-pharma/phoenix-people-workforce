@@ -219,6 +219,8 @@ type MergeOutcome = {
   alreadyOnSurvivor: number;
   codesMoved: number;
   customerLinksMoved: number;
+  duplicateCodesRetired: number;
+  repointed: number;
   requestTargetsMoved: number;
   transfersMoved: number;
 };
@@ -316,6 +318,8 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
         alreadyOnSurvivor: Number(payload.alreadyOnSurvivor ?? 0),
         codesMoved: Number(payload.codesMoved ?? 0),
         customerLinksMoved: Number(payload.customerLinksMoved ?? 0),
+        duplicateCodesRetired: Number(payload.duplicateCodesRetired ?? 0),
+        repointed: Number(payload.customerLinksRepointed ?? 0) + Number(payload.requestTargetsRepointed ?? 0),
         requestTargetsMoved: Number(payload.requestTargetsMoved ?? 0),
         transfersMoved: Number(payload.transfersMoved ?? 0),
       });
@@ -421,6 +425,9 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
             {`Merged. Moved ${outcome.customerLinksMoved} customer link(s), ${outcome.requestTargetsMoved} request target(s), `}
             {`${outcome.codesMoved} distributor code(s) and ${outcome.transfersMoved} transfer(s); `}
             {`${outcome.alreadyOnSurvivor} were already on the survivor.`}
+            {outcome.duplicateCodesRetired > 0
+              ? ` Switched off ${outcome.duplicateCodesRetired} duplicate distributor code(s) the survivor already had, and moved ${outcome.repointed} link(s) and target(s) onto the survivor's copy.`
+              : null}
           </div>
         ) : null}
 
