@@ -126,6 +126,47 @@ async function reviewCustomerId(reviewId: string): Promise<string | null> {
   return text((data as Row | null)?.customer_id);
 }
 
+/**
+ * Whether the system's own approval of this held review must wait for the three names.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: the system approves a held signboard through the same
+ * function the two deciders' button runs, but it called it directly, so the one approve path that asked
+ * nothing about a short name was the system's. It asks the SAME gate now, and reads its refusal as an
+ * answer: true means "leave this one waiting", where the deciders' Approve is disabled and the rejection
+ * with `short_name` sends it back to the rep. Any other failure travels to the caller.
+ */
+export async function heldReviewNeedsFullName(reviewId: string): Promise<boolean> {
+  try {
+    await refuseApprovalOfShortName(await reviewCustomerId(reviewId));
+    return false;
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === VALIDATION_FULL_NAME_CODE) return true;
+    throw error;
+  }
+}
+
+/**
+ * Which of these places are still in use.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: a rejected building, and a place retired from the list,
+ * both retire the place and leave a pending review of it pending. Every reader that asked "is a review
+ * waiting?" then answered yes for a place nobody can decide any more, so the customer read "checking"
+ * for ever and his requests were held on Place checks. A pending review counts only while its place is
+ * active; this is the one read that says which are. Two plain reads, never an embedded join.
+ */
+async function activePlaceIds(placeIds: ReadonlyArray<string | null | undefined>): Promise<Set<string>> {
+  const rows = await selectByIds<Row>("phoenix_crm_places", "id", "id", placeIds, (query) => query.eq("status", "active"));
+  return new Set(rows.map((row) => String(row.id)));
+}
+
+/** Whether one decision was made after another. An instant that cannot be read is never the later one. */
+function decidedLater(left: unknown, right: unknown): boolean {
+  const leftAt = Date.parse(String(left ?? ""));
+  const rightAt = Date.parse(String(right ?? ""));
+  if (Number.isNaN(leftAt)) return false;
+  return Number.isNaN(rightAt) || leftAt > rightAt;
+}
+
 // ── What the rep's own list reads ───────────────────────────────────────────────────────────────
 
 /** One customer's standing, as his own list reads it. */
@@ -155,7 +196,7 @@ export async function loadLocationChecks(seatId: string, isTest: boolean): Promi
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_validation_reviews")
-        .select("id, customer_id, status, created_at, decided_at, refusal_reason")
+        .select("id, customer_id, place_id, status, created_at, decided_at, refusal_reason")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)
         .order("created_at", { ascending: false })
@@ -170,14 +211,27 @@ export async function loadLocationChecks(seatId: string, isTest: boolean): Promi
     },
   );
   throwIfError(error);
+  // Phoenix CRM validation audit, 14 Nov 2026: a waiting review says "checking" only while its place is
+  // still in use. A review left pending on a retired place (a rejected building, a place removed from the
+  // list) is nobody's to decide, and it kept the rep's row on "checking" with no way out.
+  const inUse = await activePlaceIds(rows.filter((row) => row.status === "pending").map((row) => text(row.place_id)));
   const checks = new Map<string, LocationCheckReading>();
+  // Phoenix CRM validation audit, 14 Nov 2026: his latest ANSWER is the row decided last, not the row
+  // created last. A place has one review row for all time, so refusing a place approved weeks ago decides
+  // an old row today; read by `created_at`, a newer approval of another place of his hid that refusal and
+  // his list never said "Validate again". The board's reopened list reads `decided_at`, and so does this.
+  const answered = new Map<string, Row>();
   for (const row of rows) {
     const customerId = String(row.customer_id);
     if (row.status === "pending") {
-      checks.set(customerId, { decidedAt: null, reason: null, state: "checking" });
+      if (inUse.has(String(row.place_id))) checks.set(customerId, { decidedAt: null, reason: null, state: "checking" });
       continue;
     }
-    // Newest first: the first decided row is his latest answer, unless a waiting one already spoke.
+    const current = answered.get(customerId);
+    if (!current || decidedLater(row.decided_at, current.decided_at)) answered.set(customerId, row);
+  }
+  for (const [customerId, row] of answered) {
+    // A waiting one already spoke.
     if (checks.has(customerId)) continue;
     const rejected = row.status === "rejected";
     checks.set(customerId, {
@@ -191,13 +245,18 @@ export async function loadLocationChecks(seatId: string, isTest: boolean): Promi
 
 /** Whether a customer's place is with the Super Admin right now. */
 export async function pendingLocationReview(customerId: string): Promise<boolean> {
-  const { count, error } = await getSupabaseAdmin()
+  // Phoenix CRM validation audit, 14 Nov 2026: this was a head count of every pending review, so a
+  // review left pending on a retired place held the customer's requests for ever. It reads the places
+  // the pending reviews are about and counts only the ones still in use (`activePlaceIds`).
+  const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_validation_reviews")
-    .select("id", { count: "exact", head: true })
+    .select("place_id")
     .eq("customer_id", customerId)
     .eq("status", "pending");
   throwIfError(error);
-  return (count ?? 0) > 0;
+  const waiting = ((data ?? []) as Row[]).map((row) => text(row.place_id));
+  if (waiting.length === 0) return false;
+  return (await activePlaceIds(waiting)).size > 0;
 }
 
 /**
@@ -213,11 +272,18 @@ export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<
   const slices: string[][] = [];
   for (let start = 0; start < unique.length; start += 150) slices.push(unique.slice(start, start + 150));
   const answers = await mapWithConcurrency(slices, 4, async (slice) =>
-    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("customer_id").in("customer_id", slice).eq("status", "pending"),
+    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("customer_id, place_id").in("customer_id", slice).eq("status", "pending"),
   );
+  const waiting: Row[] = [];
   for (const { data, error } of answers) {
     throwIfError(error);
-    for (const row of data ?? []) held.add(String(row.customer_id));
+    waiting.push(...((data ?? []) as Row[]));
+  }
+  // Phoenix CRM validation audit, 14 Nov 2026: the same test as the single check above. A pending
+  // review whose place is retired holds nobody, so a request card is not told to wait on it.
+  const inUse = await activePlaceIds(waiting.map((row) => text(row.place_id)));
+  for (const row of waiting) {
+    if (inUse.has(String(row.place_id))) held.add(String(row.customer_id));
   }
   return held;
 }
@@ -358,6 +424,13 @@ async function tellRepValidateAgain(viewer: PhoenixCrmViewer, result: Row): Prom
         customerName: text(result.customer_name) ?? "A customer",
         reviewId,
         reason: parseValidationRefusalReason(result.refusal_reason),
+        // Phoenix CRM validation audit, 14 Nov 2026: a place has ONE review row for all time, so a place
+        // refused, brought back and refused again raised its second notice on the first one's key. A key
+        // that already reached him is never delivered twice and nothing un-archives a notice he cleared,
+        // so the second refusal reached nobody. The refusal's own instant rides on the end of the key, as
+        // a building's does (`tellSeatedRepsValidateAgain`); the function returns no `decided_at`, so it
+        // is read from the clock. The prefix `withdrawValidationNotConfirmed` clears by is untouched.
+        attempt: new Date().toISOString(),
       },
       result.is_test === true,
     );
@@ -563,27 +636,41 @@ export async function loadValidationReviews(
   const decides = canDecideValidationReviews(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
-  const read = await readEveryPage<Row>(
-    () => {
-      const base = getSupabaseAdmin()
-        .from("phoenix_crm_validation_reviews")
-        .select(
-          "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
-        );
-      // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
-      // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
-      // with nothing left to undo is dropped after the read, below.
-      const query = options.everyDecision
-        ? base
-        : base.or(`status.eq.pending,decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
-      return seatScoped(query, seats)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false });
-    },
-    { maxRows: 5_000, whenFull: "stop", what: "The place checks waiting and decided", uniqueBy: (row) => String(row.id) },
-  );
-  throwIfError(read.error);
-  const reviews = read.rows;
+  // Phoenix CRM validation audit, 14 Nov 2026: the waiting reviews and the decided ones were ONE read
+  // with one ceiling of 5,000, newest first. The wide read (`everyDecision`) carries every decision ever
+  // made, so once the decisions passed the ceiling the rows it cut were the OLDEST — which is where a
+  // review still waiting sits. A place nobody had decided would have left the queue with nothing going
+  // red. So the waiting rows are read on their own, whole, and only the decided rows meet the ceiling.
+  const reviewsOf = (waiting: boolean) => () => {
+    const base = getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .select(
+        "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
+      );
+    // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
+    // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
+    // with nothing left to undo is dropped after the read, below.
+    const query = waiting
+      ? base.eq("status", "pending")
+      : options.everyDecision
+        ? base.neq("status", "pending")
+        : base.neq("status", "pending").or(`decided_at.gte.${since},and(status.eq.rejected,decided_at.gte.${rejectedSince})`);
+    return seatScoped(query, seats)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+  };
+  const [waitingRead, decidedRead] = await Promise.all([
+    readEveryPage<Row>(reviewsOf(true), { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) }),
+    readEveryPage<Row>(reviewsOf(false), { maxRows: 5_000, whenFull: "stop", what: "The place checks decided", uniqueBy: (row) => String(row.id) }),
+  ]);
+  throwIfError(waitingRead.error);
+  throwIfError(decidedRead.error);
+  // One row per review: a review decided between the two reads is kept once, as decided. Then the
+  // order the single read asked the database for, `created_at desc, id desc`, made here.
+  const reviewById = new Map<string, Row>();
+  for (const row of [...waitingRead.rows, ...decidedRead.rows]) reviewById.set(String(row.id), row);
+  const reviews = [...reviewById.values()].sort(newestValidatedFirst);
+  const capped = waitingRead.capped || decidedRead.capped;
   if (reviews.length === 0) return { rows: [], capped: false };
 
   const customerIds = [...new Set(reviews.map((row) => String(row.customer_id)))];
@@ -725,7 +812,7 @@ export async function loadValidationReviews(
       row.status === "pending" || decided === null || decided >= since || (row.status === "rejected" && row.restorable && decided >= rejectedSince);
   }
   const keep = options.everyDecision ? rows : rows.filter((row) => row.recent);
-  return { rows: keep, capped: read.capped };
+  return { rows: keep, capped };
 }
 
 // ── The decision ────────────────────────────────────────────────────────────────────────────────
@@ -778,6 +865,11 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   if (decision === "approve") {
     await afterResponse("phoenix-crm: share an approved validation across the lines", () => shareAcrossLinesQuietly(text(result.customer_id)));
   }
+  // Phoenix CRM validation audit, 14 Nov 2026: an approval that validates the customer answers the
+  // "validate again" notice an earlier refusal left in the rep's bell. Only the door and the take-back
+  // of a rejection withdrew it, so a customer approved here kept a bell asking for a photo already
+  // accepted. Never throws.
+  if (decision === "approve" && result.validated === true) await withdrawValidationNotConfirmed(String(result.customer_id));
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
@@ -1145,6 +1237,27 @@ export function signboardOf(value: unknown): ValidatedPlaceRow["signboard"] {
 }
 
 /**
+ * What a review row's `google` record held, as the one thing a hand decision keeps of it.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026 (see `refuseValidatedPlace`). The record is kept WITHOUT
+ * its own `before`, so the column never grows a chain. One exception, and it is the point of keeping
+ * anything: when the record on file is itself a hand decision (`refused_by_admin`,
+ * `confirmed_by_admin`) that already carries the system's evidence, that evidence is carried forward
+ * rather than replaced by a stub that says only who pressed the button last.
+ */
+function evidenceToKeep(google: unknown): Row | null {
+  if (!isRecord(google)) return null;
+  const byHand = google.reason === "refused_by_admin" || google.reason === "confirmed_by_admin";
+  const kept = byHand && isRecord(google.before) ? google.before : google;
+  const flat = Object.fromEntries(Object.entries(kept).filter(([key]) => key !== "before"));
+  return Object.keys(flat).length > 0 ? flat : null;
+}
+
+function isRecord(value: unknown): value is Row {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
  * Refuse one validation the system never questioned.
  *
  * 🔴 THE NOTE IS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"); the REASON — the one
@@ -1180,6 +1293,15 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // approved — has a row, and inserting a second died on 23505. It is put back to `pending` (and
   // `decided_at` cleared with it, or the table's own CHECK refuses the row) so the shared reject
   // below is what decides it, exactly as it decides an automatic hold.
+  //
+  // Phoenix CRM validation audit, 14 Nov 2026: the upsert replaced the row's `google` column whole, so
+  // refusing here a place the system had once held threw away what it was held on (the listings, the
+  // sign as read). What the row held is read first and kept under `before` — one level, never a `before`
+  // inside a `before` (`evidenceToKeep`). Every reader of this column reads its top level, which is
+  // still the hand refusal, so nothing on a screen changes. Still two steps, as it always was.
+  const earlier = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("google").eq("place_id", placeId).maybeSingle();
+  throwIfError(earlier.error);
+  const before = evidenceToKeep((earlier.data as Row | null)?.google);
   const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_validation_reviews")
     .upsert(
@@ -1190,7 +1312,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
         is_test: place.is_test === true,
         kind: "validation",
         status: "pending",
-        google: { reason: "refused_by_admin", refused_by_hr_id: viewer.hrId },
+        google: { reason: "refused_by_admin", refused_by_hr_id: viewer.hrId, ...(before ? { before } : {}) },
         created_by_hr_id: String(place.created_by_hr_id),
         decided_by_hr_id: null,
         decided_at: null,
@@ -1291,11 +1413,14 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
     reviewId = String((upserted.data as Row).id);
   }
 
-  await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
+  const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision: "approve", note, refusal_reason: null },
   });
   // A held place's "waiting for you" notice is answered.
   await withdrawValidationReviewWaiting(reviewId);
+  // Phoenix CRM validation audit, 14 Nov 2026: and where this approval is what validated the customer
+  // (a place the door was still holding), the "validate again" notice in the rep's bell goes with it.
+  if (result?.validated === true) await withdrawValidationNotConfirmed(String(place.customer_id));
   await tellDecisionComment(viewer, "place", placeId, note);
   await afterResponse("phoenix-crm: share a confirmed validation across the lines", () => shareAcrossLinesQuietly(text(place.customer_id)));
   return { placeId, approved: true };
@@ -1378,16 +1503,20 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
   for (const review of reviews) {
     const customerId = String(review.customer_id);
     const current = latest.get(customerId);
-    if (!current || String(review.decided_at ?? "") > String(current.decided_at ?? "")) latest.set(customerId, review);
+    if (!current || decidedLater(review.decided_at, current.decided_at)) latest.set(customerId, review);
   }
   // 🔴 A VENUE'S REFUSAL WRITES NO REVIEW ROW FOR THE CUSTOMER, so the read above finds nothing for a
   // customer reopened by a rejected polyclinic and this list rendered "A rep" and "No reason was
   // chosen — refused before the reason list existed." while `no_signboard` sat on the venue (measured
   // on staging, 2026-10-09, both customers of one rejected venue). The reason lives on the venue and
-  // the rep on the retired seating, so those are asked for — only for the customers with no review.
-  const viaVenue = await loadSharedPlaceRefusalsForCustomers(
-    customers.map((row) => String(row.id)).filter((id) => !latest.has(id)),
-  );
+  // the rep on the retired seating, so those are asked for.
+  //
+  // Phoenix CRM validation audit, 14 Nov 2026: asked for EVERY reopened customer, no longer only the
+  // ones with no refused review of their own. A customer whose own place was refused once, who was then
+  // seated in a building, and whose building was refused later, was shown under the OLD refusal: the
+  // wrong reason, the wrong rep, the wrong date, and filed among the single clinics. Whichever refusal
+  // was decided later is the one he is waiting on (`decidedLater`), and the row is built from that one.
+  const viaVenue = await loadSharedPlaceRefusalsForCustomers(customers.map((row) => String(row.id)));
   const names = await loadPeopleNames([
     ...[...latest.values()].map((row) => text(row.created_by_hr_id)),
     ...[...viaVenue.values()].map((row) => row.repHrId),
@@ -1397,8 +1526,13 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
   const now = Date.now();
 
   const rows = customers.map((row): ReopenedCustomerRow => {
-    const review = latest.get(String(row.id));
-    const venue = review ? undefined : viaVenue.get(String(row.id));
+    const ownRefusal = latest.get(String(row.id));
+    const venueRefusal = viaVenue.get(String(row.id));
+    // The later of the two refusals; with only one on file, that one. A building's refusal with no
+    // instant on record (before 2026-10-20) never outranks a refusal of his own place that has one.
+    const venueIsLater = venueRefusal !== undefined && (!ownRefusal || decidedLater(venueRefusal.decidedAt, ownRefusal.decided_at));
+    const review = venueIsLater ? undefined : ownRefusal;
+    const venue = venueIsLater ? venueRefusal : undefined;
     const seat = viewer.org.seats.get(String(row.seat_id));
     const reopenedAt = String(row.reopened_at);
     const refusedAt = review ? text(review.decided_at) : (venue?.decidedAt ?? null);

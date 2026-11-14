@@ -116,20 +116,21 @@ import { googleMismatchMessage, mismatchIsHeld, type LocationCheckState } from "
 import { checkPlaceOnGoogle, googleCheckRecord, type GooglePlaceCheck } from "@/lib/phoenix-crm/server/google-place-check";
 import { distanceMeters, isUsableFix } from "@/lib/phoenix-crm/geo";
 import { filePlaceCaptureTrust, filePlaceSignboardFlag, judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
-import { readPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
+import { readPlaceSignboard, readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { approveHeldSignboardBySystem, settleHeldSignboard } from "@/lib/phoenix-crm/server/signboard-holds";
 import {
   SIGNBOARD_DOOR_MAX_TRIES,
+  SIGNBOARD_RETAKE_AWAY_FROM_PLACE,
   SIGNBOARD_RETAKE_CODE,
   jsonbSafe,
+  signboardAfterSecondReading,
   signboardApplies,
   signboardAsksForAPhoto,
   signboardDoorAction,
   signboardHoldRecord,
   signboardNameIsUsable,
-  signboardNextAttempt,
-  signboardReadsRecorded,
   signboardRefusalKey,
+  signboardRetakeCheckToKeep,
   signboardRetakeIsAtThePlace,
   signboardRetakeWaiting,
   signboardUnjudged,
@@ -150,6 +151,7 @@ import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/li
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import {
+  SCHEDULE_MAX_TRIES,
   SCHEDULE_RETAKE_CODE,
   SCHEDULE_UPLOAD_TOO_EARLY,
   scheduleUploadAllowed,
@@ -2148,6 +2150,19 @@ type SeatedSchedule = {
 };
 
 /**
+ * The retake words for a board the rep did NOT photograph — the building's board on file, read again and
+ * found unreadable or not a timetable.
+ *
+ * Phoenix CRM validation audit, 14 Nov 2026: that refusal was filed and counted like one of his own
+ * photographs, so the building's stored board cost him try 1 of 3 before he had opened the camera. It is
+ * no longer filed (`scanSeatedTimetable`), so the try the sentence names is one lower than
+ * `scheduleDoorAction` wrote: with nothing refused today his next photograph is try 1, not try 2.
+ */
+function timetableRetakeWordsForBoardOnFile(action: { message: string; nextTry: number }): string {
+  return action.message.replace(/ Try \d+ of \d+\.$/, ` Try ${Math.max(1, action.nextTry - 1)} of ${SCHEDULE_MAX_TRIES}.`);
+}
+
+/**
  * 🔴 THE TIMETABLE SCANNER AT THE DOOR (owner, 2026-10-17) — ONE HELPER FOR BOTH SEATING PATHS, so
  * Validate and Add another clinic can never disagree about a photograph. The board is read, the rep's
  * refused photographs of this building today are counted, and `scheduleDoorAction` decides:
@@ -2198,6 +2213,10 @@ async function scanSeatedTimetable(input: {
     : 0;
   const action = scheduleDoorAction(check, earlierTries);
   if (action.kind === "retake") {
+    // Phoenix CRM validation audit, 14 Nov 2026: a board reused from file is still refused with the
+    // retake code and words, so the camera opens — but it is not filed and spends no try. The rep did
+    // not take that photograph; counting it cost him one of his three before he had taken any.
+    if (seatedPhoto.reused) throw validationError(timetableRetakeWordsForBoardOnFile(action), SCHEDULE_RETAKE_CODE);
     await recordTimetableRefusal({
       reason: action.reason,
       sharedPlaceId: venue.sharedPlaceId,
@@ -3276,7 +3295,9 @@ export async function retakePlaceSignboard(
   const accuracy = Number(body.shutterAccuracyMeters);
   const away = distanceMeters(fix, { lat: Number(row.lat), lon: Number(row.lon) });
   if (!signboardRetakeIsAtThePlace(away, Number.isFinite(accuracy) ? accuracy : null)) {
-    throw validationError(`This photo was taken ${Math.round(away)} m from the place. Take it at the place's own door.`);
+    // Phoenix CRM validation audit, 14 Nov 2026: this sentence printed the rep's own distance in metres.
+    // Golden Rule #1 — he is never shown the line or his metres — so it is one fixed sentence now.
+    throw validationError(SIGNBOARD_RETAKE_AWAY_FROM_PLACE);
   }
 
   const check = await readPlaceSignboard({ customerName, isTest, listType, photoBrick: text(row.brick_name), photoPath, repHrId: viewer.hrId, seatId: seat.seatId });
@@ -3291,7 +3312,10 @@ export async function retakePlaceSignboard(
 
   // Saved: the request is answered whatever was read. A photo still not read after the tries is final
   // for the reader and the Super Admin's on the board — never sent back to the rep a second time.
-  const kept = signboardNextAttempt({ ...check, retake: null }, signboardReadsRecorded(row.signboard_check));
+  // Phoenix CRM validation audit, 14 Nov 2026: the new photo used to inherit the OLD photo's read count,
+  // so a held place whose reads were spent was never read again. A new photo starts its own count at the
+  // door's read (`signboardRetakeCheckToKeep`), which the hourly re-read of held places then picks up.
+  const kept = signboardRetakeCheckToKeep(check);
   await callPhoenixCrm<Row>("phoenix_crm_retake_place_signboard", {
     p: {
       seat_id: seat.seatId,
@@ -3319,6 +3343,17 @@ export async function retakePlaceSignboard(
     }
     // Another clear name on a place nobody is holding goes to the Super Admin's board, as the night files it.
     if (!reviewId && check.verdict === "other_name") {
+      // Phoenix CRM validation audit, 14 Nov 2026: this flag was filed on ONE reading. Nothing reaches
+      // the integrity board unless two readings agree, so the stored photo is read once more — here,
+      // after the reply, so the rep waits for none of it — and filed only if the second reading says
+      // the same. On disagreement the place is kept `unconfirmed` with the first reading's text, the
+      // night pass reads it again, and nothing is filed.
+      const second = await readStoredPlaceSignboard({ customerName, listType, photoBrick: text(row.brick_name), photoPath });
+      const settled = signboardAfterSecondReading(kept, second);
+      if (settled.verdict !== "other_name") {
+        await recordPlaceSignboard(placeId, settled);
+        return;
+      }
       await filePlaceSignboardFlag({
         placeId,
         seatId: seat.seatId,

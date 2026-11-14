@@ -43,6 +43,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { downloadPhoto } from "@/lib/phoenix-crm/server/photos";
 import { runPhoenixCrmSignboardSweep, type SignboardSweepResult } from "@/lib/phoenix-crm/server/signboard-sweep";
 import { runPhoenixCrmSilentSweep, type SilentSweepResult } from "@/lib/phoenix-crm/server/silent-detectors";
+import { runLostTimetableRereads, type LostTimetableRereadResult } from "@/lib/phoenix-crm/server/venue-timetable";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -334,17 +335,26 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
  */
 export async function runPhoenixCrmIntegritySweep(
   options: { limit?: number; today?: string } = {},
-): Promise<{ photos: PhotoSweepResult; signboards: SignboardSweepResult; silent: SilentSweepResult; behaviour: BehaviourSweepResult }> {
+): Promise<{
+  photos: PhotoSweepResult;
+  signboards: SignboardSweepResult;
+  timetables: LostTimetableRereadResult;
+  silent: SilentSweepResult;
+  behaviour: BehaviourSweepResult;
+}> {
   const photos = await runPhoenixCrmPhotoSweep({ limit: options.limit });
   // The signboard pass (2026-10-08) sits BETWEEN the two for the same reason the photos lead: a case
   // it files tonight is evidence about this month, and the behaviour pass reads the month whole. It
   // never holds a place and tells nobody — see server/signboard-sweep.ts.
   const signboards = await runPhoenixCrmSignboardSweep();
+  // The timetables the door got no answer about (14 Nov 2026), read again. It only writes each seated
+  // place's own verdict — no case, no hold, no notice — see `runLostTimetableRereads`.
+  const timetables = await runLostTimetableRereads();
   // The roster, cadence, coverage and shared-venue checks (2026-10-12). Before the behaviour pass for
   // the same reason the other two are: every finding it files is evidence about the month the
   // behaviour pass is about to read whole. It makes no model call and downloads nothing, so it costs
   // the window far less than the signboard pass that precedes it.
   const silent = await runPhoenixCrmSilentSweep({ today: options.today });
   const behaviour = await runPhoenixCrmBehaviourSweep({ today: options.today });
-  return { photos, signboards, silent, behaviour };
+  return { photos, signboards, timetables, silent, behaviour };
 }
