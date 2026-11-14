@@ -32,7 +32,9 @@ System Administrator account (no passkey, no person behind it).
    routes demand the fingerprint, face or PIN), so it is both steps at once.
 5. **The profile's Devices tab** has a "Second sign-in step" card: set it up without signing out (it asks
    the password first), make ten new recovery codes, forget the remembered browsers, reset it, or reset the
-   other Super Admin account.
+   other Super Admin account. If the card cannot read its status (signed out, refused, too many requests, a
+   server error or a dropped connection) it says so in its error line, with the server's own message when
+   there is one, and offers "Try again"; it never stays on "Loading" (14 Nov 2026, 9 breaks).
 6. **Adding a passkey asks the password.** On the "Biometric sign-in" card beside it, "Set up on this
    device" asks the account's current password before the device is asked for its fingerprint, face or PIN.
    The same card lists every passkey on the account, with when it was added and last used, and removes one.
