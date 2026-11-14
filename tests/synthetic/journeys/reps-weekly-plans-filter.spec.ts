@@ -43,8 +43,17 @@ const ROUTE = "/admin/reps-list?tab=plans";
 /** The status control. Implicitly labelled — the `<select>` sits inside its `<label>`. */
 const statusSelect = (page: Page) => page.getByLabel("Plan status");
 
-/** Rep cards carry `&rep=` in their href; the four tiles carry `status=` and no rep. */
-const repCards = (page: Page) => page.locator('a[href*="&rep="]');
+/**
+ * A rep's link carries `&rep=` in its href; the four tiles carry `status=` and no rep.
+ *
+ * VISIBLE links only. Since the premium pass of 9 November 2026 (#171) the board prints every rep
+ * TWICE in the page: once as a card for a phone (`md:hidden`) and once as a row of the team table for
+ * a desktop (`hidden md:block`). Only one of the two is ever shown, so a manager sees each rep once —
+ * but a count of every link in the page comes to exactly double, and this journey failed on that for
+ * five days while the board itself was right. Counting what is shown is the count a person makes, and
+ * it holds at either width.
+ */
+const repCards = (page: Page) => page.locator('a[href*="&rep="]:visible');
 
 /**
  * Reads the four counts out of the option labels — "Awaiting verification (3)".
