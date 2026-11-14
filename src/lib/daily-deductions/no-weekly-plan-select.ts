@@ -40,6 +40,13 @@ import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
  * managers plan in Phoenix CRM (`phoenix_crm_plans`, which carries its own due_on /
  * submitted_late), not in `employee_plan_headers` at all.
  *
+ * 🔴 SINCE 14 NOV 2026 A PRODUCT MANAGER'S PLAN IS FOUND IN PHOENIX CRM TOO (owner, DR-02: Phoenix CRM is
+ * the one plan store; the legacy form is closed — weekly-planning/legacy-closed.ts). They had planned
+ * their weeks there since 17 Oct 2026 (`phoenix_crm_manager_plans`, planner kind `pm`) and stopped
+ * filing the legacy form after 24 Oct, so a rule reading the legacy form alone would charge a day for a
+ * week they did plan. A week counts when EITHER store holds a plan sent on time
+ * (`onTimePhoenixCrmPlans`); who owes one, the deadline and the first Monday are unchanged.
+ *
  * Widening this list is a one-line change — and it must stay a deliberate one.
  */
 export const WEEKLY_PLAN_REQUIRED_TITLES: readonly string[] = [
@@ -81,6 +88,57 @@ export type OnTimeWeeklyPlan = {
   /** Compact HR id (hyphens stripped). */
   employeeCompactKey: string;
 };
+
+/** One Phoenix CRM manager week, as the loader reads it (`phoenix_crm_manager_plans`). */
+export type PhoenixCrmWeekSubmission = {
+  hrId: string;
+  /** The field week's first day, ISO date — a Saturday in Phoenix CRM. */
+  weekStart: string;
+  submittedAt: string | null;
+};
+
+function isoDayPlus(dateIso: string, days: number): string {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/** The one Monday inside a seven-day week that starts on `weekStartIso`; null for a malformed date. */
+export function mondayInsideWeek(weekStartIso: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStartIso)) return null;
+  for (let offset = 0; offset < 7; offset += 1) {
+    const day = isoDayPlus(weekStartIso, offset);
+    if (new Date(`${day}T00:00:00Z`).getUTCDay() === 1) return day;
+  }
+  return null;
+}
+
+/**
+ * The Phoenix CRM weeks that count as a plan filed ON TIME for these weeks (DR-02, header above).
+ *
+ * A Phoenix CRM week runs seven days, so it holds exactly one Monday — the Monday this rule charges — and
+ * it is judged by that Monday's deadline, exactly as a legacy plan is. `submitted_at` is the test here
+ * too: sending the week is the employee's own act, approval is not. A week never sent counts as nothing.
+ */
+export function onTimePhoenixCrmPlans(input: {
+  rows: readonly PhoenixCrmWeekSubmission[];
+  weeks: readonly WeeklyPlanWeek[];
+  /** The deadline instant (ms) for the Monday a charge lands on. */
+  deadlineForMonday: (mondayIso: string) => number;
+}): OnTimeWeeklyPlan[] {
+  const weekByMonday = new Map(input.weeks.map((week) => [week.mondayIso, week]));
+  const onTime: OnTimeWeeklyPlan[] = [];
+  for (const row of input.rows) {
+    if (!row.submittedAt) continue;
+    const monday = mondayInsideWeek(row.weekStart);
+    const week = monday ? weekByMonday.get(monday) : undefined;
+    if (!monday || !week) continue;
+    const submittedAt = Date.parse(row.submittedAt);
+    if (!Number.isFinite(submittedAt) || submittedAt > input.deadlineForMonday(monday)) continue;
+    const compactKey = compactDeductionsHrId(row.hrId);
+    if (compactKey) onTime.push({ weekKey: week.weekKey, employeeCompactKey: compactKey });
+  }
+  return onTime;
+}
 
 export function selectNoWeeklyPlanDrafts(input: {
   roster: readonly WeeklyPlanRosterEntry[];

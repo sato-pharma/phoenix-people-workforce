@@ -3,8 +3,9 @@
  *
  * Every reader here is keyed by the MANAGER'S HR id, never by a district seat, so a regional, national or
  * product manager's week (owner, 2026-10-17) reaches the same screens as a district manager's with no
- * second door. A product manager files his legacy plan as well (the no-weekly-plan deduction reads it),
- * so his calendars show both, side by side — each is a plan he sent.
+ * second door. A product manager filed his legacy plan as well until the legacy form closed (DR-02, 14 Nov
+ * 2026 — weekly-planning/legacy-closed.ts), so his calendars may show both for those weeks — each is a plan
+ * he sent.
  *
  * Owner, 2026-10-16: the district manager's Phoenix CRM week REPLACES his legacy Weekly/Monthly plan. Six
  * screens showed that legacy plan — the Planning Calendar, his landing page's plan card, the Action Center,

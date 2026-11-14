@@ -42,9 +42,9 @@ export default async function PlansPage({
 
   const params = await searchParams;
   const selectedPlanId = Array.isArray(params.plan) ? params.plan[0] : params.plan;
-  // A manager whose Phoenix CRM team is live plans his week there now (owner, 2026-10-16). This page stays
-  // open to him as the HISTORY of the plans he filed here before, to read only (owner, 2026-10-17: "make it
-  // unhidden, but make them not able to submit … only able to see their historical plans").
+  // Everyone plans in Phoenix CRM now (DR-02, owner, 14 Nov 2026 — legacy-closed.ts). This page stays open as
+  // the HISTORY of the plans each person filed here before, to read only (the owner's words for the first
+  // managers who moved, 2026-10-17: "only able to see their historical plans").
   const workspace = await getEmployeePlansWorkspace(access);
   const ownPlans = workspace.plans.filter((plan) => hrIdsMatch(plan.employeeHrId, workspace.currentEmployee?.hrId));
   // A link to somebody ELSE's plan (an approver's notice) still opens the full review workspace — the
@@ -56,7 +56,7 @@ export default async function PlansPage({
     return (
       <EmployeePortalPageShell
         badge="Weekly / Monthly Plan"
-        description="The plans you filed here before your week moved to Phoenix CRM. They are kept to read only."
+        description="The plans you filed here before weekly plans moved to Phoenix CRM. They are kept to read only."
         title="Weekly / Monthly Plan history"
       >
         <PlansHistory openPlanId={openedPlan?.id ?? null} plans={ownPlans} />
