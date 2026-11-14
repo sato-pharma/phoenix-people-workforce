@@ -681,7 +681,7 @@ function signboardOf(value: unknown, buildingName: string, brickName: string | n
   if (!stored || typeof stored.verdict !== "string") return null;
   const check = buildingSignboardNow(stored as unknown as PhoenixCrmSignboardCheck, buildingName, brickName) as unknown as Row;
   return {
-    verdict: check.verdict,
+    verdict: String(check.verdict),
     reason: text(check.reason),
     signText: text(check.signText ?? check.sign_text),
     note: text(check.note),
