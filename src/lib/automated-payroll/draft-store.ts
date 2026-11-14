@@ -322,6 +322,43 @@ export async function markRunPublished(
   return mapRun(row);
 }
 
+/**
+ * REOPEN PART 1 IS ONE DATABASE CALL (payroll audit 2026-11-14, finding 3; owner: "All or nothing").
+ * Clearing the freeze, withdrawing the held-salary reservations and moving the run back to part1 used to
+ * be three calls, and a failure after the first left a Part 2 run with no frozen first instalment — every
+ * person then read as "joined after Part 1", and acknowledged, the second instalment became the whole
+ * month. phx_reopen_automated_payroll_part1 does all three in one transaction under the reopen's claim,
+ * so a failure leaves the run exactly as it was, still in Part 2.
+ */
+export async function reopenPart1Atomically(
+  id: string,
+  input: { actorHrId: string },
+  options: { transitionToken: string },
+): Promise<MonthlySalaryRun> {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_reopen_automated_payroll_part1", {
+    p_run_id: id,
+    p_transition_token: options.transitionToken,
+    p_actor_hr_id: input.actorHrId,
+  });
+  if (error) {
+    const message = String(error.message ?? "");
+    if (message.includes("automated_payroll_transition_claim_lost")) {
+      throw new Error(
+        `Conflict: ${TRANSITION_CLAIM_LOST} this action's hold on the run lapsed before Part 1 could be ` +
+          "reopened, and another action has taken the run. Nothing was reopened — refresh the page and " +
+          "read where the run is before repeating it.",
+      );
+    }
+    throw new Error(
+      "Part 1 could not be reopened, so nothing was changed: the first instalment is still frozen and the " +
+        `run is still in Part 2. Try again. (${message})`,
+    );
+  }
+  const row = ((Array.isArray(data) ? data : data ? [data] : []) as RunRow[])[0];
+  if (!row) throw new Error("Not found: payroll run does not exist.");
+  return mapRun(row);
+}
+
 /** Let go of a claim a transition could not finish. Matches nothing when the phase write already cleared it. */
 export async function releaseRunTransition(runId: string, token: string): Promise<void> {
   const { error } = await getSupabaseAdmin()

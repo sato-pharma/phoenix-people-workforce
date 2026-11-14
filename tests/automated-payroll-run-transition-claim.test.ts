@@ -90,7 +90,7 @@ export function runAutomatedPayrollRunTransitionClaimTests() {
   const transitions: Array<[string, string, string]> = [
     ["cancelRun", '["part1", "part2", "ready"]', "await releaseCarryForwardForCancelledRun("],
     ["confirmPart1", '["part1"]', "await upsertDraftRows(runId, patches)"],
-    ["unconfirmPart1", '["part2"]', "await upsertDraftRows(runId, patches)"],
+    ["unconfirmPart1", '["part2"]', "await reopenPart1Atomically("],
     ["unconfirmPart2", '["ready"]', "await releaseCarryForwardForCancelledRun("],
     ["confirmPart2", '["part2"]', "await recordOverpaidCarryForward("],
     ["publishToPayslips", '["ready"]', "await findSalaryBatchForPeriod("],

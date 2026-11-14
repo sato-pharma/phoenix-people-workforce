@@ -338,12 +338,18 @@ export function runAutomatedPayrollPart1ReleaseDeferralTests() {
     `${path}: a Part 1 release must still be owed before it is frozen as money`,
   );
   const reopen = bodyOf("unconfirmPart1");
+  // Withdrawn inside phx_reopen_automated_payroll_part1, in the same transaction as the freeze (payroll
+  // audit 2026-11-14, finding 3).
+  const reopenSql = readFileSync(
+    "supabase/migrations/20261114170804_automated_payroll_reopen_part1_atomically.sql",
+    "utf8",
+  );
   assert.match(
-    reopen,
-    /recordHeldReleases\(\{ runId, actorHrId: actorId\(access\), stage: "part1_reopened", releases: \[\] \}\)/,
+    reopenSql,
+    /delete from public\.automated_payroll_held_releases\s+where paying_run_id = p_run_id;/,
     `${path}: reopening Part 1 withdraws what it reserved`,
   );
-  assert.ok(reopen.indexOf("part1_reopened\", releases") > reopen.indexOf("whileClaimed"), `${path}: under the claim`);
+  assert.ok(reopen.indexOf("reopenPart1Atomically(") > reopen.indexOf("whileClaimed"), `${path}: under the claim`);
   assert.match(
     source,
     /const PART1_ONLY_STEP_KEYS: ReadonlySet<StepKey> = new Set<StepKey>\(\["p1_held_release", "p1_pay_deferral"\]\)/,

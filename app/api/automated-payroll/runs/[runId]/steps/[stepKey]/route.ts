@@ -39,10 +39,17 @@ export async function PUT(
     const body = (await request.json().catch(() => ({}))) as {
       edits?: StepEditInput[];
       inputMode?: StepInputMode;
+      /** The step's revision when the screen loaded it; a newer one refuses the save (finding 1). */
+      revision?: string | null;
     };
     const edits = Array.isArray(body.edits) ? body.edits : [];
-    await saveStep(access, runId, stepKey, edits, body.inputMode === "xlsx" ? "xlsx" : "inline");
-    return NextResponse.json({ success: true, saved: edits.length });
+    const expectedRevision =
+      body.revision === null ? null : typeof body.revision === "string" ? body.revision : undefined;
+    const { revision } = await saveStep(access, runId, stepKey, edits, body.inputMode === "xlsx" ? "xlsx" : "inline", {
+      expectedRevision,
+      revisionSource: "screen",
+    });
+    return NextResponse.json({ success: true, saved: edits.length, revision });
   } catch (error) {
     return jsonError(error, "Failed to save the step.");
   }

@@ -240,7 +240,12 @@ export function runAutomatedPayrollPayDeferralTests() {
   const stamp = confirm.indexOf("patch.part1Withheld = heldNow.has(");
   assert.ok(stamp > confirm.indexOf("whileClaimed"), `${path}: the Part 1 hold is read under the claim`);
   assert.ok(stamp < confirm.indexOf("upsertDraftRows(runId, patches)"), `${path}: and written with the freeze`);
-  assert.match(bodyOf("unconfirmPart1"), /part1Withheld: null/, `${path}: reopening Part 1 clears the stamp`);
+  assert.match(bodyOf("unconfirmPart1"), /reopenPart1Atomically\(/, `${path}: reopening Part 1 goes through the one call`);
+  assert.match(
+    readFileSync("supabase/migrations/20261114170804_automated_payroll_reopen_part1_atomically.sql", "utf8"),
+    /part1_withheld = null/,
+    `${path}: reopening Part 1 clears the stamp`,
+  );
   const publish = bodyOf("publishToPayslips");
   assert.match(publish, /part1Unpaid,\s*deferred,/, `${path}: publish records the unpaid Part 1 and the deferred pay`);
   assert.match(

@@ -139,9 +139,10 @@ export async function runAutomatedPayrollPartSplitStampTests() {
     unconfirmBody.length > 500 && unconfirmBody.length < 6000,
     `the unconfirmPart1 slice must stay bounded (got ${unconfirmBody.length})`,
   );
+  assert.match(unconfirmBody, /reopenPart1Atomically\(/, "Reopen Part 1 goes through the one all-or-nothing call");
   assert.match(
-    unconfirmBody,
-    /settledInPart1: null/,
+    readFileSync("supabase/migrations/20261114170804_automated_payroll_reopen_part1_atomically.sql", "utf8"),
+    /settled_in_part1 = null/,
     "reopening exists so HR can correct the very data this was read from — a surviving stamp would " +
       "pin the run to the answer they just corrected",
   );

@@ -7,6 +7,7 @@ import {
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 import { stepDefinition } from "../step-definitions.ts";
+import { readStepFileRevision } from "./step-file-revision.ts";
 import type {
   StepEditInput,
   StepImportDiff,
@@ -52,7 +53,12 @@ function pickCell(row: Record<string, unknown>, label: string): unknown {
 export async function parseStepWorkbook(input: {
   file: File;
   stepKey: StepKey;
-}): Promise<{ edits: StepEditInput[]; invalidHrIds: number }> {
+}): Promise<{
+  edits: StepEditInput[];
+  invalidHrIds: number;
+  /** The step revision the file was built from (see step-file-revision.ts); undefined when it carries none. */
+  revision: string | null | undefined;
+}> {
   const guard = validateSpreadsheetFile(input.file, xlsxSpreadsheetValidation);
   if (!guard.ok) {
     throw new Error(`Validation: ${guard.message}`);
@@ -77,9 +83,18 @@ export async function parseStepWorkbook(input: {
     }
     const edit: StepEditInput = { hrId, values: {} };
     if (definition.isHoldStep) {
-      const hold = String(pickCell(jsonRow, "Hold?") ?? "").trim().toLowerCase();
-      edit.onHold = hold === "yes" || hold === "y" || hold === "true" || hold === "1";
-      edit.reason = String(pickCell(jsonRow, "Hold Reason") ?? "").trim() || null;
+      // An ABSENT "Hold?" column keeps every hold as it stands (payroll audit 2026-11-14, finding 5;
+      // owner: "Keep current holds"). It used to read as "No" for everyone, so a sheet rebuilt without
+      // that column lifted every hold of the month. Only a column that is on the sheet can change a
+      // hold; `undefined` reaches saveStep as "not supplied", and saveStep keeps the stored value.
+      // The same for "Hold Reason", as the other steps' Reason already works (audit finding 48).
+      const holdCell = pickCell(jsonRow, "Hold?");
+      if (holdCell !== undefined) {
+        const hold = String(holdCell ?? "").trim().toLowerCase();
+        edit.onHold = hold === "yes" || hold === "y" || hold === "true" || hold === "1";
+      }
+      const holdReasonCell = pickCell(jsonRow, "Hold Reason");
+      if (holdReasonCell !== undefined) edit.reason = String(holdReasonCell ?? "").trim() || null;
     } else {
       for (const field of definition.fields) {
         if (field.kind === "text") {
@@ -118,7 +133,7 @@ export async function parseStepWorkbook(input: {
     edits.push(edit);
   }
 
-  return { edits, invalidHrIds };
+  return { edits, invalidHrIds, revision: readStepFileRevision(workbook.keywords) };
 }
 
 /** Dry-run diff of uploaded edits vs the current recommendation rows. */
@@ -158,17 +173,20 @@ export function diffStepUpload(input: {
 
     if (definition.isHoldStep) {
       const wasHeld = current.onHold;
-      const nowHeld = Boolean(edit.onHold);
-      const status = wasHeld === nowHeld ? "unchanged" : "changed";
-      if (status === "changed") changed += 1;
-      diffs.push({
-        hrId: edit.hrId,
-        fullName: current.fullName,
-        field: "Hold?",
-        from: wasHeld ? "Yes" : "No",
-        to: nowHeld ? "Yes" : "No",
-        status,
-      });
+      // No "Hold?" column: the hold stays as it is, and the preview says nothing about it.
+      const nowHeld = edit.onHold === undefined ? wasHeld : Boolean(edit.onHold);
+      if (edit.onHold !== undefined) {
+        const status = wasHeld === nowHeld ? "unchanged" : "changed";
+        if (status === "changed") changed += 1;
+        diffs.push({
+          hrId: edit.hrId,
+          fullName: current.fullName,
+          field: "Hold?",
+          from: wasHeld ? "Yes" : "No",
+          to: nowHeld ? "Yes" : "No",
+          status,
+        });
+      }
 
       // The REASON is a column on this sheet too, and the preview used to be
       // silent about it — so an upload that emptied "Hold Reason" while leaving
@@ -177,7 +195,7 @@ export function diffStepUpload(input: {
       // means the reviewer sees the change before it is attempted, rather than
       // meeting it as an error.
       const reasonFrom = (current.reason ?? "").trim();
-      const reasonTo = (edit.reason ?? "").trim();
+      const reasonTo = edit.reason === undefined ? reasonFrom : (edit.reason ?? "").trim();
       if (reasonFrom !== reasonTo) {
         changed += 1;
         diffs.push({

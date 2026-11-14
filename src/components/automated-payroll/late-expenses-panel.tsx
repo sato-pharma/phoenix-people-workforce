@@ -6,6 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import type { LateExpensesOverview } from "@/lib/automated-payroll/late-expenses";
 import { cn } from "@/lib/utils";
 
+import { formatPayrollDay, formatPayrollMoney } from "./format";
+
 type Props = {
   month: number;
   year: number;
@@ -20,16 +22,14 @@ type Props = {
 
 type LateTrip = LateExpensesOverview["trips"][number];
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const money = formatPayrollMoney;
 
-/** "2026-09-03", or "2026-09-03 → 2026-09-04" for an overnight trip — the Expenses step's own wording. */
+/** "3 Sep 2026", or "3 Sep 2026 → 4 Sep 2026" for an overnight trip — the module's one way of writing a day. */
 function tripDates(trip: LateTrip): string {
   const start = (trip.expenseDate ?? "").slice(0, 10);
   const end = (trip.toDate ?? "").slice(0, 10);
-  if (start && end && start !== end) return `${start} → ${end}`;
-  return start || end || "—";
+  if (start && end && start !== end) return `${formatPayrollDay(start)} → ${formatPayrollDay(end)}`;
+  return start || end ? formatPayrollDay(start || end) : "—";
 }
 
 function route(trip: LateTrip): string {
@@ -59,7 +59,9 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
     try {
       const query = new URLSearchParams({ month: String(month), year: String(year) });
       const res = await fetch(`/api/automated-payroll/late-expenses?${query.toString()}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}).`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to load the approved expenses not yet in a run.");
       setOn(data.setting?.carryLateExpenses === true);
       setTrips((data.trips ?? []) as LateTrip[]);
@@ -85,7 +87,9 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ on: next }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see where the switch stands.`);
+      });
       // A refusal (409 while a run is in Part 2 or confirmed) says why, in its own words.
       if (!res.ok) throw new Error(data.error ?? "Failed to change the switch.");
       setOn(data.setting?.carryLateExpenses === true);

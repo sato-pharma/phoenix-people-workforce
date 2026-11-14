@@ -16,6 +16,8 @@ import type {
 } from "@/lib/automated-payroll/held-settlements";
 import { cn } from "@/lib/utils";
 
+import { formatPayrollMoney } from "./format";
+
 type Props = {
   runId: string;
   /** The step is locked (its part is not open): the list shows, nothing can be added or removed. */
@@ -29,9 +31,7 @@ type Props = {
   onChanged: () => void;
 };
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const money = formatPayrollMoney;
 
 /**
  * Held in a month that did not record names (owner decision, 2026-11-09: HR types the held amount).
@@ -58,7 +58,9 @@ export function HeldEnteredPanel({ runId, locked, stepDirty, onChanged }: Props)
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/held-entered`);
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to load the held amounts entered.");
       const loadedMonths = (data.months ?? []) as HeldMonthWithoutRoster[];
       setMonths(loadedMonths);
@@ -94,7 +96,9 @@ export function HeldEnteredPanel({ runId, locked, stepDirty, onChanged }: Props)
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ heldRunId, hrId, amount: amountNumber, note: note.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to record the held amount.");
       setHrId("");
       setAmount("");
@@ -117,7 +121,9 @@ export function HeldEnteredPanel({ runId, locked, stepDirty, onChanged }: Props)
       const res = await fetch(`/api/automated-payroll/runs/${runId}/held-entered?${query.toString()}`, {
         method: "DELETE",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to remove the held amount.");
       await load();
       onChanged();
@@ -324,6 +330,16 @@ export function HeldEnteredPanel({ runId, locked, stepDirty, onChanged }: Props)
                     </div>
                   );
                 })}
+              </div>
+
+              {/* The total, one line under the table or the cards — the same shape as the late-expenses list. */}
+              <div className="flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                  Total · {entries.length} held amount{entries.length === 1 ? "" : "s"}
+                </span>
+                <span className="font-black tabular-nums text-slate-900">
+                  {money(entries.reduce((sum, entry) => sum + entry.amount, 0))}
+                </span>
               </div>
             </>
           ) : (

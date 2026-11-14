@@ -60,6 +60,7 @@ import { buildCibSheetWorkbook, cibRowsForNonEmployees, cibRowsForScope } from "
 import { buildFabSheetWorkbook, defaultFabValueDate, fabRowsForNonEmployees, fabRowsForScope } from "./exports/fab-sheet.ts";
 import { buildFullSheetWorkbook, buildPart1SheetWorkbook, type PeriodSummary } from "./exports/sheet.ts";
 import { buildStepTemplateWorkbook } from "./exports/step-template.ts";
+import { STALE_STEP_OPENING } from "./imports/step-file-revision.ts";
 import { diffStepUpload, parseStepWorkbook } from "./imports/step-parser.ts";
 import { applyDayDrivenMoney } from "./imports/day-driven-money.ts";
 import {
@@ -118,7 +119,7 @@ import {
   takeCurrentModuleFigures,
   type ModuleDriftReport,
 } from "./module-drift.ts";
-import { describeReopenedPart1Block, reopenedPart1DeductionSteps } from "./module-sourced-steps.ts";
+import { describeReopenedPart1Block, reopenedPart1DeductionSteps, stepOpenDuringPart2 } from "./module-sourced-steps.ts";
 import { figureGroups, untouchedFigureFields, type FigureWrite } from "./saved-figures.ts";
 import {
   carryForwardForRunAssembly,
@@ -170,6 +171,7 @@ import {
   listLatestCellWrites,
   listStepStates,
   markRunPublished,
+  reopenPart1Atomically,
   updateRun,
   upsertDraftRows,
   upsertStepState,
@@ -201,7 +203,7 @@ import {
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { reconcile } from "./reconcile.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
-import { stepDefinition } from "./step-definitions.ts";
+import { monthNameAndYear, stepDefinition } from "./step-definitions.ts";
 import type {
   DraftRow,
   DraftCellChange,
@@ -559,7 +561,8 @@ export async function startOrResumeRun(
   const published = await findPublishedRun(period.month, period.year);
   if (published) {
     throw new Error(
-      `Conflict: ${period.month}/${period.year} has already been published (run ${published.id}). ` +
+      // Named as HR reads it: the run id it used to carry is a code nobody on that screen can use.
+      `Conflict: ${monthNameAndYear(period.month, period.year)} has already been published. ` +
         "A published month is finished — starting another run for it would create a second, shadow run " +
         "that every finance screen would answer with instead of the paid one.",
     );
@@ -1166,6 +1169,67 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
 }
 
 /**
+ * DURING PART 2, A PART 1 STEP IS WRITABLE ONLY WHEN THE SCREEN OFFERS IT (audit, 14 Nov 2026).
+ *
+ * The wizard locks every Part 1 step once Part 1 is confirmed, except a deduction step a decision
+ * re-opened since (`stepOpenDuringPart2`) — and that lock was the browser's alone. A tab left open
+ * from Part 1, or a re-uploaded step file, could still save and confirm Special Situations or Other
+ * Deductions in Part 2: the first instalment is frozen, so the changed figure moved the whole month
+ * and landed entirely in the Part 2 residual, and Part 2's confirm checks only its own steps and the
+ * re-opened ones, so nothing on screen said a Part 1 step had changed. The server now answers the
+ * same question the screen does.
+ */
+async function assertPart1StepOpenDuringPart2(run: MonthlySalaryRun, stepKey: StepKey): Promise<void> {
+  if (run.phase !== "part2" || stepPhase(stepKey) !== "part1") return;
+  const states = await listStepStates(run.id);
+  if (!stepOpenDuringPart2(stepKey, states)) {
+    throw new Error(
+      `Conflict: Part 1 is confirmed, so "${stepDefinition(stepKey).title}" is locked. Its figures are ` +
+        "already in the first instalment the bank paid. Change it on a Part 2 step, or reopen Part 1.",
+    );
+  }
+}
+
+/**
+ * A STALE SCREEN OR AN OLDER STEP FILE IS REFUSED, NEVER WRITTEN OVER LATER EDITS (payroll audit
+ * 2026-11-14, finding 1; owner: "Refuse and reload").
+ *
+ * A step's revision is when its state row was last written — every save, confirm and reopen writes it.
+ * The screen sends the revision it loaded; a step file carries the one it was built from
+ * (STEP_FILE_REVISION_PREFIX in the workbook's keywords). Before this, a tab left open, or a file
+ * downloaded before somebody else's save, wrote its older figures over theirs, and nothing said so.
+ * `undefined` means "not told" (a caller with no revision, or a sheet made by hand), and is let through.
+ * The refusal opens with STALE_STEP_OPENING (imports/step-file-revision.ts), which the screen matches.
+ */
+function stepRevisionOf(states: readonly StepState[], stepKey: StepKey): string | null {
+  return states.find((state) => state.stepKey === stepKey)?.updatedAt || null;
+}
+
+export function sameStepRevision(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a === b) return true;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  return Number.isFinite(left) && Number.isFinite(right) && left === right;
+}
+
+async function assertStepUnchangedSince(
+  runId: string,
+  stepKey: StepKey,
+  expected: string | null | undefined,
+  source: "screen" | "file",
+): Promise<void> {
+  if (expected === undefined) return;
+  const current = stepRevisionOf(await listStepStates(runId), stepKey);
+  if (sameStepRevision(current, expected)) return;
+  throw new Error(
+    `Conflict: ${STALE_STEP_OPENING}${source === "file" ? " (this file was downloaded before the latest save)" : ""}, ` +
+      `so nothing was saved — saving would have written over the newer figures. Reload the step, then ` +
+      (source === "file" ? "download the file again and make your change on it." : "make your change again."),
+  );
+}
+
+/**
  * Every phase a write to this step may land in — the same answer assertStepPhaseAllowed gives, handed
  * to the run hold so the phase is checked again at the moment of the write, not only when it was read.
  */
@@ -1186,12 +1250,20 @@ export async function saveStep(
    * HR id, the money fields a re-uploaded sheet left stale beside a corrected day count. They are
    * cleared so the settlement rule re-derives them (see applyDayDrivenMoney).
    */
-  options?: { recalculateMoney?: Map<string, string[]> },
-): Promise<void> {
+  options?: {
+    recalculateMoney?: Map<string, string[]>;
+    /** The step's revision when the screen loaded it, or the step file was built; see assertStepUnchangedSince. */
+    expectedRevision?: string | null;
+    revisionSource?: "screen" | "file";
+  },
+): Promise<{ revision: string | null }> {
   assertRealSessionForDecision(access, "save a payroll run step");
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
+  // Asked once here, before Part 1 Not Paid below can record anything, and again under the hold.
+  await assertStepUnchangedSince(runId, stepKey, options?.expectedRevision, options?.revisionSource ?? "screen");
 
   // Notice-period rows are display-only (see confirmStep). Drop any that reach
   // here — including via a re-uploaded xlsx, which bypasses the UI entirely.
@@ -1303,9 +1375,11 @@ export async function saveStep(
   });
   // Written under the run's hold (audit 2026-10-23, F-08a): a confirm that started after the checks
   // above cannot be overtaken by this save, and a run that moved on is refused rather than written.
-  await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.saveStep }, async () => {
+  // The revision is checked under the same hold as the write, so two saves cannot both pass it.
+  const saved = await holdRun({ runId, expected: stepWritablePhases(stepKey), action: RUN_HOLD_ACTIONS.saveStep }, async () => {
+    await assertStepUnchangedSince(runId, stepKey, options?.expectedRevision, options?.revisionSource ?? "screen");
     await upsertDraftRows(runId, patches);
-    await upsertStepState({ runId, stepKey, status: "pending", inputMode });
+    return upsertStepState({ runId, stepKey, status: "pending", inputMode });
   });
   await writeAutomatedPayrollAudit({
     runId,
@@ -1316,6 +1390,8 @@ export async function saveStep(
     // after the untouched groups were left out — the cell history is the full record.
     detail: { edited: patches.length, figuresWritten: patches.filter(writesAFigure).length, inputMode },
   });
+  // The screen keeps this as its new revision, so its own next save is not refused as stale.
+  return { revision: saved.updatedAt || null };
 }
 
 /** Confirm a step: persist the currently-shown values (accepted recommendations + edits) and lock it. */
@@ -1328,6 +1404,7 @@ export async function confirmStep(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const [{ members, sources, draftRows, directory }, states] = await Promise.all([
@@ -1879,22 +1956,12 @@ export async function unconfirmPart1(
       row.baseForMonth != null || row.ecolPaid != null || row.fuelPaid != null || row.daysWorked != null,
   ).length;
 
-  const patches: DraftRowPatch[] = draftRows.map((row) => ({
-    employeeHrId: row.employeeHrId,
-    firstPartFrozen: null,
-    // Cleared with the money it was frozen beside. Reopening exists so HR can correct the very
-    // source data this decision was read from, and re-confirming freezes both again from current
-    // truth. A stamp surviving the reopen would pin the run to the answer HR just corrected.
-    settledInPart1: null,
-    part1Withheld: null,
-    // The joiner / leaver basis, re-derived on the next confirm.
-    baseForMonth: null,
-    ecolPaid: null,
-    fuelPaid: null,
-    daysWorked: null,
-    editedBy: actorId(access),
-    writeReason: "part1_reopened",
-  }));
+  // What is cleared, on every draft row of the run (phx_reopen_automated_payroll_part1): the frozen first
+  // instalment; settled-in-Part-1 and withheld-in-Part-1, cleared with the money they were frozen beside
+  // (re-confirming freezes them again from current truth — a stamp surviving the reopen would pin the run
+  // to the answer HR just corrected); and the joiner / leaver basis (base, allowance, fuel, days worked),
+  // re-derived on the next confirm.
+  const unfrozenEmployees = draftRows.length;
   // Under one claim with the phase write (audit finding 50): see claimTransition.
   const transition = await claimTransition(runId, ["part2"], "Reopening Part 1");
   const { updated, override } = await whileClaimed(runId, transition, async () => {
@@ -1904,15 +1971,13 @@ export async function unconfirmPart1(
     // The carried trips go back on the list FIRST, as cancel and Reopen Part 2 do: a failed release
     // then refuses before any figure is unfrozen (late-expenses.ts).
     await releaseLateExpenseReservations(runId);
-    await upsertDraftRows(runId, patches);
-    // What confirming Part 1 (and any Part 2 confirm since) reserved of earlier months' held salary is
-    // withdrawn with the freeze: re-confirming records it again from the figures as they then stand.
-    await recordHeldReleases({ runId, actorHrId: actorId(access), stage: "part1_reopened", releases: [] });
-    const reopened = await updateRun(
-      runId,
-      { phase: "part1", part1ConfirmedAt: null, part1ConfirmedBy: null },
-      { transitionToken: transition },
-    );
+    // ALL OR NOTHING (payroll audit 2026-11-14, finding 3; owner: "All or nothing"). The freeze is
+    // cleared, what confirming Part 1 (and any Part 2 confirm since) reserved of earlier months' held
+    // salary is withdrawn, and the run goes back to part1 — in ONE transaction. These were three calls,
+    // and a failure after the first left a Part 2 run with no frozen first instalment, so every person
+    // read as "joined after Part 1" and the second instalment could become the whole month. Re-confirming
+    // records the reservations again from the figures as they then stand.
+    const reopened = await reopenPart1Atomically(runId, { actorHrId: actorId(access) }, { transitionToken: transition });
     return { updated: reopened, override };
   });
   await writeAutomatedPayrollAudit({
@@ -1920,7 +1985,7 @@ export async function unconfirmPart1(
     actorHrId: actorId(access),
     action: "part1_unconfirmed",
     detail: {
-      unfrozenEmployees: patches.length,
+      unfrozenEmployees,
       stampedBasisCleared: stampedCleared,
       ...(override.overridden ? { reopenedAfterBankFileDownload: true, overrideReason: override.reason } : {}),
     },
@@ -3522,8 +3587,9 @@ export async function buildStepTemplate(
   runId: string,
   stepKey: StepKey,
 ): Promise<{ buffer: Buffer; fileName: string }> {
-  const { run, rows } = await getStepRecommendation(access, runId, stepKey);
-  const buffer = await buildStepTemplateWorkbook({ run, stepKey, rows });
+  const { run, rows, state } = await getStepRecommendation(access, runId, stepKey);
+  // The file carries the revision it was built from, so an upload of it after a newer save is refused.
+  const buffer = await buildStepTemplateWorkbook({ run, stepKey, rows, revision: state?.updatedAt || null });
   return { buffer, fileName: `Automated-Payroll-${stepKey}.xlsx` };
 }
 
@@ -3534,12 +3600,23 @@ export async function importStepUpload(
   stepKey: StepKey,
   file: File,
   commit: boolean,
+  /** The step's revision on the screen that uploads the file; see assertStepUnchangedSince. */
+  screenRevision?: string | null,
 ): Promise<StepImportPreview | StepImportCommit> {
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
 
-  const { edits: parsed, invalidHrIds } = await parseStepWorkbook({ file, stepKey });
+  const { edits: parsed, invalidHrIds, revision: fileRevision } = await parseStepWorkbook({ file, stepKey });
+  // The file's own revision when it carries one (it says what the figures in it were read from);
+  // otherwise the screen's. Checked at the preview too, so a stale file is refused before anyone
+  // reviews a diff that would never be applied.
+  const revisionCheck =
+    fileRevision !== undefined
+      ? { expectedRevision: fileRevision, revisionSource: "file" as const }
+      : { expectedRevision: screenRevision, revisionSource: "screen" as const };
+  await assertStepUnchangedSince(runId, stepKey, revisionCheck.expectedRevision, revisionCheck.revisionSource);
   // A corrected day count moves the money it drives, as it does on screen (audit finding 32). Priced
   // against the rows as they stand BEFORE the upload, so the preview and the commit move the same money.
   const { rows: before } = await getStepRecommendation(access, runId, stepKey);
@@ -3554,7 +3631,7 @@ export async function importStepUpload(
     return diffStepUpload({ stepKey, edits, current: before, invalidHrIds, recalculated });
   }
 
-  await saveStep(access, runId, stepKey, edits, "xlsx", { recalculateMoney: recalculated });
+  await saveStep(access, runId, stepKey, edits, "xlsx", { recalculateMoney: recalculated, ...revisionCheck });
   const { rows: current } = await getStepRecommendation(access, runId, stepKey);
   const preview = diffStepUpload({ stepKey, edits, current, invalidHrIds });
   return { mode: "commit", applied: edits.length, invalid: preview.invalid, diffs: preview.diffs };

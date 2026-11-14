@@ -355,7 +355,7 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
     {
       fn: "unconfirmPart1",
       action: "reopen_part1",
-      writes: ["await releaseLateExpenseReservations(runId)", "await upsertDraftRows(runId, patches)", "await recordHeldReleases(", 'phase: "part1"'],
+      writes: ["await releaseLateExpenseReservations(runId)", "await reopenPart1Atomically("],
       routePath: "app/api/automated-payroll/runs/[runId]/part1/unconfirm/route.ts",
     },
   ];
@@ -392,7 +392,7 @@ export async function runAutomatedPayrollBankFileDownloadGuardTests() {
   {
     const part1 = bodyOf(runService, "export async function unconfirmPart1(");
     const releaseAt = part1.indexOf("await releaseLateExpenseReservations(runId)");
-    for (const write of ["await upsertDraftRows(runId, patches)", "await recordHeldReleases(", "await updateRun("]) {
+    for (const write of ["await reopenPart1Atomically("]) {
       assert.ok(releaseAt > 0 && releaseAt < part1.indexOf(write), `HEADLINE: Reopen Part 1 releases the carried trips before ${write}`);
     }
   }

@@ -82,6 +82,20 @@ type Seed = { file: string; moduleKey: string; statuses: SeedStatus[] | null; ac
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rel = (full: string) => path.relative(repoRoot, full).split(path.sep).join("/");
 
+/** The phase the latest phx_reopen_automated_payroll_part1 sets on the run, read from its migration. */
+function reopenFunctionPhase(): string {
+  const dir = path.join(repoRoot, "supabase/migrations");
+  const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort().reverse();
+  for (const name of files) {
+    const sql = stripSqlComments(readFileSync(path.join(dir, name), "utf8"));
+    if (!/create\s+or\s+replace\s+function\s+public\.phx_reopen_automated_payroll_part1\s*\(/i.test(sql)) continue;
+    const write = /update\s+public\.automated_payroll_runs\s+set\s+phase\s*=\s*'([^']+)'/i.exec(sql);
+    assert.ok(write, `${name}: phx_reopen_automated_payroll_part1 writes no phase on the run`);
+    return write[1];
+  }
+  assert.fail("no migration creates phx_reopen_automated_payroll_part1, which reopenPart1Atomically calls");
+}
+
 function walk(dir: string, onFile: (file: string) => void) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -454,9 +468,11 @@ export async function runWorkflowRegistryCoverageTests() {
     usedLabels.add(label);
     assert.ok(sameSet(from, row.from), `"${label}": run-service.ts leaves from [${from.join(", ")}] but the table from [${row.from.join(", ")}]`);
     const after = runService.slice(claim.index! + claim[0].length);
-    const write = /\bphase:\s*"([^"]+)"|\bmarkRunPublished\(/.exec(after);
+    // reopenPart1Atomically (payroll audit 2026-11-14, owner: "All or nothing") moves the run inside the
+    // database function phx_reopen_automated_payroll_part1, so its SQL is read for the phase it writes.
+    const write = /\bphase:\s*"([^"]+)"|\bmarkRunPublished\(|\breopenPart1Atomically\(/.exec(after);
     assert.ok(write, `"${label}": no phase write follows the claim`);
-    const written = write[1] ?? "published";
+    const written = write[1] ?? (write[0].startsWith("reopenPart1Atomically") ? reopenFunctionPhase() : "published");
     assert.equal(written, row.to, `"${label}": run-service.ts writes phase "${written}" but the table says "${row.to}"`);
   }
 

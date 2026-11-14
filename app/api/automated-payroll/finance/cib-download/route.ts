@@ -1,4 +1,5 @@
 import { downloadError, resolveAccessContext, xlsxResponse } from "@/lib/automated-payroll/http";
+import { parseBankFileScope } from "@/lib/automated-payroll/finance-links";
 import { buildCibSheet } from "@/lib/automated-payroll/run-service";
 
 export const runtime = "nodejs";
@@ -14,7 +15,11 @@ export async function GET(request: Request) {
     if (!Number.isInteger(month) || !Number.isInteger(year)) {
       return downloadError(request, new Error("Validation: month and year are required."));
     }
-    const scope = url.searchParams.get("scope") === "part2" ? "part2" : "part1";
+    // An unknown word is refused, never read as Part 1 — that default once paid every First Part twice.
+    const scope = parseBankFileScope(url.searchParams.get("scope"));
+    if (!scope) {
+      return downloadError(request, new Error("Validation: scope must be part1 or part2."));
+    }
     const { buffer, coverage, fileName } = await buildCibSheet(access, { month, year }, scope);
     return xlsxResponse(buffer, fileName, [coverage]);
   } catch (error) {

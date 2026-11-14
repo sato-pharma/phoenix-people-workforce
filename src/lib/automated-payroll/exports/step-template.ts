@@ -10,6 +10,7 @@ import {
   WHITE,
 } from "@/lib/sales/sales-workbook-kit";
 
+import { STEP_FILE_NEVER_SAVED, STEP_FILE_REVISION_PREFIX } from "../imports/step-file-revision.ts";
 import { monthLabel } from "../notify.ts";
 import { stepDefinition, stepFieldsTotal } from "../step-definitions.ts";
 import type { MonthlySalaryRun, StepKey, StepRow } from "../types.ts";
@@ -153,10 +154,16 @@ export async function buildStepTemplateWorkbook(input: {
   run: MonthlySalaryRun;
   stepKey: StepKey;
   rows: StepRow[];
+  /** The step's revision this file is built from (null: never saved). Read back by parseStepWorkbook. */
+  revision?: string | null;
 }): Promise<Buffer> {
   const definition = stepDefinition(input.stepKey);
   const columns = stepTemplateColumns(input.stepKey);
   const workbook = new ExcelJS.Workbook();
+  // Invisible on the sheet: a document property, so the layout and every column stay as they are.
+  if (input.revision !== undefined) {
+    workbook.keywords = `${STEP_FILE_REVISION_PREFIX}${input.revision ?? STEP_FILE_NEVER_SAVED}`;
+  }
   const sheet = workbook.addWorksheet(worksheetNameFor(definition.title));
 
   bandHeader(

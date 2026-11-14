@@ -3,11 +3,17 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
-import { stepTemplateColumns } from "../src/lib/automated-payroll/exports/step-template.ts";
+import { buildStepTemplateWorkbook, stepTemplateColumns } from "../src/lib/automated-payroll/exports/step-template.ts";
 import { applyDayDrivenMoney } from "../src/lib/automated-payroll/imports/day-driven-money.ts";
+import {
+  readStepFileRevision,
+  STEP_FILE_NEVER_SAVED,
+  STEP_FILE_REVISION_PREFIX,
+} from "../src/lib/automated-payroll/imports/step-file-revision.ts";
 import { diffStepUpload, parseStepWorkbook } from "../src/lib/automated-payroll/imports/step-parser.ts";
+import { sameStepRevision } from "../src/lib/automated-payroll/run-service.ts";
 import { dayDrivenMoney, STEP_DEFINITIONS } from "../src/lib/automated-payroll/step-definitions.ts";
-import type { StepKey, StepRow } from "../src/lib/automated-payroll/types.ts";
+import type { MonthlySalaryRun, StepKey, StepRow } from "../src/lib/automated-payroll/types.ts";
 
 /**
  * THE STEP SPREADSHEET ROUND TRIP SAYS WHAT IT WILL DO, AND DOES IT.
@@ -76,6 +82,86 @@ export async function runAutomatedPayrollStepUploadRoundTripTests() {
     "and the preview must show the reason being emptied, not report 0 changed",
   );
   assert.equal(blankedPreview.changed, 1);
+
+  // ==== Payroll audit 2026-11-14, finding 5: an absent "Hold?" column keeps every hold ============
+  // Owner: "Keep current holds". A sheet rebuilt without the column used to read "No" for everyone
+  // and lift every hold of the month.
+  const holdStep: StepKey = "p1_holds";
+  const held = [stepRow({ hrId: "B-1", fullName: "Mona Adel", onHold: true, reason: "Exit papers not signed" })];
+  const noHoldColumn = await parseStepWorkbook({ file: await sheetFile(["HR_ID", "Name"], [["B-1", "Mona Adel"]]), stepKey: holdStep });
+  assert.equal(
+    noHoldColumn.edits[0].onHold,
+    undefined,
+    "HEADLINE: a sheet with no Hold? column must not supply 'No' — it lifted every hold of the month",
+  );
+  assert.equal(noHoldColumn.edits[0].reason, undefined, "and with no Hold Reason column it supplies no reason either");
+  assert.equal(
+    diffStepUpload({ stepKey: holdStep, edits: noHoldColumn.edits, current: held, invalidHrIds: 0 }).changed,
+    0,
+    "so the preview says nothing changes, and nothing does",
+  );
+  const lifted = await parseStepWorkbook({
+    file: await sheetFile(["HR_ID", "Hold?", "Hold Reason"], [["B-1", "No", "Exit papers not signed"]]),
+    stepKey: holdStep,
+  });
+  assert.equal(lifted.edits[0].onHold, false, "a Hold? column that says No still lifts the hold, deliberately");
+  const liftedPreview = diffStepUpload({ stepKey: holdStep, edits: lifted.edits, current: held, invalidHrIds: 0 });
+  assert.equal(liftedPreview.diffs.find((diff) => diff.field === "Hold?")?.status, "changed", "and the preview shows it");
+
+  // ==== Payroll audit 2026-11-14, finding 1: a stale screen or older step file is refused ==========
+  // Owner: "Refuse and reload". The file carries the revision it was built from, as a document
+  // property; the screen sends the one it loaded; saveStep compares under the run hold.
+  const run = { id: "run-1", month: 10, year: 2026, phase: "part1" } as unknown as MonthlySalaryRun;
+  const revision = "2026-11-14T13:05:28.358+00:00";
+  const built = await buildStepTemplateWorkbook({ run, stepKey: manual, rows: reasoned, revision });
+  const builtFile = new File([built as unknown as BlobPart], "step.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  assert.equal(
+    (await parseStepWorkbook({ file: builtFile, stepKey: manual })).revision,
+    revision,
+    "HEADLINE: a downloaded step file carries the revision it was built from, and the upload reads it back",
+  );
+  const neverSaved = await buildStepTemplateWorkbook({ run, stepKey: manual, rows: reasoned, revision: null });
+  assert.equal(
+    (await parseStepWorkbook({ file: new File([neverSaved as unknown as BlobPart], "s.xlsx"), stepKey: manual })).revision,
+    null,
+    "a step never saved when the file was built reads back as null, not as 'no revision'",
+  );
+  assert.equal(withoutColumn.revision, undefined, "a sheet made by hand carries no revision, and is let through");
+  assert.equal(readStepFileRevision(`${STEP_FILE_REVISION_PREFIX}${STEP_FILE_NEVER_SAVED}`), null);
+  assert.equal(readStepFileRevision("budget, payroll"), undefined);
+  assert.ok(sameStepRevision(revision, "2026-11-14T13:05:28.358Z"), "the same moment written two ways is the same revision");
+  assert.ok(!sameStepRevision(revision, "2026-11-14T13:05:29.000Z"), "a later save is a different revision");
+  assert.ok(!sameStepRevision(null, revision), "a step saved since it was opened unsaved is a different revision");
+  assert.ok(sameStepRevision(null, null));
+
+  const service = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  const save = bodyOf(service, "export async function saveStep(");
+  const hold = save.indexOf("holdRun(");
+  assert.ok(
+    hold > 0 && save.indexOf("await assertStepUnchangedSince(", hold) > hold &&
+      save.indexOf("await assertStepUnchangedSince(", hold) < save.indexOf("await upsertDraftRows(runId, patches)", hold),
+    "HEADLINE: saveStep checks the revision under the run hold, before it writes, so two saves cannot both pass",
+  );
+  assert.ok(
+    save.indexOf("await assertStepUnchangedSince(") < save.indexOf("savePart1NotPaid("),
+    "and once before Part 1 Not Paid can record anything",
+  );
+  assert.match(save, /return \{ revision: saved\.updatedAt \|\| null \};/, "a save hands the screen its new revision");
+  const importer = bodyOf(service, "export async function importStepUpload(");
+  assert.ok(
+    importer.indexOf("await assertStepUnchangedSince(") < importer.indexOf("if (!commit)"),
+    "a stale file is refused at the preview, before anyone reviews a diff that would never apply",
+  );
+  assert.match(importer, /fileRevision !== undefined/, "the file's own revision wins over the screen's");
+  assert.match(importer, /recalculateMoney: recalculated, \.\.\.revisionCheck/, "and the commit is checked again under the hold");
+  const route = readFileSync("app/api/automated-payroll/runs/[runId]/steps/[stepKey]/route.ts", "utf8");
+  assert.match(route, /expectedRevision,\s*revisionSource: "screen"/, "the save route passes the screen's revision");
+  const screen = readFileSync("src/components/automated-payroll/recommendation-step.tsx", "utf8");
+  assert.match(screen, /inputMode: "inline", revision: revisionRef\.current/, "the screen sends the revision it loaded");
+  assert.match(screen, /form\.set\("revision", revisionRef\.current \?\? ""\)/, "and with an upload");
+  assert.match(screen, /error\.includes\(STALE_STEP_OPENING\)/, "and offers Reload the step on that refusal");
 
   // ==== 31: a field with nowhere to be saved ships read-only and is never read back ===============
   const notStored: Array<[StepKey, string]> = [

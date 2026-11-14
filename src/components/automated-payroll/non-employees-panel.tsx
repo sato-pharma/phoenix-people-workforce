@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Repeat, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import type {
 } from "@/lib/automated-payroll/types";
 import { cn } from "@/lib/utils";
 
+import { formatPayrollMoney } from "./format";
 import { RecurringNonEmployeesPanel } from "./recurring-non-employees-panel";
 import { WrappingTextField } from "./wrapping-text-field";
 
@@ -22,6 +23,11 @@ type Props = {
   locked: boolean;
   /** Must be referentially stable — the loader below depends on it. */
   onChange?: (part: NonEmployeePart, count: number) => void;
+  /**
+   * Whether an entry here has edits not yet saved. The wizard uses it the way it uses a step's: the
+   * sheet downloads wait, and moving away asks first instead of dropping the typing.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 const fieldClassName = "h-9";
@@ -33,8 +39,42 @@ const amountFieldClassName = cn(
   "text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
 );
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const money = formatPayrollMoney;
+
+function toInput(row: NonEmployeePayrollRow): NonEmployeePayrollInput {
+  return {
+    fullNameAr: row.fullNameAr,
+    fullNameEn: row.fullNameEn,
+    totalSalary: row.totalSalary,
+    bankName: row.bankName ?? "",
+    bankAccount: row.bankAccount ?? "",
+  };
+}
+
+function sameInput(a: NonEmployeePayrollInput, b: NonEmployeePayrollInput): boolean {
+  return (
+    a.fullNameAr === b.fullNameAr &&
+    a.fullNameEn === b.fullNameEn &&
+    Number(a.totalSalary) === Number(b.totalSalary) &&
+    (a.bankName ?? "") === (b.bankName ?? "") &&
+    (a.bankAccount ?? "") === (b.bankAccount ?? "")
+  );
+}
+
+/** A new entry with nothing typed in it is not unsaved work — an empty slot is just a slot. */
+function hasContent(row: NonEmployeePayrollInput): boolean {
+  return Boolean(
+    row.fullNameEn.trim() ||
+      row.fullNameAr.trim() ||
+      (row.bankName ?? "").trim() ||
+      (row.bankAccount ?? "").trim() ||
+      Number(row.totalSalary) > 0,
+  );
+}
+
+/** A new entry is added only once it names someone. */
+function hasName(row: NonEmployeePayrollInput): boolean {
+  return Boolean(row.fullNameEn.trim() || row.fullNameAr.trim());
 }
 
 const emptyDraft: NonEmployeePayrollInput = {
@@ -58,45 +98,58 @@ type NewRow = NonEmployeePayrollInput & { tempId: string };
  * own wizard tabs lock — so the two can never overwrite each other and a Part 1
  * entry can't be edited after Part 1 has been executed.
  */
-export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
+export function NonEmployeesPanel({ runId, part, locked, onChange, onDirtyChange }: Props) {
   const [rows, setRows] = useState<NonEmployeePayrollRow[]>([]);
   const [edits, setEdits] = useState<Record<string, NonEmployeePayrollInput>>({});
   const [newRows, setNewRows] = useState<NewRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  /** Only the FIRST read shows the loading line. A reload after a save used to unmount the whole
+   * list for that moment, which threw away the typing in every other row. */
+  const [loaded, setLoaded] = useState(false);
+  /** What the server last said each entry holds — an edit is "unsaved" only against this. */
+  const serverRef = useRef<Record<string, NonEmployeePayrollInput>>({});
+  /** The same, as state, for the render — a ref is read only by the loader. */
+  const [stored, setStored] = useState<Record<string, NonEmployeePayrollInput>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showStanding, setShowStanding] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /**
+   * `settledId` is the entry just saved: it takes the server's figures. Every other entry with
+   * unsaved typing keeps it — saving one row used to reset all the others to what was stored.
+   */
+  const load = useCallback(async (settledId?: string) => {
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees?part=${part}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload the page.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to load Non-Employees Payroll.");
-      const loaded = data.rows as NonEmployeePayrollRow[];
-      setRows(loaded);
-      setEdits(
+      const fetched = data.rows as NonEmployeePayrollRow[];
+      const before = serverRef.current;
+      const fresh: Record<string, NonEmployeePayrollInput> = Object.fromEntries(
+        fetched.map((row) => [row.id, toInput(row)]),
+      );
+      serverRef.current = fresh;
+      setStored(fresh);
+      setRows(fetched);
+      setEdits((current) =>
         Object.fromEntries(
-          loaded.map((row) => [
-            row.id,
-            {
-              fullNameAr: row.fullNameAr,
-              fullNameEn: row.fullNameEn,
-              totalSalary: row.totalSalary,
-              bankName: row.bankName ?? "",
-              bankAccount: row.bankAccount ?? "",
-            },
-          ]),
+          fetched.map((row) => {
+            const draft = current[row.id];
+            const stored = before[row.id];
+            const unsaved = row.id !== settledId && draft !== undefined && stored !== undefined && !sameInput(draft, stored);
+            return [row.id, unsaved ? draft : fresh[row.id]];
+          }),
         ),
       );
-      onChange?.(part, loaded.length);
+      onChange?.(part, fetched.length);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load Non-Employees Payroll.");
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
   }, [runId, part, onChange]);
 
@@ -120,9 +173,11 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...draft, part }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to save.");
-      await load();
+      await load(id);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save.");
     } finally {
@@ -135,7 +190,9 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to delete.");
       await load();
     } catch (deleteError) {
@@ -168,7 +225,9 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...draft, part }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to add.");
       setNewRows((prev) => prev.filter((row) => row.tempId !== tempId));
       await load();
@@ -193,7 +252,9 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
     setSyncNote(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees/sync`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to sync the standing list.");
       const inserted = Number(data.inserted ?? 0);
       const skipped = Number(data.skipped ?? 0);
@@ -210,6 +271,17 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
     }
   };
 
+  const rowDirty = (id: string): boolean => {
+    const draft = edits[id];
+    const saved = stored[id];
+    return Boolean(draft && saved && !sameInput(draft, saved));
+  };
+  const anyDirty = rows.some((row) => rowDirty(row.id)) || newRows.some(hasContent);
+  useEffect(() => {
+    onDirtyChange?.(anyDirty);
+  }, [anyDirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
   const total =
     rows.reduce((sum, row) => sum + row.totalSalary, 0) +
     newRows.reduce((sum, row) => sum + (Number(row.totalSalary) || 0), 0);
@@ -217,7 +289,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
   const partLabel = part === "first" ? "Part 1" : "Part 2";
   const fromStandingCount = rows.filter((row) => row.recurringId).length;
 
-  if (loading) {
+  if (!loaded) {
     return <div className="p-6 text-sm text-slate-500">Loading {partLabel} Non-Employees Payroll…</div>;
   }
 
@@ -361,10 +433,11 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={busyId === row.id}
+                            disabled={busyId === row.id || !rowDirty(row.id)}
                             onClick={() => void saveExisting(row.id)}
+                            className={cn(rowDirty(row.id) && "border-orange-600 bg-orange-600 text-white hover:bg-orange-700")}
                           >
-                            Save
+                            {rowDirty(row.id) ? "Save change" : "Saved"}
                           </Button>
                           <Button
                             aria-label="Delete this entry"
@@ -432,7 +505,8 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   <div className="flex flex-wrap gap-1.5">
                     <Button
                       size="sm"
-                      disabled={busyId === row.tempId}
+                      disabled={busyId === row.tempId || !hasName(row)}
+                      title={hasName(row) ? undefined : "Type the person's name first."}
                       onClick={() => void saveNewRow(row.tempId)}
                       className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                     >
@@ -463,7 +537,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
           return (
             <div
               key={row.id}
-              className="border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md"
+              className="border border-slate-200 bg-white transition-colors hover:border-slate-300"
             >
               {/* Same dark identity header the per-employee recommendation cards
                   carry, so a non-employee entry reads as the same kind of object
@@ -480,6 +554,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 </span>
                 {!locked ? (
                   <Button
+                    aria-label={`Delete entry ${index + 1}`}
                     size="sm"
                     variant="ghost"
                     disabled={busyId === row.id}
@@ -531,17 +606,17 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                     value={String(draft.totalSalary)}
                     disabled={locked}
                     onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
-                    className={fieldClassName}
+                    className={amountFieldClassName}
                   />
                 </label>
                 {!locked ? (
                   <Button
                     size="sm"
-                    disabled={busyId === row.id}
+                    disabled={busyId === row.id || !rowDirty(row.id)}
                     onClick={() => void saveExisting(row.id)}
                     className="self-start border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                   >
-                    Save
+                    {rowDirty(row.id) ? "Save change" : "Saved"}
                   </Button>
                 ) : null}
               </div>
@@ -550,7 +625,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         })}
 
         {newRows.map((row) => (
-          <div key={row.tempId} className="border border-orange-300 bg-orange-50/40 shadow-sm">
+          <div key={row.tempId} className="border border-orange-300 bg-orange-50/40">
             {/* An unsaved entry keeps the orange draft tone rather than the dark
                 header — it is deliberately not yet one of the saved objects. */}
             <div className="flex items-center justify-between gap-2 border-b border-orange-200 bg-orange-100/70 px-3 py-2">
@@ -558,6 +633,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 New entry
               </span>
               <Button
+                aria-label="Discard this new entry"
                 size="sm"
                 variant="ghost"
                 onClick={() => discardNewRow(row.tempId)}
@@ -606,12 +682,12 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   type="number"
                   value={String(row.totalSalary)}
                   onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
-                  className={fieldClassName}
+                  className={amountFieldClassName}
                 />
               </label>
               <Button
                 size="sm"
-                disabled={busyId === row.tempId}
+                disabled={busyId === row.tempId || !hasName(row)}
                 onClick={() => void saveNewRow(row.tempId)}
                 className="self-start border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
               >

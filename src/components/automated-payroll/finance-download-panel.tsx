@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Banknote, Building2, Landmark, ShieldCheck } from "lucide-react";
 
@@ -13,7 +13,23 @@ import { SectionHeading } from "./section-shell";
 import { SelectField } from "./select-field";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** The first year this module has a run for — the Year list starts here (as on the HR wizard). */
+const FIRST_PAYROLL_YEAR = 2026;
 
 type Availability = { hasRun: boolean; part1: boolean; full: boolean; published: boolean };
 
@@ -26,23 +42,39 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
   const [month, setMonth] = useState(initialMonth);
   const [year, setYear] = useState(initialYear);
   const [availability, setAvailability] = useState<Availability | null>(null);
+  /**
+   * Where the read for the chosen month stands. Before this the page said "No Automated Payroll run
+   * exists" while it was still asking, and again when the question failed — the same words for
+   * "not yet known", "could not tell" and "there is none", on the page finance pays the bank from.
+   */
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "failed">("loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fabValueDate, setFabValueDate] = useState(() => defaultFabValueDate(initialMonth, initialYear));
+  /** Only the newest read may write to the screen: a slow answer for the month just left is dropped. */
+  const loadSeq = useRef(0);
 
   const load = useCallback(async (m: number, y: number) => {
+    const seq = ++loadSeq.current;
     setBusy(true);
     setError(null);
+    setAvailability(null);
+    setLoadState("loading");
     try {
       const res = await fetch(`/api/automated-payroll/finance?month=${m}&year=${y}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Check again in a moment.`);
+      });
+      if (seq !== loadSeq.current) return;
       if (!res.ok) throw new Error(data.error ?? "Failed to load.");
       setAvailability(data.availability as Availability);
+      setLoadState("loaded");
     } catch (loadError) {
+      if (seq !== loadSeq.current) return;
       setError(loadError instanceof Error ? loadError.message : "Failed to load.");
-      setAvailability(null);
+      setLoadState("failed");
     } finally {
-      setBusy(false);
+      if (seq === loadSeq.current) setBusy(false);
     }
   }, []);
 
@@ -52,10 +84,26 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFabValueDate(defaultFabValueDate(month, year));
-  }, [month, year]);
+  /**
+   * A new month is read at once. It used to wait for "Check", so the page showed one month's
+   * files under another month's name — and each download button sent the NEW month to the server.
+   */
+  const choosePeriod = (m: number, y: number) => {
+    setMonth(m);
+    setYear(y);
+    setFabValueDate(defaultFabValueDate(m, y));
+    void load(m, y);
+  };
+
+  const yearOptions = useMemo(() => {
+    const last = Math.max(initialYear + 1, year);
+    const years: number[] = [];
+    for (let value = Math.min(FIRST_PAYROLL_YEAR, year); value <= last; value += 1) years.push(value);
+    return years;
+  }, [initialYear, year]);
+  const periodLabel = `${MONTHS[month - 1]} ${year}`;
+  /** A FAB file with no value date is refused by the bank, so its buttons wait for one. */
+  const fabDateMissing = !/^\d{4}-\d{2}-\d{2}$/.test(fabValueDate);
 
   const download = (scope: "part1" | "full") => {
     downloadFromApiRoute(`/api/automated-payroll/finance/download?month=${month}&year=${year}&scope=${scope}`);
@@ -79,19 +127,19 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
   // genuinely parallel — same period, same run, three files — so a row is what they are.
   const periodControls = (
     <div className="flex flex-wrap items-end gap-3">
-      <SelectField label="Month" value={month} onChange={setMonth}>
+      <SelectField label="Month" value={month} onChange={(value) => choosePeriod(value, year)}>
         {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
       </SelectField>
-      <SelectField label="Year" value={year} onChange={setYear}>
-        {[year - 1, year, year + 1].map((value) => <option key={value} value={value}>{value}</option>)}
+      <SelectField label="Year" value={year} onChange={(value) => choosePeriod(month, value)}>
+        {yearOptions.map((value) => <option key={value} value={value}>{value}</option>)}
       </SelectField>
       <Button
         variant="outline"
         disabled={busy}
         onClick={() => void load(month, year)}
-        className="h-10 border-white/25 bg-white/10 font-bold text-white shadow-sm hover:bg-white/20"
+        className="h-10 border-white/25 bg-white/10 font-bold text-white hover:bg-white/20"
       >
-        {busy ? "Checking…" : "Check"}
+        {busy ? "Checking…" : "Check again"}
       </Button>
     </div>
   );
@@ -105,8 +153,12 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
           ? <Badge variant="neutral">Part 1 ready</Badge>
           : <Badge variant="warning">In progress</Badge>}
     </>
+  ) : loadState === "loading" ? (
+    <Badge variant="neutral">Checking {periodLabel}…</Badge>
+  ) : loadState === "failed" ? (
+    <Badge variant="warning">Could not check {periodLabel}</Badge>
   ) : (
-    <Badge variant="neutral">No run for this period</Badge>
+    <Badge variant="neutral">No run for {periodLabel}</Badge>
   );
 
   return (
@@ -122,10 +174,17 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
 
-      {!availability?.hasRun ? (
+      {loadState === "loading" ? (
+        <AdminCallout tone="neutral">Checking which files are ready for {periodLabel}…</AdminCallout>
+      ) : loadState === "failed" ? (
+        <AdminCallout tone="warning">
+          Could not tell which files are ready for {periodLabel}. Press Check again above; nothing is shown until the
+          answer is known.
+        </AdminCallout>
+      ) : !availability?.hasRun ? (
         <AdminCallout tone="neutral">
-          No Automated Payroll run exists for {MONTHS[month - 1]} {year} yet. Pick another period above, or wait for HR
-          to confirm this one.
+          No Automated Payroll run exists for {periodLabel} yet. Pick another period above, or wait for HR to confirm
+          this one.
         </AdminCallout>
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
@@ -172,16 +231,21 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
                   onChange={(event) => setFabValueDate(event.target.value)}
                   className={phxFieldClassName}
                 />
+                {fabDateMissing ? (
+                  <span className="normal-case tracking-normal text-[12px] font-semibold text-amber-700">
+                    Choose the value date the bank should pay on.
+                  </span>
+                ) : null}
               </label>
               <Button
-                disabled={!availability.part1}
+                disabled={!availability.part1 || fabDateMissing}
                 onClick={() => downloadFab("part1")}
                 className="w-full border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
               >
                 Download FAB Sheet — Part 1
               </Button>
               <Button
-                disabled={!availability.full}
+                disabled={!availability.full || fabDateMissing}
                 onClick={() => downloadFab("part2")}
                 className="w-full border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
               >
