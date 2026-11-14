@@ -1661,10 +1661,10 @@ export const MODULES = [
       "src/lib/auth/{credentials,staging-test-sign-in}.ts",
       "tests/staging-test-sign-in*",
       // The second sign-in step (2026-11-13): asked by the login route, so it loads with it.
-      "src/lib/auth/{second-step,second-step-store,second-step-management}.ts",
-      "src/components/auth/second-step-card.tsx",
+      "src/lib/auth/{second-step,second-step-store,second-step-management,second-step-qr}.ts",
+      "src/components/auth/{second-step-card,second-step-qr-code}.tsx",
       "app/api/auth/second-step/**",
-      "tests/second-sign-in-step*",
+      "tests/{second-sign-in-step,second-step-qr-code}*",
       // Adding a passkey asks a Super Admin's password (2026-11-14): the second step's rule binds it.
       "app/api/auth/biometric/register/**",
       "src/components/auth/biometric-devices-card.tsx",

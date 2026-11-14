@@ -307,6 +307,17 @@ export function runPnpmWorktreeGuardTests() {
         install.includes("node scripts/new-session.mjs --repair"),
         `an install has no node equivalent — it must point at the junction repair instead.\n${install}`,
       );
+
+      // A library IS added from a worktree (owner, 14 Nov 2026: "install the qr library and allow in
+      // worktrees"): the deny names the route that works there — the manifest, then the lockfile
+      // regenerated on GitHub — never "install in the primary", which a worktree session cannot do.
+      const add = runGuard(worktree, "pnpm add qrcode.react@4.2.0");
+      assert.equal(add.decision, "deny", "pnpm add in a worktree is still refused: it would reach the primary's node_modules");
+      assert.ok(
+        add.reason.includes("package.json") && add.reason.includes("node scripts/remote-check.mjs lockfile"),
+        `adding a library from a worktree must name the route that works there.\n${add.reason}`,
+      );
+      assert.ok(!add.reason.includes("Install in the PRIMARY folder only"), `the dead end must be gone.\n${add.reason}`);
     }
 
     // ── A replacement must never itself contain pnpm ────────────────────────────────────────────
