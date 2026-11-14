@@ -202,8 +202,20 @@ export async function notifyPart1SubmittedForReview(run: MonthlySalaryRun): Prom
   }
 }
 
-/** Part 2 confirmed — email + Telegram + in-app. */
-export async function notifyPart2Ready(run: MonthlySalaryRun): Promise<void> {
+/**
+ * Part 2 confirmed — email + Telegram + in-app + push.
+ *
+ * `email: false` leaves the email out for this one confirm (owner, 14 Nov 2026: "make it not email
+ * this time when i confirm"); the in-app, Telegram and phone notices still go. Ticked by default on
+ * the Confirm Part 2 prompt, so leaving it alone sends exactly what it always did.
+ */
+export const PART2_READY_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "email", "telegram", "push"];
+
+export function part2ReadyChannels(email: boolean): SystemNotificationChannel[] {
+  return PART2_READY_CHANNELS.filter((channel) => email || channel !== "email");
+}
+
+export async function notifyPart2Ready(run: MonthlySalaryRun, options: { email?: boolean } = {}): Promise<void> {
   const label = monthLabel(run.month, run.year);
   await fanOut({
     run,
@@ -213,7 +225,7 @@ export async function notifyPart2Ready(run: MonthlySalaryRun): Promise<void> {
     // ANY email whose summary/title contains that substring, even ordinary admin prose (bug
     // found 2026-08-08: this exact sentence silently vanished the Part 2 milestone email).
     message: `${label} Automated Payroll Part 2 is HR-confirmed. The full monthly sheet is ready for review. Awaiting System Admin to publish this run.`,
-    channels: ["in_app", "email", "telegram", "push"],
+    channels: part2ReadyChannels(options.email !== false),
   });
 }
 
