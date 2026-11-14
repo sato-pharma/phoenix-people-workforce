@@ -93,13 +93,17 @@ function testEverySaveStepRefusesADuplicateWorkbook() {
     const source = readFileSync(path, "utf8");
     const start = source.indexOf(signature);
     assert.ok(start >= 0, `${signature} must exist`);
-    const call = source.indexOf("assertNotADuplicateUpload(", start);
+    // Since REC-008 (14 Nov 2026) the refusal runs in the one door both save steps call.
+    const call = source.indexOf("applyImportStoreRules(", start);
     const insert = source.indexOf('.from("source_of_sales_import_batches")', start);
     assert.ok(
       call > start && call < insert,
       `${signature} must refuse a workbook already committed under another period before it writes the batch`,
     );
   }
+  const rules = readFileSync(fileURLToPath(new URL("../src/lib/sales/import-store-rules.ts", import.meta.url)), "utf8");
+  const door = rules.slice(rules.indexOf("export async function applyImportStoreRules<"));
+  assert.ok(door.indexOf("await (seams.assertNotADuplicate ?? assertNotADuplicateUpload)({") > 0, "the one door refuses a workbook already committed under another period");
 }
 
 function testGuardFailsClosedAndExplainsItself() {
