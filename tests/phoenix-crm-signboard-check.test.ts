@@ -794,15 +794,17 @@ function checkTwoReaders(): void {
     for (const reason of ["name_unusable", "unconfirmed", "unreadable", "unreadable_final"]) {
       assert.ok(map[1].includes(`${reason}:`), `${file} must say in words what ${reason} means`);
     }
-    const sentences = [...map[1].matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
-    assert.equal(new Set(sentences).size, 4, `${file} must give each of the four its OWN sentence`);
+    const sentences = [...map[1].matchAll(/^\s*\w+: "([^"]+)"/gm)].map((hit) => hit[1]);
+    // The building board also says what `not_comparable` means (owner, 14 Nov 2026): every answer its own.
+    assert.ok(sentences.length >= 4, `${file} must tell the four unjudged answers apart`);
+    assert.equal(new Set(sentences).size, sentences.length, `${file} must give each of the four its OWN sentence`);
     for (const sentence of sentences) {
       assert.ok(!/_/.test(sentence), `${file} must never show a reason code: ${sentence}`);
       assert.ok(!sentence.includes("…") && !sentence.includes("..."), `${file} must not truncate: ${sentence}`);
     }
     assert.ok(
       board.includes("function signboardText(signboard: NonNullable<") &&
-        board.includes("{signboardText(row.signboard)}"),
+        /\{signboardText\(row\.signboard(?:, row\.kind)?\)\}/.test(board),
       `${file} must RENDER through that map, not straight off the verdict`,
     );
     assert.ok(

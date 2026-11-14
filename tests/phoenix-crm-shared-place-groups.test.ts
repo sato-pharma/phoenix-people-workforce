@@ -484,7 +484,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.ok(list.includes("Sign photo for"), "beside the sign on its door");
   assert.ok((list.match(/<SeatedCustomers/g) ?? []).length === 2, "the customers are drawn under their building on the phone and on the desktop");
   assert.ok(list.includes('layout="cards"') && list.includes('layout="table"'), "once per screen size, so a label points at the control the reader can see");
-  assert.ok(list.includes("{signboardText(row.signboard)}"), "the building's sign verdict is still drawn in words");
+  assert.ok(list.includes("{signboardText(row.signboard, row.kind)}"), "the building's sign verdict is still drawn in words, naming its own kind");
 
   // ── The reject control: the existing refusal, on the timetable's own pick-list ────────────────
   const customersSource = read("src/components/phoenix-crm/shared-place-customers.tsx");

@@ -52,6 +52,7 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import { integrityBoardRow } from "@/lib/crm-integrity/integrity-board-rows";
 import { adviseOnBuilding, adviseOnPlaceInUse, adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteAdviceLabel, placeNoteSubjectKey, type PlaceNoteAdvice } from "@/lib/phoenix-crm/place-note-rules";
+import { sharedPlaceKindLabel, sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
@@ -361,16 +362,16 @@ function venueSlide(group: VenueGroup, noteIndex: PlaceNoteIndex): SlideView {
       <>
         <header className="min-w-0 space-y-2 border-b border-slate-200 px-5 pb-4 pt-5">
           <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
-            Polyclinic · {venue.status === "held" ? "held for your decision" : venue.status === "retired" ? "rejected" : "in use"}
+            {sharedPlaceKindLabel(venue.kind) ?? "Building"} · {venue.status === "held" ? "held for your decision" : venue.status === "retired" ? "rejected" : "in use"}
           </p>
           <VenueHeader mode="company" row={venue} />
         </header>
 
         {/* Part 1 — the building's own validation, decided on its own. */}
-        <DeckSection title="1 · The polyclinic itself">
+        <DeckSection title={`1 · The ${sharedPlaceKindNoun(venue.kind)} itself`}>
           {venue.signboard ? (
             <CrmPill tone={venue.signboard.verdict === "match" ? "good" : venue.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-              {venueSignboardText(venue.signboard)}
+              {venueSignboardText(venue.signboard, venue.kind)}
             </CrmPill>
           ) : (
             <p className="break-words text-xs text-slate-500">The sign has not been read yet.</p>

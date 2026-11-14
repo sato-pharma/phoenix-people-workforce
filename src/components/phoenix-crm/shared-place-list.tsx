@@ -57,14 +57,17 @@ import {
   NO_TIMETABLE_WITHDRAW_LABEL,
 } from "@/lib/phoenix-crm/failing-timetable-rules";
 import { adviseOnBuilding } from "@/lib/phoenix-crm/place-check-advice";
+import { sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { cn } from "@/lib/utils";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
 import type { PlaceNoteIndex, SharedPlaceBoardRow } from "@/lib/phoenix-crm/view-types";
 
-/** What the system read on the sign of the BUILDING. A verdict on the venue's own name, never on a person's. */
+/**
+ * What the system read on the sign of the BUILDING. A verdict on the venue's own name, never on a person's.
+ * The match names the building's own kind (`sharedPlaceKindNoun`), never "polyclinic" for a hospital.
+ */
 const SIGNBOARD_TEXT: Record<string, string> = {
-  match: "The sign names this polyclinic",
   other_name: "The sign names something else",
   no_name: "No name to judge on the sign",
   unjudged: "The sign could not be read",
@@ -78,12 +81,15 @@ const SIGNBOARD_TEXT: Record<string, string> = {
  */
 const SIGNBOARD_UNJUDGED_TEXT: Record<string, string> = {
   name_unusable: "Nothing on a sign to compare",
+  not_comparable: "The sign is in another script from the name",
   unconfirmed: "Two readings of the sign disagreed",
-  unreadable: "The sign could not be read yet",
+  // 🔴 Never "yet": a building's sign is read at its capture, and no night pass reads it again.
+  unreadable: "The sign could not be read at the capture",
   unreadable_final: "The sign could not be read",
 };
 
-function signboardText(signboard: NonNullable<SharedPlaceBoardRow["signboard"]>): string {
+function signboardText(signboard: NonNullable<SharedPlaceBoardRow["signboard"]>, kind: string | null): string {
+  if (signboard.verdict === "match") return `The sign names this ${sharedPlaceKindNoun(kind)}`;
   if (signboard.verdict !== "unjudged") return SIGNBOARD_TEXT[signboard.verdict] ?? SIGNBOARD_TEXT.unjudged;
   return SIGNBOARD_UNJUDGED_TEXT[signboard.reason ?? ""] ?? SIGNBOARD_TEXT.unjudged;
 }
@@ -157,7 +163,7 @@ function SignPhoto({ headed, row }: { headed: boolean; row: SharedPlaceBoardRow 
       <CrmPhotoThumb alt={`Sign photo for ${row.name}`} className="h-64 w-full" lazy path={row.photoPath} rotatable />
       {row.signboard ? (
         <CrmPill tone={row.signboard.verdict === "match" ? "good" : row.signboard.verdict === "unjudged" ? "neutral" : "warn"}>
-          {signboardText(row.signboard)}
+          {signboardText(row.signboard, row.kind)}
         </CrmPill>
       ) : (
         <p className="break-words text-xs text-slate-500">The sign has not been read yet.</p>
@@ -265,7 +271,7 @@ function Where({ row }: { row: SharedPlaceBoardRow }) {
         Open the building in Google Maps
       </a>
       <p className="break-words border-t border-slate-100 pt-1 text-xs text-slate-500">
-        This building is not looked up in Google: the check reads a customer&apos;s own name, and a polyclinic has none.
+        This building is not looked up in Google: the check reads a customer&apos;s own name, and a {sharedPlaceKindNoun(row.kind)} has none.
       </p>
     </div>
   );

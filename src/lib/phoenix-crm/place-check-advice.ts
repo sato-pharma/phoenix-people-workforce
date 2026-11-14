@@ -143,7 +143,12 @@ export function adviseOnSign(sign: SignEvidence, subject: "customer" | "building
       }
       return reject(`The sign could not be read, so it cannot show that this is ${who}.`, sign.signText, null);
     case "unreadable":
+      // 🔴 A BUILDING'S SIGN IS NEVER READ AGAIN (owner, 14 Nov 2026, "Fix all three"): the night pass reads
+      // a customer's own place only, and 65 buildings had said "read again tonight" for up to a month.
+      if (subject === "building") return look("The sign on this building could not be read. Look at the photo yourself.", sign.signText);
       return look("The sign could not be read on the first try, and it is read again tonight. Look at the photo yourself.", sign.signText);
+    case "not_comparable":
+      return look(`The sign is written in another script from ${who}'s name, so the system cannot compare them. Compare it with the photo yourself.`, sign.signText);
     case "unconfirmed":
       return look("Two readings of this sign disagreed, so the system will not say either way.", sign.signText);
     case "name_unusable":
