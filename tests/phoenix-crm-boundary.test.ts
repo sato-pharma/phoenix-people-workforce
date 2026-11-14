@@ -209,6 +209,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "approve"),
+  // Declaring that a building has no timetable, or taking that back (owner, 14 Nov 2026): the Super Admin
+  // alone — `update` at the route, `canDecideSharedPlaces` in the service. It writes a screen marker.
+  post("validation-reviews/shared-place/no-timetable", "update"),
   // A PM customer's full name that matched the signboard under 60% (owner, 2026-11-07, pm-name-rules.ts):
   // `approve` at the route, and `decideHeldFullName` narrows it to the Super Admin and the SFE Manager
   // before a row is read.
@@ -1123,6 +1126,11 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_settle_venue_timetable and phoenix_crm_seat_places_in_venue REPLACED, and one NEW function —
   // phoenix_crm_customer_stands_on_another_place. It replaces nothing save_visit depends on.
   "supabase/migrations/20261114051314_phoenix_crm_validation_owner_decisions.sql",
+  // The items that audit left as they were, closed the same day: eight functions REPLACED, each from the body
+  // production held — the two review doors, the two building doors, phoenix_crm_place_on_trusted_point,
+  // phoenix_crm_share_line_validation, phoenix_crm_decide_request and phoenix_crm_reverse_list_request — and two
+  // clean-ups of stale values. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261114062049_phoenix_crm_validation_left_items.sql",
 ];
 
 /**

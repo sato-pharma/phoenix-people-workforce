@@ -23,6 +23,7 @@
  * scroller); a phone draws the same rows as cards. Square corners throughout.
  */
 
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
@@ -49,6 +50,12 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
+import {
+  NO_TIMETABLE_DECLARE_EXPLAINER,
+  NO_TIMETABLE_DECLARE_LABEL,
+  NO_TIMETABLE_WITHDRAW_EXPLAINER,
+  NO_TIMETABLE_WITHDRAW_LABEL,
+} from "@/lib/phoenix-crm/failing-timetable-rules";
 import { adviseOnBuilding } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { cn } from "@/lib/utils";
@@ -118,6 +125,7 @@ function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <CrmPill>{row.kindLabel}</CrmPill>
         <VenueStatus mode={mode} row={row} />
+        {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>
@@ -439,6 +447,65 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
 }
 
 /**
+ * The Super Admin's declaration that this building has no timetable, or taking it back (owner, 14 Nov
+ * 2026, "List + declare"). Until then the marker was set by hand on one building.
+ *
+ * 🔴 TWO CLICKS, AND THE FIRST ONE SAYS WHAT THE SECOND DOES NOT DO. It validates nobody: the customers
+ * seated here still wait for his Approve, each on his own row. The row says which of the two the viewer
+ * may do (`noTimetableControl`), so nobody else is drawn a button, and a rejected building has none.
+ */
+function NoTimetableDeclaration({ row }: { row: SharedPlaceBoardRow }) {
+  const router = useRouter();
+  const control = row.noTimetableControl ?? null;
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // The control that was saved. Once the page is read again the row offers the other one, and the note goes.
+  const [savedAs, setSavedAs] = useState<"declare" | "withdraw" | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  if (!control) return null;
+
+  async function save() {
+    if (saving || !control) return;
+    setSaving(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/shared-place/no-timetable", { sharedPlaceId: row.sharedPlaceId, declared: control === "declare" }, "declaration");
+      setSavedAs(control);
+      setOpen(false);
+      router.refresh();
+    } catch (error) {
+      setProblem(messageOf(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (savedAs === control) {
+    return <CrmNote tone="good">{control === "declare" ? "Saved. This building is declared to have no timetable." : "Saved. The board reads this building's timetable again."}</CrmNote>;
+  }
+  return (
+    <div className="min-w-0 space-y-2 border-t border-slate-200 pt-2">
+      {open ? (
+        <>
+          <p className="break-words text-xs text-slate-600">{control === "declare" ? NO_TIMETABLE_DECLARE_EXPLAINER : NO_TIMETABLE_WITHDRAW_EXPLAINER}</p>
+          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
+            <CrmButton disabled={saving} onClick={() => void save()} variant="primary">
+              {saving ? "Saving…" : "Confirm"}
+            </CrmButton>
+            <CrmButton disabled={saving} onClick={() => setOpen(false)}>
+              Cancel
+            </CrmButton>
+          </div>
+        </>
+      ) : (
+        <CrmButton onClick={() => setOpen(true)}>{control === "declare" ? NO_TIMETABLE_DECLARE_LABEL : NO_TIMETABLE_WITHDRAW_LABEL}</CrmButton>
+      )}
+      {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
+    </div>
+  );
+}
+
+/**
  * The last column, both modes together.
  *
  * 🔴 A MANAGER GETS NO `Decision` AND NOT EVEN THE `Cost` WARNING INSIDE IT. Rejecting a venue retires
@@ -453,6 +520,7 @@ function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnBuilding(row)} />}
       {mode === "team" ? null : <Decision row={row} scope={scope} />}
+      {mode === "team" ? null : <NoTimetableDeclaration row={row} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}

@@ -129,6 +129,59 @@ export function lastFinishedWorkingDay(cairoToday: string, holidays?: CallRateHo
   return null;
 }
 
+/**
+ * 🔴 HOW MANY WORKING DAYS IN A ROW HAVE NO VISIT (owner, 14 Nov 2026, "Add days in a row").
+ *
+ * "No visit on the last working day" read the same for a rep who missed yesterday and for one who had
+ * not visited anybody in two weeks. The row and the 06:55 message now say the run: "No visit for 8
+ * working days in a row". The kind, its place on the ladder and who is told are unchanged; only the
+ * words on a run of two days or more are.
+ *
+ * The run is counted back from the last finished working day and ends at the first working day that
+ * has a visit. 🔴 A FULL DAY OF APPROVED LEAVE IS SKIPPED — it is neither counted nor does it end the
+ * run, though a visit made on one still ends it — and a holiday or a Thursday is not a working day at
+ * all, so it is never in the list. A half day of leave is counted like any other day: he owed the other
+ * half (`leaveFullDaysInWindow`).
+ *
+ * It looks back `NO_VISIT_STREAK_LOOKBACK_DAYS` working days and stops counting at
+ * `NO_VISIT_STREAK_MAX_DAYS`. A run that reaches either without meeting a visit reads "or more",
+ * unless the list already reaches the day the line opened in Phoenix CRM (`completeHistory`): then
+ * the run is every day there was, and the number is exact.
+ */
+export const NO_VISIT_STREAK_MAX_DAYS = 15;
+export const NO_VISIT_STREAK_LOOKBACK_DAYS = 22;
+
+export type NoVisitStreak = { days: number; orMore: boolean };
+
+export function noVisitStreak(input: {
+  /** Finished working days, the last finished one FIRST. */
+  workingDaysNewestFirst: ReadonlyArray<string>;
+  /** The days this territory has a visit on. */
+  visitDays: ReadonlySet<string>;
+  /** The rep's FULL days of approved leave. */
+  leaveDays: ReadonlySet<string>;
+  /** The list goes back to the day the line opened, so there is no earlier day to ask about. */
+  completeHistory: boolean;
+}): NoVisitStreak {
+  let days = 0;
+  for (const day of input.workingDaysNewestFirst) {
+    // A visit ends the run on any day, a leave day included: he was at a door.
+    if (input.visitDays.has(day)) return { days, orMore: false };
+    if (input.leaveDays.has(day)) continue;
+    days += 1;
+    if (days >= NO_VISIT_STREAK_MAX_DAYS) return { days, orMore: true };
+  }
+  return { days, orMore: days > 0 && !input.completeHistory };
+}
+
+/** The row's words for a run of two days or more; null leaves the kind's own label, which already says one day. */
+export function noVisitStreakLabel(streak: NoVisitStreak | null | undefined): string | null {
+  if (!streak || streak.days < 2) return null;
+  return `No visit for ${streak.days}${streak.orMore ? " or more" : ""} working days in a row`;
+}
+
+export const NO_VISIT_STREAK_WHY = "No working day in that run has a visit on it. Approved leave and holidays are not counted.";
+
 export type ExceptionRules = {
   callRateAmTarget: number;
   callRatePmTarget: number;
@@ -191,6 +244,12 @@ export type TerritoryFacts = {
   leaveFullDaysInWindow: number;
   /** True only when the rep had a FULL day of approved leave on `lastFinishedWorkingDay`. */
   leaveOnLastWorkingDay: boolean;
+  /**
+   * The run of working days with no visit, ending on `lastFinishedWorkingDay` (`noVisitStreak`). Null
+   * or absent when it was not measured — the leave calendar could not be read, or the day has a visit —
+   * and the row then keeps its one-day words rather than a number nobody counted.
+   */
+  noVisitStreak?: NoVisitStreak | null;
   /**
    * True only when approved leave covers EVERY working day of this field week. A week signed off in
    * full has no plan to make; leave on two days of five does not excuse the plan for the other three.
@@ -305,7 +364,11 @@ export function judgeTerritory(facts: TerritoryFacts, rules: ExceptionRules): Te
 
   // 🔴 ONLY A FULL DAY OF LEAVE ANSWERS "anything?" — a rep on half a day still worked the other
   // half, so a day with no visit at all is still a day with no visit.
-  if (facts.lastWorkingDayVisits === 0 && !facts.leaveOnLastWorkingDay) return of("no_visit", null);
+  if (facts.lastWorkingDayVisits === 0 && !facts.leaveOnLastWorkingDay) {
+    // The same row, on the same rung; a run of two days or more says its length (owner, 14 Nov 2026).
+    const run = noVisitStreakLabel(facts.noVisitStreak);
+    return run ? { ...of("no_visit", null), label: run, why: NO_VISIT_STREAK_WHY } : of("no_visit", null);
+  }
 
   // AM and PM are judged APART and never averaged (the call-rate golden rule). PM leads because a
   // doctor list is the bigger half of the day; only ONE of the two is ever shown, so a territory

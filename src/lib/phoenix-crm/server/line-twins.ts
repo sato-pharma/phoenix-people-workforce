@@ -109,10 +109,19 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<L
   const [customerRows, placeRows, reviewRows, dropRows] = await Promise.all([
     readAll("phoenix_crm_customers", CUSTOMER_COLUMNS, scope, (query) => query.in("list_type", ["AM", "PM"]).in("status", ["active", "pending"]), "The AM and PM customers"),
     readAll("phoenix_crm_places", PLACE_COLUMNS, scope, (query) => query.eq("status", "active"), "The active places"),
-    readAll("phoenix_crm_validation_reviews", "id, customer_id", scope, (query) => query.eq("status", "pending"), "The validations waiting for the Super Admin"),
+    readAll("phoenix_crm_validation_reviews", "id, customer_id, place_id", scope, (query) => query.eq("status", "pending"), "The validations waiting for the Super Admin"),
     readAll("phoenix_crm_list_requests", "id, seat_id, customer_id, reference_contact_crm_id", scope, (query) => query.eq("kind", "drop").eq("status", "pending"), "The drop requests waiting"),
   ]);
-  const inReview = new Set(reviewRows.map((row) => String(row.customer_id)));
+  // 🔴 A REVIEW WAITS ONLY WHILE ITS PLACE IS IN USE (owner, 14 Nov 2026, the items the audit left). A
+  // rejected building and a place removed from the list leave their pending review pending, and it is
+  // nobody's to decide; counted here it kept the row "in review" and out of the line sharing for good.
+  // The places are asked by id, never taken from this scope's own places: a review and its place can sit
+  // on two territories. A place that could not be read holds the row, as before.
+  const reviewedPlaces = await selectByIds<Row>("phoenix_crm_places", "id, status", "id", [...new Set(reviewRows.map((row) => String(row.place_id)))]);
+  const reviewedPlaceStatus = new Map(reviewedPlaces.map((row) => [String(row.id), String(row.status)]));
+  const inReview = new Set(
+    reviewRows.filter((row) => (reviewedPlaceStatus.get(String(row.place_id)) ?? "active") === "active").map((row) => String(row.customer_id)),
+  );
   const dropById = new Set(dropRows.map((row) => text(row.customer_id)).filter((id): id is string => id !== null));
   const dropByReference = new Set(dropRows.filter((row) => !text(row.customer_id) && row.reference_contact_crm_id !== null).map((row) => `${row.seat_id}|${row.reference_contact_crm_id}`));
 

@@ -32,10 +32,12 @@
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
+import { noTimetableControl, type NoTimetableControl } from "@/lib/phoenix-crm/failing-timetable-rules";
 import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { waitingIsLong, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import {
   canDecideValidationReviews,
   canRestoreValidation,
@@ -611,6 +613,15 @@ export function seatedDraftOf(body: Row): SeatedPlaceDraft | null {
 export type SharedPlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
 
 export type SharedPlaceBoardRow = SharedPlaceRow & {
+  /**
+   * What THIS viewer may do about the building's "no timetable" marker: declare it, take it back, or
+   * nothing. The Super Admin alone, never on a rejected building (`noTimetableControl`).
+   */
+  noTimetableControl?: NoTimetableControl;
+  /** A HELD building only: how long it has waited for a decision, in the board's words. */
+  waitingText?: string | null;
+  /** A HELD building only: it has waited `WAITING_LONG_HOURS` or more. */
+  waitingLong?: boolean;
   repName: string;
   territory: string;
   line: string | null;
@@ -708,13 +719,19 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
     ]),
   ]);
 
+  const now = new Date();
+  const canDeclare = canDecideSharedPlaces(viewer);
   return {
     capped: read.capped,
     rows: rows.map((row): SharedPlaceBoardRow => {
       const base = mapSharedPlace(row, counts.get(String(row.id)) ?? 0);
       const seat = viewer.org.seats.get(String(row.seat_id));
+      const held = base.status === "held";
       return {
         ...base,
+        // A building is held at its capture, so that instant is when its wait began.
+        waitingText: held ? waitingText(base.capturedAt, now) : null,
+        waitingLong: held && waitingIsLong(base.capturedAt, now),
         repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
         territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
         line: seat?.lineName ?? null,
@@ -733,6 +750,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
               byName: decides ? nameOf(names, text(row.timetable_exempt_by_hr_id), "The administrator") : null,
             }
           : null,
+        noTimetableControl: noTimetableControl({ canDeclare, status: base.status, exempt: text(row.timetable_exempt_at) !== null }),
         // The same pair of tests the database makes, so the control appears exactly where it works.
         restorable: row.status === "retired" && text(row.retired_at) !== null,
       };

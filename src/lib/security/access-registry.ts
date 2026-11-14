@@ -1090,6 +1090,9 @@ export const accessRegistry = [
   // the Polyclinics section is read on the page itself, so there is no GET to gate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // Declaring that a building has no timetable, or taking that back (owner, 14 Nov 2026). The Super Admin alone:
+  // `update` here, which the SFE Manager does not hold, and `canDecideSharedPlaces` in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/shared-place/no-timetable", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // The third tab of Place checks: every place several reps validated, side by side (owner, 2026-10-17).
   // The Super Admin and the SFE Manager — `canDecideValidationReviews` in the loader and the answer, so a `read` here is
   // only gate one. GET is read when the tab is first opened; POST stores his "same place or different
