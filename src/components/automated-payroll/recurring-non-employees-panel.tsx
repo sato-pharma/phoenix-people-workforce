@@ -13,6 +13,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
+import { formatPayrollMoney } from "./format";
 import { WrappingTextField } from "./wrapping-text-field";
 
 type Props = {
@@ -29,9 +30,7 @@ const amountFieldClassName = cn(
   "text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
 );
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
+const money = formatPayrollMoney;
 
 const emptyDraft: RecurringNonEmployeeInput = {
   fullNameAr: "",
@@ -72,7 +71,9 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
     setError(null);
     try {
       const res = await fetch("/api/automated-payroll/non-employee-recurring");
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to load the standing roster.");
       const loaded = data.rows as RecurringNonEmployeeRow[];
       setRows(loaded);
@@ -128,7 +129,9 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(draft),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to save.");
       await afterWrite();
     } catch (saveError) {
@@ -143,7 +146,9 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/non-employee-recurring/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to remove.");
       await afterWrite();
     } catch (deleteError) {
@@ -180,7 +185,9 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(draft),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => {
+        throw new Error(`The server did not answer properly (${res.status}). Reload to see what was saved.`);
+      });
       if (!res.ok) throw new Error(data.error ?? "Failed to add.");
       setNewRows((prev) => prev.filter((row) => row.tempId !== tempId));
       await afterWrite();
@@ -427,6 +434,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                   Entry {index + 1} · {partLabel(draft.part ?? "first")}
                 </span>
                 <Button
+                  aria-label={`Delete standing entry ${index + 1}`}
                   size="sm"
                   variant="ghost"
                   disabled={busyId === row.id}
@@ -438,14 +446,14 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
               </div>
               <div className="flex flex-col gap-2">
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Full Name (EN)</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
                   <WrappingTextField
                     value={draft.fullNameEn}
                     onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Full Name (AR)</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
                   <WrappingTextField
                     value={draft.fullNameAr}
                     dir="rtl"
@@ -453,21 +461,21 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Bank Name</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
                   <WrappingTextField
                     value={draft.bankName ?? ""}
                     onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Bank Account</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
                   <WrappingTextField
                     value={draft.bankAccount ?? ""}
                     onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Total Salary</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Total Salary</span>
                   <Input
                     type="number"
                     value={String(draft.totalSalary)}
@@ -476,7 +484,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Paid With</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Paid With</span>
                   <select
                     value={draft.part ?? "first"}
                     onChange={(event) => setEditField(row.id, "part", event.target.value)}
@@ -512,13 +520,13 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
           <div key={row.tempId} className="border border-orange-300 bg-orange-50/40 p-3">
             <div className="mb-2 flex items-center justify-between gap-2 border-b border-orange-200 pb-2">
               <span className="text-xs font-semibold text-orange-700">New standing entry</span>
-              <Button size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
+              <Button aria-label="Discard this new entry" size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
                 <Trash2 className="size-4" />
               </Button>
             </div>
             <div className="flex flex-col gap-2">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Full Name (EN)</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
                 <WrappingTextField
                   value={row.fullNameEn}
                   placeholder="Full name (English)"
@@ -526,7 +534,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Full Name (AR)</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
                 <WrappingTextField
                   value={row.fullNameAr}
                   placeholder="الاسم بالعربية"
@@ -535,7 +543,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Bank Name</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
                 <WrappingTextField
                   value={row.bankName ?? ""}
                   placeholder="Bank Name"
@@ -543,7 +551,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Bank Account</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
                 <WrappingTextField
                   value={row.bankAccount ?? ""}
                   placeholder="Bank Account"
@@ -551,7 +559,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Total Salary</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Total Salary</span>
                 <Input
                   type="number"
                   value={String(row.totalSalary)}
@@ -560,7 +568,7 @@ export function RecurringNonEmployeesPanel({ onChanged }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Paid With</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Paid With</span>
                 <select
                   value={row.part ?? "first"}
                   onChange={(event) => setNewRowField(row.tempId, "part", event.target.value)}

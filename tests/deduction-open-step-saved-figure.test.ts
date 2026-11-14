@@ -291,6 +291,24 @@ export async function runDeductionOpenStepSavedFigureTests() {
   const wizard = readFileSync("src/components/automated-payroll/automated-payroll-wizard.tsx", "utf8");
   const stepLocked = wizard.slice(wizard.indexOf("const stepLocked = "), wizard.indexOf("const stepLocked = ") + 900);
   assert.match(stepLocked, /stepOpenDuringPart2\(stepKey, stepStates\)/, "the wizard keeps a re-opened Part 1 deduction step open during Part 2, so the block has a button that clears it");
+
+  // The server half (audit, 14 Nov 2026): the lock above was the browser's alone, so a stale tab or a
+  // re-uploaded file could still save a locked Part 1 step during Part 2 and move the month unseen.
+  const service = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  const gate = service.slice(service.indexOf("async function assertPart1StepOpenDuringPart2("));
+  assert.match(
+    gate.slice(0, 700),
+    /if \(run\.phase !== "part2" \|\| stepPhase\(stepKey\) !== "part1"\) return;[\s\S]*if \(!stepOpenDuringPart2\(stepKey, states\)\) \{\s*throw new Error\(/,
+    "HEADLINE: during Part 2 the server refuses a Part 1 step the screen keeps locked",
+  );
+  for (const writer of ["export async function saveStep(", "export async function confirmStep(", "export async function importStepUpload("]) {
+    const body = service.slice(service.indexOf(writer), service.indexOf(writer) + 1500);
+    assert.match(
+      body,
+      /assertStepPhaseAllowed\(run, stepKey\);\s*await assertPart1StepOpenDuringPart2\(run, stepKey\);/,
+      `${writer.replace("export async function ", "").replace("(", "")} asks the same question before it writes`,
+    );
+  }
   const part2Confirm = wizard.slice(wizard.indexOf("const confirmPart2WithOverpaidGate = "));
   const refusal = part2Confirm.slice(0, part2Confirm.indexOf('throw new Error(data.error ?? "Action failed.");'));
   assert.match(

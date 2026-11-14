@@ -1062,14 +1062,16 @@ export function RecommendationStep({
             size="sm"
             disabled={busy}
             onClick={async () => {
-              if (dirty) await save();
+              // The sheet is read from the SAVED figures. A refused save used to download anyway, so
+              // HR edited a file that did not hold what was on screen; it stops here, its error shown.
+              if (dirty && !(await save())) return;
               downloadFromApiRoute(`/api/automated-payroll/runs/${runId}/steps/${stepKey}/export`);
             }}
           >
-            Download xlsx
+            Download Excel
           </Button>
           <Button variant="outline" size="sm" disabled={locked || busy} onClick={() => fileRef.current?.click()}>
-            Upload edited xlsx
+            Upload edited Excel
           </Button>
           <input
             ref={fileRef}

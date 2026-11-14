@@ -118,7 +118,7 @@ import {
   takeCurrentModuleFigures,
   type ModuleDriftReport,
 } from "./module-drift.ts";
-import { describeReopenedPart1Block, reopenedPart1DeductionSteps } from "./module-sourced-steps.ts";
+import { describeReopenedPart1Block, reopenedPart1DeductionSteps, stepOpenDuringPart2 } from "./module-sourced-steps.ts";
 import { figureGroups, untouchedFigureFields, type FigureWrite } from "./saved-figures.ts";
 import {
   carryForwardForRunAssembly,
@@ -201,7 +201,7 @@ import {
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import { reconcile } from "./reconcile.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
-import { stepDefinition } from "./step-definitions.ts";
+import { monthNameAndYear, stepDefinition } from "./step-definitions.ts";
 import type {
   DraftRow,
   DraftCellChange,
@@ -559,7 +559,8 @@ export async function startOrResumeRun(
   const published = await findPublishedRun(period.month, period.year);
   if (published) {
     throw new Error(
-      `Conflict: ${period.month}/${period.year} has already been published (run ${published.id}). ` +
+      // Named as HR reads it: the run id it used to carry is a code nobody on that screen can use.
+      `Conflict: ${monthNameAndYear(period.month, period.year)} has already been published. ` +
         "A published month is finished — starting another run for it would create a second, shadow run " +
         "that every finance screen would answer with instead of the paid one.",
     );
@@ -1166,6 +1167,28 @@ function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
 }
 
 /**
+ * DURING PART 2, A PART 1 STEP IS WRITABLE ONLY WHEN THE SCREEN OFFERS IT (audit, 14 Nov 2026).
+ *
+ * The wizard locks every Part 1 step once Part 1 is confirmed, except a deduction step a decision
+ * re-opened since (`stepOpenDuringPart2`) — and that lock was the browser's alone. A tab left open
+ * from Part 1, or a re-uploaded step file, could still save and confirm Special Situations or Other
+ * Deductions in Part 2: the first instalment is frozen, so the changed figure moved the whole month
+ * and landed entirely in the Part 2 residual, and Part 2's confirm checks only its own steps and the
+ * re-opened ones, so nothing on screen said a Part 1 step had changed. The server now answers the
+ * same question the screen does.
+ */
+async function assertPart1StepOpenDuringPart2(run: MonthlySalaryRun, stepKey: StepKey): Promise<void> {
+  if (run.phase !== "part2" || stepPhase(stepKey) !== "part1") return;
+  const states = await listStepStates(run.id);
+  if (!stepOpenDuringPart2(stepKey, states)) {
+    throw new Error(
+      `Conflict: Part 1 is confirmed, so "${stepDefinition(stepKey).title}" is locked. Its figures are ` +
+        "already in the first instalment the bank paid. Change it on a Part 2 step, or reopen Part 1.",
+    );
+  }
+}
+
+/**
  * Every phase a write to this step may land in — the same answer assertStepPhaseAllowed gives, handed
  * to the run hold so the phase is checked again at the moment of the write, not only when it was read.
  */
@@ -1192,6 +1215,7 @@ export async function saveStep(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
 
   // Notice-period rows are display-only (see confirmStep). Drop any that reach
   // here — including via a re-uploaded xlsx, which bypasses the UI entirely.
@@ -1328,6 +1352,7 @@ export async function confirmStep(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const [{ members, sources, draftRows, directory }, states] = await Promise.all([
@@ -3538,6 +3563,7 @@ export async function importStepUpload(
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertStepPhaseAllowed(run, stepKey);
+  await assertPart1StepOpenDuringPart2(run, stepKey);
 
   const { edits: parsed, invalidHrIds } = await parseStepWorkbook({ file, stepKey });
   // A corrected day count moves the money it drives, as it does on screen (audit finding 32). Priced

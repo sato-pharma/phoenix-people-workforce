@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check } from "lucide-react";
 
 import {
@@ -39,6 +39,7 @@ import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
 import { DownloadHistoryPanel } from "./download-history-panel";
+import { formatPayrollDay, formatPayrollMoney, peopleCount } from "./format";
 import { HeldEnteredPanel } from "./held-entered-panel";
 import { LateExpensesPanel } from "./late-expenses-panel";
 import { NonEmployeesPanel } from "./non-employees-panel";
@@ -54,7 +55,53 @@ import { SelectField } from "./select-field";
 const DOWNLOAD_REFUSAL_OPENING = "finance has already downloaded";
 const OVERRIDE_MIN_REASON = 10;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** The first year this module has a run for. The Year list starts here, so it never shifts under the hand. */
+const FIRST_PAYROLL_YEAR = 2026;
+
+/**
+ * A response's JSON. A body that is not JSON — a gateway's error page, a sign-in redirect, a dropped
+ * connection — is said in words: the raw parse error ("Unexpected token <") tells HR nothing, and on a
+ * confirm it leaves them guessing whether the money moved.
+ */
+async function readJson(res: Response): ReturnType<Response["json"]> {
+  try {
+    return await res.json();
+  } catch {
+    throw new Error(
+      res.status === 401 || res.status === 403
+        ? "Your session has ended. Sign in again, then reload this page."
+        : `The server did not answer properly (${res.status}). Reload the page to see where the run stands before trying again.`,
+    );
+  }
+}
+
+/**
+ * The five checks the page runs on its own when a run opens, as HR would name them. One that could
+ * not be read is listed by these words — it was not checked, which is not the same as clear.
+ */
+const RUN_CHECK_LABELS = {
+  populationDiff: "who left the payroll since last month",
+  holdReview: "who is held and why",
+  dataQuality: "missing payroll data",
+  dayCollisions: "days charged twice",
+  moduleDrift: "deductions changed since a step was confirmed",
+} as const;
+type RunCheckKey = keyof typeof RUN_CHECK_LABELS;
 
 /** One excluded person as `getRunView` returns them — named, because a panel never shows a code. */
 type ExcludedPerson = { hrId: string; fullName: string; reason: string | null };
@@ -114,14 +161,10 @@ type Props = {
   isPublisher: boolean;
 };
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
-
-/** "1 employee" / "6 employees" — the data-quality banner composes several counts. */
-function people(count: number): string {
-  return `${count} ${count === 1 ? "employee" : "employees"}`;
-}
+// The module's one way of writing money and head counts (format.ts): this file used to carry its own,
+// which wrote 1,250 here beside 1,250.00 on the step below.
+const money = formatPayrollMoney;
+const people = peopleCount;
 
 export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher }: Props) {
   const [month, setMonth] = useState(initialMonth);
@@ -311,13 +354,50 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     setNonEmployeeCount((prev) => ({ ...prev, [part]: count }));
   }, []);
 
+  /**
+   * Every load is numbered and only the newest one may write to the screen. Without it, a slow answer
+   * for the month HR just left lands after the month they moved to — and its checks (who vanished,
+   * who is held, days charged twice) appear under the wrong month's name.
+   */
+  const loadSeq = useRef(0);
+  /** The period whose run is on screen, as "2026-11". A load for any other period starts from blank. */
+  const loadedPeriod = useRef<string | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "failed">("loading");
+  /** The checks that could not be read for this run — named on screen, never shown as all clear. */
+  const [unreadChecks, setUnreadChecks] = useState<RunCheckKey[]>([]);
+  /**
+   * A move that would drop unsaved edits on the open step — another step, the other list, another
+   * month — waits here for HR to choose. Before this, the click simply threw the edits away.
+   */
+  const [pendingNav, setPendingNav] = useState<{ message: string; go: () => void } | null>(null);
+
   const loadRun = useCallback(async (m: number, y: number) => {
+    const seq = ++loadSeq.current;
+    const periodKey = `${y}-${m}`;
+    if (loadedPeriod.current !== periodKey) {
+      // Another month: nothing from the one on screen may stay up while this one loads.
+      loadedPeriod.current = null;
+      setRun(null);
+      setStepStates([]);
+      setExcludedPeople([]);
+      setParkedResyncs([]);
+      setRecon(null);
+      setPopulationDiff(null);
+      setHoldReview(null);
+      setDayCollisions([]);
+      setModuleDrift(null);
+      setUnreadChecks([]);
+      setLoadState("loading");
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs?month=${m}&year=${y}`);
-      const data = await res.json();
+      const data = await readJson(res);
+      if (seq !== loadSeq.current) return;
       if (!res.ok) throw new Error(data.error ?? "Failed to load run.");
+      loadedPeriod.current = periodKey;
+      setLoadState("loaded");
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
       setDraftRows(data.view?.draftRows ?? []);
@@ -329,6 +409,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
       setHoldReview(null);
+      // These two were never reset, so a month with no collision kept showing the last month's.
+      setDayCollisions([]);
+      setModuleDrift(null);
+      setUnreadChecks([]);
       setDataQuality(null);
       // Every acknowledgement dies with the reload that could have changed what it answered.
       // Keeping them would let a LATER, different disappearance be accepted with no prompt —
@@ -343,72 +427,110 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       // by definition, so it has to be on screen without anyone thinking to ask.
       const runId = data.run?.id;
       if (runId) {
-        void fetch(`/api/automated-payroll/runs/${runId}/population-diff`)
-          .then((response) => response.json())
-          .then((diffData) => {
-            if (diffData?.success) setPopulationDiff(diffData.diff as PopulationDiff);
-          })
-          .catch(() => {
-            /* diff is a safety net, never block the wizard on it */
-          });
+        // Each check is a safety net and never blocks the wizard — but one that could not be read is
+        // NOT an all clear. It used to fail with no word, which on screen looks exactly like "nobody
+        // vanished, nobody is held, no day is charged twice". Now it is named in its own callout.
+        const runCheck = (key: RunCheckKey, path: string, apply: (body: Awaited<ReturnType<typeof readJson>>) => void) => {
+          const markUnread = () => {
+            if (seq === loadSeq.current) setUnreadChecks((current) => (current.includes(key) ? current : [...current, key]));
+          };
+          void fetch(`/api/automated-payroll/runs/${runId}/${path}`)
+            .then(readJson)
+            .then((body) => {
+              if (seq !== loadSeq.current) return;
+              if (body?.success) apply(body);
+              else markUnread();
+            })
+            .catch(markUnread);
+        };
+
+        runCheck("populationDiff", "population-diff", (body) => setPopulationDiff(body.diff as PopulationDiff));
 
         // Who this run is not paying. Eager for the same reason as the diff: a
         // held row is DROPPED at publish and writes no payslip, so the reason is
         // readable only until the run is published — and the reconciliation
         // strip reports it as a bare count, which is the one shape that cannot
         // separate a settled owner ruling from an unanswered question.
-        void fetch(`/api/automated-payroll/runs/${runId}/hold-review`)
-          .then((response) => response.json())
-          .then((reviewData) => {
-            if (reviewData?.success) setHoldReview(reviewData.review as HoldReview);
-          })
-          .catch(() => {
-            /* the review is a safety net, never block the wizard on it */
-          });
+        runCheck("holdReview", "hold-review", (body) => setHoldReview(body.review as HoldReview));
 
         // Same reasoning for missing pay-determining data: a null hire date or a
         // null salary looks like nothing at all on screen, which is exactly how
         // two August starters ended up on the July sheet at a full month's pay.
-        void fetch(`/api/automated-payroll/runs/${runId}/data-quality`)
-          .then((response) => response.json())
-          .then((qualityData) => {
-            if (qualityData?.success) setDataQuality(qualityData.report as PayrollDataQualityReport);
-          })
-          .catch(() => {
-            /* a safety net, never block the wizard on it */
-          });
+        runCheck("dataQuality", "data-quality", (body) => setDataQuality(body.report as PayrollDataQualityReport));
 
         // An absence day claimed by two detectors would be charged twice. Part 2 confirm refuses
         // it outright, so it is shown from the moment the run opens rather than sprung at the last
         // step — see day-collisions.ts.
-        void fetch(`/api/automated-payroll/runs/${runId}/day-collisions`)
-          .then((response) => response.json())
-          .then((collisionData) => {
-            if (collisionData?.success) setDayCollisions((collisionData.collisions ?? []) as PayrollDayCollision[]);
-          })
-          .catch(() => {
-            /* a safety net, never block the wizard on it */
-          });
+        runCheck("dayCollisions", "day-collisions", (body) =>
+          setDayCollisions((body.collisions ?? []) as PayrollDayCollision[]),
+        );
 
         // And whether the Deductions module has changed its mind since a step was confirmed.
         // Confirming copies the module's figure onto the run's own row and the engine reads that
         // row from then on, so a candidate withdrawn afterwards keeps being charged with nothing
         // to show for it. See module-drift.ts.
-        void fetch(`/api/automated-payroll/runs/${runId}/module-drift`)
-          .then((response) => response.json())
-          .then((driftData) => {
-            if (driftData?.success) setModuleDrift(driftData.report as ModuleDriftReport);
-          })
-          .catch(() => {
-            /* a safety net, never block the wizard on it */
-          });
+        runCheck("moduleDrift", "module-drift", (body) => setModuleDrift(body.report as ModuleDriftReport));
       }
     } catch (loadError) {
+      if (seq !== loadSeq.current) return;
+      if (loadedPeriod.current !== periodKey) setLoadState("failed");
       setError(loadError instanceof Error ? loadError.message : "Failed to load run.");
     } finally {
-      setBusy(false);
+      if (seq === loadSeq.current) setBusy(false);
     }
   }, []);
+
+  /**
+   * Run `go` now, or — when the open step has unsaved edits it would drop — hold it until HR says to
+   * leave without saving. `what` finishes the sentence "Moving to … drops them".
+   */
+  const guardedNav = (what: string, go: () => void) => {
+    if (!activeStepDirty) {
+      setPendingNav(null);
+      go();
+      return;
+    }
+    const open = activeStep
+      ? stepDefinition(activeStep).title
+      : nonEmployeesOpen
+        ? "The Non-Employees Payroll list"
+        : "This step";
+    setPendingNav({ message: `${open} has changes that are not saved. Moving to ${what} drops them.`, go });
+  };
+
+  /** Month and Year load as soon as they change: the screen never shows one month under another's name. */
+  const choosePeriod = (m: number, y: number) => {
+    guardedNav(`${MONTHS[m - 1]} ${y}`, () => {
+      setMonth(m);
+      setYear(y);
+      setNotice(null);
+      void loadRun(m, y);
+    });
+  };
+
+  const openStep = (key: StepKey) => {
+    if (key === activeStep && !nonEmployeesOpen) return;
+    guardedNav(stepDefinition(key).title, () => {
+      setActiveStep(key);
+      setNonEmployeesOpen(null);
+    });
+  };
+
+  const openNonEmployees = (part: NonEmployeePart) => {
+    if (nonEmployeesOpen === part) return;
+    guardedNav(`the ${part === "first" ? "Part 1" : "Part 2"} Non-Employees Payroll list`, () => {
+      setNonEmployeesOpen(part);
+      setActiveStep(null);
+    });
+  };
+
+  const yearOptions = useMemo(() => {
+    const last = Math.max(initialYear + 1, year);
+    const years: number[] = [];
+    for (let value = Math.min(FIRST_PAYROLL_YEAR, year); value <= last; value += 1) years.push(value);
+    return years;
+  }, [initialYear, year]);
+  const periodLabel = `${MONTHS[month - 1]} ${year}`;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -425,7 +547,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         method: "POST",
         ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? "Action failed.");
       if (okMessage) setNotice(okMessage);
       await loadRun(month, year);
@@ -455,7 +577,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         headers: { "content-type": "application/json" },
         body: JSON.stringify(override ? { overrideDownloaded: true, reason: override.reason } : {}),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
         const message = String(data.error ?? "Action failed.");
         if (res.status === 409 && message.startsWith(DOWNLOAD_REFUSAL_OPENING)) {
@@ -503,7 +625,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           acknowledgePopulationDiffToken: acks.populationDiff ?? null,
         }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
         // One prompt at a time: the gate the server raised now is the only one on screen.
         setDataIssuePrompt(null);
@@ -562,7 +684,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ acknowledgeDataIssuesToken }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
         if (data.requiresDataQualityAcknowledgment) {
           setDataIssuePrompt({
@@ -625,7 +747,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ month, year }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? "Failed to start run.");
       await loadRun(month, year);
     } catch (startError) {
@@ -668,7 +790,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     setBusy(true);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${run.id}/reconcile`);
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error ?? "Failed to reconcile.");
       setRecon(data.totals as ReconciliationTotals);
     } catch (reconError) {
@@ -711,10 +833,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <button
             key={key}
             type="button"
-            onClick={() => {
-              setActiveStep(key);
-              setNonEmployeesOpen(null);
-            }}
+            aria-current={isActive ? "step" : undefined}
+            onClick={() => openStep(key)}
             className={cn(
               // Flat: the border colour and the active pill's solid left rule make the open step
               // findable in one glance across a strip of ten look-alikes, without a shadow or glow.
@@ -736,9 +856,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                     : "border border-slate-300 text-slate-500",
               )}
             >
-              {isConfirmed ? <Check className="size-2.5" /> : index + 1}
+              {isConfirmed ? <Check aria-hidden className="size-2.5" /> : index + 1}
             </span>
             <span className={cn("whitespace-nowrap", isActive && "font-semibold")}>{definition.title}</span>
+            {/* The tick is a picture; a screen reader hears the word. */}
+            {isConfirmed ? <span className="sr-only">, confirmed</span> : null}
           </button>
         );
       })}
@@ -779,10 +901,8 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     return (
       <button
         type="button"
-        onClick={() => {
-          setNonEmployeesOpen(part);
-          setActiveStep(null);
-        }}
+        aria-current={nonEmployeesOpen === part ? "step" : undefined}
+        onClick={() => openNonEmployees(part)}
         className={cn(
           "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
           nonEmployeesOpen === part
@@ -809,6 +929,39 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     ? { part1: "Part 1 in progress", part2: "Part 2 in progress", ready: "Ready to publish", published: "Published", cancelled: "Cancelled" }[run.phase]
     : "";
 
+  /**
+   * The one line that says what to do next. Ten look-alike pills per part give no starting point;
+   * HR had to work out from the ticks which step was left and which button came after.
+   */
+  const nextPart1 = PART1_STEP_KEYS.find((key) => !confirmedSet.has(key)) ?? null;
+  const nextPart2 = PART2_STEP_KEYS.find((key) => !confirmedSet.has(key)) ?? null;
+  const guide: { text: string; step: StepKey | null } | null = !run
+    ? null
+    : run.phase === "part1"
+      ? nextPart1
+        ? {
+            text: `${part1Confirmed} of ${PART1_STEP_KEYS.length} Part 1 steps confirmed. Next: ${stepDefinition(nextPart1).title}.`,
+            step: nextPart1,
+          }
+        : { text: "Every Part 1 step is confirmed. Confirm Part 1 to freeze the first instalment; finance is told it is ready.", step: null }
+      : run.phase === "part2"
+        ? nextPart2
+          ? {
+              text: `${part2Confirmed} of ${PART2_STEP_KEYS.length} Part 2 steps confirmed. Next: ${stepDefinition(nextPart2).title}.`,
+              step: nextPart2,
+            }
+          : { text: "Every Part 2 step is confirmed. Confirm Part 2 to lock the full sheet; finance is told it is ready.", step: null }
+        : run.phase === "ready"
+          ? {
+              text: isPublisher
+                ? "Part 2 is confirmed and the sheet is locked. What is left is to publish this month to payslips."
+                : "Part 2 is confirmed and the sheet is locked. Only a System Admin can publish it to payslips.",
+              step: null,
+            }
+          : run.phase === "published"
+            ? { text: `${MONTHS[run.month - 1]} ${run.year} is published to payslips. This month is finished.`, step: null }
+            : { text: "This run was cancelled. Start a new run to work on this month again.", step: null };
+
   return (
     <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6">
       <AdminPageHero
@@ -833,13 +986,13 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       />
 
       <div className={cn(adminPanelClassName, "flex flex-wrap items-end gap-3 p-4")}>
-        <SelectField label="Month" value={month} onChange={setMonth}>
+        <SelectField label="Month" value={month} onChange={(value) => choosePeriod(value, year)}>
           {MONTHS.map((label, index) => (
             <option key={label} value={index + 1}>{label}</option>
           ))}
         </SelectField>
-        <SelectField label="Year" value={year} onChange={setYear}>
-          {[year - 1, year, year + 1].map((value) => (
+        <SelectField label="Year" value={year} onChange={(value) => choosePeriod(month, value)}>
+          {yearOptions.map((value) => (
             <option key={value} value={value}>{value}</option>
           ))}
         </SelectField>
@@ -849,23 +1002,75 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           onClick={() => void loadRun(month, year)}
           className="h-10 border-slate-300 font-bold text-slate-700 hover:bg-slate-100"
         >
-          Load
+          Reload
         </Button>
-        {!run || run.phase === "published" || run.phase === "cancelled" ? (
+        {/* Start is offered only where it can do something: a month with no run, or one whose run was
+            cancelled. On a published month the server always refuses it (a second run would shadow
+            the paid one), so the button used to lead straight to an error. */}
+        {(!run && loadState === "loaded") || run?.phase === "cancelled" ? (
           <Button
             disabled={busy}
             onClick={() => void onStartClick()}
             className="h-10 border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
           >
-            Start / Resume run
+            {run?.phase === "cancelled" ? `Start a new ${periodLabel} run` : `Start the ${periodLabel} run`}
           </Button>
-        ) : (
-          <Badge variant="neutral">{phaseLabel}</Badge>
-        )}
+        ) : run ? (
+          <Badge variant={run.phase === "published" || run.phase === "ready" ? "success" : "neutral"}>{phaseLabel}</Badge>
+        ) : null}
       </div>
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
+      {pendingNav ? (
+        <div role="alertdialog" aria-labelledby="payroll-pending-nav" className="border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div id="payroll-pending-nav" className="font-black">{pendingNav.message}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-400 bg-white text-amber-900 hover:bg-amber-100"
+              onClick={() => setPendingNav(null)}
+            >
+              Stay and save first
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-amber-900 hover:bg-amber-100"
+              onClick={() => {
+                const nav = pendingNav;
+                setPendingNav(null);
+                // The step's own unmount reports it clean; nothing here pretends the edits were saved.
+                nav.go();
+              }}
+            >
+              Leave without saving
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {run && unreadChecks.length > 0 ? (
+        <AdminCallout tone="warning">
+          <div className="min-w-0 flex-1">
+            <div className="font-black">
+              {unreadChecks.length === 1 ? "One safety check could not be read" : `${unreadChecks.length} safety checks could not be read`}
+            </div>
+            <p className="mt-1 text-xs">
+              Not checked is not the same as clear: {unreadChecks.map((key) => RUN_CHECK_LABELS[key]).join("; ")}.
+              Check again before confirming a part.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void loadRun(month, year)}
+              className="mt-2 text-xs font-semibold underline underline-offset-2 disabled:opacity-50"
+            >
+              Check again
+            </button>
+          </div>
+        </AdminCallout>
+      ) : null}
       {pendingAction ? (
         <div id="payroll-pending-action" tabIndex={-1} role="alertdialog" aria-labelledby="payroll-pending-title" className="outline-none border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <div id="payroll-pending-title" className="font-black">{pendingAction.title}</div>
@@ -1114,17 +1319,17 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                         wrong while the row is the whole finding. State the charge instead. */}
                     {isUnbackedCharge(row) ? (
                       <>
-                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — this run charges {row.charged.toFixed(2)} and
+                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — this run charges {money(row.charged)} and
                         the Deductions module has no approved line behind any of it,{" "}
                         {describeChargeSource(row.chargeSource, cairoTimeLabel)}
                       </>
                     ) : (
                       <>
-                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — confirmed at {row.proposedAtConfirm.toFixed(2)}, the module now
-                        says {row.proposedNow.toFixed(2)}
+                        {row.fullName}, {columnLabel(row.stepKey, row.field)} — confirmed at {money(row.proposedAtConfirm)}, the module now
+                        says {money(row.proposedNow)}
                         {row.overridden
-                          ? `; this run charges ${row.charged.toFixed(2)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
-                          : `; this run still charges ${row.charged.toFixed(2)}`}
+                          ? `; this run charges ${money(row.charged)}, ${describeChargeSource(row.chargeSource, cairoTimeLabel)}`
+                          : `; this run still charges ${money(row.charged)}`}
                       </>
                     )}
                   </div>
@@ -1155,7 +1360,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             <ul className="mt-1 flex flex-col gap-0.5 text-xs">
               {dayCollisions.map((collision) => (
                 <li key={`${collision.hrId}:${collision.date}`} className="opacity-80">
-                  {collision.fullName} on {collision.date} — claimed by {collision.categories.join(" + ")}
+                  {collision.fullName} on {formatPayrollDay(collision.date)} — claimed by {collision.categories.join(" + ")}
                 </li>
               ))}
             </ul>
@@ -1320,11 +1525,38 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       ) : null}
 
       {!run ? (
-        <div className={cn(adminPanelClassName, "p-8 text-center text-sm text-slate-500")}>
-          Choose a month and start a run to begin.
+        <div className={cn(adminPanelClassName, "flex flex-col items-center gap-3 p-8 text-center text-sm text-slate-500")}>
+          {loadState === "loading" ? (
+            <span>Loading {periodLabel}…</span>
+          ) : loadState === "failed" ? (
+            <>
+              <span className="font-semibold text-slate-700">{periodLabel} could not be loaded.</span>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => void loadRun(month, year)}>
+                Try again
+              </Button>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-slate-700">No payroll run for {periodLabel} yet.</span>
+              <span>Start it with the button above. The system then recommends every figure, step by step.</span>
+            </>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-4">
+          {guide ? (
+            <div className="flex flex-col gap-2 border border-slate-200 border-l-4 border-l-orange-500 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <span className="mr-2 text-[11px] font-black uppercase tracking-wide text-orange-600">Next step</span>
+                <span className="text-slate-800">{guide.text}</span>
+              </div>
+              {guide.step && guide.step !== activeStep ? (
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => openStep(guide.step as StepKey)}>
+                  Open {stepDefinition(guide.step).title}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           {/* Horizontal step-nav + actions — sits above the grid instead of beside it,
               so the grid below gets the full page width (was squeezed into a 1fr column
               fighting a fixed 260px sidebar for space). */}
@@ -1446,7 +1678,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                   Unsaved changes on this step — save or confirm it to include them in a download.
                 </span>
               ) : null}
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => void loadRecon()}>Reconcile</Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => void loadRecon()}>Check the totals</Button>
               {run.phase === "ready" && isPublisher ? (
                 <Button
                   size="sm"
@@ -1528,14 +1760,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             <div className={cn(adminPanelClassName, "grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 lg:grid-cols-8")}>
               <Stat label="Employees" value={String(recon.headcount)} />
               <Stat label="Held" value={String(recon.held)} tone={recon.held ? "rose" : "slate"} />
-              <Stat label="Σ First Part" value={money(recon.totalFirstPart)} />
-              <Stat label="Σ Second Part" value={money(recon.totalSecondPart)} />
-              <Stat label="Σ Month Salary" value={money(recon.totalMonthSalary)} />
+              <Stat label="First instalment" value={money(recon.totalFirstPart)} />
+              <Stat label="Second instalment" value={money(recon.totalSecondPart)} />
+              <Stat label="Month salary" value={money(recon.totalMonthSalary)} />
               <Stat label="New hires" value={String(recon.joiners)} />
               <Stat label="Resignations" value={String(recon.leavers)} />
               <Stat
-                label="Split OK"
-                value={recon.splitMismatches.length === 0 ? "balanced" : `${recon.splitMismatches.length} off`}
+                label="Instalments add up"
+                value={recon.splitMismatches.length === 0 ? "Yes" : `${people(recon.splitMismatches.length)} do not`}
                 tone={recon.splitMismatches.length === 0 ? "emerald" : "rose"}
               />
             </div>
@@ -1645,6 +1877,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 part={nonEmployeesOpen}
                 locked={run.phase !== (nonEmployeesOpen === "first" ? "part1" : "part2")}
                 onChange={onNonEmployeeCount}
+                onDirtyChange={setActiveStepDirty}
               />
             ) : activeStep ? (
               <div className="flex flex-col gap-4">
