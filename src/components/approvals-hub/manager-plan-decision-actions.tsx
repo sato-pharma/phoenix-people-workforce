@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarX2, CheckCircle2, CornerUpLeft, XCircle } from "lucide-react";
 
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import {
-  phxButtonApproveClassName,
-  phxButtonGhostClassName,
+  ApprovalConfirmButtons,
+  ApprovalResponsePanel,
+  approvalActionClassName,
+} from "@/components/approvals-hub/approval-action-kit";
+import {
   phxLabelClassName,
   phxRequiredMarkClassName,
   phxSelectClassName,
@@ -132,9 +134,6 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
     }
   }
 
-  const headerBar = `${adminPanelHeaderClassName} px-4 py-2.5`;
-  const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
-  const outline = "inline-flex items-center gap-1.5 border px-4 py-2 text-sm font-bold";
   // The regional manager's approval passes it on: name who decides after him, and what waits until then.
   const passesOn = target.thenName
     ? target.kind === "plan"
@@ -151,10 +150,7 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
 
   if (choice) {
     return (
-      <section className={adminPanelClassName}>
-        <header className={headerBar}>
-          <h3 className={headerText}>{confirmLabel(choice)}</h3>
-        </header>
+      <ApprovalResponsePanel title={confirmLabel(choice)}>
         <div className="space-y-3 px-4 py-4">
           {byAdministrator ? (
             <p className="border-l-4 border-slate-400 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
@@ -191,24 +187,20 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
             />
           </label>
           {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={send} disabled={busy || (choice === "return_day" && !day)} className={phxButtonApproveClassName}>
-              {busy ? "Saving…" : confirmLabel(choice)}
-            </button>
-            <button type="button" onClick={() => setChoice(null)} disabled={busy} className={phxButtonGhostClassName}>
-              Cancel
-            </button>
-          </div>
+          <ApprovalConfirmButtons
+            busy={busy}
+            confirmLabel={confirmLabel(choice)}
+            disabled={choice === "return_day" && !day}
+            onConfirm={send}
+            onCancel={() => setChoice(null)}
+          />
         </div>
-      </section>
+      </ApprovalResponsePanel>
     );
   }
 
   return (
-    <section className={adminPanelClassName}>
-      <header className={headerBar}>
-        <h3 className={headerText}>Your decision</h3>
-      </header>
+    <ApprovalResponsePanel title="Your decision">
       {passesOnNote ? <div className="px-4 pt-4">{passesOnNote}</div> : null}
       {target.kind === "plan" && !target.canApprove ? (
         <p className="px-4 pt-4 text-sm text-slate-600">This week is already approved. You can still return it until the week ends.</p>
@@ -217,15 +209,15 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
         {target.kind === "plan" ? (
           <>
             {target.canApprove ? (
-              <button type="button" onClick={() => open("approve")} className={phxButtonApproveClassName}>
+              <button type="button" onClick={() => open("approve")} className={approvalActionClassName("approve")}>
                 <CheckCircle2 className="h-4 w-4" /> Approve
               </button>
             ) : null}
-            <button type="button" onClick={() => open("return_week")} className={`${outline} border-amber-500 text-amber-700 hover:bg-amber-50`}>
+            <button type="button" onClick={() => open("return_week")} className={approvalActionClassName("return")}>
               <CornerUpLeft className="h-4 w-4" /> Return the week
             </button>
             {target.returnableDays.length > 0 ? (
-              <button type="button" onClick={() => open("return_day")} className={`${outline} border-amber-500 text-amber-700 hover:bg-amber-50`}>
+              <button type="button" onClick={() => open("return_day")} className={approvalActionClassName("return")}>
                 <CalendarX2 className="h-4 w-4" /> Return one day
               </button>
             ) : null}
@@ -233,35 +225,35 @@ export function ManagerPlanDecisionActions({ target, byAdministrator, backHref }
         ) : null}
         {target.kind === "edit" ? (
           <>
-            <button type="button" onClick={() => open("reopen")} className={phxButtonApproveClassName}>
+            <button type="button" onClick={() => open("reopen")} className={approvalActionClassName("approve")}>
               <CheckCircle2 className="h-4 w-4" /> {target.thenName ? "Approve the reopening" : "Reopen for editing"}
             </button>
-            <button type="button" onClick={() => open("refuse_edit")} className={`${outline} border-rose-500 text-rose-700 hover:bg-rose-50`}>
+            <button type="button" onClick={() => open("refuse_edit")} className={approvalActionClassName("reject")}>
               <XCircle className="h-4 w-4" /> Keep it as sent
             </button>
           </>
         ) : null}
         {target.kind === "removal" ? (
           <>
-            <button type="button" onClick={() => open("approve_removal")} className={phxButtonApproveClassName}>
+            <button type="button" onClick={() => open("approve_removal")} className={approvalActionClassName("approve")}>
               <CheckCircle2 className="h-4 w-4" /> Approve the removal
             </button>
-            <button type="button" onClick={() => open("refuse_removal")} className={`${outline} border-rose-500 text-rose-700 hover:bg-rose-50`}>
+            <button type="button" onClick={() => open("refuse_removal")} className={approvalActionClassName("reject")}>
               <XCircle className="h-4 w-4" /> Keep it on Manager&apos;s own list
             </button>
           </>
         ) : null}
         {target.kind === "single_visit_day" ? (
           <>
-            <button type="button" onClick={() => open("approve_day")} className={phxButtonApproveClassName}>
+            <button type="button" onClick={() => open("approve_day")} className={approvalActionClassName("approve")}>
               <CheckCircle2 className="h-4 w-4" /> Approve the day
             </button>
-            <button type="button" onClick={() => open("refuse_day")} className={`${outline} border-rose-500 text-rose-700 hover:bg-rose-50`}>
+            <button type="button" onClick={() => open("refuse_day")} className={approvalActionClassName("reject")}>
               <XCircle className="h-4 w-4" /> Refuse the day
             </button>
           </>
         ) : null}
       </div>
-    </section>
+    </ApprovalResponsePanel>
   );
 }

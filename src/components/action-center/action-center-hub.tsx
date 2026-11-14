@@ -28,13 +28,12 @@ import {
   buildMarketingDecisionConfirmPrompt,
   type MarketingConfirmDecision,
 } from "@/lib/marketing-requests/decision-confirm-prompt";
+import { approvalActionClassName, type ApprovalTone } from "@/components/approvals-hub/approval-action-kit";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { cn } from "@/lib/utils";
 import {
-  phxButtonApproveClassName,
   phxButtonApproveDenseClassName,
-  phxButtonDangerClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 
@@ -468,6 +467,16 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+/** The one approvals interface's tone for a hub action (REC-032): the same act looks the same here as
+ *  on the request page. */
+function hubActionTone(key: string, variant: "approve" | "reject" | "neutral"): ApprovalTone {
+  if (variant === "approve") return "approve";
+  if (variant === "reject") return "reject";
+  if (key === "acknowledge") return "acknowledge";
+  if (key.startsWith("return")) return "return";
+  return "neutral";
 }
 
 function resolveLeaveActions(detail: LeaveDetail): Array<{ key: string; label: string; variant: "approve" | "reject" | "neutral" }> {
@@ -1323,13 +1332,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       key={action.key}
                                       disabled={busy}
                                       onClick={() => handleLeaveAction(action.key)}
-                                      className={`rounded px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
-                                        action.variant === "approve"
-                                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                          : action.variant === "reject"
-                                            ? "bg-rose-600 text-white hover:bg-rose-700"
-                                            : "bg-slate-700 text-white hover:bg-slate-800"
-                                      }`}
+                                      className={approvalActionClassName(hubActionTone(action.key, action.variant))}
                                     >
                                       {busy ? "…" : action.label}
                                     </button>
@@ -1345,13 +1348,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                       key={action.key}
                                       disabled={busy}
                                       onClick={() => handleResignationAction(action.key)}
-                                      className={`rounded px-4 py-2 text-sm font-bold transition-colors disabled:opacity-50 ${
-                                        action.variant === "approve"
-                                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                          : action.variant === "reject"
-                                            ? "bg-rose-600 text-white hover:bg-rose-700"
-                                            : "bg-amber-500 text-white hover:bg-amber-600"
-                                      }`}
+                                      className={approvalActionClassName(hubActionTone(action.key, action.variant))}
                                     >
                                       {busy ? "…" : action.label}
                                     </button>
@@ -1362,15 +1359,15 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "excuse" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleExcuseAction("approve")}
-                                    className={phxButtonApproveClassName}>
+                                    className={approvalActionClassName("approve")}>
                                     {busy ? "…" : "Approve"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("return")}
-                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
+                                    className={approvalActionClassName("return")}>
                                     {busy ? "…" : "Return with reply"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleExcuseAction("reject")}
-                                    className={phxButtonDangerClassName}>
+                                    className={approvalActionClassName("reject")}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1379,11 +1376,11 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "outstation" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleOutstationAction("approve")}
-                                    className={phxButtonApproveClassName}>
+                                    className={approvalActionClassName("approve")}>
                                     {busy ? "…" : "Approve for Payroll"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleOutstationAction("reject")}
-                                    className={phxButtonDangerClassName}>
+                                    className={approvalActionClassName("reject")}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>
@@ -1394,17 +1391,17 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                 return (
                                   <>
                                     <button disabled={busy} onClick={() => handleMarketingAction("approve")}
-                                      className={phxButtonApproveClassName}>
+                                      className={approvalActionClassName("approve")}>
                                       {busy ? "…" : (labels?.approve ?? "Approve")}
                                     </button>
                                     {labels?.return && (
                                       <button disabled={busy} onClick={() => handleMarketingAction("return")}
-                                        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
+                                        className={approvalActionClassName("return")}>
                                         {busy ? "…" : labels.return}
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleMarketingAction("reject")}
-                                      className={phxButtonDangerClassName}>
+                                      className={approvalActionClassName("reject")}>
                                       {busy ? "…" : (labels?.reject ?? "Reject")}
                                     </button>
                                   </>
@@ -1417,22 +1414,22 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                   <>
                                     {status === "requested" && (
                                       <button disabled={busy} onClick={() => handleContractRenewalAction("manager_review")}
-                                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50">
+                                        className={approvalActionClassName("neutral")}>
                                         {busy ? "…" : "Mark Under Review"}
                                       </button>
                                     )}
                                     {status === "manager_review" && (
                                       <button disabled={busy} onClick={() => handleContractRenewalAction("hr_review")}
-                                        className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50">
+                                        className={approvalActionClassName("neutral")}>
                                         {busy ? "…" : "Send to HR Review"}
                                       </button>
                                     )}
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("renew")}
-                                      className={phxButtonApproveClassName}>
+                                      className={approvalActionClassName("approve")}>
                                       {busy ? "…" : "Renew Contract"}
                                     </button>
                                     <button disabled={busy} onClick={() => handleContractRenewalAction("not_renew")}
-                                      className={phxButtonDangerClassName}>
+                                      className={approvalActionClassName("reject")}>
                                       {busy ? "…" : "Do Not Renew"}
                                     </button>
                                   </>
@@ -1442,21 +1439,21 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                               {selected.module === "weekly_plan" && selected.detail.module === "weekly_plan" && (
                                 <>
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("approve")}
-                                    className={phxButtonApproveClassName}>
+                                    className={approvalActionClassName("approve")}>
                                     {busy ? "…" : selected.detail.stage === "manager" ? "Approve → CEO" : "Approve (final)"}
                                   </button>
                                   {selected.detail.stage === "manager" && selected.detail.items.some((i) => i.activityType === "Field") && (
                                     <button disabled={busy} onClick={() => handleRequestVisitDetails()}
-                                      className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-700 shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-100 disabled:opacity-50">
+                                      className={approvalActionClassName("neutral")}>
                                       {busy ? "…" : "Request Visit Details"}
                                     </button>
                                   )}
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("return")}
-                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50">
+                                    className={approvalActionClassName("return")}>
                                     {busy ? "…" : "Return for edit"}
                                   </button>
                                   <button disabled={busy} onClick={() => handleWeeklyPlanAction("reject")}
-                                    className={phxButtonDangerClassName}>
+                                    className={approvalActionClassName("reject")}>
                                     {busy ? "…" : "Reject"}
                                   </button>
                                 </>

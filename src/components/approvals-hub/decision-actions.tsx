@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { adminPanelClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import {
+  ApprovalConfirmButtons,
+  ApprovalResponsePanel,
+  approvalActionClassName,
+  approvalActionToneClassName,
+  type ApprovalTone,
+} from "@/components/approvals-hub/approval-action-kit";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -194,24 +200,22 @@ export function DecisionActions({
     }
   }
 
-  const toneClass: Record<Action, string> = {
-    approve: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)]",
-    acknowledge: "bg-slate-900 hover:bg-black text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)]",
-    return: "border border-amber-500 text-amber-700 hover:bg-amber-50",
-    returnPlain: "border border-amber-500 text-amber-700 hover:bg-amber-50",
-    reject: "border border-rose-500 text-rose-700 hover:bg-rose-50",
+  // The look comes from the one approvals interface (REC-032), so this panel, the plan panels, the
+  // Action Center row and the expense queue draw the same act the same way.
+  const tone: Record<Action, ApprovalTone> = {
+    approve: "approve",
+    acknowledge: "acknowledge",
+    return: "return",
+    returnPlain: "return",
+    reject: "reject",
     // Outlined, not filled: an override must never be the button a tired thumb reaches for first.
-    overrideApprove: "border border-slate-900 text-slate-900 hover:bg-slate-100",
-    overrideReject: "border border-slate-400 text-slate-600 hover:bg-slate-100",
+    overrideApprove: "override",
+    overrideReject: "overrideQuiet",
   };
 
   return (
     <>
-    <section ref={panelRef} className={adminPanelClassName}>
-      <header className={`${adminPanelHeaderClassName} px-4 py-2.5`}>
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Your response</h3>
-      </header>
-
+    <ApprovalResponsePanel panelRef={panelRef}>
       <div className="px-4 py-4">
         {pending === null ? (
           <div className="flex flex-wrap gap-2">
@@ -220,9 +224,9 @@ export function DecisionActions({
                 key={action}
                 type="button"
                 onClick={() => start(action)}
-                // h-11 is the 44px accessibility floor. This is the screen where money
-                // moves, reached after eight sections of evidence, often on a phone.
-                className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
+                // The regular size is h-11, the 44px accessibility floor. This is the screen where
+                // money moves, reached after eight sections of evidence, often on a phone.
+                className={approvalActionClassName(tone[action], "regular", "flex-1 md:flex-none")}
               >
                 {labelFor(action)}
               </button>
@@ -234,7 +238,7 @@ export function DecisionActions({
                 <button
                   type="button"
                   disabled
-                  className="h-11 w-full cursor-not-allowed border border-slate-300 px-4 text-sm font-bold text-slate-400 md:w-auto"
+                  className={approvalActionClassName("neutral", "regular", "w-full md:w-auto")}
                 >
                   {labelFor(action)}
                 </button>
@@ -276,32 +280,20 @@ export function DecisionActions({
               />
             ) : null}
             {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={confirm}
-                disabled={busy}
-                className="h-11 flex-1 bg-orange-500 px-4 text-sm font-bold text-white shadow-[0_1px_2px_rgba(15,23,42,0.2),0_8px_18px_rgba(15,23,42,0.16)] transition-shadow hover:bg-orange-600 disabled:opacity-60 disabled:shadow-none md:flex-none"
-              >
-                {busy ? "Submitting…" : `Confirm ${LABEL[pending].split(" ")[0]}`}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPending(null);
-                  setError(null);
-                }}
-                disabled={busy}
-                className="h-11 flex-1 border border-slate-300 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60 md:flex-none"
-              >
-                Cancel
-              </button>
-            </div>
+            <ApprovalConfirmButtons
+              busy={busy}
+              confirmLabel={`Confirm ${LABEL[pending].split(" ")[0]}`}
+              onConfirm={confirm}
+              onCancel={() => {
+                setPending(null);
+                setError(null);
+              }}
+            />
           </div>
         )}
         {error && pending === null ? <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p> : null}
       </div>
-    </section>
+    </ApprovalResponsePanel>
 
     {/* The thumb bar. A decision reached after eight sections of evidence should not require
         scrolling back to find the buttons. Hidden once a decision is pending, because the confirm
@@ -330,7 +322,7 @@ export function DecisionActions({
                 // one this was measured against. A min-width cannot conflict: two buttons fit a
                 // 375px row, three cannot, so they wrap. It also keeps `h-12 flex-1` contiguous,
                 // which tests/direct-orders-approval-window-mobile.test.ts pins as the thumb size.
-                className={`h-12 flex-1 min-w-[9rem] px-2 text-sm font-bold transition-colors ${toneClass[action]}`}
+                className={`inline-flex items-center justify-center h-12 flex-1 min-w-[9rem] px-2 text-center text-sm font-bold transition-colors ${approvalActionToneClassName[tone[action]]}`}
               >
                 {labelFor(action)}
               </button>
