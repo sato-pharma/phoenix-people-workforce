@@ -4,6 +4,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
+import { loadReferenceAreas, type ReferenceArea } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -258,11 +259,13 @@ async function namesFor(supabase: RecheckClient, codes: readonly RecheckCodeRow[
     pharmacyIds.length ? supabase.from("marketing_pharmacies").select("id, display_name").in("id", pharmacyIds) : { data: [], error: null },
     vendorIds.length ? supabase.from("marketing_distributors").select("id, display_name").in("id", vendorIds) : { data: [], error: null },
     hrIds.length ? supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", hrIds) : { data: [], error: null },
-    areaCodes.length ? supabase.from("areas").select("code, name").in("code", areaCodes) : { data: [], error: null },
+    // The shared, cached area list (src/lib/reference/reference-lists.ts), never a direct read of `areas`.
+    areaCodes.length ? loadReferenceAreas() : Promise.resolve([] as ReferenceArea[]),
   ]);
-  for (const read of [pharmacies, vendors, people, areas]) if (read.error) throw read.error;
+  for (const read of [pharmacies, vendors, people]) if (read.error) throw read.error;
+  const wanted = new Set(areaCodes);
   return {
-    area: new Map(((areas.data ?? []) as Array<{ code: string; name: string | null }>).map((row) => [row.code, row.name])),
+    area: new Map(areas.filter((row) => row.code && wanted.has(row.code)).map((row) => [String(row.code), row.name])),
     person: new Map(
       ((people.data ?? []) as Array<{ full_name: string; hr_id: string; nickname: string | null }>).map((row) => [
         String(row.hr_id).toUpperCase(),
