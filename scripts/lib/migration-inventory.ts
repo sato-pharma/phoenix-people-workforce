@@ -2386,6 +2386,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // real primary key; it creates no function, so there is no prosrc to digest. Read back on BOTH projects: 50 enabled
   // registry rows (7 before), the script reporting count 43 on each. Re-applying is a no-op.
   "20261113151741_recovery_protects_money_and_people_tables.sql",
+  // Applied 14 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), the standing
+  // route; no ledger row. Read back on BOTH cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf: md5(prosrc) equal to this
+  // file's bodies as LF text — recovery.restore_table e0827d99b1cd971bf8f4372514306f0c,
+  // phx_log_deduction_decision_change 4c61a46c152b5a6c6f9fd549ec2a73be, phx_log_employee_change
+  // 897ab4df6b29b78c1868565ca9472a1e (all SECURITY DEFINER, executable by postgres and service_role only); the trigger
+  // phx_deductions_decisions_history_delete; v_employee_change_log joining app_auth_users, security_invoker, no browser
+  // grant. Rehearsed on staging in rolled-back transactions: a placeholder delete and re-insert wrote no audit row, a
+  // real change and its delete wrote decision_changed and decision_deleted; a residence_city change was named and not
+  // valued; the view named the login's person; deductions_candidates, deductions_decisions, automated_payroll_runs,
+  // au.line_area_map and employee_salary_structure all restored, and a corrupted hr_note came back. Re-applying is a
+  // no-op (`create or replace`, drop-and-create of the new trigger).
+  "20261114020715_history_and_undo_log_review_fixes.sql",
   // Applied 13 Nov 2026 at about 16:00 Cairo by scripts/apply-sql-file.mjs (staging, then production with the
   // aws-1 pooler), the standing route; no ledger row. It creates no function, so there is no prosrc to digest:
   // read back on BOTH projects, 22 constraints named `<table>_phx_employee_fkey` to public.employees(hr_id), all

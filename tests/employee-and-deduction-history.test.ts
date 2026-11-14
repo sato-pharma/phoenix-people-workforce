@@ -24,6 +24,10 @@ const MIGRATIONS = "supabase/migrations";
 const EMPLOYEE_FILE = "20261113151738_employee_change_log.sql";
 const DECISION_FILE = "20261113151739_deduction_decision_history.sql";
 const RECOVERY_FILE = "20261113151741_recovery_protects_money_and_people_tables.sql";
+// The code review of 14 Nov 2026, fixed forward: nine more masked columns, a placeholder decision is
+// not a decision and a real one's delete is logged, the view resolves a login through app_auth_users,
+// and a restore merges by key instead of emptying the table.
+const FIX_FILE = "20261114020715_history_and_undo_log_review_fixes.sql";
 
 const MASKED = [
   "base_salary", "basic_salary", "gross_salary", "net_salary",
@@ -32,6 +36,9 @@ const MASKED = [
   "bank_account", "national_id", "social_insurance_number", "medical_insurance_number",
   "health_card_number", "kaab_elamaal_number", "mobile_number", "personal_email",
   "residence_address", "birth_date",
+  "residence_city", "residence_area", "birth_place",
+  "kaab_elamaal_issuer", "kaab_elamaal_issue_date", "kaab_elamaal_refund",
+  "cv_path", "cv_file_name", "photo_path",
 ];
 
 const DECIDING = [
@@ -70,15 +77,30 @@ function quotedList(body: string, name: string): string[] {
   return [...body.slice(open, close).matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
 }
 
+/** The body a fresh database runs: the LAST migration that defines the function, cut at its end quote. */
+function lastDefiner(files: string[], fn: string): { file: string; body: string } {
+  const head = `create or replace function ${fn}(`;
+  const definers = files.filter((name) => read(name).toLowerCase().includes(head));
+  assert.ok(definers.length > 0, `no migration defines ${fn}`);
+  const file = definers[definers.length - 1];
+  const sql = read(file);
+  const at = sql.toLowerCase().indexOf(head);
+  const quote = sql.slice(at).match(/\bas (\$[a-z]*\$)/i);
+  assert.ok(quote, `${file}: ${fn} has no dollar-quoted body`);
+  const open = sql.indexOf(quote[1], at) + quote[1].length;
+  return { file, body: sql.slice(at, sql.indexOf(quote[1], open)) };
+}
+
 export async function runEmployeeAndDeductionHistoryTests() {
   const files = readdirSync(MIGRATIONS).filter((name) => name.endsWith(".sql")).sort();
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE]) {
     assert.ok(files.includes(name), `the migration must still be here: ${name}`);
   }
 
   // ---- HEADLINE: the employee log never stores an identifier or a salary figure --------------------
   const employee = read(EMPLOYEE_FILE);
-  const masked = quotedList(employee, "masked  constant text[]");
+  const employeeWriter = lastDefiner(files, "public.phx_log_employee_change").body;
+  const masked = quotedList(employeeWriter, "masked  constant text[]");
   assert.deepEqual(
     [...masked].sort(),
     [...MASKED].sort(),
@@ -87,12 +109,12 @@ export async function runEmployeeAndDeductionHistoryTests() {
       "so it can never be cleaned",
   );
   assert.match(
-    employee,
+    employeeWriter,
     /if col = any\(masked\) then\s+hidden := array_append\(hidden, col\);\s+else/,
     "a masked column must be named in masked_fields and given NO value",
   );
   assert.deepEqual(
-    quotedList(employee, "ignored constant text[]"),
+    quotedList(employeeWriter, "ignored constant text[]"),
     ["updated_at", "total_experience_years", "total_experience_as_of"],
     "only the columns the row's own triggers stamp on every save are ignored — ignoring more hides a " +
       "real change",
@@ -108,7 +130,7 @@ export async function runEmployeeAndDeductionHistoryTests() {
     "the writer runs as definer with a fixed search_path, so the row is written whoever saves",
   );
   assert.match(
-    employee,
+    employeeWriter,
     /case when v_login is not null or v_hr is not null then 'app' else 'unattributed' end/,
     "a write with no actor header is recorded as unattributed, never dropped",
   );
@@ -143,8 +165,16 @@ export async function runEmployeeAndDeductionHistoryTests() {
     "the view must run as its caller, or it would read the log with its owner's rights",
   );
 
+  // ---- The view names the person a login belongs to, never the login read as an hr id -------------
+  const viewFiles = files.filter((name) => read(name).includes("create or replace view public.v_employee_change_log"));
+  assert.match(
+    read(viewFiles[viewFiles.length - 1]),
+    /left join public\.app_auth_users u on l\.actor_hr_id is null and u\.login_id = l\.actor_login_id\s+left join public\.employees a on a\.hr_id = coalesce\(l\.actor_hr_id, u\.hr_id\)/,
+    "a login id is not an hr id: the actor is resolved through app_auth_users",
+  );
+
   // ---- Deduction decisions: before and after, on the deciding columns only ------------------------
-  const decision = read(DECISION_FILE);
+  const decision = lastDefiner(files, "public.phx_log_deduction_decision_change").body;
   assert.deepEqual(
     quotedList(decision, "deciding constant text[]"),
     DECIDING,
@@ -156,18 +186,32 @@ export async function runEmployeeAndDeductionHistoryTests() {
     /insert into public\.deductions_audit \(candidate_id, actor_hr_id, action, detail\)/,
     "the history goes into the existing append-only deductions_audit, not a new unguarded table",
   );
-  assert.match(decision, /'decision_recorded' else 'decision_changed'/);
   assert.match(
     decision,
-    /if tg_op = 'UPDATE' and array_length\(fields, 1\) is null then\s+return null;/,
-    "a re-save that changes no deciding column records nothing",
+    /case tg_op when 'INSERT' then 'decision_recorded'\s+when 'UPDATE' then 'decision_changed'\s+else 'decision_deleted' end/,
   );
   assert.match(
     decision,
+    /if array_length\(fields, 1\) is null then\s+return null;/,
+    "a re-save that changes no deciding column, and an untouched placeholder, record nothing",
+  );
+  assert.match(
+    decision,
+    /and \(r -> col\) not in \('""'::jsonb, '\[\]'::jsonb\)\s+and not \(col = 'decision_status' and r ->> col = 'Pending'\)/,
+    "the Pending placeholder service.ts inserts for every candidate is not a decision; logging it would " +
+      "hold every candidate by deductions_audit's RESTRICT key",
+  );
+  assert.match(
+    read(DECISION_FILE),
     /create trigger phx_deductions_decisions_history\s+after insert or update on public\.deductions_decisions/,
   );
+  assert.match(
+    read(FIX_FILE),
+    /create trigger phx_deductions_decisions_history_delete\s+after delete on public\.deductions_decisions/,
+    "deleting a real decision must leave its trace",
+  );
   assert.ok(
-    decision.includes(
+    read(FIX_FILE).includes(
       "revoke execute on function public.phx_log_deduction_decision_change() from public, anon, authenticated;",
     ),
   );
@@ -203,6 +247,20 @@ export async function runEmployeeAndDeductionHistoryTests() {
     "the migration must refuse a registered key that is not the table's real primary key",
   );
 
+  // ---- A restore merges by key: it never empties the table first -------------------------------------
+  // A non-deferrable RESTRICT or NO ACTION key (deductions_audit, automated_payroll_audit, ...) refuses
+  // the first statement of an empty-and-refill, so five of the 43 could never be restored; and
+  // `select *` refuses every table with a generated column.
+  const restore = lastDefiner(files, "recovery.restore_table");
+  assert.ok(
+    !/execute format\('delete from %I\.%I',/.test(restore.body),
+    `${restore.file} empties the table before refilling it`,
+  );
+  assert.match(restore.body, /delete from %I\.%I t where not exists \(/, "only rows the snapshot lacks are deleted");
+  assert.match(restore.body, /on conflict \(%s\) do update/, "every other row is put back in place by its key");
+  assert.match(restore.body, /a\.attgenerated = ''/, "a generated column is never written");
+  assert.ok(!/select \* from jsonb_populate_recordset/.test(restore.body), "the columns are named, never select *");
+
   // ---- Nothing LATER takes any of it back ------------------------------------------------------------
   const guarded = [
     "phx_employees_change_log",
@@ -234,7 +292,7 @@ export async function runEmployeeAndDeductionHistoryTests() {
 
   // ---- No ledger row, so each needs its evidenced exception ---------------------------------------
   const inventory = readFileSync("scripts/lib/migration-inventory.ts", "utf8");
-  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE]) {
+  for (const name of [EMPLOYEE_FILE, DECISION_FILE, RECOVERY_FILE, FIX_FILE]) {
     assert.ok(
       inventory.includes(`"${name}",`),
       `${name} was applied by apply-sql-file.mjs, which writes no ledger row: it needs its evidenced ` +

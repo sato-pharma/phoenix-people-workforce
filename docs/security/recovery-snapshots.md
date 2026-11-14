@@ -224,7 +224,8 @@ key is not the table's real primary key.
 so there is nothing for a restore to undo; and the rebuilt tables (`expense_claims`,
 `expense_claim_events` by `phx_refresh_expense_claims`, the weekly attendance digests) are restored
 by restoring their source and rebuilding. `tests/employee-and-deduction-history.test.ts` pins the 43,
-the 24-version five and these exclusions.
+the 24-version five and these exclusions. Five of the 43 could not actually be restored until
+`20261114020715` changed how a restore writes — see "Restoring".
 
 Measured after the first real run: the whole store is **2,336 kB on disk** (17 MB of logical JSON,
 which TOASTs well).
@@ -298,7 +299,19 @@ select * from recovery.restore_table('public', 'salary_records', timestamptz '20
 
 Applying takes a **pre-image of the current contents first**, into `recovery.restore_preimages` —
 mandatory, because there is no PITR behind a restore that turns out to be the wrong call. Then, in
-one transaction: `set constraints all deferred`, `delete`, and re-insert from the payload.
+one transaction: `set constraints all deferred`, delete **only the rows the snapshot does not hold**,
+and put every other row back in place by its primary key (an upsert over the named, non-generated
+columns that touches only rows that differ).
+
+🔴 **Never put the empty-and-refill back** (`20261114020715`). Until then a restore deleted the
+whole table first, and that failed on its first statement for every table another table points at
+with a RESTRICT or NO ACTION key — `set constraints all deferred` does not reach a key that is not
+deferrable. Read live on 2026-11-14 that was `deductions_candidates`, `deductions_publications`
+(both held by the append-only `deductions_audit`), `automated_payroll_runs` (held by
+`automated_payroll_audit`), `deductions_decisions` and `attendance_settlements`; and `select *`
+failed on the five with a generated column. Rehearsed on staging the same day, rolled back: all of
+them restore, and a corrupted decision note came back. A row that must go and is still referenced
+now refuses by name — right, because it cannot vanish without its children.
 
 ### Proven end to end, on production, 2026-09-29
 
