@@ -118,6 +118,7 @@ function VenueHeader({ mode, row }: { mode: PlaceCheckNotesMode; row: SharedPlac
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <CrmPill>{row.kindLabel}</CrmPill>
         <VenueStatus mode={mode} row={row} />
+        {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
         <CrmPill tone={row.seated === 0 ? "neutral" : "info"}>
           {row.seated === 0 ? "Nobody seated yet" : `${row.seated} ${row.seated === 1 ? "customer seated" : "customers seated"}`}
         </CrmPill>

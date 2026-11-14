@@ -2182,6 +2182,7 @@ import { runPhoenixCrmValidationAuditDoorTests } from "./phoenix-crm-validation-
 import { runPhoenixCrmValidationAuditReviewsTests } from "./phoenix-crm-validation-audit-reviews.test.ts";
 import { runPhoenixCrmValidationAuditSqlTests } from "./phoenix-crm-validation-audit-sql.test.ts";
 import { runPhoenixCrmValidationAuditTimetableTests } from "./phoenix-crm-validation-audit-timetable.test.ts";
+import { runPhoenixCrmWaitingOldestFirstTests } from "./phoenix-crm-waiting-oldest-first.test.ts";
 import { runPhoenixCrmSfePlaceChecksTests } from "./phoenix-crm-sfe-place-checks.test.ts";
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
@@ -8430,6 +8431,12 @@ await runTest(
 await runTest(
   "Phoenix CRM validation audit, the owner's decisions (14 Nov 2026): 'Approve it after all' stops and says why for a dropped customer, a retired building or a door captured again; a customer validated at his own clinic stays in when a polyclinic's board does not name him",
   runPhoenixCrmValidationAuditDecisionsTests,
+);
+
+// The Phoenix CRM validation enhancements of 14 Nov 2026 — appended below, one file per part.
+await runTest(
+  "Place checks lists what is WAITING oldest first and says how long it has waited (owner, 14 Nov 2026): the waiting reviews, the held buildings and the seated customers behind them; the decided rows keep newest first; a broken stamp never jumps the queue; the rep's picker row carries no wait",
+  runPhoenixCrmWaitingOldestFirstTests,
 );
 
 await runTest(

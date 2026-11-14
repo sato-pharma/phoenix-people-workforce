@@ -87,6 +87,7 @@ function Who({ row }: { row: ValidationReviewRow }) {
       <p className="break-words text-sm text-slate-700">{row.repName}</p>
       <p className="break-words text-xs text-slate-500">{row.territory}</p>
       <p className="break-words text-xs text-slate-500">Captured {row.createdAtText}</p>
+      {row.waitingText ? <CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill> : null}
       {/* A door signboard hold the system is still re-reading (owner, 2026-10-17); it may still be decided now. */}
       {row.systemStillReading ? <CrmPill tone="info">The system is still reading this sign</CrmPill> : null}
       {row.isTest ? <CrmPill>Test entry</CrmPill> : null}

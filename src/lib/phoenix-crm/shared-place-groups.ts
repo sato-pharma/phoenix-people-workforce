@@ -30,6 +30,7 @@ import {
 } from "@/lib/phoenix-crm/validation-review-filters";
 import type { ScheduleHeldBecause, ScheduleLegibility, ScheduleProblem } from "@/lib/phoenix-crm/schedule-rules";
 import type { ReopenedCustomerRow, SharedPlaceBoardRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/view-types";
+import { compareOldestFirst } from "@/lib/phoenix-crm/waiting-rules";
 
 /**
  * Where a seated customer stands:
@@ -64,6 +65,9 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   /** The row's own date, for the period filter and the sort. */
   at: string;
   atText: string;
+  /** A WAITING customer only: how long his seating has waited for a decision. */
+  waitingText?: string | null;
+  waitingLong?: boolean;
   placeId: string | null;
   /** The review row a decision is made on, when there is one. Null is "nobody has ever looked at him". */
   reviewId: string | null;
@@ -138,6 +142,8 @@ function fromReview(row: ValidationReviewRow, sharedPlaceId: string, state: Seat
     isTest: row.isTest,
     at: row.createdAt,
     atText: row.createdAtText,
+    waitingText: state === "waiting" ? (row.waitingText ?? null) : null,
+    waitingLong: state === "waiting" && row.waitingLong === true,
     placeId: row.placeId,
     reviewId: row.reviewId,
     reviewStatus: row.status,
@@ -359,8 +365,25 @@ export function narrowVenueGroups(input: {
   return groups.sort((left, right) => {
     const rank = urgencyOf(left) - urgencyOf(right);
     if (rank !== 0) return rank;
+    // 🔴 WHAT IS WAITING FOR A DECISION IS LISTED OLDEST FIRST (owner, 14 Nov 2026): the building, or the
+    // customer behind it, that has waited longest is the one read first. Everything else keeps newest first.
+    if (venueNeedsDecision(left)) return compareOldestFirst(waitingSinceOf(left), waitingSinceOf(right));
     return String(right.venue.capturedAt).localeCompare(String(left.venue.capturedAt));
   });
+}
+
+/**
+ * When a building's wait began: a held building's own capture, otherwise the oldest customer still
+ * waiting behind it. The building's id breaks a tie.
+ */
+export function waitingSinceOf(group: Pick<VenueGroup, "venue" | "customers">): { at: string; id: string } {
+  const id = group.venue.sharedPlaceId;
+  if (group.venue.status === "held") return { at: group.venue.capturedAt, id };
+  const waiting = group.customers
+    .filter((customer) => customer.state === "waiting")
+    .map((customer) => ({ at: customer.at, id: customer.key }))
+    .sort(compareOldestFirst);
+  return { at: waiting[0]?.at ?? group.venue.capturedAt, id };
 }
 
 /**

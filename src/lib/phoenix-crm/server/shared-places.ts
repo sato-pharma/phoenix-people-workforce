@@ -36,6 +36,7 @@ import { logError } from "@/lib/observability/log";
 import { deviceClockSkewMinutes, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { waitingIsLong, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import {
   canDecideValidationReviews,
   canRestoreValidation,
@@ -611,6 +612,10 @@ export function seatedDraftOf(body: Row): SeatedPlaceDraft | null {
 export type SharedPlaceReading = { lat: number; lon: number; accuracyMeters: number | null };
 
 export type SharedPlaceBoardRow = SharedPlaceRow & {
+  /** A HELD building only: how long it has waited for a decision, in the board's words. */
+  waitingText?: string | null;
+  /** A HELD building only: it has waited `WAITING_LONG_HOURS` or more. */
+  waitingLong?: boolean;
   repName: string;
   territory: string;
   line: string | null;
@@ -708,13 +713,18 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
     ]),
   ]);
 
+  const now = new Date();
   return {
     capped: read.capped,
     rows: rows.map((row): SharedPlaceBoardRow => {
       const base = mapSharedPlace(row, counts.get(String(row.id)) ?? 0);
       const seat = viewer.org.seats.get(String(row.seat_id));
+      const held = base.status === "held";
       return {
         ...base,
+        // A building is held at its capture, so that instant is when its wait began.
+        waitingText: held ? waitingText(base.capturedAt, now) : null,
+        waitingLong: held && waitingIsLong(base.capturedAt, now),
         repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
         territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
         line: seat?.lineName ?? null,

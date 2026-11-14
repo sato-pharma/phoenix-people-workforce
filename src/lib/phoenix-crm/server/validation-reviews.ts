@@ -36,6 +36,7 @@ import {
   type ScheduleProblem,
 } from "@/lib/phoenix-crm/schedule-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { waitingIsLong, waitingOldestFirst, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
@@ -457,6 +458,10 @@ export type ValidationReviewRow = {
   isTest: boolean;
   createdAt: string;
   createdAtText: string;
+  /** A waiting review only: how long it has waited for a decision, in the board's words. Null once decided. */
+  waitingText?: string | null;
+  /** A waiting review only: it has waited `WAITING_LONG_HOURS` or more. */
+  waitingLong?: boolean;
   repName: string;
   territory: string;
   /** The seat's line and region, carried apart from `territory` so the page can filter by each. */
@@ -691,6 +696,8 @@ export async function loadValidationReviews(
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
   const placeById = new Map(places.map((row) => [String(row.id), row]));
 
+  // One clock for the whole read, so two rows of one instant never read two different waits.
+  const now = new Date();
   const rows = reviews.map((row): ValidationReviewRow => {
     const customer = customerById.get(String(row.customer_id)) ?? {};
     const place = placeById.get(String(row.place_id)) ?? {};
@@ -760,6 +767,9 @@ export async function loadValidationReviews(
       isTest: row.is_test === true,
       createdAt: String(row.created_at),
       createdAtText: formatPhoenixDateTime(String(row.created_at)),
+      // A review is never put back to waiting once decided, so its own instant is when the wait began.
+      waitingText: status === "pending" ? waitingText(String(row.created_at), now) : null,
+      waitingLong: status === "pending" && waitingIsLong(String(row.created_at), now),
       repName: nameOf(names, text(row.created_by_hr_id), "A rep"),
       territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
       line: seat?.lineName ?? null,
@@ -812,7 +822,15 @@ export async function loadValidationReviews(
       row.status === "pending" || decided === null || decided >= since || (row.status === "rejected" && row.restorable && decided >= rejectedSince);
   }
   const keep = options.everyDecision ? rows : rows.filter((row) => row.recent);
-  return { rows: keep, capped };
+  // 🔴 WHAT IS WAITING IS LISTED OLDEST FIRST (owner, 14 Nov 2026). The decided rows keep the
+  // newest-first order made above; only the waiting ones are re-ordered, in the places they already
+  // hold, so every screen that splits this one list by status reads the longest wait at the top.
+  const ordered = waitingOldestFirst(
+    keep,
+    (row) => row.status === "pending",
+    (row) => ({ at: row.createdAt, id: row.reviewId }),
+  );
+  return { rows: ordered, capped };
 }
 
 // ── The decision ────────────────────────────────────────────────────────────────────────────────

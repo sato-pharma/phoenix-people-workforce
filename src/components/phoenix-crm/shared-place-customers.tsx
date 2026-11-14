@@ -97,6 +97,7 @@ function Who({ customer, mode }: { customer: SeatedCustomer; mode: PlaceCheckNot
       {stamp ? <p className="break-words text-xs font-semibold text-slate-700">{stamp}</p> : null}
       <div className="flex min-w-0 flex-wrap gap-1">
         {customer.state === "waiting" ? <CrmPill tone="warn">{mode === "team" ? "Still being checked" : "Waiting for you"}</CrmPill> : null}
+        {customer.waitingText ? <CrmPill tone={customer.waitingLong ? "warn" : "neutral"}>{customer.waitingText}</CrmPill> : null}
         {customer.state === "rejected" ? <CrmPill tone="bad">{mode === "team" ? "Settled" : "Rejected"}</CrmPill> : null}
         {customer.state === "sent_back" ? <CrmPill tone="neutral">Waiting to be captured again</CrmPill> : null}
         {customer.state === "in_use" && !customer.reviewed ? <CrmPill tone="info">Never looked at</CrmPill> : null}
