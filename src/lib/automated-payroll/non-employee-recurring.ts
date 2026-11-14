@@ -5,6 +5,8 @@ import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { getRunById } from "./draft-store.ts";
 import { validateNonEmployeePayrollInput } from "./non-employees.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
+import { holdRun } from "./run-hold.ts";
+import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import type {
   MonthlySalaryRun,
   NonEmployeePart,
@@ -413,5 +415,12 @@ export async function syncRunFromRecurring(
   // The phase is what stops this adding money to an instalment finance has already executed —
   // see partStillOpen. Without it, pressing Sync during Part 2 put a first-instalment row on a
   // paid Part 1, and the per-part edit lock then made that row impossible to remove.
-  return seedRunFromRecurring({ runId, actorHrId: actorId(access), phase: run.phase });
+  //
+  // Under the run's hold (payroll audit 2026-11-14, S1): the phase above was read once, and a sync that
+  // passed it while Part 2 was being confirmed inserted rows after the confirm. The hold re-checks that
+  // the run is still in this phase, and Confirm waits for the sync to finish.
+  const phase = run.phase;
+  return holdRun({ runId, expected: [phase], action: RUN_HOLD_ACTIONS.nonEmployeeSync }, () =>
+    seedRunFromRecurring({ runId, actorHrId: actorId(access), phase }),
+  );
 }

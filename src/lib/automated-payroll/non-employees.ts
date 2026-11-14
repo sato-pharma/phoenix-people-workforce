@@ -4,6 +4,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { getRunById } from "./draft-store.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
+import { holdRun } from "./run-hold.ts";
+import { RUN_HOLD_ACTIONS } from "./transition-claim.ts";
 import type {
   MonthlySalaryRun,
   NonEmployeePart,
@@ -74,6 +76,20 @@ async function requireEditableRun(runId: string, part: NonEmployeePart): Promise
     throw new Error(`Conflict: ${label} Non-Employees Payroll can only be edited while ${label} is open.`);
   }
   return run;
+}
+
+/**
+ * EVERY NON-EMPLOYEE WRITE HOLDS THE RUN (payroll audit 2026-11-14, S1). The phase check above reads
+ * the run once, seconds before the write; an add that passed it while Part 2 was being confirmed landed
+ * after the confirm, and the bank file then carried an amount nobody confirmed. The hold is the same
+ * one a step save takes: it re-checks the phase in one statement, so a write that would land after the
+ * part closed is refused, and Confirm waits for a write already under way.
+ */
+function holdForPart<T>(runId: string, part: NonEmployeePart, work: () => Promise<T>): Promise<T> {
+  return holdRun({ runId, expected: [EDITABLE_PHASE[part]], action: RUN_HOLD_ACTIONS.nonEmployee }, async () => {
+    await requireEditableRun(runId, part);
+    return work();
+  });
 }
 
 function resolvePart(value: NonEmployeePart | undefined | null): NonEmployeePart {
@@ -229,30 +245,34 @@ export async function addNonEmployeePayrollEntry(
   assertAutomatedPayrollHrActor(access);
   validateNonEmployeePayrollInput(input);
   const part = resolvePart(input.part);
+  // Checked first for its plain words ("Part 2 … can only be edited while Part 2 is open"), then again
+  // under the hold, which is what actually keeps the write out of a confirm.
   await requireEditableRun(runId, part);
 
-  const { data, error } = await writeWithPart<Row>(
-    part,
-    {
-      run_id: runId,
-      full_name_ar: input.fullNameAr.trim(),
-      full_name_en: input.fullNameEn.trim(),
-      total_salary: input.totalSalary,
-      bank_name: input.bankName?.trim() || null,
-      bank_account: input.bankAccount?.trim() || null,
-      created_by: actorId(access),
-    },
-    (body) => getSupabaseAdmin().from(TABLE).insert(body).select("*").single(),
-  );
-  if (error) throw error;
-  const row = mapRow(data as Row);
-  await writeAutomatedPayrollAudit({
-    runId,
-    actorHrId: actorId(access),
-    action: "non_employee_added",
-    detail: { id: row.id, part: row.part, fullNameEn: row.fullNameEn, totalSalary: row.totalSalary },
+  return holdForPart(runId, part, async () => {
+    const { data, error } = await writeWithPart<Row>(
+      part,
+      {
+        run_id: runId,
+        full_name_ar: input.fullNameAr.trim(),
+        full_name_en: input.fullNameEn.trim(),
+        total_salary: input.totalSalary,
+        bank_name: input.bankName?.trim() || null,
+        bank_account: input.bankAccount?.trim() || null,
+        created_by: actorId(access),
+      },
+      (body) => getSupabaseAdmin().from(TABLE).insert(body).select("*").single(),
+    );
+    if (error) throw error;
+    const row = mapRow(data as Row);
+    await writeAutomatedPayrollAudit({
+      runId,
+      actorHrId: actorId(access),
+      action: "non_employee_added",
+      detail: { id: row.id, part: row.part, fullNameEn: row.fullNameEn, totalSalary: row.totalSalary },
+    });
+    return row;
   });
-  return row;
 }
 
 export async function updateNonEmployeePayrollEntry(
@@ -267,44 +287,54 @@ export async function updateNonEmployeePayrollEntry(
   // Gate on the part it is stored under AND the part it would become, so an edit
   // can never move an entry into an installment that is already closed, nor out
   // of one that is.
-  const existing = await requireEntry(runId, id);
-  const part = input.part === undefined ? existing.part : resolvePart(input.part);
-  await requireEditableRun(runId, existing.part);
-  if (part !== existing.part) await requireEditableRun(runId, part);
+  const found = await requireEntry(runId, id);
+  const part = input.part === undefined ? found.part : resolvePart(input.part);
+  await requireEditableRun(runId, found.part);
+  if (part !== found.part) await requireEditableRun(runId, part);
 
-  const { data, error } = await writeWithPart<Row>(
-    part,
-    {
-      full_name_ar: input.fullNameAr.trim(),
-      full_name_en: input.fullNameEn.trim(),
-      total_salary: input.totalSalary,
-      bank_name: input.bankName?.trim() || null,
-      bank_account: input.bankAccount?.trim() || null,
-      updated_at: new Date().toISOString(),
-    },
-    (body) => getSupabaseAdmin().from(TABLE).update(body).eq("id", id).eq("run_id", runId).select("*").maybeSingle(),
-  );
-  if (error) throw error;
-  if (!data) throw new Error("Not found: non-employee entry does not exist on this run.");
-  const row = mapRow(data as Row);
-  // Audited like add and remove (payroll audit 2026-11-14, finding 12): a changed salary or bank account
-  // left only `updated_at` and the 72-hour recovery log behind it.
-  const fields = ["fullNameAr", "fullNameEn", "totalSalary", "bankName", "bankAccount", "part"] as const;
-  const changed = fields.filter((field) => existing[field] !== row[field]);
-  if (changed.length > 0) {
-    await writeAutomatedPayrollAudit({
-      runId,
-      actorHrId: actorId(access),
-      action: "non_employee_updated",
-      detail: {
-        id,
-        fullNameEn: row.fullNameEn,
-        before: Object.fromEntries(changed.map((field) => [field, existing[field]])),
-        after: Object.fromEntries(changed.map((field) => [field, row[field]])),
+  return holdForPart(runId, found.part, async () => {
+    // Re-read under the hold: the before-image the audit row keeps is the entry as it stood when this
+    // write began, not as it stood before another change finished.
+    const existing = await requireEntry(runId, id);
+    if (existing.part !== found.part) {
+      throw new Error("Conflict: this entry moved to the other part while you were editing it. Reload and try again.");
+    }
+    if (part !== existing.part) await requireEditableRun(runId, part);
+
+    const { data, error } = await writeWithPart<Row>(
+      part,
+      {
+        full_name_ar: input.fullNameAr.trim(),
+        full_name_en: input.fullNameEn.trim(),
+        total_salary: input.totalSalary,
+        bank_name: input.bankName?.trim() || null,
+        bank_account: input.bankAccount?.trim() || null,
+        updated_at: new Date().toISOString(),
       },
-    });
-  }
-  return row;
+      (body) => getSupabaseAdmin().from(TABLE).update(body).eq("id", id).eq("run_id", runId).select("*").maybeSingle(),
+    );
+    if (error) throw error;
+    if (!data) throw new Error("Not found: non-employee entry does not exist on this run.");
+    const row = mapRow(data as Row);
+    // Audited like add and remove (payroll audit 2026-11-14, finding 12): a changed salary or bank account
+    // left only `updated_at` and the 72-hour recovery log behind it.
+    const fields = ["fullNameAr", "fullNameEn", "totalSalary", "bankName", "bankAccount", "part"] as const;
+    const changed = fields.filter((field) => existing[field] !== row[field]);
+    if (changed.length > 0) {
+      await writeAutomatedPayrollAudit({
+        runId,
+        actorHrId: actorId(access),
+        action: "non_employee_updated",
+        detail: {
+          id,
+          fullNameEn: row.fullNameEn,
+          before: Object.fromEntries(changed.map((field) => [field, existing[field]])),
+          after: Object.fromEntries(changed.map((field) => [field, row[field]])),
+        },
+      });
+    }
+    return row;
+  });
 }
 
 export async function deleteNonEmployeePayrollEntry(
@@ -316,13 +346,15 @@ export async function deleteNonEmployeePayrollEntry(
   const existing = await requireEntry(runId, id);
   await requireEditableRun(runId, existing.part);
 
-  const { error } = await getSupabaseAdmin().from(TABLE).delete().eq("id", id).eq("run_id", runId);
-  if (error) throw error;
-  await writeAutomatedPayrollAudit({
-    runId,
-    actorHrId: actorId(access),
-    action: "non_employee_removed",
-    detail: { id, part: existing.part },
+  await holdForPart(runId, existing.part, async () => {
+    const { error } = await getSupabaseAdmin().from(TABLE).delete().eq("id", id).eq("run_id", runId);
+    if (error) throw error;
+    await writeAutomatedPayrollAudit({
+      runId,
+      actorHrId: actorId(access),
+      action: "non_employee_removed",
+      detail: { id, part: existing.part },
+    });
   });
 }
 
