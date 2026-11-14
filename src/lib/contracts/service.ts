@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import {
   canSeeHrScopedRecord,
   type AccessContext,
@@ -11,7 +12,6 @@ import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { daysUntilLifecycleDate } from "@/lib/lifecycle-risk/metrics";
 import { afterResponse } from "@/lib/http/after-response";
-import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -534,7 +534,7 @@ async function notifyContractWorkflow(
   tone: "success" | "warning" | "danger" | "neutral",
 ) {
   const actionUrl = `/admin/approvals-hub?module=contract_renewal&id=${encodeURIComponent(record.id)}`;
-  await createSystemNotification({
+  await raiseApproval(approvalIdentity("contract", record.status), { via: "notice", notice: {
     actionUrl,
     actorId: "system",
     email: {
@@ -577,7 +577,7 @@ async function notifyContractWorkflow(
     recordId: record.id,
     subjectHrId: record.employeeHrId,
     title,
-  });
+  } });
 }
 
 // WP-6: when a contract is marked not_renewed, terminate the employee and open

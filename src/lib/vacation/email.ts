@@ -1,3 +1,4 @@
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
@@ -124,7 +125,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     { label: "Duration", value: duration },
     { label: "Approval flow", value: approvalFlow },
   ];
-  const templated = await sendDurableEmail({ sender: "templated", input: {
+  const templated = await raiseApproval({ module: "leave", step: "waiting" }, { via: "durable-email", message: { sender: "templated", input: {
     context: {
       approvalFlow,
       ctaLabel: "Review Leave Request",
@@ -155,7 +156,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     // one actionable manager TO, visibility recipients in CC.
     overrides: { cc: input.cc, replaceRecipients: true, to: [input.managerEmail] },
     templateKey: "leave_request",
-  } }, { dedupeKey: `vacation:${input.request.id}:leave_request:${input.managerEmail.toLowerCase()}` });
+  } }, dedupeKey: `vacation:${input.request.id}:leave_request:${input.managerEmail.toLowerCase()}` });
   if (!isTemplateUnavailableSkip(templated)) return templated;
 
   const fallback = buildFallbackEmail({
@@ -170,7 +171,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     title: "Vacation request review",
   });
   const fallbackKey = `vacation:${input.request.id}:leave_request_fallback:${input.managerEmail.toLowerCase()}`;
-  return sendDurableEmail({ sender: "phoenix", input: {
+  return raiseApproval({ module: "leave", step: "waiting" }, { via: "durable-email", message: { sender: "phoenix", input: {
     cc: input.cc,
     html: fallback.html,
     idempotencyKey: fallbackKey,
@@ -178,7 +179,7 @@ export async function sendVacationManagerDecisionEmail(input: VacationManagerEma
     subject: `Vacation request from ${input.request.employeeName}`,
     text: fallback.text,
     to: [input.managerEmail],
-  } }, { dedupeKey: fallbackKey });
+  } }, dedupeKey: fallbackKey });
 }
 
 export async function sendVacationDecisionResultEmail(input: VacationDecisionEmailInput): Promise<SendPhoenixEmailResult> {
@@ -193,7 +194,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     { label: "Duration", value: formatDays(input.request.durationDays) },
     ...(approved ? [] : [{ label: "Rejection reason", value: input.request.hrDecisionComment ?? "—" }]),
   ];
-  const templated = await sendDurableEmail({ sender: "templated", input: {
+  const templated = await raiseApproval({ decision: approved ? "approved" : "rejected", module: "leave", step: "decided" }, { via: "durable-email", message: { sender: "templated", input: {
     context: {
       // CTA + duration are used by both decision templates; the rejection template also uses
       // {{status}} as the Request ID, {{summary}} as the rejection reason, and {{managerName}}.
@@ -223,7 +224,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     // template's editor recipient rules.
     overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
     templateKey: approved ? "leave_approval" : "leave_rejection",
-  } }, { dedupeKey: `vacation:${input.request.id}:decision_${input.decision}:${input.employeeEmail.toLowerCase()}` });
+  } }, dedupeKey: `vacation:${input.request.id}:decision_${input.decision}:${input.employeeEmail.toLowerCase()}` });
   if (!isTemplateUnavailableSkip(templated)) return templated;
 
   const fallback = buildFallbackEmail({
@@ -237,7 +238,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     title: `Vacation request ${approved ? "approved" : "rejected"}`,
   });
   const fallbackKey = `vacation:${input.request.id}:decision_${input.decision}_fallback:${input.employeeEmail.toLowerCase()}`;
-  return sendDurableEmail({ sender: "phoenix", input: {
+  return raiseApproval({ decision: approved ? "approved" : "rejected", module: "leave", step: "decided" }, { via: "durable-email", message: { sender: "phoenix", input: {
     cc: input.cc,
     html: fallback.html,
     idempotencyKey: fallbackKey,
@@ -245,7 +246,7 @@ export async function sendVacationDecisionResultEmail(input: VacationDecisionEma
     subject: `Vacation request ${approved ? "approved" : "rejected"}`,
     text: fallback.text,
     to: [input.employeeEmail],
-  } }, { dedupeKey: fallbackKey });
+  } }, dedupeKey: fallbackKey });
 }
 
 type VacationManagerStepResultEmailInput = {
@@ -280,7 +281,7 @@ export async function sendVacationManagerStepResultEmail(
     { label: "Decision", value: approved ? "Approved" : "Rejected" },
     ...(!approved && input.managerDecisionComment ? [{ label: "Reason", value: input.managerDecisionComment }] : []),
   ];
-  const templated = await sendDurableEmail({ sender: "templated", input: {
+  const templated = await raiseApproval({ decision: approved ? "approved" : "rejected", module: "leave", step: "decided" }, { via: "durable-email", message: { sender: "templated", input: {
     context: {
       ctaLabel: "Open in Phoenix Workforce",
       ctaUrl: systemDeployment.productionUrl,
@@ -304,7 +305,7 @@ export async function sendVacationManagerStepResultEmail(
     fallbackTo: [input.employeeEmail],
     overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
     templateKey: "leave_manager_step_decision",
-  } }, { dedupeKey: `vacation:${input.request.id}:manager_step_${action}:${input.employeeEmail.toLowerCase()}` });
+  } }, dedupeKey: `vacation:${input.request.id}:manager_step_${action}:${input.employeeEmail.toLowerCase()}` });
   if (!isTemplateUnavailableSkip(templated)) return templated;
 
   const rows: Array<[string, string]> = [
@@ -321,7 +322,7 @@ export async function sendVacationManagerStepResultEmail(
     title: `Vacation request ${action}`,
   });
   const fallbackKey = `vacation:${input.request.id}:manager_step_${action}:employee:${input.employeeEmail.toLowerCase()}`;
-  return sendDurableEmail({ sender: "phoenix", input: {
+  return raiseApproval({ decision: approved ? "approved" : "rejected", module: "leave", step: "decided" }, { via: "durable-email", message: { sender: "phoenix", input: {
     cc: input.cc,
     html: fallback.html,
     idempotencyKey: fallbackKey,
@@ -329,7 +330,7 @@ export async function sendVacationManagerStepResultEmail(
     subject: `Vacation request ${action} by ${input.managerName}`,
     text: fallback.text,
     to: [input.employeeEmail],
-  } }, { dedupeKey: fallbackKey });
+  } }, dedupeKey: fallbackKey });
 }
 
 type VacationBalanceSettlementEmailInput = {
@@ -427,7 +428,7 @@ export async function sendVacationReturnedEmail(
   input: VacationReturnedEmailInput,
 ): Promise<SendPhoenixEmailResult> {
   const heading = `${input.managerName} returned your ${vacationTypeLabel(input.request.vacationType)} request for revision.${input.decisionComment ? ` Reason: ${input.decisionComment}` : ""}`;
-  const templated = await sendDurableEmail({ sender: "templated", input: {
+  const templated = await raiseApproval({ decision: "returned", module: "leave", step: "returned" }, { via: "durable-email", message: { sender: "templated", input: {
     context: {
       ctaLabel: "Open in Phoenix Workforce",
       ctaUrl: systemDeployment.productionUrl,
@@ -448,7 +449,7 @@ export async function sendVacationReturnedEmail(
     fallbackTo: [input.employeeEmail],
     overrides: { cc: input.cc, replaceRecipients: true, to: [input.employeeEmail] },
     templateKey: "leave_returned",
-  } }, { dedupeKey: `vacation:${input.request.id}:returned:${input.employeeEmail.toLowerCase()}` });
+  } }, dedupeKey: `vacation:${input.request.id}:returned:${input.employeeEmail.toLowerCase()}` });
   if (!isTemplateUnavailableSkip(templated)) return templated;
 
   const fallback = buildFallbackEmail({
@@ -465,7 +466,7 @@ export async function sendVacationReturnedEmail(
     title: "Vacation request returned for revision",
   });
   const fallbackKey = `vacation:${input.request.id}:returned:employee:${input.employeeEmail.toLowerCase()}`;
-  return sendDurableEmail({ sender: "phoenix", input: {
+  return raiseApproval({ decision: "returned", module: "leave", step: "returned" }, { via: "durable-email", message: { sender: "phoenix", input: {
     cc: input.cc,
     html: fallback.html,
     idempotencyKey: fallbackKey,
@@ -473,5 +474,5 @@ export async function sendVacationReturnedEmail(
     subject: "Vacation request returned for revision",
     text: fallback.text,
     to: [input.employeeEmail],
-  } }, { dedupeKey: fallbackKey });
+  } }, dedupeKey: fallbackKey });
 }

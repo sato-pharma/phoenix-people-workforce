@@ -6,7 +6,7 @@
 // createSystemNotificationForRecipients rather than a per-recipient loop — looping bypasses
 // envelope consolidation and sends N separate emails to the same thread.
 
-import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -111,8 +111,7 @@ export async function notifyEarlyBirdsRecommendation(candidate: EarlyBirdsPendin
       new Map(recipients.map((hrId) => [canonicalHrIdKey(hrId) ?? hrId, hrId])).values(),
     );
 
-    await createSystemNotificationForRecipients(
-      {
+    await raiseApproval({ module: "early_bird", step: "waiting" }, { via: "notices", notice: {
         category: "early_bird_recommendation",
         module: "early_birds",
         eventType: "recommendation_pending",
@@ -134,9 +133,7 @@ export async function notifyEarlyBirdsRecommendation(candidate: EarlyBirdsPendin
           // re-run cannot double-notify for the same fortnight and candidate.
           idempotencyKey: `early_birds:${candidate.snapshotId}:${candidate.candidateId}:pending`,
         },
-      },
-      deduped,
-    );
+      }, recipientHrIds: deduped });
   } catch (error) {
     logError("Early Birds recommendation notification failed", {
       labels: {

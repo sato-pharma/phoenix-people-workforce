@@ -23,6 +23,7 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔒 **THE EXPENSE APPROVALS ROW WEARS THE ONE APPROVALS INTERFACE BUT KEEPS ITS BATCH SAVE** (REC-032, owner 14 Nov 2026: "Keep its batch save"). `review-queue-table.tsx` draws Approve, Review and Undo from `approvalActionClassName(…, "dense")` (flat, square — this screen's own no-shadow rule holds); a row's Approve still only MARKS the trip, and Save commits the batch through POST `/api/admin/outstation/expenses`. Never give the row its own post. Pinned by `tests/approvals-one-interface.test.ts`.
 ### Production hooks (moved from AGENTS.md §2.3)
 
 - **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every shared-queue production `WHERE`; **"Log out everywhere" is THREE writes.**

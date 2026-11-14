@@ -1,3 +1,4 @@
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "crypto";
 
@@ -104,7 +105,7 @@ import {
   type MarketingDoubleVisitPartner,
 } from "@/lib/weekly-planning/marketing-double-visit";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
-import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
+import type { NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
@@ -1552,7 +1553,7 @@ async function notifyRecipients(rawInput: {
         { eventType: input.eventType, messageKey: input.messageKey, module: "weekly_plans", recordId: input.plan.id },
         normalizeHrId(recipient.hrId) || recipient.userId || "",
       );
-      return createSystemNotification({
+      return raiseApproval(approvalIdentity("weekly_plan", input.eventType), { via: "notice", notice: {
         actionUrl: input.actionUrl,
         category: "general",
         channels: emailMode !== "none" && (normalizeHrId(recipient.hrId) || recipient.userId || "") === primaryKey ? ["in_app", "email", "telegram", "push"] : ["in_app", "telegram", "push"],
@@ -1583,7 +1584,7 @@ async function notifyRecipients(rawInput: {
         recipientUserId: recipient.userId,
         subjectHrId: input.plan.employee_hr_id,
         title: input.title,
-      });
+      } });
     }));
 }
 

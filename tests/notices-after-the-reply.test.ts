@@ -131,7 +131,7 @@ export const NOTICE_PINS: Array<{ file: string; specs: NoticePinSpec[] }> = [
     file: "../src/lib/marketing-requests/service.ts",
     specs: [
       { fn: "decideMarketingRequestWorkflow", calls: ["notifyMarketingWorkflow"] },
-      { fn: "createMarketingRequestDraft", calls: ["notifyMarketingWorkflow", "createSystemNotification"] },
+      { fn: "createMarketingRequestDraft", calls: ["notifyMarketingWorkflow", "raiseApproval"] },
       { fn: "resubmitReturnedMarketingRequest", calls: ["notifyMarketingWorkflow"] },
       { fn: "postMarketingAdvisoryComment", calls: ["notifyAdvisoryComment"] },
       { fn: "postMarketingRequestConversationComment", calls: ["notifyMarketingRequestConversation"] },
@@ -297,7 +297,7 @@ export async function runNoticesAfterTheReplyTests() {
       breakCopy(marketing, 'afterResponse("marketing_notice:request_submitted"', 'Promise.resolve("marketing_notice:request_submitted"'),
       NOTICE_PINS[3].specs,
     ),
-    "createMarketingRequestDraft: createSystemNotification() runs before the reply",
+    "createMarketingRequestDraft: raiseApproval() runs before the reply",
     "a marketing submit that waits for its notices again",
   );
   const weekly = read("../src/lib/weekly-planning/service.ts");

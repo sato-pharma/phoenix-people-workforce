@@ -1,4 +1,5 @@
 
+import { approvalIdentity, raiseApproval } from "@/lib/approvals/raise-approval";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import {
@@ -17,7 +18,6 @@ import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/wo
 import { DECLINE_OFFER_WINDOW_DAYS, isDeclineOfferEligible } from "@/lib/resignations/decline-offer-eligibility";
 import { afterResponse } from "@/lib/http/after-response";
 import { ApiError } from "@/lib/http/api-errors";
-import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
@@ -509,7 +509,7 @@ async function notifyResignationWorkflow(
     });
   }
   const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
-  await createSystemNotification({
+  await raiseApproval(approvalIdentity("resignation", record.status), { via: "notice", notice: {
     actionUrl,
     actorId: "system",
     email: {
@@ -548,7 +548,7 @@ async function notifyResignationWorkflow(
     priority: tone === "danger" ? "critical" : "high",
     subjectHrId: record.employeeHrId,
     title,
-  });
+  } });
 }
 
 export function resignationErrorMessage(error: unknown) {
@@ -2734,7 +2734,7 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
     if (ageDays < 5) continue;
     for (const hrId of hrHrIds) {
       try {
-        await createSystemNotification({
+        await raiseApproval({ module: "resignation", step: "reminder" }, { via: "notice", notice: {
           channels: ["email", "push"],
           eventType: "resignation_sla_reminder",
           message: `${String(row.employee_name)}'s resignation (effective: ${String(row.effective_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"} with no final decision.`,
@@ -2749,7 +2749,7 @@ export async function runResignationSlaDaily(): Promise<{ processed: number; err
             ctaLabel: "Review resignation",
             tone: "danger" as const,
           },
-        });
+        } });
         processed++;
       } catch (error) {
         logError("Resignation SLA reminder failed for recipient", { labels: { event: "resignation_sla_reminder_failed", cron: "resignation-sla-reminder", recipientHrId: hrId }, error });

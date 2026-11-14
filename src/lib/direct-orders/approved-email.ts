@@ -7,6 +7,7 @@
 // the hero sales figure. Routing also stays here — who receives an approved order is decided
 // by the approval, not by the template's recipient rules — hence replaceRecipients.
 
+import { raiseApproval } from "@/lib/approvals/raise-approval";
 import { systemDeployment } from "@/config/system-settings";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
@@ -136,7 +137,7 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
     // Wording lives in /admin/email-templates under "Direct Order Approved". The grouped detail
     // sections and the hero figure are generated from the order itself, so they stay here and
     // reach the template through {{detailsSections}} and the heroStat passthrough.
-    const sendResult = await sendTemplatedEmail({
+    const sendResult = await raiseApproval({ decision: "approved", module: "direct_order", step: "decided" }, { via: "direct-email", send: () => sendTemplatedEmail({
       context: {
         ctaLabel: "Open Direct Orders report",
         ctaUrl: `${systemDeployment.productionUrl}/admin/direct-orders/report`,
@@ -153,7 +154,7 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
       origin: { eventType: "direct_order_approved", module: "direct_orders" },
       overrides: { cc, replaceRecipients: true, to: [DIRECT_ORDER_APPROVED_TO] },
       templateKey: "direct_order_approved",
-    });
+    }) });
     const outcome = sendResult.skipped ? `skipped (${sendResult.reason})` : `sent (${sendResult.id ?? "ok"})`;
     console.info(`[direct-orders] approved-email for ${row.id} → to=${DIRECT_ORDER_APPROVED_TO} cc=${cc.length}: ${outcome}`);
   } catch (error) {
