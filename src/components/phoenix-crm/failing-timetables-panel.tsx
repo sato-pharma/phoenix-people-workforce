@@ -55,7 +55,7 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
       }${more > 0 ? ` The first ${view.rows.length} are shown.` : ""}`}
     >
       {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
-      <div className="hidden lg:block">
+      <div className="hidden xl:block">
         <table className="w-full table-fixed border-collapse">
           <colgroup>
             <col className="w-[30%]" />
@@ -95,7 +95,7 @@ export function FailingTimetablesPanel({ onOpen, opened, view }: { onOpen: (shar
       </div>
 
       {/* Mobile: the same buildings as cards. */}
-      <div className="space-y-3 px-4 py-4 lg:hidden">
+      <div className="space-y-3 px-4 py-4 xl:hidden">
         {view.rows.map((row) => (
           <div key={row.sharedPlaceId} className="border border-slate-200 bg-white p-4">
             <Building row={row} />
