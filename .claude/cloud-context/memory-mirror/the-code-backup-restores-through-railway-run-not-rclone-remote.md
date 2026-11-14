@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3881682b-219d-457b-9086-74f9eb37981b
-  modified: 2026-11-03T19:53:47.173Z
+  modified: 2026-11-14T00:30:57.291Z
 ---
 
 First real run of `phoenix-code-backup` 2026-11-03 17:54 Cairo, restored and compared the same evening: 7 of 7 manifest rows matched, 1,984 Phoenix refs, 3 release files.
@@ -16,4 +16,4 @@ First real run of `phoenix-code-backup` 2026-11-03 17:54 Cairo, restored and com
 - **Reading the comparison:** "in backup but gone live" on Phoenix is branches deleted since the run, not a loss. `hmdm-android`'s bundle is 1,254 bytes by nature: its content is the APK release files.
 
 **Why:** the first attempts cost a refused login and a wrong service id (`railway status`'s top-level id is not the GraphQL service id).
-**How to apply:** use this route for any restore test; the private key `F:\GitHub-move-backup\code-backup-age-key.txt` is passed to `age -i` and never printed.
+**How to apply:** use this route for any restore test; the private key `C:\Users\satoh\.secrets\code-backup\code-backup-age-key.txt` (moved off the F: root on 14 Nov 2026) is passed to `age -i` and never printed.

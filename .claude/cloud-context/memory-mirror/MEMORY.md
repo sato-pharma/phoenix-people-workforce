@@ -29,8 +29,10 @@
 
 
 ## Inbox — new notes land here
+- [REC-032 owner decisions](rec-032-owner-decisions-same-notices-and-expense-batch.md) - same notices only (gaps listed, not wired); Expense Approvals keeps its batch save in the shared row (14 Nov 2026).
 - [four employees are never company-insured](four-employees-are-never-company-insured.md) - Ahmed Farag, Rasha Sabry, Reham Mahmoud, Samaa Mosaad (owner 2026-11-13); correct record = status no, wage empty, SI 0.
 - [restore drill kit + the rclone token file](restore-drill-kit-and-the-rclone-token-file.md) - one command, `~/.claude/scripts/restore-drill/tonight.sh <date>`; a missing `RCLONE_CONFIG` path is CREATED holding the Drive token, name it `notfound`.
+- [the enterprise refuses a GitHub token with no expiry](the-enterprise-refuses-a-github-token-with-no-expiry.md) - sato-pharma-phoenix answers 403 over 366 days; stranded the workflow watch and synthetic journeys 13 Nov 2026. New tokens need an expiry of a year or less.
 - [S04/S05 owner decisions](s05-owner-decisions-safety-owner-and-field-probation.md) - Report It owner = Samaa Mosaad (in-app + email, her Report It desk); probation = field roles only; daily-jobs split behind a safe switch (13 Nov 2026).
 
 
