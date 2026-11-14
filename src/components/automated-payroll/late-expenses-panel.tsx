@@ -147,9 +147,15 @@ export function LateExpensesPanel({ month, year, stepDirty, onChanged }: Props) 
             {pendingSwitch ? "Add the late-approved trips to this run?" : "Take the late-approved trips out of this run?"}
           </div>
           <p className="mt-1 break-words">
+            {/* Nothing listed is said in words — "The 0 trips listed here (0.00) are added" read as a broken sum
+                on the October 2026 run (owner: "fix the 0-trips wording"). */}
             {pendingSwitch
-              ? `The ${trips.length} trip${trips.length === 1 ? "" : "s"} listed here (${money(total)}) are added to this run's Expenses step for the people in it. `
-              : "The trips listed here leave this run's Expenses step and are only listed again. "}
+              ? trips.length === 0
+                ? "No late-approved trip is listed right now, so nothing is added yet. Any that is listed later is added to this run's Expenses step for the people in it. "
+                : `The ${trips.length} trip${trips.length === 1 ? "" : "s"} listed here (${money(total)}) ${trips.length === 1 ? "is" : "are"} added to this run's Expenses step for the people in it. `
+              : trips.length === 0
+                ? "Late-approved trips are no longer added to this run's Expenses step; any that appears is only listed. "
+                : "The trips listed here leave this run's Expenses step and are only listed again. "}
             The saved Expenses figures of every open run are cleared and its Expenses step reopens, so it has to be
             confirmed again.
           </p>

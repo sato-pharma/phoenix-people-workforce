@@ -375,6 +375,12 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     /The saved Expenses figures of every open run are cleared and its Expenses step reopens/,
     "the prompt says what the change clears",
   );
+  // With nothing listed it says so in words, never "The 0 trips listed here (0.00)" (owner: "fix the 0-trips wording").
+  assert.match(
+    LATE_EXPENSES_PANEL,
+    /trips\.length === 0\s*\?\s*"No late-approved trip is listed right now, so nothing is added yet\./,
+    "turning the switch ON with nothing listed says nothing is added yet",
+  );
 
   // ---- The standing-list delete asks first (owner: "build the confirm prompt before the standing-list delete") ----
   // One tap on the bin removed a person from every future month, with no undo. Both bins (the desktop row and
