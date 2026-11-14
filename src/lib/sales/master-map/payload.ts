@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 
 import {
   MASTER_MAP_FLAT_COLUMNS,
-  buildMasterMapTree,
+  buildMasterMapTreeYielding,
   flatShopCount,
   renderFlatRows,
   renderMasterRows,
@@ -269,7 +269,12 @@ export async function hashValues(
 
 /** What the payload needs from the outside world — injected so a test can run it without a database. */
 export type MasterMapPayloadDeps = {
-  buildTree: typeof buildMasterMapTree;
+  /**
+   * Builds the tree, pausing as it goes. May answer synchronously (a test stub), and is always awaited.
+   * The server passes `buildMasterMapTreeYielding`: on a new container this is the one build of the
+   * whole customer master, and it must not be a single block (14 Nov 2026 — see customer-merge.ts).
+   */
+  buildTree: (source: LoadedSource, pause: () => Promise<void>) => MasterMapTree | Promise<MasterMapTree>;
   loadSource: () => Promise<LoadedSource>;
   now: () => number;
   pause: () => Promise<void>;
@@ -306,6 +311,7 @@ export function createMasterMapPayload(deps: MasterMapPayloadDeps) {
     }
 
     await deps.pause();
+    const tree = await deps.buildTree(source, deps.pause);
     const workbook: CachedWorkbook = {
       distributorName: (code: string) => source.distributorNames.get(code) ?? code,
       loadedAt: deps.now(),
@@ -313,7 +319,7 @@ export function createMasterMapPayload(deps: MasterMapPayloadDeps) {
       renders: new Map(),
       sourceKey,
       stamp,
-      tree: deps.buildTree(source),
+      tree,
     };
     cached = workbook;
     return workbook;
@@ -440,7 +446,7 @@ export function createMasterMapPayload(deps: MasterMapPayloadDeps) {
 }
 
 const payload = createMasterMapPayload({
-  buildTree: buildMasterMapTree,
+  buildTree: buildMasterMapTreeYielding,
   loadSource: loadMasterMapSource,
   now: () => Date.now(),
   pause: yieldToEventLoop,

@@ -2347,6 +2347,7 @@ import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapPlanCacheTests } from "./master-map-plan-cache.test.ts";
+import { runMasterMapColdBuildYieldsTests } from "./master-map-cold-build-yields.test.ts";
 import { runCustomerChannelPreparedStemsTests } from "./customer-channel-prepared-stems.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
 import { runMasterMapFinderGridTests } from "./master-map-finder-grid.test.ts";
@@ -9009,6 +9010,10 @@ await runTest(
 await runTest(
   "master map hourly check (an hour with nothing changed rebuilds no tree and re-hashes nothing, a hand-edited row still moves the plan, and every loader field is in the fingerprint)",
   runMasterMapPlanCacheTests,
+);
+await runTest(
+  "master map cold build (a new server's first plan merges the customer master in slices, never one block, and hands back the same shops in the same order)",
+  runMasterMapColdBuildYieldsTests,
 );
 await runTest(
   "customer channel prepared stems (each keyword list is folded once, and not one classification moves against the old per-name folding)",
