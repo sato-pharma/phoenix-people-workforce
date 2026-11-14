@@ -1126,6 +1126,11 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_settle_venue_timetable and phoenix_crm_seat_places_in_venue REPLACED, and one NEW function —
   // phoenix_crm_customer_stands_on_another_place. It replaces nothing save_visit depends on.
   "supabase/migrations/20261114051314_phoenix_crm_validation_owner_decisions.sql",
+  // The items that audit left as they were, closed the same day: eight functions REPLACED, each from the body
+  // production held — the two review doors, the two building doors, phoenix_crm_place_on_trusted_point,
+  // phoenix_crm_share_line_validation, phoenix_crm_decide_request and phoenix_crm_reverse_list_request — and two
+  // clean-ups of stale values. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261114062049_phoenix_crm_validation_left_items.sql",
 ];
 
 /**

@@ -2523,6 +2523,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // service_role only. Proven on production inside a rolled-back transaction, 19 checks of 19 (docs/
   // phoenix-crm-shared-places.md, "The validation audit"). Functions only; re-applying is a no-op.
   "20261114051314_phoenix_crm_validation_owner_decisions.sql",
+  // Applied 14 Nov 2026 through scripts/apply-sql-file.mjs: staging first, then production with the aws-1 pooler.
+  // No ledger row on either. Rehearsed first on production inside a transaction that was rolled back, with the
+  // file's own begin and commit removed (14 scenario checks of 14). Read back on BOTH projects, md5(prosrc):
+  // phoenix_crm_decide_validation_review deb4db4e9342b4d09d3ac28a6fd3b75e, phoenix_crm_restore_validation
+  // 856f77c5db70d077b9e52d12c4b2c441, phoenix_crm_decide_shared_place 4692843a9d19b894c421f3868122ac34,
+  // phoenix_crm_restore_shared_place 1f197da1ea9943f050375c54e3e13358, phoenix_crm_place_on_trusted_point
+  // afb57a138edf00eff639ddab64922d50, phoenix_crm_share_line_validation 60782903ed872d66844618f2d6a02f0f,
+  // phoenix_crm_decide_request 867331bbeec8231a62d578a6c0921876, phoenix_crm_reverse_list_request
+  // 3f23ab63310174713f1867f46e674b90; each is executable by postgres and service_role only. Production data:
+  // 237 customers in use lost a re-open stamp and 641 seated places lost a copied pin, 0 of either left; the
+  // pre-image is phoenix_crm_backup_20261114.left_items_reopen_stamps (237) and .left_items_copied_pins (641).
+  // Re-applying is a no-op.
+  "20261114062049_phoenix_crm_validation_left_items.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

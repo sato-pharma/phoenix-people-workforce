@@ -34,7 +34,29 @@ import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
 
 /** What a saved decision did, in the review's own words. */
-export type PlaceCheckOutcome = "approved" | "rejected" | "refused" | "restored" | "kept" | "settled" | "reopened" | "already";
+export type PlaceCheckOutcome =
+  | "approved"
+  | "waiting_building"
+  | "rejected"
+  | "refused"
+  | "restored"
+  | "kept"
+  | "settled"
+  | "reopened"
+  | "already";
+
+/**
+ * What an approval did, from the server's own answer. 🔴 A CUSTOMER BEHIND A BUILDING STILL BEING CHECKED
+ * IS APPROVED AND WAITS (owner, 14 Nov 2026): the review is settled, and he is counted only once his
+ * building is approved. The control says so, instead of "Approved" over a customer still under To validate.
+ */
+export function approvalOutcome(answer: unknown, plain: "approved" | "restored"): PlaceCheckOutcome {
+  const waiting = answer !== null && typeof answer === "object" && (answer as { waitingForBuilding?: unknown }).waitingForBuilding === true;
+  return waiting ? "waiting_building" : plain;
+}
+
+/** Under an approval that waits for its building. */
+export const APPROVED_WAITS_FOR_BUILDING = "Saved. The customer is counted once his building is approved.";
 
 /**
  * 🔴 "ALREADY DECIDED" IS AN ANSWER, NOT AN ERROR (owner, 2026-11-08: "places checks is stale … many
@@ -106,6 +128,7 @@ export function usePlaceCheckDone(): (outcome: PlaceCheckOutcome) => PlaceCheckO
 
 const SAVED_LABEL: Record<PlaceCheckOutcome, { text: string; tone: PillTone }> = {
   approved: { text: "Approved", tone: "good" },
+  waiting_building: { text: "Approved, waits for the building", tone: "good" },
   kept: { text: "Kept", tone: "good" },
   refused: { text: "Refused", tone: "warn" },
   rejected: { text: "Rejected", tone: "warn" },
@@ -168,7 +191,13 @@ export function PlaceCheckSaved({ outcome }: { outcome: PlaceCheckOutcome }) {
     <div className="min-w-0 space-y-1" role="status">
       <CrmPill tone={label.tone}>{label.text}</CrmPill>
       <p className="break-words text-xs text-slate-500">
-        {approval ? `Saved. ${PLACE_APPROVED_NOT_A_LIST_ADD}` : outcome === "already" ? "This was decided already. The page updates itself." : "Saved."}
+        {approval
+          ? `Saved. ${PLACE_APPROVED_NOT_A_LIST_ADD}`
+          : outcome === "waiting_building"
+            ? APPROVED_WAITS_FOR_BUILDING
+            : outcome === "already"
+              ? "This was decided already. The page updates itself."
+              : "Saved."}
       </p>
     </div>
   );

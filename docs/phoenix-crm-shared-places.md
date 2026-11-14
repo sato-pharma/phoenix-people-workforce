@@ -748,11 +748,43 @@ On his three answers. Each row was copied first into `phoenix_crm_backup_2026111
 - **One review corrected.** فادى عاصم الشفاء at مستشفى الشفاء التخصصي still read "rejected" from 18 Oct, though the owner seated him there on 8 Nov. It is "approved", dated to that seating, with a note and a `validation_review_approved` event that carries what it was. After: 0 rejected reviews on an active place of a validated customer.
 - **15 same-door twins merged,** found through the `place_restored` events whose reason is `validation_restored`. The older place was retired through `phoenix_crm_update_place` in his name, the newer one kept, and the older one's 30 visits moved to it through `phoenix_crm_restamp_visit_locations`. 5 plan lines followed. No visit was judged again: 0 flags changed (29 ok, 1 far before and after), and 10 distances changed, by 76 m at most, because 4 of the pairs stood 2 to 84 m apart. After: each of the 15 customers is validated with exactly one active place.
 
-### Left as it is
+### The left items, closed the same day — `20261114062049_phoenix_crm_validation_left_items.sql`
 
-- "Approve a review while its building is held" is not built. It needs the building's release changed in the same file (`phoenix_crm_decide_shared_place` and `phoenix_crm_restore_shared_place`); 3 of the 9 reviews pending that morning in a held building would otherwise be left pending with nothing to decide.
-- `reopened_at` is still not cleared by `phoenix_crm_decide_shared_place`, `phoenix_crm_share_line_validation`, `phoenix_crm_decide_request` and `phoenix_crm_reverse_list_request`. 237 active customers keep an old stamp; no reader shows it while they are validated.
-- The "any pending review" test is unchanged in `loadTwinWorld`, `countValidationReviewsWaiting`, `phoenix_crm_place_on_trusted_point`, `phoenix_crm_decide_shared_place` and `phoenix_crm_restore_shared_place`.
-- The seated places that already carry a copied pin keep it (no backfill).
-- One seat stands in a retired building: حضانه احمد محروس, validated, 3 visits. Reported to the owner, not changed.
-- The Google refusal still names "within 150 m", and a retake on a short-named customer raises no "waiting for you" notice.
+The audit's first change listed six things as left as they were. The owner asked for them to be closed as one follow-up change (14 Nov 2026). Pinned by `tests/phoenix-crm-validation-left-items.test.ts`.
+
+- **Approving a customer behind a building still being checked.** Nobody behind a held building counts in a KPI until the building is approved (owner, 2026-10-14), yet approving that customer's held validation validated him at once. The approval is now kept and the customer waits: `phoenix_crm_decide_validation_review` and `phoenix_crm_restore_validation` answer `waiting_for_building`, the board draws "Approved, waits for the building", and the sentence under it is "Saved. The customer is counted once his building is approved." The release changed in the same file, because holding him there alone would have stranded him: `phoenix_crm_decide_shared_place` and `phoenix_crm_restore_shared_place` used to skip exactly the customers a review is held for (no timetable on file, `other_name`, `no_schedule`). A seat a person already approved is now validated when the building is approved, whatever its timetable verdict. Measured before it ran: 8 real reviews pending behind a held building (3 of them `other_name`) and no real customer validated behind one, so nobody's standing changed.
+- **The bell.** The "Validate again" bell is withdrawn on an approval that validates the customer and on one that waits for the building: in both the rep has nothing left to do.
+- **A waiting review counts only while its place is in use.** `phoenix_crm_place_on_trusted_point`, `phoenix_crm_decide_shared_place`, `phoenix_crm_restore_shared_place` and `loadTwinWorld` now make the test the door already made. A review left pending on a retired place is nobody's to decide: the page no longer lists it (`reviewStillToDecide`) and `countValidationReviewsWaiting` counts by the same test, read whole and paged, so the Needs you figure and the page can never disagree. Production held no such review that morning.
+- **The stamp of an old refusal.** `reopened_at` puts a customer first in To validate. Every door that validates a customer now clears it: the building's approval, `phoenix_crm_share_line_validation`, an add admitted validated or a bring-back with his place (`phoenix_crm_decide_request`), and a reversed drop (`phoenix_crm_reverse_list_request`). The 237 stamps those doors had left on customers in use were cleared; the 328 on customers not in use were not touched.
+- **The copied pin.** A seating has no reading of its own; until the audit the building's point was copied into the pin columns, where it read as a second reading taken at the customer's place. The 641 seated places whose pin was an exact copy of their point had it cleared. The other 6,038 pins were not touched.
+- **The stray seat.** حضانه احمد محروس stood validated in a retired building with 3 visits. On the owner's answer ("Send back") he was refused through the board's own refusal at 06:37 Cairo, reason "no signboard": the customer is to validate again and stamped, the place is retired, the review reads rejected, his 3 visits are unchanged, and the rep and his two managers were told in the app. No real seat stands in a retired building now.
+- **A retake on a short-named clinic customer** now raises the "waiting for you" notice to the Super Admin, like every other held validation (`retakePlaceSignboard`, `approvalNeedsFullName`).
+
+**Kept as it is, on purpose:** the Google refusal still says "within 150 m". That is the rule the owner sent the reps on 3 Oct, and `tests/phoenix-crm-google-place-check.test.ts` pins it. The bulk approve still draws plain "Approved" for a row that waits for its building.
+
+**How it reached the databases.** Rehearsed first on production inside a transaction that was rolled back: 14 scenarios of 14 passed and production read back untouched. Applied through `scripts/apply-sql-file.mjs` to staging, then production, and each of the eight functions was read back from `pg_proc` on both by its digest (the file's header lists them), `security definer`, executable by `postgres` and `service_role` only. The pre-image of the data is in `phoenix_crm_backup_20261114` on production: `left_items_reopen_stamps` (237), `left_items_copied_pins` (641) and the stray seat's four tables (customer, place, review, visits). That schema is never dropped.
+
+## The validation enhancements — owner, 14 Nov 2026
+
+Five follow-ups to the audit, asked for as one change ("build the five enhancements in one PR").
+
+### What is waiting is listed oldest first, with its wait
+
+Measured that morning: 46 validations and 38 polyclinic seatings waiting, the oldest for 11.6 days, listed newest first, so the longest wait sat at the bottom of the last page while the customer behind it stayed out of the KPIs. `src/lib/phoenix-crm/waiting-rules.ts`: the waiting rows are ordered oldest first and everything already decided keeps its newest-first order (`waitingOldestFirst`). Each waiting review, each held building and each waiting seated customer carries "Waiting 11 days" (hours under a day), in the warning tone from three days (`WAITING_LONG_HOURS`). A broken stamp goes last, never to the head of the queue. The rep's building picker carries no wait. Pinned by `tests/phoenix-crm-waiting-oldest-first.test.ts`.
+
+### Timetables that keep failing, and "This building has no timetable"
+
+Measured that morning: 380 timetable photographs refused in 30 days across 174 buildings, 28 of them refused on two or more different days, and no screen named them. The owner chose "List + declare".
+
+- **The list** (`failing-timetable-rules.ts`, `server/failing-timetables.ts`, `failing-timetables-panel.tsx`). A building refused on two or more different visit days in 30 days is listed on the deciders' board, the one refused on the most days first. A building refused on one day is one rep's ordinary three tries, which already end in a hold. A rejected building, a declared one and a test entry are not listed. It is housekeeping: it says where reps are stuck, never who did something wrong, and nobody is told anything by it. A district manager's board never draws it.
+- **The declaration.** The marker of 18 Oct ("A polyclinic with no timetable", above) was two columns set by hand on one building. The Super Admin now declares it on the building's own row, and takes it back: `POST /api/phoenix-crm/validation-reviews/shared-place/no-timetable` (permission `phoenix_crm` `update`, which the SFE Manager does not hold; `setSharedPlaceNoTimetable` checks `canDecideSharedPlaces` before anything is read). It writes `timetable_exempt_at` and `timetable_exempt_by_hr_id` and nothing else. Nobody is validated by it: each customer seated there still waits for his Approve, and the first click says so. A rejected building takes neither button.
+
+Pinned by `tests/phoenix-crm-failing-timetables.test.ts`.
+
+### Pins to check — left as it is
+
+The owner's answer was "Leave it". Nothing changed.
+
+### The no-visit exception says how many working days in a row
+
+"No visit on the last working day" read the same for a rep who missed yesterday and for one who had visited nobody in two weeks. The owner chose "Add days in a row". A run of two working days or more now reads "No visit for 8 working days in a row" on the exceptions board and in the 06:55 message; one day keeps its words. A full day of approved leave is skipped (a visit made on one still ends the run), a day that is not a working day (Thursday, Friday, a national holiday) is never in the list, and a half day of leave counts like any other day. The count looks back 22 working days and stops at 15, where it reads "or more". It is not made at all when the leave or the holiday calendar could not be read. The kind, its rung and who is told are unchanged. `noVisitStreak` in `src/lib/phoenix-crm/exceptions.ts`; pinned by `tests/phoenix-crm-no-visit-streak.test.ts`.

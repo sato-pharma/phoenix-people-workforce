@@ -311,7 +311,22 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     );
     assert.ok(countBlock.length > 0, "the count could not be located");
     assert.ok(!countBlock.includes("is_test"), "the page shows both worlds and marks each row, so the count filters neither");
-    assert.ok(countBlock.includes('{ count: "exact", head: true }'), "a head count, so the 1,000-row ceiling cannot shorten it");
+    // 14 Nov 2026: it was a head count of every pending review. A review left pending on a retired place
+    // is nobody's to decide and the page no longer lists it, so the count reads the waiting rows whole,
+    // paged, and asks the page's own test of each. A read it could not finish throws, never a short figure.
+    assert.ok(countBlock.includes("readEveryPage<Row>("), "read whole and paged, so the 1,000-row ceiling cannot shorten it");
+    assert.ok(!countBlock.includes(".limit("), "and never a bounded read");
+    assert.match(countBlock, /if \(capped\) throw new Error\(/, "a read that met its ceiling is refused, never counted short");
+    assert.ok(countBlock.includes("rows.filter((row) => reviewStillToDecide(row, placeById))"), "counted by the same test the page lists by");
+    assert.ok(
+      reviews.includes("reviews.filter((row) => reviewStillToDecide(row, placeById)).map((row): ValidationReviewRow =>"),
+      "and the page lists by it, so the two can never disagree",
+    );
+    assert.match(
+      countBlock,
+      /if \(review\.status !== "pending"\) return true;\s+const place = placeById\.get\(String\(review\.place_id\)\);\s+return !place \|\| place\.status === "active";/,
+      "a decided row is always shown, and a place that could not be read hides nothing",
+    );
     for (const swallow of ["catch", "|| 0"]) {
       assert.ok(!countBlock.includes(swallow), `a failed read must travel, never become a figure (${swallow})`);
     }

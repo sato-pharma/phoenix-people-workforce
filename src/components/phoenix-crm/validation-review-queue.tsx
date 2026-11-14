@@ -17,7 +17,7 @@ import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
-import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
@@ -341,12 +341,12 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     setSaving(decision);
     setProblem(null);
     try {
-      await crmPost<unknown>(
+      const decided = await crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews",
         { reviewId: row.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      markSaved(done(decision === "approve" ? "approved" : "rejected"));
+      markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));
       setSaving(null);
     } catch (error) {
       if (isAlreadyDecided(error)) {

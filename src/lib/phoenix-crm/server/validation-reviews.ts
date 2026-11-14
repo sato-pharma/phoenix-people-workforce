@@ -300,20 +300,45 @@ export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<
  * entries (owner, 2026-09-16), so a real-only count would be a board permanently calm about the only
  * queue that is his by name.
  *
- * A head count, so PostgREST's 1,000-row ceiling cannot shorten it, plus the oldest stamp so the row
- * can state its age. It THROWS on a failed read: the board turns a rejection into its amber "could
- * not be read" row, and a zero it cannot prove is the one shape that board must never have.
+ * Read whole and paged, so PostgREST's 1,000-row ceiling cannot shorten it, with the oldest stamp so the
+ * row can state its age. It THROWS on a failed read, and on a read it could not finish: the board turns a
+ * rejection into its amber "could not be read" row, and a zero it cannot prove is the one shape that
+ * board must never have.
  */
 export async function countValidationReviewsWaiting(): Promise<{ count: number; oldestAt: string | null }> {
-  const supabase = getSupabaseAdmin();
-  const [waiting, oldest] = await Promise.all([
-    supabase.from("phoenix_crm_validation_reviews").select("id", { count: "exact", head: true }).eq("status", "pending"),
-    supabase.from("phoenix_crm_validation_reviews").select("created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(1),
-  ]);
-  throwIfError(waiting.error);
-  throwIfError(oldest.error);
-  const first = ((oldest.data ?? []) as Row[])[0];
-  return { count: waiting.count ?? 0, oldestAt: first ? String(first.created_at) : null };
+  // 🔴 ONLY WHAT CAN STILL BE DECIDED IS COUNTED (owner, 14 Nov 2026, the items the audit left). A review
+  // left pending on a retired place (a rejected building, a place removed from the list) is nobody's to
+  // decide and the page no longer lists it (`reviewStillToDecide`), so a head count of every pending
+  // review would read 1 where the page shows nothing. The waiting rows are read whole, paged, oldest
+  // first, and the places they are about are asked for their status. Still throws on a failed read.
+  const { rows, error, capped } = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_validation_reviews")
+        .select("id, place_id, status, created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
+    { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(error);
+  if (capped) throw new Error("The place checks waiting could not be counted whole.");
+  const places = await selectByIds<Row>("phoenix_crm_places", "id, status", "id", [...new Set(rows.map((row) => String(row.place_id)))]);
+  const placeById = new Map(places.map((row) => [String(row.id), row]));
+  const waiting = rows.filter((row) => reviewStillToDecide(row, placeById));
+  return { count: waiting.length, oldestAt: waiting[0] ? String(waiting[0].created_at) : null };
+}
+
+/**
+ * Whether a review row is still somebody's to decide, for the page and for the count that must equal it.
+ * A DECIDED row always is shown (its history and its undo are its own). A WAITING row is, unless its
+ * place was read and is no longer in use. 🔴 A place that could not be read hides nothing: the row stays,
+ * because a waiting review that disappears is the one failure this queue must never have.
+ */
+function reviewStillToDecide(review: Row, placeById: ReadonlyMap<string, Row>): boolean {
+  if (review.status !== "pending") return true;
+  const place = placeById.get(String(review.place_id));
+  return !place || place.status === "active";
 }
 
 // ── Telling the Super Admin ─────────────────────────────────────────────────────────────────────
@@ -698,7 +723,8 @@ export async function loadValidationReviews(
 
   // One clock for the whole read, so two rows of one instant never read two different waits.
   const now = new Date();
-  const rows = reviews.map((row): ValidationReviewRow => {
+  // A review left waiting on a place no longer in use is nobody's to decide (`reviewStillToDecide`).
+  const rows = reviews.filter((row) => reviewStillToDecide(row, placeById)).map((row): ValidationReviewRow => {
     const customer = customerById.get(String(row.customer_id)) ?? {};
     const place = placeById.get(String(row.place_id)) ?? {};
     const google = (row.google && typeof row.google === "object" ? row.google : {}) as Row;
@@ -853,7 +879,10 @@ export async function loadValidationReviews(
  * and anything at all on a rejected one, still raise `review_decided`; taking a REJECTION back is
  * `restoreValidation` below.
  */
-export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; status: "approved" | "rejected" }> {
+export async function decideValidationReview(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ reviewId: string; status: "approved" | "rejected"; waitingForBuilding: boolean }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the place to decide.");
@@ -887,7 +916,11 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   // "validate again" notice an earlier refusal left in the rep's bell. Only the door and the take-back
   // of a rejection withdrew it, so a customer approved here kept a bell asking for a photo already
   // accepted. Never throws.
-  if (decision === "approve" && result.validated === true) await withdrawValidationNotConfirmed(String(result.customer_id));
+  // 🔴 AN APPROVAL BEHIND A BUILDING STILL BEING CHECKED WAITS FOR THE BUILDING (owner, 14 Nov 2026).
+  // The review is approved and the customer stays under To validate until his building is approved, which
+  // then validates him (migration 20261114062049). His photo is accepted all the same, so the bell goes.
+  const waitingForBuilding = decision === "approve" && result.waiting_for_building === true;
+  if (decision === "approve" && (result.validated === true || waitingForBuilding)) await withdrawValidationNotConfirmed(String(result.customer_id));
   // The "waiting for you" notice is answered.
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
@@ -910,7 +943,7 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   }
   // A rejected place leaves My map; its landing cards read again rather than waiting out their minute.
   invalidateMyMapSnapshotCache("phoenix-crm-decide-validation-review");
-  return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
+  return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding };
 }
 
 /**
@@ -928,7 +961,10 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
  * single character `-`. Who reversed it, when, and what the rejection had said are all on the record
  * either way (`decided_by_hr_id`, `decided_at`, and the `google` payload the function carries over).
  */
-export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ reviewId: string; validated: boolean; renamed: boolean }> {
+export async function restoreValidation(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ reviewId: string; validated: boolean; renamed: boolean; waitingForBuilding: boolean }> {
   // 🔴 THE SUPER ADMIN ALONE, AND NEVER BLOCKED (owner, 2026-11-10: "make the administrator able to approve
   // a rejected validation from the SFE in place checks but the SFE cannot; the administrator is never
   // blocked"). The short-name rule that greys out Approve does NOT stand in his way here: he approves the
@@ -969,7 +1005,13 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
   // The refusal is taken back, so the bell that asked him to capture it again goes with it.
   await withdrawValidationNotConfirmed(String(result.customer_id));
   await tellDecisionComment(viewer, "place", String(result.place_id), note);
-  return { reviewId: String(result.review_id), validated: result.validated === true, renamed: result.renamed === true };
+  return {
+    reviewId: String(result.review_id),
+    validated: result.validated === true,
+    renamed: result.renamed === true,
+    // His building is still being checked: the place is back and he counts once the building is approved.
+    waitingForBuilding: result.waiting_for_building === true,
+  };
 }
 
 // ── Refusing a validation the system never held ─────────────────────────────────────────────────

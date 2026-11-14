@@ -18,7 +18,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
-import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { CrmButton, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { phxButtonGhostClassName } from "@/components/ui/form-tokens";
@@ -94,8 +94,8 @@ export function RestoreAfterRejection({
     setSaving(nameParts ? "corrected" : "as-is");
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", restoreRequest(reviewId, note, nameParts), "restored");
-      markSaved(done("restored"));
+      const restored = await crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", restoreRequest(reviewId, note, nameParts), "restored");
+      markSaved(done(approvalOutcome(restored, "restored")));
       setSaving(null);
     } catch (error) {
       if (isAlreadyDecided(error)) {

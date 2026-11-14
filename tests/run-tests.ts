@@ -2182,6 +2182,7 @@ import { runPhoenixCrmValidationAuditDoorTests } from "./phoenix-crm-validation-
 import { runPhoenixCrmValidationAuditReviewsTests } from "./phoenix-crm-validation-audit-reviews.test.ts";
 import { runPhoenixCrmValidationAuditSqlTests } from "./phoenix-crm-validation-audit-sql.test.ts";
 import { runPhoenixCrmValidationAuditTimetableTests } from "./phoenix-crm-validation-audit-timetable.test.ts";
+import { runPhoenixCrmValidationLeftItemsTests } from "./phoenix-crm-validation-left-items.test.ts";
 import { runPhoenixCrmNoVisitStreakTests } from "./phoenix-crm-no-visit-streak.test.ts";
 import { runPhoenixCrmFailingTimetablesTests } from "./phoenix-crm-failing-timetables.test.ts";
 import { runPhoenixCrmWaitingOldestFirstTests } from "./phoenix-crm-waiting-oldest-first.test.ts";
@@ -8447,6 +8448,10 @@ await runTest(
 await runTest(
   "Phoenix CRM's no-visit exception and the morning message say how many working days in a row, leave and holidays skipped",
   runPhoenixCrmNoVisitStreakTests,
+);
+await runTest(
+  "Phoenix CRM validation: the items the audit left — an approval behind a held building waits, a review on a retired place holds nobody, validating clears the old stamp",
+  runPhoenixCrmValidationLeftItemsTests,
 );
 
 await runTest(

@@ -27,7 +27,7 @@
 import { useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
-import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
+import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
@@ -330,12 +330,12 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
     setSaving(decision);
     setProblem(null);
     try {
-      await crmPost<unknown>(
+      const decided = await crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews",
         { reviewId: customer.reviewId, decision, note, ...(decision === "reject" ? { refusalReason: reason } : {}) },
         "decided",
       );
-      markSaved(done(decision === "approve" ? "approved" : "rejected"));
+      markSaved(done(decision === "approve" ? approvalOutcome(decided, "approved") : "rejected"));
       setSaving(null);
     } catch (error) {
       if (isAlreadyDecided(error)) {

@@ -41,6 +41,8 @@ export function runPhoenixCrmFailingTimetablesTests(): void {
     refusal("one-day", "B-1", "2026-11-10", "2026-11-10T09:00:00Z"),
     refusal("one-day", "B-1", "2026-11-10", "2026-11-10T09:02:00Z"),
     refusal("one-day", "B-1", "2026-11-10", "2026-11-10T09:04:00Z"),
+    // A refusal with no visit day is never a second day for a building refused on one.
+    refusal("one-day", "B-1", null, "2026-11-11T09:00:00Z"),
     // Two different days.
     refusal("two-days", "b-2", "2026-11-03", "2026-11-03T10:00:00Z"),
     refusal("two-days", "B-2", "2026-11-09", "2026-11-09T10:00:00Z"),
