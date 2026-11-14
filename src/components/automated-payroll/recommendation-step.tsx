@@ -1062,9 +1062,11 @@ export function RecommendationStep({
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: on a phone the badge and the two Excel buttons do not fit one line, and the badge was
+            squeezed until "Confirmed" read "Co" (owner, 14 Nov 2026). */}
+        <div className="flex flex-wrap items-center gap-2">
           {confirmed ? (
-            <Badge variant="success" className="gap-1">
+            <Badge variant="success" className="shrink-0 gap-1">
               <Check className="size-3" />
               Confirmed
             </Badge>
