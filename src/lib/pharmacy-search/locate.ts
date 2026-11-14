@@ -19,7 +19,7 @@
  *   less. See `pickNearestBrick`.
  */
 
-import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
@@ -143,7 +143,7 @@ export async function resolvePharmacyCoordinates(input: {
   name: string;
 }): Promise<PharmacyCoordinates | null> {
   const supabase = getSupabaseAdmin();
-  const normalizedName = normalizeArabicPharmacyName(input.name);
+  const normalizedName = foldCustomerName(input.name);
 
   // 1. A rep physically stood there and captured the point — the only first-hand source we have.
   if (normalizedName) {

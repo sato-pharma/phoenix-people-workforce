@@ -74,7 +74,7 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.equal(pharmacyNameKey("صيدلية"), pharmacyNameKey("صيدليه"), "a name that is only the word keeps it, so it still compares");
 
     const rules = read("src/lib/phoenix-crm/pharmacy-call-rules.ts");
-    assert.match(rules, /import \{ normalizeArabicPharmacyName \} from "@\/lib\/pharmacy-master\/pharmacy-matching";/, "the letters are folded by the repo's one pharmacy normalizer, never a second copy");
+    assert.match(rules, /import \{ foldCustomerName \} from "@\/lib\/customer-master\/name-key";/, "the letters are folded by the repo's one pharmacy normalizer, never a second copy");
   }
 
   // ── 2. The pharmacy a doctor's visit names ────────────────────────────────────────────────────
