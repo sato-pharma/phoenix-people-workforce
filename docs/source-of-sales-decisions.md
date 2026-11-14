@@ -303,3 +303,22 @@ The audit asked whether two more caches go stale on a publish. Both were checked
 Brick coverage works the same way as the dashboard. `tests/closing-publication-refresh.test.ts` checks every cached read in the app that reads the publication. Each must either carry one of the refreshed tags or read the publication outside its cache; a new cache that does neither fails the test.
 
 Nothing a viewer sees changed in this step: the same four refreshes run at the same moments.
+
+## The same file, renamed, is refused (14 Nov 2026, audit REC-069)
+
+The duplicate guard could only match a file by its name and its figures. A copy of the same workbook saved under a new name and loaded under another month went through, because nothing kept what the file actually was.
+
+Every upload now keeps a **fingerprint**: the SHA-256 of the file's bytes, stored on the batch as `source_of_sales_import_batches.file_sha256`. The owner chose (14 Nov 2026) to refuse, as the guard already did for a matching name:
+
+- the same fingerprint already stored under a **different month**, or for a **different distributor**, is refused before anything is written. The message names the upload it repeats: the distributor, the month, the file name and the day it was uploaded;
+- the same distributor and the same month is the replace flow, and is untouched;
+- a blocked batch never became sales and is never matched;
+- the 187 batches stored before today have no fingerprint. Nothing is invented for them, so they are still caught by name and figures only.
+
+What is fingerprinted is always the file the person chose, never a workbook the server built from it. The Normalizer imports through a coded copy it writes in memory, and that copy carries its own creation time, so it would hash differently every run.
+
+Several sheets stored as one batch are fingerprinted together: the SHA-256 of their sorted fingerprints, so the order they were chosen in does not matter. One upload stored as several batches (a Phoenix template naming several distributors, or sheets spanning months) qualifies each batch by what tells it apart from the others: the distributor, the month, or both. Without that, the second batch of the same upload would read as the first one's file under another distributor. The months of such an upload are the sheets' own dates, never a month someone picked; a template split only by distributor is not qualified by month, so the same template loaded again under another month is still refused.
+
+The check runs inside `applyImportStoreRules` (step 3 above), so every screen and both writers apply it: Monthly Import, the Sales Upload (one sheet or several), the Office upload, the Direct channel and both Normalizer imports. The Uploaded Sheets list shows the first twelve characters of each fingerprint under the file name; the whole one is its tooltip.
+
+Pinned by `tests/upload-fingerprint.test.ts`.
