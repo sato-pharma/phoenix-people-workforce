@@ -34,6 +34,7 @@ import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-t
 import { misplacedComma, needsAGuess, normalizeNumberText } from "@/lib/sales/normalizer/number-text";
 import { numberProblem } from "@/lib/sales/normalizer/row-messages";
 import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
+import { fileSha256 } from "@/lib/sales/upload-fingerprint";
 import {
   productPeriodPricesFromRows,
   type ProductPriceOverrideRow,
@@ -195,6 +196,11 @@ export type DistributorSalesValidationResult = {
   distributor: SalesDistributorOption;
   failedRows: number;
   fileName: string;
+  /**
+   * The fingerprint of the bytes the person chose (upload-fingerprint.ts, REC-069). Set by the step that
+   * holds those bytes, just before the save; the save stores it and the duplicate guard compares it.
+   */
+  fileSha256?: string | null;
   importableRows: number;
   issues: DistributorSalesValidationIssue[];
   period: string | null;
@@ -215,6 +221,8 @@ export type SourceOfSalesUploadBatch = {
   distributorName: string;
   failedRows: number;
   fileName: string;
+  /** The fingerprint of the bytes it was read from; null for a batch stored before 14 Nov 2026. */
+  fileSha256?: string | null;
   importableRows: number;
   period: string | null;
   rowCount: number;
@@ -2513,6 +2521,7 @@ function mapSourceOfSalesBatch(row: Record<string, unknown>): SourceOfSalesUploa
     distributorName: String(row.distributor_name ?? ""),
     failedRows: Number(row.failed_rows ?? 0),
     fileName: String(row.file_name ?? ""),
+    fileSha256: typeof row.file_sha256 === "string" && row.file_sha256 ? row.file_sha256 : null,
     importableRows: Number(row.importable_rows ?? 0),
     period: row.period ? String(row.period) : null,
     rowCount: Number(row.total_rows ?? 0),
@@ -3338,6 +3347,7 @@ export async function persistDistributorSalesUpload(
     priceDistributorOf: (row) => row.distributorCode,
     totalRows: result.rowCount,
     sheetTotals: { totalQty: result.totals.totalQty, totalValue: result.totals.totalValue },
+    fileSha256: result.fileSha256 ?? null,
   });
   const parsedRows = stored.rows;
   // The batch stores what its rows hold. `result` stays the sheet's: it is the receipt, whose every
@@ -3373,6 +3383,7 @@ export async function persistDistributorSalesUpload(
       total_value: storedTotals.totalValue,
       blocking_reasons: result.blockingReasons,
       uploaded_by: uploadedBy,
+      file_sha256: result.fileSha256 ?? null,
     })
     .select("id,created_at")
     .single();
@@ -3493,7 +3504,7 @@ export async function createSourceOfSalesUpload(input: {
   if (input.dryRun) {
     return { ...parsed, batchId: null as string | null, createdAt: null as string | null };
   }
-  return persistDistributorSalesUpload(parsed, input.uploadedBy);
+  return persistDistributorSalesUpload({ ...parsed, fileSha256: fileSha256(buffer) }, input.uploadedBy);
 }
 
 // Buffer-based upload — the Normalizer's one-click "Import (validated)" path builds the coded workbook in
@@ -3510,6 +3521,12 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
   // Dry run (preview): parse + validate but DO NOT persist. Returns the validation result WITH
   // parsedRows attached (batchId/createdAt null) so the caller can build the import-preview diff.
   dryRun?: boolean;
+  /**
+   * The fingerprint of the bytes the person chose (upload-fingerprint.ts). A caller that hands in a
+   * workbook the SERVER built (the Normalizer's coded copy) must pass it: that copy hashes differently
+   * every time. Absent, the buffer is the chosen file and is hashed itself.
+   */
+  fileSha256?: string | null;
 }) {
   const references = await loadSalesReferenceData();
   const parsed = await parseDistributorSalesWorkbookBuffer({
@@ -3529,7 +3546,10 @@ export async function createSourceOfSalesUploadFromBuffer(input: {
     void parsedRows;
     return { ...result, batchId: null as string | null, createdAt: null as string | null };
   }
-  return persistDistributorSalesUpload(parsed, input.uploadedBy);
+  return persistDistributorSalesUpload(
+    { ...parsed, fileSha256: input.fileSha256 ?? fileSha256(input.buffer) },
+    input.uploadedBy,
+  );
 }
 
 export async function validateDistributorSalesFile(input: {

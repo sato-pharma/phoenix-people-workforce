@@ -21,6 +21,7 @@ import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import type { CodedRow, NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { repriceValue, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { fileSha256, uploadFingerprint } from "@/lib/sales/upload-fingerprint";
 import {
   MAX_UPLOAD_FILES,
   combineMonthReports,
@@ -576,6 +577,7 @@ export async function commitMonthlyUpload(input: {
       result: stamped,
       uploadedBy: input.uploadedBy,
       period,
+      fileSha256: fileSha256(await input.file.arrayBuffer()),
     });
   } catch (error) {
     if (isPostgresUniqueViolation(error)) {
@@ -837,6 +839,9 @@ export async function commitMonthlyUploadFiles(input: {
   const stored: { batchId: string; period: string; importedRows: number; fileNames: string[] }[] = [];
   for (const { group, period, stamped } of checked) {
     const memberNames = group.members.map((i) => fileNames[i]);
+    // Each batch is fingerprinted by the files in IT (a month's sheets), never the whole upload.
+    const memberDigests: string[] = [];
+    for (const i of group.members) memberDigests.push(fileSha256(await files[i].arrayBuffer()));
     let persisted: Awaited<ReturnType<typeof persistNormalizedBatch>>;
     try {
       persisted = await persistNormalizedBatch({
@@ -846,6 +851,7 @@ export async function commitMonthlyUploadFiles(input: {
         result: stamped,
         uploadedBy: input.uploadedBy,
         period,
+        fileSha256: uploadFingerprint(memberDigests),
       });
     } catch (error) {
       const landed = stored.length > 0 ? ` Already imported: ${stored.map((s) => s.period).join(", ")}.` : "";

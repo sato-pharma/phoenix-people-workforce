@@ -16,6 +16,7 @@ import {
 import { assertOfficeProductsOnAllowedLine } from "@/lib/sales/office-distributor";
 import { parseOfficePivotBuffer } from "@/lib/sales/office-pivot";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { fileSha256 } from "@/lib/sales/upload-fingerprint";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 
 // Office front door: parse the office pivot, resolve product NAMES → codes via the Office product
@@ -134,6 +135,7 @@ export async function commitOfficeAllocation(input: { buffer: ArrayBuffer | Buff
   if (result.status !== "validated") {
     return stripRows(result); // blocked: surface unmapped names, persist nothing
   }
-  const persisted = await persistOfficeAllocation(result, input.uploadedBy);
+  // The fingerprint of the Office workbook itself (REC-069): the same file under another month is refused.
+  const persisted = await persistOfficeAllocation({ ...result, fileSha256: fileSha256(input.buffer) }, input.uploadedBy);
   return persisted;
 }

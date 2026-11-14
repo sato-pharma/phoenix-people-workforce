@@ -2814,6 +2814,7 @@ import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.t
 import { runMonthlyImportValidateDryRunTests } from "./monthly-import-validate-dry-run.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runSalesImportOneDoorTests } from "./sales-import-one-door.test.ts";
+import { runUploadFingerprintTests } from "./upload-fingerprint.test.ts";
 import { runCustomerNameKeyTests } from "./customer-name-key.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
@@ -11113,6 +11114,11 @@ await runTest(
 await runTest(
   "every sales import runs its money rules through one door: only applyImportStoreRules deducts EPDA bonus units, checks the month lock and looks for the same workbook on a write; the Normalizer writer now refuses a locked month before anything is written; the same sheet through Monthly Import and the Normalizer stores identical rows, totals and duplicate check",
   runSalesImportOneDoorTests,
+);
+
+await runTest(
+  "the same file, renamed, is refused: every batch stores the fingerprint of the bytes the person chose (never the Normalizer coded copy), and the guard refuses it under another month or another distributor, naming the upload it repeats; the same distributor and month is the replace flow, and the parts of one upload never refuse each other",
+  runUploadFingerprintTests,
 );
 
 await runTest(

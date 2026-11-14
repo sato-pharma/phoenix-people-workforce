@@ -40,10 +40,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // import). It used to run in the Monthly Import commit route alone, which left every other monthly
 // upload screen with no cross-month check at all.
 //
-// It does NOT catch the same content uploaded under a renamed file; that needs a content hash
-// stored on the batch, and `source_of_sales_import_batches` has no hash column.
+// THE SAME BYTES, RENAMED (enterprise audit REC-069, F-SAL-002; owner, 14 Nov 2026: "refuse, like
+// today"). The name rule above cannot see a renamed copy, so every batch now keeps `file_sha256`, the
+// fingerprint of the bytes it was read from (upload-fingerprint.ts). The same fingerprint on a
+// non-blocked batch under a DIFFERENT month or a DIFFERENT distributor is refused, naming the upload it
+// repeats — checked first, because it needs no figures and holds whatever the file is called. A batch
+// stored before 14 Nov 2026 has no fingerprint and is still caught by name and figures only.
 //
-// Re-uploading the SAME period is untouched: that is the legitimate replace flow.
+// Re-uploading the SAME distributor and period is untouched: that is the legitimate replace flow.
 
 export type DuplicateUploadMatch = {
   id: string;
@@ -51,6 +55,11 @@ export type DuplicateUploadMatch = {
   fileName: string;
   totalRows: number;
   totalValue: number;
+  /** How the stored batch was matched: the same bytes, or the same name and figures. */
+  matchedBy?: "fingerprint" | "name_and_figures";
+  distributorCode?: string;
+  distributorName?: string;
+  createdAt?: string | null;
 };
 
 /** The batch a save step is about to write: its file name, its period and the figures it stores. */
@@ -74,6 +83,8 @@ export type DuplicateUploadCandidate = {
    * file did in September. Absent, the stored quantity is compared as it always was.
    */
   totalQtyAt?: (period: string | null) => number;
+  /** The fingerprint of the bytes this batch is read from (upload-fingerprint.ts); absent, none is compared. */
+  fileSha256?: string | null;
 };
 
 /** One row of the file being saved, as totalValueAtPeriod re-prices it. */
@@ -237,10 +248,125 @@ export function duplicateUploadMessage(match: DuplicateUploadMatch, period: stri
 export async function assertNotADuplicateUpload(
   input: DuplicateUploadCandidate & { distributorCode: string },
 ): Promise<void> {
+  // The same bytes first: it holds whatever the file is called, and needs no figures.
+  const sameBytes = await findFingerprintClash(input);
+  if (sameBytes) {
+    throw new SalesWorkflowError("duplicate_upload", fingerprintClashMessage(sameBytes, input), 409, {
+      existingBatchId: sameBytes.id,
+      existingDistributorCode: sameBytes.distributorCode ?? null,
+      existingPeriod: sameBytes.period,
+      matchedBy: "fingerprint",
+    });
+  }
   const match = await findDuplicateUploadBatch(input);
   if (!match) return;
   throw new SalesWorkflowError("duplicate_upload", duplicateUploadMessage(match, input.period), 409, {
     existingBatchId: match.id,
     existingPeriod: match.period,
+    matchedBy: "name_and_figures",
   });
+}
+
+/** A stored batch as the fingerprint lookup reads it. */
+export type StoredFingerprintBatch = {
+  id: unknown;
+  period: unknown;
+  file_name: unknown;
+  status: unknown;
+  distributor_code: unknown;
+  distributor_name: unknown;
+  created_at: unknown;
+  total_rows: unknown;
+  total_value: unknown;
+  file_sha256: unknown;
+};
+
+/**
+ * The first stored batch with these exact bytes under a different month or a different distributor, or
+ * null. The same distributor and month is the replace flow and never a clash; a blocked batch never
+ * became sales. Pure: the query only narrows the rows, this decides.
+ */
+export function pickFingerprintClash(
+  rows: readonly StoredFingerprintBatch[],
+  candidate: { distributorCode: string; period: string | null; fileSha256?: string | null },
+): DuplicateUploadMatch | null {
+  const digest = String(candidate.fileSha256 ?? "").trim().toLowerCase();
+  if (!digest) return null;
+  const period = candidate.period ?? null;
+  const distributor = candidate.distributorCode.trim().toUpperCase();
+  const clash = rows.find((row) => {
+    if (row.status === "blocked") return false;
+    if (String(row.file_sha256 ?? "").trim().toLowerCase() !== digest) return false;
+    const rowPeriod = typeof row.period === "string" ? row.period : null;
+    const rowDistributor = String(row.distributor_code ?? "").trim().toUpperCase();
+    return rowPeriod !== period || rowDistributor !== distributor;
+  });
+  if (!clash) return null;
+  return {
+    createdAt: typeof clash.created_at === "string" ? clash.created_at : null,
+    distributorCode: String(clash.distributor_code ?? ""),
+    distributorName: String(clash.distributor_name ?? "") || String(clash.distributor_code ?? ""),
+    fileName: String(clash.file_name ?? ""),
+    id: String(clash.id),
+    matchedBy: "fingerprint",
+    period: typeof clash.period === "string" ? clash.period : null,
+    totalRows: Number(clash.total_rows ?? 0),
+    totalValue: Number(clash.total_value ?? 0),
+  };
+}
+
+/** The stored batch with these exact bytes under another month or distributor (pickFingerprintClash). */
+export async function findFingerprintClash(input: {
+  distributorCode: string;
+  period: string | null;
+  fileSha256?: string | null;
+}): Promise<DuplicateUploadMatch | null> {
+  const digest = String(input.fileSha256 ?? "").trim().toLowerCase();
+  if (!digest) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("source_of_sales_import_batches")
+    .select("id,period,file_name,status,distributor_code,distributor_name,created_at,total_rows,total_value,file_sha256")
+    .eq("file_sha256", digest)
+    .neq("status", "blocked")
+    .order("created_at", { ascending: true })
+    .limit(50);
+  // Like the name lookup: a guard that cannot read must not silently pass.
+  if (error) {
+    throw new SalesWorkflowError(
+      "duplicate_check_failed",
+      `Could not check whether this file has already been imported: ${error.message}`,
+      503,
+    );
+  }
+  return pickFingerprintClash(data ?? [], input);
+}
+
+/** "14 Nov 2026" in Cairo, or null. */
+function cairoDay(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+}
+
+/** The refusal for the same bytes, naming the upload it repeats and what to do instead. */
+export function fingerprintClashMessage(
+  match: DuplicateUploadMatch,
+  input: { distributorCode: string; period: string | null },
+): string {
+  const earlier = match.period ?? "that month";
+  const where = `${match.distributorName || match.distributorCode || "another distributor"} for ${match.period ?? "another period"}`;
+  const when = cairoDay(match.createdAt);
+  const sameDistributor =
+    String(match.distributorCode ?? "").trim().toUpperCase() === input.distributorCode.trim().toUpperCase();
+  const again = sameDistributor ? `as ${input.period ?? "this period"}` : "for another distributor";
+  const fix = sameDistributor
+    ? `If you meant to replace ${earlier}, import it under that month instead; if ${earlier} was the wrong month for it, delete that upload first.`
+    : "If it was filed under the wrong distributor, delete that upload first and import it under the right one.";
+  const uploaded = when ? `, uploaded ${when}` : "";
+  return (
+    `This exact file was already imported as ${where} ("${match.fileName}"${uploaded}) — the same bytes, whatever ` +
+    `the file is called now. Importing it again ${again} would count the same sales twice. If this really is ` +
+    `different data, re-export it from the distributor. ${fix}`
+  );
 }
