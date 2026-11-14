@@ -8,9 +8,9 @@ import {
   diceCoefficient,
   jaccardSimilarity,
   nameTokens,
-  normalizeArabicPharmacyName,
   resolvePharmacyMatchConfidence,
 } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 import {
   DEFAULT_VENUE_TYPE,
   venueRequiresDistributorCode,
@@ -138,8 +138,8 @@ export function signMatchesClaimedName(
   signText: string | null,
   claimedName: string | null,
 ): { matches: boolean | null; similarity: number | null } {
-  const sign = normalizeArabicPharmacyName(signText);
-  const claim = normalizeArabicPharmacyName(claimedName);
+  const sign = foldCustomerName(signText);
+  const claim = foldCustomerName(claimedName);
   if (!sign || !claim) return { matches: null, similarity: null };
 
   const jaccard = jaccardSimilarity(nameTokens(signText), nameTokens(claimedName));

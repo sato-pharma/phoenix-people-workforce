@@ -2352,6 +2352,7 @@ import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapPlanCacheTests } from "./master-map-plan-cache.test.ts";
+import { runMasterMapColdBuildYieldsTests } from "./master-map-cold-build-yields.test.ts";
 import { runCustomerChannelPreparedStemsTests } from "./customer-channel-prepared-stems.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
 import { runMasterMapFinderGridTests } from "./master-map-finder-grid.test.ts";
@@ -2811,6 +2812,7 @@ import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.t
 import { runMonthlyImportValidateDryRunTests } from "./monthly-import-validate-dry-run.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runSalesImportOneDoorTests } from "./sales-import-one-door.test.ts";
+import { runCustomerNameKeyTests } from "./customer-name-key.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
@@ -9039,6 +9041,10 @@ await runTest(
   runMasterMapPlanCacheTests,
 );
 await runTest(
+  "master map cold build (a new server's first plan merges the customer master in slices, never one block, and hands back the same shops in the same order)",
+  runMasterMapColdBuildYieldsTests,
+);
+await runTest(
   "customer channel prepared stems (each keyword list is folded once, and not one classification moves against the old per-name folding)",
   runCustomerChannelPreparedStemsTests,
 );
@@ -11102,6 +11108,11 @@ await runTest(
 await runTest(
   "every sales import runs its money rules through one door: only applyImportStoreRules deducts EPDA bonus units, checks the month lock and looks for the same workbook on a write; the Normalizer writer now refuses a locked month before anything is written; the same sheet through Monthly Import and the Normalizer stores identical rows, totals and duplicate check",
   runSalesImportOneDoorTests,
+);
+
+await runTest(
+  "one customer name key: foldCustomerName is the one matcher Pharmacy Master, Pharmacy Search, Direct Orders and Phoenix CRM pharmacy rules read, moved unchanged; a table of sample names folds alike from every caller, and every other Arabic fold is listed as a known difference or not a customer name",
+  runCustomerNameKeyTests,
 );
 
 await runTest(

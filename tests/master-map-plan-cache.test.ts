@@ -228,7 +228,7 @@ export async function runMasterMapPlanCacheTests() {
   );
   assert.match(
     payload2,
-    /await deps\.pause\(\);\s*const workbook: CachedWorkbook = \{[\s\S]*?tree: deps\.buildTree\(source\)/,
+    /await deps\.pause\(\);\s*const tree = await deps\.buildTree\(source, deps\.pause\);\s*const workbook: CachedWorkbook = \{[\s\S]*?\btree,/,
     "a real rebuild still yields to the loop before it builds the tree",
   );
   assert.match(

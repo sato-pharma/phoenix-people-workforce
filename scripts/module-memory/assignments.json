@@ -831,7 +831,7 @@
   "marketing-validation-report-labels-the-link-not-the-customer": "marketing",
   "marketing-venue-evidence-was-writable-only-at-insert": "marketing",
   "marketing-xlsx-requests-were-test-data-deleted-on-purpose": "marketing",
-  "master-map-sheet-live-on-prod-2026-08-17": "sales-imports",
+  "master-map-sheet-live-on-prod-2026-08-17": "sales-master-map",
   "master-workbook-keyset-live-on-prod-2026-08-15": "sales-imports",
   "match-module-design-before-building-ui": "platform",
   "mcp-apply-migration-version-drift": "database",

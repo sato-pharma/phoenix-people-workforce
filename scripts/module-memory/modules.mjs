@@ -209,6 +209,24 @@ export const MODULES = [
     keywords: ["source of sales", "sos", "distributor", "distributors", "sales import", "sales upload", "master map", "customer map", "normalizer"],
     tables: ["source_of_sales", "sos_", "distributor"],
   },
+  // 🔴 SPLIT 2026-11-14, FOR THE REASON `phoenix-crm-approvals` RECORDS: `sales-imports` measured a 4,106-byte
+  // pointer against the 4,000 margin once the Master Map cold-build rule (the stall alert) landed. The Master
+  // Map — the live Google Sheet's feed, its customer merge, its tree and the hourly plan cache — is its own
+  // family with its own folders, so its two rules and its sheet note moved VERBATIM. `sales-imports` KEEPS
+  // EVERY GLOB IT HAD, so a file under `src/lib/sales/master-map/` loads the PAIR and nothing that used to
+  // arrive stops arriving. The customer-channel rule stays: `customer-channel.ts` is an import file too.
+  {
+    id: "sales-master-map",
+    title: "Source of Sales — the Master Map sheet and its feed",
+    scope: "The Master Map live Google Sheet: the feed it pulls, the customer merge into one row per shop, the region → area → brick tree, the hourly plan and its cache, and what a new server's first build costs the web thread.",
+    globs: [
+      "src/lib/sales/master-map/**",
+      "app/api/sales/master-map/**",
+      "tests/master-map-*",
+    ],
+    keywords: ["master map", "master map sheet", "find a pharmacy", "customer merge", "plan cache", "Code.gs"],
+    tables: [],
+  },
   {
     id: "sales-attribution",
     title: "Attribution, achievement, targets and sales territory",
@@ -782,7 +800,7 @@ export const MODULES = [
     title: "Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans",
     scope: "The vendor CRM sync (iReports360), visits and call rates, coverage and frequency, Reps List, Reps Plans, KPIs, double visits, doctor lists, field activity.",
     globs: [
-      "src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**",
+      "src/lib/{crm,crm-integrity,customer-360,customer-identity,customer-master,double-visit-analytics,visits-report,field-activity,weekly-planning}/**",
       "src/components/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,double-visit-report,field-activity,weekly-planning}/**",
       "app/**/{crm,crm-integrity,crm-tools,field-crm,customer-360,double-visit-analytics,double-visit-data-integrity,double-visit-report,dv-planner,doctor-coverage,doctor-coverage-settings,doctor-list,doctor-list-changes,rep-doctor-lists,reps-list,reps-plans,kpis,field-activity,visit-entry,visits,plan-verification,weekly-plans,plans,my-list,contact-review}/**",
       "tests/*{crm,ireports,visit,reps-list,reps-plans,kpi,double-visit,doctor-list,coverage}*",

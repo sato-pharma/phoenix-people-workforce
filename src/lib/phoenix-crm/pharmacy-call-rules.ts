@@ -1,5 +1,5 @@
 import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
-import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import { foldCustomerName } from "@/lib/customer-master/name-key";
 
 /**
  * Phoenix CRM — a PHARMACY CALL, with no I/O.
@@ -209,7 +209,7 @@ export const PHARMACY_CALL_REP_NOTE = "Recorded. Pharmacy calls need no plan and
  * from as free text — "ص.الفيومي", "صيدلية الفيومي", "صيدليه الفيومى" — and the list carries the
  * vendor's spelling, so a plain lower-case compare reads one pharmacy as three.
  *
- * The letters are folded by the Pharmacy Master's own normalizer (`normalizeArabicPharmacyName`:
+ * The letters are folded by the customer name key (`foldCustomerName`, customer-master/name-key.ts:
  * diacritics, tatweel, the alef and ya forms, case, punctuation), never a second copy of it. On top of
  * that, only what this match needs: Arabic-Indic digits read as digits (that normalizer drops them),
  * ة read as ه and ؤ ئ as و ي, and the word "pharmacy" dropped wherever it stands — صيدلية, صيدليه, the
@@ -221,7 +221,7 @@ const PHARMACY_WORDS = new Set(["صيدليه", "ص", "pharmacy"]);
 
 export function pharmacyNameKey(name: string): string {
   const digits = name.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660));
-  const tokens = normalizeArabicPharmacyName(digits)
+  const tokens = foldCustomerName(digits)
     .replace(/ة/g, "ه")
     .replace(/ؤ/g, "و")
     .replace(/ئ/g, "ي")
