@@ -39,7 +39,7 @@
 // and Upper Egypt 1 on Pedia, and the sheet has to say all three.
 
 import type { MasterMapCustomer, MasterMapCustomerInput } from "@/lib/sales/master-map/customer-merge";
-import { mergeMasterMapCustomers } from "@/lib/sales/master-map/customer-merge";
+import { mergeMasterMapCustomers, mergeMasterMapCustomersYielding } from "@/lib/sales/master-map/customer-merge";
 
 export type RegionInput = { regionCode: string; regionName: string };
 export type AreaInput = { areaCode: string; areaName: string; regionCode: string };
@@ -169,7 +169,7 @@ function perAreaPerLine<T extends { areaCode: string; lineName: string }>(
   return byArea;
 }
 
-export function buildMasterMapTree(input: {
+export type MasterMapTreeInput = {
   /** Optional: absent means every area reports its managers as unknown rather than as blank. */
   areaManagers?: readonly AreaManagerInput[];
   areas: readonly AreaInput[];
@@ -178,8 +178,27 @@ export function buildMasterMapTree(input: {
   /** Optional: absent or empty simply means no region borrows anything, which is a valid sheet. */
   organogramAreas?: readonly OrganogramAreaInput[];
   regions: readonly RegionInput[];
-}): MasterMapTree {
-  const merged = mergeMasterMapCustomers(input.customers);
+};
+
+export function buildMasterMapTree(input: MasterMapTreeInput): MasterMapTree {
+  return treeOfMerged(input, mergeMasterMapCustomers(input.customers));
+}
+
+/**
+ * The same tree, for the web server: the customer merge — nearly all of the build — pauses between
+ * slices so a new container's first Master Map check never holds every page (14 Nov 2026). What is left
+ * after the merge is grouping by brick, area and region, well under a tenth of a second.
+ */
+export async function buildMasterMapTreeYielding(
+  input: MasterMapTreeInput,
+  pause: () => Promise<void>,
+): Promise<MasterMapTree> {
+  const merged = await mergeMasterMapCustomersYielding(input.customers, pause);
+  await pause();
+  return treeOfMerged(input, merged);
+}
+
+function treeOfMerged(input: MasterMapTreeInput, merged: MasterMapCustomer[]): MasterMapTree {
 
   const customersByBrick = new Map<string, MasterMapCustomer[]>();
   for (const customer of merged) {
