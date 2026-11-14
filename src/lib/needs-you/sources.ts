@@ -65,6 +65,9 @@ import { ApiError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmDecisionCounts, phoenixCrmReadsDecisions } from "@/lib/phoenix-crm/server/needs-you";
 import { listPendingPrivateCalendarDataDisputes } from "@/lib/private-calendar/disputes";
+import { countOpenDeductionsDisputes } from "@/lib/deductions/comments";
+import { isDeductionsDecisionActor } from "@/lib/deductions/permissions";
+import { countExhaustedDurableEmails } from "@/lib/notifications/durable-email";
 import { VALIDATION_REVIEWS_PATH } from "@/lib/phoenix-crm/server/validation-reviews";
 import { VISIT_RECORDING_ADMIN_PATH } from "@/lib/phoenix-crm/visit-recording-rules";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
@@ -1378,6 +1381,70 @@ const hireHandoffGaps: NeedsYouAdapter = {
   },
 };
 
+// ── Deduction disputes and stopped approval emails (enterprise audit REC-031, 14 Nov 2026) ──
+
+/**
+ * A deduction dispute nobody has answered. It counts nothing itself: the one producer is the function
+ * behind the Deduction Disputes rail badge, so the board and the badge cannot disagree. A read failure
+ * THROWS (amber, never a zero) — unlike the badge route, which settles a failure at 0.
+ *
+ * NO `cost`: one read of the comment history (10 rows on 14 Nov 2026) and one read of the active
+ * lines it names — far inside the 8-second budget, so it belongs in the light lane.
+ */
+const deductionDisputes: NeedsYouAdapter = {
+  id: "deduction-disputes",
+  load: async (access) => {
+    if (!isDeductionsDecisionActor(access)) {
+      return { status: "not-applicable", because: "A deduction dispute is answered by the Super Admin alone" };
+    }
+    return countItem({
+      id: "deduction-disputes",
+      key: "deduction-disputes:waiting",
+      count: await countOpenDeductionsDisputes(),
+      label: (count) => `${count} deduction ${plural(count, "dispute is", "disputes are")} waiting for your reply`,
+      // No SLA on these upstream, so no verdict is invented here.
+      overdue: false,
+      lane: "yours",
+      kind: "approval",
+      note: "An employee questioned a deduction on the payslip and nobody has answered yet. Reply on the Disputes tab.",
+    });
+  },
+};
+
+/**
+ * An approval email that stopped retrying. Gated on the same `admin` `update` that "send again"
+ * needs, so it is only "yours" for someone who can press the button; anyone else is refused with
+ * `Forbidden:`, which `service.ts` reads as not-applicable. The person usually got the in-app and
+ * Telegram notice already — what is lost is the email, which is why this is a flag and not an approval.
+ *
+ * NO `cost`: one counted read of the failed rows, normally none.
+ */
+const stoppedApprovalEmails: NeedsYouAdapter = {
+  id: "stopped-approval-emails",
+  load: async (access, now) => {
+    await assertPermission(access, "admin", "update");
+    const { count, oldestAt } = await countExhaustedDurableEmails();
+    if (count <= 0) return EMPTY;
+    return ok([
+      {
+        key: "stopped-approval-emails:exhausted",
+        sourceId: "stopped-approval-emails",
+        kind: "flag",
+        lane: "yours",
+        label: `${count} approval ${plural(count, "email", "emails")} stopped after every retry and will not be sent unless you send ${count === 1 ? "it" : "them"} again`,
+        count,
+        people: [],
+        href: needsYouDestinations["stopped-approval-emails"].href,
+        externalUrl: null,
+        oldestAt,
+        ageDays: ageDaysSince(oldestAt, now),
+        overdue: false,
+        note: "Open Email Notifications, read why each one failed, and press Send again once the cause is fixed.",
+      },
+    ]);
+  },
+};
+
 // ── The vendor accounts (owner, 3 Nov 2026, vendor-accounts-rules.ts) ──
 
 const VENDOR_NOT_YOURS = "A vendor account is the Super Admin's to settle";
@@ -1428,6 +1495,8 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   officeAllocationDrift,
   organogramSeatDrift,
   hireHandoffGaps,
+  deductionDisputes,
+  stoppedApprovalEmails,
   vendorGithub,
   vendorWhatsApp,
   vendorTelegram,

@@ -151,6 +151,17 @@ export const needsYouSourceIds = [
   // `hire_handoff_steps` (src/lib/employees/hire-handoff.ts); one row per person, linked to the
   // record; the board never retries anything itself.
   "hire-handoff-gaps",
+  // Added 2026-11-14 (enterprise audit REC-031). A deduction dispute whose newest line is the
+  // employee's (nobody has answered since) on a deduction still active on the payslip — the same count
+  // as the Deduction Disputes rail badge (countOpenDeductionsDisputes). The badge was the only place it
+  // showed, so a dispute waited unseen by anyone who did not open that tab. Super Admin only: a reply
+  // is his alone (isDeductionsDecisionActor).
+  "deduction-disputes",
+  // Added 2026-11-14 (enterprise audit REC-031). An approval email (a durable direct email) that used
+  // every outbox retry and will not be tried again until someone presses "send again" on Email
+  // Notifications — the same rows that screen lists (listExhaustedDurableEmails). The drain alarm sees
+  // them for a week; this keeps each one on the board until it is sent again.
+  "stopped-approval-emails",
   // Added 2026-11-03, after GitHub suspended the account on 2 Nov and no board said so. Three sources rather
   // than one, so one failed read cannot hide another or print a false all-clear (vendor-accounts-rules.ts).
   "vendor-github",
@@ -192,6 +203,8 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "office-allocation-drift": "Office allocation that no longer matches the rule",
   "organogram-seat-drift": "Employee records that disagree with the organogram",
   "hire-handoff-gaps": "New hires whose hand-off did not finish",
+  "deduction-disputes": "Deduction disputes waiting for a reply",
+  "stopped-approval-emails": "Approval emails that stopped retrying",
   "vendor-github": "The GitHub account",
   "vendor-whatsapp": "The WhatsApp account",
   "vendor-telegram": "The Telegram bot",
@@ -258,6 +271,11 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // Employee Master: each item appends `?edit=<hr id>` and opens that new hire's record, where a
   // missing login, CV or work email is finished by hand. The board links; it never retries.
   "hire-handoff-gaps": { href: "/employees", screen: "Employee Master" },
+  // The Disputes tab of Deductions — where the reply is written. The board links; it never replies.
+  "deduction-disputes": { href: "/admin/deductions?tab=disputes", screen: "Deduction Disputes" },
+  // Email Notifications, whose "Approval emails that did not send" list carries the "send again"
+  // button for each one. The board links; it never re-queues anything itself.
+  "stopped-approval-emails": { href: "/admin/email-notifications", screen: "Email Notifications" },
   // An account is settled on the vendor's own site, and no Phoenix screen can do it. System Audit is where the
   // failed runs behind these rows are recorded, so that is where the board sends him to read more.
   "vendor-github": { href: "/admin/system-audit", screen: "System Audit" },
