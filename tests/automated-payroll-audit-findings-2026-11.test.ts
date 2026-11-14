@@ -10,7 +10,7 @@ import {
 import { isRunHoldAction, RUN_HOLD_ACTIONS } from "../src/lib/automated-payroll/transition-claim.ts";
 import { assertSettlementTarget, settlementCeiling } from "../src/lib/automated-payroll/held-settlements.ts";
 import { jsonError } from "../src/lib/automated-payroll/http.ts";
-import { PART2_READY_CHANNELS, part2ReadyChannels } from "../src/lib/automated-payroll/notify.ts";
+import { PART2_READY_CHANNELS, PUBLISHED_CHANNELS, part2ReadyChannels } from "../src/lib/automated-payroll/notify.ts";
 import {
   assertPart2FileMatchesStamp,
   compareNonEmployees,
@@ -404,6 +404,18 @@ export async function runAutomatedPayrollAuditFindings202611Tests() {
     STANDING_LIST_PANEL,
     /This cannot be undone: to bring them back they have to be typed in again\./,
     "the prompt says the delete cannot be undone",
+  );
+
+  // ---- PUBLISH TO PAYSLIPS NEVER EMAILS THE CEO OR FINANCE, PERMANENTLY (owner, 14 Nov 2026) ---------
+  // "make publish to payslips not send email to finance or ceo permentatly".
+  assert.deepEqual([...PUBLISHED_CHANNELS], ["in_app", "push"], "publishing tells them in Phoenix and on their phones, never by email");
+  const notifySource = readFileSync("src/lib/automated-payroll/notify.ts", "utf8");
+  const publishedBody = notifySource.slice(notifySource.indexOf("export async function notifyPublished"));
+  assert.match(publishedBody, /channels: \[\.\.\.PUBLISHED_CHANNELS\],/, "the publish notice sends exactly that list");
+  assert.doesNotMatch(
+    publishedBody.slice(0, publishedBody.indexOf("\n}\n")),
+    /"email"/,
+    "no email channel is added beside it",
   );
 
   // ---- CONFIRM PART 2 CAN GO WITHOUT ITS EMAIL, THIS ONCE (owner, 14 Nov 2026) -----------------------
