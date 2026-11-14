@@ -38,7 +38,8 @@ const WRITERS: ReadonlyArray<readonly [string, number, string]> = [
   ["src/lib/direct-orders/pharmacy-validation.ts", 1, "a direct-order pharmacy validated"],
   ["src/lib/direct-orders/pharmacy-probation.ts", 1, "a venue promoted out of probation"],
   ["src/lib/customer-identity/server/decisions.ts", 3, "an identity link confirmed, ruled apart or withdrawn"],
-  ["src/lib/sales/monthly-closing-publication.ts", 2, "a closing published or unpublished"],
+  // Publish and unpublish both call onClosingPublicationChanged (tests/closing-publication-refresh.test.ts).
+  ["src/lib/sales/closing-publication-refresh.ts", 1, "a closing published or unpublished"],
   ["src/lib/customer-360/server/pharmacy-matches.ts", 2, "a pharmacy match decided or undone"],
 ];
 

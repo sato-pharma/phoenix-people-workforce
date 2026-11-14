@@ -137,13 +137,15 @@ export function runCacheAuditFixesTests() {
       /tags: \["sos-reference", CRM_DAILY_FORECAST_CACHE_TAG\]/,
       "and its cached closing wears that tag",
     );
+    // Publish and unpublish both refresh through the one helper (closing-publication-refresh.ts, REC-030).
     const publication = source("src/lib/sales/monthly-closing-publication.ts");
     assert.match(
       publication,
-      /invalidateCrmDailyForecastCache\(`closing published — \$\{line\}\/\$\{period\}`\);/,
+      /onClosingPublicationChanged\(`closing published — \$\{line\}\/\$\{period\}`\);/,
       "a publish moves the reps' forecast onto the published month at once",
     );
-    assert.match(publication, /invalidateCrmDailyForecastCache\(`closing unpublished — \$\{input\.line\}\/\$\{period\}`\);/, "and so does an unpublish");
+    assert.match(publication, /onClosingPublicationChanged\(`closing unpublished — \$\{input\.line\}\/\$\{period\}`\);/, "and so does an unpublish");
+    assert.match(source("src/lib/sales/closing-publication-refresh.ts"), /invalidateCrmDailyForecastCache\(reason\);/, "the one refresh reaches the forecast");
     assert.match(source("src/lib/sales/monthly-targets.ts"), /invalidateCrmDailyForecastCache\("monthly targets saved"\);/, "and a target save");
     assert.match(
       source("src/lib/sales/monthly-targets-drop.ts"),
