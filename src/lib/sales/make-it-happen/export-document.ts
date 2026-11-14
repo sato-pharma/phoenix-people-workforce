@@ -70,7 +70,16 @@ export type ForecastExportModel = {
   shownRows: number;
   totalRows: number;
   /** engine.ts rule 9 — each shown product's forecast per brick, biggest pace first. */
-  bricks: Record<string, Array<{ name: string; units: number; value: number }>>;
+  bricks: Record<string, ForecastBrick[]>;
+};
+
+export type ForecastBrick = {
+  name: string;
+  units: number;
+  value: number;
+  /** Who covers the brick (engine.ts BrickPlanRow): null = vacant seat / no District Manager. */
+  repName?: string | null;
+  districtManagerName?: string | null;
 };
 
 const INTEGER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -137,6 +146,8 @@ export function buildForecastExportModel(input: {
         name: brick.name,
         units: split[brick.brickId] ?? 0,
         value: (split[brick.brickId] ?? 0) * row.price,
+        ...(brick.repName !== undefined ? { repName: brick.repName } : {}),
+        ...(brick.districtManagerName !== undefined ? { districtManagerName: brick.districtManagerName } : {}),
       }));
     }
   }
@@ -201,6 +212,77 @@ function forecastNote(line: ForecastExportLine["line"]): string {
       : "";
   if (line.remainingMonths > 0) return `Forecasting ${line.forecastMonthLabels.join(", ")}.${untargeted}`;
   return untargeted ? `No open month carries a target yet.${untargeted}` : "Every month of this period is closed for this line.";
+}
+
+// ── Bricks per District Manager, then per rep ────────────────────────────────
+//
+// Owner, 2026-11-14: "make it simply per DSM (I mean tab by brick) firstly then per MR, not by brick
+// name only". The workbook's brick sheet was one long Product × Brick list; it is now one tab per
+// District Manager, and inside it one table per rep holding that rep's bricks. Each brick sits under
+// the rep and District Manager who covered it in the latest closed month (workspace.ts brickCover).
+
+export const NO_DISTRICT_MANAGER = "No District Manager";
+export const VACANT_SEAT = "Vacant seat";
+
+export type BrickTabRow = { brick: string; product: string; units: number; value: number };
+export type BrickRepBlock = { name: string; lineName: string; bricks: number; value: number; rows: BrickTabRow[] };
+export type BrickDistrictTab = { name: string; value: number; reps: BrickRepBlock[] };
+
+/** Names first, the unnamed buckets last — "Vacant seat" and "No District Manager" sit at the end. */
+function byNameLast(last: string) {
+  return (a: { name: string }, b: { name: string }) =>
+    Number(a.name === last) - Number(b.name === last) || a.name.localeCompare(b.name);
+}
+
+export function groupBricksByDistrict(model: Pick<ForecastExportModel, "lines" | "bricks">): BrickDistrictTab[] {
+  const districts = new Map<string, Map<string, BrickRepBlock>>();
+  for (const line of model.lines) {
+    for (const { row: product } of line.rows) {
+      for (const brick of model.bricks[product.productCode] ?? []) {
+        const districtName = brick.districtManagerName || NO_DISTRICT_MANAGER;
+        const repName = brick.repName || VACANT_SEAT;
+        const reps = districts.get(districtName) ?? new Map<string, BrickRepBlock>();
+        districts.set(districtName, reps);
+        const repKey = `${line.line.lineName}|${repName}`;
+        const block = reps.get(repKey) ?? { name: repName, lineName: line.line.lineName, bricks: 0, value: 0, rows: [] };
+        reps.set(repKey, block);
+        block.rows.push({ brick: brick.name, product: product.name, units: brick.units, value: brick.value });
+        block.value += brick.value;
+      }
+    }
+  }
+  const tabs: BrickDistrictTab[] = [];
+  for (const [name, reps] of districts) {
+    const blocks = [...reps.values()];
+    for (const block of blocks) {
+      // A rep's bricks together, by name; the sort is stable, so each brick's products keep the
+      // plan's own product order.
+      block.rows.sort((a, b) => a.brick.localeCompare(b.brick, "ar"));
+      block.bricks = new Set(block.rows.map((row) => row.brick)).size;
+    }
+    blocks.sort((a, b) => byNameLast(VACANT_SEAT)(a, b) || a.lineName.localeCompare(b.lineName));
+    tabs.push({ name, value: blocks.reduce((sum, block) => sum + block.value, 0), reps: blocks });
+  }
+  return tabs.sort(byNameLast(NO_DISTRICT_MANAGER));
+}
+
+/** At most `max` characters, cut at a whole word where one fits — "Osama Mohamed El-said Mahmoud". */
+function wholeWords(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1).lastIndexOf(" ");
+  return (cut > 0 ? text.slice(0, cut) : text.slice(0, max)).trimEnd();
+}
+
+/** An Excel tab name: at most 31 characters, none of : \ / ? * [ ], unique ignoring case. */
+export function brickTabName(name: string, taken: Set<string>): string {
+  const base = wholeWords(name.replace(/[:\\/?*[\]]/g, " ").replace(/\s+/g, " ").trim(), 31) || "District";
+  let candidate = base;
+  for (let n = 2; taken.has(candidate.toLowerCase()); n += 1) {
+    const suffix = ` (${n})`;
+    candidate = `${wholeWords(base, 31 - suffix.length)}${suffix}`;
+  }
+  taken.add(candidate.toLowerCase());
+  return candidate;
 }
 
 // ── Excel ────────────────────────────────────────────────────────────────────
@@ -304,29 +386,53 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
     });
   }
 
-  // engine.ts rule 9 — the forecast per product per brick. A product's bricks add up to its units.
-  const byBrick = workbook.addWorksheet("By brick", { properties: { defaultRowHeight: 18 } });
-  byBrick.views = [{ showGridLines: false }];
-  let brickRow = 1;
-  const brickLines = model.lines.filter((line) => line.rows.some(({ row: product }) => model.bricks[product.productCode]));
-  if (brickLines.length === 0) {
-    byBrick.getCell(brickRow, 1).value = "No product in this file sold on a brick in its closed months.";
+  // engine.ts rule 9 — the forecast per brick, one tab per District Manager, then one table per rep
+  // (owner, 2026-11-14). A product's bricks still add up to its units; units are never totalled
+  // across products, so every total row is value.
+  const districts = groupBricksByDistrict(model);
+  if (districts.length === 0) {
+    const empty = workbook.addWorksheet("By brick", { properties: { defaultRowHeight: 18 } });
+    empty.views = [{ showGridLines: false }];
+    empty.getCell(1, 1).value = "No product in this file sold on a brick in its closed months.";
   }
-  for (const line of brickLines) {
-    const rows: CellValue[][] = line.rows.flatMap(({ row: product }) =>
-      (model.bricks[product.productCode] ?? []).map((brick) => [product.name, brick.name, brick.units, brick.value]),
-    );
-    brickRow = writeHouseTable(byBrick, brickRow, {
+  const takenTabs = new Set(["cover", "forecast", "scenarios", "by brick"]);
+  for (const district of districts) {
+    const tab = workbook.addWorksheet(brickTabName(district.name, takenTabs), { properties: { defaultRowHeight: 18 } });
+    tab.views = [{ showGridLines: false }];
+    let tabRow = 1;
+    if (model.filterNote) {
+      tab.getCell(tabRow, 1).value = model.filterNote;
+      tab.getCell(tabRow, 1).font = { bold: true, color: { argb: "FFB3312C" } };
+      tabRow += 2;
+    }
+    tabRow = writeHouseTable(tab, tabRow, {
       columns: [
-        { label: "Product", width: 30 },
-        { label: "Brick", width: 34 },
-        { label: "Forecast units", numFmt: UNITS_FMT, right: true, width: 14 },
+        { label: "Medical rep", width: 34 },
+        { label: "Line", width: 30 },
+        { label: "Bricks", numFmt: UNITS_FMT, right: true, width: 14 },
         { label: "Forecast value", numFmt: MONEY_FMT, right: true, width: 16 },
       ],
-      rows,
-      title: `${line.line.lineName} · forecast per brick`,
-      note: "Each brick's share comes from its own sales of that product. A product's bricks add up to its forecast.",
+      rows: district.reps.map((rep) => [rep.name, rep.lineName, rep.bricks, rep.value]),
+      // The name alone, never "District Manager" after it: a Regional Manager can hold an area
+      // directly (Hany Saad, Pedia Sharkia, from October 2026) and is never called a District Manager.
+      title: `${district.name} · bricks per medical rep`,
+      totals: [`${district.name} total`, null, null, district.value],
+      note: "Each brick sits under the rep who covered it in the latest closed month, and each rep under the District Manager of that month.",
     });
+    for (const rep of district.reps) {
+      tabRow = writeHouseTable(tab, tabRow, {
+        columns: [
+          { label: "Brick", width: 34 },
+          { label: "Product", width: 30 },
+          { label: "Forecast units", numFmt: UNITS_FMT, right: true, width: 14 },
+          { label: "Forecast value", numFmt: MONEY_FMT, right: true, width: 16 },
+        ],
+        rows: rep.rows.map((row) => [row.brick, row.product, row.units, row.value]),
+        title: `${rep.name} · ${rep.lineName} · ${INTEGER.format(rep.bricks)} ${rep.bricks === 1 ? "brick" : "bricks"}`,
+        totals: [`${rep.name} total`, null, null, rep.value],
+        note: "Each brick's share comes from its own sales of that product. A product's bricks add up to its forecast.",
+      });
+    }
   }
 
   const scenarios = workbook.addWorksheet("Scenarios", { properties: { defaultRowHeight: 18 } });

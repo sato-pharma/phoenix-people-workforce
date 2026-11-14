@@ -627,6 +627,14 @@ export type BrickPlanRow = {
   /** The brick's own pace over the open months: what weights its share of the product. */
   expectedUnits: number;
   realisticMaxUnits: number;
+  /**
+   * Who covers the brick: the rep and District Manager it was attributed to in the LATEST closed
+   * month it sold anything on this line (a brick has one rep and one DM per line and month). null =
+   * a vacant seat / no District Manager; undefined = not read (a fixture). The export groups its
+   * brick tabs by these (owner, 2026-11-14: "per DSM firstly then per MR").
+   */
+  repName?: string | null;
+  districtManagerName?: string | null;
 };
 
 /** Order bricks the way the planner lists them: the biggest pace first, then by name. */
