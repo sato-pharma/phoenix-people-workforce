@@ -1,10 +1,5 @@
-import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
-import {
-  invalidateAchievementStampedCaches,
-  invalidateClosingStoreSplitCache,
-  invalidateCrmDailyForecastCache,
-} from "@/lib/dashboard/invalidation";
 import { isHeadOfficeLine } from "@/lib/sales/access-scope";
+import { onClosingPublicationChanged } from "@/lib/sales/closing-publication-refresh";
 import {
   assertClosingPeriodComplete,
   closingPeriodOpensOn,
@@ -422,10 +417,8 @@ export async function publishClosing(input: {
     .select("published_at")
     .single();
   if (error) throw new Error(error.message);
-  invalidateClosingStoreSplitCache(`closing published — ${line}/${period}`);
-  invalidateCrmDailyForecastCache(`closing published — ${line}/${period}`);
-  invalidateAchievementStampedCaches(`closing published — ${line}/${period}`);
-  bumpCustomer360Cache("monthly closing published");
+  // Every cache that holds a closing's published figures (closing-publication-refresh.ts, REC-030).
+  onClosingPublicationChanged(`closing published — ${line}/${period}`);
 
   // Best-effort: a notification failure must never turn a successful publish into an error response.
   // publishedAt anchors the send's idempotency key — a true re-publish (this row didn't exist a
@@ -484,10 +477,7 @@ export async function unpublishClosing(input: {
     .eq("period", period)
     .is("unpublished_at", null);
   if (error) throw new Error(error.message);
-  invalidateClosingStoreSplitCache(`closing unpublished — ${input.line}/${period}`);
-  invalidateCrmDailyForecastCache(`closing unpublished — ${input.line}/${period}`);
-  // The platform tile's key is the stamp, and the stamp does not see a publication: a withdrawn month
-  // would otherwise stay on it for up to five minutes.
-  invalidateAchievementStampedCaches(`closing unpublished — ${input.line}/${period}`);
-  bumpCustomer360Cache("monthly closing unpublished");
+  // The same refresh as a publish (closing-publication-refresh.ts, REC-030): the platform tile is keyed
+  // on the stamp, which does not see a publication, so a withdrawn month would otherwise stay for minutes.
+  onClosingPublicationChanged(`closing unpublished — ${input.line}/${period}`);
 }
