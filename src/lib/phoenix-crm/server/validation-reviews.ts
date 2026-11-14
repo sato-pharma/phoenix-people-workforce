@@ -41,7 +41,7 @@ import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope,
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
@@ -1531,6 +1531,29 @@ export type ReopenedCustomerRow = {
  * The same two worlds the rest of the page shows, each row marked, so a count here can never read 0
  * where the page lists a row. Paged with a total order, and it stops rather than refuses: it presents.
  */
+/**
+ * Whose name a sent-back customer's row carries (14 Nov 2026, owner: "fix the 'A rep' name on both
+ * boards"). The rep who took the refused photo first; but a customer sent back by a clean-up rather than
+ * a refused photo has no refusal to name anybody — measured on production the same day, 42 of the
+ * customers waiting to be captured again had no refused review of their own, among them the ones the
+ * 11 Nov bring-back fix returned at 01:52 — and every one of them was filed under one "A rep" line on the
+ * place checks scorecard. Every one of them carries the rep who captured it, and all 17 of those people
+ * have a name. So: the refusal's rep, then the capturer, then the seat's territory, and "A rep" only when
+ * none of the three is on file.
+ */
+export function sentBackRepName(input: {
+  names: PeopleNames;
+  refusedBy: string | null | undefined;
+  capturedBy: string | null | undefined;
+  territory: string | null | undefined;
+}): string {
+  const refused = nameOf(input.names, input.refusedBy, "");
+  if (refused) return refused;
+  const captured = nameOf(input.names, input.capturedBy, "");
+  if (captured) return captured;
+  return input.territory?.trim() || "A rep";
+}
+
 export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ReopenedCustomerRow>> {
   const seats = placeChecksSeatScope(viewer);
   const decides = canDecideValidationReviews(viewer);
@@ -1538,7 +1561,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
     () => {
       const query = getSupabaseAdmin()
         .from("phoenix_crm_customers")
-        .select("id, seat_id, name, list_type, is_test, reopened_at")
+        .select("id, seat_id, name, list_type, is_test, reopened_at, created_by_hr_id")
         .eq("status", "pending")
         .not("reopened_at", "is", null);
       return seatScoped(query, seats)
@@ -1582,6 +1605,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
     ...[...viaVenue.values()].map((row) => row.repHrId),
     ...[...latest.values()].map((row) => text(row.decided_by_hr_id)),
     ...[...viaVenue.values()].map((row) => row.decidedByHrId),
+    ...customers.map((row) => text(row.created_by_hr_id)),
   ]);
   const now = Date.now();
 
@@ -1603,7 +1627,12 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
       listType: String(row.list_type ?? ""),
       isTest: row.is_test === true,
       // The rep who took the refused photo — the occupant may since have changed.
-      repName: nameOf(names, review ? text(review.created_by_hr_id) : (venue?.repHrId ?? null), "A rep"),
+      repName: sentBackRepName({
+        names,
+        refusedBy: review ? text(review.created_by_hr_id) : (venue?.repHrId ?? null),
+        capturedBy: text(row.created_by_hr_id),
+        territory: seat ? territoryName(seat) : null,
+      }),
       territory: seat ? territoryName(seat) : "Territory no longer in the organogram",
       line: seat?.lineName ?? null,
       region: seat?.regionName ?? null,

@@ -317,4 +317,28 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     );
     assert.ok(reopened.includes("const review = venueIsLater ? undefined : ownRefusal;") && reopened.includes("const venue = venueIsLater ? venueRefusal : undefined;"), "exactly one of the two, never a mix");
   }
+
+  // ── I · A customer sent back with no refusal on file still names its rep (14 Nov 2026) ────────────
+  {
+    const { sentBackRepName } = await import("../src/lib/phoenix-crm/server/validation-reviews.ts");
+    const names = new Map([
+      ["B-132", "Refusing Rep"],
+      ["B-135", "Capturing Rep"],
+    ]);
+    assert.equal(sentBackRepName({ names, refusedBy: "B-132", capturedBy: "B-135", territory: "Alex 2" }), "Refusing Rep", "the rep who took the refused photo comes first, as before");
+    assert.equal(
+      sentBackRepName({ names, refusedBy: null, capturedBy: "B-135", territory: "Alex 2" }),
+      "Capturing Rep",
+      "🔴 a customer sent back by a clean-up, with no refusal to name anybody, is filed under the rep who captured it — not \"A rep\"",
+    );
+    assert.equal(sentBackRepName({ names, refusedBy: "X-404", capturedBy: "b-135", territory: null }), "Capturing Rep", "a refusal naming nobody on file falls to the capturer too, whatever the case of the code");
+    assert.equal(sentBackRepName({ names, refusedBy: null, capturedBy: null, territory: "Alex 2" }), "Alex 2", "with neither on file, the seat's territory");
+    assert.equal(sentBackRepName({ names, refusedBy: null, capturedBy: "X-404", territory: "  " }), "A rep", "\"A rep\" only when none of the three is on file");
+
+    const reopened = fn(reviews, "export async function loadReopenedCustomers(");
+    assert.ok(reopened.includes('.select("id, seat_id, name, list_type, is_test, reopened_at, created_by_hr_id")'), "the board reads who captured each sent-back customer");
+    assert.ok(reopened.includes("...customers.map((row) => text(row.created_by_hr_id)),"), "and asks for that person's name");
+    assert.ok(reopened.includes("capturedBy: text(row.created_by_hr_id),"), "and hands it to the row");
+    assert.ok(!reopened.includes('"A rep")'), "🔴 the row never falls straight to \"A rep\" again");
+  }
 }
