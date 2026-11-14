@@ -290,7 +290,7 @@ export function SecondStepCard() {
                 <span className="block self-start border border-slate-300">
                   <SecondStepQrCode otpauthUri={setup.otpauthUri} />
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="flex-1 [overflow-wrap:anywhere]">
                   <span className="block break-words border border-slate-300 bg-white px-3 py-2 font-mono text-base font-bold tracking-[0.08em] text-slate-900">
                     {setup.secretForTyping}
                   </span>

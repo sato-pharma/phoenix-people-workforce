@@ -868,7 +868,7 @@ function SecondStepFields({
             Type the key in, or open it in the app if you are reading this on the phone itself.
             <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
               <SecondStepQrCode otpauthUri={setup.otpauthUri} />
-              <div className="min-w-0 flex-1">
+              <div className="flex-1 [overflow-wrap:anywhere]">
                 <span
                   className="block break-words border border-white/14 bg-black/40 px-4 py-3 font-mono text-base font-bold tracking-[0.08em] text-[#ffb366]"
                   data-second-step-key
