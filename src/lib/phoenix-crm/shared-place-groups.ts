@@ -95,7 +95,7 @@ export type SeatedCustomer = ValidationReviewFilterable & {
 
 export type VenueGroup = {
   venue: SharedPlaceBoardRow;
-  /** The customers that pass the filters, waiting first. */
+  /** The customers that pass the filters: the waiting ones first, oldest wait first, then the rest by name. */
   customers: SeatedCustomer[];
   /** Every customer filed under this building, before the filters — the header says "3 of 7" when they differ. */
   total: number;
@@ -228,8 +228,17 @@ function fromReopened(row: ReopenedCustomerRow, sharedPlaceId: string): SeatedCu
 
 const STATE_ORDER: Record<SeatedState, number> = { waiting: 0, in_use: 1, rejected: 2, sent_back: 3 };
 
-function byStateThenName(left: SeatedCustomer, right: SeatedCustomer): number {
-  return STATE_ORDER[left.state] - STATE_ORDER[right.state] || left.customerName.localeCompare(right.customerName);
+/**
+ * 🔴 THE CUSTOMERS WAITING INSIDE ONE BUILDING ARE LISTED OLDEST FIRST TOO (owner, 14 Nov 2026: "order
+ * them by wait"). Live that day one held building listed its seven waiting customers by name, their
+ * waits reading 5, 3, 5, 3, 5, 5, 3 days. A waiting customer's `at` is the instant his review was
+ * opened, the same instant his "Waiting N days" is counted from. Everybody else keeps his name order.
+ */
+function byStateThenWaitThenName(left: SeatedCustomer, right: SeatedCustomer): number {
+  const state = STATE_ORDER[left.state] - STATE_ORDER[right.state];
+  if (state !== 0) return state;
+  if (left.state === "waiting") return compareOldestFirst({ at: left.at, id: left.key }, { at: right.at, id: right.key });
+  return left.customerName.localeCompare(right.customerName);
 }
 
 /**
@@ -292,7 +301,7 @@ export function seatedCustomersByVenue(input: {
   for (const row of input.reopened) {
     if (known(row.sharedPlaceId)) file(fromReopened(row, row.sharedPlaceId));
   }
-  for (const list of byVenue.values()) list.sort(byStateThenName);
+  for (const list of byVenue.values()) list.sort(byStateThenWaitThenName);
   return byVenue;
 }
 

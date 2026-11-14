@@ -97,6 +97,12 @@ export function runPhoenixCrmWaitingOldestFirstTests(): void {
     "🔴 a building with something to decide is ordered by how long it has waited",
   );
   assert.ok(groups.includes('waitingText: state === "waiting" ? (row.waitingText ?? null) : null,'), "a seated customer carries his review's wait only while he waits");
+  // The order itself is exercised in tests/phoenix-crm-shared-place-groups.test.ts.
+  assert.ok(
+    groups.includes('if (left.state === "waiting") return compareOldestFirst({ at: left.at, id: left.key }, { at: right.at, id: right.key });'),
+    "🔴 the customers waiting inside one building are ordered by their wait too, not by name",
+  );
+  assert.ok(groups.includes("for (const list of byVenue.values()) list.sort(byStateThenWaitThenName);"), "and that is the order every building's list is filed in");
 
   const pill = '<CrmPill tone={row.waitingLong ? "warn" : "neutral"}>{row.waitingText}</CrmPill>';
   assert.ok(code("src/components/phoenix-crm/validation-review-queue.tsx").includes(`{row.waitingText ? ${pill} : null}`), "the review row shows its wait");
