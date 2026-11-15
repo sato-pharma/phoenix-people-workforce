@@ -95,7 +95,10 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   // The declared role is asked FIRST: the careers form files the person only after this alert.
   const hiddenFromTalentAcquisition =
     declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily) ||
-    (await candidateHiddenFrom({ role: "HR Resourcing", scope: "company" }, input.candidateId).catch(() => true));
+    (await candidateHiddenFrom(
+      { role: "HR Resourcing", scope: "company" },
+      input.candidateId,
+    ).catch(() => true));
   // The desk list IS the alert list without her, so a hidden person goes to the desk alone.
   const recipientHrIds = hiddenFromTalentAcquisition
     ? await hrIdsForRoles(recruitmentDeskAlertRoles)
