@@ -4,7 +4,7 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { MarketingCeoApprovalsReport } from "@/components/marketing-requests/marketing-ceo-approvals-report";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { todayInCairo } from "@/lib/date-only";
-import { canViewMarketingCeoApprovals, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { canViewMarketingCeoApprovals, resolveCeoApprovalsCarry, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
 import { canSendMarketingCeoApprovalsEmail } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 
@@ -14,22 +14,24 @@ export const dynamic = "force-dynamic";
 export default async function EmployeePortalMarketingCeoApprovalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string | string[]; to?: string | string[] }>;
+  searchParams: Promise<{ carry?: string | string[]; from?: string | string[]; to?: string | string[] }>;
 }) {
   const access = await resolveAccessContextFromPage();
   if (!canViewMarketingCeoApprovals(access.role)) redirect("/employee-portals/marketing-requests");
-  const range = resolveCeoApprovalsRange(await searchParams, todayInCairo());
-  const report = await getMarketingCeoApprovals(access, range);
+  const params = await searchParams;
+  const range = resolveCeoApprovalsRange(params, todayInCairo());
+  const includeCarriedOver = resolveCeoApprovalsCarry(params.carry);
+  const report = await getMarketingCeoApprovals(access, range, { includeCarriedOver });
 
   return (
     <EmployeePortalPageShell
       badge="Marketing"
-      description="Every marketing request the CEO approved between two dates, plus every earlier approval Finance has not paid yet, with its value and where its money stands now. Untick a row to leave it out of the totals."
+      description="Every marketing request the CEO approved between two dates, with its value and where its money stands now. Tick the switch to add earlier approvals Finance has not paid yet. Untick a row to leave it out of the totals and the exports."
       title="CEO Approvals"
     >
       <MarketingCeoApprovalsReport
         canSend={canSendMarketingCeoApprovalsEmail(access.role)}
-        key={`${range.from}:${range.to}`}
+        key={`${range.from}:${range.to}:${includeCarriedOver ? 1 : 0}`}
         report={report}
       />
     </EmployeePortalPageShell>

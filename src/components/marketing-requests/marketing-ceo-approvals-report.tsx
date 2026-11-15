@@ -22,6 +22,7 @@ import {
 import { cairoDate, cairoDateTime, cairoMonthDayTime12h, utcDate } from "@/lib/format/cairo-datetime";
 import {
   CEO_APPROVAL_LISTED_AS_LABEL,
+  CEO_APPROVALS_CARRY_PARAM,
   summarizeCeoApprovals,
   type CeoApprovalFinanceState,
   type CeoApprovalsRange,
@@ -195,6 +196,7 @@ function NotesCell({
 type EmailPerson = { email: string; name: string };
 type EmailPreview = {
   cc: EmailPerson[];
+  from: { address: string; kind: "own_mailbox" | "phoenix"; note: string | null };
   holdNames: string[];
   redCount: number;
   rowCount: number;
@@ -284,6 +286,12 @@ function SendPanel({ onClose, onSend, state }: { onClose: () => void; onSend: ()
         </p>
       </div>
       <dl className="grid grid-cols-1 gap-3">
+        <div className="min-w-0">
+          <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">From</dt>
+          <dd className="break-words text-phx-sm font-bold text-slate-800">
+            {preview.from.kind === "own_mailbox" ? `${preview.from.address} · your own mailbox` : `Phoenix on your behalf (${preview.from.address})`}
+          </dd>
+        </div>
         <PeopleLine label="To" people={preview.to} />
         <PeopleLine label="Cc" people={preview.cc} />
       </dl>
@@ -296,9 +304,14 @@ function SendPanel({ onClose, onSend, state }: { onClose: () => void; onSend: ()
           ))}
         </ul>
       ) : null}
+      {preview.from.kind === "phoenix" && preview.from.note ? (
+        <p className="break-words border border-amber-300 bg-amber-50 p-3 text-phx-sm text-amber-900">{preview.from.note}</p>
+      ) : null}
       <p className="text-phx-xs text-slate-500">
-        It goes out in your name through Phoenix, and replies come back to you. Each of them also gets the same notice in
-        Phoenix and on Telegram.
+        {preview.from.kind === "own_mailbox"
+          ? "It leaves from your own mailbox and a copy is filed in your Sent folder. "
+          : "It goes out in your name through Phoenix, and replies come back to you. "}
+        Each of them also gets the same notice in Phoenix and on Telegram.
       </p>
       <div className="flex flex-wrap gap-2">
         <button className={phxButtonAccentClassName} disabled={sending} onClick={onSend} type="button">
@@ -324,10 +337,13 @@ function SendPanel({ onClose, onSend, state }: { onClose: () => void; onSend: ()
  * The parent keys the report by the range, so the pending state ends when the new report mounts.
  */
 function RangeForm({
+  carry,
   from,
   onPendingChange,
   to,
 }: {
+  /** The list was read with earlier unpaid approvals included. */
+  carry: boolean;
   from: string;
   onPendingChange: (pending: boolean) => void;
   to: string;
@@ -336,6 +352,7 @@ function RangeForm({
   const pathname = usePathname();
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
+  const [draftCarry, setDraftCarry] = useState(carry);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -345,10 +362,11 @@ function RangeForm({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = new URLSearchParams({ from: draftFrom, to: draftTo });
+    if (draftCarry) query.set(CEO_APPROVALS_CARRY_PARAM, "1");
     const target = `${pathname}?${query.toString()}`;
     startTransition(() => {
       // The same dates again re-read the page rather than doing nothing.
-      if (draftFrom === from && draftTo === to) router.refresh();
+      if (draftFrom === from && draftTo === to && draftCarry === carry) router.refresh();
       else router.push(target, { scroll: false });
     });
   }
@@ -379,6 +397,15 @@ function RangeForm({
           value={draftTo}
         />
       </label>
+      <label className="flex min-w-0 basis-full items-start gap-2 text-phx-sm text-slate-700 sm:basis-auto sm:self-center">
+        <input
+          checked={draftCarry}
+          className={`${phxCheckInputClassName} mt-0.5`}
+          onChange={(event) => setDraftCarry(event.target.checked)}
+          type="checkbox"
+        />
+        <span className="min-w-0 break-words">Also list earlier approvals Finance has not paid yet</span>
+      </label>
       <button className={phxButtonPrimaryClassName} disabled={pending} type="submit">
         {pending ? "Loading…" : "Show report"}
       </button>
@@ -399,12 +426,14 @@ function RangeForm({
  * first asks the server who the email would reach, shows that, and sends only on "Send now".
  */
 export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSend?: boolean; report: MarketingCeoApprovals }) {
-  const { rows, range } = report;
+  const { includeCarriedOver: carry, rows, range } = report;
   const allIds = useMemo(() => rows.map((row) => row.requestId), [rows]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(allIds));
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const draftsLoaded = useRef(false);
   const [sendState, setSendState] = useState<SendState>({ phase: "idle" });
+  const [exporting, setExporting] = useState<"xlsx" | "pdf" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   // True while "Show report" is fetching a new range; the report below dims until it arrives.
   const [loading, setLoading] = useState(false);
   const headerBox = useRef<HTMLInputElement>(null);
@@ -462,6 +491,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
   async function postEmail(dryRun: boolean): Promise<EmailResult> {
     const response = await fetch("/api/marketing-requests/ceo-approvals/email", {
       body: JSON.stringify({
+        carry,
         dryRun,
         from: range.from,
         rows: rows
@@ -498,9 +528,54 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
     }
   }
 
-  const widths = canSend
-    ? ["w-[3%]", "w-[3%]", "w-[10%]", "w-[11%]", "w-[12%]", "w-[7%]", "w-[8%]", "w-[9%]", "w-[11%]", "w-[8%]", "w-[18%]"]
-    : ["w-[4%]", "w-[3%]", "w-[12%]", "w-[15%]", "w-[16%]", "w-[8%]", "w-[10%]", "w-[10%]", "w-[13%]", "w-[9%]"];
+  // Column 7 is "Listed as". Without the carry-over switch every row is the period's own, so the
+  // column says nothing and its width goes to the customer (column 3).
+  const widthPercents = canSend ? [3, 3, 10, 11, 12, 7, 8, 9, 11, 8, 18] : [4, 3, 12, 15, 16, 8, 10, 10, 13, 9];
+  const widths = carry
+    ? widthPercents
+    : widthPercents.filter((_, index) => index !== 7).map((width, index) => (index === 3 ? width + widthPercents[7] : width));
+
+  /** The ticked rows, in screen order, as a house-style XLSX or PDF. The server re-reads every row. */
+  async function downloadExport(format: "xlsx" | "pdf") {
+    setExporting(format);
+    setExportError(null);
+    try {
+      const response = await fetch("/api/marketing-requests/ceo-approvals/export", {
+        body: JSON.stringify({
+          carry,
+          format,
+          from: range.from,
+          rows: rows
+            .filter((row) => selected.has(row.requestId))
+            .map((row) => ({ note: canSend ? noteOf(row) : "", requestId: row.requestId })),
+          to: range.to,
+        }),
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        setExportError(payload?.message || "The export could not be made. Try again.");
+        return;
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="(.+?)"/);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match ? match[1] : `CEO Approvals ${range.from} to ${range.to}.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setExportError("The export could not be made. Check the connection and try again.");
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const rangeLabel = `${utcDate(range.from)} to ${utcDate(range.to)}`;
 
@@ -525,15 +600,20 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
 
   return (
     <div className="space-y-6">
-      <RangeForm from={range.from} onPendingChange={setLoading} to={range.to} />
+      <RangeForm carry={carry} from={range.from} onPendingChange={setLoading} to={range.to} />
 
       <div aria-busy={loading} className={`space-y-6 ${loading ? "pointer-events-none opacity-50" : ""}`}>
         {rows.length === 0 ? (
           <div className={`${adminSoftPanelClassName} p-6`}>
             <p className="text-phx-md font-bold text-slate-900">
-              The CEO approved no marketing request from {rangeLabel}, and nothing approved earlier is waiting for Finance
+              {carry
+                ? `The CEO approved no marketing request from ${rangeLabel}, and nothing approved earlier is waiting for Finance`
+                : `The CEO approved no marketing request from ${rangeLabel}`}
             </p>
-            <p className="mt-1 text-phx-sm text-slate-600">Pick other dates above. Read {cairoDateTime(report.generatedAtIso)} Cairo.</p>
+            <p className="mt-1 text-phx-sm text-slate-600">
+              Pick other dates above{carry ? "" : ", or tick the switch to add earlier approvals Finance has not paid yet"}. Read{" "}
+              {cairoDateTime(report.generatedAtIso)} Cairo.
+            </p>
           </div>
         ) : (
           <>
@@ -553,7 +633,9 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
               <header className={`${adminPanelHeaderClassName} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}>
                 <div className="min-w-0">
                   <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-white">Approved by the CEO · {rangeLabel}</p>
-                  <p className="mt-0.5 text-phx-xs text-slate-300">With every earlier approval Finance has not paid yet</p>
+                  <p className="mt-0.5 text-phx-xs text-slate-300">
+                    {carry ? "With every earlier approval Finance has not paid yet" : "Only requests approved in these dates"}
+                  </p>
                   <p className="mt-0.5 text-phx-xs text-slate-300">Read {cairoDateTime(report.generatedAtIso)} Cairo</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -563,6 +645,26 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                   <button className={phxButtonGhostClassName} onClick={toggleAll} type="button">
                     {allTicked ? "Clear all" : "Select all"}
                   </button>
+                  {selected.size > 0 ? (
+                    <>
+                      <button
+                        className={phxButtonGhostClassName}
+                        disabled={exporting !== null}
+                        onClick={() => downloadExport("xlsx")}
+                        type="button"
+                      >
+                        {exporting === "xlsx" ? "Preparing XLSX…" : `Export XLSX (${selected.size})`}
+                      </button>
+                      <button
+                        className={phxButtonGhostClassName}
+                        disabled={exporting !== null}
+                        onClick={() => downloadExport("pdf")}
+                        type="button"
+                      >
+                        {exporting === "pdf" ? "Preparing PDF…" : `Export PDF (${selected.size})`}
+                      </button>
+                    </>
+                  ) : null}
                   {canSend && selected.size > 0 ? (
                     <button
                       className={phxButtonAccentClassName}
@@ -577,6 +679,9 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                 </div>
               </header>
 
+              {exportError ? (
+                <p className="break-words border-b border-phx-line bg-rose-50 px-4 py-2 text-phx-sm font-bold text-rose-800">{exportError}</p>
+              ) : null}
               {canSend && sendState.phase !== "idle" ? (
                 <div className="border-b border-phx-line p-3">
                   <SendPanel onClose={() => setSendState({ phase: "idle" })} onSend={sendEmail} state={sendState} />
@@ -591,7 +696,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
               <table className="hidden w-full table-fixed text-left text-sm @min-[1100px]:table">
                 <colgroup>
                   {widths.map((width, index) => (
-                    <col className={width} key={index} />
+                    <col key={index} style={{ width: `${width}%` }} />
                   ))}
                 </colgroup>
                 <thead>
@@ -612,7 +717,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                     <th className="px-2 py-2" scope="col">Requester · line · type</th>
                     <th className="px-2 py-2 text-right" scope="col">Value (EGP)</th>
                     <th className="px-2 py-2" scope="col">Dr Anwar approval</th>
-                    <th className="px-2 py-2" scope="col">Listed as</th>
+                    {carry ? <th className="px-2 py-2" scope="col">Listed as</th> : null}
                     <th className="px-2 py-2" scope="col">Live report status</th>
                     <th className="px-2 py-2" scope="col">Pay date</th>
                     {canSend ? <th className="px-2 py-2" scope="col">Notes for the email</th> : null}
@@ -649,7 +754,7 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                         </td>
                         <td className={`px-2 py-2 text-right font-bold ${red ? EXECUTED_RED : "text-slate-900"}`}>{money(row.estimatedCost)}</td>
                         <td className="px-2 py-2"><ApprovalCell row={row} /></td>
-                        <td className="px-2 py-2"><ListedAsCell range={range} row={row} /></td>
+                        {carry ? <td className="px-2 py-2"><ListedAsCell range={range} row={row} /></td> : null}
                         <td className="px-2 py-2"><StatusCell row={row} /></td>
                         <td className="px-2 py-2"><PayDateCell row={row} /></td>
                         {canSend ? (
@@ -712,10 +817,12 @@ export function MarketingCeoApprovalsReport({ canSend = false, report }: { canSe
                               <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Dr Anwar approval</dt>
                               <dd><ApprovalCell row={row} /></dd>
                             </div>
-                            <div className="min-w-0">
-                              <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Listed as</dt>
-                              <dd><ListedAsCell range={range} row={row} /></dd>
-                            </div>
+                            {carry ? (
+                              <div className="min-w-0">
+                                <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Listed as</dt>
+                                <dd><ListedAsCell range={range} row={row} /></dd>
+                              </div>
+                            ) : null}
                             <div className="min-w-0">
                               <dt className="text-phx-xs font-bold uppercase tracking-wider text-slate-500">Live report status</dt>
                               <dd><StatusCell row={row} /></dd>

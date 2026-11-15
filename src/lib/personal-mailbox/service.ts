@@ -50,7 +50,7 @@ import {
   PersonalMailboxError,
   validateSendInput,
 } from "@/lib/personal-mailbox/rules";
-import { composeMessage, sendComposedMessage, verifySmtpLogin } from "@/lib/personal-mailbox/smtp";
+import { composeMessage, composeRawMessage, sendComposedMessage, verifySmtpLogin } from "@/lib/personal-mailbox/smtp";
 import type {
   PersonalMailboxCredential,
   PersonalMailboxFolder,
@@ -662,6 +662,67 @@ export async function sendPersonalMailboxEmail(
       });
     }
     return { filedInSent, rejected };
+  });
+}
+
+/**
+ * Whether the signed-in person's My email can send right now: connected, not waiting for a new app
+ * password, and still the company address HR has on record. Reads the row; never logs in.
+ * `address` is the mailbox an email would leave from. Never throws — an unreadable row is "no".
+ */
+export async function personalMailboxSendable(
+  access: AccessContext,
+): Promise<{ sendable: boolean; address: string | null; reason: string | null }> {
+  try {
+    const owner = await resolveMailboxOwner(access);
+    const state = await getPersonalMailboxState(owner);
+    if (!state.connected) {
+      return { address: owner.emailAddress, reason: "My email is not connected", sendable: false };
+    }
+    if (state.status !== "active") {
+      return { address: state.emailAddress, reason: state.lastError ?? "My email needs a new app password", sendable: false };
+    }
+    return { address: state.emailAddress, reason: null, sendable: true };
+  } catch {
+    return { address: null, reason: "My email could not be read", sendable: false };
+  }
+}
+
+/**
+ * Send one finished HTML email as the signed-in person, from their own connected mailbox, through
+ * Turbify — for a Phoenix screen whose email must leave from the person's real address (owner,
+ * 2026-11-15: CEO Approvals' "Approved requests" email from hossam.reda@satopharma.com). Same rules as
+ * the envelope's Send: sent once and never retried, a refused password stops every later login, and
+ * the copy in Sent is best-effort. The caller has already built and checked the content.
+ */
+export async function sendPersonalMailboxHtmlEmail(
+  access: AccessContext,
+  input: { cc: string[]; html: string; subject: string; text: string; to: string[] },
+): Promise<{ address: string; filedInSent: boolean; rejected: string[] }> {
+  const owner = await resolveMailboxOwner(access);
+  validateSendInput({ attachments: [], body: input.text, cc: input.cc, inReplyTo: null, references: [], subject: input.subject, to: input.to });
+  return withCredential(owner, sendFailure, async (credential, markRefused) => {
+    const { messageId, raw } = await composeRawMessage({
+      cc: input.cc.length > 0 ? input.cc : undefined,
+      from: { address: credential.user, name: owner.displayName ?? "" },
+      html: input.html,
+      subject: input.subject,
+      text: input.text,
+      to: input.to,
+    });
+    const { rejected } = await sendComposedMessage(credential, { from: credential.user, to: [...input.to, ...input.cc] }, raw);
+    let filedInSent = true;
+    try {
+      await ensureCopyInSent(credential, raw, messageId);
+    } catch (error) {
+      filedInSent = false;
+      if (isAuthenticationFailure(error)) await markRefused();
+      logError("Personal mailbox sent email could not be filed in Sent", {
+        error,
+        labels: { event: "personal_mailbox_file_sent_failed" },
+      });
+    }
+    return { address: credential.user, filedInSent, rejected };
   });
 }
 
