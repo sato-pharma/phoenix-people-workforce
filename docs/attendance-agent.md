@@ -44,6 +44,31 @@ that timed out logins from 10:30 to 11:55 (`docs/observability.md`, "18 October 
 **Not done:** a replay watermark on the agent side (`local-attendance-agent/`), so it stops re-sending
 punches the server already holds. That is the .NET program on the office machine and ships separately.
 
+## The device clock and summer time
+
+**The ZKTeco device does not follow Egypt's summer time by itself, and the agent stores whatever time
+the device reports.** Each punch's `punch_time` is the device's local time read as Cairo time
+(`raw_payload.device_local_time` keeps the device's own text). So a device clock one hour off makes
+every punch one hour off, and the weekly attendance digest turns that into lateness lines.
+
+**30 October to 10 November 2026.** Summer time ended at midnight after Thursday 29 October and
+the device kept it until its clock was put right overnight between 10 November 19:13 and
+11 November 08:27 (device time). The median first punch moved from ~09:05 to ~10:08 and back; the
+digest held 67 "late" lines for 1-10 November (16,167.75 EGP, none released). Corrected on
+15 November by `20261115170525_fingerprint_clock_summer_time_correction.sql`:
+
+- the 265 punches in the window moved one hour earlier, each keeping the device's time in
+  `raw_payload.clock_correction.original_punch_time`; untouched pre-image in
+  `attendance_backup_20261115.raw_punches_clock_shift`;
+- a `BEFORE INSERT` trigger, `attendance_raw_punches_clock_correction`, applies the same shift to any
+  punch arriving later inside that window. **Do not drop it while the device still holds those
+  punches:** every sync re-reads the device's WHOLE buffer, and without the trigger the wrong-time
+  copies would be inserted again beside the corrected rows instead of being ignored as duplicates.
+
+**Check the device clock at every summer-time change** (Egypt: last Friday of April on, last
+Thursday of October off). A future correction is the same shape: a new dated window in a new
+migration, never an edit to this one.
+
 ## Setup
 
 1. Navigate to `local-attendance-agent/`
