@@ -47,6 +47,7 @@ import {
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { DayPlanActualTable } from "@/components/employee-portal/private-calendar-plan-actual";
 import { buildDayPlanActual } from "@/lib/private-calendar/plan-actual";
+import { verificationSourceOptions } from "@/lib/private-calendar/verification-sources";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
@@ -68,16 +69,6 @@ import {
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const allValue = "__all__";
 
-// Where a Super Admin can actually go verify a request-review / no-activity
-// clarification claim — a closed, real list of the systems this app already
-// has, plus an escape hatch for anything else.
-const verificationSourceOptions = [
-  "CRM / iReports360 (Double Visit)",
-  "Fingerprint / Attendance Device",
-  "Manager Confirmation",
-  "HR Records (Vacation / Excuse Approval)",
-  "Other",
-] as const;
 
 function todayIso() {
   return currentCairoDateOnlyIso();

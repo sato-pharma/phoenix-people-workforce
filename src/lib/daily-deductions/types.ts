@@ -57,7 +57,7 @@ export function isDailyDeductionConnector(value: unknown): value is DailyDeducti
 
 export const dailyDeductionConnectorLabels: Record<DailyDeductionConnector, string> = {
   fingerprint: "Fingerprint attendance",
-  crm: "CRM no-activity",
+  crm: "Phoenix CRM no-activity",
   unpaid_vacation: "Unpaid vacation",
   insufficient_balance_vacation: "Insufficient balance vacation",
   no_records_activity: "No records (no punch, no activity)",

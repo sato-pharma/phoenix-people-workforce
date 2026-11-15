@@ -488,6 +488,7 @@ import { runDailyDeductionsPortalAndReadersTests } from "./daily-deductions-port
 import { runDailyDeductionsDisputesTests } from "./daily-deductions-disputes.test.ts";
 import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
 import { runDeductionsAcceptedReviewDaysTests } from "./deductions-accepted-review-days.test.ts";
+import { runDeductionsCurrentSourceWordingTests } from "./deductions-current-source-wording.test.ts";
 import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
@@ -4345,6 +4346,7 @@ await runTest("deductions module CRM guards (suspect-date sync-gap detection + e
 await runTest("deductions Phoenix CRM work evidence (no day the rep provably worked is charged, started team or not)", runDeductionsPhoenixWorkEvidenceTests);
 await runTest("deductions outstation trip days (any trip not rejected spares the day; a rejected one does not)", runDeductionsOutstationTripDaysTests);
 await runTest("deductions accepted review days (a day the Super Admin accepted a review request for is never charged)", runDeductionsAcceptedReviewDaysTests);
+await runTest("deductions current source wording (CRM deductions and calendar disputes name Phoenix CRM, not the retired iReports360 audit)", runDeductionsCurrentSourceWordingTests);
 await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
 await runTest("daily deductions on the employee portal and for readers (released lines show on his Deductions page and a failed read says so; the Finance Manager reads the page and only the Super Admin computes)", runDailyDeductionsPortalAndReadersTests);
 await runTest("daily deduction disputes (every released daily line can be disputed; an accepted dispute withdraws it and month-end collection never charges those days again; the Super Admin decides, the module readers read)", runDailyDeductionsDisputesTests);

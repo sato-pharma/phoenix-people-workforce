@@ -19,6 +19,7 @@ import { resolveCaseParticipant, viewerHrIdOf } from "./participants.ts";
 import { compareCasesForReviewer, deriveDisputeCaseState, lastActivityAt, reopenedSince } from "./state.ts";
 import { dayLabel, daysLabel, moneyLabel, picturesNotice, picturesOnlyBody, tidyDisputeText } from "./text.ts";
 import type { DisputeCase, DisputeCaseEvent, DisputeCaseFact, DisputeMessage } from "./types.ts";
+import { currentDeductionReason } from "@/lib/deductions/reason-text.ts";
 
 // DAILY DEDUCTION DISPUTES in the Dispute Center's shape (owner, 2026-11-13).
 //
@@ -227,7 +228,7 @@ function lineFacts(row: DisputeRow): DisputeCaseFact[] {
     { label: "Days released", value: datesSentence(row) },
     { label: "Released amount", value: `${moneyLabel(num(row.amount))}${row.unit === "days" ? ` for ${daysLabel(num(row.days_count))}` : ""}` },
   ];
-  if (row.reason) facts.push({ label: "Why it was raised", value: row.reason });
+  if (row.reason) facts.push({ label: "Why it was raised", value: currentDeductionReason(row.reason) });
   return facts;
 }
 

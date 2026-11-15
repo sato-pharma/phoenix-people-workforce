@@ -14,6 +14,7 @@ import { recordCaseEvent } from "@/lib/dispute-center/events.ts";
 import { tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import { privateCalendarHrIdPattern, type PrivateCalendarSource } from "@/lib/private-calendar/logic";
+import { currentVerificationSourceText } from "@/lib/private-calendar/verification-sources";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Private Calendar data-accuracy disputes. An employee flags that what the
@@ -66,7 +67,8 @@ function mapDisputeRow(row: DisputeRow): PrivateCalendarDataDispute {
   return {
     adminDecisionNote: row.admin_decision_note,
     adminHrId: row.admin_hr_id,
-    claimSourceText: row.claim_source_text,
+    // A request filed before 15 Nov 2026 names the retired iReports360 option; it reads as Phoenix CRM now.
+    claimSourceText: currentVerificationSourceText(row.claim_source_text),
     claimText: row.claim_text,
     createdAt: row.created_at,
     decidedAt: row.decided_at,
