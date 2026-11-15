@@ -7,6 +7,7 @@ import {
   cairoDayStartIso,
   canViewMarketingCeoApprovals,
   ceoApprovalsWindow,
+  resolveCeoApprovalsCarry,
   resolveCeoApprovalsRange,
   summarizeCeoApprovals,
   type CeoApprovalRequestInput,
@@ -198,11 +199,21 @@ export async function runMarketingCeoApprovalsTests() {
 
   assert.ok(rows.every((row) => row.listedAs === "approved_in_period"), "without a period every row is the period's own");
 
+  // ── The switch in the address bar ──────────────────────────────────────────────────────────────
+  for (const on of ["1", "true", "yes", "TRUE", true, ["1"]] as const) {
+    assert.equal(resolveCeoApprovalsCarry(on as never), true, `${String(on)} turns the earlier approvals on`);
+  }
+  for (const off of [undefined, null, "", "0", "false", "no", "maybe", false] as const) {
+    assert.equal(resolveCeoApprovalsCarry(off as never), false, `${String(off)} leaves the list on the dates alone`);
+  }
+
   // ── Hossam's week (owner, 2026-11-08) ──────────────────────────────────────────────────────────
   // "Approved requests 8th Nov to 15th Nov" listed 12 requests; Dr Anwar approved 3 in those dates and
-  // the other 9 earlier, all still waiting for Finance. A period lists both, each saying which.
+  // the other 9 earlier, all still waiting for Finance. With the switch on, a period lists both, each
+  // saying which. Since 2026-11-15 the switch is OFF by default: "the filter is not following the
+  // periods I chose" — the list is the dates' own approvals and nothing else.
   const week = ceoApprovalsWindow({ from: "2026-11-08", to: "2026-11-15" });
-  const weekRows = buildCeoApprovalRows({
+  const weekInput = {
     ceoApprovals: [
       ceoApproved("in-week", "2026-11-08T08:54:00.000Z"),
       ceoApproved("carried", "2026-11-03T10:20:00.000Z"),
@@ -248,7 +259,18 @@ export async function runMarketingCeoApprovalsTests() {
       financeStep("edge-start"),
     ],
     todayCairo: TODAY,
-  });
+  };
+  const datesOnly = buildCeoApprovalRows(weekInput);
+  assert.deepEqual(
+    datesOnly.map((row) => row.requestId),
+    ["edge-start", "in-week", "re-approved"],
+    "by default the list follows the chosen dates: only the approvals made between From and To",
+  );
+  assert.ok(datesOnly.every((row) => row.listedAs === "approved_in_period"), "no carried-over row without the switch");
+  assert.equal(summarizeCeoApprovals(datesOnly).carriedOverCount, 0);
+  assert.equal(buildCeoApprovalRows({ ...weekInput, includeCarriedOver: false }).length, 3, "the switch off is the same as no switch");
+
+  const weekRows = buildCeoApprovalRows({ ...weekInput, includeCarriedOver: true });
   const listed = Object.fromEntries(weekRows.map((row) => [row.requestId, row.listedAs]));
   assert.deepEqual(
     listed,

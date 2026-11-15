@@ -13,11 +13,11 @@ import { EXECUTION_STEP_CODE } from "@/lib/marketing-requests/request-status-lab
 // "Approved by the CEO" is the `ceo_approval` rung reaching `approved` — the rung, not the person,
 // so an approval the Super Admin recorded on that rung is listed too and says who pressed it.
 //
-// The period is HIS week's email, not a filter on the approval date alone (owner, 2026-11-08): Hossam
-// Reda's "Approved requests 8th Nov to 15th Nov" listed 12 requests, and only 3 were approved in those
-// dates — the other 9 were approved earlier and still waiting for Finance's transfer. So a period lists
-// what the CEO approved in it PLUS every earlier approval Finance has not paid yet ("carried over"), and
-// the "Listed as" column says which, so the two are never confused again.
+// The period FOLLOWS THE DATES (owner, 2026-11-15: "the filter is not following the periods I chose"):
+// by default it lists only what the CEO approved between From and To. The carried-over rows — every
+// earlier CEO approval Finance has not paid yet, which Hossam Reda's weekly email carries (2026-11-08:
+// 12 rows, only 3 approved in those dates) — come back with one switch, `carry=1`, and the "Listed as"
+// column says which is which, so the two are never confused.
 //
 // The status column repeats the Key Data tab's column N word for word (`humanize(status)`), so the
 // page and the live sheet can never name the same request two ways.
@@ -65,6 +65,20 @@ export function resolveCeoApprovalsRange(
   const from = isRealDate(rawFrom) ? rawFrom : `${todayCairo.slice(0, 7)}-01`;
   const to = isRealDate(rawTo) ? rawTo : todayCairo;
   return from <= to ? { from, to } : { from: to, to: from };
+}
+
+/** The address-bar name of the switch that adds the carried-over rows. */
+export const CEO_APPROVALS_CARRY_PARAM = "carry";
+
+/**
+ * Whether the period also lists earlier CEO approvals Finance has not paid yet. OFF unless the address
+ * bar (or a posted body) says `carry=1` — the dates alone decide the list (owner, 2026-11-15).
+ */
+export function resolveCeoApprovalsCarry(value: string | string[] | boolean | null | undefined): boolean {
+  if (value === true) return true;
+  if (typeof value === "boolean") return false;
+  const text = firstParam(value).toLowerCase();
+  return text === "1" || text === "true" || text === "yes";
 }
 
 function nextDay(day: string): string {
@@ -183,15 +197,17 @@ function financeStateOf(
  * ordered by that approval, oldest first.
  *
  * With `period`, an approval at or after `endIso` is ignored; a newest approval at or after
- * `startIso` is "approved in this period"; one before it is listed only while Finance still owes the
- * money (waiting for Finance, or Finance hold) and reads "carried over". Without `period` every row is
- * "approved in this period" — the caller already read only the window.
+ * `startIso` is "approved in this period"; one before it is listed only when `includeCarriedOver` is
+ * on AND Finance still owes the money (waiting for Finance, or Finance hold), and reads "carried over".
+ * Without `period` every row is "approved in this period" — the caller already read only the window.
  */
 export function buildCeoApprovalRows(input: {
   ceoApprovals: readonly CeoApprovalStepInput[];
   /** Keyed by `canonicalHrIdKey`; `isCeo` false marks someone pressing on the CEO's behalf. */
   deciders: ReadonlyMap<string, { isCeo: boolean; name: string }>;
   requestsById: ReadonlyMap<string, CeoApprovalRequestInput>;
+  /** The switch on the page: also list earlier approvals Finance has not paid. Off by default. */
+  includeCarriedOver?: boolean;
   /** The period's half-open UTC window; see the function's comment. */
   period?: { endIso: string; startIso: string };
   steps: readonly CeoApprovalStepInput[];
@@ -224,7 +240,7 @@ export function buildCeoApprovalRows(input: {
     const finance = financeStateOf(request, financeStep, openStep);
     const listedAs: CeoApprovalListedAs =
       period && Date.parse(approval.decisionAt as string) < Date.parse(period.startIso) ? "carried_over" : "approved_in_period";
-    if (listedAs === "carried_over" && !CARRY_OVER_STATES.has(finance.state)) continue;
+    if (listedAs === "carried_over" && (!input.includeCarriedOver || !CARRY_OVER_STATES.has(finance.state))) continue;
     const executed = finance.state === "executed";
     const decider = input.deciders.get(canonicalHrIdKey(approval.decisionByHrId) ?? "");
     const executor = executed ? input.deciders.get(canonicalHrIdKey(financeStep?.decisionByHrId) ?? "") : undefined;
@@ -304,6 +320,8 @@ export function summarizeCeoApprovals(
 
 export type MarketingCeoApprovals = {
   generatedAtIso: string;
+  /** The switch the list was read with — earlier unpaid approvals included or not. */
+  includeCarriedOver: boolean;
   range: CeoApprovalsRange;
   rows: MarketingCeoApprovalRow[];
 };

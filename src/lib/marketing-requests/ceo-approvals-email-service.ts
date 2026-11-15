@@ -12,7 +12,7 @@ import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { afterResponse } from "@/lib/http/after-response";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
-import { resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { resolveCeoApprovalsCarry, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
 import {
   APPROVED_REQUESTS_EMAIL_EVENT,
   APPROVED_REQUESTS_EMAIL_MODULE,
@@ -33,6 +33,8 @@ import {
 } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 import { logError } from "@/lib/observability/log";
+import { personalMailboxSendable, sendPersonalMailboxHtmlEmail } from "@/lib/personal-mailbox/service";
+import { PersonalMailboxError } from "@/lib/personal-mailbox/rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type EmployeeRow = {
@@ -91,8 +93,17 @@ async function loadPeople(seedHrIds: readonly string[]): Promise<Map<string, App
   return people;
 }
 
+/**
+ * Where the email leaves from (owner, 2026-11-15: "if sent from Dr Hossam's account then to be sent
+ * from hossam.reda@satopharma.com"). `own_mailbox` is the sender's real company mailbox, through
+ * their connected My email; `phoenix` is "<name> via Phoenix" with replies to them — used only while
+ * their My email is not connected, and the preview says so before "Send now".
+ */
+export type ApprovedRequestsSentFrom = { address: string; kind: "own_mailbox" | "phoenix"; note: string | null };
+
 export type ApprovedRequestsEmailPreview = {
   cc: Array<{ email: string; name: string }>;
+  from: ApprovedRequestsSentFrom;
   holdNames: string[];
   redCount: number;
   rowCount: number;
@@ -108,6 +119,18 @@ export type ApprovedRequestsEmailResult = ApprovedRequestsEmailPreview & {
   skippedReason: string | null;
 };
 
+/** A double press within this window sends one email: Turbify has no idempotency key of its own. */
+const OWN_MAILBOX_SENT_MEMORY_MS = 10 * 60_000;
+const ownMailboxSentKeys = new Map<string, number>();
+
+function rememberOwnMailboxSend(key: string): boolean {
+  const now = Date.now();
+  for (const [stored, at] of ownMailboxSentKeys) if (now - at > OWN_MAILBOX_SENT_MEMORY_MS) ownMailboxSentKeys.delete(stored);
+  if (ownMailboxSentKeys.has(key)) return false;
+  ownMailboxSentKeys.set(key, now);
+  return true;
+}
+
 function visible(list: readonly ApprovedRequestsRecipient[]) {
   return list.map((person) => ({ email: person.email, name: person.name }));
 }
@@ -121,7 +144,7 @@ function visible(list: readonly ApprovedRequestsRecipient[]) {
  */
 export async function sendMarketingCeoApprovalsEmail(
   access: AccessContext,
-  body: { dryRun?: unknown; from?: unknown; rows?: unknown; to?: unknown },
+  body: { carry?: unknown; dryRun?: unknown; from?: unknown; rows?: unknown; to?: unknown },
 ): Promise<ApprovedRequestsEmailResult> {
   if (!canSendMarketingCeoApprovalsEmail(access.role)) {
     throw forbiddenError("Only the Marketing Manager can send the approved requests email.");
@@ -131,7 +154,8 @@ export async function sendMarketingCeoApprovalsEmail(
     { from: typeof body.from === "string" ? body.from : null, to: typeof body.to === "string" ? body.to : null },
     todayInCairo(),
   );
-  const report = await getMarketingCeoApprovals(access, range);
+  const includeCarriedOver = resolveCeoApprovalsCarry(typeof body.carry === "boolean" || typeof body.carry === "string" ? body.carry : null);
+  const report = await getMarketingCeoApprovals(access, range, { includeCarriedOver });
 
   let picked: ReturnType<typeof normalizeEmailSelection>;
   try {
@@ -169,8 +193,18 @@ export async function sendMarketingCeoApprovalsEmail(
     senderTitle: sender?.jobTitle ?? null,
   };
   const subject = approvedRequestsSubject(range);
+  const senderEmail = String(sender?.email ?? "").trim();
+  const mailbox = await personalMailboxSendable(access);
+  const from: ApprovedRequestsSentFrom = mailbox.sendable && mailbox.address
+    ? { address: mailbox.address, kind: "own_mailbox", note: null }
+    : {
+        address: systemEmail.defaultFromEmail,
+        kind: "phoenix",
+        note: `${mailbox.reason ?? "My email is not connected"}, so this goes out as "${content.senderName} via Phoenix" with replies to ${senderEmail || "you"}. To send it from ${mailbox.address || senderEmail || "your own address"}, open the envelope at the top of Phoenix, choose My email and paste your Turbify app password once.`,
+      };
   const preview: ApprovedRequestsEmailPreview = {
     cc: visible(recipients.cc),
+    from,
     holdNames: content.holdNames,
     redCount: emailRows.filter((row) => row.mark === "executed").length,
     rowCount: emailRows.length,
@@ -200,9 +234,36 @@ export async function sendMarketingCeoApprovalsEmail(
     .digest("hex")
     .slice(0, 32);
   const idempotencyKey = `marketing-approved-requests:${fingerprint}`;
-  const senderEmail = String(sender?.email ?? "").trim();
 
-  const result = await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendPhoenixEmail({
+  // From the sender's own mailbox when their My email can send (owner, 2026-11-15). A failure there is
+  // NEVER retried through Phoenix: Turbify may already have taken it, and a second copy would reach
+  // Finance and every manager twice. The person reads why, and looks in Sent before pressing again.
+  const sendFromOwnMailbox = async (): Promise<{ skipped: false } | { reason: string; skipped: true }> => {
+    if (!rememberOwnMailboxSend(idempotencyKey)) {
+      return { reason: "the same email was sent from your mailbox a moment ago", skipped: true as const };
+    }
+    try {
+      const sent = await sendPersonalMailboxHtmlEmail(access, {
+        cc: recipients.cc.map((person) => person.email),
+        html,
+        subject,
+        text,
+        to: recipients.to.map((person) => person.email),
+      });
+      if (sent.rejected.length > 0) {
+        logError("marketing_approved_requests_own_mailbox_rejected", {
+          labels: { event: "marketing_approved_requests_own_mailbox_rejected" },
+          context: { idempotencyKey, rejected: sent.rejected.length },
+        });
+      }
+      return { skipped: false as const };
+    } catch (error) {
+      if (error instanceof PersonalMailboxError) return { reason: error.message, skipped: true as const };
+      throw error;
+    }
+  };
+
+  const result = await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => from.kind === "own_mailbox" ? sendFromOwnMailbox() : sendPhoenixEmail({
     cc: recipients.cc.map((person) => person.email),
     from: `${content.senderName} via Phoenix <${systemEmail.defaultFromEmail}>`,
     html,
@@ -223,6 +284,7 @@ export async function sendMarketingCeoApprovalsEmail(
       cc: recipients.cc.map((person) => person.hrId),
       requestIds: picked.map(({ row }) => row.requestId),
       sent: !result.skipped,
+      sentFrom: from.kind === "own_mailbox" ? from.address : `${content.senderName} via Phoenix`,
       skippedReason: result.skipped ? result.reason : null,
       subject,
       to: recipients.to.map((person) => person.hrId),

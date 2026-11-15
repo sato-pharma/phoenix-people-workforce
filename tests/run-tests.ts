@@ -993,6 +993,7 @@ import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audi
 import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
 import { runMarketingCeoApprovalsTests } from "./marketing-ceo-approvals.test.ts";
 import { runMarketingCeoApprovalsEmailTests } from "./marketing-ceo-approvals-email.test.ts";
+import { runMarketingCeoApprovalsExportTests } from "./marketing-ceo-approvals-export.test.ts";
 import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
 import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
@@ -9167,6 +9168,10 @@ await runTest(
 await runTest(
   "marketing approved-requests email (Marketing Manager sends, subject names the period, To Finance, Cc requesters up to the National Sales Manager plus Dr Anwar and Omar Anwar, red and hold rows, escaped cells, in-app and Telegram with no second email)",
   runMarketingCeoApprovalsEmailTests,
+);
+await runTest(
+  "marketing CEO approvals export (only the ticked rows in screen order, nothing from outside the dates, cleaned notes, escaped cells, Listed as only with the switch, a live SUM total, rows re-read and audited on the server)",
+  runMarketingCeoApprovalsExportTests,
 );
 await runTest(
   "marketing doctor-list check (one letter and the twin names, 500 m, a pick never overwritten, the flag wording, the board sums, the sheet layout)",

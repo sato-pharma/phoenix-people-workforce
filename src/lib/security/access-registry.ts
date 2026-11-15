@@ -848,6 +848,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
+  // CEO Approvals' ticked rows as a house-style XLSX or PDF (owner, 2026-11-15). The page's own gate,
+  // canViewMarketingCeoApprovals, runs inside getMarketingCeoApprovals before a row is read.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/ceo-approvals/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/report/share-links", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Minting a link that copies candidate names and phone numbers into a Google Sheet is gated on
   // recruitment:EXPORT, not recruitment:read — reading the pool inside Phoenix and issuing a

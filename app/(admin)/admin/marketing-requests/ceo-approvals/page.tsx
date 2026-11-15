@@ -10,7 +10,7 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 import { todayInCairo } from "@/lib/date-only";
-import { resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
+import { CEO_APPROVALS_CARRY_PARAM, resolveCeoApprovalsCarry, resolveCeoApprovalsRange } from "@/lib/marketing-requests/ceo-approvals";
 import { canSendMarketingCeoApprovalsEmail } from "@/lib/marketing-requests/ceo-approvals-email";
 import { getMarketingCeoApprovals } from "@/lib/marketing-requests/ceo-approvals-service";
 
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 /** The two dates travel with a portal viewer, so the portal page opens on the same range. */
 function preservedQuery(params: Record<string, string | string[] | undefined>) {
   const query = new URLSearchParams();
-  for (const key of ["from", "to"]) {
+  for (const key of ["from", "to", CEO_APPROVALS_CARRY_PARAM]) {
     const value = params[key];
     if (typeof value === "string" && value.trim()) query.set(key, value);
   }
@@ -37,7 +37,7 @@ function preservedQuery(params: Record<string, string | string[] | undefined>) {
 export default async function AdminMarketingCeoApprovalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string | string[]; to?: string | string[] }>;
+  searchParams: Promise<{ carry?: string | string[]; from?: string | string[]; to?: string | string[] }>;
 }) {
   const access = await assertMarketingCeoApprovalsAdminPageAccess();
   const params = await searchParams;
@@ -46,7 +46,8 @@ export default async function AdminMarketingCeoApprovalsPage({
     redirect(`/employee-portals/marketing-requests/ceo-approvals${preservedQuery(params)}`);
   }
   const range = resolveCeoApprovalsRange(params, todayInCairo());
-  const report = await getMarketingCeoApprovals(access, range);
+  const includeCarriedOver = resolveCeoApprovalsCarry(params.carry);
+  const report = await getMarketingCeoApprovals(access, range, { includeCarriedOver });
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
@@ -57,14 +58,15 @@ export default async function AdminMarketingCeoApprovalsPage({
           <p className={pageHeaderKickerClassName}>Marketing</p>
           <h1 className={pageHeaderTitleClassName}>CEO Approvals</h1>
           <p className={pageHeaderDescriptionClassName}>
-            Every marketing request the CEO approved between two dates, plus every earlier approval Finance has not
-            paid yet, with its value and where its money stands now. Untick a row to leave it out of the totals.
+            Every marketing request the CEO approved between two dates, with its value and where its money stands
+            now. Tick the switch to add earlier approvals Finance has not paid yet. Untick a row to leave it out of the
+            totals and the exports.
           </p>
         </div>
       </div>
       <MarketingCeoApprovalsReport
         canSend={canSendMarketingCeoApprovalsEmail(access.role)}
-        key={`${range.from}:${range.to}`}
+        key={`${range.from}:${range.to}:${includeCarriedOver ? 1 : 0}`}
         report={report}
       />
     </div>
