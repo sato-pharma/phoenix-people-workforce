@@ -120,14 +120,19 @@ export type ZoomMeetingInput = {
  * The meeting as Zoom wants it: a scheduled meeting (type 2) at a Cairo wall-clock time.
  *
  * `start_time` is written WITHOUT a zone and `timezone` names Cairo, so Zoom does the daylight-saving
- * arithmetic and the meeting shows the same hour the calendar does. Nobody in before the host: an
- * interview must not start without the interviewer.
+ * arithmetic and the meeting shows the same hour the calendar does.
  *
- * NO WAITING ROOM — the owner, 2026-09-20, after a live interview: "the meeting was by permission and I
- * had to accept the employees entering". With `join_before_host: false` a candidate who arrives early
- * still waits for the interviewer to start it, and once it has started they walk straight in; the
- * waiting room only added a click per person. (Zoom can still force a waiting room from the account's
- * own settings, which no API field overrides.)
+ * EVERYONE WALKS STRAIGHT IN — NO WAITING ROOM, NO "WAITING FOR HOST".
+ *   - No waiting room: the owner, 2026-09-20, after a live interview: "the meeting was by permission and
+ *     I had to accept the employees entering".
+ *   - Join before the host, at any time (`jbh_time: 0`): the owner, 2026-11-15: "when the DM and
+ *     candidate join the link they are asked waiting for host … I want them automatic, they enter the
+ *     zoom with no approval as long they are joining from Phoenix interview calendar". The earlier
+ *     `join_before_host: false` kept a candidate who arrived first on Zoom's "waiting for the host to
+ *     start this meeting" screen until the interviewer opened it. The interviewer still opens it with the
+ *     host link (getZoomHostStartUrl) and takes the host seat on arrival.
+ * These are per-meeting settings, so they reach only the meetings Phoenix creates and moves. (Zoom can
+ * still force a waiting room from the account's own locked settings, which no API field overrides.)
  */
 export function zoomMeetingBody(input: ZoomMeetingInput) {
   const hours = String(Math.floor(input.startMinutes / 60)).padStart(2, "0");
@@ -135,7 +140,8 @@ export function zoomMeetingBody(input: ZoomMeetingInput) {
   return {
     duration: input.durationMinutes,
     settings: {
-      join_before_host: false,
+      jbh_time: 0,
+      join_before_host: true,
       waiting_room: false,
     },
     start_time: `${input.dateKey}T${hours}:${minutes}:00`,
