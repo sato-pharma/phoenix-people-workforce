@@ -10,6 +10,7 @@
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logError } from "@/lib/observability/log";
 import { recruitmentAlertRoles, recruitmentDeskAlertRoles } from "@/lib/recruitment/access";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import type { CandidateMatchReason } from "@/lib/recruitment/candidate-matching";
@@ -88,18 +89,17 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   const reason = inboundCvAlertReason(input);
   if (!reason) return;
 
-  // The Talent Acquisition fence is by PERSON and reaches her notifications too: an HR applicant (her
-  // manager's seat or her own) is never named to her, here or anywhere. Asked of the fence itself, so
-  // the rule is the one every screen uses; a check that cannot answer leaves her off (fail closed) —
-  // the Super Admin still hears of the CV either way.
-  // The declared role is asked FIRST: the careers form files the person only after this alert.
-  const hiddenFromTalentAcquisition =
+  // The Talent Acquisition fence is by PERSON and reaches her notifications too: an HR applicant is
+  // never named to her. The declared role first (the careers form files the person after this alert),
+  // then the fence itself; a check that cannot answer leaves her off (fail closed).
+  const fenced =
     declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily) ||
     (await candidateHiddenFrom(
       { role: "HR Resourcing", scope: "company" },
       input.candidateId,
     ).catch(() => true));
-  // The desk list IS the alert list without her, so a hidden person goes to the desk alone.
+  const heldForRoleAnswer = !fenced && (await whatsAppRoleAwaited(input));
+  const hiddenFromTalentAcquisition = fenced || heldForRoleAnswer;
   const recipientHrIds = hiddenFromTalentAcquisition
     ? await hrIdsForRoles(recruitmentDeskAlertRoles)
     : await hrIdsForRoles(recruitmentAlertRoles);
@@ -133,6 +133,8 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
         fieldsAwaitingReview: awaiting,
         fileAttached: input.fileAttached,
         matchReason: input.matchReason ?? null,
+        // The marker releaseHeldWhatsAppCvAlert looks for: her copy of THIS alert is still owed.
+        talentAcquisitionHeld: heldForRoleAnswer,
       },
       module: "recruitment",
       priority: "normal",
@@ -140,6 +142,113 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
     },
     recipientHrIds,
   );
+}
+
+/**
+ * True when her copy of a WhatsApp CV's alert must wait: the CV arrives BEFORE the bot asks the role,
+ * so nobody can yet say whether this person is behind her fence (15 Nov 2026: 14 WhatsApp HR applicants
+ * were named to her this way). The desk is told now; releaseHeldWhatsAppCvAlert tells her once the bot
+ * files them outside the HR tabs. A read that cannot answer holds it too (fail closed).
+ */
+async function whatsAppRoleAwaited(input: { channel: InboundCvChannel; candidateId: string }): Promise<boolean> {
+  if (input.channel !== "whatsapp") return false;
+  return readCandidateFiling(input.candidateId)
+    .then((filing) => roleNotYetAnswered(filing))
+    .catch(() => true);
+}
+
+/** What files a person: the role they declared, and the tabs they are placed in. */
+export type CandidateFiling = { declaredRoleFamily: string | null; placementCount: number };
+
+/** True while nothing has filed this person yet — no declared role and no placement. */
+export function roleNotYetAnswered(filing: CandidateFiling | null): boolean {
+  if (!filing) return true;
+  return String(filing.declaredRoleFamily ?? "").trim().length === 0 && filing.placementCount === 0;
+}
+
+async function readCandidateFiling(candidateId: string): Promise<CandidateFiling | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("ats_candidates")
+    .select("declared_role_family, ats_candidate_placements(role_tab)")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as { declared_role_family: unknown; ats_candidate_placements: unknown };
+  return {
+    declaredRoleFamily: typeof row.declared_role_family === "string" ? row.declared_role_family : null,
+    placementCount: Array.isArray(row.ats_candidate_placements) ? row.ats_candidate_placements.length : 0,
+  };
+}
+
+/** The seats on the new-CV alert and on no other recruitment alert — the Talent Acquisition seat. */
+const talentAcquisitionAlertRoles: readonly PhoenixRole[] = recruitmentAlertRoles.filter(
+  (role) => !recruitmentDeskAlertRoles.includes(role),
+);
+
+/** How far back a held alert is still owed. A role answered later than this releases nothing. */
+const HELD_ALERT_WINDOW_DAYS = 30;
+
+/**
+ * Sends the Talent Acquisition seat the new-CV alert that notifyTalentAcquisitionOfInboundCv held
+ * back for a WhatsApp CV whose role was not yet answered. Called every time the bot files a person
+ * from their answers; sends only when (1) the fence now lets her see them, (2) a held alert for them
+ * exists, and (3) she was not already sent one for them — and a fixed idempotency key makes a race
+ * between two answers send once. The words are the held alert's own. Never throws.
+ */
+export async function releaseHeldWhatsAppCvAlert(candidateId: string): Promise<void> {
+  try {
+    if (await candidateHiddenFrom({ role: "HR Resourcing", scope: "company" }, candidateId)) return;
+
+    const since = new Date(Date.now() - HELD_ALERT_WINDOW_DAYS * 86_400_000).toISOString();
+    const { data, error } = await getSupabaseAdmin()
+      .from("notification_events")
+      .select("recipients, metadata, action_url")
+      .eq("module", "recruitment")
+      .eq("event_type", "recruitment_inbound_cv")
+      .gte("created_at", since)
+      .contains("metadata", { candidateId })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    const rows = (data ?? []) as Array<{ recipients: unknown; metadata: Record<string, unknown> | null; action_url: unknown }>;
+    const held = rows.find((row) => row.metadata?.talentAcquisitionHeld === true);
+    if (!held) return;
+
+    const alreadyTold = new Set(
+      rows.flatMap((row) => (Array.isArray(row.recipients) ? row.recipients : [])).map((id) => String(id).trim().toUpperCase()),
+    );
+    const owed = (await hrIdsForRoles(talentAcquisitionAlertRoles)).filter((hrId) => !alreadyTold.has(hrId));
+    if (owed.length === 0) return;
+
+    const metadata = held.metadata ?? {};
+    const message = typeof metadata.message === "string" ? metadata.message : "A WhatsApp applicant's CV is on their candidate record now.";
+    const title = typeof metadata.title === "string" ? metadata.title : "New CV received";
+    await createSystemNotificationForRecipients(
+      {
+        actionUrl: typeof held.action_url === "string" ? held.action_url : workspaceCandidateHref(candidateId),
+        eventType: "recruitment_inbound_cv",
+        message,
+        metadata: {
+          alertReason: metadata.alertReason ?? null,
+          bulkArrival: false,
+          candidateId,
+          channel: "whatsapp",
+          idempotencyKey: `recruitment_inbound_cv_released:${candidateId}`,
+          releasedAfterRoleAnswer: true,
+          talentAcquisitionHeld: false,
+        },
+        module: "recruitment",
+        priority: "normal",
+        title,
+      },
+      owed,
+    );
+  } catch (error) {
+    logError("A held new-CV alert could not be released to Talent Acquisition", {
+      error,
+      labels: { candidate_id: candidateId, event: "recruitment_held_cv_alert_release_failed" },
+    });
+  }
 }
 
 /**

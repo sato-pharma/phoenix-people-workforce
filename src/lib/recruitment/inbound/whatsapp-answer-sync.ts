@@ -29,6 +29,7 @@ import {
   classificationPayload,
   sessionAreaLabel,
 } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import { releaseHeldWhatsAppCvAlert } from "@/lib/recruitment/inbound/recruitment-notify";
 import type { SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
 import type { BuiltInQuestionKey } from "@/lib/recruitment/inbound/whatsapp-question-audience";
 import { safeCandidateForSession } from "@/lib/recruitment/inbound/whatsapp-session-link";
@@ -113,7 +114,7 @@ export async function afterSessionAnswersWritten(input: {
   const marks = input.placing ? await readAnswerMarks(candidateId) : {};
   const hrFiled = PLACING_ANSWER_KEYS.some((key) => key in marks);
   if (input.placing && !hrFiled && session.job_title_family) {
-    await placeFromAnswers({
+    const placed = await placeFromAnswers({
       areaName: sessionAreaLabel(session),
       candidateId,
       placedBy: "whatsapp",
@@ -121,6 +122,9 @@ export async function afterSessionAnswersWritten(input: {
       roleFamily: session.job_title_family,
       sessionId: session.id,
     });
+    // The new-CV alert for a WhatsApp CV waits for this answer before it reaches the Talent
+    // Acquisition seat: now that the role is known, it goes out — unless the role is an HR one.
+    if (placed.outcome === "placed") await releaseHeldWhatsAppCvAlert(candidateId);
   }
   await recomputeCompleteness([candidateId]);
 }
