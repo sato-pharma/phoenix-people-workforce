@@ -34,6 +34,7 @@ import {
   NO_AREA,
   NO_DISTRICT_MANAGER,
   NO_REGION,
+  PRODUCT_DETAIL_TAB,
   VACANT_SEAT,
   buildForecastExportModel,
   buildForecastPdfHtml,
@@ -41,6 +42,7 @@ import {
   forecastExportFilename,
   groupBricksByDistrict,
   groupBricksByRegion,
+  groupProductsByRegionAndRep,
 } from "@/lib/sales/make-it-happen/export-document";
 import {
   NO_PLANNER_FILTERS,
@@ -781,8 +783,8 @@ export async function runMakeItHappenTests() {
   const brickTexts: string[] = [];
   assert.deepEqual(
     brickBook.worksheets.map((sheet) => sheet.name),
-    ["Cover", "Forecast", BRICKS_TAB, "Scenarios"],
-    "one District Manager and one rep: no District Managers or Medical Reps tab, the Bricks tab alone",
+    ["Cover", "Forecast", PRODUCT_DETAIL_TAB, BRICKS_TAB, "Scenarios"],
+    "one District Manager and one rep: no District Managers or Medical Reps tab, the product detail and the Bricks tab",
   );
   brickBook.getWorksheet(BRICKS_TAB)?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
   assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "a brick with no named cover is still on the Bricks tab, with its units");
@@ -846,8 +848,8 @@ export async function runMakeItHappenTests() {
   // ── Owner, 2026-11-14 (later): one tab per LEVEL — District Managers, Medical Reps, then Bricks from region down ──
   assert.deepEqual(
     coverBook.worksheets.map((sheet) => sheet.name),
-    ["Cover", "Forecast", DISTRICT_MANAGERS_TAB, MEDICAL_REPS_TAB, BRICKS_TAB, "Scenarios"],
-    "a team file carries a District Managers tab, a Medical Reps tab and a Bricks tab, in that order",
+    ["Cover", "Forecast", DISTRICT_MANAGERS_TAB, MEDICAL_REPS_TAB, PRODUCT_DETAIL_TAB, BRICKS_TAB, "Scenarios"],
+    "a team file carries District Managers, Medical Reps, the product detail and Bricks, in that order",
   );
   const sheetTexts = (name: string) => {
     const texts: string[] = [];
@@ -884,6 +886,32 @@ export async function runMakeItHappenTests() {
     "region, then its areas, then each area's bricks, before the next region",
   );
 
+  // ── Owner, 2026-11-15: the files show the detail per product, per rep, per region ──
+  const detail = groupProductsByRegionAndRep(coverModel);
+  assert.deepEqual(detail.map((line) => line.lineName), ["CNS"]);
+  assert.deepEqual(detail[0].regions.map((region) => region.name), ["Delta", "Upper Egypt", NO_REGION], "the same regions as the Bricks tab, the unplaced last");
+  const delta = detail[0].regions[0];
+  assert.deepEqual(delta.reps.map((rep) => rep.name), ["Rep Amr", "Rep Zed"], "each region's reps by name");
+  assert.deepEqual(
+    delta.reps[1].rows.map((row) => [row.product, row.units, row.bricks, row.areas]),
+    [["Alpha", 30, 1, ["Tanta"]], ["Beta", 5, 1, ["Tanta"]]],
+    "each rep's products in plan order, with that product's own units, bricks and areas",
+  );
+  assert.equal(delta.reps[1].value, delta.reps[1].rows.reduce((sum, row) => sum + row.value, 0), "a rep's total is value, never units");
+  assert.equal(delta.value, delta.reps.reduce((sum, rep) => sum + rep.value, 0), "a region's total is its reps' value");
+  assert.equal(
+    detail[0].regions.reduce((sum, region) => sum + region.value, 0),
+    totalBrickValue,
+    "the detail holds the whole brick forecast, nothing lost or doubled",
+  );
+  const detailTexts = sheetTexts(PRODUCT_DETAIL_TAB);
+  assert.ok(detailTexts.includes("CNS · Delta · 2 reps"), "one table per region on the Excel tab");
+  assert.ok(detailTexts.includes("Rep Zed") && detailTexts.includes("Beta") && detailTexts.includes("Manager Bee"), "a row per rep and product, with the District Manager");
+  const coverHtml = buildForecastPdfHtml(coverModel);
+  assert.ok(coverHtml.includes("By region, rep and product"), "the PDF carries the detail section");
+  assert.ok(coverHtml.includes("CNS · Delta") && coverHtml.includes("Rep Zed total"), "each region a table, and a rep with several products gets his own value total");
+  assert.ok(!buildForecastPdfHtml(model).includes("By region, rep and product"), "a file with no brick sales has no detail section");
+
   // A District Manager's own file: no District Managers tab, his reps and his bricks.
   const ownDistrictModel = buildForecastExportModel({
     workspace: {
@@ -901,7 +929,7 @@ export async function runMakeItHappenTests() {
   await ownDistrictBook.xlsx.load((await buildForecastWorkbook(ownDistrictModel)) as unknown as ArrayBuffer);
   assert.deepEqual(
     ownDistrictBook.worksheets.map((sheet) => sheet.name),
-    ["Cover", "Forecast", MEDICAL_REPS_TAB, BRICKS_TAB, "Scenarios"],
+    ["Cover", "Forecast", MEDICAL_REPS_TAB, PRODUCT_DETAIL_TAB, BRICKS_TAB, "Scenarios"],
     "a District Manager's own file has no District Managers tab",
   );
 
