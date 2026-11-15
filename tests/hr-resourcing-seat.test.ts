@@ -45,6 +45,10 @@ import {
   recruitmentManageRoles,
 } from "../src/lib/recruitment/access.ts";
 import {
+  declaredFamilyHiddenFromTalentAcquisition,
+  roleNotYetAnswered,
+} from "../src/lib/recruitment/inbound/recruitment-notify.ts";
+import {
   noticeFetchLimit,
   noticeHiddenFromSeat,
   seatNeedsOtherKindsRead,
@@ -250,6 +254,60 @@ export async function runHrResourcingSeatTests() {
   assert.ok(
     (notifySource.match(/hrIdsForRoles\(recruitmentDeskAlertRoles\)/g) ?? []).length >= 6,
     "every other alert in recruitment-notify.ts reads the desk list",
+  );
+  // 15 Nov 2026: the careers form names the role BEFORE the record holds it, so the new-CV alert
+  // must be told the declared family, or an HR applicant is named to her and her link opens nothing.
+  for (const family of ["hr_section_head", "talent_acquisition", "personnel", "human_resources"]) {
+    assert.equal(declaredFamilyHiddenFromTalentAcquisition(family), true, `a declared ${family} applicant is never named to her`);
+  }
+  for (const family of ["medical_rep", "district_manager", "product_manager", "", null, undefined]) {
+    assert.equal(declaredFamilyHiddenFromTalentAcquisition(family), false, `a declared ${String(family)} applicant still reaches her`);
+  }
+  const notifyCode = stripComments(notifySource);
+  assert.ok(
+    notifyCode.indexOf("declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily)") >= 0 &&
+      notifyCode.indexOf("declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily)") <
+        notifyCode.indexOf("hrIdsForRoles(recruitmentAlertRoles)"),
+    "the new-CV alert asks the declared role before it chooses her audience",
+  );
+  const intakeCode = stripComments(source("src/lib/recruitment/inbound/cv-intake-service.ts"));
+  assert.equal(
+    (intakeCode.match(/declaredRoleFamily: input\.declaredRoleFamily \?\? null/g) ?? []).length,
+    (intakeCode.match(/notifyTalentAcquisitionOfInboundCv\(\{/g) ?? []).length,
+    "every new-CV alert intake raises is handed the declared role",
+  );
+  assert.match(
+    stripComments(source("src/lib/recruitment/inbound/website-apply.ts")),
+    /ingestInboundCv\(\{[\s\S]*?declaredRoleFamily: input\.role\.roleFamily[\s\S]*?\}\)/,
+    "the careers form hands intake the role the applicant chose",
+  );
+  // 15 Nov 2026, the WhatsApp half: a WhatsApp CV arrives before the bot asks the role, so her copy
+  // of the alert waits for the role answer and goes out only if that answer is not an HR role.
+  assert.equal(roleNotYetAnswered(null), true, "a person the read cannot find is not filed");
+  assert.equal(roleNotYetAnswered({ declaredRoleFamily: null, placementCount: 0 }), true, "no role and no tab: hold her alert");
+  assert.equal(roleNotYetAnswered({ declaredRoleFamily: "  ", placementCount: 0 }), true, "a blank role is no role");
+  assert.equal(roleNotYetAnswered({ declaredRoleFamily: "medical_rep", placementCount: 0 }), false, "a declared role files them");
+  assert.equal(roleNotYetAnswered({ declaredRoleFamily: null, placementCount: 1 }), false, "a placement files them");
+  assert.match(
+    notifyCode,
+    /async function whatsAppRoleAwaited\([\s\S]*?if \(input\.channel !== "whatsapp"\) return false;[\s\S]*?roleNotYetAnswered\(filing\)\)\s*\.catch\(\(\) => true\)/,
+    "only a WhatsApp CV waits, and a read that cannot answer holds it (fail closed)",
+  );
+  assert.match(
+    notifyCode,
+    /const heldForRoleAnswer = !fenced && \(await whatsAppRoleAwaited\(input\)\);\s*const hiddenFromTalentAcquisition = fenced \|\| heldForRoleAnswer;/,
+    "a held WhatsApp CV goes to the desk alone",
+  );
+  assert.match(notifyCode, /talentAcquisitionHeld: heldForRoleAnswer/, "the desk's alert records that her copy is owed");
+  assert.match(
+    notifyCode,
+    /releaseHeldWhatsAppCvAlert[\s\S]*?candidateHiddenFrom\(\{ role: "HR Resourcing", scope: "company" \}, candidateId\)\) return;/,
+    "the held alert is released only when the fence lets her see the person",
+  );
+  assert.match(
+    stripComments(source("src/lib/recruitment/inbound/whatsapp-answer-sync.ts")),
+    /const placed = await placeFromAnswers\([\s\S]*?\);\s*if \(placed\.outcome === "placed"\) await releaseHeldWhatsAppCvAlert\(candidateId\);/,
+    "the bot's role answer releases her held alert once it has filed the person",
   );
   for (const reader of [
     "src/lib/recruitment/stale-send-check.ts",
