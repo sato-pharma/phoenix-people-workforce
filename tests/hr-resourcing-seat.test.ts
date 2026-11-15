@@ -44,6 +44,7 @@ import {
   recruitmentDeskAlertRoles,
   recruitmentManageRoles,
 } from "../src/lib/recruitment/access.ts";
+import { declaredFamilyHiddenFromTalentAcquisition } from "../src/lib/recruitment/inbound/recruitment-notify.ts";
 import {
   noticeFetchLimit,
   noticeHiddenFromSeat,
@@ -250,6 +251,32 @@ export async function runHrResourcingSeatTests() {
   assert.ok(
     (notifySource.match(/hrIdsForRoles\(recruitmentDeskAlertRoles\)/g) ?? []).length >= 6,
     "every other alert in recruitment-notify.ts reads the desk list",
+  );
+  // 15 Nov 2026: the careers form names the role BEFORE the record holds it, so the new-CV alert
+  // must be told the declared family, or an HR applicant is named to her and her link opens nothing.
+  for (const family of ["hr_section_head", "talent_acquisition", "personnel", "human_resources"]) {
+    assert.equal(declaredFamilyHiddenFromTalentAcquisition(family), true, `a declared ${family} applicant is never named to her`);
+  }
+  for (const family of ["medical_rep", "district_manager", "product_manager", "", null, undefined]) {
+    assert.equal(declaredFamilyHiddenFromTalentAcquisition(family), false, `a declared ${String(family)} applicant still reaches her`);
+  }
+  const notifyCode = stripComments(notifySource);
+  assert.ok(
+    notifyCode.indexOf("declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily)") >= 0 &&
+      notifyCode.indexOf("declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily)") <
+        notifyCode.indexOf("hrIdsForRoles(recruitmentAlertRoles)"),
+    "the new-CV alert asks the declared role before it chooses her audience",
+  );
+  const intakeCode = stripComments(source("src/lib/recruitment/inbound/cv-intake-service.ts"));
+  assert.equal(
+    (intakeCode.match(/declaredRoleFamily: input\.declaredRoleFamily \?\? null/g) ?? []).length,
+    (intakeCode.match(/notifyTalentAcquisitionOfInboundCv\(\{/g) ?? []).length,
+    "every new-CV alert intake raises is handed the declared role",
+  );
+  assert.match(
+    stripComments(source("src/lib/recruitment/inbound/website-apply.ts")),
+    /ingestInboundCv\(\{[\s\S]*?declaredRoleFamily: input\.role\.roleFamily[\s\S]*?\}\)/,
+    "the careers form hands intake the role the applicant chose",
   );
   for (const reader of [
     "src/lib/recruitment/stale-send-check.ts",
