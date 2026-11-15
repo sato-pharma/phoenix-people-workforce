@@ -2536,6 +2536,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // pre-image is phoenix_crm_backup_20261114.left_items_reopen_stamps (237) and .left_items_copied_pins (641).
   // Re-applying is a no-op.
   "20261114062049_phoenix_crm_validation_left_items.sql",
+  // Applied 15 Nov 2026 through scripts/apply-sql-file.mjs (the MCP apply was declined twice): staging first, then
+  // production with the aws-1 pooler. No ledger row on either. Read back on BOTH projects: trigger
+  // attendance_raw_punches_clock_correction on public.attendance_raw_punches, md5(prosrc) of
+  // phx_attendance_raw_punch_clock_correction 157dde01cc3f4e2eeb41c82454e5b9f2, executable by postgres and
+  // service_role only, not SECURITY DEFINER. Production data: 265 Head Office punches (30 Oct - 10 Nov, the
+  // ZKTeco clock kept summer time) moved one hour earlier, 0 left in the window unmarked; pre-image
+  // attendance_backup_20261115.raw_punches_clock_shift (265). The file's last UPDATE gained "and not (raw_payload ?
+  // 'clock_correction')" after the apply — true for all 265 rows at the time — so re-applying moves nothing.
+  "20261115170525_fingerprint_clock_summer_time_correction.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
