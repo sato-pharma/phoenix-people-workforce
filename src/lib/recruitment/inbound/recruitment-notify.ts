@@ -22,6 +22,7 @@ import {
 } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
+import { HR_ROLE_FAMILIES } from "@/lib/recruitment/workspace/role-tabs";
 import { workspaceCandidateHref, workspaceHref } from "@/lib/recruitment/workspace/links";
 
 export async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
@@ -47,6 +48,20 @@ export const MATCH_REASON_LABEL: Record<CandidateMatchReason, string> = {
   phone: "phone number",
 };
 
+/**
+ * True when the role the applicant chose ALREADY puts them behind the Talent Acquisition fence,
+ * before anything has been written to their record. The careers form knows the role when the CV
+ * arrives, but writes `declared_role_family` and the placement only AFTER intake has returned — and
+ * intake raises this alert on its way out. Asking the database alone at that moment found an
+ * unfiled person and named an HR applicant to her (15 Nov 2026: Mahmoud G Kazamel, HR Section Head;
+ * 13 careers-form HR applicants before him). Her link then opened nothing, because every screen
+ * fences him.
+ */
+export function declaredFamilyHiddenFromTalentAcquisition(family: string | null | undefined): boolean {
+  const value = String(family ?? "").trim();
+  return value.length > 0 && HR_ROLE_FAMILIES.includes(value);
+}
+
 export async function notifyTalentAcquisitionOfInboundCv(input: {
   candidateId: string;
   fullName: string;
@@ -63,6 +78,9 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   // A forwarding handset or a coexistence history replay rather than the applicant themselves.
   // Counted by the daily digest like any other arrival; it just never interrupts anyone.
   bulkArrival?: boolean;
+  // The role family the applicant chose, when the channel knows it before the record holds it (the
+  // careers form). Absent everywhere else, where the record is the only answer.
+  declaredRoleFamily?: string | null;
 }): Promise<void> {
   // A bulk forward is reported once a day by notifyDailyCvDigest instead of once per CV. Checked
   // BEFORE the recipient lookup so that path costs no database round trip at all — it runs on every
@@ -74,10 +92,10 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   // manager's seat or her own) is never named to her, here or anywhere. Asked of the fence itself, so
   // the rule is the one every screen uses; a check that cannot answer leaves her off (fail closed) —
   // the Super Admin still hears of the CV either way.
-  const hiddenFromTalentAcquisition = await candidateHiddenFrom(
-    { role: "HR Resourcing", scope: "company" },
-    input.candidateId,
-  ).catch(() => true);
+  // The declared role is asked FIRST: the careers form files the person only after this alert.
+  const hiddenFromTalentAcquisition =
+    declaredFamilyHiddenFromTalentAcquisition(input.declaredRoleFamily) ||
+    (await candidateHiddenFrom({ role: "HR Resourcing", scope: "company" }, input.candidateId).catch(() => true));
   // The desk list IS the alert list without her, so a hidden person goes to the desk alone.
   const recipientHrIds = hiddenFromTalentAcquisition
     ? await hrIdsForRoles(recruitmentDeskAlertRoles)

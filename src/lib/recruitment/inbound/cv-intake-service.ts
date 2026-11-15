@@ -114,6 +114,10 @@ export type InboundCvIntakeInput = {
   // by the public careers form (public-apply-ai-budget.ts); absent everywhere else, which is today's
   // behaviour exactly. A refusal reads the CV the free way (rules, then OCR) and never loses it.
   aiBudget?: () => Promise<boolean>;
+  // The role family the applicant chose, when the channel knows it before the record does — the
+  // careers form, which writes declared_role_family only after this call returns. Handed to the
+  // new-CV alert so an HR applicant is never named to the Talent Acquisition seat (her fence).
+  declaredRoleFamily?: string | null;
 };
 
 export type InboundCvIntakeOutcome =
@@ -595,6 +599,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         candidateId: candidate.id,
         channel: input.channel,
         created,
+        declaredRoleFamily: input.declaredRoleFamily ?? null,
         fileAttached: false,
         fullName: candidate.fullName,
         matchReason,
@@ -698,6 +703,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       candidateId: candidate.id,
       channel: input.channel,
       created,
+      declaredRoleFamily: input.declaredRoleFamily ?? null,
       // Count only what is STILL waiting: the high-confidence half was already written onto the
       // candidate by the auto-apply above, so counting the whole extraction would send Talent
       // Acquisition to "review and save" fields that are already saved — and, when everything
