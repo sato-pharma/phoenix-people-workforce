@@ -263,7 +263,11 @@ export async function sendMarketingCeoApprovalsEmail(
     }
   };
 
-  const result = await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => from.kind === "own_mailbox" ? sendFromOwnMailbox() : sendPhoenixEmail({
+  // Two doors, one per route, so each send is plainly an approval sent through raiseApproval.
+  const result =
+    from.kind === "own_mailbox"
+      ? await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendFromOwnMailbox() })
+      : await raiseApproval({ decision: "approved", module: "marketing", step: "decided" }, { via: "direct-email", send: () => sendPhoenixEmail({
     cc: recipients.cc.map((person) => person.email),
     from: `${content.senderName} via Phoenix <${systemEmail.defaultFromEmail}>`,
     html,
