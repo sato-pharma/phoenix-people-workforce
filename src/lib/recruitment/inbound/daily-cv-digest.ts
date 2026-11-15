@@ -32,6 +32,7 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   NEEDS_PLACING,
   personVisibleToViewer,
+  placementIsComplete,
   workspaceRoleTabLabels,
   workspaceRoleTabs,
   workspaceViewer,
@@ -192,7 +193,10 @@ function regionLabel(code: string | null | undefined): string | null {
  * else the tab alone — never a code on screen.
  */
 function placesOf(row: DailyCvDigestRow): Array<Omit<DailyCvDigestPlace, "count" | "incomplete">> {
-  const placements = (row.placements ?? []).filter((placement) => workspaceRoleTabs.includes(placement.tab));
+  // A filing that is not whole (a Medical Rep with no area) is still Needs placing.
+  const placements = (row.placements ?? []).filter(
+    (placement) => workspaceRoleTabs.includes(placement.tab) && placementIsComplete(placement),
+  );
   if (placements.length === 0) {
     return [{ area: null, label: NEEDS_PLACING_LABEL, region: null, tab: NEEDS_PLACING }];
   }

@@ -414,6 +414,11 @@ export function PlacingForm({
           <span className="text-xs font-medium text-slate-500">
             Each answer you type is marked “added by HR” with your name. Answers you leave as they are stay the applicant&apos;s. Moving on to
             another CV places this one too.
+            {shape.area
+              ? " A Medical Rep is placed only with an area — without one the CV stays in Needs placing."
+              : shape.region
+                ? " A District Manager is placed only with a region — without one the CV stays in Needs placing."
+                : ""}
           </span>
         </div>
       </div>

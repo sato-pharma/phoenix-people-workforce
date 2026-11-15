@@ -11,6 +11,7 @@
 //   * `personVisibleToViewer` is the TypeScript twin of the SQL fence in `ats_workspace_filter`.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-family.ts";
 import { scopeForRole } from "../src/lib/auth/permissions.ts";
@@ -22,6 +23,7 @@ import {
   isWorkspaceTabKey,
   NEEDS_PLACING,
   personVisibleToViewer,
+  placementIsComplete,
   roleTabForFamily,
   workspaceRoleTabLabels,
   workspaceRoleTabs,
@@ -128,4 +130,20 @@ export function runRecruitmentRoleTabsTests() {
   assert.equal(visible(superAdmin, "talent_acquisition", ["talent_acquisition"]), true, "the Super Admin sees HR applicants");
   assert.equal(visible(ceo, "hr_section_head", ["hr_section_head"]), true, "the CEO sees HR applicants");
   assert.equal(visible(viewerFor("Medical Rep"), "medical_rep", ["medical_rep"]), false, "a non-reader sees nobody");
+
+  // ── A placement is whole only with its area (owner, 15 Nov 2026: "if not placed in an area consider
+  // him still needs placing — placing is confirmed if moved to position, region and area") ──
+  assert.equal(placementIsComplete({ areaCode: "AB4", regionCode: "AB", tab: "medical_rep" }), true, "a Medical Rep with region and area is placed");
+  assert.equal(placementIsComplete({ areaCode: null, regionCode: "AB", tab: "medical_rep" }), false, "a Medical Rep with a region and no area is still Needs placing");
+  assert.equal(placementIsComplete({ areaCode: null, regionCode: null, tab: "medical_rep" }), false, "a Medical Rep with nothing is still Needs placing");
+  assert.equal(placementIsComplete({ areaCode: " ", regionCode: "AB", tab: "medical_rep" }), false, "a blank area is no area");
+  assert.equal(placementIsComplete({ regionCode: "CA", tab: "district_manager" }), true, "a District Manager is placed with a region (the tab has no areas)");
+  assert.equal(placementIsComplete({ regionCode: null, tab: "district_manager" }), false, "a District Manager with no region is still Needs placing");
+  for (const tab of workspaceRoleTabs.filter((key) => key !== "medical_rep" && key !== "district_manager")) {
+    assert.equal(placementIsComplete({ tab }), true, `${tab} is placed with the role alone`);
+  }
+  const migration = readFileSync("supabase/migrations/20261115130110_ats_needs_placing_until_area_chosen.sql", "utf8");
+  assert.match(migration, /when 'medical_rep' then nullif\(btrim\(coalesce\(p_region_code, ''\)\), ''\) is not null\s+and nullif\(btrim\(coalesce\(p_area_code, ''\)\), ''\) is not null/, "the database rule says the same for a Medical Rep");
+  assert.match(migration, /when 'district_manager' then nullif\(btrim\(coalesce\(p_region_code, ''\)\), ''\) is not null/, "and for a District Manager");
+  assert.equal((migration.match(/public\.ats_placement_is_complete\(/g) ?? []).length >= 8, true, "every Needs placing and tab test in the filter and the counts asks it");
 }

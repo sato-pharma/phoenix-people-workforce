@@ -193,6 +193,13 @@ function tableSourceTests(): void {
   assert.match(onLeave, /const refusal = placingRefusal\(input, options\.roleTabs\);\s*if \(refusal\) \{\s*problem\(`\$\{row\.name\} was not placed: \$\{refusal\}`\);/, "a form that cannot be placed says why, by name");
   assert.match(onLeave, /placeWithAnswers\(row, input, \{ editorName: options\.editorName, leaves: options\.leaves \}\)\.catch\(\(error: unknown\) => \{\s*problem\(/, "the same save as the button, and a failure is said on screen");
 
+  // A part-made filing stays in Needs placing (owner, 15 Nov 2026): only a whole one takes the row out.
+  const save = hook.slice(hook.indexOf("const placeWithAnswers = useCallback("), hook.indexOf("const placeOnLeave = useCallback("));
+  assert.match(save, /const whole = tab !== null && placementIsComplete\(\{ areaCode: input\.areaCode, regionCode: input\.regionCode, tab \}\);/, "the save asks whether the filing is whole");
+  assert.match(save, /const leaves = options\.leaves && whole;\s*const removed = leaves \? rows\.removeRows\(\[row\.id\]\) : \[\];/, "and leaves Needs placing only when it is");
+  assert.match(save, /still in Needs placing until the/, "a part-made save says the CV is still waiting");
+  assert.match(form, /A Medical Rep is placed only with an area — without one the CV stays in Needs placing\./, "the form tells HR before the save");
+
   const route = code("app/api/recruitment/candidates/[id]/answers/route.ts");
   const put = route.slice(route.indexOf("export async function PUT"));
   const order = ["assertSameOriginMutation(request)", 'requireRecruitmentAccess(request, "candidates", "update")', "assertWorkspaceWorker(access)", "isUuid(id)", "assertCandidateVisible(access, id)", "placeWithAnswers("];

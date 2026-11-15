@@ -1136,6 +1136,25 @@ export const MODULES = [
     keywords: ["job post", "job posts", "careers page", "careers card", "publish to careers", "integration token", "apply route"],
     tables: ["ats_job_post_titles"],
   },
+  // 🔴 SPLIT 2026-11-15, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the "placed means position,
+  // region and area" rule took `recruitment`'s pointer to 4,041 bytes, over the 4,000-byte margin. The
+  // rebuilt `/recruitment` workspace — its tabs, Needs placing and the placing form, the one SQL filter,
+  // Undo, the table and the opened CV — is the clean cut: its own folders under lib/components/api.
+  // `recruitment` KEEPS EVERY GLOB IT HAD, so a workspace file loads the PAIR and nothing stops arriving.
+  {
+    id: "recruitment-workspace",
+    title: "Recruitment — the /recruitment workspace, its tabs and Needs placing",
+    scope: "The rebuilt /recruitment workspace: the role tabs and Needs placing, the placing form and what counts as placed, the one SQL filter behind every row and count, Undo, the Talent Acquisition fence, the table and the opened CV.",
+    globs: [
+      "src/lib/recruitment/workspace/**",
+      "src/components/recruitment/workspace/**",
+      "app/api/recruitment/workspace/**",
+      "tests/recruitment-{workspace,role-tabs,ta-fence}*",
+      "supabase/migrations/*{ats_workspace,ats_recruitment_workspace,needs_placing}*",
+    ],
+    keywords: ["needs placing", "placing form", "role tab", "recruitment workspace", "place this candidate", "save and place", "ats_workspace_filter"],
+    tables: ["ats_candidate_placements"],
+  },
   {
     id: "recruitment",
     title: "Recruitment, CVs and offers",

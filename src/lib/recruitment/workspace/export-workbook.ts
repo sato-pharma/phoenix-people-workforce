@@ -39,6 +39,7 @@ import { decisionModeLabels, decisionModeOf, quickDatePickLabels, type Workspace
 import { workspaceCandidateHref } from "@/lib/recruitment/workspace/links";
 import {
   FOLDERS_TAB,
+  placementIsComplete,
   workspaceRoleTabLabels,
   workspaceTabLabels,
   type WorkspaceTabKey,
@@ -61,6 +62,18 @@ export const EXPORT_NOT_ANSWERED = "Not answered";
 export const EXPORT_ADDED_BY_HR_SUFFIX = " (added by HR)";
 /** The Filed-in cell for a person no reply has filed yet — the screen's own tab name. */
 export const EXPORT_NEEDS_PLACING = workspaceTabLabels.needs_placing;
+
+/**
+ * The "Placed in" cell. Only a whole filing is a placement (a Medical Rep needs its area, a District
+ * Manager its region); with none the CV reads Needs placing, and a part-made filing is named after it
+ * so the role and region already chosen still show.
+ */
+export function workspaceExportPlacedCell(placements: readonly WorkspacePlacement[]): string {
+  const whole = placements.filter(placementIsComplete);
+  if (whole.length > 0) return whole.map(workspaceExportPlacementLabel).join("; ");
+  if (placements.length === 0) return EXPORT_NEEDS_PLACING;
+  return `${EXPORT_NEEDS_PLACING} (started: ${placements.map(workspaceExportPlacementLabel).join("; ")})`;
+}
 
 export type WorkspaceExportAnswerColumn = { key: string; label: string; lead: boolean };
 
@@ -192,7 +205,7 @@ export function workspaceExportRowValues(
       candidateSourceLabels[row.source] ?? candidateSourceLabels.other,
       houseCairoDateTime(row.receivedAt),
       workspaceExportStatus(row),
-      row.placements.length > 0 ? row.placements.map(workspaceExportPlacementLabel).join("; ") : EXPORT_NEEDS_PLACING,
+      workspaceExportPlacedCell(row.placements),
       ...answerColumns.map((column) => workspaceExportAnswerCell(row, column.key)),
       latestCallCell(row),
       returnedCell(row),
