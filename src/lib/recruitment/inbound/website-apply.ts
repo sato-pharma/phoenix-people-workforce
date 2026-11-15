@@ -835,6 +835,9 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
       // What the applicant applied for is known here, not guessed from the CV — but the covering
       // message still helps extraction answer the other fields, exactly as an email subject does.
       coverMessage: `Applied via the Sato Pharma careers website for: ${input.role.jobTitle}`,
+      // The role is known now and written to the record only after this call, so the new-CV alert is
+      // told it directly — an HR applicant is never named to the Talent Acquisition seat.
+      declaredRoleFamily: input.role.roleFamily,
       // A real applicant's own email is their contact detail — the default "sender" identity, never
       // the "cv" path (that is only for bulk forward-imports off a shared handset/mailbox).
       providerMessageId: `website:${randomUUID()}`,
