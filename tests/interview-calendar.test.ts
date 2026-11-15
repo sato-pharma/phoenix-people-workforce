@@ -688,14 +688,15 @@ async function runZoomTests() {
   const input = { dateKey: "2026-11-01", durationMinutes: 45, startMinutes: 9 * 60 + 30, topic: "Interview · Mona Ali" };
   assert.deepEqual(zoomMeetingBody(input), {
     duration: 45,
-    settings: { join_before_host: false, waiting_room: false },
+    settings: { jbh_time: 0, join_before_host: true, waiting_room: false },
     start_time: "2026-11-01T09:30:00",
     timezone: "Africa/Cairo",
     topic: "Interview · Mona Ali",
     type: 2,
   }, "a scheduled meeting at the Cairo wall-clock time, with no zone on the time — Zoom does the daylight saving");
   assert.equal(zoomMeetingBody(input).settings.waiting_room, false, "no waiting room: the owner had to admit every candidate by hand (2026-09-20)");
-  assert.equal(zoomMeetingBody(input).settings.join_before_host, false, "but nobody is in before the interviewer starts it");
+  assert.equal(zoomMeetingBody(input).settings.join_before_host, true, "nobody waits for the host: the owner, 2026-11-15, wants candidates and managers to walk straight in");
+  assert.equal(zoomMeetingBody(input).settings.jbh_time, 0, "and at any time before the start, not only in its last few minutes");
 
   resetZoomTokenCacheForTests();
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
