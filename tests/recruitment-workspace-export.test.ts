@@ -10,6 +10,7 @@ import {
   workspaceExportFilename,
   workspaceExportFilterLine,
   workspaceExportHeaders,
+  workspaceExportPlacedCell,
   workspaceExportRowValues,
 } from "../src/lib/recruitment/workspace/export-workbook.ts";
 import { emptyWorkspaceFilters } from "../src/lib/recruitment/workspace/filters.ts";
@@ -110,6 +111,12 @@ function flat(file: string): string {
 }
 
 export async function runRecruitmentWorkspaceExportTests(): Promise<void> {
+  // Only a whole filing is "placed" (owner, 15 Nov 2026): a Medical Rep with no area reads Needs placing.
+  const mr = { areaCode: null, areaName: null, botRoleFamily: null, placedAt: "2026-11-15T10:00:00Z", placedBy: "hr" as const, placedByName: null, regionCode: "AB", regionName: "Alex-BHR", tab: "medical_rep" as const };
+  assert.equal(workspaceExportPlacedCell([]), "Needs placing");
+  assert.equal(workspaceExportPlacedCell([mr]), "Needs placing (started: Medical Rep · Alex-BHR)", "a region with no area is still Needs placing");
+  assert.equal(workspaceExportPlacedCell([{ ...mr, areaCode: "AB4", areaName: "Behira 1" }]), "Medical Rep · Alex-BHR · Behira 1", "with its area it is placed");
+
   // ── 1 · One column per question, the Medical Rep six first ───────────────────────────────────
   const columns = workspaceExportAnswerColumns([MONA, KARIM]);
   assert.deepEqual(

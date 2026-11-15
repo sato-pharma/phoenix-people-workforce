@@ -23,7 +23,7 @@ import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import type { ArchivedMode } from "@/lib/recruitment/workspace/filters";
 import { placingRefusal, placingRoleLabel, placingShape, type PlacingInput } from "@/lib/recruitment/workspace/placing-rules";
-import { workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
+import { placementIsComplete, workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceAnswerChip, WorkspacePlacement, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 import { callResultLabels, rejectionReasonLabels, type CallResult, type RejectionReason } from "@/lib/recruitment/workspace/vocabulary";
 
@@ -547,8 +547,12 @@ export function useWorkspaceActions({
       const mark = { at: now, hrId: "", name: options.editorName };
       const typed: Record<string, string | null> = { ...input.answers };
       if (input.roleFamily) typed.role = placingRoleLabel(input.roleFamily);
-      const removed = options.leaves ? rows.removeRows([row.id]) : [];
-      const before = options.leaves
+      // Only a whole filing takes the CV out of Needs placing (owner, 15 Nov 2026: a Medical Rep with no
+      // area is still Needs placing). A part-made one stays in the list, its role and region kept.
+      const whole = tab !== null && placementIsComplete({ areaCode: input.areaCode, regionCode: input.regionCode, tab });
+      const leaves = options.leaves && whole;
+      const removed = leaves ? rows.removeRows([row.id]) : [];
+      const before = leaves
         ? []
         : rows.patchRows([row.id], (current) => ({
             ...current,
@@ -562,7 +566,9 @@ export function useWorkspaceActions({
       countsSoon();
       push({
         kind: "applied",
-        message: `Placed ${row.name}${tab ? ` · ${workspaceRoleTabLabels[tab]}` : ""}`,
+        message: whole
+          ? `Placed ${row.name}${tab ? ` · ${workspaceRoleTabLabels[tab]}` : ""}`
+          : `Saved ${row.name}${tab ? ` · ${workspaceRoleTabLabels[tab]}` : ""} — still in Needs placing until the ${tab === "medical_rep" ? "area" : "region"} is chosen`,
         restore: () => {
           rows.reinsertRows(removed);
           rows.restoreRows(before);

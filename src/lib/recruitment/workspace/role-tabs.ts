@@ -61,6 +61,25 @@ export const tabsWithRegions: readonly WorkspaceRoleTab[] = ["medical_rep", "dis
 export const tabsWithAreas: readonly WorkspaceRoleTab[] = ["medical_rep"];
 
 /**
+ * A CV is PLACED only when its filing is whole (owner, 15 Nov 2026: "if not placed in an area consider
+ * him still needs placing — placing is confirmed if moved to position, region and area"). A Medical Rep
+ * needs its area, a District Manager its region (the tab has no areas); every other tab is whole with
+ * the role alone. A filing that is not whole keeps the CV in Needs placing — the row stays, so the role
+ * and region already chosen are not lost. The database says the same in `ats_placement_is_complete`.
+ */
+export function placementIsComplete(placement: {
+  tab: string;
+  regionCode?: string | null;
+  areaCode?: string | null;
+}): boolean {
+  const region = String(placement.regionCode ?? "").trim();
+  const area = String(placement.areaCode ?? "").trim();
+  if (placement.tab === "medical_rep") return region.length > 0 && area.length > 0;
+  if (placement.tab === "district_manager") return region.length > 0;
+  return true;
+}
+
+/**
  * The tabs the Talent Acquisition seat never sees: her manager's seat and her own (owner, 2026-10-20),
  * and the Personnel seat beside hers (2026-10-31) — his rule is that she never sees an HR applicant.
  */
