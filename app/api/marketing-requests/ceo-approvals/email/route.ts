@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => null)) as
-      | { dryRun?: unknown; from?: unknown; rows?: unknown; to?: unknown }
+      | { carry?: unknown; dryRun?: unknown; from?: unknown; rows?: unknown; to?: unknown }
       | null;
     const result = await sendMarketingCeoApprovalsEmail(access, body ?? {});
     return NextResponse.json({ result });
