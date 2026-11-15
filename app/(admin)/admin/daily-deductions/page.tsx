@@ -33,7 +33,7 @@ export default async function AdminDailyDeductionsPage() {
       <PremiumHero
         kicker="Deductions"
         title="Daily Deductions"
-        subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, CRM, Vacation, No-records and Weekly-plan detection of the month-final module, counting only days that have fully elapsed. Each released employee is emailed the amount, the reason and the days. Releasing here feeds no salary run; payroll takes its figures from the Deductions screen."
+        subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, Phoenix CRM, Vacation, No-records and Weekly-plan detection of the month-final module (days before 6 Nov 2026 read the iReports360 archive), counting only days that have fully elapsed. Each released employee is emailed the amount, the reason and the days. Releasing here feeds no salary run; payroll takes its figures from the Deductions screen."
       />
       <DailyDeductionsWorkspace canPublish={access.role === "Super Admin"} defaultFrom={from} defaultTo={to} />
     </div>

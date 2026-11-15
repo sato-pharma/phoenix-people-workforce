@@ -39,6 +39,7 @@ import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
 import { loadProvenWorkedDays, provenWorkedDayReason, type ProvenWorkedDays } from "../proven-worked-days.ts";
 import { ledgerClaimMonthKeys } from "../cycle.ts";
+import { CRM_NO_ACTIVITY_REASON } from "../reason-text.ts";
 import type { DeductionsCandidateDraft, DeductionsSeverity } from "../types.ts";
 
 function lastDayOfMonth(year: number, month: number): number {
@@ -836,7 +837,7 @@ async function collectContinuingEmployeeCrmCandidates(input: {
       estimatedAmount,
       calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
       severity: recommendation.severity as DeductionsSeverity,
-      reason: "Field Workforce Compliance no-activity candidate",
+      reason: CRM_NO_ACTIVITY_REASON,
       evidence: {
         recommendationKey: recommendation.recommendationKey,
         recommendationReason: recommendation.recommendationReason,

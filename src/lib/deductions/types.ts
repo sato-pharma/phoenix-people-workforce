@@ -64,7 +64,7 @@ export type DeductionsCategory = (typeof deductionsCategories)[number];
  * an EMPLOYEE is told, and a best-effort notifier must not depend on a database read to say it.
  */
 export const deductionsCategoryNames: Record<DeductionsCategory, string> = {
-  crm: "CRM — no visit activity recorded",
+  crm: "Phoenix CRM — no field work recorded",
   crm_half_day: "CRM — half day",
   field_review: "Field day — reviewed by HR",
   fingerprint: "Fingerprint attendance — no punch recorded",

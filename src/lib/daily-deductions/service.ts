@@ -18,6 +18,7 @@ import { aggregateClippedLines, clipDraftToRange, type ClippedDraftLine } from "
 import { collectNoRecordsDailyCandidates } from "./no-records.ts";
 import { collectNoWeeklyPlanCandidates } from "./no-weekly-plan.ts";
 import { monthsInRange, resolveDailyRange } from "./range.ts";
+import { currentDeductionReason } from "@/lib/deductions/reason-text.ts";
 import {
   dailyDeductionConnectorLabels,
   type DailyConnectorTally,
@@ -167,7 +168,7 @@ export function mapDailyLineRow(row: Record<string, unknown>): DailyDeductionsLi
     amount: Number(row.amount ?? 0),
     dates: Array.isArray(row.dates) ? (row.dates as string[]) : [],
     sourceSystem: String(row.source_system ?? ""),
-    reason: (row.reason as string | null) ?? null,
+    reason: currentDeductionReason((row.reason as string | null) ?? null),
     hrNote: String(row.hr_note ?? ""),
     createdAt: String(row.created_at),
     deductionDate: typeof row.deduction_date === "string" ? row.deduction_date.slice(0, 10) : null,

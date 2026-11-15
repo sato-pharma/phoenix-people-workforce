@@ -30,6 +30,7 @@ import { salaryRecordsColumnForCategory } from "./calculations.ts";
 import { listDeductionsComments, listRecentDeductionsComments } from "./comments.ts";
 import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
 import { resolveDisputeAudience, toDisputeAudience } from "./dispute-audience.ts";
+import { currentDeductionReason } from "./reason-text.ts";
 import { meaningfulHrText } from "./portal-ledger-filters.ts";
 import {
   deductionOpenForDispute,
@@ -100,7 +101,7 @@ export function mapPublicationLine(row: PublicationLineRow): DeductionsPortalLin
     appliedDeductionValue: Number(row.applied_value ?? 0),
     appliedAmount: Number(row.applied_amount ?? 0),
     dates: Array.isArray(row.dates) ? (row.dates as string[]) : [],
-    reason: row.reason,
+    reason: currentDeductionReason(row.reason),
     hrNote: row.hr_note,
     createdAt: row.created_at,
   };
@@ -337,7 +338,7 @@ export function mapPortalLedgerRow(input: {
     payrollColumn: salaryRecordsColumnForCategory(candidate.category) ?? "other_deductions",
     unit,
     dates: Array.isArray(candidate.dates) ? (candidate.dates as unknown[]).map(String) : [],
-    whyFlagged: candidate.reason,
+    whyFlagged: currentDeductionReason(candidate.reason),
     detectedValue,
     detectedAmount,
     chargedValue,
