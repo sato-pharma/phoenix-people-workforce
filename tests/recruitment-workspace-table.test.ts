@@ -173,6 +173,26 @@ function tableSourceTests(): void {
   assert.match(placing, /\n {2}await removePlacementsWhere\(\{ candidateId, exceptRoleTab: roleTab, placedBy: ANSWER_PLACEMENT_SOURCES \}\);/, "every save clears the other tabs the answers filed them in");
   assert.doesNotMatch(placing, /if \(roleChanged\) \{\s*await removePlacementsWhere/, "never only when the role changed in this save");
 
+  // Leaving saves too (owner, 15 Nov 2026, "Save on leaving"): he chose the role, region and area,
+  // opened the next CV, and the form threw his choices away without a word — Needs placing stayed at
+  // 120 and not one placing reached the server. A touched, unpressed form places the person when it
+  // closes, through the same save and Undo; a refusal or a failed save is said on screen by name.
+  const form = code("src/components/recruitment/workspace/placing-form.tsx");
+  const leave = form.slice(form.indexOf("useEffect(\n    () => () => {"), form.indexOf("const save = async () => {"));
+  assert.ok(leave.length > 100, "the closing effect is where the test expects it");
+  assert.match(leave, /if \(!touched\.current \|\| pressed\.current\) return;/, "only a form he touched, and never twice after a press");
+  assert.match(leave, /now\.actions\.placeOnLeave\(now\.row, now\.input,/, "a closed, touched form places the person");
+  assert.match(leave, /\n {4}\[\],\n {2}\);/, "read once, when the form closes");
+  for (const setter of ["setFamily(next);", "setRegionCode(event.target.value);", "setAreaCode(event.target.value);", "setAnswers((current) =>"]) {
+    const at = form.indexOf(setter);
+    assert.ok(at > 0 && form.slice(Math.max(0, at - 40), at).includes("touch();"), `every choice he makes marks the form touched (${setter})`);
+  }
+  assert.doesNotMatch(form.slice(form.indexOf("getJson(`/api/recruitment/candidates/${row.id}/answers`)"), form.indexOf("const data = form.phase")), /touch\(\)/, "the form loading its own answers is not a touch");
+  const hook = code("src/components/recruitment/workspace/use-workspace-actions.ts");
+  const onLeave = hook.slice(hook.indexOf("const placeOnLeave = useCallback("), hook.indexOf("return {\n    archive,"));
+  assert.match(onLeave, /const refusal = placingRefusal\(input, options\.roleTabs\);\s*if \(refusal\) \{\s*problem\(`\$\{row\.name\} was not placed: \$\{refusal\}`\);/, "a form that cannot be placed says why, by name");
+  assert.match(onLeave, /placeWithAnswers\(row, input, \{ editorName: options\.editorName, leaves: options\.leaves \}\)\.catch\(\(error: unknown\) => \{\s*problem\(/, "the same save as the button, and a failure is said on screen");
+
   const route = code("app/api/recruitment/candidates/[id]/answers/route.ts");
   const put = route.slice(route.indexOf("export async function PUT"));
   const order = ["assertSameOriginMutation(request)", 'requireRecruitmentAccess(request, "candidates", "update")', "assertWorkspaceWorker(access)", "isUuid(id)", "assertCandidateVisible(access, id)", "placeWithAnswers("];
