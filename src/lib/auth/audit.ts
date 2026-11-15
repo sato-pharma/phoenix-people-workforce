@@ -2,6 +2,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeLoginId, resolveStoredLoginId } from "@/lib/auth/credentials";
 import {
+  failuresSinceLastSuccess,
   loginIpFailureLimit,
   loginIpThrottleMaxFailures,
   loginLockoutMinutes,
@@ -144,7 +145,10 @@ export async function isLoginRateLimited(loginId: string, ip: string | null) {
 
   const supabase = getSupabaseAdmin();
   const threshold = new Date(Date.now() - loginThrottleWindowMinutes * 60 * 1000).toISOString();
-  const [lockResult, loginAttemptsResult, ipAttemptsResult] = await Promise.all([
+  // The account gate counts only the failures AFTER this account's last successful sign-in
+  // (failuresSinceLastSuccess). Reading the latest `loginThrottleMaxFailures` failures is enough:
+  // the limit is reached only when every one of them is newer than that success.
+  const [lockResult, loginFailuresResult, lastSuccessResult, ipAttemptsResult] = await Promise.all([
     supabase
       .from("app_auth_users")
       .select("locked_until")
@@ -152,10 +156,20 @@ export async function isLoginRateLimited(loginId: string, ip: string | null) {
       .maybeSingle(),
     supabase
       .from("auth_login_attempts")
-      .select("*", { count: "exact", head: true })
+      .select("attempted_at")
       .eq("login_id", rateLimitKey)
       .eq("success", false)
-      .gte("attempted_at", threshold),
+      .gte("attempted_at", threshold)
+      .order("attempted_at", { ascending: false })
+      .limit(loginThrottleMaxFailures),
+    supabase
+      .from("auth_login_attempts")
+      .select("attempted_at")
+      .eq("login_id", rateLimitKey)
+      .eq("success", true)
+      .gte("attempted_at", threshold)
+      .order("attempted_at", { ascending: false })
+      .limit(1),
     ip
       ? supabase
           .from("auth_login_attempts")
@@ -171,8 +185,15 @@ export async function isLoginRateLimited(loginId: string, ip: string | null) {
     return true;
   }
 
-  if (!loginAttemptsResult.error && (loginAttemptsResult.count ?? 0) >= loginThrottleMaxFailures) {
-    return true;
+  if (!loginFailuresResult.error) {
+    const failedAt = ((loginFailuresResult.data ?? []) as { attempted_at?: string | null }[]).map((row) => row.attempted_at);
+    // An unreadable success read counts no success, so every failure in the window still counts.
+    const lastSuccessAt = lastSuccessResult.error
+      ? null
+      : ((lastSuccessResult.data ?? []) as { attempted_at?: string | null }[])[0]?.attempted_at ?? null;
+    if (failuresSinceLastSuccess(failedAt, lastSuccessAt) >= loginThrottleMaxFailures) {
+      return true;
+    }
   }
 
   // The network gate: strict for an unknown address, roomier for a shared office network that has

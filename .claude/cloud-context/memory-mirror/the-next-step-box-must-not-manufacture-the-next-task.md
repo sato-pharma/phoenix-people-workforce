@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 58f3e480-4d78-4e33-bc7c-c27f8b77f55d
-  modified: 2026-10-02T09:30:29.057Z
+  modified: 2026-11-15T08:49:37.183Z
 ---
 
 🔴 **THE `Next step:` BOX IS FOR WHAT GENUINELY NEEDS HIM — NEVER A TASK CLAUDE THOUGHT OF. He sends
@@ -92,6 +92,16 @@ exactly the guess that costs him the turn.
 and 0 validated, 0 places, 0 plans, 0 visits — two weeks open, nobody started. Before offering to
 turn something on, read whether it is already on and whether anything is flowing through it; the
 honest finding ("it is on and unused") is worth far more to him than the action Claude imagined.
+
+🔴 **AND AGAIN, 14-15 Nov 2026 — "ONLY IF" AND "AFTER 09:00" WRITTEN INTO THE QUOTE ITSELF DID NOT HELP.** With
+the first robot run due the next morning, Claude quoted *"report the 08:20 robot run"* and he sent it four
+times the evening before, each time getting "not yet". Claude then moved the condition inside the quote
+(*"report the 15 Nov 08:20 robot run after 09:00"*), and finally quoted *"find out why the mailbox robots
+missed their 08:20 run"* with "only if that alarm reaches you" in the prose. He sent that too, minutes after
+the run had been proven successful, so there was nothing to find. **A quote describing a future or
+hypothetical event is sent immediately, whatever wording surrounds it, including wording inside it.** When
+the only remaining item is a scheduled check that reports by itself, the box quotes a real action that is
+due now, never the check.
 
 **Related, and it cuts the same way:** [[hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces]]
 is about not splitting one feature across six PRs. This is the upstream half — do not manufacture the
