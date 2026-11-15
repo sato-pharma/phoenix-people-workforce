@@ -4,6 +4,7 @@ import { conflictError, notFoundError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { listMessagesForDisputes, type PrivateCalendarDisputeMessage } from "@/lib/private-calendar/dispute-messages";
+import { currentVerificationSourceText } from "@/lib/private-calendar/verification-sources";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -53,7 +54,7 @@ function mapRow(row: DisputeRow): PrivateCalendarDataDispute {
   return {
     adminDecisionNote: row.admin_decision_note,
     adminHrId: row.admin_hr_id,
-    claimSourceText: row.claim_source_text,
+    claimSourceText: currentVerificationSourceText(row.claim_source_text),
     claimText: row.claim_text,
     createdAt: row.created_at,
     decidedAt: row.decided_at,

@@ -30,6 +30,7 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { effectiveSettlement } from "@/lib/attendance/digest-rules.ts";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
 import { getLeaveBalanceChargeForCandidate } from "./leave-balance-ledger.ts";
+import { currentDeductionReason } from "./reason-text.ts";
 import {
   buildDeductionsCandidateKey,
   compactDeductionsHrId,
@@ -919,7 +920,7 @@ export function mapCandidateRow(row: Record<string, unknown>): DeductionsCandida
     estimatedAmount: row.estimated_amount == null ? null : Number(row.estimated_amount),
     calculationStatus: row.calculation_status as DeductionsCandidate["calculationStatus"],
     severity: (row.severity as DeductionsCandidate["severity"]) ?? null,
-    reason: (row.reason as string | null) ?? null,
+    reason: currentDeductionReason((row.reason as string | null) ?? null),
     evidence: (row.evidence as Record<string, unknown>) ?? {},
     dates: Array.isArray(row.dates) ? (row.dates as string[]) : [],
     hierarchySnapshot: (row.hierarchy_snapshot as Record<string, unknown>) ?? {},
