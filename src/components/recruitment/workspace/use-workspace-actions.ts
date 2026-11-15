@@ -22,7 +22,7 @@ import { answerEditKey, errorText } from "@/components/recruitment/workspace/wor
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import type { ArchivedMode } from "@/lib/recruitment/workspace/filters";
-import { placingRoleLabel, placingShape, type PlacingInput } from "@/lib/recruitment/workspace/placing-rules";
+import { placingRefusal, placingRoleLabel, placingShape, type PlacingInput } from "@/lib/recruitment/workspace/placing-rules";
 import { workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceAnswerChip, WorkspacePlacement, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 import { callResultLabels, rejectionReasonLabels, type CallResult, type RejectionReason } from "@/lib/recruitment/workspace/vocabulary";
@@ -588,6 +588,26 @@ export function useWorkspaceActions({
     [countsSoon, push, rows],
   );
 
+  /**
+   * The placing form closed with HR's choices unsaved (owner, 15 Nov 2026: "Save on leaving") — the
+   * next CV, the arrows, Close or another tab. The person is placed exactly as a press of Save and
+   * place would, Undo included; a form that cannot be placed, or a save that fails, says so on screen
+   * with the person's name, because the form that would have shown it is already gone.
+   */
+  const placeOnLeave = useCallback(
+    (row: WorkspaceRow, input: PlacingInput, options: { leaves: boolean; editorName: string | null; roleTabs: readonly WorkspaceRoleTab[] }) => {
+      const refusal = placingRefusal(input, options.roleTabs);
+      if (refusal) {
+        problem(`${row.name} was not placed: ${refusal}`);
+        return;
+      }
+      placeWithAnswers(row, input, { editorName: options.editorName, leaves: options.leaves }).catch((error: unknown) => {
+        problem(`${row.name} was not placed: ${errorText(error, "the save failed. Open the CV and press Save and place.")}`);
+      });
+    },
+    [placeWithAnswers, problem],
+  );
+
   return {
     archive,
     askAgain,
@@ -598,6 +618,7 @@ export function useWorkspaceActions({
     fileInFolder,
     merge,
     place,
+    placeOnLeave,
     placeWithAnswers,
     reject,
     remove,

@@ -13,9 +13,15 @@
 // ONE PRESS SAVES AND PLACES (`PUT /api/recruitment/candidates/[id]/answers`). Only the answers HR
 // changed are sent — an answer the applicant gave and HR left alone stays the applicant's — and each
 // one saved says "added by HR" with the name. The rules are `placing-rules.ts`, shared with the server.
+//
+// LEAVING SAVES TOO (owner, 15 Nov 2026: "Save on leaving"). He chose the role, region and area and
+// opened the next CV, and the form threw his choices away without a word — 120 stayed 120 and not one
+// of those placings reached the server. Now a form he has touched and not saved places the person the
+// moment it closes (the next CV, the arrows, Close, another tab), through the same save and the same
+// 10-second Undo; a form that cannot be placed says why on screen, never silently.
 
 import { AlertTriangle, Loader2, MapPin, Tags, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { getJson } from "@/components/recruitment/recruitment-fetch";
@@ -24,7 +30,7 @@ import { errorText } from "@/components/recruitment/workspace/workspace-format";
 import { FormField } from "@/components/ui/form-kit";
 import { phxButtonAccentClassName, phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
-import { placingRefusal, placingShape, visiblePlacingQuestions, type PlacingQuestion } from "@/lib/recruitment/workspace/placing-rules";
+import { placingRefusal, placingShape, visiblePlacingQuestions, type PlacingInput, type PlacingQuestion } from "@/lib/recruitment/workspace/placing-rules";
 import type { WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspacePlaces, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 import { cn } from "@/lib/utils";
@@ -182,6 +188,15 @@ export function PlacingForm({
   const [switching, setSwitching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /** He changed something in this form; nothing here is touched by the form loading itself. */
+  const touched = useRef(false);
+  /** A press of Save and place is under way or done — leaving must not place the person twice. */
+  const pressed = useRef(false);
+  /** The form as it stands, with this render's props, read when it closes. */
+  const latest = useRef<(() => { input: PlacingInput | null; actions: WorkspaceActions; editorName: string | null; leaves: boolean; roleTabs: readonly WorkspaceRoleTab[]; row: WorkspaceRow }) | null>(null);
+  const touch = () => {
+    touched.current = true;
+  };
 
   useEffect(() => {
     let active = true;
@@ -209,6 +224,7 @@ export function PlacingForm({
   const visible = useMemo(() => (data ? visiblePlacingQuestions(data.questions, answers) : []), [answers, data]);
 
   const chooseRole = async (next: string) => {
+    touch();
     setFamily(next);
     setProblem(null);
     if (!next) return;
@@ -230,26 +246,47 @@ export function PlacingForm({
     }
   };
 
-  const save = async () => {
-    if (!data) return;
+  const buildInput = (): PlacingInput | null => {
+    if (!data) return null;
     const changed: Record<string, string | null> = {};
     for (const question of visible) {
       const now = (answers[question.key] ?? "").trim();
       const was = (data.current[question.key] ?? "").trim();
       if (now !== was) changed[question.key] = now || null;
     }
-    const input = { answers: changed, areaCode: areaCode || null, regionCode: regionCode || null, roleFamily: family || null };
+    return { answers: changed, areaCode: areaCode || null, regionCode: regionCode || null, roleFamily: family || null };
+  };
+  useEffect(() => {
+    latest.current = () => ({ actions, editorName, input: buildInput(), leaves, roleTabs, row });
+  });
+
+  // Closing the form with his choices unsaved places the person — see the header. Read once, when the
+  // form closes (its key is the row, so it closes with its row), through `latest`, never a stale prop.
+  useEffect(
+    () => () => {
+      if (!touched.current || pressed.current) return;
+      const now = latest.current?.();
+      if (now?.input) now.actions.placeOnLeave(now.row, now.input, { editorName: now.editorName, leaves: now.leaves, roleTabs: now.roleTabs });
+    },
+    [],
+  );
+
+  const save = async () => {
+    const input = buildInput();
+    if (!input) return;
     const refusal = placingRefusal(input, roleTabs);
     if (refusal) {
       setProblem(refusal);
       return;
     }
+    pressed.current = true;
     setBusy(true);
     setProblem(null);
     try {
       await actions.placeWithAnswers(row, input, { editorName, leaves });
       onPlaced?.();
     } catch (error) {
+      pressed.current = false;
       setProblem(errorText(error, "The CV was not placed."));
       setBusy(false);
     }
@@ -293,6 +330,7 @@ export function PlacingForm({
                 disabled={disabled}
                 id={`ws-place-region-${row.id}`}
                 onChange={(event) => {
+                  touch();
                   setRegionCode(event.target.value);
                   setAreaCode("");
                 }}
@@ -313,7 +351,10 @@ export function PlacingForm({
                 className={cn(phxSelectClassName, "h-9 text-sm")}
                 disabled={disabled || !region}
                 id={`ws-place-area-${row.id}`}
-                onChange={(event) => setAreaCode(event.target.value)}
+                onChange={(event) => {
+                  touch();
+                  setAreaCode(event.target.value);
+                }}
                 value={areaCode}
               >
                 <option value="">{region ? `Choose an area in ${region.name}…` : "Choose the region first"}</option>
@@ -341,7 +382,10 @@ export function PlacingForm({
                     disabled={disabled}
                     key={question.key}
                     missing={!(answers[question.key] ?? "").trim()}
-                    onChange={(value) => setAnswers((current) => ({ ...current, [question.key]: value }))}
+                    onChange={(value) => {
+                      touch();
+                      setAnswers((current) => ({ ...current, [question.key]: value }));
+                    }}
                     onTypedMode={(on) => setTyped((current) => ({ ...current, [question.key]: on }))}
                     question={question}
                     typedMode={Boolean(typed[question.key])}
@@ -368,7 +412,8 @@ export function PlacingForm({
             Save and place
           </button>
           <span className="text-xs font-medium text-slate-500">
-            Each answer you type is marked “added by HR” with your name. Answers you leave as they are stay the applicant&apos;s.
+            Each answer you type is marked “added by HR” with your name. Answers you leave as they are stay the applicant&apos;s. Moving on to
+            another CV places this one too.
           </span>
         </div>
       </div>
