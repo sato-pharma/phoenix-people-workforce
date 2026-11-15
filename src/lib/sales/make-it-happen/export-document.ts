@@ -366,6 +366,72 @@ export function groupBricksByRegion(model: Pick<ForecastExportModel, "lines" | "
   return out;
 }
 
+// ── The detail: per product, per rep, per region ─────────────────────────────
+//
+// Owner, 2026-11-15: "i want the exported xlsx and pdf to show the details per product per rep per
+// region". Each line's regions, each region's reps, each rep's products — one row per rep and
+// product, carrying that product's own units (one product, so the units are real) and value. A rep's
+// total and a region's total are VALUE only. Built from the same brick rows as every other level tab,
+// so it adds up to the brick forecast exactly.
+
+export const PRODUCT_DETAIL_TAB = "By region, rep and product";
+
+export type ProductDetailRow = {
+  product: string;
+  units: number;
+  value: number;
+  bricks: number;
+  /** The areas of this region the rep sells this product in, by name. */
+  areas: string[];
+};
+export type ProductDetailRep = { name: string; districtManager: string; value: number; rows: ProductDetailRow[] };
+export type ProductDetailRegion = { name: string; value: number; reps: ProductDetailRep[] };
+export type ProductDetailLine = { lineName: string; value: number; regions: ProductDetailRegion[] };
+
+export function groupProductsByRegionAndRep(model: Pick<ForecastExportModel, "lines" | "bricks">): ProductDetailLine[] {
+  const out: ProductDetailLine[] = [];
+  for (const line of groupBricksByRegion(model)) {
+    // The plan's own product order, so a rep's products read as the Forecast tab lists them.
+    const planLine = model.lines.find((entry) => entry.line.lineName === line.lineName);
+    const productOrder = new Map((planLine?.rows ?? []).map(({ row }, index) => [row.name, index]));
+    const regions: ProductDetailRegion[] = line.regions.map((region) => {
+      const reps = new Map<string, { rep: ProductDetailRep; products: Map<string, { row: ProductDetailRow; bricks: Set<string>; areas: Set<string> }> }>();
+      for (const area of region.areas) {
+        for (const brickRow of area.rows) {
+          // A vacant seat under one District Manager is not the vacant seat under another.
+          const repKey = `${brickRow.rep}|${brickRow.districtManager}`;
+          const entry = reps.get(repKey) ?? {
+            rep: { name: brickRow.rep, districtManager: brickRow.districtManager, value: 0, rows: [] },
+            products: new Map(),
+          };
+          reps.set(repKey, entry);
+          const product = entry.products.get(brickRow.product) ?? {
+            row: { product: brickRow.product, units: 0, value: 0, bricks: 0, areas: [] },
+            bricks: new Set<string>(),
+            areas: new Set<string>(),
+          };
+          entry.products.set(brickRow.product, product);
+          product.row.units += brickRow.units;
+          product.row.value += brickRow.value;
+          product.bricks.add(`${brickRow.area}|${brickRow.brick}`);
+          product.areas.add(brickRow.area);
+          entry.rep.value += brickRow.value;
+        }
+      }
+      const repList = [...reps.values()].map(({ rep, products }) => ({
+        ...rep,
+        rows: [...products.values()]
+          .map(({ row, bricks, areas }) => ({ ...row, bricks: bricks.size, areas: distinctSorted(areas, NO_AREA) }))
+          .sort((a, b) => (productOrder.get(a.product) ?? 0) - (productOrder.get(b.product) ?? 0)),
+      }));
+      repList.sort((a, b) => byNameLast(VACANT_SEAT)(a, b) || a.districtManager.localeCompare(b.districtManager));
+      return { name: region.name, value: region.value, reps: repList };
+    });
+    out.push({ lineName: line.lineName, value: line.value, regions });
+  }
+  return out;
+}
+
 // ── Excel ────────────────────────────────────────────────────────────────────
 
 const MONEY_FMT = '#,##0;[Red]-#,##0';
@@ -542,6 +608,36 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
     }
   }
 
+  // Owner, 2026-11-15 — the detail per product, per rep, per region: one table per region, a row per
+  // rep and product. Every rep's name on every row, so the sheet filters by rep, product or area.
+  const productDetail = groupProductsByRegionAndRep(model);
+  if (productDetail.length > 0) {
+    const { tab, first } = levelTab(PRODUCT_DETAIL_TAB);
+    let tabRow = first;
+    for (const line of productDetail) {
+      for (const region of line.regions) {
+        tabRow = writeHouseTable(tab, tabRow, {
+          columns: [
+            { label: "Medical rep", width: 28 },
+            { label: "District Manager", width: 26 },
+            { label: "Area", width: 24 },
+            { label: "Product", width: 30 },
+            { label: "Bricks", numFmt: UNITS_FMT, right: true, width: 10 },
+            { label: "Forecast units", numFmt: UNITS_FMT, right: true, width: 14 },
+            { label: "Forecast value", numFmt: MONEY_FMT, right: true, width: 16 },
+          ],
+          rows: region.reps.flatMap((rep) =>
+            rep.rows.map((row) => [rep.name, rep.districtManager, row.areas.join(", "), row.product, row.bricks, row.units, row.value]),
+          ),
+          title: `${line.lineName} · ${region.name} · ${INTEGER.format(region.reps.length)} ${region.reps.length === 1 ? "rep" : "reps"}`,
+          // Value only: units of different products are never added.
+          totals: [`${region.name} total`, null, null, null, null, null, region.value],
+          note: `${COVER_NOTE} Units are one product's own units; every total is value.`,
+        });
+      }
+    }
+  }
+
   const regionsByLine = groupBricksByRegion(model);
   const { tab: brickTab, first: brickFirst } = levelTab(BRICKS_TAB);
   let brickRow = brickFirst;
@@ -694,6 +790,8 @@ const FORECAST_CSS = `
   tr { break-inside: avoid; page-break-inside: avoid; }
   .notes { margin: 4mm 0 0; padding: 0; list-style: none; color: var(--phx-doc-muted); font-size: 7pt; }
   .notes li { margin: .6mm 0; padding-inline-start: 2.6mm; border-inline-start: .5pt solid var(--phx-doc-hair); }
+  h2.detail-start { break-before: page; }
+  tr.sub td { border-top: .5pt solid var(--phx-doc-hair); color: var(--phx-doc-deep); font-weight: 700; }
   .empty { margin: 6mm 0; padding: 3mm; border: .5pt solid var(--phx-doc-hair); color: var(--phx-doc-muted); text-align: center; }
 `;
 
@@ -773,6 +871,47 @@ export function buildForecastPdfHtml(model: ForecastExportModel): string {
           })
           .join("");
 
+  // Owner, 2026-11-15 — the detail per product, per rep, per region, after the product tables: each
+  // region a table, each rep's products together, a rep's total and the region's total in value only.
+  const productDetail = groupProductsByRegionAndRep(model);
+  const detailTables =
+    productDetail.length === 0
+      ? ""
+      : `<h2 class="detail-start">By region, rep and product <span>each brick under the rep, District Manager, area and region of the latest closed month it sold in</span></h2>${productDetail
+          .flatMap((line) =>
+            line.regions.map(
+              (region) => `<h2>${escapeHtml(`${line.lineName} · ${region.name}`)} <span>${escapeHtml(
+                `${INTEGER.format(region.reps.length)} ${region.reps.length === 1 ? "rep" : "reps"}`,
+              )}</span></h2>
+  <table>
+    <colgroup><col style="width:22%"><col style="width:20%"><col style="width:26%"><col style="width:8%"><col style="width:10%"><col style="width:14%"></colgroup>
+    <thead><tr><th>Medical rep</th><th>Area</th><th>Product</th><th class="num">Bricks</th><th class="num">Forecast units</th><th class="num">Forecast value</th></tr></thead>
+    <tbody>${region.reps
+      .map(
+        (rep) =>
+          rep.rows
+            .map(
+              (row) => `<tr>
+        <td><strong>${escapeHtml(rep.name)}</strong><br><span class="muted">${escapeHtml(rep.districtManager)}</span></td>
+        <td>${escapeHtml(row.areas.join(", "))}</td>
+        <td>${escapeHtml(row.product)}</td>
+        <td class="num">${INTEGER.format(row.bricks)}</td>
+        <td class="num">${INTEGER.format(row.units)}</td>
+        <td class="num">${escapeHtml(money(row.value))}</td>
+      </tr>`,
+            )
+            .join("") +
+          (rep.rows.length > 1
+            ? `<tr class="sub"><td colspan="4">${escapeHtml(`${rep.name} total`)}</td><td class="num muted">By value</td><td class="num">${escapeHtml(money(rep.value))}</td></tr>`
+            : ""),
+      )
+      .join("")}</tbody>
+    <tfoot><tr><td colspan="4">${escapeHtml(`${region.name} total`)}</td><td class="num muted">By value</td><td class="num">${escapeHtml(money(region.value))}</td></tr></tfoot>
+  </table>`,
+            ),
+          )
+          .join("")}`;
+
   const realistic = model.scenarios.find((scenario) => scenario.key === "realistic");
   const notes = [
     "Sold so far counts closed months only. Achievement is sales so far plus forecast, over target value.",
@@ -799,6 +938,7 @@ ${model.filterNote ? `<p class="filter">${escapeHtml(model.filterNote)}</p>` : "
 ${scenarioTable}
 <ul class="notes">${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>
 ${lineTables}
+${detailTables}
 </body></html>`;
 }
 
