@@ -4,8 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { MessageSquare, Send } from "lucide-react";
 
+import {
+  EMPTY_EXPLAIN_DRAFT,
+  ExplainReasonFields,
+  explainDraftProblem,
+  type ExplainReasonDraft,
+} from "@/components/disputes/explain-reason-fields";
 import { Button } from "@/components/ui/button";
-import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 /** What the page knows about a dispute already raised on this line. */
@@ -29,21 +34,21 @@ function disputeHref(id: string) {
  */
 export function DailyDeductionDisputeBox({ dispute, lineId }: { dispute: DailyLineDisputeState; lineId: string }) {
   const [state, setState] = useState<DailyLineDisputeState>(dispute);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState<ExplainReasonDraft>(EMPTY_EXPLAIN_DRAFT);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function send() {
-    const body = draft.trim();
-    if (!body) {
-      setError("Write why you dispute it first.");
+    const problem = explainDraftProblem(draft);
+    if (problem) {
+      setError(problem);
       return;
     }
     setSaving(true);
     setError(null);
     try {
       const response = await fetch("/api/daily-deductions/disputes", {
-        body: JSON.stringify({ body, lineId }),
+        body: JSON.stringify({ explanation: draft, lineId }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -56,7 +61,7 @@ export function DailyDeductionDisputeBox({ dispute, lineId }: { dispute: DailyLi
         throw new Error(payload.message || "Your dispute could not be sent.");
       }
       setState({ id: payload.dispute.id, status: "open" });
-      setDraft("");
+      setDraft(EMPTY_EXPLAIN_DRAFT);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Your dispute could not be sent.");
     } finally {
@@ -90,24 +95,18 @@ export function DailyDeductionDisputeBox({ dispute, lineId }: { dispute: DailyLi
       ) : (
         <>
           <p className="mt-1.5 text-xs text-slate-600">
-            If this is wrong, say why. If the dispute is accepted, the deduction is cancelled and those days are never
-            charged; if it is rejected, the deduction is taken at month end.
+            Choose why those days have no record and who can confirm it. If HR accepts it, the deduction is cancelled
+            and those days are never charged; if not, the deduction is taken at month end.
           </p>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <input
-              className={`${phxFieldClassName} flex-1`}
-              maxLength={2000}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Why is this deduction wrong?"
-              value={draft}
-            />
-            <Button className="h-10 gap-2" disabled={saving} onClick={() => void send()} type="button">
+          <ExplainReasonFields name={`explain-daily-${lineId}`} onChange={setDraft} value={draft} />
+          <div className="mt-2 flex justify-end">
+            <Button className="h-10 gap-2" disabled={saving || !draft.reasonCode} onClick={() => void send()} type="button">
               {saving ? (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
               ) : (
                 <Send className="h-4 w-4" />
               )}
-              Dispute
+              Send explanation
             </Button>
           </div>
         </>

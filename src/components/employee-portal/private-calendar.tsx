@@ -47,7 +47,14 @@ import {
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { DayPlanActualTable } from "@/components/employee-portal/private-calendar-plan-actual";
 import { buildDayPlanActual } from "@/lib/private-calendar/plan-actual";
-import { verificationSourceOptions } from "@/lib/private-calendar/verification-sources";
+import {
+  EXPLAIN_LEAVE_REDIRECT_HREF,
+  EXPLAIN_OTHER_MIN_WORDS,
+  EXPLAIN_REASONS,
+  validateExplanation,
+  type ExplainConfirmerKind,
+  type ExplainReasonCode,
+} from "@/lib/dispute-center/explain-reasons";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
@@ -67,6 +74,9 @@ import {
 
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** One person the employee may name to confirm an explanation (GET /api/dispute-center/explanations/confirmers). */
+type ExplanationConfirmerOption = { hrId: string; kind: ExplainConfirmerKind; name: string; title: string | null };
 const allValue = "__all__";
 
 
@@ -741,57 +751,113 @@ export function PrivateCalendar({
     [reviewRequests, selectedDate, selectedEmployee.hrId],
   );
 
+  // EXPLAIN THIS DAY (owner, 2026-11-16). The employee no longer says the calendar is "wrong" in free
+  // text: he picks why the day has no record from the reason list, names who can confirm it, and may
+  // add the same reason to other unexplained days of the month in the same action. Only a day that
+  // shows something to explain, and has no request yet, offers the button.
+  const ownHrIdKey = privateCalendarHrIdKey(selectedEmployee.hrId);
+  const explainableDays = useMemo(() => {
+    if (!canActOnOwnDay) return [] as string[];
+    const requested = new Set(
+      (reviewRequests ?? [])
+        .filter((request) => privateCalendarHrIdKey(request.employeeHrId) === ownHrIdKey)
+        .map((request) => request.date),
+    );
+    const days = new Set<string>();
+    for (const exception of exceptions) {
+      if (exception.severity === "info" || exception.date > today || requested.has(exception.date)) continue;
+      if (exception.employeeHrId && privateCalendarHrIdKey(exception.employeeHrId) !== ownHrIdKey) continue;
+      days.add(exception.date);
+    }
+    return Array.from(days).sort();
+  }, [canActOnOwnDay, exceptions, ownHrIdKey, reviewRequests, today]);
+  const selectedDayExplainable = explainableDays.includes(selectedDate);
+  const otherExplainableDays = useMemo(() => explainableDays.filter((date) => date !== selectedDate), [explainableDays, selectedDate]);
+
   const [disputeFormOpen, setDisputeFormOpen] = useState(false);
-  const [disputeClaimText, setDisputeClaimText] = useState("");
-  const [disputeSourceOptions, setDisputeSourceOptions] = useState<string[]>([]);
-  const [disputeSourceDetail, setDisputeSourceDetail] = useState("");
+  const [explainReasonCode, setExplainReasonCode] = useState<ExplainReasonCode | "">("");
+  const [explainDetail, setExplainDetail] = useState("");
+  const [explainConfirmerHrId, setExplainConfirmerHrId] = useState("");
+  const [explainExtraDates, setExplainExtraDates] = useState<string[]>([]);
+  const [explainConfirmers, setExplainConfirmers] = useState<ExplanationConfirmerOption[] | null>(null);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [disputeMessage, setDisputeMessage] = useState<string | null>(null);
+  const explainReasonEntry = explainReasonCode ? EXPLAIN_REASONS.find((reason) => reason.code === explainReasonCode) ?? null : null;
+  const explainConfirmerOptions = useMemo(
+    () => (explainConfirmers ?? []).filter((option) => explainReasonEntry?.confirmerKinds.includes(option.kind) ?? false),
+    [explainConfirmers, explainReasonEntry],
+  );
 
+  function openExplainForm() {
+    setDisputeFormOpen((open) => !open);
+    setDisputeMessage(null);
+    setExplainExtraDates([]);
+    if (explainConfirmers === null) {
+      fetch("/api/dispute-center/explanations/confirmers")
+        .then((response) => response.json())
+        .then((payload) => setExplainConfirmers(Array.isArray(payload?.data) ? payload.data : []))
+        .catch(() => setExplainConfirmers([]));
+    }
+  }
+
+  function toggleExplainExtraDate(date: string) {
+    setExplainExtraDates((current) =>
+      current.includes(date) ? current.filter((value) => value !== date) : [...current, date].sort(),
+    );
+  }
+
+  function shownOnDay(date: string): string {
+    if (date === selectedDate && timelineItems.length > 0) return timelineItems.map((item) => item.title).join(" | ");
+    const titles = exceptions
+      .filter((exception) => exception.date === date && exception.severity !== "info")
+      .map((exception) => exception.title);
+    return titles.length > 0 ? Array.from(new Set(titles)).join(" | ") : "Nothing was shown for this day.";
+  }
 
   async function submitDayDispute() {
     setDisputeMessage(null);
-    if (!disputeClaimText.trim() || disputeSourceOptions.length === 0) {
-      setDisputeMessage("Tell us what actually happened, and where a Super Admin can verify it.");
-      return;
-    }
-    if (disputeSourceOptions.includes("Other") && !disputeSourceDetail.trim()) {
-      setDisputeMessage("Tell us where a Super Admin can verify this.");
+    const dates = Array.from(new Set([selectedDate, ...explainExtraDates])).sort();
+    const draft = {
+      confirmerHrId: explainConfirmerHrId || null,
+      dates,
+      detailText: explainDetail,
+      reasonCode: explainReasonCode,
+    };
+    try {
+      validateExplanation(draft, today);
+    } catch (error) {
+      setDisputeMessage(error instanceof Error ? error.message : "Check the explanation and try again.");
       return;
     }
     setDisputeSubmitting(true);
     try {
-      const claimSourceText = disputeSourceDetail.trim()
-        ? `${disputeSourceOptions.join(", ")}: ${disputeSourceDetail.trim()}`
-        : disputeSourceOptions.join(", ");
-      const displayedSummary = timelineItems.length > 0
-        ? timelineItems.map((item) => item.title).join(" | ")
-        : selectedExceptions.length > 0
-          ? selectedExceptions.map((exception) => exception.title).join(" | ")
-          : "Nothing was shown for this day.";
       const response = await fetch("/api/private-calendar/disputes", {
         body: JSON.stringify({
-          claimSourceText,
-          claimText: disputeClaimText,
-          displayedSummary,
-          disputeDate: selectedDate,
+          ...draft,
+          displayedSummaries: Object.fromEntries(dates.map((date) => [date, shownOnDay(date)])),
           employeeName: selectedEmployee.fullName,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to submit this dispute.");
-      setDisputeClaimText("");
-      setDisputeSourceOptions([]);
-      setDisputeSourceDetail("");
-      setDisputeMessage("Request submitted — a Super Admin will review it.");
+      if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to send this explanation.");
+      const confirmerName = explainConfirmerOptions.find((option) => option.hrId === explainConfirmerHrId)?.name;
+      setExplainReasonCode("");
+      setExplainDetail("");
+      setExplainConfirmerHrId("");
+      setExplainExtraDates([]);
+      setDisputeMessage(
+        confirmerName
+          ? `Sent to ${confirmerName} to confirm. The Super Admin decides after that.`
+          : "Sent. The Super Admin will review it.",
+      );
       // Re-read the month so the day shows its "Review Requested — Pending" status now, not
       // only after the next navigation. A failed refresh must not turn a sent request into an
       // error message, so it is swallowed here; Sync Now retries it.
       await loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, viewMode).catch(() => undefined);
     } catch (error) {
-      setDisputeMessage(error instanceof Error ? error.message : "Unable to submit this dispute.");
+      setDisputeMessage(error instanceof Error ? error.message : "Unable to send this explanation.");
     } finally {
       setDisputeSubmitting(false);
     }
@@ -1541,14 +1607,14 @@ export function PrivateCalendar({
               <span className="bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
                 {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
               </span>
-              {canActOnOwnDay ? (
+              {canActOnOwnDay && selectedDayExplainable ? (
                 <button
                   className="inline-flex h-8 items-center gap-1.5 border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
-                  onClick={() => { setDisputeFormOpen((open) => !open); setDisputeMessage(null); }}
+                  onClick={openExplainForm}
                   type="button"
                 >
                   <FileSearch className="h-3.5 w-3.5" />
-                  Request review
+                  Explain this day
                 </button>
               ) : null}
             </div>
@@ -1556,41 +1622,107 @@ export function PrivateCalendar({
 
           {disputeFormOpen ? (
             <div className="border-b border-sky-200 bg-sky-50/60 px-4 py-4 sm:px-6">
-              <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Request a Review — {dayLabel(selectedDate)}</p>
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Explain this day — {dayLabel(selectedDate)}</p>
               <p className="mt-1 text-xs font-semibold text-sky-800">
-                If something here doesn&apos;t look right, let us know what actually happened and where a Super Admin can check.
+                Choose why this day has no record and who can confirm it. The person you name confirms first, then the Super Admin decides.
               </p>
-              <textarea
-                className={`${phxTextareaClassName} mt-3`}
-                onChange={(event) => setDisputeClaimText(event.target.value)}
-                placeholder="What actually happened this day"
-                rows={3}
-                value={disputeClaimText}
-              />
-              <VerificationSourceMultiSelect
-                borderClass="border-sky-200"
-                focusRingClass="focus:border-sky-400"
-                onChange={setDisputeSourceOptions}
-                selected={disputeSourceOptions}
-              />
-              {disputeSourceOptions.length > 0 ? (
-                <input
-                  className={`${phxFieldClassName} mt-2`}
-                  onChange={(event) => setDisputeSourceDetail(event.target.value)}
-                  placeholder={disputeSourceOptions.includes("Other") ? "Describe the source" : "Additional details (optional)"}
-                  type="text"
-                  value={disputeSourceDetail}
+              <fieldset className="mt-3 grid gap-2 sm:grid-cols-2">
+                <legend className="sr-only">Reason</legend>
+                {EXPLAIN_REASONS.map((reason) => (
+                  <label
+                    className={[
+                      "flex cursor-pointer items-start gap-2 border bg-white p-3",
+                      explainReasonCode === reason.code ? "border-sky-600" : "border-sky-200",
+                    ].join(" ")}
+                    key={reason.code}
+                  >
+                    <input
+                      checked={explainReasonCode === reason.code}
+                      className="mt-0.5"
+                      name="explain-reason"
+                      onChange={() => { setExplainReasonCode(reason.code); setExplainConfirmerHrId(""); setDisputeMessage(null); }}
+                      type="radio"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black text-slate-900">{reason.label}</span>
+                      <span className="block text-xs font-semibold leading-relaxed text-slate-600">{reason.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <p className="mt-2 text-xs font-semibold text-sky-900">
+                Was this day leave?{" "}
+                <a className="font-black text-sky-800 underline" href={EXPLAIN_LEAVE_REDIRECT_HREF}>Request the leave instead</a>
+                {" "}— leave is approved there, never explained here.
+              </p>
+              {explainReasonEntry && explainReasonEntry.confirmerKinds.length > 0 ? (
+                <label className="mt-3 block">
+                  <span className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Who can confirm it</span>
+                  <select
+                    className={`${phxFieldClassName} mt-1`}
+                    onChange={(event) => setExplainConfirmerHrId(event.target.value)}
+                    value={explainConfirmerHrId}
+                  >
+                    <option value="">{explainConfirmers === null ? "Loading" : "Choose a person"}</option>
+                    {explainConfirmerOptions.map((option) => (
+                      <option key={option.hrId} value={option.hrId}>
+                        {option.title ? `${option.name} — ${option.title}` : option.name}
+                      </option>
+                    ))}
+                  </select>
+                  {explainConfirmers !== null && explainConfirmerOptions.length === 0 ? (
+                    <span className="mt-1 block text-xs font-bold text-sky-900">
+                      No manager is on file for you. Choose Something else and explain it, or ask HR to set your manager.
+                    </span>
+                  ) : null}
+                </label>
+              ) : null}
+              {explainReasonEntry ? (
+                <textarea
+                  className={`${phxTextareaClassName} mt-3`}
+                  onChange={(event) => setExplainDetail(event.target.value)}
+                  placeholder={
+                    explainReasonCode === "other"
+                      ? `What happened: where you were and what you did (at least ${EXPLAIN_OTHER_MIN_WORDS} words)`
+                      : "Anything to add (optional): the training's name, the meeting's place"
+                  }
+                  rows={3}
+                  value={explainDetail}
                 />
+              ) : null}
+              {explainReasonEntry && otherExplainableDays.length > 0 ? (
+                <div className="mt-3">
+                  <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">The same reason on other days</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {otherExplainableDays.map((date) => (
+                      <label
+                        className="inline-flex cursor-pointer items-center gap-1.5 border border-sky-200 bg-white px-2 py-1 text-xs font-bold text-slate-700"
+                        key={date}
+                      >
+                        <input
+                          checked={explainExtraDates.includes(date)}
+                          onChange={() => toggleExplainExtraDate(date)}
+                          type="checkbox"
+                        />
+                        {dayLabel(date)}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               ) : null}
               {disputeMessage ? <p className="mt-2 text-xs font-bold text-sky-900">{disputeMessage}</p> : null}
               <div className="mt-3 flex items-center gap-2">
                 <button
                   className={phxButtonAccentClassName}
-                  disabled={disputeSubmitting}
+                  disabled={disputeSubmitting || !explainReasonEntry}
                   onClick={submitDayDispute}
                   type="button"
                 >
-                  {disputeSubmitting ? "Submitting" : "Submit"}
+                  {disputeSubmitting
+                    ? "Sending"
+                    : explainExtraDates.length > 0
+                      ? `Send for ${explainExtraDates.length + 1} days`
+                      : "Send"}
                 </button>
                 <button className={phxButtonGhostClassName} onClick={() => setDisputeFormOpen(false)} type="button">
                   Cancel
@@ -1962,59 +2094,6 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
         ))}
       </div>
     </section>
-  );
-}
-
-// Multi-select "where can a Super Admin verify this" dropdown used by the
-// Request Review form — a day's claim can point to more than one source at
-// once (e.g. both CRM and a manager confirmation).
-function VerificationSourceMultiSelect({
-  borderClass,
-  focusRingClass,
-  onChange,
-  selected,
-}: {
-  borderClass: string;
-  focusRingClass: string;
-  onChange: (next: string[]) => void;
-  selected: string[];
-}) {
-  const [open, setOpen] = useState(false);
-
-  function toggle(option: string) {
-    onChange(selected.includes(option) ? selected.filter((value) => value !== option) : [...selected, option]);
-  }
-
-  return (
-    <div className="relative mt-2">
-      <button
-        className={["flex w-full items-center justify-between border bg-white px-3 py-2 text-left text-sm text-slate-900 focus:outline-none", borderClass, focusRingClass].join(" ")}
-        onClick={() => setOpen((value) => !value)}
-        type="button"
-      >
-        <span className={selected.length > 0 ? "text-slate-900" : "text-slate-400"}>
-          {selected.length > 0 ? selected.join(", ") : "Where can a Super Admin verify this?"}
-        </span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-      </button>
-      {open ? (
-        <div className={`absolute z-10 mt-1 w-full border border-slate-200 bg-white p-1.5 ${adminPanelDepthClassName}`}>
-          {verificationSourceOptions.map((option) => (
-            <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50" key={option}>
-              <input checked={selected.includes(option)} onChange={() => toggle(option)} type="checkbox" />
-              {option}
-            </label>
-          ))}
-          <button
-            className="mt-1 w-full bg-slate-100 px-2 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-200"
-            onClick={() => setOpen(false)}
-            type="button"
-          >
-            Done
-          </button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

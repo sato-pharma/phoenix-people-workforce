@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "employee_profile", "read");
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const dispute = await openDailyDeductionDispute(access, {
-      body: String(body.body ?? ""),
+      explanation: body.explanation,
       lineId: String(body.lineId ?? "").trim(),
     });
     return NextResponse.json({ dispute, success: true });

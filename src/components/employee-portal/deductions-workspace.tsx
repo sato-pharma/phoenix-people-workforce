@@ -7,6 +7,12 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PictureStrip } from "@/components/deductions/dispute-pictures";
+import {
+  EMPTY_EXPLAIN_DRAFT,
+  ExplainReasonFields,
+  explainDraftProblem,
+  type ExplainReasonDraft,
+} from "@/components/disputes/explain-reason-fields";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { periodLabel } from "@/lib/business-review/period-format";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
@@ -35,6 +41,9 @@ import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 
 const DEDUCTION_LINES_PAGE_SIZE = 25;
+
+// The two confirmations that read green under the box; anything else there is a refusal to fix.
+const SENT_MESSAGES = new Set(["Dispute sent to HR.", "Explanation sent. The person you named confirms it, then HR decides."]);
 
 type DeductionsPortalWorkspaceProps = {
   comments: DeductionsComment[];
@@ -139,6 +148,8 @@ export function DeductionsPortalWorkspace({
   firstMonthKey,
 }: DeductionsPortalWorkspaceProps) {
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  // The opening of a dispute is an explanation from the reason list (owner, 2026-11-16), one per row.
+  const [explainDrafts, setExplainDrafts] = useState<Record<string, ExplainReasonDraft>>({});
   const [savingCandidateId, setSavingCandidateId] = useState<string | null>(null);
   const [messageByCandidate, setMessageByCandidate] = useState<Record<string, string>>({});
   const [localComments, setLocalComments] = useState<DeductionsComment[]>(comments);
@@ -172,10 +183,12 @@ export function DeductionsPortalWorkspace({
   const filtered =
     monthFilter !== PORTAL_LEDGER_ANY || categoryFilter !== PORTAL_LEDGER_ANY || statusFilter !== PORTAL_LEDGER_ANY;
 
-  const submitComment = useCallback(async (candidateId: string) => {
-    const body = String(commentDrafts[candidateId] ?? "").trim();
-    if (!body) {
-      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Write why you dispute it first." }));
+  const submitComment = useCallback(async (candidateId: string, opening: boolean) => {
+    const body = opening ? "" : String(commentDrafts[candidateId] ?? "").trim();
+    const explanation = explainDrafts[candidateId] ?? EMPTY_EXPLAIN_DRAFT;
+    const problem = opening ? explainDraftProblem(explanation) : body ? null : "Write what you want to add first.";
+    if (problem) {
+      setMessageByCandidate((current) => ({ ...current, [candidateId]: problem }));
       return;
     }
     setSavingCandidateId(candidateId);
@@ -184,7 +197,7 @@ export function DeductionsPortalWorkspace({
       const response = await fetch("/api/deductions/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, candidateId }),
+        body: JSON.stringify(opening ? { body, candidateId, explanation } : { body, candidateId }),
       });
       const payload = (await response.json()) as {
         comment?: DeductionsComment;
@@ -200,7 +213,13 @@ export function DeductionsPortalWorkspace({
       }
       setLocalComments((current) => [payload.comment as DeductionsComment, ...current]);
       setCommentDrafts((current) => ({ ...current, [candidateId]: "" }));
-      setMessageByCandidate((current) => ({ ...current, [candidateId]: "Dispute sent to HR." }));
+      setExplainDrafts((current) => ({ ...current, [candidateId]: EMPTY_EXPLAIN_DRAFT }));
+      setMessageByCandidate((current) => ({
+        ...current,
+        [candidateId]: opening && explanation.reasonCode !== "other"
+          ? "Explanation sent. The person you named confirms it, then HR decides."
+          : "Dispute sent to HR.",
+      }));
     } catch (error) {
       setMessageByCandidate((current) => ({
         ...current,
@@ -209,7 +228,7 @@ export function DeductionsPortalWorkspace({
     } finally {
       setSavingCandidateId(null);
     }
-  }, [commentDrafts]);
+  }, [commentDrafts, explainDrafts]);
 
   if (rows.length === 0) {
     return (
@@ -324,6 +343,10 @@ export function DeductionsPortalWorkspace({
           // accepted keeps it, read-only — and the box to write in only where a dispute is open.
           const candidateComments = ownRow ? commentsByCandidate.get(row.candidateId) ?? [] : [];
           const message = messageByCandidate[row.candidateId];
+          // Has the employee written anything on this row yet? His first word is the explanation.
+          const opening = !candidateComments.some(
+            (comment) => Boolean(ownCompactHrId && comment.authorHrId && compactDeductionsHrId(comment.authorHrId) === ownCompactHrId),
+          );
           return (
             <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm" key={row.candidateId}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -399,12 +422,12 @@ export function DeductionsPortalWorkspace({
                 <div className="mt-4 border-t border-slate-100 pt-4">
                   <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
                     <MessageSquare className="h-4 w-4" />
-                    {candidateComments.length > 0 ? "Your dispute" : "Dispute this deduction"}
+                    {opening ? "Dispute this deduction" : "Your dispute"}
                   </div>
-                  {candidateComments.length === 0 ? (
+                  {opening && canComment ? (
                     <p className="mt-1.5 text-xs text-slate-600">
-                      If this is wrong, say why. If the dispute is accepted, the deduction is cancelled and the
-                      day is corrected on your calendar; if it is rejected, the deduction is taken.
+                      Choose why those days have no record and who can confirm it. If HR accepts it, the deduction is
+                      cancelled and the day is marked as explained on your calendar; if not, the deduction is taken.
                     </p>
                   ) : null}
                   {candidateComments.length > 0 ? (
@@ -439,12 +462,38 @@ export function DeductionsPortalWorkspace({
                       })}
                     </div>
                   ) : null}
-                  {canComment ? (
+                  {canComment && opening ? (
+                    <>
+                      <ExplainReasonFields
+                        name={`explain-deduction-${row.candidateId}`}
+                        onChange={(next) => setExplainDrafts((current) => ({ ...current, [row.candidateId]: next }))}
+                        value={explainDrafts[row.candidateId] ?? EMPTY_EXPLAIN_DRAFT}
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <Button
+                          className="h-10 gap-2"
+                          disabled={savingCandidateId === row.candidateId || !explainDrafts[row.candidateId]?.reasonCode}
+                          onClick={() => {
+                            void submitComment(row.candidateId, true);
+                          }}
+                          type="button"
+                        >
+                          {savingCandidateId === row.candidateId ? (
+                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                          Send explanation
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+                  {canComment && !opening ? (
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input
                       className={`${phxFieldClassName} flex-1`}
                       maxLength={2000}
-                      placeholder={candidateComments.length > 0 ? "Add to your dispute" : "Why is this deduction wrong?"}
+                      placeholder="Add to your dispute"
                       value={commentDrafts[row.candidateId] ?? ""}
                       onChange={(event) =>
                         setCommentDrafts((current) => ({
@@ -458,7 +507,7 @@ export function DeductionsPortalWorkspace({
                       disabled={savingCandidateId === row.candidateId}
                       type="button"
                       onClick={() => {
-                        void submitComment(row.candidateId);
+                        void submitComment(row.candidateId, false);
                       }}
                     >
                       {savingCandidateId === row.candidateId ? (
@@ -466,7 +515,7 @@ export function DeductionsPortalWorkspace({
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      {candidateComments.length > 0 ? "Send" : "Dispute"}
+                      Send
                     </Button>
                   </div>
                   ) : null}
@@ -474,7 +523,7 @@ export function DeductionsPortalWorkspace({
                     <p
                       className={cn(
                         "mt-2 text-xs font-semibold",
-                        message === "Dispute sent to HR." ? "text-emerald-600" : "text-rose-600",
+                        SENT_MESSAGES.has(message) ? "text-emerald-600" : "text-rose-600",
                       )}
                     >
                       {message}
