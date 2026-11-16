@@ -178,6 +178,39 @@ export function runDeleteGuardStandDownTests() {
 
   assert.equal(decide("rm './scratch-notes.txt'").decision, "allow", "an unprotected type was never this guard's business");
 
+  // ---- 2026-11-16: a delete is judged by what IT names, and a quote mark no longer hides one ------
+  // The narrowing is a loosening by design, so every way a delete can still reach a document is pinned
+  // here as a refusal: a narrowing that went one step too far would read as the fix working.
+  const stillRefused = [
+    "rm -f p1.png ./report.pdf && ls",
+    "F=./report.pdf; rm \"$F\"",
+    "for f in *.pdf; do rm \"$f\"; done",
+    "ls *.pdf | xargs rm",
+    "find . -name '*.pdf' -exec rm {} \\;",
+    "Get-ChildItem -Filter *.pdf | Remove-Item",
+    "Remove-Item -Path @(\n  'a.png',\n  'report.pdf'\n)",
+    "bash <<'EOF'\nrm ./report.pdf\nEOF",
+    "node -e \"require('fs').unlinkSync(process.argv[1])\" ./report.pdf",
+    // The quote-mark gap, closed the same day: each of these deleted a PDF and was allowed before.
+    "bash -c 'rm -f ./report.pdf'",
+    "bash -c 'rm -f \"$1\"' _ ./report.pdf",
+    "python -c \"import os; os.system('rm -f ./report.pdf')\"",
+    "python -c \"import subprocess; subprocess.run(['rm', '-f', './report.pdf'])\"",
+    "node -e \"const p='./report.html'; require('child_process').spawnSync('rm', ['-f', p])\"",
+  ];
+  for (const command of stillRefused) {
+    assert.equal(decide(command).decision, "deny", `a delete that reaches a document must stay refused: ${command}`);
+  }
+  // The false refusals that started it — five in four days, each deleting only images or temp files.
+  const nowAllowed = [
+    "rm -f p1.png p2.png && python -I -c \"import sys; print(sys.argv[1])\" ./no-such-register.pdf",
+    "cat > t.tmp.mjs <<'EOF'\n// don't reopen report.pdf\nconsole.log(1)\nEOF\nnode t.tmp.mjs && rm t.tmp.mjs",
+    "python -c \"import subprocess; subprocess.run(['rm', '-f', 'a.png'])\" ./no-such-register.pdf",
+  ];
+  for (const command of nowAllowed) {
+    assert.equal(decide(command).decision, "allow", `a delete of no document beside a document only READ is allowed: ${command}`);
+  }
+
   // ---- clauses a weakening could remove while every assertion above still passed -----------------
   // Each of these is load-bearing in a way the decision table cannot observe.
   assert.match(

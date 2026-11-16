@@ -1,12 +1,24 @@
 ---
 name: attendance-agent-needs-the-office-lan
-description: "Punch ingestion silently stops whenever the owner's laptop leaves the office LAN — the ZKTeco device is at 192.168.100.52:4370 and nothing else can reach it"
+description: "SINCE 15 Nov 2026 the always-on OFFICE PC runs the fingerprint sync and the owner laptop sync is REMOVED; the history below is the laptop era — the ZKTeco device is at 192.168.100.52:4370 and only the office LAN reaches it"
 metadata: 
   node_type: memory
   type: project
   originSessionId: d0007173-7b15-4def-a4c3-f0d0670c67f0
-  modified: 2026-11-14T02:01:19.543Z
+  modified: 2026-11-15T15:20:34.870Z
 ---
+
+🔴 **15 Nov 2026 — THE OFFICE PC OWNS THE FINGERPRINT SYNC; THE LAPTOP NO LONGER SYNCS** (owner:
+"remove the fingerprint sync from this laptop"). The always-on office PC runs the agent from
+`C:\Phoenix-Attendance-Agent\Phoenix-Attendance-Agent` (health `status:ok`, `deviceConnects:true`;
+its first run `zkteco-main-20261115140426-…` at 16:04 Cairo saved a punch). On the laptop, 17:3x Cairo:
+the three tasks `Phoenix Attendance Agent - Run At Logon`, `… Sync - Every 2 Hours` and `… Required
+5 PM` were unregistered (each needed an admin prompt; plain `Unregister-ScheduledTask` and
+`schtasks /Delete` answer Access is denied even though the tasks are the owner's and RunLevel
+Limited), the running agent (port 8787) was stopped, also only with admin rights, and no startup
+shortcut existed. The code in `local-attendance-agent/` is unchanged. So: punches stopping is now
+the OFFICE PC's problem — check it, never the laptop; everything below about the laptop's Wi-Fi,
+battery flags and scheduled tasks is history.
 
 Fingerprint punch ingestion runs from a **local .NET agent on the owner's laptop**
 (`local-attendance-agent/`, listens on `127.0.0.1:8787`). It reads the ZKTeco device at

@@ -1585,5 +1585,6 @@
   "worktree-session-can-silently-write-to-primary-checkout": "git-worktrees",
   "wrong-brick-customers-fixed-2026-10-27": "sales-attribution",
   "zero-deployment-rows-means-a-railway-build-outage-not-a-withheld-deploy": "engineering-deploys",
-  "zeroing-is-bonus-turns-free-goods-into-sales": "sales-closing"
+  "zeroing-is-bonus-turns-free-goods-into-sales": "sales-closing",
+  "zoom-account-settings-override-the-interview-meeting": "recruitment"
 }
