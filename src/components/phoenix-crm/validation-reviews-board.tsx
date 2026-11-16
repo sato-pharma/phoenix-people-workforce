@@ -47,6 +47,8 @@ import { LineLookalikeBoardView } from "@/components/phoenix-crm/line-lookalike-
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
+import { useBulkRunGoing } from "@/components/phoenix-crm/place-check-bulk";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -64,7 +66,7 @@ import {
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
 import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
-import { rejectedBuildingsSwitchLabel } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, rejectedBuildingsSwitchLabel } from "@/lib/phoenix-crm/validation-feedback";
 import {
   chipTakes,
   clinicsInUse,
@@ -102,6 +104,25 @@ const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
   "14": "Last 14 days",
   "30": "Last 30 days",
 };
+
+/**
+ * What is narrowing the board, one short label each, for the folded Filters line (owner, 17 Nov 2026:
+ * "simple to decide"). The boxes fold away; what they hold stays on screen, so a rep picked from the
+ * scorecard or a period left on is never hidden behind the fold.
+ */
+function filterSummary(filters: ValidationReviewFilters): string[] {
+  const labels: string[] = [];
+  if (filters.outcome !== "all") labels.push(OUTCOME_LABELS[filters.outcome]);
+  if (filters.rep) labels.push(`Rep: ${filters.rep}`);
+  if (filters.line) labels.push(`Line: ${filters.line}`);
+  if (filters.region) labels.push(`Region: ${filters.region}`);
+  if (filters.area) labels.push(`Area: ${filters.area}`);
+  if (filters.list) labels.push(`List: ${filters.list}`);
+  if (filters.period !== "all") labels.push(PERIOD_LABELS[filters.period]);
+  if (filters.decider) labels.push(`Decided by ${filters.decider}`);
+  if (filters.text.trim()) labels.push(`Search: ${filters.text.trim()}`);
+  return labels;
+}
 
 /** Every list on the board shows this many rows, then "Show more" — no tab draws its whole set at once. */
 const PAGE_ROWS = 20;
@@ -191,12 +212,14 @@ function Paged<Row>({ children, noun, rows, size }: { children: (shown: Row[]) =
  * What the board says while the click's read is on its way — every place in use and the older decisions —
  * and, when it fails, why, with the one button that asks again.
  */
-function ReadingEverything({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+function ReadingEverything({ error, onRetry, stale = false }: { error: string | null; onRetry: () => void; stale?: boolean }) {
   return (
     <AdminCallout tone={error ? "warning" : "neutral"}>
       <span className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="min-w-0 flex-1 basis-60 break-words">
-          {error ?? "Reading every place in use and every older decision, so each list and count here is complete."}
+          {stale
+            ? `Reading every place again did not work${error ? `: ${error.trim().replace(/([^.!?])$/, "$1.")}` : "."} The lists and counts below are from the reading before it.`
+            : (error ?? "Reading every place in use and every older decision, so each list and count here is complete.")}
         </span>
         {error ? (
           <CrmButton onClick={onRetry} size="sm">
@@ -278,6 +301,8 @@ export function ValidationReviewsBoard({
   reviewDeck?: (input: PlaceReviewDeckInput, everything: { ready: boolean; want: () => void; error: string | null; retry: () => void }) => ReactNode;
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
+  // The eight boxes fold away under a one-line summary of what is narrowing the board (17 Nov 2026).
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState<PlaceCheckView>("needs");
   const [chip, setChip] = useState<UnconfirmedChip>("open");
   const [showRejectedBuildings, setShowRejectedBuildings] = useState(false);
@@ -290,6 +315,12 @@ export function ValidationReviewsBoard({
   const [lineLookalikesOpened, setLineLookalikesOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
+  // While a bulk run is going, the tabs, filters, counts and every switch that redraws a list wait for it
+  // (`useBulkRunGoing`, 17 Nov 2026): the run's own report is drawn in the bar the switch would remove.
+  const bulkRunning = useBulkRunGoing();
+  // 🔴 A DECISION'S RE-READ DIES WITH THE BOARD (17 Nov 2026): it waits for the decisions to pause, and
+  // pressed just before he left, it rebuilt whatever page he had opened since.
+  useEffect(() => () => placeCheckReread.cancel(), []);
 
   // ── The rows the page did not send (`onDemand`) ──────────────────────────────────────────────────
   // Asked for once, on the first click that needs them — Not confirmed, any filter or outcome, a tapped
@@ -444,6 +475,7 @@ export function ValidationReviewsBoard({
   const reading = !complete && (filtering || view === "unconfirmed");
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
+  const narrowedBy = filterSummary(filters);
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
@@ -535,116 +567,137 @@ export function ValidationReviewsBoard({
   return (
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
+        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         {deckInput && reviewDeck
           ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything })
           : null}
-        <div className="min-w-0 border border-slate-200 bg-white px-4 py-4">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 border border-slate-200 bg-white">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
-            {anyFilter || filters.outcome !== "all" ? (
-              <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
-                Clear filters
+            <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-1.5">
+              {narrowedBy.length === 0 ? (
+                <span className="break-words text-xs font-semibold text-slate-500">Showing everything</span>
+              ) : (
+                narrowedBy.map((label) => (
+                  <span key={label} className="break-words border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-orange-800" dir="auto">
+                    {label}
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-2">
+              {anyFilter || filters.outcome !== "all" ? (
+                <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
+                  Clear filters
+                </CrmButton>
+              ) : null}
+              <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
+                {filtersOpen ? "Hide filters" : "Show filters"}
               </CrmButton>
-            ) : null}
+            </div>
           </div>
-          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <CrmField htmlFor="vr-outcome" label="Outcome">
-              <CrmSelect id="vr-outcome" onChange={(event) => set("outcome", event.target.value as ValidationReviewOutcome)} value={filters.outcome}>
-                {(Object.keys(OUTCOME_LABELS) as ValidationReviewOutcome[]).map((value) => (
-                  <option key={value} value={value}>
-                    {OUTCOME_LABELS[value]}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+          {filtersOpen ? (
+            <div className="border-t border-slate-100 px-4 pb-4 pt-3" id="vr-filter-fields">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <CrmField htmlFor="vr-outcome" label="Outcome">
+                  <CrmSelect id="vr-outcome" onChange={(event) => set("outcome", event.target.value as ValidationReviewOutcome)} value={filters.outcome}>
+                    {(Object.keys(OUTCOME_LABELS) as ValidationReviewOutcome[]).map((value) => (
+                      <option key={value} value={value}>
+                        {OUTCOME_LABELS[value]}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-rep" label="Rep">
-              <CrmSelect id="vr-rep" onChange={(event) => set("rep", event.target.value)} value={filters.rep}>
-                <option value="">Every rep</option>
-                {reps.map((rep) => (
-                  <option key={rep} value={rep}>
-                    {rep}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-rep" label="Rep">
+                  <CrmSelect id="vr-rep" onChange={(event) => set("rep", event.target.value)} value={filters.rep}>
+                    <option value="">Every rep</option>
+                    {reps.map((rep) => (
+                      <option key={rep} value={rep}>
+                        {rep}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-line" label="Line">
-              <CrmSelect id="vr-line" onChange={(event) => set("line", event.target.value)} value={filters.line}>
-                <option value="">Every line</option>
-                {lines.map((line) => (
-                  <option key={line} value={line}>
-                    {line}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-line" label="Line">
+                  <CrmSelect id="vr-line" onChange={(event) => set("line", event.target.value)} value={filters.line}>
+                    <option value="">Every line</option>
+                    {lines.map((line) => (
+                      <option key={line} value={line}>
+                        {line}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-region" label="Region">
-              <CrmSelect id="vr-region" onChange={(event) => set("region", event.target.value)} value={filters.region}>
-                <option value="">Every region</option>
-                {regions.map((region) => (
-                  <option key={region} value={region}>
-                    {region}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-region" label="Region">
+                  <CrmSelect id="vr-region" onChange={(event) => set("region", event.target.value)} value={filters.region}>
+                    <option value="">Every region</option>
+                    {regions.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-area" label="Area">
-              <CrmSelect id="vr-area" onChange={(event) => set("area", event.target.value)} value={filters.area}>
-                <option value="">Every area</option>
-                {areas.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-area" label="Area">
+                  <CrmSelect id="vr-area" onChange={(event) => set("area", event.target.value)} value={filters.area}>
+                    <option value="">Every area</option>
+                    {areas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-list" label="List">
-              <CrmSelect id="vr-list" onChange={(event) => set("list", event.target.value)} value={filters.list}>
-                <option value="">Every list</option>
-                {lists.map((list) => (
-                  <option key={list} value={list}>
-                    {list}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-list" label="List">
+                  <CrmSelect id="vr-list" onChange={(event) => set("list", event.target.value)} value={filters.list}>
+                    <option value="">Every list</option>
+                    {lists.map((list) => (
+                      <option key={list} value={list}>
+                        {list}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-period" label="Period">
-              <CrmSelect id="vr-period" onChange={(event) => set("period", event.target.value as ValidationReviewPeriod)} value={filters.period}>
-                {(Object.keys(PERIOD_LABELS) as ValidationReviewPeriod[]).map((value) => (
-                  <option key={value} value={value}>
-                    {PERIOD_LABELS[value]}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-period" label="Period">
+                  <CrmSelect id="vr-period" onChange={(event) => set("period", event.target.value as ValidationReviewPeriod)} value={filters.period}>
+                    {(Object.keys(PERIOD_LABELS) as ValidationReviewPeriod[]).map((value) => (
+                      <option key={value} value={value}>
+                        {PERIOD_LABELS[value]}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            {team ? null : (
-              <CrmField htmlFor="vr-decider" label="Decided by">
-                <CrmSelect id="vr-decider" onChange={(event) => set("decider", event.target.value)} value={filters.decider}>
-                  <option value="">Anyone</option>
-                  {deciders.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </CrmSelect>
-              </CrmField>
-            )}
-          </div>
-          <div className="mt-3 min-w-0 lg:max-w-md">
-            <CrmSearchField
-              id="vr-search"
-              label="Search"
-              onChange={(next) => set("text", next)}
-              placeholder="Customer, rep, territory, brick or area"
-              value={filters.text}
-            />
-          </div>
+                {team ? null : (
+                  <CrmField htmlFor="vr-decider" label="Decided by">
+                    <CrmSelect id="vr-decider" onChange={(event) => set("decider", event.target.value)} value={filters.decider}>
+                      <option value="">Anyone</option>
+                      {deciders.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </CrmSelect>
+                  </CrmField>
+                )}
+              </div>
+              <div className="mt-3 min-w-0 lg:max-w-md">
+                <CrmSearchField
+                  id="vr-search"
+                  label="Search"
+                  onChange={(next) => set("text", next)}
+                  placeholder="Customer, rep, territory, brick or area"
+                  value={filters.text}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {capped.reviews || capped.validated || capped.reopened || capped.sharedPlaces ? (
@@ -692,7 +745,22 @@ export function ValidationReviewsBoard({
             </button>
           ))}
         </div>
+        </fieldset>
 
+        {bulkRunning ? (
+          <p className="break-words border-l-4 border-orange-500 bg-white px-4 py-2 text-sm font-semibold text-slate-700" role="status">
+            Answering the rows you picked. The tabs, the filters and every other decision wait until it is done.
+          </p>
+        ) : null}
+
+        {onDemand && wanted && complete && everythingRead.error ? (
+          <ReadingEverything error={everythingRead.error} onRetry={reloadEverything} stale />
+        ) : null}
+
+        {/* 🔴 EVERY ROW'S OWN BUTTONS WAIT FOR A BULK RUN TOO (17 Nov 2026, the review of the audit fixes): an
+            approved place can be rejected on its own row, so a row approved by hand mid-run was rejected
+            again when the run reached it. The running bar's own controls are already held by `busy`. */}
+        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         {!reading && view === "needs" ? (
           <div aria-labelledby="vr-tab-needs" className="space-y-5" id="vr-panel-needs" role="tabpanel">
             {team ? null : <AdviceSummary advice={advice} />}
@@ -702,7 +770,7 @@ export function ValidationReviewsBoard({
                 description={
                   team
                     ? "The places the system could not settle by itself: Google has no listing it is sure is the customer, its pin is far from where the rep stood, or the signboard names somebody else — or nobody. Each one's evidence is below, and the rep knows only that the system is checking."
-                    : "Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. It does not add anybody to the list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
+                    : `Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. ${PLACE_APPROVAL_IS_NOT_A_LIST_ADD} Reject retires the place; a customer left without one goes back to To validate. The rep reads either as the system's answer.`
                 }
               >
                 {filteredPending.length === 0 ? (
@@ -761,6 +829,7 @@ export function ValidationReviewsBoard({
                       "inline-flex min-h-10 min-w-0 items-center gap-2 rounded-none border px-3 py-1.5 text-left text-xs font-black",
                       chip === key ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                     )}
+                    disabled={bulkRunning}
                     onClick={() => setChip(key)}
                     type="button"
                   >
@@ -811,6 +880,7 @@ export function ValidationReviewsBoard({
         {!reading && view === "polyclinics" ? (
           <div aria-labelledby="vr-tab-polyclinics" className="space-y-3" id="vr-panel-polyclinics" role="tabpanel">
             {!team && failingTimetables ? (
+              <fieldset className="m-0 min-w-0 border-0 p-0" disabled={bulkRunning}>
               <FailingTimetablesPanel
                 onOpen={(sharedPlaceId) => {
                   setOnlyBuilding(sharedPlaceId);
@@ -819,17 +889,18 @@ export function ValidationReviewsBoard({
                 opened={onlyBuilding}
                 view={failingTimetables}
               />
+              </fieldset>
             ) : null}
             {openedBuilding ? (
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="break-words text-sm text-slate-700">Showing the one building you opened, whatever the filters say.</span>
-                <CrmButton onClick={() => setOnlyBuilding(null)} size="sm">
+                <CrmButton disabled={bulkRunning} onClick={() => setOnlyBuilding(null)} size="sm">
                   Show every building
                 </CrmButton>
               </div>
             ) : null}
             {!openedBuilding && rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
-              <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
+              <CrmCheck checked={showRejectedBuildings} disabled={bulkRunning} onChange={setShowRejectedBuildings}>
                 {rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })}
               </CrmCheck>
             ) : null}
@@ -937,6 +1008,7 @@ export function ValidationReviewsBoard({
             ) : null}
           </div>
         ) : null}
+        </fieldset>
       </div>
     </CrmSurfaceProvider>
   );

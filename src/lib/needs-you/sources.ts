@@ -976,7 +976,9 @@ const phoenixCrmDecisions: NeedsYouAdapter = {
         // Manager can decide a held place (`canDecideValidationReviews`, which asked for the count), so
         // nobody below them can clear this row — and either of the two clearing it clears it for both.
         lane: "yours",
-        label: `${counts.placeChecks} ${plural(counts.placeChecks, "place is", "places are")} held for your approval`,
+        // A count of DECISIONS since 17 Nov 2026 (`countValidationReviewsWaiting`): a building with everybody
+        // waiting behind it is one, held or not, so the row says "place checks wait", never "places are held".
+        label: `${counts.placeChecks} ${plural(counts.placeChecks, "place check waits", "place checks wait")} for your approval`,
         count: counts.placeChecks,
         people: [],
         // 🔴 ITS OWN HREF, not the source's Team tab — that screen cannot decide one of these. The

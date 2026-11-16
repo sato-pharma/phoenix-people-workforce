@@ -368,6 +368,15 @@ async function subjectFor(viewer: PhoenixCrmViewer, kind: PlaceNoteSubjectKind, 
     seatId: String(row.seat_id ?? ""),
   };
 
+  // 🔴 A TEST ACCOUNT NEVER WRITES ON A REAL PLACE (audit, 2026-11-16). A `TEST-` login carries the
+  // mirrored manager's own hrId and role, so his team board opens for it exactly as he sees it — and
+  // without this line a comment it saved was a real row in HIS name (the rep read "From your manager"),
+  // and a recommendation was upserted onto (place_id, manager_hr_id), OVERWRITING his own. Reading the
+  // board stays exactly his; writing on it stays his alone. A test row is the test world's, as before.
+  if (viewer.isTestPersona && !subject.isTest) {
+    throw forbiddenError("A test login reads this board as the manager sees it, and cannot comment or recommend on a real place.");
+  }
+
   if (canDecideValidationReviews(viewer)) return { source: "system_admin", subject };
   if (!readsTeamPlaceChecks(viewer)) throw forbiddenError("These place checks are not yours to comment on.");
   const mine = new Set(teamPlaceChecksSeats(viewer).map((seat) => seat.seatId));
@@ -449,7 +458,13 @@ export async function savePlaceRecommendation(
   if (!recommendation) throw validationError(PLACE_RECOMMENDATION_REQUIRED);
   const subjectId = String(body.subjectId).toLowerCase();
 
-  const { subject } = await subjectFor(viewer, kind, subjectId);
+  const { source, subject } = await subjectFor(viewer, kind, subjectId);
+  // 🔴 A RECOMMENDATION IS THE DISTRICT MANAGER'S WORD ON HIS OWN TEAM'S PLACE, AND NOBODY ELSE'S (owner,
+  // 17 Nov 2026, the audit's decision paths). The company board draws no recommend buttons, but this save
+  // read only the subject from `subjectFor` and threw its source away, so a hand-built request from the
+  // Super Admin or the SFE Manager stored a "manager" recommendation under a decider's own HR id, and the
+  // manager board then named him beside it: the one payload that must carry no decider.
+  if (source !== "manager") throw forbiddenError("A recommendation is the district manager's own word on a place in their team. The company board decides it.");
   const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_place_recommendations")
     .upsert(

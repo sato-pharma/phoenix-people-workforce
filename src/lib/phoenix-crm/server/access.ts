@@ -42,6 +42,7 @@ import {
   ownTerritories,
   personKey,
   TERRITORY_TIER,
+  territoriesBelow,
   territoriesInScope,
   territoryReviewer,
   type OrgIndex,
@@ -888,7 +889,13 @@ export function readsTeamPlaceChecks(viewer: PhoenixCrmViewer): boolean {
  */
 export function teamPlaceChecksSeats(viewer: PhoenixCrmViewer): OrgSeat[] {
   if (!readsTeamPlaceChecks(viewer)) return [];
-  return viewer.scopeTerritories.filter((seat) => !isLocationBlind(viewer, seat));
+  // 🔴 ONLY THE TERRITORIES UNDER HIS DISTRICT-MANAGER SEATS (owner, 17 Nov 2026, the audit's decision
+  // paths). `scopeTerritories` is built from EVERY manager seat a person holds, so a Regional Sales Manager
+  // who also sat on a vacant district seat opened this board for his whole region, and could comment and
+  // recommend on all of it — the widening the ruling above forbids. The tiers that admit him are the
+  // tiers that bound what he reads.
+  const districtSeats = viewer.managerSeats.filter((seat) => TEAM_PLACE_CHECKS_TIERS.has(seat.tier)).map((seat) => seat.seatId);
+  return territoriesBelow(viewer.org, districtSeats).filter((seat) => !isLocationBlind(viewer, seat));
 }
 
 /** How the viewer reads the Double visit requests report: "scope" — the territories he reads; "own" — only what is addressed to him. */

@@ -340,6 +340,38 @@ export function venueNeedsDecision(group: Pick<VenueGroup, "venue" | "customers"
 }
 
 /**
+ * How many decisions the central Needs you board says wait on Place checks: what the board's own Needs
+ * you tab counts with no filter, so the two never disagree (owner, 17 Nov 2026, the audit's wrong counts).
+ * It counted review rows alone, so a polyclinic just captured showed 1 on the tab and nothing on Needs
+ * you, and a held building with seven doctors behind it showed 7 there and 1 on the tab.
+ *
+ * A single clinic is one decision. A building on the board is ONE decision however many customers wait
+ * behind it, and it counts when it is held itself or anybody behind it waits (`venueNeedsDecision`). A
+ * waiting review whose building is not on the board stays among the clinics, as `withoutSeated` keeps it.
+ * The oldest stamp is the oldest thing counted, so the row's age is the age of something the tab shows.
+ */
+export function needsYouDecisionCount(input: {
+  waiting: ReadonlyArray<{ id: string; at: string; sharedPlaceId: string | null }>;
+  heldVenues: ReadonlyArray<{ id: string; at: string }>;
+  venuesOnBoard: ReadonlySet<string>;
+}): { count: number; oldestAt: string | null } {
+  const units = new Map<string, { at: string; id: string }>();
+  const keep = (key: string, at: string, id: string) => {
+    const current = units.get(key);
+    if (!current || compareOldestFirst({ at, id }, current) < 0) units.set(key, { at, id });
+  };
+  for (const row of input.waiting) {
+    if (row.sharedPlaceId !== null && input.venuesOnBoard.has(row.sharedPlaceId)) keep(`venue:${row.sharedPlaceId}`, row.at, row.id);
+    else keep(`review:${row.id}`, row.at, row.id);
+  }
+  for (const venue of input.heldVenues) {
+    if (input.venuesOnBoard.has(venue.id)) keep(`venue:${venue.id}`, venue.at, venue.id);
+  }
+  const oldest = [...units.values()].sort(compareOldestFirst)[0];
+  return { count: units.size, oldestAt: oldest ? oldest.at : null };
+}
+
+/**
  * The buildings the filters leave, each with the customers that pass them.
  *
  * A building is shown when it passes the filters itself, or when any customer behind it does. The text

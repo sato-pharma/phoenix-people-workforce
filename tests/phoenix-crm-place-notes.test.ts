@@ -209,7 +209,7 @@ function checkHeDecidesNothing(): void {
   assert.ok(!settled[0].includes("decidedByName"), "it never names who decided");
   assert.ok(!settled[0].includes("decisionNote"), "and never carries the decision note");
   assert.ok(!settled[0].includes("Restore"), "and offers no way to take a decision back");
-  assert.match(queue, /mode === "team" \? <Settled row=\{row\} \/> : <Decision row=\{row\} \/>/, "one switch, both modes, in one place");
+  assert.match(queue, /mode === "team" \? <Settled row=\{row\} \/> : <Decision row=\{row\} scope=\{scope\} \/>/, "one switch, both modes, in one place");
 
   // 🔴 NOT A WORD ABOUT WHO DECIDES, anywhere a manager can read. The owner's instruction was
   // "don't show this on the screen", so this sweeps the strings a well-meaning edit would add. The
@@ -327,7 +327,16 @@ function checkWriteGate(): void {
   // which team a row belongs to, and a screen is not an authority.
   assert.match(subject[0], /\.from\(table\)\.select\(columns\)\.eq\("id", id\)/, "it reads the place or the venue itself");
   assert.match(subject[0], /seatId: String\(row\.seat_id \?\? ""\)/, "and takes the seat from that row");
+  // 🔴 A TEST ACCOUNT NEVER WRITES ON A REAL PLACE (audit, 2026-11-16): it carries the mirrored
+  // manager's hrId, so a comment was his in the rep's app and a recommendation overwrote his own. The
+  // refusal must come BEFORE any return, or a later branch could write first.
+  const testGate = subject[0].search(/if \(viewer\.isTestPersona && !subject\.isTest\) \{\s*throw forbiddenError\(/);
+  assert.ok(testGate > -1, "a test account is refused a write on a real place");
+  assert.ok(testGate < subject[0].indexOf("return {"), "and refused before the resolver can hand back a subject");
   assert.match(subject[0], /if \(canDecideValidationReviews\(viewer\)\) return \{ source: "system_admin", subject \}/, "the Super Admin writes as the administrator");
+  for (const name of ["savePlaceNote", "savePlaceRecommendation"]) {
+    assert.match(functionBody(notes, name), /await subjectFor\(viewer, kind, subjectId\)/, `${name} writes only through the gated resolver`);
+  }
   assert.match(subject[0], /if \(!readsTeamPlaceChecks\(viewer\)\) throw forbiddenError/, "anybody who is not a district manager is refused");
   assert.match(
     subject[0],

@@ -133,7 +133,16 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
       active.includes('selectByIds<Row>("phoenix_crm_places", "id", "id", placeIds, (query) => query.eq("status", "active"))'),
       "one read says which of the places are active — chunked, so a long list cannot overflow the request",
     );
-    assert.doesNotMatch(reviews, /phoenix_crm_places\s*[!(]/, "two plain reads, never an embedded join");
+    for (const signature of ["async function activePlaceIds(", "export async function pendingLocationReview(", "export async function pendingLocationReviewCustomers("]) {
+      assert.doesNotMatch(fn(reviews, signature), /phoenix_crm_places\s*[!(]/, `${signature} two plain reads, never an embedded join`);
+    }
+    // 17 Nov 2026: the one embed of the places in this file is the reopened count's "no place in use" join
+    // (`countReopenedCustomersWaiting`), and it names its foreign key, so it can never be the ambiguous one.
+    assert.deepEqual(
+      reviews.match(/phoenix_crm_places\s*[!(][^)]*\)/g),
+      ["phoenix_crm_places!phoenix_crm_places_customer_id_fkey(id)"],
+      "any other embed of the places is a reader this section has not looked at",
+    );
 
     const single = fn(reviews, "export async function pendingLocationReview(");
     assert.ok(single.includes('.select("place_id")') && single.includes('.eq("status", "pending")'), "the single check reads the places its waiting reviews are about");
@@ -207,7 +216,8 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     }
 
     const refuse = fn(reviews, "export async function refuseValidatedPlace(");
-    const read = refuse.search(/\.select\("google(?:, status, decided_by_hr_id)?"\)\s*\.eq\("place_id", placeId\)\s*\.maybeSingle\(\)/);
+    // The review's id rides along since 17 Nov 2026: an approval is rejected on its own row through it.
+    const read = refuse.search(/\.select\("(?:id, )?google(?:, status, decided_by_hr_id)?"\)\s*\.eq\("place_id", placeId\)\s*\.maybeSingle\(\)/);
     const written = refuse.indexOf(".upsert(");
     assert.ok(read > 0 && read < written, "🔴 the row's record is read BEFORE the upsert replaces it");
     assert.ok(refuse.includes("const before = evidenceToKeep((earlier.data as Row | null)?.google);"), "through the one function above");

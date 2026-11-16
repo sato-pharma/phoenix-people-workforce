@@ -31,8 +31,9 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
   CrmButton,
@@ -44,7 +45,6 @@ import {
   CrmShowMore,
   CrmTable,
   crmTdClassName,
-  crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
@@ -53,7 +53,7 @@ import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
-import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVED_NOT_A_LIST_ADD, refusalTakeBack, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -256,6 +256,7 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
  */
 function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
   const done = usePlaceCheckDone();
+  const canRestore = useCanRestoreValidation();
   const { saved, markSaved } = useSavedOutcome(row);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -285,7 +286,9 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
     }
   }
 
-  if (saved) return <PlaceCheckSaved outcome={saved} />;
+  // Approve, drawn beside this control on every row, reads the same saved mark and draws it once; drawn here
+  // too, one press showed its outcome twice (17 Nov 2026).
+  if (saved) return null;
 
   // 🔴 What the administrator approved — a trusted point included — only he refuses (owner, 2026-11-16).
   if (row.lockedBySuperAdmin) return <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>;
@@ -311,25 +314,19 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
         }}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`refuse-note-${scope}${row.placeId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
+      <DecisionComment
         disabled={saving}
         id={`refuse-note-${scope}${row.placeId}`}
-        maxLength={500}
-        onChange={(event) => {
-          setNote(event.target.value);
+        label={VALIDATION_NOTE_LABEL}
+        onChange={(next) => {
+          setNote(next);
           setArmed(false);
         }}
-        rows={2}
         value={note}
       />
-      <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
-          <CrmNote tone="warn">This retires the place and cannot be undone — they validate the customer again from their own list.</CrmNote>
+          <CrmNote tone="warn">This retires the place — they validate the customer again from their own list. {refusalTakeBack(canRestore)}</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton disabled={saving} onClick={() => void refuse()} variant="danger">
               {saving ? "Refusing…" : "Yes, refuse it"}
@@ -367,7 +364,6 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
   const noteFieldId = useId();
-  const [commenting, setCommenting] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -397,33 +393,12 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
 
   return (
     <div className="space-y-2">
-      {commenting ? (
-        <>
-          <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={noteFieldId}>
-            {VALIDATION_NOTE_LABEL}
-          </label>
-          <textarea
-            className={crmTextareaClassName}
-            disabled={saving}
-            id={noteFieldId}
-            maxLength={500}
-            onChange={(event) => setNote(event.target.value)}
-            rows={2}
-            value={note}
-          />
-          <RefusalNoteHint />
-        </>
-      ) : null}
+      <DecisionComment disabled={saving} id={noteFieldId} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : "Approve this validation"}
       </CrmButton>
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      {commenting ? null : (
-        <CrmButton onClick={() => setCommenting(true)} size="sm" variant="ghost">
-          Add a comment
-        </CrmButton>
-      )}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
@@ -439,17 +414,20 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
  *
  * 🔴 `Refuse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Refusing a validation retires
  * the place and can send the customer back to To validate — it is a decision, and the decision is the
- * Super Admin's alone. A manager comments and recommends, and the owner's instruction on 2026-10-13 was
- * that his screen does not say who makes the call.
+ * deciders' alone (the Super Admin and the SFE Manager). A manager comments and recommends, and the
+ * owner's instruction on 2026-10-13 was that his screen does not say who makes the call.
+ *
+ * `scope` keeps the phone cards' field ids apart from the table's (17 Nov 2026, the audit): both are on the
+ * page at once, one of them hidden, and the same id twice sent a label's tap to the hidden copy.
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
       {mode === "team" ? null : <Approve row={row} />}
-      {mode === "team" ? null : <Refuse row={row} />}
+      {mode === "team" ? null : <Refuse row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -465,9 +443,10 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
 /**
  * Answering several at once (owner, 2026-10-15: "also make me able to multiple select and response";
  * Approve added 2026-10-17). Each runs the row's OWN request per place — same route, same reason, same
- * note — so there is no second decision path; see `place-check-bulk.tsx`.
+ * note — so there is no second decision path; see `place-check-bulk.tsx`. The refusal's warning says who
+ * can take it back by who is reading (`refusalTakeBack`), as one row's does.
  */
-const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
+const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPlaceRow>> => [
   {
     key: "approve",
     label: "Approve",
@@ -485,7 +464,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     variant: "danger",
     needsReason: true,
     warning: (count) =>
-      `This retires ${count === 1 ? "that place" : `those ${count} places`} and cannot be undone here; each customer left without one validates again from their own list.`,
+      `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one validates again from their own list. ${refusalTakeBack(canRestore, count)}`,
     // What the administrator approved, only he refuses (owner, 2026-11-16).
     takes: (row) => !row.lockedBySuperAdmin,
     run: (row, answer) =>
@@ -508,6 +487,7 @@ export function ValidatedPlaceList({
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const bulk = mode === "company";
+  const canRestore = useCanRestoreValidation();
 
   const found = useMemo(() => {
     const wanted = query.trim().toLowerCase();
@@ -549,7 +529,7 @@ export function ValidatedPlaceList({
         <>
           {bulk ? (
             <BulkDecideBar
-              actions={IN_USE_ACTIONS}
+              actions={inUseActions(canRestore)}
               // Both answers are here since 2026-10-17, so both quick picks are offered; "look yourself" is neither.
               adviceOf={(row) => {
                 const advice = adviseOnPlaceInUse(row).kind;
@@ -568,7 +548,7 @@ export function ValidatedPlaceList({
                 <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
                 <Who mode={mode} row={row} />
                 <Place row={row} />
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
               </div>
             ))}
           </CrmCardsOnPhone>
@@ -597,7 +577,7 @@ export function ValidatedPlaceList({
                     <Place row={row} />
                   </td>
                   <td className={crmTdClassName}>
-                    <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                    <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="" />
                   </td>
                 </tr>
               ))}

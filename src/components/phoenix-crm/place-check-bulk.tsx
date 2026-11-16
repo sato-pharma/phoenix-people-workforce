@@ -18,15 +18,17 @@
  * ticked with what is on screen at every render, so changing a filter — or a row settling under you —
  * can never decide a place you cannot see.
  *
- * 🔴 AND IT IS THE SUPER ADMIN'S ALONE, like every control it repeats: a district manager's board
- * passes `mode === "team"` and renders none of this (his screen says nothing about who decides).
+ * 🔴 AND IT IS THE DECIDERS' ALONE — the Super Admin and the SFE Manager — like every control it
+ * repeats: a district manager's board passes `mode === "team"` and renders none of this (his screen says
+ * nothing about who decides).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
 import { messageOf } from "@/components/phoenix-crm/api";
-import { bulkOutcomeSummary, type PlaceCheckOutcome } from "@/components/phoenix-crm/place-check-done";
+import { bulkOutcomeSummary, isAlreadyDecided, markRowSaved, type PlaceCheckOutcome } from "@/components/phoenix-crm/place-check-done";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { CrmButton, CrmCheck, CrmNote, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice";
@@ -116,6 +118,34 @@ export function useRowPicks<Row>(
   };
 }
 
+/**
+ * 🔴 A BULK RUN HOLDS THE BOARD STILL UNTIL IT ENDS (17 Nov 2026, the audit's background runs). Each
+ * section's bar is remounted by a tab, a filter or a tapped count, so a run started on twelve rows and
+ * followed by a tab change went on answering out of sight: its "Saved" line and every row that would not
+ * answer were drawn into a bar no longer on the screen. While a run is going the board's tabs, filters and
+ * counts wait (`useBulkRunGoing`), and so does every other bar, so two runs never overlap.
+ */
+let bulkRunGoing = false;
+const bulkRunListeners = new Set<() => void>();
+
+function setBulkRunGoing(next: boolean) {
+  if (bulkRunGoing === next) return;
+  bulkRunGoing = next;
+  for (const listener of bulkRunListeners) listener();
+}
+
+function subscribeBulkRun(listener: () => void): () => void {
+  bulkRunListeners.add(listener);
+  return () => {
+    bulkRunListeners.delete(listener);
+  };
+}
+
+/** Whether a bulk run is going anywhere on the page — the board locks its tabs, filters and counts on it. */
+export function useBulkRunGoing(): boolean {
+  return useSyncExternalStore(subscribeBulkRun, () => bulkRunGoing, () => false);
+}
+
 /** The tick box on one row — the same control in the cards and in the table. */
 export function BulkPick<Row>({ picks, row }: { picks: RowPicks<Row>; row: Row }) {
   return (
@@ -150,6 +180,12 @@ export function BulkDecideBar<Row>({
   picks: RowPicks<Row>;
 }) {
   const router = useRouter();
+  // 🔴 EACH BAR ITS OWN FIELD IDS (17 Nov 2026): a page holds up to three bars at once, and three
+  // `place-check-bulk-note` boxes sent every label's tap to the first one.
+  const fieldId = useId();
+  const reasonId = `place-check-bulk-reason-${fieldId}`;
+  const noteId = `place-check-bulk-note-${fieldId}`;
+  const anyRunGoing = useBulkRunGoing();
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<ValidationRefusalReason | "">("");
   const [armed, setArmed] = useState<string | null>(null);
@@ -160,35 +196,75 @@ export function BulkDecideBar<Row>({
 
   const picked = picks.picked;
   const needsReason = actions.some((action) => action.needsReason);
+  const busy = running !== null || anyRunGoing;
+
+  // 🔴 A RUN DIES WITH ITS BAR (17 Nov 2026, the review of the audit fixes): leaving the page stops it
+  // before its next row, frees the board's lock at once, and never refreshes the page he went to — the
+  // same rule as the decisions' waiting re-read (`placeCheckReread.cancel`).
+  const alive = useRef(true);
+  const ownsRun = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (ownsRun.current) {
+        ownsRun.current = false;
+        setBulkRunGoing(false);
+      }
+    };
+  }, []);
 
   async function run(action: BulkAction<Row>) {
     const targets = picked.filter(action.takes);
-    if (running || targets.length === 0) return;
+    if (busy || targets.length === 0) return;
     if (action.warning && armed !== action.key) {
       setArmed(action.key);
       return;
     }
     setArmed(null);
     setRunning(action.key);
+    ownsRun.current = true;
+    setBulkRunGoing(true);
+    // A re-read still waiting from an earlier press would rebuild the rows under the run; this one reads
+    // the page itself when it ends.
+    placeCheckReread.cancel();
     setDone(0);
     setFailures([]);
     setSummary(null);
     const failed: Array<{ name: string; problem: string }> = [];
     const landed: PlaceCheckOutcome[] = [];
-    for (const row of targets) {
-      try {
-        landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));
-      } catch (error) {
-        failed.push({ name: nameOf(row), problem: messageOf(error) });
+    try {
+      for (const row of targets) {
+        if (!alive.current) break;
+        const before = landed.length;
+        try {
+          landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));
+        } catch (error) {
+          // 🔴 "ALREADY DECIDED" IS AN ANSWER IN A BULK RUN TOO (17 Nov 2026, the audit's wording): the
+          // other decider, or his own earlier press, settled that row first. It was listed in red as "not
+          // answered"; the decision he wanted is the one that stands, so it is counted as such.
+          if (isAlreadyDecided(error)) landed.push("already");
+          else failed.push({ name: nameOf(row), problem: messageOf(error) });
+        }
+        // The row's own control draws what was saved, at once, until the re-read hands the row back.
+        if (landed.length > before) markRowSaved(row, landed[landed.length - 1]);
+        setDone((current) => current + 1);
       }
-      setDone((current) => current + 1);
+    } finally {
+      if (ownsRun.current) {
+        ownsRun.current = false;
+        setBulkRunGoing(false);
+      }
     }
+    if (!alive.current) return;
     setFailures(failed);
     setSummary(landed.length > 0 ? bulkOutcomeSummary(landed) : null);
     setRunning(null);
     // Whatever landed, the page is re-read: the rows that settled leave their section, and the ones
-    // that failed stay where they are with their reason beside them.
+    // that failed stay where they are with their reason beside them. A re-read already waiting for the
+    // decisions to pause is dropped first: this one reads the same page now.
     if (failed.length < targets.length) picks.clear();
+    placeCheckReread.cancel();
     router.refresh();
   }
 
@@ -205,21 +281,21 @@ export function BulkDecideBar<Row>({
         <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
           {picked.length === 0 ? `Pick rows to answer together (${picks.selectable} here)` : `${picked.length} picked`}
         </p>
-        <CrmButton disabled={running !== null} onClick={() => picks.pickAll()} size="sm" variant="ghost">
+        <CrmButton disabled={busy} onClick={() => picks.pickAll()} size="sm" variant="ghost">
           Pick all {picks.selectable}
         </CrmButton>
         {adviceOf && toApprove > 0 ? (
-          <CrmButton disabled={running !== null} onClick={() => picks.pickWhere((row) => adviceOf(row) === "approve")} size="sm" variant="ghost">
+          <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "approve")} size="sm" variant="ghost">
             Pick the {toApprove} the system recommends approving
           </CrmButton>
         ) : null}
         {adviceOf && toReject > 0 ? (
-          <CrmButton disabled={running !== null} onClick={() => picks.pickWhere((row) => adviceOf(row) === "reject")} size="sm" variant="ghost">
+          <CrmButton disabled={busy} onClick={() => picks.pickWhere((row) => adviceOf(row) === "reject")} size="sm" variant="ghost">
             Pick the {toReject} the system recommends rejecting
           </CrmButton>
         ) : null}
         {picked.length > 0 ? (
-          <CrmButton disabled={running !== null} onClick={() => picks.clear()} size="sm" variant="ghost">
+          <CrmButton disabled={busy} onClick={() => picks.clear()} size="sm" variant="ghost">
             Clear
           </CrmButton>
         ) : null}
@@ -229,8 +305,8 @@ export function BulkDecideBar<Row>({
         <>
           {needsReason ? (
             <RefusalReasonField
-              disabled={running !== null}
-              id="place-check-bulk-reason"
+              disabled={busy}
+              id={reasonId}
               kind={kind}
               onChange={(next) => {
                 setReason(next);
@@ -239,13 +315,13 @@ export function BulkDecideBar<Row>({
               value={reason}
             />
           ) : null}
-          <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor="place-check-bulk-note">
+          <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={noteId}>
             {VALIDATION_NOTE_LABEL}
           </label>
           <textarea
             className={crmTextareaClassName}
-            disabled={running !== null}
-            id="place-check-bulk-note"
+            disabled={busy}
+            id={noteId}
             maxLength={500}
             onChange={(event) => {
               setNote(event.target.value);
@@ -261,7 +337,7 @@ export function BulkDecideBar<Row>({
               const held = action.needsReason && reason === "";
               return (
                 <CrmButton
-                  disabled={running !== null || targets.length === 0 || held}
+                  disabled={busy || targets.length === 0 || held}
                   key={action.key}
                   onClick={() => void run(action)}
                   variant={action.variant}

@@ -102,7 +102,9 @@ function checkLoadersGoThroughSelectByIds(): void {
   for (const name of ["loadValidatedPlaces", "loadValidationReviews"]) {
     const body = functionBody(service, name);
     // loadValidatedPlaces sends its ids in an RPC's POST body since 2026-11-08 — no URL, so no header to overflow.
-    if (name === "loadValidationReviews") assert.match(body, /selectByIds</, `${name} reads its id-keyed tables through selectByIds`);
+    // loadValidationReviews sends no id list at all since 16 Nov 2026: each review's customer and place come
+    // joined into its own row over their foreign keys (`REVIEW_SUBJECTS_SELECT`), so there is no URL to grow.
+    if (name === "loadValidationReviews") assert.match(body, /\$\{REVIEW_SUBJECTS_SELECT\}/, `${name} reads each review's customer and place joined into it, with no id list`);
     else assert.match(body, /\.rpc\("phoenix_crm_validated_place_facts"/, `${name} sends its ids in one function call's body`);
     // The overflow path is a bare `.in(` on a derived id list — it must be gone from both loaders.
     assert.doesNotMatch(body, /\.in\(/, `${name} no longer issues a bare .in() that could overflow the request headers`);
