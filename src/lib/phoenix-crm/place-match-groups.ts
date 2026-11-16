@@ -23,6 +23,12 @@
  *
  * 🔴 "MORE THAN A REP" IS MORE THAN ONE SEAT. Two doctors one rep validated in the same building are
  * one rep's work; a group needs two seats before it is a comparison at all.
+ *
+ * 🔴 HE ANSWERS A QUESTION READING BY READING WHEN ONE SIDE HOLDS SEVERAL (owner, 2026-11-17: "i want to
+ * accept 1 and reject 1"). One side of a question is a place the system grouped by distance, so it can
+ * hold a reading he knows is somebody else's door. `splitAnswerPairs` turns his per-reading marks into
+ * pairs, and a `different` answer then keeps that reading out of the place he confirmed: no join the
+ * system makes on distance alone may put two readings he called different in one place.
  */
 
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
@@ -180,13 +186,22 @@ export type MatchGroup = {
   waiting: boolean;
 };
 
+/** A reading put to him in a question, with how far it sits from the other side. */
+export type QuestionReading = MatchSubject & {
+  /** Metres to the nearest reading on the other side — what "same place or not" turns on for this one. */
+  otherSideMeters: number;
+};
+
 export type MatchQuestion = {
   id: string;
   /** The readings on either side, closest to the other side first; at most a handful each. */
-  left: MatchSubject[];
-  right: MatchSubject[];
+  left: QuestionReading[];
+  right: QuestionReading[];
   moreLeft: number;
   moreRight: number;
+  /** The widest distance between two readings on each side — 0 when a side is one reading. */
+  leftSpreadMeters: number;
+  rightSpreadMeters: number;
   /** How far apart the closest two readings are. */
   closestMeters: number;
   /** Every unsure pair that raised it — an answer is stored for all of them, so it is not asked twice. */
@@ -386,6 +401,53 @@ export function buildPlaceMatchBoard(input: { subjects: ReadonlyArray<MatchSubje
     if (indexByKey.has(row.a) && indexByKey.has(row.b) && row.a !== row.b) answered.set(pairId(row.a, row.b), row.answer);
   }
 
+  // 🔴 HIS "DIFFERENT" IS A WALL, NOT ONLY A SKIPPED PAIR (owner, 2026-11-17: "i want to accept 1 and
+  // reject 1"). Skipping the pair alone let a third reading carry it back in: he confirmed one customer's
+  // two readings 34 m apart and rejected the other customer, whose reading sat 3 m from the first one, and
+  // that 3 m join put the rejected reading in the confirmed place anyway. So a join made on distance is
+  // refused when it would put two readings he called different in one place, counting the places his
+  // "same" answers make, which join after the distance joins.
+  const different = new Set<string>();
+  const walled = new Set<number>();
+  const sameAnchor = new DisjointSet(subjects.length);
+  answered.forEach((verdict, id) => {
+    const [first, second] = id.split("|");
+    const left = indexByKey.get(first);
+    const right = indexByKey.get(second);
+    if (left === undefined || right === undefined) return;
+    if (verdict === "same") {
+      sameAnchor.union(left, right);
+      return;
+    }
+    different.add(id);
+    walled.add(left);
+    walled.add(right);
+  });
+  const anchorMembers = new Map<number, number[]>();
+  subjects.forEach((_, index) => {
+    const root = sameAnchor.find(index);
+    const held = anchorMembers.get(root);
+    if (held) held.push(index);
+    else anchorMembers.set(root, [index]);
+  });
+  /** The walled readings a group already holds or will hold once his "same" answers join. */
+  const walledIn = (group: ReadonlyArray<number>): number[] => {
+    const out = new Set<number>();
+    for (const index of group) {
+      for (const member of anchorMembers.get(sameAnchor.find(index)) ?? [index]) {
+        if (walled.has(member)) out.add(member);
+      }
+    }
+    return [...out];
+  };
+  const walledApart = (first: ReadonlyArray<number>, second: ReadonlyArray<number>): boolean => {
+    if (different.size === 0) return false;
+    const left = walledIn(first);
+    if (left.length === 0) return false;
+    const right = walledIn(second);
+    return left.some((one) => right.some((other) => different.has(pairId(subjects[one].key, subjects[other].key))));
+  };
+
   const sets = new DisjointSet(subjects.length);
   const unsure: Array<{ left: number; right: number; meters: number }> = [];
   const confirmed: Array<[number, number]> = [];
@@ -402,6 +464,7 @@ export function buildPlaceMatchBoard(input: { subjects: ReadonlyArray<MatchSubje
     const first = sets.find(left);
     const second = sets.find(right);
     if (first === second) return;
+    if (capped && walledApart(members[first], members[second])) return;
     let widest = Math.max(diameter[first], diameter[second]);
     for (const one of members[first]) {
       for (const other of members[second]) widest = Math.max(widest, distanceMeters(subjects[one].point, subjects[other].point));
@@ -508,12 +571,20 @@ export function buildPlaceMatchBoard(input: { subjects: ReadonlyArray<MatchSubje
     const names = (indexes: number[]): Set<string> => new Set(indexes.map((index) => subjects[index].nameKey).filter((key) => key !== ""));
     const leftNames = names(entry.sides[0].indexes);
     const sameName = [...names(entry.sides[1].indexes)].some((key) => leftNames.has(key));
+    // Each reading says how far it sits from the other side, so he can answer reading by reading
+    // (owner, 2026-11-17: "tell me the diff in m between what we are checking").
+    const reading = (index: number, otherSide: ReadonlyArray<number>): QuestionReading => ({
+      ...subjects[index],
+      otherSideMeters: Math.round(Math.min(...otherSide.map((other) => distanceMeters(subjects[index].point, subjects[other].point)))),
+    });
     questions.push({
       id: `${subjects[entry.sides[0].indexes[0]].key}~${subjects[entry.sides[1].indexes[0]].key}`,
-      left: leftAll.slice(0, SIDE_SHOWN).map((index) => subjects[index]),
-      right: rightAll.slice(0, SIDE_SHOWN).map((index) => subjects[index]),
+      left: leftAll.slice(0, SIDE_SHOWN).map((index) => reading(index, entry.sides[1].indexes)),
+      right: rightAll.slice(0, SIDE_SHOWN).map((index) => reading(index, entry.sides[0].indexes)),
       moreLeft: Math.max(leftAll.length - SIDE_SHOWN, 0),
       moreRight: Math.max(rightAll.length - SIDE_SHOWN, 0),
+      leftSpreadMeters: Math.round(spreadOf(entry.sides[0].indexes.map((index) => subjects[index]))),
+      rightSpreadMeters: Math.round(spreadOf(entry.sides[1].indexes.map((index) => subjects[index]))),
       closestMeters: closest,
       pairs: entry.pairs
         .slice()
@@ -546,6 +617,42 @@ export function buildPlaceMatchBoard(input: { subjects: ReadonlyArray<MatchSubje
   answeredDifferent.sort((left, right) => left.meters - right.meters || left.id.localeCompare(right.id));
 
   return { groups, questions, answeredDifferent, insights: insightsOf(groups) };
+}
+
+// ── His answer, reading by reading ──────────────────────────────────────────────────────────────
+
+/** Whether a question is answered reading by reading: one of its sides holds several readings. */
+export function answersEachReading(question: Pick<MatchQuestion, "left" | "right">): boolean {
+  return question.left.length > 1 || question.right.length > 1;
+}
+
+/**
+ * His answer to one question, reading by reading (owner, 2026-11-17: "i want to accept 1 and reject 1").
+ *
+ * A side of two or more readings is marked one reading at a time: `same`, this reading is the place on
+ * the other side; `different`, it is not. A side of one reading is what the other side is compared with
+ * and takes no mark. A pair is `same` only when both of its readings are, and `different` when either is
+ * not, so a reading he rejects is a different place from every reading on the other side.
+ *
+ * Only the readings the card draws are marked; one it only counts ("and 2 more") stays with its side.
+ * Null while a reading that needs a mark has none.
+ */
+export function splitAnswerPairs(
+  question: Pick<MatchQuestion, "left" | "right">,
+  marks: Readonly<Record<string, MatchAnswer | undefined>>,
+): { same: Array<[string, string]>; different: Array<[string, string]> } | null {
+  const markOf = (side: ReadonlyArray<MatchSubject>, subject: MatchSubject): MatchAnswer | null => (side.length < 2 ? "same" : (marks[subject.key] ?? null));
+  if ([...question.left.map((subject) => markOf(question.left, subject)), ...question.right.map((subject) => markOf(question.right, subject))].includes(null)) return null;
+  const same: Array<[string, string]> = [];
+  const different: Array<[string, string]> = [];
+  for (const left of question.left) {
+    for (const right of question.right) {
+      if (left.key === right.key) continue;
+      const both = markOf(question.left, left) === "same" && markOf(question.right, right) === "same";
+      (both ? same : different).push(orderedPair(left.key, right.key));
+    }
+  }
+  return { same, different };
 }
 
 // ── The insights ─────────────────────────────────────────────────────────────────────────────────

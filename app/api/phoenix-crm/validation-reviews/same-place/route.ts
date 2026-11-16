@@ -28,7 +28,8 @@ export async function GET(request: Request) {
 }
 
 // POST = his answer to "are these the same place?" — same, different, or take an answer back. One answer
-// covers every pair that raised its question, so he is never asked twice.
+// covers every pair that raised its question, so he is never asked twice. `split` is his answer reading by
+// reading when one side holds several (owner, 2026-11-17: "i want to accept 1 and reject 1").
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

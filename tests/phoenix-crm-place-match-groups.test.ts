@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import { distanceMeters } from "../src/lib/phoenix-crm/geo.ts";
 import {
   accuracySentence,
+  answersEachReading,
   buildPlaceMatchBoard,
   classifyPair,
   insightsOf,
@@ -15,6 +16,7 @@ import {
   pairId,
   pairLimits,
   SAME_GROUP_DIAMETER_METERS,
+  splitAnswerPairs,
   subjectAccuracy,
   type MatchAnswerRow,
   type MatchSubject,
@@ -276,6 +278,94 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.equal(inert.questions.length, 1, "🔴 an answer about a validation that is gone changes nothing");
   assert.equal(inert.answeredDifferent.length, 0, "and is not listed");
 
+  // ── Reading by reading (owner, 2026-11-17: "i want to accept 1 and reject 1") ────────────────────
+  // His card, as it stood on production: one rep's customer and a second rep's other customer 3 m apart
+  // (one door, so the system joined them), and the second rep's reading of the FIRST customer 34 m away.
+  const essamFirst = subject({ meters: 0, nameKey: "essam", accuracyMeters: 5, seatId: "seat-cns", repName: "First rep" });
+  const solimanSecond = subject({ meters: -3, nameKey: "soliman", accuracyMeters: 5, seatId: "seat-ai", repName: "Second rep" });
+  const essamSecond = subject({ meters: 34, nameKey: "essam", accuracyMeters: 5, seatId: "seat-ai", repName: "Second rep" });
+  const kom = board([essamFirst, solimanSecond, essamSecond]);
+  assert.equal(kom.questions.length, 1, "the 34 m reading of the same customer is the question");
+  const komQuestion = kom.questions[0];
+  const twoSide = komQuestion.left.length === 2 ? komQuestion.left : komQuestion.right;
+  const oneSide = komQuestion.left.length === 2 ? komQuestion.right : komQuestion.left;
+  const twoSpread = komQuestion.left.length === 2 ? komQuestion.leftSpreadMeters : komQuestion.rightSpreadMeters;
+  const oneSpread = komQuestion.left.length === 2 ? komQuestion.rightSpreadMeters : komQuestion.leftSpreadMeters;
+  assert.deepEqual(
+    [twoSide.map((reading) => reading.key).sort(), oneSide.map((reading) => reading.key)],
+    [[essamFirst.key, solimanSecond.key].sort(), [essamSecond.key]],
+    "the 3 m pair is one side and the far reading the other",
+  );
+  assert.deepEqual(
+    twoSide.map((reading) => [reading.key, reading.otherSideMeters]),
+    [
+      [essamFirst.key, 34],
+      [solimanSecond.key, 37],
+    ],
+    "🔴 each reading says how far it sits from the other side, closest first (his 'tell me the diff in m')",
+  );
+  assert.equal(oneSide[0].otherSideMeters, 34, "and so does the reading on the other side, to the nearest one facing it");
+  assert.deepEqual([twoSpread, oneSpread], [3, 0], "each side says how far apart its own readings are, 0 for a side of one");
+  assert.equal(answersEachReading(komQuestion), true, "a side of several readings can be answered reading by reading");
+  assert.equal(answersEachReading(asked.questions[0]), false, "a question of one reading a side has nothing to split");
+
+  assert.equal(splitAnswerPairs(komQuestion, {}), null, "🔴 nothing is saved while a reading that needs a mark has none");
+  assert.equal(splitAnswerPairs(komQuestion, { [essamFirst.key]: "same" }), null, "not even one of the two");
+  assert.deepEqual(
+    splitAnswerPairs(komQuestion, { [essamFirst.key]: "same", [solimanSecond.key]: "different" }),
+    { same: [orderedPair(essamFirst.key, essamSecond.key)], different: [orderedPair(solimanSecond.key, essamSecond.key)] },
+    "🔴 accept one and reject one: the side of one is what the others are compared with and takes no mark",
+  );
+  assert.deepEqual(
+    splitAnswerPairs(komQuestion, { [essamFirst.key]: "same", [solimanSecond.key]: "same" }),
+    { same: [orderedPair(essamFirst.key, essamSecond.key), orderedPair(solimanSecond.key, essamSecond.key)], different: [] },
+    "every reading the same is the whole question's 'same place'",
+  );
+  assert.deepEqual(
+    splitAnswerPairs(komQuestion, { [essamFirst.key]: "different", [solimanSecond.key]: "different" }),
+    { same: [], different: [orderedPair(essamFirst.key, essamSecond.key), orderedPair(solimanSecond.key, essamSecond.key)] },
+    "and every reading different is its 'different places'",
+  );
+  assert.deepEqual(splitAnswerPairs(asked.questions[0], {}), { same: [orderedPair(left.key, right.key)], different: [] }, "a side of one never needs a mark");
+
+  const komAnswered = board(
+    [essamFirst, solimanSecond, essamSecond],
+    [
+      { a: essamFirst.key, b: essamSecond.key, answer: "same" },
+      { a: solimanSecond.key, b: essamSecond.key, answer: "different" },
+    ],
+  );
+  assert.equal(komAnswered.questions.length, 0, "his split answer closes the question");
+  assert.equal(komAnswered.groups.length, 1, "and the reading he accepted makes one place");
+  assert.deepEqual(
+    komAnswered.groups[0].members.map((member) => member.key).sort(),
+    [essamFirst.key, essamSecond.key].sort(),
+    "🔴 HIS 'DIFFERENT' IS A WALL: the reading he rejected stays out of the place he confirmed, though it sits 3 m from one of its readings",
+  );
+  assert.equal(komAnswered.answeredDifferent.length, 1, "the rejected pair is listed so he can take it back");
+  const elsewhereLeft = subject({ meters: 900 });
+  const elsewhereRight = subject({ meters: 920 });
+  assert.equal(
+    board(
+      [essamFirst, solimanSecond, essamSecond, elsewhereLeft, elsewhereRight],
+      [{ a: solimanSecond.key, b: essamSecond.key, answer: "different" }],
+    ).groups.some((group) => group.members.some((member) => member.key === elsewhereLeft.key)),
+    true,
+    "a wall holds only between the readings he named — a place elsewhere still forms",
+  );
+  assert.deepEqual(
+    board(
+      [essamFirst, solimanSecond, essamSecond],
+      [
+        { a: solimanSecond.key, b: essamSecond.key, answer: "different" },
+        { a: essamFirst.key, b: essamSecond.key, answer: "same" },
+        { a: essamFirst.key, b: solimanSecond.key, answer: "same" },
+      ],
+    ).groups.map((group) => group.members.length),
+    [3],
+    "🔴 and the wall never refuses his own 'same': only a join made on distance alone",
+  );
+
   const twice = subject({ meters: 0 });
   assert.equal(board([twice, { ...twice }, subject({ meters: 10 })]).groups[0].members.length, 2, "one validation is counted once however often it arrives");
   assert.equal(board([subject({ meters: 0 }), { ...subject({ meters: 5 }), point: { lat: Number.NaN, lon: 31 } }]).groups.length, 0, "a reading with no usable point is left out");
@@ -298,6 +388,13 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(server.includes("decided_by_hr_id: viewer.hrId"), "stamped with who answered");
   assert.ok(server.includes('.delete().eq("subject_a", low).eq("subject_b", high)'), "and taking one back deletes the pair");
   assert.ok(server.includes("rawPairs.length > MAX_ANSWER_PAIRS"), "a request is bounded");
+  assert.ok(server.includes('body.answer === "split" ? "split"'), "his answer reading by reading is a fourth kind");
+  assert.ok(server.includes("total === 0 || total > MAX_ANSWER_PAIRS"), "bounded the same way, over both lists");
+  assert.ok(server.includes("if (different.some(([low, high]) => sameIds.has(`${low}|${high}`)))"), "🔴 one pair cannot be answered both ways in one request");
+  assert.ok(
+    server.includes('.upsert([...same.map(([low, high]) => row(low, high, "same")), ...different.map(([low, high]) => row(low, high, "different"))], {'),
+    "🔴 both kinds in ONE write, so a half-saved answer cannot confirm a place without walling out the reading he rejected",
+  );
 
   // ── The route: read behind `read`, write behind `approve` and the origin check ─────────────────
   const route = read("app/api/phoenix-crm/validation-reviews/same-place/route.ts");
@@ -323,6 +420,15 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(widths.length === 5 && widths.reduce((total, width) => total + width, 0) <= 100, "five columns that fit the panel — a sixth clipped its header on a laptop");
   assert.equal((screen.match(/<th /g) ?? []).length, 5, "with a header for each");
   assert.ok(screen.includes('if (answer === "forget") setAnswered(new Set());'), "🔴 a question taken back must be able to return: the hidden-ids set is emptied on a forget");
+  assert.ok(screen.includes("{meters(subject.otherSideMeters)} from the other side"), "🔴 every reading on a question says how far it is from the other side");
+  assert.ok(screen.includes("These readings are {meters(spreadMeters)} apart from each other"), "and a side of several says how far apart they are");
+  assert.ok(screen.includes("{answersEachReading(question) ? ("), "'Answer each reading' is offered only when a side holds several");
+  assert.ok(screen.includes('aria-pressed={mark === "same"}') && screen.includes('aria-pressed={mark === "different"}'), "each reading's choice says which is pressed");
+  assert.ok(screen.includes("disabled={busy || split === null}"), "🔴 nothing is saved until every reading that needs a choice has one");
+  assert.ok(
+    screen.includes('crmPost<unknown>(ROUTE, { answer: "split", same: split.same, different: split.different }, "saved")'),
+    "and the answer goes in one request, both kinds together",
+  );
   assert.ok(screen.includes("anyPasses(group.members, filters, cutoff)"), "🔴 a place stays whole when any of its validations passes the shared filters");
 
   const shell = read("src/components/phoenix-crm/validation-reviews-board.tsx");
