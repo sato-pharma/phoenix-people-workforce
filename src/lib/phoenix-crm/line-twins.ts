@@ -24,9 +24,18 @@
  * 🔴 ACCURATE BEFORE COMPLETE — two rows are one doctor only on the same list (AM or PM, never a pharmacy),
  * in the same area, on DIFFERENT lines, with the same name of at least three words and no known speciality
  * against it. Anything doubtful is skipped and counted, never guessed.
+ *
+ * 🔴 TWO FACILITIES OF DIFFERENT KINDS ARE NEVER ONE ACCOUNT (owner, 2026-11-16, "Fix rule + review list").
+ * "مستشفي كوم حمادة حميات" (the fever hospital) on CNS and "مستشفي كوم حمادة" (the general hospital) on
+ * Pedia share the town's name and sit 19 m apart, and they are two accounts. On the AM list the words
+ * that say WHICH kind of facility (fever, chest, children, eye, insurance, university, a centre, a
+ * clinic …) must be the same on both rows, and two different descriptors (general / central /
+ * specialized / private …) separate them; one row leaving its descriptor off does not. Nothing pairs and
+ * nothing merges across that line — `sameFacilityKind`.
  */
 
 import { AGREE_METERS, sameName, specialityFamily } from "@/lib/phoenix-crm/customer-match-groups";
+import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { distanceMeters } from "@/lib/phoenix-crm/geo";
 import { validationNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { personNameWords } from "@/lib/phoenix-crm/signboard-rules";
@@ -94,12 +103,111 @@ function isDoctorList(listType: string): boolean {
   return listType === "AM" || listType === "PM";
 }
 
+// ── Which kind of facility ───────────────────────────────────────────────────────────────────────
+
+/** The words that say what kind of facility an account is, folded; words for one kind share its key. */
+const FACILITY_KIND_WORDS: ReadonlyMap<string, string> = new Map([
+  ["حميات", "fever"],
+  ["صدر", "chest"],
+  ["صدريه", "chest"],
+  ["اطفال", "children"],
+  ["نفسيه", "psychiatric"],
+  ["نفسي", "psychiatric"],
+  ["رمد", "eye"],
+  ["عيون", "eye"],
+  ["كبد", "liver"],
+  ["اورام", "oncology"],
+  ["تامين", "insurance"],
+  ["جامعي", "university"],
+  ["جامعيه", "university"],
+  ["جامعه", "university"],
+  ["تعليمي", "teaching"],
+  ["تعليميه", "teaching"],
+  ["نسا", "women"],
+  ["نساء", "women"],
+  ["ولاده", "women"],
+  ["عظام", "bones"],
+  ["كلي", "kidney"],
+  ["قلب", "heart"],
+  ["حروق", "burns"],
+  ["مسالك", "urology"],
+  ["جلديه", "skin"],
+  ["اسنان", "dental"],
+  ["سكر", "diabetes"],
+  ["طوارئ", "emergency"],
+  ["طواري", "emergency"],
+  ["عزل", "isolation"],
+  ["مستوصف", "dispensary"],
+  ["معهد", "institute"],
+  ["مركز", "centre"],
+  ["عياده", "clinic"],
+  ["عيادات", "clinic"],
+  ["وحده", "unit"],
+  ["صحه", "health"],
+  ["صحيه", "health"],
+]);
+
+/** The words that say which hospital of a kind: two different ones are two hospitals. */
+const FACILITY_DESCRIPTOR_WORDS: ReadonlyMap<string, string> = new Map([
+  ["عام", "general"],
+  ["عامه", "general"],
+  ["مركزي", "central"],
+  ["مركزيه", "central"],
+  ["تخصصي", "specialized"],
+  ["تخصصيه", "specialized"],
+  ["خاص", "private"],
+  ["خاصه", "private"],
+  ["شامل", "comprehensive"],
+  ["شامله", "comprehensive"],
+  ["دولي", "international"],
+  ["دوليه", "international"],
+]);
+
+/** A folded word without the و / ال / لل in front of it: "والولاده" → "ولاده", "للاطفال" → "اطفال". */
+function bareFacilityWord(word: string): string {
+  let bare = word;
+  if (bare.startsWith("و") && bare.length >= 5 && bare.slice(1).startsWith("ال")) bare = bare.slice(1);
+  if ((bare.startsWith("ال") || bare.startsWith("لل")) && bare.length >= 4) bare = bare.slice(2);
+  return bare;
+}
+
+export type FacilityKind = { kinds: string[]; descriptors: string[] };
+
+/** What kind of facility a name says it is, and which of its kind: each a sorted set of keys. */
+export function facilityKindOf(name: string): FacilityKind {
+  const kinds = new Set<string>();
+  const descriptors = new Set<string>();
+  for (const word of normalizeContactName(name).split(" ")) {
+    if (!word) continue;
+    for (const form of new Set([word, bareFacilityWord(word)])) {
+      const kind = FACILITY_KIND_WORDS.get(form);
+      if (kind) kinds.add(kind);
+      const descriptor = FACILITY_DESCRIPTOR_WORDS.get(form);
+      if (descriptor) descriptors.add(descriptor);
+    }
+  }
+  return { kinds: [...kinds].sort(), descriptors: [...descriptors].sort() };
+}
+
+/**
+ * Two account names that can be one facility: the same kind words on both, and no two different
+ * descriptors. One row leaving off "العام" is still the general hospital; "حميات" on one row only is not.
+ */
+export function sameFacilityKind(leftName: string, rightName: string): boolean {
+  const left = facilityKindOf(leftName);
+  const right = facilityKindOf(rightName);
+  if (left.kinds.join(" ") !== right.kinds.join(" ")) return false;
+  if (left.descriptors.length > 0 && right.descriptors.length > 0 && left.descriptors.join(" ") !== right.descriptors.join(" ")) return false;
+  return true;
+}
+
 /** Two rows on two lines' lists that are one doctor. `left`/`right` words are `twinNameWords`. */
 export function areLineTwins(left: TwinCustomer, right: TwinCustomer, leftWords: ReadonlyArray<string>, rightWords: ReadonlyArray<string>): boolean {
   if (left.id === right.id || left.isTest !== right.isTest || left.seatId === right.seatId) return false;
   if (!left.lineCode || !right.lineCode || left.lineCode === right.lineCode) return false;
   if (!left.areaCode || left.areaCode !== right.areaCode) return false;
   if (left.listType !== right.listType || !isDoctorList(left.listType)) return false;
+  if (left.listType === "AM" && !sameFacilityKind(left.name, right.name)) return false;
   if (Math.min(leftWords.length, rightWords.length) < LINE_TWIN_MIN_NAME_WORDS) return false;
   if (!sameName(leftWords, rightWords)) return false;
   const leftFamily = specialityFamily(left.speciality);
@@ -312,6 +420,18 @@ export function planLineTwinMerges(input: LineTwinInput): LineTwinMove[] {
 
 // ── 1. A waiting row joins ───────────────────────────────────────────────────────────────────────
 
+/** The places a waiting row takes: the best point first, never two within `AGREE_METERS`, at most five. */
+export function pickSharePlaces(pool: ReadonlyArray<TwinPlace>): TwinPlace[] {
+  const ordered = [...pool].sort((left, right) => compareAnchors(left, right, pool));
+  const kept: TwinPlace[] = [];
+  for (const place of ordered) {
+    if (kept.length >= LINE_TWIN_MAX_PLACES) break;
+    if (kept.some((other) => distanceMeters(place, other) <= AGREE_METERS)) continue;
+    kept.push(place);
+  }
+  return kept;
+}
+
 export type LineTwinShare = {
   customerId: string;
   seatId: string;
@@ -384,14 +504,7 @@ export function planLineTwinShares(input: LineTwinInput): LineTwinSharePlan {
       continue;
     }
 
-    const pool = sources.flatMap((source) => index.ownPlaces.get(source.id) ?? []);
-    const ordered = [...pool].sort((left, right) => compareAnchors(left, right, pool));
-    const kept: TwinPlace[] = [];
-    for (const place of ordered) {
-      if (kept.length >= LINE_TWIN_MAX_PLACES) break;
-      if (kept.some((other) => distanceMeters(place, other) <= AGREE_METERS)) continue;
-      kept.push(place);
-    }
+    const kept = pickSharePlaces(sources.flatMap((source) => index.ownPlaces.get(source.id) ?? []));
     if (kept.length === 0) continue;
     const bySource = [...sources].sort((left, right) => String(left.validatedAt).localeCompare(String(right.validatedAt)) || left.id.localeCompare(right.id));
     shares.push({

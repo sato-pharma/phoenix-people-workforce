@@ -43,6 +43,7 @@ import { CrmButton, CrmCheck, CrmField, CrmPill, CrmSearchField, CrmSelect } fro
 import { PlaceCheckScorecard, type ScoreTarget } from "@/components/phoenix-crm/place-check-scorecard";
 import { ReopenedCustomerList } from "@/components/phoenix-crm/reopened-customer-list";
 import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-board";
+import { LineLookalikeBoardView } from "@/components/phoenix-crm/line-lookalike-board";
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
@@ -118,9 +119,12 @@ const PAGE_BUILDINGS = 10;
  *                   opened (owner, 2026-10-17: "a place validated by more than a rep");
  * - `sameCustomer` — one customer validated by two or more reps at places that do not agree, the
  *                   deciders' alone, read when first opened (owner, 2026-10-26, "Build the check");
+ * - `lineLookalikes` — the same customer on another rep's list, same area, another line, written another
+ *                   way: validated on one line, waiting on the other — the Super Admin confirms each pair,
+ *                   his alone, read when first opened (owner, 2026-11-16, "Fix rule + review list");
  * - `history`     — what was decided in the last 14 days, and who is waiting to be captured again.
  */
-type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "sameCustomer" | "history";
+type PlaceCheckView = "needs" | "unconfirmed" | "polyclinics" | "samePlace" | "sameCustomer" | "lineLookalikes" | "history";
 
 const CHIP_LABELS: Record<UnconfirmedChip, string> = {
   open: "Not confirmed",
@@ -283,6 +287,7 @@ export function ValidationReviewsBoard({
   // mounted — switching tabs must not read it again.
   const [samePlaceOpened, setSamePlaceOpened] = useState(false);
   const [sameCustomerOpened, setSameCustomerOpened] = useState(false);
+  const [lineLookalikesOpened, setLineLookalikesOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
@@ -498,12 +503,15 @@ export function ValidationReviewsBoard({
     { key: "polyclinics", label: "Polyclinics and hospitals", count: shown(buildingGroups.length), open: 0 },
     ...(team ? [] : [{ key: "samePlace" as const, label: "Same place, several reps", count: null, open: 0 }]),
     ...(team ? [] : [{ key: "sameCustomer" as const, label: "Same customer, several reps", count: null, open: 0 }]),
+    // 🔴 The Super Admin's alone (`canRestore` is `canRestoreValidation`): "Same customer" there validates.
+    ...(!team && canRestore ? [{ key: "lineLookalikes" as const, label: "Same customer, other line", count: null, open: 0 }] : []),
     { key: "history", label: "History", count: shown(historyCount), open: 0 },
   ];
   const selectView = (key: PlaceCheckView) => {
     setView(key);
     if (key === "samePlace") setSamePlaceOpened(true);
     if (key === "sameCustomer") setSameCustomerOpened(true);
+    if (key === "lineLookalikes") setLineLookalikesOpened(true);
   };
   // A tapped count opens exactly its rows: that rep (or every rep), the tab and narrowing that hold them,
   // and every outcome — the scorecard never reads the outcome selector, so its counts would not match.
@@ -858,7 +866,7 @@ export function ValidationReviewsBoard({
           </div>
         ) : null}
 
-        {reading && view !== "samePlace" && view !== "sameCustomer" ? (
+        {reading && view !== "samePlace" && view !== "sameCustomer" && view !== "lineLookalikes" ? (
           <ReadingEverything error={everythingRead.error} onRetry={reloadEverything} />
         ) : null}
 
@@ -871,6 +879,12 @@ export function ValidationReviewsBoard({
         {!team && sameCustomerOpened ? (
           <div aria-labelledby="vr-tab-sameCustomer" hidden={view !== "sameCustomer"} id="vr-panel-sameCustomer" role="tabpanel">
             <CustomerMatchBoardView filters={filters} />
+          </div>
+        ) : null}
+
+        {!team && canRestore && lineLookalikesOpened ? (
+          <div aria-labelledby="vr-tab-lineLookalikes" hidden={view !== "lineLookalikes"} id="vr-panel-lineLookalikes" role="tabpanel">
+            <LineLookalikeBoardView filters={filters} />
           </div>
         ) : null}
 
