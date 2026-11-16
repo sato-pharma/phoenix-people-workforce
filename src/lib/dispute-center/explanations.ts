@@ -431,7 +431,7 @@ export async function notifyExplanationConfirmer(input: {
         priority: "normal",
         recordId: input.groupId,
         subjectHrId: input.employeeHrId,
-        title: `Please confirm: ${who}, ${reason}`,
+        title: `Please confirm: ${who}, ${explainReason(input.reasonCode).label.toLowerCase()}`,
       },
       [input.confirmer.hrId],
     );
@@ -570,7 +570,7 @@ export async function answerExplanationGroup(
         priority: "normal",
         recordId: input.groupId,
         subjectHrId: first.employeeHrId,
-        title: `${input.answer === "confirmed" ? "Confirmed" : "Not confirmed"}: ${who}, ${reason}`,
+        title: `${input.answer === "confirmed" ? "Confirmed" : "Not confirmed"}: ${who}, ${explainReason(first.reasonCode).label.toLowerCase()}`,
       },
       admins.map((admin) => admin.hrId),
     );
