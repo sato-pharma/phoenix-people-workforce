@@ -176,24 +176,29 @@ async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candid
 }
 
 /**
- * The candidate's own days and person, for the explanation that opens its dispute — and whether this
- * comment IS the opening one (the employee has written nothing on it yet). A dispute opened before
- * 2026-11-16 already has their words, so it carries on as a plain conversation.
+ * Whether this comment IS the opening one, and then the candidate's own days and person for the
+ * explanation it opens with. It opens the dispute when the employee has written nothing on it yet AND
+ * either sent an explanation (the Deductions page) or nobody has written at all. A thread HR started
+ * first is answered from the Dispute Center, whose composer has no reason list, so it carries on as a
+ * plain conversation — as does a dispute opened before 2026-11-16, which already has their words. The
+ * candidate is read only for an opening comment; a later reply needs only the authors.
  */
-async function loadOpeningContext(candidateId: string, ownerCompactHrId: string) {
+async function loadOpeningContext(candidateId: string, ownerCompactHrId: string, explanationSent: boolean) {
   const supabase = getSupabaseAdmin();
-  const [candidateResult, commentsResult] = await Promise.all([
-    supabase.from("deductions_candidates").select("dates, employee_hr_id, employee_name").eq("id", candidateId).maybeSingle(),
-    supabase.from("deductions_comments").select("author_hr_id").eq("candidate_id", candidateId),
-  ]);
-  if (candidateResult.error) throw candidateResult.error;
+  const commentsResult = await supabase.from("deductions_comments").select("author_hr_id").eq("candidate_id", candidateId);
   if (commentsResult.error) throw commentsResult.error;
+  const authors = (commentsResult.data ?? []) as Array<{ author_hr_id: string | null }>;
+  const ownerHasWritten = authors.some((row) => compactDeductionsHrId(row.author_hr_id ?? "") === ownerCompactHrId);
+  if (ownerHasWritten || (!explanationSent && authors.length > 0)) return { candidate: null, opening: false as const };
+  const candidateResult = await supabase
+    .from("deductions_candidates")
+    .select("dates, employee_hr_id, employee_name")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (candidateResult.error) throw candidateResult.error;
   const candidate = candidateResult.data as { dates: unknown; employee_hr_id: string; employee_name: string | null } | null;
   if (!candidate) throw new Error("Deduction candidate not found.");
-  const ownerHasWritten = ((commentsResult.data ?? []) as Array<{ author_hr_id: string | null }>).some(
-    (row) => compactDeductionsHrId(row.author_hr_id ?? "") === ownerCompactHrId,
-  );
-  return { candidate, opening: !ownerHasWritten };
+  return { candidate, opening: true as const };
 }
 
 export async function addDeductionsComment(input: {
@@ -210,10 +215,14 @@ export async function addDeductionsComment(input: {
 }): Promise<DeductionsComment> {
   const ownerCompactHrId = await assertEmployeeCanCommentOnCandidate(input.access, input.candidateId);
   const images = input.images ?? [];
-  const { candidate, opening } = await loadOpeningContext(input.candidateId, ownerCompactHrId);
+  const { candidate } = await loadOpeningContext(
+    input.candidateId,
+    ownerCompactHrId,
+    input.explanation !== undefined && input.explanation !== null,
+  );
   // The opening comment is the explanation itself — a reason from the list and who can confirm it —
   // never "why is this deduction wrong" in free text.
-  const prepared = opening
+  const prepared = candidate
     ? await prepareCaseExplanation({
         caseKind: "deduction",
         dates: caseDates(candidate.dates),
@@ -271,7 +280,7 @@ export async function addDeductionsComment(input: {
   }
   // The explanation hangs off the candidate. If it cannot be written the opening comment goes too, so
   // HR is never notified of a dispute with no reason behind it.
-  if (prepared) {
+  if (prepared && candidate) {
     try {
       await recordCaseExplanation({
         caseKind: "deduction",

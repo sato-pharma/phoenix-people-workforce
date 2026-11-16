@@ -28,6 +28,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
   explainDatesPhrase,
+  explainDayLabel,
   explainReason,
   explainReasonPhrase,
   explanationFacts,
@@ -43,8 +44,11 @@ import {
   validateExplanation,
   validateExplanationReason,
 } from "./explain-reasons.ts";
+import { listCaseEvents } from "./events.ts";
+import { disputeCaseHref } from "./notify.ts";
 import { viewerHrIdOf } from "./participants.ts";
 import { monthKeyLabel, payrollMonthState } from "./payroll-month.ts";
+import { isDecidedByEvents } from "./state.ts";
 
 export type { DisputeExplanation } from "./explain-reasons.ts";
 
@@ -127,7 +131,10 @@ async function loadTrainingManagers(): Promise<Array<{ hrId: string; name: strin
     .from("employees")
     .select("hr_id, full_name, nickname, job_title")
     .in("hr_id", lookups);
-  if (peopleError) throw peopleError;
+  if (peopleError) {
+    logError("Training Manager names unreadable for a dispute explanation", { error: peopleError, labels: { event: "explain_training_managers_failed" } });
+    return [];
+  }
   const byKey = new Map<string, { full_name: string | null; nickname: string | null; job_title: string | null }>();
   for (const row of (people ?? []) as Array<{ hr_id: string | null; full_name: string | null; nickname: string | null; job_title: string | null }>) {
     const key = canonicalHrIdKey(row.hr_id);
@@ -218,7 +225,7 @@ export async function assertDaysStillExplainable(employeeHrId: string, dates: re
   const closed = dates.filter((date) => paid.has(monthByDate.get(date) ?? ""));
   const month = monthByDate.get(closed[0]) ?? "";
   throw validationError(
-    `${monthKeyLabel(month)}'s payroll is already confirmed, so ${closed.join(", ")} can no longer be explained here. If money was deducted for ${closed.length === 1 ? "that day" : "those days"}, dispute the deduction on your Deductions page.`,
+    `${monthKeyLabel(month)}'s payroll is already confirmed, so ${explainDatesPhrase(closed)} can no longer be explained here. If money was deducted for ${closed.length === 1 ? "that day" : "those days"}, dispute the deduction on your Deductions page.`,
   );
 }
 
@@ -237,17 +244,30 @@ export async function assertDaysNotExplainedElsewhere(input: {
   if (lookups.length === 0) return;
   const { data, error } = await getSupabaseAdmin()
     .from("dispute_explanations")
-    .select("case_kind, dates")
+    .select("case_kind, case_ref, dates")
     .in("employee_hr_id", lookups)
     .in("case_kind", [...input.otherKinds])
     .overlaps("dates", [...input.dates]);
   if (error) throw error;
-  const rows = (data ?? []) as Array<{ case_kind: ExplainCaseKind; dates: string[] | null }>;
+  let rows = (data ?? []) as Array<{ case_kind: ExplainCaseKind; case_ref: string; dates: string[] | null }>;
+  // A calendar explanation the Super Admin already decided no longer holds the day: once its payroll
+  // month is confirmed, the deduction is disputed on the Deductions page, as assertDaysStillExplainable
+  // tells the employee — refusing it there sent them in a circle.
+  const calendarRefs = rows.filter((row) => row.case_kind === "calendar").map((row) => row.case_ref);
+  if (calendarRefs.length > 0) {
+    const open = await openCaseRefs("calendar", calendarRefs);
+    rows = rows.filter((row) => row.case_kind !== "calendar" || open.has(row.case_ref));
+  }
   if (rows.length === 0) return;
   const wanted = new Set(input.dates);
-  const hit = rows.flatMap((row) => (row.dates ?? []).map((date) => String(date).slice(0, 10))).filter((date) => wanted.has(date)).sort();
-  const where = rows[0].case_kind === "calendar" ? "on your calendar" : "on a deduction dispute";
-  throw conflictError(`You already explained ${hit[0] ?? input.dates[0]} ${where}. Open it in your Disputes and add to it there.`);
+  // The earliest day hit, with the module that holds THAT day (never the first row's module).
+  const hits = rows
+    .flatMap((row) => (row.dates ?? []).map((date) => ({ date: String(date).slice(0, 10), kind: row.case_kind })))
+    .filter((hit) => wanted.has(hit.date))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const first = hits[0] ?? { date: input.dates[0], kind: rows[0].case_kind };
+  const where = first.kind === "calendar" ? "on your calendar" : "on a deduction dispute";
+  throw conflictError(`You already explained ${explainDayLabel(first.date)} ${where}. Open it in your Disputes and add to it there.`);
 }
 
 // ── Saving ──────────────────────────────────────────────────────────────────────────────────────
@@ -478,6 +498,45 @@ export function groupExplanations(rows: readonly DisputeExplanation[]): Explanat
   return Array.from(byGroup.values()).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+/**
+ * The cases among `refs` still waiting for the Super Admin. A decided case needs no confirmation: its
+ * explanation leaves the confirmer's list and can no longer be answered. A calendar or daily dispute
+ * keeps its state on its own row; a monthly deduction dispute keeps it in its case events.
+ */
+async function openCaseRefs(caseKind: ExplainCaseKind, refs: readonly string[]): Promise<Set<string>> {
+  const unique = Array.from(new Set(refs.filter(Boolean)));
+  const open = new Set<string>();
+  if (unique.length === 0) return open;
+  if (caseKind === "deduction") {
+    const events = await listCaseEvents("deduction", unique);
+    for (const ref of unique) if (!isDecidedByEvents(events.get(ref) ?? [])) open.add(ref);
+    return open;
+  }
+  const table = caseKind === "calendar" ? "private_calendar_data_disputes" : "daily_deductions_disputes";
+  const openStatus = caseKind === "calendar" ? "pending_review" : "open";
+  for (let index = 0; index < unique.length; index += 200) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(table)
+      .select("id")
+      .in("id", unique.slice(index, index + 200))
+      .eq("status", openStatus);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ id: string }>) open.add(String(row.id));
+  }
+  return open;
+}
+
+/** Only the explanations whose case is still open, each kind asked once. */
+async function withOpenCases(rows: readonly DisputeExplanation[]): Promise<DisputeExplanation[]> {
+  const kinds = Array.from(new Set(rows.map((row) => row.caseKind)));
+  const openByKind = new Map(
+    await Promise.all(
+      kinds.map(async (kind) => [kind, await openCaseRefs(kind, rows.filter((row) => row.caseKind === kind).map((row) => row.caseRef))] as const),
+    ),
+  );
+  return rows.filter((row) => openByKind.get(row.caseKind)?.has(row.caseRef));
+}
+
 /** What is waiting for the viewer to confirm. Empty for anyone nobody named. */
 export async function listExplanationGroupsAwaitingViewer(access: AccessContext): Promise<ExplanationGroup[]> {
   const hrId = viewerHrIdOf(access);
@@ -491,13 +550,13 @@ export async function listExplanationGroupsAwaitingViewer(access: AccessContext)
     .order("created_at", { ascending: true })
     .limit(500);
   if (error) throw error;
-  return groupExplanations(((data ?? []) as ExplanationRow[]).map(mapExplanationRow));
+  return groupExplanations(await withOpenCases(((data ?? []) as ExplanationRow[]).map(mapExplanationRow)));
 }
 
-/** Where the Super Admin decides a case of each kind. */
-function reviewerHrefFor(kind: ExplainCaseKind): string {
+/** Where the Super Admin decides the case: the calendar inbox, or the case itself in the Dispute Center. */
+function reviewerHrefFor(kind: ExplainCaseKind, ref: string): string {
   if (kind === "calendar") return "/admin/private-calendar-disputes";
-  return `/admin/disputes?kind=${kind}`;
+  return disputeCaseHref(kind, ref, "reviewer");
 }
 
 /**
@@ -526,20 +585,22 @@ export async function answerExplanationGroup(
   if (!hrIdsMatch(group[0].confirmerHrId, hrId)) throw forbiddenError("Only the person named to confirm this can answer it.");
   const awaiting = group.filter((row) => row.confirmationStatus === "awaiting");
   if (awaiting.length === 0) throw conflictError("You already answered this.");
+  const open = await withOpenCases(awaiting);
+  if (open.length === 0) throw conflictError("This was already decided, so it no longer needs your answer.");
 
   const now = new Date().toISOString();
   const { data: updated, error: updateError } = await supabase
     .from("dispute_explanations")
     .update({ confirmation_note: note || null, confirmation_status: input.answer, confirmed_at: now, updated_at: now })
-    .eq("group_id", input.groupId)
+    .in("id", open.map((row) => row.id))
     .eq("confirmation_status", "awaiting")
     .select("id");
   if (updateError) throw updateError;
   const answered = (updated ?? []).length;
   if (answered === 0) throw conflictError("You already answered this.");
 
-  const first = group[0];
-  const dates = Array.from(new Set(group.flatMap((row) => row.dates))).sort();
+  const first = open[0];
+  const dates = Array.from(new Set(open.flatMap((row) => row.dates))).sort();
   await writeAuditLog({
     actorLoginId: access.loginId ?? hrId,
     entityId: input.groupId,
@@ -554,7 +615,7 @@ export async function answerExplanationGroup(
     const who = first.employeeName ?? "an employee";
     await createSystemNotificationForRecipients(
       {
-        actionUrl: reviewerHrefFor(first.caseKind),
+        actionUrl: reviewerHrefFor(first.caseKind, first.caseRef),
         actorId: hrId,
         channels: ["in_app", "push"],
         eventType: "dispute_explanation_answered",
