@@ -27,6 +27,7 @@ import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
+import { REVIEW_SUBJECTS_SELECT, SIGNBOARD_CHECK_KEYS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
 import {
   parseScheduleHeldBecause,
   parseScheduleLegibility,
@@ -675,7 +676,7 @@ export async function loadValidationReviews(
     const base = getSupabaseAdmin()
       .from("phoenix_crm_validation_reviews")
       .select(
-        "id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason",
+        `id, seat_id, customer_id, place_id, is_test, kind, status, google, created_by_hr_id, created_at, decided_by_hr_id, decided_at, decision_note, refusal_reason, ${REVIEW_SUBJECTS_SELECT}`,
       );
     // A rejection keeps its undo for longer than an ordinary decided row keeps its place on the
     // page — see REJECTED_SHOWN_DAYS. The place's own status is not on this table, so a rejection
@@ -691,7 +692,15 @@ export async function loadValidationReviews(
   };
   const [waitingRead, decidedRead] = await Promise.all([
     readEveryPage<Row>(reviewsOf(true), { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) }),
-    readEveryPage<Row>(reviewsOf(false), { maxRows: 5_000, whenFull: "stop", what: "The place checks decided", uniqueBy: (row) => String(row.id) }),
+    // Every decision is three pages today (2,021 decided, 16 Nov 2026): asked for together, not one after
+    // another. The recent ones are a single page, so that read stays one page at a time.
+    readEveryPage<Row>(reviewsOf(false), {
+      maxRows: 5_000,
+      whenFull: "stop",
+      what: "The place checks decided",
+      uniqueBy: (row) => String(row.id),
+      concurrentPages: options.everyDecision ? 3 : 1,
+    }),
   ]);
   throwIfError(waitingRead.error);
   throwIfError(decidedRead.error);
@@ -703,23 +712,18 @@ export async function loadValidationReviews(
   const capped = waitingRead.capped || decidedRead.capped;
   if (reviews.length === 0) return { rows: [], capped: false };
 
-  const customerIds = [...new Set(reviews.map((row) => String(row.customer_id)))];
-  const placeIds = [...new Set(reviews.map((row) => String(row.place_id)))];
-  // selectByIds, never a bare `.in()`: at the page's 500-review cap these id lists can cross the ~395
-  // that overflows the request headers (see selectByIds / the postgrest-in memory note).
-  // The people names read in the same batch (2026-10-31): they come from the reviews alone.
-  const [customers, places, names] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
-    selectByIds<Row>(
-      "phoenix_crm_places",
-      "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, signboard_check",
-      "id",
-      placeIds,
-    ),
-    loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)])),
-  ]);
-  const customerById = new Map(customers.map((row) => [String(row.id), row]));
-  const placeById = new Map(places.map((row) => [String(row.id), row]));
+  // The customer and the place came joined into each review (`REVIEW_SUBJECTS_SELECT`), so the only read
+  // left is the people's names. A review whose join came back empty is simply absent from its map — the
+  // same as the id lookups this replaced, which left a missing row out.
+  const customerById = new Map<string, Row>();
+  const placeById = new Map<string, Row>();
+  for (const review of reviews) {
+    const customer: unknown = review.customer;
+    const place: unknown = review.place;
+    if (isRecord(customer)) customerById.set(String(review.customer_id), customer);
+    if (isRecord(place)) placeById.set(String(review.place_id), { ...place, signboard_check: signboardCheckRead(place) });
+  }
+  const names = await loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)]));
 
   // One clock for the whole read, so two rows of one instant never read two different waits.
   const now = new Date();
@@ -1149,7 +1153,10 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // 🔴 ONE STRING, AND A COLUMN THAT IS NOT THERE YET FAILS THE WHOLE READ. `shared_place_id`
           // and `schedule_check` arrive with migration 20261010013001, which reaches staging and
           // production before this file ships.
-          "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check, point_source",
+          // The signboard by the keys the board reads, never whole (`SIGNBOARD_CHECK_KEYS_SELECT`): the
+          // whole column was 7.7 of this read's 16 MB. The timetable check is kept whole — 0.4 MB, and
+          // picking its seven keys out would cost more in empty keys than it saves.
+          `id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, ${SIGNBOARD_CHECK_KEYS_SELECT}, shared_place_id, schedule_check, point_source`,
         )
         .eq("status", "active")
         // A copy validated from another line has no evidence of its own to check; its source is on the board.
@@ -1157,41 +1164,67 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
       return seatScoped(query, seats).order("id", { ascending: false });
     },
     // Four pages at once (2026-11-08): ~5,400 active places are six pages, and one after another they
-    // were four seconds of the page on their own.
-    { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id), concurrentPages: 4 },
+    // were four seconds of the page on their own. Eight since 16 Nov 2026: 6,558 places are seven pages,
+    // and four at a time made three waves one after another (0.7 + 0.9 + 0.3 s) where one wave and the
+    // closing empty page now do. A district manager's team is about one page (438 places for the one
+    // measured, 16 Nov 2026), so his read goes one page at a time: eight at once sent seven empty ones.
+    {
+      maxRows: 10_000,
+      whenFull: "stop",
+      what: "The validated places in use",
+      uniqueBy: (row) => String(row.id),
+      concurrentPages: seats ? 1 : 8,
+    },
   );
   throwIfError(read.error);
   const places = [...read.rows].sort(newestValidatedFirst);
   if (places.length === 0) return { rows: [], capped: false };
 
-  const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
   // 🔴 ONE CALL, NOT 179 (owner, 2026-11-08: "enhance more the performance of this page, hilarious slow").
   // The four lookups below went 150 ids at a time — 61 requests for the visit count alone, 179 in all, the
   // biggest share of the page. `phoenix_crm_validated_place_facts` takes the ids in the request BODY (an
   // RPC is a POST, so none of the ~395-id `.in()` header overflow that once took this page down, 2026-10-07) and answers in one jsonb value, which
   // PostgREST's row cap never cuts. Every review of these customers, whatever its status: the pending ones
   // are held above and left out here, and ANY one at all means somebody has looked at that place.
-  const facts = await getSupabaseAdmin().rpc("phoenix_crm_validated_place_facts", {
-    p_place_ids: places.map((row) => String(row.id)),
-    p_customer_ids: customerIds,
-  });
-  throwIfError(facts.error);
-  const factValue = (facts.data ?? {}) as {
-    customers?: Row[];
-    reviews?: Row[];
-    visit_counts?: Record<string, number>;
-    active_places?: Record<string, number>;
-  };
-  const customers = factValue.customers ?? [];
-  const reviewRows = factValue.reviews ?? [];
+  //
+  // 🔴 AND THAT CALL IS ASKED IN UP TO FOUR PARTS AT ONCE (owner, 16 Nov 2026: "fix the place checks
+  // slowness"): for every place in one go it took 1.1 s after the last page, alone on the clock. Every fact
+  // it returns is keyed by the place or the customer it was asked about — a customer's places and reviews
+  // are counted over the whole table, never over the ids sent with it — so the parts merge back to exactly
+  // the one call's answer: a customer whose places fall in two parts comes back twice, the same both times.
+  type PlaceFacts = { customers?: Row[]; reviews?: Row[]; visit_counts?: Record<string, number>; active_places?: Record<string, number> };
+  const factParts = Math.min(4, Math.max(1, Math.ceil(places.length / 1_000)));
+  const partSize = Math.ceil(places.length / factParts);
+  const factAnswers = await Promise.all(
+    Array.from({ length: factParts }, async (_, index) => {
+      const part = places.slice(index * partSize, (index + 1) * partSize);
+      const facts = await getSupabaseAdmin().rpc("phoenix_crm_validated_place_facts", {
+        p_place_ids: part.map((row) => String(row.id)),
+        p_customer_ids: [...new Set(part.map((row) => String(row.customer_id)))],
+      });
+      throwIfError(facts.error);
+      return (facts.data ?? {}) as PlaceFacts;
+    }),
+  );
+  const customerFacts = new Map<string, Row>();
+  const reviewFacts = new Map<string, Row>();
+  const factValue: Required<Pick<PlaceFacts, "visit_counts" | "active_places">> = { visit_counts: {}, active_places: {} };
+  for (const answer of factAnswers) {
+    for (const row of answer.customers ?? []) customerFacts.set(String(row.id), row);
+    for (const row of answer.reviews ?? []) reviewFacts.set(String(row.id), row);
+    Object.assign(factValue.visit_counts, answer.visit_counts ?? {});
+    Object.assign(factValue.active_places, answer.active_places ?? {});
+  }
+  const customers = [...customerFacts.values()];
+  const reviewRows = [...reviewFacts.values()];
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
   const held = new Set(reviewRows.filter((row) => row.status === "pending").map((row) => String(row.place_id)));
   const reviewed = new Set(reviewRows.map((row) => String(row.place_id)));
   // One review row per place, for all time (the UNIQUE index), so the approval that let a place stand is
   // this row and no other; a pending or rejected one says nothing about who approved it.
   const approvals = new Map(reviewRows.filter((row) => row.status === "approved").map((row) => [String(row.place_id), row] as const));
-  const visitsByPlace = new Map<string, number>(Object.entries(factValue.visit_counts ?? {}).map(([placeId, count]) => [placeId, Number(count)]));
-  const placesByCustomer = new Map<string, number>(Object.entries(factValue.active_places ?? {}).map(([customerId, count]) => [customerId, Number(count)]));
+  const visitsByPlace = new Map<string, number>(Object.entries(factValue.visit_counts).map(([placeId, count]) => [placeId, Number(count)]));
+  const placesByCustomer = new Map<string, number>(Object.entries(factValue.active_places).map(([customerId, count]) => [customerId, Number(count)]));
   const [names, venues] = await Promise.all([
     loadPeopleNames([
       ...places.map((row) => text(row.created_by_hr_id)),
@@ -1237,7 +1270,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         decidedAtText: text(approvals.get(String(row.id))?.decided_at)
           ? formatPhoenixDateTime(String(approvals.get(String(row.id))?.decided_at))
           : null,
-        signboard: signboardOf(row.signboard_check),
+        signboard: signboardOf(signboardCheckRead(row)),
         photoKind: text(row.shared_place_id) ? "schedule" : "signboard",
         sharedPlaceName: venues.get(String(row.shared_place_id ?? ""))?.name ?? null,
         sharedPlaceId: text(row.shared_place_id),

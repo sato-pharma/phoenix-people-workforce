@@ -327,7 +327,16 @@ function checkWriteGate(): void {
   // which team a row belongs to, and a screen is not an authority.
   assert.match(subject[0], /\.from\(table\)\.select\(columns\)\.eq\("id", id\)/, "it reads the place or the venue itself");
   assert.match(subject[0], /seatId: String\(row\.seat_id \?\? ""\)/, "and takes the seat from that row");
+  // 🔴 A TEST ACCOUNT NEVER WRITES ON A REAL PLACE (audit, 2026-11-16): it carries the mirrored
+  // manager's hrId, so a comment was his in the rep's app and a recommendation overwrote his own. The
+  // refusal must come BEFORE any return, or a later branch could write first.
+  const testGate = subject[0].search(/if \(viewer\.isTestPersona && !subject\.isTest\) \{\s*throw forbiddenError\(/);
+  assert.ok(testGate > -1, "a test account is refused a write on a real place");
+  assert.ok(testGate < subject[0].indexOf("return {"), "and refused before the resolver can hand back a subject");
   assert.match(subject[0], /if \(canDecideValidationReviews\(viewer\)\) return \{ source: "system_admin", subject \}/, "the Super Admin writes as the administrator");
+  for (const name of ["savePlaceNote", "savePlaceRecommendation"]) {
+    assert.match(functionBody(notes, name), /await subjectFor\(viewer, kind, subjectId\)/, `${name} writes only through the gated resolver`);
+  }
   assert.match(subject[0], /if \(!readsTeamPlaceChecks\(viewer\)\) throw forbiddenError/, "anybody who is not a district manager is refused");
   assert.match(
     subject[0],

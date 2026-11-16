@@ -156,19 +156,39 @@ export function formatDateValue(
 // purpose. These are deliberately separate from formatDateValue/formatDateTimeValue,
 // which keep their short "17 Oct 2026" shape for dense admin tables.
 
+/**
+ * The three formatters below, each built ONCE and kept.
+ *
+ * 🔴 BUILDING AN Intl.DateTimeFormat IS THE EXPENSIVE PART, NOT USING IT (owner, 16 Nov 2026: "fix the
+ * place checks slowness"). Each call built a new one; Place checks stamps about 13,000 rows, and two
+ * formatters per stamp cost 2.2 s of the server's time per page against 0.03 s for the same stamps from
+ * kept ones (measured 16 Nov 2026). Their options never vary, so one of each answers every call. Built on
+ * first use, so a module that only imports this file pays nothing.
+ */
+const PHOENIX_FORMAT_OPTIONS = {
+  longDate: ["en-GB", { day: "numeric", month: "long", timeZone: PHOENIX_BUSINESS_TIME_ZONE, weekday: "long", year: "numeric" }],
+  month: ["en-GB", { month: "long", timeZone: PHOENIX_BUSINESS_TIME_ZONE, year: "numeric" }],
+  time: ["en-US", { hour: "numeric", hour12: true, minute: "2-digit", timeZone: PHOENIX_BUSINESS_TIME_ZONE }],
+} as const satisfies Record<string, readonly [string, Intl.DateTimeFormatOptions]>;
+const phoenixFormatters = new Map<keyof typeof PHOENIX_FORMAT_OPTIONS, Intl.DateTimeFormat>();
+
+function phoenixFormatter(kind: keyof typeof PHOENIX_FORMAT_OPTIONS): Intl.DateTimeFormat {
+  let formatter = phoenixFormatters.get(kind);
+  if (!formatter) {
+    const [locale, options] = PHOENIX_FORMAT_OPTIONS[kind];
+    formatter = new Intl.DateTimeFormat(locale, options);
+    phoenixFormatters.set(kind, formatter);
+  }
+  return formatter;
+}
+
 /** "Tuesday, 17 October 2026" in Africa/Cairo. Accepts a date-only string or an instant. */
 export function formatPhoenixLongDate(value: Date | string | null | undefined) {
   if (!value) return "—";
   const date = asValidDate(value) ?? asValidDateTime(value);
   if (!date) return typeof value === "string" ? value : "—";
 
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-    weekday: "long",
-    year: "numeric",
-  }).format(date);
+  return phoenixFormatter("longDate").format(date);
 }
 
 /** "September 2026" in Africa/Cairo. Accepts a date-only string (a month's first day) or an instant. */
@@ -177,11 +197,7 @@ export function formatPhoenixMonth(value: Date | string | null | undefined) {
   const date = asValidDate(value) ?? asValidDateTime(value);
   if (!date) return typeof value === "string" ? value : "—";
 
-  return new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-    year: "numeric",
-  }).format(date);
+  return phoenixFormatter("month").format(date);
 }
 
 /** "12:15 PM" in Africa/Cairo. */
@@ -191,12 +207,7 @@ export function formatPhoenixTime(value: Date | string | null | undefined) {
   if (!date) return typeof value === "string" ? value : "—";
 
   return (
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      hour12: true,
-      minute: "2-digit",
-      timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-    })
+    phoenixFormatter("time")
       .format(date)
       // ICU ≥ 72 separates the minutes from AM/PM with U+202F (narrow no-break
       // space), older builds use a plain space. The runtime's ICU version is not

@@ -368,6 +368,15 @@ async function subjectFor(viewer: PhoenixCrmViewer, kind: PlaceNoteSubjectKind, 
     seatId: String(row.seat_id ?? ""),
   };
 
+  // 🔴 A TEST ACCOUNT NEVER WRITES ON A REAL PLACE (audit, 2026-11-16). A `TEST-` login carries the
+  // mirrored manager's own hrId and role, so his team board opens for it exactly as he sees it — and
+  // without this line a comment it saved was a real row in HIS name (the rep read "From your manager"),
+  // and a recommendation was upserted onto (place_id, manager_hr_id), OVERWRITING his own. Reading the
+  // board stays exactly his; writing on it stays his alone. A test row is the test world's, as before.
+  if (viewer.isTestPersona && !subject.isTest) {
+    throw forbiddenError("A test account reads this board as the manager sees it, and cannot comment or recommend on a real place.");
+  }
+
   if (canDecideValidationReviews(viewer)) return { source: "system_admin", subject };
   if (!readsTeamPlaceChecks(viewer)) throw forbiddenError("These place checks are not yours to comment on.");
   const mine = new Set(teamPlaceChecksSeats(viewer).map((seat) => seat.seatId));

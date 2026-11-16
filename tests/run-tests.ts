@@ -2204,6 +2204,7 @@ import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
+import { runPhoenixCrmPlaceChecksSpeedTests } from "./phoenix-crm-place-checks-speed.test.ts";
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
@@ -8506,6 +8507,11 @@ await runTest(
 await runTest(
   "Phoenix CRM gives every district manager his own Place checks tab, his team and nobody else's (owner, 2026-10-13): all four section reads narrow to his seats in the QUERY through placeChecksSeatScope, which THROWS rather than returning an empty list a PostgREST .in() would answer with zero rows and no error; he comments and recommends, and neither decides anything — canDecideValidationReviews still gates all three decision services, his board renders no decision control, and no sentence on it says who decides or that anything is waiting; rep_visible is NOT NULL with no default in the table and a required boolean on the wire, so the two buttons are the only way to save; the subject's seat is re-read from its own row, never taken from the request; and a visible comment reaches the rep attributed by ROLE and never by name, filtered in the query so one he may not read never leaves the server, with no bell, no Telegram and no email",
   runPhoenixCrmPlaceNotesTests,
+);
+
+await runTest(
+  "Phoenix CRM Place checks reads only what it draws, in as few requests as it can (owner, 16 Nov 2026: \"fix the place checks slowness\"): both board reads ask for the six keys of signboard_check the board reads and never the whole column (7.7 of the 18 MB the places in use weighed), held against every reader of the check — the ones in signboard-rules.ts by watching which keys they touch, signboardOf by the keys its body reads — so a key a reader starts using cannot quietly read as absent; each decision's customer and place come joined into its own row over the two named foreign keys, so no id lookup follows the pages, and every decision's pages are asked for together; and the three Cairo date formatters are built once, counted by wrapping Intl.DateTimeFormat, with the owner's exact stamp unchanged",
+  runPhoenixCrmPlaceChecksSpeedTests,
 );
 
 await runTest(
