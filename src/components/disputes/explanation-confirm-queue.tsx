@@ -1,19 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { Check, Loader2, X } from "lucide-react";
 
-import { phxButtonGhostClassName, phxButtonPrimaryClassName, phxTextareaClassName } from "@/components/ui/form-tokens";
+import {
+  phxButtonApproveClassName,
+  phxButtonDangerClassName,
+  phxButtonGhostClassName,
+  phxFieldMessageClassName,
+  phxLabelClassName,
+  phxTextareaClassName,
+} from "@/components/ui/form-tokens";
+import { FormBlockHeader } from "@/components/ui/form-kit";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
-import { explainReason, type ExplainCaseKind, type ExplainReasonCode } from "@/lib/dispute-center/explain-reasons";
+import {
+  explainDatesPhrase,
+  explainReason,
+  explainReasonPhrase,
+  type ExplainCaseKind,
+  type ExplainReasonCode,
+} from "@/lib/dispute-center/explain-reasons";
 
 // WAITING FOR YOUR CONFIRMATION (owner, 2026-11-16: "manager first then me"). An employee who explains
-// a day names his manager, the manager above, or the Training Manager to confirm it; that person sees
-// it here, at the top of his own Disputes page, and answers once for the whole group of days. The
-// Super Admin decides afterwards — a confirmation is information, never the decision. Renders nothing
-// for anybody nobody named.
+// a day names their manager, the manager above, or the Training Manager to confirm it; that person
+// sees it here, at the top of their own Disputes page, and answers once for the whole group of days.
+// The Super Admin decides afterwards — a confirmation is information, never the decision. Renders
+// nothing for anybody nobody named.
 
-type ExplanationGroup = {
+export type ExplanationGroup = {
   caseKind: ExplainCaseKind;
   createdAt: string;
   dates: string[];
@@ -25,21 +39,20 @@ type ExplanationGroup = {
 };
 
 const CASE_WORDS: Record<ExplainCaseKind, string> = {
-  calendar: "Calendar day",
+  calendar: "Calendar",
   daily: "Daily deduction",
-  deduction: "Deduction",
+  deduction: "Monthly deduction",
 };
 
-function datesLine(dates: string[]): string {
-  if (dates.length <= 3) return dates.join(", ");
-  return `${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`;
-}
-
-function ConfirmCard({ group, onAnswered }: { group: ExplanationGroup; onAnswered: () => void }) {
+/** One group of days, and the one answer it needs. Exported for the screen's own preview. */
+export function ConfirmCard({ group, onAnswered }: { group: ExplanationGroup; onAnswered: () => void }) {
   const [declining, setDeclining] = useState(false);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"confirmed" | "declined" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const reason = explainReason(group.reasonCode).label;
+  const dayCount = new Set(group.dates).size;
+  const noteId = `confirm-note-${group.groupId}`;
 
   async function answer(value: "confirmed" | "declined") {
     setMessage(null);
@@ -47,7 +60,7 @@ function ConfirmCard({ group, onAnswered }: { group: ExplanationGroup; onAnswere
       setMessage("Say in a few words what was not as described.");
       return;
     }
-    setBusy(true);
+    setBusy(value);
     try {
       const response = await fetch(`/api/dispute-center/explanations/${encodeURIComponent(group.groupId)}/answer`, {
         body: JSON.stringify({ answer: value, note }),
@@ -60,55 +73,86 @@ function ConfirmCard({ group, onAnswered }: { group: ExplanationGroup; onAnswere
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to save your answer.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   return (
-    <li className="px-4 py-3">
-      <p className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-sm font-black text-slate-900">{group.employeeName ?? "Employee"}</span>
-        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-400">{CASE_WORDS[group.caseKind]}</span>
-        <span className="text-xs text-slate-400">{cairoDateTime(group.createdAt)}</span>
-      </p>
-      <p className="mt-1 break-words text-sm font-bold text-slate-800">
-        {explainReason(group.reasonCode).label} on {datesLine(group.dates)}
-      </p>
-      {group.detailText ? <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-slate-600">{group.detailText}</p> : null}
-      {declining ? (
-        <textarea
-          className={`${phxTextareaClassName} mt-2`}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="What was not as described"
-          rows={2}
-          value={note}
-        />
-      ) : null}
-      {message ? <p className="mt-1 text-xs font-bold text-red-700">{message}</p> : null}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+    <li className="grid gap-4 px-4 py-4 sm:px-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+      <div className="min-w-0">
+        <p className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
+          <span className="text-orange-600">{reason}</span> · {CASE_WORDS[group.caseKind]} · sent {cairoDateTime(group.createdAt)}
+        </p>
+        <p className="mt-1 break-words text-base font-bold leading-snug text-slate-900">
+          {group.employeeName ?? "An employee"} says they were {explainReasonPhrase(group.reasonCode)} on{" "}
+          <span className="whitespace-nowrap">{explainDatesPhrase(group.dates)}</span>
+          {dayCount > 1 ? <span className="font-semibold text-slate-500"> · {dayCount} days</span> : null}
+        </p>
+        {group.detailText ? (
+          <p className="mt-2 whitespace-pre-wrap break-words border-l-2 border-slate-200 pl-3 text-sm text-slate-600">{group.detailText}</p>
+        ) : null}
+        {declining ? (
+          <div className="mt-3">
+            <label className={phxLabelClassName} htmlFor={noteId}>
+              What was not as described
+            </label>
+            <textarea
+              autoFocus
+              className={phxTextareaClassName}
+              id={noteId}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="For example: there was no meeting that day"
+              rows={2}
+              value={note}
+            />
+          </div>
+        ) : null}
+        {message ? <p className={phxFieldMessageClassName}>{message}</p> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
         {declining ? (
           <>
-            <button className={phxButtonPrimaryClassName} disabled={busy} onClick={() => answer("declined")} type="button">
-              {busy ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : <XCircle aria-hidden className="h-3.5 w-3.5" />}
-              Send: not confirmed
-            </button>
-            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => { setDeclining(false); setMessage(null); }} type="button">
+            <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => { setDeclining(false); setMessage(null); }} type="button">
               Back
+            </button>
+            <button className={phxButtonDangerClassName} disabled={busy !== null} onClick={() => answer("declined")} type="button">
+              {busy === "declined" ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : <X aria-hidden className="h-3.5 w-3.5" />}
+              Send: not confirmed
             </button>
           </>
         ) : (
           <>
-            <button className={phxButtonPrimaryClassName} disabled={busy} onClick={() => answer("confirmed")} type="button">
-              {busy ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 aria-hidden className="h-3.5 w-3.5" />}
-              Confirm
-            </button>
-            <button className={phxButtonGhostClassName} disabled={busy} onClick={() => setDeclining(true)} type="button">
+            <button className={phxButtonGhostClassName} disabled={busy !== null} onClick={() => setDeclining(true)} type="button">
               Not as described
+            </button>
+            <button className={phxButtonApproveClassName} disabled={busy !== null} onClick={() => answer("confirmed")} type="button">
+              {busy === "confirmed" ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : <Check aria-hidden className="h-3.5 w-3.5" />}
+              Confirm
             </button>
           </>
         )}
       </div>
     </li>
+  );
+}
+
+/** The panel itself, given the groups — split from the loader so the look can be previewed. */
+export function ExplanationConfirmPanel({ groups, onAnswered }: { groups: ExplanationGroup[]; onAnswered: () => void }) {
+  return (
+    <section className="mb-4 border border-slate-200 bg-white" id="confirm">
+      <FormBlockHeader
+        action={<span className="text-xs font-black tabular-nums text-slate-500">{groups.length}</span>}
+        label="Waiting for your confirmation"
+      />
+      <p className="border-b border-slate-100 px-4 py-2.5 text-sm text-slate-600 sm:px-5">
+        These people named you to confirm why a day has no record. You confirm what you know; the Super Admin decides.
+      </p>
+      <ol className="divide-y divide-slate-100">
+        {groups.map((group) => (
+          <ConfirmCard group={group} key={group.groupId} onAnswered={onAnswered} />
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -147,20 +191,5 @@ export function ExplanationConfirmQueue() {
     );
   }
   if (!groups || groups.length === 0) return null;
-
-  return (
-    <section className="mb-4 border border-slate-200 bg-white" id="confirm">
-      <h2 className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-xs font-black uppercase tracking-wide text-slate-600">
-        Waiting for your confirmation · {groups.length}
-      </h2>
-      <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-600">
-        These people named you to confirm why a day has no record. Your answer goes to the Super Admin, who decides.
-      </p>
-      <ol className="divide-y divide-slate-100">
-        {groups.map((group) => (
-          <ConfirmCard group={group} key={group.groupId} onAnswered={() => void load()} />
-        ))}
-      </ol>
-    </section>
-  );
+  return <ExplanationConfirmPanel groups={groups} onAnswered={load} />;
 }

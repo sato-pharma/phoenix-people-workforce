@@ -7,13 +7,17 @@ import {
   phxButtonApproveClassName,
   phxButtonDangerClassName,
   phxButtonGhostClassName,
+  phxLabelTextClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import {
   EXPLAIN_CONFIRMATION_LABELS,
   EXPLAIN_REASON_CODES,
+  explainDatesPhrase,
+  explainDayLabel,
   explainReason,
+  explainReasonPhrase,
   type DisputeExplanation,
   type ExplainReasonCode,
 } from "@/lib/dispute-center/explain-reasons";
@@ -73,10 +77,11 @@ function asReviewRequest(dispute: AdminPrivateCalendarDispute): PrivateCalendarR
 // DATE-ONLY (a calendar-item date, a `date` column), which `new Date` parses as UTC midnight. UTC here
 // is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
 // instant — do not "fix" this one to Cairo.
+/** "9 Nov 2026" — the same day-month spelling as every other date on the card, plus the year. */
 function formatDate(iso: string) {
-  const date = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(date);
+  const label = explainDayLabel(iso);
+  // A value that is not a real day comes back as sent; anything else drops its weekday ("Mon ").
+  return label === iso ? iso : `${label.slice(4)} ${iso.slice(0, 4)}`;
 }
 
 /**
@@ -89,12 +94,10 @@ function formatDate(iso: string) {
  */
 function claimSentence(dispute: AdminPrivateCalendarDispute) {
   const who = dispute.employeeName ?? dispute.employeeHrId;
-  const weekday = dispute.context?.weekday;
-  const when = weekday ? `${weekday}, ${formatDate(dispute.disputeDate)}` : formatDate(dispute.disputeDate);
+  const when = explainDayLabel(dispute.disputeDate);
   const explanation = dispute.explanation;
   if (explanation) {
     if (explanation.reasonCode === "other") return `${who} explains ${when} in their own words.`;
-    const reason = explainReason(explanation.reasonCode).label.toLowerCase();
     const confirmer = explanation.confirmerName ?? "the person they named";
     const standing =
       explanation.confirmationStatus === "confirmed"
@@ -104,7 +107,7 @@ function claimSentence(dispute: AdminPrivateCalendarDispute) {
           : explanation.confirmationStatus === "awaiting"
             ? ` Waiting for ${confirmer} to confirm.`
             : "";
-    return `${who} says ${when} was ${reason}.${standing}`;
+    return `${who} says they were ${explainReasonPhrase(explanation.reasonCode)} on ${when}.${standing}`;
   }
   const what = dispute.context?.itemSourceLabel ?? null;
   const scope = what ? `the ${what} record on ${when}` : when;
@@ -120,6 +123,28 @@ const SHELF_TITLES: Record<Shelf, string> = {
   awaiting: "Waiting for the person they named to confirm",
   declined: "Not confirmed by the person they named",
   ready: "Ready for your decision",
+};
+
+/** One line under each shelf's title: what its requests have in common, and what is yours to do. */
+const SHELF_NOTES: Record<Shelf, string> = {
+  awaiting: "Still with the person they named. You can decide now, but their answer is not in yet.",
+  declined: "The person they named said it was not as described. Read their note before you decide.",
+  ready: "Confirmed by the person they named, or nobody needed to confirm it. Yours to decide.",
+};
+
+/** A confirmation state as a flat square and a word — no pill, no fill behind the text. */
+const CONFIRMATION_MARK: Record<string, { ink: string; square: string }> = {
+  awaiting: { ink: "text-slate-600", square: "bg-slate-400" },
+  confirmed: { ink: "text-emerald-700", square: "bg-emerald-600" },
+  declined: { ink: "text-rose-700", square: "bg-rose-600" },
+  not_needed: { ink: "text-slate-600", square: "bg-slate-300" },
+};
+
+/** The same shelves in two words, for the counts in the header strip. */
+const SHELF_SHORT: Record<Shelf, string> = {
+  awaiting: "with the confirmer",
+  declined: "not confirmed",
+  ready: "ready for you",
 };
 
 function shelfOf(dispute: AdminPrivateCalendarDispute): Shelf {
@@ -233,6 +258,8 @@ export function PrivateCalendarDisputesWorkspace({
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   // "Accept all" takes two clicks: the first arms one group, the second sends it.
   const [armedGroup, setArmedGroup] = useState<string | null>(null);
+  const shelfCounts: Record<Shelf, number> = { awaiting: 0, declined: 0, ready: 0 };
+  for (const dispute of disputes) shelfCounts[shelfOf(dispute)] += 1;
   const [bulkBusy, setBulkBusy] = useState(false);
 
   async function acceptGroup(group: ReasonGroup) {
@@ -301,33 +328,23 @@ export function PrivateCalendarDisputesWorkspace({
           know who is asking, about which day, and for what. */}
       <p className="text-base font-bold text-slate-900">{claimSentence(dispute)}</p>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{formatDate(dispute.disputeDate)}</span>
-        <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
-          {dispute.employeeName ?? "Employee"}
-        </span>
-        {dispute.itemSource ? (
-          <span className="whitespace-nowrap bg-indigo-100 px-2 py-0.5 text-phx-xs font-semibold text-indigo-700">
-            One {dispute.context?.itemSourceLabel ?? dispute.itemSource} record
-          </span>
-        ) : (
-          <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
-            whole day
-          </span>
-        )}
+      {/* The day, the scope and the wait as one quiet line — the name is already in the sentence
+          above, so it is not repeated as a chip beside it. */}
+      <p className={cn(phxLabelTextClassName, "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1")}>
+        <span className="tabular-nums text-slate-600">{formatDate(dispute.disputeDate)}</span>
+        <span aria-hidden className="text-slate-300">/</span>
+        <span>{dispute.itemSource ? `One ${dispute.context?.itemSourceLabel ?? dispute.itemSource} record` : "Whole day"}</span>
         {dispute.context ? (
-          <span
-            className={cn(
-              "whitespace-nowrap px-2 py-0.5 text-phx-xs font-semibold",
-              dispute.context.waitingDays >= 3 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600",
-            )}
-          >
-            {dispute.context.waitingDays === 0
-              ? "raised today"
-              : `waiting ${dispute.context.waitingDays} day${dispute.context.waitingDays === 1 ? "" : "s"}`}
-          </span>
+          <>
+            <span aria-hidden className="text-slate-300">/</span>
+            <span className={dispute.context.waitingDays >= 3 ? "text-amber-700" : undefined}>
+              {dispute.context.waitingDays === 0
+                ? "Raised today"
+                : `Waiting ${dispute.context.waitingDays} day${dispute.context.waitingDays === 1 ? "" : "s"}`}
+            </span>
+          </>
         ) : null}
-      </div>
+      </p>
 
       {/* Who the employee is and who can vouch for them — "Manager Confirmation" is unusable as a
           verification route until the manager is NAMED (owner, 2026-10-08). Names, never ids. */}
@@ -344,40 +361,38 @@ export function PrivateCalendarDisputesWorkspace({
         </p>
       ) : null}
 
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <div>
+      {/* Three facts side by side on a desktop, stacked on a phone, ruled like a ledger. */}
+      <div className="mt-4 grid divide-y divide-slate-200 border border-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="min-w-0 px-3 py-2.5">
           <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">The calendar shows</p>
           <p className="mt-1 break-words text-sm font-semibold text-slate-700">{dispute.displayedSummary}</p>
         </div>
         {dispute.explanation ? (
           <>
-            <div>
+            <div className="min-w-0 px-3 py-2.5">
               <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Their reason</p>
               <p className="mt-1 text-sm font-black text-slate-900">{explainReason(dispute.explanation.reasonCode).label}</p>
               {dispute.explanation.detailText ? (
                 <p className="mt-0.5 whitespace-pre-wrap break-words text-sm font-semibold text-slate-700">{dispute.explanation.detailText}</p>
               ) : null}
               {dispute.explanation.dates.length > 1 ? (
-                <p className="mt-0.5 text-xs font-semibold text-slate-500">
-                  Sent together for {dispute.explanation.dates.length} days: {dispute.explanation.dates.map(formatDate).join(", ")}
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Sent together for {dispute.explanation.dates.length} days: {explainDatesPhrase(dispute.explanation.dates)}
                 </p>
               ) : null}
             </div>
-            <div>
+            <div className="min-w-0 px-3 py-2.5">
               <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Confirmation</p>
               {dispute.explanation.confirmerHrId ? (
                 <>
                   <p className="mt-1 text-sm font-semibold text-slate-900">{dispute.explanation.confirmerName ?? "The person they named"}</p>
                   <p
                     className={cn(
-                      "mt-0.5 inline-block border px-2 py-0.5 text-phx-xs font-black uppercase tracking-[0.08em]",
-                      dispute.explanation.confirmationStatus === "confirmed"
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                        : dispute.explanation.confirmationStatus === "declined"
-                          ? "border-red-300 bg-red-50 text-red-800"
-                          : "border-slate-300 bg-slate-50 text-slate-700",
+                      "mt-1 flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em]",
+                      CONFIRMATION_MARK[dispute.explanation.confirmationStatus]?.ink,
                     )}
                   >
+                    <span aria-hidden className={cn("h-2 w-2 shrink-0", CONFIRMATION_MARK[dispute.explanation.confirmationStatus]?.square)} />
                     {EXPLAIN_CONFIRMATION_LABELS[dispute.explanation.confirmationStatus]}
                   </p>
                   {dispute.explanation.confirmationNote ? (
@@ -391,11 +406,11 @@ export function PrivateCalendarDisputesWorkspace({
           </>
         ) : (
           <>
-            <div>
+            <div className="min-w-0 px-3 py-2.5">
               <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">They say it was</p>
               <p className="mt-1 break-words text-sm font-semibold text-slate-900">{dispute.claimText}</p>
             </div>
-            <div>
+            <div className="min-w-0 px-3 py-2.5">
               <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Check it with</p>
               <p className="mt-1 break-words text-sm font-semibold text-slate-900">
                 {dispute.claimSourceText}
@@ -465,10 +480,24 @@ export function PrivateCalendarDisputesWorkspace({
 
   return (
     <section className="border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-900 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-100 bg-slate-900 px-5 py-3">
         <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
           {disputes.length} review request{disputes.length === 1 ? "" : "s"} pending
         </h2>
+        {/* How the pile splits, before any scrolling: what is yours now, and what is still out. */}
+        {disputes.length > 0 ? (
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">
+            {SHELVES.map((shelf) => {
+              const count = shelfCounts[shelf];
+              if (count === 0) return null;
+              return (
+                <span className={shelf === "ready" ? "text-orange-300" : undefined} key={shelf}>
+                  <span className="tabular-nums">{count}</span> {SHELF_SHORT[shelf]}
+                </span>
+              );
+            })}
+          </p>
+        ) : null}
       </div>
 
       {error ? (
@@ -496,12 +525,18 @@ export function PrivateCalendarDisputesWorkspace({
             if (onShelf.length === 0) return null;
             return (
               <div key={shelf}>
-                <h3 className="border-b border-slate-200 bg-slate-100 px-5 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-700">
-                  {SHELF_TITLES[shelf]} · {onShelf.length}
-                </h3>
+                <div className="border-b border-slate-200 bg-slate-100 px-5 py-2.5">
+                  <h3 className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-700">
+                    <span aria-hidden className={cn("h-2 w-2 shrink-0", shelf === "ready" ? "bg-orange-600" : shelf === "declined" ? "bg-rose-600" : "bg-slate-400")} />
+                    {SHELF_TITLES[shelf]}
+                    <span className="tabular-nums text-slate-500">· {onShelf.length}</span>
+                  </h3>
+                  <p className="mt-0.5 pl-4 text-xs font-semibold text-slate-500">{SHELF_NOTES[shelf]}</p>
+                </div>
                 {groupByReason(onShelf).map((group) => {
                   const groupKey = `${shelf}:${group.key}`;
                   const people = new Set(group.disputes.map((dispute) => dispute.employeeHrId)).size;
+                  const span = explainDatesPhrase(group.disputes.map((dispute) => dispute.disputeDate));
                   const offerAll = shelf === "ready" && group.bulkAcceptable && group.disputes.length > 1;
                   return (
                     <div className="border-b border-slate-200" key={groupKey}>
@@ -510,6 +545,7 @@ export function PrivateCalendarDisputesWorkspace({
                           {group.title}
                           <span className="ml-2 text-xs font-semibold text-slate-500">
                             {group.disputes.length} request{group.disputes.length === 1 ? "" : "s"} · {people} {people === 1 ? "person" : "people"}
+                            {span ? ` · ${span}` : ""}
                           </span>
                         </p>
                         {offerAll ? (

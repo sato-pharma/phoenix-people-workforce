@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { MessageSquare, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Loader2, MessageSquare, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
 
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,8 @@ import type {
 import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
-import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { phxButtonAccentClassName, phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { FormActions } from "@/components/ui/form-kit";
 
 const DEDUCTION_LINES_PAGE_SIZE = 25;
 
@@ -464,28 +465,33 @@ export function DeductionsPortalWorkspace({
                   ) : null}
                   {canComment && opening ? (
                     <>
-                      <ExplainReasonFields
-                        name={`explain-deduction-${row.candidateId}`}
-                        onChange={(next) => setExplainDrafts((current) => ({ ...current, [row.candidateId]: next }))}
-                        value={explainDrafts[row.candidateId] ?? EMPTY_EXPLAIN_DRAFT}
-                      />
-                      <div className="mt-2 flex justify-end">
-                        <Button
-                          className="h-10 gap-2"
-                          disabled={savingCandidateId === row.candidateId || !explainDrafts[row.candidateId]?.reasonCode}
-                          onClick={() => {
-                            void submitComment(row.candidateId, true);
-                          }}
-                          type="button"
-                        >
-                          {savingCandidateId === row.candidateId ? (
-                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
-                          ) : (
-                            <Send className="h-4 w-4" />
-                          )}
-                          Send explanation
-                        </Button>
+                      <div className="mt-4">
+                        <ExplainReasonFields
+                          name={`explain-deduction-${row.candidateId}`}
+                          onChange={(next) => setExplainDrafts((current) => ({ ...current, [row.candidateId]: next }))}
+                          value={explainDrafts[row.candidateId] ?? EMPTY_EXPLAIN_DRAFT}
+                        />
                       </div>
+                      <FormActions
+                        className="mt-5 pt-4"
+                        right={
+                          <button
+                            className={phxButtonAccentClassName}
+                            disabled={savingCandidateId === row.candidateId || !explainDrafts[row.candidateId]?.reasonCode}
+                            onClick={() => {
+                              void submitComment(row.candidateId, true);
+                            }}
+                            type="button"
+                          >
+                            {savingCandidateId === row.candidateId ? (
+                              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send aria-hidden className="h-4 w-4" />
+                            )}
+                            Send explanation
+                          </button>
+                        }
+                      />
                     </>
                   ) : null}
                   {canComment && !opening ? (

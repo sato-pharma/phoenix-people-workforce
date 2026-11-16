@@ -27,6 +27,8 @@
 //
 // Pure and client-safe: the employee's form, the server and the tests all read this one list.
 
+import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
+
 export type ExplainReasonCode = "training" | "meeting" | "double_visit" | "other";
 
 export const EXPLAIN_REASON_CODES: readonly ExplainReasonCode[] = ["training", "meeting", "double_visit", "other"];
@@ -298,4 +300,75 @@ export function explanationFacts(
 /** The first confirmation state a new explanation is born with. */
 export function initialConfirmationStatus(code: ExplainReasonCode): ExplainConfirmationStatus {
   return reasonNeedsConfirmer(code) ? "awaiting" : "not_needed";
+}
+
+// ─── How a day reads to a person ───────────────────────────────────────────────
+// Names, never codes: a person reads "Tue 12 Nov", never "2026-11-12" (AGENTS.md §4). DATE-ONLY
+// values, so the day is read straight off the ISO string and never moved by a zone.
+//
+// 🔴 NO Intl HERE. These labels render inside client components, and en-GB's short September is
+// "Sep" on an older browser's ICU and "Sept" on the server's: React error #418, in September only
+// (docs/agents-session-traps-clusters.md, "the MONTH NAME is the bug"). The month comes from the
+// app's one shipped table, CAIRO_MONTHS, and the weekday from a fixed list.
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const DAY_MS = 86_400_000;
+
+function isoToUtc(value: string): number {
+  return Date.parse(`${value}T00:00:00Z`);
+}
+
+/** "12 Nov" — the day and the month, from the shipped month table. */
+function dayMonth(value: string): string {
+  return `${Number(value.slice(8, 10))} ${CAIRO_MONTHS[Number(value.slice(5, 7)) - 1]}`;
+}
+
+/** One day as a person reads it: "Tue 12 Nov". */
+export function explainDayLabel(value: string): string {
+  return isRealIsoDate(value) ? `${WEEKDAYS[new Date(isoToUtc(value)).getUTCDay()]} ${dayMonth(value)}` : value;
+}
+
+/**
+ * Several days, short and exact: runs of consecutive days fold into a span, so a training week reads
+ * "7–12 Nov" and a broken week reads "7–9 Nov and 12 Nov". One day keeps its weekday ("Tue 12 Nov").
+ * Never "to … (6 days)" across a gap, which claimed days that were never explained.
+ */
+export function explainDatesPhrase(dates: readonly string[]): string {
+  const days = [...new Set(dates.filter(isRealIsoDate))].sort();
+  if (days.length === 0) return "";
+  if (days.length === 1) return explainDayLabel(days[0]);
+  const runs: Array<[string, string]> = [];
+  for (const day of days) {
+    const last = runs[runs.length - 1];
+    if (last && isoToUtc(day) - isoToUtc(last[1]) === DAY_MS) last[1] = day;
+    else runs.push([day, day]);
+  }
+  const parts = runs.map(([start, end]) => {
+    if (start === end) return dayMonth(start);
+    if (start.slice(0, 7) === end.slice(0, 7)) return `${Number(start.slice(8, 10))}–${dayMonth(end)}`;
+    return `${dayMonth(start)} – ${dayMonth(end)}`;
+  });
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * How far "Something else" has to go, counted exactly as {@link validateExplanationReason} counts it,
+ * so the counter under the box and the server can never disagree about "enough".
+ */
+export function explainDetailProgress(text: string): { chars: number; enough: boolean; words: number } {
+  const tidy = text.replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  const words = wordCount(tidy);
+  return { chars: tidy.length, enough: tidy.length >= EXPLAIN_OTHER_MIN_CHARS && words >= EXPLAIN_OTHER_MIN_WORDS, words };
+}
+
+const REASON_PHRASES: Record<ExplainReasonCode, string> = {
+  double_visit: "on a double visit",
+  meeting: "in a meeting",
+  other: "away for another reason",
+  training: "in training",
+};
+
+/** The reason as it reads in a sentence: "they were in a meeting on Thu 12 Nov". */
+export function explainReasonPhrase(code: ExplainReasonCode): string {
+  return REASON_PHRASES[code];
 }

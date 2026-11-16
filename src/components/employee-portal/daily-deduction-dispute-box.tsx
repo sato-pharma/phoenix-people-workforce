@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { MessageSquare, Send } from "lucide-react";
+import { Loader2, MessageSquare, Send } from "lucide-react";
 
 import {
   EMPTY_EXPLAIN_DRAFT,
@@ -10,7 +10,8 @@ import {
   explainDraftProblem,
   type ExplainReasonDraft,
 } from "@/components/disputes/explain-reason-fields";
-import { Button } from "@/components/ui/button";
+import { FormActions } from "@/components/ui/form-kit";
+import { phxButtonAccentClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 /** What the page knows about a dispute already raised on this line. */
@@ -98,17 +99,18 @@ export function DailyDeductionDisputeBox({ dispute, lineId }: { dispute: DailyLi
             Choose why those days have no record and who can confirm it. If HR accepts it, the deduction is cancelled
             and those days are never charged; if not, the deduction is taken at month end.
           </p>
-          <ExplainReasonFields name={`explain-daily-${lineId}`} onChange={setDraft} value={draft} />
-          <div className="mt-2 flex justify-end">
-            <Button className="h-10 gap-2" disabled={saving || !draft.reasonCode} onClick={() => void send()} type="button">
-              {saving ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              Send explanation
-            </Button>
+          <div className="mt-4">
+            <ExplainReasonFields name={`explain-daily-${lineId}`} onChange={setDraft} value={draft} />
           </div>
+          <FormActions
+            className="mt-5 pt-4"
+            right={
+              <button className={phxButtonAccentClassName} disabled={saving || !draft.reasonCode} onClick={() => void send()} type="button">
+                {saving ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Send aria-hidden className="h-4 w-4" />}
+                Send explanation
+              </button>
+            }
+          />
         </>
       )}
       {error ? <p className="mt-2 text-xs font-semibold text-rose-600">{error}</p> : null}

@@ -6,6 +6,10 @@ import {
   EXPLAIN_REASON_CODES,
   EXPLAIN_REASONS,
   caseDates,
+  explainDatesPhrase,
+  explainDayLabel,
+  explainDetailProgress,
+  explainReasonPhrase,
   explanationFacts,
   explanationSummary,
   initialConfirmationStatus,
@@ -27,7 +31,10 @@ import {
  *      confirmer, a calendar explanation covers 14 days at most and never a future day. A deduction's
  *      days are its own, so only the reason part is checked there.
  *   3. What the reviewer reads — the confirmer's answer as the case's first facts, in the right tone.
- *   4. The wiring the pure half cannot prove: every dispute box opens with the list, the three modules
+ *   4. How a day reads — "Thu 12 Nov", a training week folded to "7–12 Nov", a gap never bridged
+ *      ("7–9 Nov and 12 Nov" claims no day that was not explained), and the word counter under
+ *      "Something else" agreeing with the server about "enough" on every input.
+ *   5. The wiring the pure half cannot prove: every dispute box opens with the list, the three modules
  *      refuse a day explained in another, the confirmer is told in-app and by push and never by email,
  *      and the Super Admin's inbox never calls the employee's day "wrong" and never bulk-accepts an
  *      unconfirmed or free-text request.
@@ -200,4 +207,77 @@ export function runDisputeExplanationsTests() {
   assert.match(inbox, /if \(dispute\.explanation\?\.confirmationStatus !== "confirmed"\) group\.bulkAcceptable = false;/,
     "and only where every request in the group was confirmed by the person named");
   assert.match(inbox, /armedGroup === groupKey \?/, "Accept all takes two clicks");
+
+  // 4. How a day reads to a person. Names, never ISO strings; a span only where the days really run on.
+  assert.equal(explainDayLabel("2026-11-12"), "Thu 12 Nov", "one day keeps its weekday");
+  assert.equal(explainDayLabel("2026-02-30"), "2026-02-30", "a date that does not exist is shown as sent, never moved");
+  assert.equal(explainDatesPhrase([]), "", "no days, no phrase");
+  assert.equal(explainDatesPhrase(["2026-11-12"]), "Thu 12 Nov");
+  assert.equal(
+    explainDatesPhrase(["2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]),
+    "7–12 Nov",
+    "a training week folds into one span",
+  );
+  assert.equal(
+    explainDatesPhrase(["2026-11-07", "2026-11-08", "2026-11-09", "2026-11-12"]),
+    "7–9 Nov and 12 Nov",
+    "a gap is never bridged: 10 and 11 Nov were not explained, so the phrase must not claim them",
+  );
+  assert.equal(
+    explainDatesPhrase(["2026-10-30", "2026-10-31", "2026-11-01", "2026-11-05", "2026-11-09"]),
+    "30 Oct – 1 Nov, 5 Nov and 9 Nov",
+    "a run across the month end names both months",
+  );
+  assert.equal(explainDatesPhrase(["2026-12-31", "2027-01-01"]), "31 Dec – 1 Jan", "and across the year end");
+  assert.equal(
+    explainDatesPhrase(["2026-11-09", "2026-11-07", "2026-11-08", "2026-11-08", "not a day"]),
+    "7–9 Nov",
+    "days arrive unsorted, repeated or broken and still read once, in order",
+  );
+
+  // September is the month the reader's ICU and the server's disagree on ("Sep" against "Sept"), so the
+  // labels carry the app's own month table and never call Intl — a client component renders them.
+  assert.equal(explainDayLabel("2026-09-15"), "Tue 15 Sept", "September is spelt the way the shipped month table spells it");
+  assert.equal(explainDatesPhrase(["2026-09-29", "2026-09-30", "2026-10-01"]), "29 Sept – 1 Oct");
+  assert.doesNotMatch(
+    read("src/lib/dispute-center/explain-reasons.ts"),
+    /Intl\.DateTimeFormat|toLocale(Date)?String/,
+    "the day labels never ask the reader's ICU for a month name (React error #418, in September only)",
+  );
+
+  for (const code of EXPLAIN_REASON_CODES) {
+    assert.ok(explainReasonPhrase(code).length > 0, `${code} reads in a sentence`);
+    assert.doesNotMatch(explainReasonPhrase(code), /wrong/, `${code} never calls the day wrong`);
+  }
+  assert.equal(explainReasonPhrase("meeting"), "in a meeting");
+  assert.equal(explainReasonPhrase("training"), "in training");
+
+  const counted = explainDetailProgress("I was at the Tanta distributor all day");
+  assert.deepEqual(counted, { chars: 38, enough: true, words: 8 }, "the counter counts what the employee typed");
+  for (const text of [
+    "",
+    "short",
+    "four words but tiny",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "abcd efgh ijkl mnop qrst",
+    "abcd efgh ijkl mnop qrstu",
+    "  abcd			efgh     ijkl      mnop    ",
+    "  I   was\tat the\r\n\r\n\r\n\r\nTanta distributor  ",
+    "— — — — — — — — — — — — —",
+    "كنت في اجتماع مع المدير طوال اليوم",
+  ]) {
+    const serverSaysEnough = refusal(() => validateExplanationReason({ detailText: text, reasonCode: "other" })) === "";
+    assert.equal(
+      explainDetailProgress(text).enough,
+      serverSaysEnough,
+      `the counter and the server agree about ${JSON.stringify(text)}`,
+    );
+  }
+  assert.equal(explainDetailProgress("abcd efgh ijkl mnop qrst").enough, false, "24 characters is one short");
+  assert.deepEqual(
+    explainDetailProgress("  abcd			efgh     ijkl      mnop    "),
+    { chars: 19, enough: false, words: 4 },
+    "spaces typed to pad the box are not counted, exactly as the server does not count them",
+  );
+  assert.equal(explainDetailProgress("abcd efgh ijkl mnop qrstu").enough, true, "25 characters and 4 words is enough");
 }

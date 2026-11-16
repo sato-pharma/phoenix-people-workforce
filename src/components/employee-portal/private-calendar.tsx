@@ -47,23 +47,22 @@ import {
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
 import { DayPlanActualTable } from "@/components/employee-portal/private-calendar-plan-actual";
 import { buildDayPlanActual } from "@/lib/private-calendar/plan-actual";
+import { explainDatesPhrase, validateExplanation } from "@/lib/dispute-center/explain-reasons";
 import {
-  EXPLAIN_LEAVE_REDIRECT_HREF,
-  EXPLAIN_OTHER_MIN_WORDS,
-  EXPLAIN_REASONS,
-  validateExplanation,
-  type ExplainConfirmerKind,
-  type ExplainReasonCode,
-} from "@/lib/dispute-center/explain-reasons";
+  EMPTY_EXPLAIN_DRAFT,
+  ExplainReasonFields,
+  useExplainConfirmers,
+  type ExplainReasonDraft,
+} from "@/components/disputes/explain-reason-fields";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import {
   phxButtonAccentClassName,
   phxButtonGhostClassName,
-  phxFieldClassName,
-  phxTextareaClassName,
+  phxFormErrorClassName,
 } from "@/components/ui/form-tokens";
+import { FormActions, FormBlock } from "@/components/ui/form-kit";
 import {
   adminChipDepthClassName,
   adminControlDepthClassName,
@@ -75,8 +74,6 @@ import {
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** One person the employee may name to confirm an explanation (GET /api/dispute-center/explanations/confirmers). */
-type ExplanationConfirmerOption = { hrId: string; kind: ExplainConfirmerKind; name: string; title: string | null };
 const allValue = "__all__";
 
 
@@ -775,29 +772,18 @@ export function PrivateCalendar({
   const otherExplainableDays = useMemo(() => explainableDays.filter((date) => date !== selectedDate), [explainableDays, selectedDate]);
 
   const [disputeFormOpen, setDisputeFormOpen] = useState(false);
-  const [explainReasonCode, setExplainReasonCode] = useState<ExplainReasonCode | "">("");
-  const [explainDetail, setExplainDetail] = useState("");
-  const [explainConfirmerHrId, setExplainConfirmerHrId] = useState("");
+  const [explainDraft, setExplainDraft] = useState<ExplainReasonDraft>(EMPTY_EXPLAIN_DRAFT);
   const [explainExtraDates, setExplainExtraDates] = useState<string[]>([]);
-  const [explainConfirmers, setExplainConfirmers] = useState<ExplanationConfirmerOption[] | null>(null);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
-  const [disputeMessage, setDisputeMessage] = useState<string | null>(null);
-  const explainReasonEntry = explainReasonCode ? EXPLAIN_REASONS.find((reason) => reason.code === explainReasonCode) ?? null : null;
-  const explainConfirmerOptions = useMemo(
-    () => (explainConfirmers ?? []).filter((option) => explainReasonEntry?.confirmerKinds.includes(option.kind) ?? false),
-    [explainConfirmers, explainReasonEntry],
-  );
+  // What the last send said: a refusal to fix, or the receipt naming who confirms it next.
+  const [disputeNotice, setDisputeNotice] = useState<{ dates?: string[]; text: string; tone: "error" | "sent" } | null>(null);
+  // Asked for only once the form opens; the picker shares the same single request.
+  const explainConfirmers = useExplainConfirmers(disputeFormOpen);
 
   function openExplainForm() {
     setDisputeFormOpen((open) => !open);
-    setDisputeMessage(null);
+    setDisputeNotice(null);
     setExplainExtraDates([]);
-    if (explainConfirmers === null) {
-      fetch("/api/dispute-center/explanations/confirmers")
-        .then((response) => response.json())
-        .then((payload) => setExplainConfirmers(Array.isArray(payload?.data) ? payload.data : []))
-        .catch(() => setExplainConfirmers([]));
-    }
   }
 
   function toggleExplainExtraDate(date: string) {
@@ -815,18 +801,18 @@ export function PrivateCalendar({
   }
 
   async function submitDayDispute() {
-    setDisputeMessage(null);
+    setDisputeNotice(null);
     const dates = Array.from(new Set([selectedDate, ...explainExtraDates])).sort();
     const draft = {
-      confirmerHrId: explainConfirmerHrId || null,
+      confirmerHrId: explainDraft.confirmerHrId || null,
       dates,
-      detailText: explainDetail,
-      reasonCode: explainReasonCode,
+      detailText: explainDraft.detailText,
+      reasonCode: explainDraft.reasonCode,
     };
     try {
       validateExplanation(draft, today);
     } catch (error) {
-      setDisputeMessage(error instanceof Error ? error.message : "Check the explanation and try again.");
+      setDisputeNotice({ text: error instanceof Error ? error.message : "Check the explanation and try again.", tone: "error" });
       return;
     }
     setDisputeSubmitting(true);
@@ -842,22 +828,25 @@ export function PrivateCalendar({
       });
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to send this explanation.");
-      const confirmerName = explainConfirmerOptions.find((option) => option.hrId === explainConfirmerHrId)?.name;
-      setExplainReasonCode("");
-      setExplainDetail("");
-      setExplainConfirmerHrId("");
+      const confirmerName = draft.confirmerHrId
+        ? explainConfirmers?.find((option) => option.hrId === draft.confirmerHrId)?.name
+        : undefined;
+      setExplainDraft(EMPTY_EXPLAIN_DRAFT);
       setExplainExtraDates([]);
-      setDisputeMessage(
-        confirmerName
-          ? `Sent to ${confirmerName} to confirm. The Super Admin decides after that.`
-          : "Sent. The Super Admin will review it.",
-      );
+      setDisputeFormOpen(false);
+      setDisputeNotice({
+        dates,
+        text: confirmerName
+          ? `Sent for ${explainDatesPhrase(dates)}. ${confirmerName} confirms it first, then the Super Admin decides.`
+          : `Sent for ${explainDatesPhrase(dates)}. The Super Admin will read it and decide.`,
+        tone: "sent",
+      });
       // Re-read the month so the day shows its "Review Requested — Pending" status now, not
       // only after the next navigation. A failed refresh must not turn a sent request into an
       // error message, so it is swallowed here; Sync Now retries it.
       await loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, viewMode).catch(() => undefined);
     } catch (error) {
-      setDisputeMessage(error instanceof Error ? error.message : "Unable to send this explanation.");
+      setDisputeNotice({ text: error instanceof Error ? error.message : "Unable to send this explanation.", tone: "error" });
     } finally {
       setDisputeSubmitting(false);
     }
@@ -1620,115 +1609,55 @@ export function PrivateCalendar({
             </div>
           </div>
 
-          {disputeFormOpen ? (
-            <div className="border-b border-sky-200 bg-sky-50/60 px-4 py-4 sm:px-6">
-              <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Explain this day — {dayLabel(selectedDate)}</p>
-              <p className="mt-1 text-xs font-semibold text-sky-800">
-                Choose why this day has no record and who can confirm it. The person you name confirms first, then the Super Admin decides.
-              </p>
-              <fieldset className="mt-3 grid gap-2 sm:grid-cols-2">
-                <legend className="sr-only">Reason</legend>
-                {EXPLAIN_REASONS.map((reason) => (
-                  <label
-                    className={[
-                      "flex cursor-pointer items-start gap-2 border bg-white p-3",
-                      explainReasonCode === reason.code ? "border-sky-600" : "border-sky-200",
-                    ].join(" ")}
-                    key={reason.code}
-                  >
-                    <input
-                      checked={explainReasonCode === reason.code}
-                      className="mt-0.5"
-                      name="explain-reason"
-                      onChange={() => { setExplainReasonCode(reason.code); setExplainConfirmerHrId(""); setDisputeMessage(null); }}
-                      type="radio"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-black text-slate-900">{reason.label}</span>
-                      <span className="block text-xs font-semibold leading-relaxed text-slate-600">{reason.hint}</span>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-              <p className="mt-2 text-xs font-semibold text-sky-900">
-                Was this day leave?{" "}
-                <a className="font-black text-sky-800 underline" href={EXPLAIN_LEAVE_REDIRECT_HREF}>Request the leave instead</a>
-                {" "}— leave is approved there, never explained here.
-              </p>
-              {explainReasonEntry && explainReasonEntry.confirmerKinds.length > 0 ? (
-                <label className="mt-3 block">
-                  <span className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Who can confirm it</span>
-                  <select
-                    className={`${phxFieldClassName} mt-1`}
-                    onChange={(event) => setExplainConfirmerHrId(event.target.value)}
-                    value={explainConfirmerHrId}
-                  >
-                    <option value="">{explainConfirmers === null ? "Loading" : "Choose a person"}</option>
-                    {explainConfirmerOptions.map((option) => (
-                      <option key={option.hrId} value={option.hrId}>
-                        {option.title ? `${option.name} — ${option.title}` : option.name}
-                      </option>
-                    ))}
-                  </select>
-                  {explainConfirmers !== null && explainConfirmerOptions.length === 0 ? (
-                    <span className="mt-1 block text-xs font-bold text-sky-900">
-                      No manager is on file for you. Choose Something else and explain it, or ask HR to set your manager.
-                    </span>
-                  ) : null}
-                </label>
-              ) : null}
-              {explainReasonEntry ? (
-                <textarea
-                  className={`${phxTextareaClassName} mt-3`}
-                  onChange={(event) => setExplainDetail(event.target.value)}
-                  placeholder={
-                    explainReasonCode === "other"
-                      ? `What happened: where you were and what you did (at least ${EXPLAIN_OTHER_MIN_WORDS} words)`
-                      : "Anything to add (optional): the training's name, the meeting's place"
-                  }
-                  rows={3}
-                  value={explainDetail}
+          {/* Open only on a day that still has something to explain: moving to another day, or
+              sending this one, puts it away rather than leaving a form for a day it no longer fits. */}
+          {disputeFormOpen && selectedDayExplainable ? (
+            <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-5 sm:px-6">
+              <FormBlock label={`Explain ${dayLabel(selectedDate)}`}>
+                <p className="mb-5 text-sm leading-relaxed text-slate-600">
+                  Say why this day has no record and who can confirm it. The person you name confirms first, then the
+                  Super Admin decides. Nothing on your calendar changes until then.
+                </p>
+                <ExplainReasonFields
+                  extraDays={{ onToggle: toggleExplainExtraDate, options: otherExplainableDays, selected: explainExtraDates }}
+                  name="explain-calendar-day"
+                  onChange={(next) => {
+                    setExplainDraft(next);
+                    setDisputeNotice(null);
+                  }}
+                  subject="this day has no record"
+                  value={explainDraft}
                 />
-              ) : null}
-              {explainReasonEntry && otherExplainableDays.length > 0 ? (
-                <div className="mt-3">
-                  <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">The same reason on other days</p>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {otherExplainableDays.map((date) => (
-                      <label
-                        className="inline-flex cursor-pointer items-center gap-1.5 border border-sky-200 bg-white px-2 py-1 text-xs font-bold text-slate-700"
-                        key={date}
-                      >
-                        <input
-                          checked={explainExtraDates.includes(date)}
-                          onChange={() => toggleExplainExtraDate(date)}
-                          type="checkbox"
-                        />
-                        {dayLabel(date)}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {disputeMessage ? <p className="mt-2 text-xs font-bold text-sky-900">{disputeMessage}</p> : null}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  className={phxButtonAccentClassName}
-                  disabled={disputeSubmitting || !explainReasonEntry}
-                  onClick={submitDayDispute}
-                  type="button"
-                >
-                  {disputeSubmitting
-                    ? "Sending"
-                    : explainExtraDates.length > 0
-                      ? `Send for ${explainExtraDates.length + 1} days`
-                      : "Send"}
-                </button>
-                <button className={phxButtonGhostClassName} onClick={() => setDisputeFormOpen(false)} type="button">
-                  Cancel
-                </button>
-              </div>
+                {disputeNotice?.tone === "error" ? <p className={`mt-4 ${phxFormErrorClassName}`}>{disputeNotice.text}</p> : null}
+                <FormActions
+                  left={
+                    <button className={phxButtonGhostClassName} onClick={() => setDisputeFormOpen(false)} type="button">
+                      Cancel
+                    </button>
+                  }
+                  right={
+                    <button
+                      className={phxButtonAccentClassName}
+                      disabled={disputeSubmitting || !explainDraft.reasonCode}
+                      onClick={submitDayDispute}
+                      type="button"
+                    >
+                      {disputeSubmitting
+                        ? "Sending"
+                        : explainExtraDates.length > 0
+                          ? `Send for ${explainExtraDates.length + 1} days`
+                          : "Send"}
+                    </button>
+                  }
+                />
+              </FormBlock>
             </div>
+          ) : null}
+          {disputeNotice?.tone === "sent" && disputeNotice.dates?.includes(selectedDate) ? (
+            <p className="flex items-start gap-2 border-b border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 sm:px-6" role="status">
+              <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 bg-orange-500" />
+              {disputeNotice.text}
+            </p>
           ) : null}
 
           {/* The conversation on this day's review request. Shown to the person whose calendar this

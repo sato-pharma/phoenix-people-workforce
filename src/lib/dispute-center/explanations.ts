@@ -27,7 +27,9 @@ import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
+  explainDatesPhrase,
   explainReason,
+  explainReasonPhrase,
   explanationFacts,
   explanationSummary,
   initialConfirmationStatus,
@@ -391,10 +393,9 @@ export async function explanationFactsFor(caseKind: ExplainCaseKind, ref: string
 /** Where a confirmer opens what is waiting for him. */
 export const EXPLANATION_CONFIRM_HREF = "/employee-portals/disputes#confirm";
 
-function datesPhrase(dates: readonly string[]): string {
-  if (dates.length === 0) return "";
-  if (dates.length === 1) return dates[0];
-  return `${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`;
+/** The days as a person reads them ("Thu 12 Nov", "7–9 Nov and 12 Nov"), or the case when it has none. */
+function daysPhrase(dates: readonly string[]): string {
+  return dates.length > 0 ? explainDatesPhrase(dates) : "a deducted day";
 }
 
 /**
@@ -412,14 +413,13 @@ export async function notifyExplanationConfirmer(input: {
 }): Promise<void> {
   await afterResponse("dispute_explanation_notice:confirm_requested", async () => {
     const who = input.employeeName?.trim() || "An employee";
-    const reason = explainReason(input.reasonCode).label.toLowerCase();
     await createSystemNotificationForRecipients(
       {
         actionUrl: EXPLANATION_CONFIRM_HREF,
         actorId: input.employeeHrId,
         channels: ["in_app", "push"],
         eventType: "dispute_explanation_confirm_requested",
-        message: `${who} says ${input.dates.length > 0 ? datesPhrase(input.dates) : "a deducted day"} was ${reason} and named you to confirm it. Open your Disputes page to confirm or decline.`,
+        message: `${who} says they were ${explainReasonPhrase(input.reasonCode)} on ${daysPhrase(input.dates)}, and named you to confirm it. Open your Disputes page to confirm or decline.`,
         metadata: {
           authorizedRecipient: true,
           caseKind: input.caseKind,
@@ -552,14 +552,13 @@ export async function answerExplanationGroup(
     const admins = await resolveSuperAdminRecipients();
     const confirmerName = first.confirmerName ?? "The confirmer";
     const who = first.employeeName ?? "an employee";
-    const reason = explainReason(first.reasonCode).label.toLowerCase();
     await createSystemNotificationForRecipients(
       {
         actionUrl: reviewerHrefFor(first.caseKind),
         actorId: hrId,
         channels: ["in_app", "push"],
         eventType: "dispute_explanation_answered",
-        message: `${confirmerName} ${input.answer === "confirmed" ? "confirmed" : "did not confirm"} ${who}'s ${reason} on ${datesPhrase(dates)}.${note ? ` Note: ${note}` : ""} It is ready for your decision.`,
+        message: `${confirmerName} ${input.answer === "confirmed" ? "confirmed" : "did not confirm"} that ${who} was ${explainReasonPhrase(first.reasonCode)} on ${daysPhrase(dates)}.${note ? ` Note: ${note}` : ""} It is ready for your decision.`,
         metadata: {
           authorizedRecipient: true,
           caseKind: first.caseKind,
