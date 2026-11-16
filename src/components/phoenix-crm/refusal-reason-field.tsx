@@ -12,7 +12,10 @@
  * record's, and the rep never reads it — which is why its label says so in words.
  */
 
-import { CrmSelect } from "@/components/phoenix-crm/ui";
+import { useState } from "react";
+import { Plus } from "lucide-react";
+
+import { CrmSelect, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import {
   reasonsFor,
   VALIDATION_NOTE_HINT,
@@ -68,4 +71,65 @@ export function RefusalReasonField({
 /** Under the note box on both screens, so the split between what he reads and what is kept is stated. */
 export function RefusalNoteHint() {
   return <p className="break-words text-xs text-slate-500">{VALIDATION_NOTE_HINT}</p>;
+}
+
+/**
+ * The optional comment sent with a decision, folded until it is asked for.
+ *
+ * 🔴 FOLDED, NEVER DROPPED (owner, 17 Nov 2026: "make it easier to use, simple to decide"). An empty box
+ * under every row was the tallest thing in Place checks' decision column — twenty of them on a page — and
+ * most decisions go without one. The link opens the same box, label and hint as before, it stays open
+ * while it holds text, and whatever is typed is still posted with the press. The label is passed in, so
+ * each screen keeps naming `VALIDATION_NOTE_LABEL` where it draws the box.
+ */
+export function DecisionComment({
+  disabled,
+  id,
+  label,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  id: string;
+  label: string;
+  onChange: (next: string) => void;
+  value: string;
+}) {
+  const [open, setOpen] = useState(value !== "");
+  const [focus, setFocus] = useState(false);
+  if (!open && value === "") {
+    return (
+      <button
+        aria-expanded={false}
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-none text-xs font-black text-orange-700 underline-offset-2 hover:underline disabled:text-slate-400"
+        disabled={disabled}
+        onClick={() => {
+          setOpen(true);
+          setFocus(true);
+        }}
+        type="button"
+      >
+        <Plus aria-hidden className="h-3.5 w-3.5" />
+        Add a comment for the rep (optional)
+      </button>
+    );
+  }
+  return (
+    <div className="min-w-0 space-y-1">
+      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={id}>
+        {label}
+      </label>
+      <textarea
+        autoFocus={focus}
+        className={crmTextareaClassName}
+        disabled={disabled}
+        id={id}
+        maxLength={500}
+        onChange={(event) => onChange(event.target.value)}
+        rows={2}
+        value={value}
+      />
+      <RefusalNoteHint />
+    </div>
+  );
 }

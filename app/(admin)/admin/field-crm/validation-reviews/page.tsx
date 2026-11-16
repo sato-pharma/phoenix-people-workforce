@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Building2, CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
+import { Building2, CheckCircle2, ChevronDown, EyeOff, Hourglass, MapPinCheck } from "lucide-react";
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
@@ -137,12 +137,27 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
 
   return (
     <div className="space-y-5">
+      {/* 🔴 ONE LINE, AND THE REST ONE PRESS AWAY (owner, 17 Nov 2026: "make it easier to use, simple to
+          decide"). The whole account of the checks was a paragraph above every visit to the page. */}
       <AdminPageHero
         eyebrow="CRM"
         title="Place checks"
-        description={`Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and they must have stood within ${GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. Every new place also has its signboard read: the sign must name the customer (for an AM customer, the place; for a PM customer, the person). These are the ones the system could not settle — Google had no listing for the customer, its pin is over ${GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away, or the signboard names somebody else or nobody — and each waits for you. The rep is told only that the system is checking.`}
+        description="The places the system could not settle by itself, each waiting for your decision. The rep is told only that the system is checking."
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
+      <details className="group min-w-0 border border-slate-200 bg-white">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700">
+          <ChevronDown aria-hidden className="h-3.5 w-3.5 transition group-open:rotate-180" />
+          How the checks work
+        </summary>
+        <p className="break-words border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+          Every AM customer a rep validates is checked against its own Google Maps listing: the listing must be that customer, and they must
+          have stood within {GOOGLE_MATCH_METERS} m of it. A place that does not match is refused at the door. Every new place also has its
+          signboard read: the sign must name the customer (for an AM customer, the place; for a PM customer, the person). What reaches this
+          page is what the system could not settle — Google had no listing for the customer, its pin is over{" "}
+          {GOOGLE_STALE_PIN_METERS.toLocaleString("en-GB")} m away, or the signboard names somebody else or nobody.
+        </p>
+      </details>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <AdminStatCard icon={<Hourglass className="h-5 w-5" />} label="Waiting for you" value={realWaiting.length} description="Saved at the door, not validated yet" tone="orange" size="compact" />

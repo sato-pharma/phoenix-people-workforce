@@ -21,15 +21,14 @@ import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, 
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
-import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import {
-  PLACE_APPROVAL_IS_NOT_A_LIST_ADD,
   PLACE_APPROVED_NOT_A_LIST_ADD,
   VALIDATION_NOTE_LABEL,
   VALIDATION_REASON_REQUIRED,
@@ -262,19 +261,7 @@ function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: 
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`reject-again-note-${scope}${row.reviewId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving}
-        id={`reject-again-note-${scope}${row.reviewId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving} id={`reject-again-note-${scope}${row.reviewId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton disabled={saving || reason === ""} onClick={() => void reject()} variant="danger">
         {saving ? "Rejecting…" : "Reject it after all"}
       </CrmButton>
@@ -362,8 +349,11 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     }
   }
 
+  // 🔴 THE DECISION READS TOP TO BOTTOM, THEN THE PRESS (owner, 17 Nov 2026: "simple to decide"): what the
+  // rep is told, an optional comment folded behind one link, the two buttons, and one short line each under
+  // them. The long "does not add to the list" sentence is the section's own description, once, not every row's.
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <RefusalReasonField
         disabled={saving !== null}
         id={`review-reason-${scope}${row.reviewId}`}
@@ -371,19 +361,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${scope}${row.reviewId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving !== null}
-        id={`review-note-${scope}${row.reviewId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving !== null} id={`review-note-${scope}${row.reviewId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}
@@ -394,7 +372,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
       </div>
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

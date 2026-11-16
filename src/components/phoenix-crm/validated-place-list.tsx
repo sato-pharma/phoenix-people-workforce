@@ -32,7 +32,7 @@ import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/compone
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
   CrmButton,
@@ -44,7 +44,6 @@ import {
   CrmShowMore,
   CrmTable,
   crmTdClassName,
-  crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
@@ -53,7 +52,7 @@ import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
-import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVED_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -305,22 +304,16 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
         }}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`refuse-note-${scope}${row.placeId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
+      <DecisionComment
         disabled={saving}
         id={`refuse-note-${scope}${row.placeId}`}
-        maxLength={500}
-        onChange={(event) => {
-          setNote(event.target.value);
+        label={VALIDATION_NOTE_LABEL}
+        onChange={(next) => {
+          setNote(next);
           setArmed(false);
         }}
-        rows={2}
         value={note}
       />
-      <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
           <CrmNote tone="warn">This retires the place and cannot be undone — they validate the customer again from their own list.</CrmNote>
@@ -361,7 +354,6 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
   const noteFieldId = useId();
-  const [commenting, setCommenting] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -391,33 +383,12 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
 
   return (
     <div className="space-y-2">
-      {commenting ? (
-        <>
-          <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={noteFieldId}>
-            {VALIDATION_NOTE_LABEL}
-          </label>
-          <textarea
-            className={crmTextareaClassName}
-            disabled={saving}
-            id={noteFieldId}
-            maxLength={500}
-            onChange={(event) => setNote(event.target.value)}
-            rows={2}
-            value={note}
-          />
-          <RefusalNoteHint />
-        </>
-      ) : null}
+      <DecisionComment disabled={saving} id={noteFieldId} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : "Approve this validation"}
       </CrmButton>
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
-      {commenting ? null : (
-        <CrmButton onClick={() => setCommenting(true)} size="sm" variant="ghost">
-          Add a comment
-        </CrmButton>
-      )}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

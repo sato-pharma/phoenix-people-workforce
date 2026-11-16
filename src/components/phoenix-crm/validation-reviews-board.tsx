@@ -63,7 +63,7 @@ import {
   type ValidationReviewPeriod,
 } from "@/lib/phoenix-crm/validation-review-filters";
 import { adviseOnBuilding, adviseOnReview, adviseOnTimetable, type PlaceCheckAdvice } from "@/lib/phoenix-crm/place-check-advice";
-import { rejectedBuildingsSwitchLabel } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, rejectedBuildingsSwitchLabel } from "@/lib/phoenix-crm/validation-feedback";
 import {
   chipTakes,
   clinicsInUse,
@@ -101,6 +101,25 @@ const PERIOD_LABELS: Record<ValidationReviewPeriod, string> = {
   "14": "Last 14 days",
   "30": "Last 30 days",
 };
+
+/**
+ * What is narrowing the board, one short label each, for the folded Filters line (owner, 17 Nov 2026:
+ * "simple to decide"). The boxes fold away; what they hold stays on screen, so a rep picked from the
+ * scorecard or a period left on is never hidden behind the fold.
+ */
+function filterSummary(filters: ValidationReviewFilters): string[] {
+  const labels: string[] = [];
+  if (filters.outcome !== "all") labels.push(OUTCOME_LABELS[filters.outcome]);
+  if (filters.rep) labels.push(`Rep: ${filters.rep}`);
+  if (filters.line) labels.push(`Line: ${filters.line}`);
+  if (filters.region) labels.push(`Region: ${filters.region}`);
+  if (filters.area) labels.push(`Area: ${filters.area}`);
+  if (filters.list) labels.push(`List: ${filters.list}`);
+  if (filters.period !== "all") labels.push(PERIOD_LABELS[filters.period]);
+  if (filters.decider) labels.push(`Decided by ${filters.decider}`);
+  if (filters.text.trim()) labels.push(`Search: ${filters.text.trim()}`);
+  return labels;
+}
 
 /** Every list on the board shows this many rows, then "Show more" — no tab draws its whole set at once. */
 const PAGE_ROWS = 20;
@@ -274,6 +293,8 @@ export function ValidationReviewsBoard({
   reviewDeck?: (input: PlaceReviewDeckInput, everything: { ready: boolean; want: () => void; error: string | null; retry: () => void }) => ReactNode;
 }) {
   const [filters, setFilters] = useState<ValidationReviewFilters>(EMPTY_VALIDATION_REVIEW_FILTERS);
+  // The eight boxes fold away under a one-line summary of what is narrowing the board (17 Nov 2026).
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState<PlaceCheckView>("needs");
   const [chip, setChip] = useState<UnconfirmedChip>("open");
   const [showRejectedBuildings, setShowRejectedBuildings] = useState(false);
@@ -439,6 +460,7 @@ export function ValidationReviewsBoard({
   const reading = !complete && (filtering || view === "unconfirmed");
 
   const anyFilter = hasActiveValidationReviewFilter(filters);
+  const narrowedBy = filterSummary(filters);
   const showWaiting = filters.outcome === "all" || filters.outcome === "pending";
   const showDecided = filters.outcome === "all" || filters.outcome === "approved" || filters.outcome === "rejected";
   const showValidated = filters.outcome === "all" || filters.outcome === "validated" || filters.outcome === "unseen";
@@ -530,113 +552,133 @@ export function ValidationReviewsBoard({
         {deckInput && reviewDeck
           ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything })
           : null}
-        <div className="min-w-0 border border-slate-200 bg-white px-4 py-4">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 border border-slate-200 bg-white">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
-            {anyFilter || filters.outcome !== "all" ? (
-              <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
-                Clear filters
+            <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-1.5">
+              {narrowedBy.length === 0 ? (
+                <span className="break-words text-xs font-semibold text-slate-500">Showing everything</span>
+              ) : (
+                narrowedBy.map((label) => (
+                  <span key={label} className="break-words border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-black text-orange-800" dir="auto">
+                    {label}
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-2">
+              {anyFilter || filters.outcome !== "all" ? (
+                <CrmButton onClick={() => setFilters(EMPTY_VALIDATION_REVIEW_FILTERS)} size="sm" variant="ghost">
+                  Clear filters
+                </CrmButton>
+              ) : null}
+              <CrmButton aria-controls="vr-filter-fields" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
+                {filtersOpen ? "Hide filters" : "Show filters"}
               </CrmButton>
-            ) : null}
+            </div>
           </div>
-          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <CrmField htmlFor="vr-outcome" label="Outcome">
-              <CrmSelect id="vr-outcome" onChange={(event) => set("outcome", event.target.value as ValidationReviewOutcome)} value={filters.outcome}>
-                {(Object.keys(OUTCOME_LABELS) as ValidationReviewOutcome[]).map((value) => (
-                  <option key={value} value={value}>
-                    {OUTCOME_LABELS[value]}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+          {filtersOpen ? (
+            <div className="border-t border-slate-100 px-4 pb-4 pt-3" id="vr-filter-fields">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <CrmField htmlFor="vr-outcome" label="Outcome">
+                  <CrmSelect id="vr-outcome" onChange={(event) => set("outcome", event.target.value as ValidationReviewOutcome)} value={filters.outcome}>
+                    {(Object.keys(OUTCOME_LABELS) as ValidationReviewOutcome[]).map((value) => (
+                      <option key={value} value={value}>
+                        {OUTCOME_LABELS[value]}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-rep" label="Rep">
-              <CrmSelect id="vr-rep" onChange={(event) => set("rep", event.target.value)} value={filters.rep}>
-                <option value="">Every rep</option>
-                {reps.map((rep) => (
-                  <option key={rep} value={rep}>
-                    {rep}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-rep" label="Rep">
+                  <CrmSelect id="vr-rep" onChange={(event) => set("rep", event.target.value)} value={filters.rep}>
+                    <option value="">Every rep</option>
+                    {reps.map((rep) => (
+                      <option key={rep} value={rep}>
+                        {rep}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-line" label="Line">
-              <CrmSelect id="vr-line" onChange={(event) => set("line", event.target.value)} value={filters.line}>
-                <option value="">Every line</option>
-                {lines.map((line) => (
-                  <option key={line} value={line}>
-                    {line}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-line" label="Line">
+                  <CrmSelect id="vr-line" onChange={(event) => set("line", event.target.value)} value={filters.line}>
+                    <option value="">Every line</option>
+                    {lines.map((line) => (
+                      <option key={line} value={line}>
+                        {line}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-region" label="Region">
-              <CrmSelect id="vr-region" onChange={(event) => set("region", event.target.value)} value={filters.region}>
-                <option value="">Every region</option>
-                {regions.map((region) => (
-                  <option key={region} value={region}>
-                    {region}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-region" label="Region">
+                  <CrmSelect id="vr-region" onChange={(event) => set("region", event.target.value)} value={filters.region}>
+                    <option value="">Every region</option>
+                    {regions.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-area" label="Area">
-              <CrmSelect id="vr-area" onChange={(event) => set("area", event.target.value)} value={filters.area}>
-                <option value="">Every area</option>
-                {areas.map((area) => (
-                  <option key={area} value={area}>
-                    {area}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-area" label="Area">
+                  <CrmSelect id="vr-area" onChange={(event) => set("area", event.target.value)} value={filters.area}>
+                    <option value="">Every area</option>
+                    {areas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-list" label="List">
-              <CrmSelect id="vr-list" onChange={(event) => set("list", event.target.value)} value={filters.list}>
-                <option value="">Every list</option>
-                {lists.map((list) => (
-                  <option key={list} value={list}>
-                    {list}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-list" label="List">
+                  <CrmSelect id="vr-list" onChange={(event) => set("list", event.target.value)} value={filters.list}>
+                    <option value="">Every list</option>
+                    {lists.map((list) => (
+                      <option key={list} value={list}>
+                        {list}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            <CrmField htmlFor="vr-period" label="Period">
-              <CrmSelect id="vr-period" onChange={(event) => set("period", event.target.value as ValidationReviewPeriod)} value={filters.period}>
-                {(Object.keys(PERIOD_LABELS) as ValidationReviewPeriod[]).map((value) => (
-                  <option key={value} value={value}>
-                    {PERIOD_LABELS[value]}
-                  </option>
-                ))}
-              </CrmSelect>
-            </CrmField>
+                <CrmField htmlFor="vr-period" label="Period">
+                  <CrmSelect id="vr-period" onChange={(event) => set("period", event.target.value as ValidationReviewPeriod)} value={filters.period}>
+                    {(Object.keys(PERIOD_LABELS) as ValidationReviewPeriod[]).map((value) => (
+                      <option key={value} value={value}>
+                        {PERIOD_LABELS[value]}
+                      </option>
+                    ))}
+                  </CrmSelect>
+                </CrmField>
 
-            {team ? null : (
-              <CrmField htmlFor="vr-decider" label="Decided by">
-                <CrmSelect id="vr-decider" onChange={(event) => set("decider", event.target.value)} value={filters.decider}>
-                  <option value="">Anyone</option>
-                  {deciders.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </CrmSelect>
-              </CrmField>
-            )}
-          </div>
-          <div className="mt-3 min-w-0 lg:max-w-md">
-            <CrmSearchField
-              id="vr-search"
-              label="Search"
-              onChange={(next) => set("text", next)}
-              placeholder="Customer, rep, territory, brick or area"
-              value={filters.text}
-            />
-          </div>
+                {team ? null : (
+                  <CrmField htmlFor="vr-decider" label="Decided by">
+                    <CrmSelect id="vr-decider" onChange={(event) => set("decider", event.target.value)} value={filters.decider}>
+                      <option value="">Anyone</option>
+                      {deciders.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </CrmSelect>
+                  </CrmField>
+                )}
+              </div>
+              <div className="mt-3 min-w-0 lg:max-w-md">
+                <CrmSearchField
+                  id="vr-search"
+                  label="Search"
+                  onChange={(next) => set("text", next)}
+                  placeholder="Customer, rep, territory, brick or area"
+                  value={filters.text}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {capped.reviews || capped.validated || capped.reopened || capped.sharedPlaces ? (
@@ -694,7 +736,7 @@ export function ValidationReviewsBoard({
                 description={
                   team
                     ? "The places the system could not settle by itself: Google has no listing it is sure is the customer, its pin is far from where the rep stood, or the signboard names somebody else — or nobody. Each one's evidence is below, and the rep knows only that the system is checking."
-                    : "Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. It does not add anybody to the list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own. Reject retires the place; when it was their only one, the customer goes back to To validate. The rep reads either as the system's answer."
+                    : `Approve validates the place in the rep's name, and a customer already on the rep's list starts counting. ${PLACE_APPROVAL_IS_NOT_A_LIST_ADD} Reject retires the place; a customer left without one goes back to To validate. The rep reads either as the system's answer.`
                 }
               >
                 {filteredPending.length === 0 ? (

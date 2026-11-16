@@ -211,8 +211,10 @@ export const VALIDATION_NOTE_LABEL = "Comment — optional (the rep and their ma
 // ── A place check is not an add to the rep's list ────────────────────────────────────────────────
 
 /**
- * Under every control that approves a place check, and on the board's own explanation (owner,
+ * On the board's own explanation of what Approve does, once at the head of the waiting list (owner,
  * 2026-10-27, after a rep was told her doctors were "approved" and waited for them to reach her list).
+ * Under each Approve button the short line below says the same since 17 Nov 2026 (owner: "make it easier
+ * to use, simple to decide"): this sentence, repeated under twenty rows, was a paragraph each.
  *
  * 🔴 WORDING ONLY. Approving a place check confirms the place and nothing else; a customer outside the
  * rep's list stays outside until the rep asks to add them and that request is decided on its own. The
@@ -220,7 +222,7 @@ export const VALIDATION_NOTE_LABEL = "Comment — optional (the rep and their ma
  */
 export const PLACE_APPROVAL_IS_NOT_A_LIST_ADD =
   "Approving confirms the place only. It does not add the customer to the rep's list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own.";
-/** Beside a settled or just-saved approval, where the long sentence above would crowd the row. */
+/** Under every Approve button, and beside a settled or just-saved approval, where the long sentence above would crowd the row. */
 export const PLACE_APPROVED_NOT_A_LIST_ADD = "The place only — this does not add the customer to the rep's list.";
 
 // ── A take-back is promised only to the one who has it ───────────────────────────────────────────

@@ -31,9 +31,9 @@ import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, 
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
-import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
@@ -267,22 +267,16 @@ function RejectNotOnTimetable({ customer, scope }: { customer: SeatedCustomer; s
         }}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`seated-note-${scope}-${customer.key}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
+      <DecisionComment
         disabled={saving}
         id={`seated-note-${scope}-${customer.key}`}
-        maxLength={500}
-        onChange={(event) => {
-          setNote(event.target.value);
+        label={VALIDATION_NOTE_LABEL}
+        onChange={(next) => {
+          setNote(next);
           setArmed(false);
         }}
-        rows={2}
         value={note}
       />
-      <RefusalNoteHint />
       {armed ? (
         <div className="space-y-2">
           <CrmNote tone="warn">{seatedRejectWarning(canRestore)}</CrmNote>
@@ -356,19 +350,7 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
   return (
     <div className="space-y-2">
       <RefusalReasonField disabled={saving !== null} id={`seated-reason-${scope}-${customer.key}`} kind="schedule" onChange={setReason} value={reason} />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`seated-note-${scope}-${customer.key}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving !== null}
-        id={`seated-note-${scope}-${customer.key}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving !== null} id={`seated-note-${scope}-${customer.key}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}

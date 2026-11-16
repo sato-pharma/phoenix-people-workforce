@@ -205,6 +205,10 @@ export function PlaceCheckScorecard({
   total: RepScore;
 }) {
   const [showAll, setShowAll] = useState(false);
+  // 🔴 FOLDED UNDER ITS OWN TOTALS (owner, 17 Nov 2026: "make it easier to use, simple to decide"). It still
+  // heads the board and says how many places and photo problems there are; the table of reps, a screen and
+  // a half tall above the decisions, opens on one press.
+  const [open, setOpen] = useState(false);
   const columns = columnsFor(mode);
   const shown = showAll ? reps : reps.slice(0, FIRST_REPS);
   const widths = ["18%", ...TABLE_GROUPS.map((group) => group.width)];
@@ -213,68 +217,76 @@ export function PlaceCheckScorecard({
 
   return (
     <section aria-labelledby="place-check-scorecard" className="min-w-0 border border-slate-200 bg-white">
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 px-4 py-3">
+      <div className={cn("flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3", open ? "border-b border-slate-200" : null)}>
         <h2 className="break-words text-sm font-black uppercase tracking-[0.12em] text-slate-500" id="place-check-scorecard">
           Each rep&apos;s captures
         </h2>
-        <p className="break-words text-xs font-semibold text-slate-500">
-          {total.places} {total.places === 1 ? "place" : "places"} · {problemsOf(total)} with a photo problem · worst first · tap a name to see only that rep, a count to see its photos
+        <p className="min-w-0 flex-1 basis-60 break-words text-xs font-semibold text-slate-500">
+          {total.places} {total.places === 1 ? "place" : "places"} · {problemsOf(total)} with a photo problem
+          {open ? " · worst first · tap a name to see only that rep, a count to see its photos" : ` · ${reps.length} ${reps.length === 1 ? "rep" : "reps"}`}
         </p>
+        <CrmButton aria-controls="place-check-scorecard-body" aria-expanded={open} onClick={() => setOpen((current) => !current)} size="sm">
+          {open ? "Hide each rep" : "Show each rep"}
+        </CrmButton>
       </div>
 
-      <CrmCardsOnPhone>
-        {shown.map((score) => (
-          <div key={score.repName} className="space-y-2 px-4 py-3">
-            <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
-            <ScoreFacts columns={columns} onOpen={onOpen} rep={score.repName} score={score} />
-          </div>
-        ))}
-        {/* The table's "Every rep" line, on a phone too: the same rows, never fewer facts. */}
-        <div className="space-y-2 bg-slate-50 px-4 py-3">
-          <p className="break-words text-sm font-black text-slate-900">{total.repName}</p>
-          <ScoreFacts columns={columns} onOpen={onOpen} rep="" score={total} />
-        </div>
-      </CrmCardsOnPhone>
-
-      <CrmTable columns={widths}>
-        <thead>
-          <tr>
-            {["Rep", ...TABLE_GROUPS.map((group) => group.label)].map((label) => (
-              <th key={label} className={cn(crmThClassName, "break-words")}>
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((score) => (
-            <tr key={score.repName} className={pickedRep === score.repName ? "bg-orange-50/60" : undefined}>
-              <td className={crmTdClassName}>
+      {open ? (
+        <div id="place-check-scorecard-body">
+          <CrmCardsOnPhone>
+            {shown.map((score) => (
+              <div key={score.repName} className="space-y-2 px-4 py-3">
                 <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
-                <span className="block text-xs font-semibold text-slate-500">{placesText(score.places)}</span>
-              </td>
-              {TABLE_GROUPS.map((group) => (
-                <GroupCell key={group.label} columns={columns} group={group} onOpen={onOpen} rep={score.repName} score={score} />
-              ))}
-            </tr>
-          ))}
-          <tr className="bg-slate-50">
-            <td className={cn(crmTdClassName, "font-black text-slate-900")}>
-              {total.repName}
-              <span className="block text-xs font-semibold text-slate-500">{placesText(total.places)}</span>
-            </td>
-            {TABLE_GROUPS.map((group) => (
-              <GroupCell key={group.label} columns={columns} group={group} onOpen={onOpen} rep="" score={total} total />
+                <ScoreFacts columns={columns} onOpen={onOpen} rep={score.repName} score={score} />
+              </div>
             ))}
-          </tr>
-        </tbody>
-      </CrmTable>
+            {/* The table's "Every rep" line, on a phone too: the same rows, never fewer facts. */}
+            <div className="space-y-2 bg-slate-50 px-4 py-3">
+              <p className="break-words text-sm font-black text-slate-900">{total.repName}</p>
+              <ScoreFacts columns={columns} onOpen={onOpen} rep="" score={total} />
+            </div>
+          </CrmCardsOnPhone>
 
-      {reps.length > FIRST_REPS ? (
-        <div className="border-t border-slate-200 px-4 py-2">
-          <CrmButton onClick={() => setShowAll((current) => !current)} size="sm" variant="ghost">
-            {showAll ? `Show the first ${FIRST_REPS} only` : `Show every rep (${reps.length})`}
-          </CrmButton>
+          <CrmTable columns={widths}>
+            <thead>
+              <tr>
+                {["Rep", ...TABLE_GROUPS.map((group) => group.label)].map((label) => (
+                  <th key={label} className={cn(crmThClassName, "break-words")}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((score) => (
+                <tr key={score.repName} className={pickedRep === score.repName ? "bg-orange-50/60" : undefined}>
+                  <td className={crmTdClassName}>
+                    <RepName onPick={onPickRep} picked={pickedRep === score.repName} score={score} />
+                    <span className="block text-xs font-semibold text-slate-500">{placesText(score.places)}</span>
+                  </td>
+                  {TABLE_GROUPS.map((group) => (
+                    <GroupCell key={group.label} columns={columns} group={group} onOpen={onOpen} rep={score.repName} score={score} />
+                  ))}
+                </tr>
+              ))}
+              <tr className="bg-slate-50">
+                <td className={cn(crmTdClassName, "font-black text-slate-900")}>
+                  {total.repName}
+                  <span className="block text-xs font-semibold text-slate-500">{placesText(total.places)}</span>
+                </td>
+                {TABLE_GROUPS.map((group) => (
+                  <GroupCell key={group.label} columns={columns} group={group} onOpen={onOpen} rep="" score={total} total />
+                ))}
+              </tr>
+            </tbody>
+          </CrmTable>
+
+          {reps.length > FIRST_REPS ? (
+            <div className="border-t border-slate-200 px-4 py-2">
+              <CrmButton onClick={() => setShowAll((current) => !current)} size="sm" variant="ghost">
+                {showAll ? `Show the first ${FIRST_REPS} only` : `Show every rep (${reps.length})`}
+              </CrmButton>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
