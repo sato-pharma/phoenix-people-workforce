@@ -78,6 +78,8 @@ export type SeatedCustomer = ValidationReviewFilterable & {
   refusable: boolean;
   /** A rejection that can still be taken back. */
   restorable: boolean;
+  /** 🔴 The Super Admin approved this seat, so nobody else may reject it (owner, 2026-11-16). */
+  lockedBySuperAdmin?: boolean;
   /** Visits measured against his place, and the places he would keep — only a validated row knows them. */
   visits: number | null;
   otherPlaces: number | null;
@@ -150,6 +152,7 @@ function fromReview(row: ValidationReviewRow, sharedPlaceId: string, state: Seat
     reviewed: true,
     refusable: row.refusable,
     restorable: row.restorable,
+    lockedBySuperAdmin: row.lockedBySuperAdmin === true,
     visits: null,
     otherPlaces: null,
     timetable: timetableOfReview(row),
@@ -177,6 +180,7 @@ function fromValidated(row: ValidatedPlaceRow, sharedPlaceId: string): SeatedCus
     reviewed: row.reviewed,
     refusable: false,
     restorable: false,
+    lockedBySuperAdmin: row.lockedBySuperAdmin === true,
     visits: row.visits,
     otherPlaces: row.otherPlaces,
     timetable: row.schedule,
@@ -278,6 +282,7 @@ export function seatedCustomersByVenue(input: {
       customer.reviewStatus = "approved";
       customer.reviewed = true;
       customer.refusable = review.refusable;
+      customer.lockedBySuperAdmin = customer.lockedBySuperAdmin === true || review.lockedBySuperAdmin === true;
       customer.decidedByName = review.decidedByName;
       customer.decidedAtText = review.decidedAtText;
       customer.decisionNote = review.decisionNote;

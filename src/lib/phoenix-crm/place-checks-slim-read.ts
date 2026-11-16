@@ -47,9 +47,10 @@ export function signboardCheckRead(row: Row): Row | null {
  * reviews made about 30 requests after the pages, four at a time. Both columns are foreign keys
  * (`phoenix_crm_validation_reviews_customer_id_fkey`, `…_place_id_fkey`), so PostgREST joins them into
  * each row; the constraint is NAMED so a second key to either table one day cannot make it ambiguous.
- * The place carries the signboard by its keys, as above.
+ * The place carries the signboard by its keys, as above, and who created it — the Super Admin's
+ * approval lock (`approvalLockFor`) reads that.
  */
 export const REVIEW_SUBJECTS_SELECT =
   "customer:phoenix_crm_customers!phoenix_crm_validation_reviews_customer_id_fkey(id, name, list_type, speciality), " +
-  "place:phoenix_crm_places!phoenix_crm_validation_reviews_place_id_fkey(id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, " +
+  "place:phoenix_crm_places!phoenix_crm_validation_reviews_place_id_fkey(id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, created_by_hr_id, " +
   `${SIGNBOARD_CHECK_KEYS_SELECT})`;

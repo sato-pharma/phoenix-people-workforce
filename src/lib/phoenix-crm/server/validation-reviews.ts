@@ -39,6 +39,8 @@ import {
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { waitingIsLong, waitingOldestFirst, waitingText } from "@/lib/phoenix-crm/waiting-rules";
 import { canDecideValidationReviews, canRestoreValidation, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
@@ -603,6 +605,11 @@ export type ValidationReviewRow = {
    */
   refusable: boolean;
   /**
+   * 🔴 The Super Admin approved this (or created the place himself), so nobody else may reject it (owner,
+   * 2026-11-16). Always false for a Super Admin viewer; when true, `refusable` is false too.
+   */
+  lockedBySuperAdmin?: boolean;
+  /**
    * A door signboard hold the system is still re-reading (owner, 2026-10-17: "Hold; re-read; else you
    * decide"). He may still decide it now; the row says the system has not finished with it.
    */
@@ -694,13 +701,7 @@ export async function loadValidationReviews(
     readEveryPage<Row>(reviewsOf(true), { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) }),
     // Every decision is three pages today (2,021 decided, 16 Nov 2026): asked for together, not one after
     // another. The recent ones are a single page, so that read stays one page at a time.
-    readEveryPage<Row>(reviewsOf(false), {
-      maxRows: 5_000,
-      whenFull: "stop",
-      what: "The place checks decided",
-      uniqueBy: (row) => String(row.id),
-      concurrentPages: options.everyDecision ? 3 : 1,
-    }),
+    readEveryPage<Row>(reviewsOf(false), { maxRows: 5_000, whenFull: "stop", what: "The place checks decided", uniqueBy: (row) => String(row.id), concurrentPages: options.everyDecision ? 3 : 1 }),
   ]);
   throwIfError(waitingRead.error);
   throwIfError(decidedRead.error);
@@ -712,9 +713,9 @@ export async function loadValidationReviews(
   const capped = waitingRead.capped || decidedRead.capped;
   if (reviews.length === 0) return { rows: [], capped: false };
 
-  // The customer and the place came joined into each review (`REVIEW_SUBJECTS_SELECT`), so the only read
-  // left is the people's names. A review whose join came back empty is simply absent from its map — the
-  // same as the id lookups this replaced, which left a missing row out.
+  // The customer and the place came joined into each review (`REVIEW_SUBJECTS_SELECT`), so the only reads
+  // left are the people's names and the Super Admin's approval lock. A review whose join came back empty is
+  // simply absent from its map — the same as the id lookups this replaced, which left a missing row out.
   const customerById = new Map<string, Row>();
   const placeById = new Map<string, Row>();
   for (const review of reviews) {
@@ -723,7 +724,10 @@ export async function loadValidationReviews(
     if (isRecord(customer)) customerById.set(String(review.customer_id), customer);
     if (isRecord(place)) placeById.set(String(review.place_id), { ...place, signboard_check: signboardCheckRead(place) });
   }
-  const names = await loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)]));
+  const [names, lockedFor] = await Promise.all([
+    loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)])),
+    approvalLockFor(viewer),
+  ]);
 
   // One clock for the whole read, so two rows of one instant never read two different waits.
   const now = new Date();
@@ -733,6 +737,7 @@ export async function loadValidationReviews(
     const place = placeById.get(String(row.place_id)) ?? {};
     const google = (row.google && typeof row.google === "object" ? row.google : {}) as Row;
     const point = { lat: numberOrNull(place.lat) ?? 0, lon: numberOrNull(place.lon) ?? 0 };
+    const locked = lockedFor(row.status === "approved" ? row.decided_by_hr_id : null, place.created_by_hr_id);
     const seat = viewer.org.seats.get(String(row.seat_id));
     const photoPath = text(place.photo_path);
     const status = row.status === "approved" || row.status === "rejected" ? row.status : "pending";
@@ -829,7 +834,9 @@ export async function loadValidationReviews(
       // rejection can be taken back while the place it retired is still retired, and since
       // 2026-10-15 an APPROVAL can be taken back while the place it approved is still active.
       restorable: status === "rejected" && place.status === "retired",
-      refusable: status === "approved" && place.status === "active",
+      // 🔴 Not when the Super Admin approved it, unless the viewer is the Super Admin (owner, 2026-11-16).
+      refusable: status === "approved" && place.status === "active" && !locked,
+      lockedBySuperAdmin: locked,
       systemStillReading: signboardHoldStillReading({
         isTest: row.is_test === true,
         pending: status === "pending",
@@ -1060,6 +1067,11 @@ export type ValidatedPlaceRow = {
    * screen says so in words rather than drawing a missing file.
    */
   trustedPoint?: boolean;
+  /**
+   * 🔴 The Super Admin approved this place (or created it himself — a trusted point), so nobody else may
+   * refuse it (owner, 2026-11-16). Always false for a Super Admin viewer.
+   */
+  lockedBySuperAdmin?: boolean;
   /** Visits already measured against this place — refusing it un-places every one of them. */
   visits: number;
   /** Other active places this customer has: when there are none, refusing sends him back to To validate. */
@@ -1225,13 +1237,14 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
   const approvals = new Map(reviewRows.filter((row) => row.status === "approved").map((row) => [String(row.place_id), row] as const));
   const visitsByPlace = new Map<string, number>(Object.entries(factValue.visit_counts).map(([placeId, count]) => [placeId, Number(count)]));
   const placesByCustomer = new Map<string, number>(Object.entries(factValue.active_places).map(([customerId, count]) => [customerId, Number(count)]));
-  const [names, venues] = await Promise.all([
+  const [names, venues, lockedFor] = await Promise.all([
     loadPeopleNames([
       ...places.map((row) => text(row.created_by_hr_id)),
       ...[...approvals.values()].map((row) => text(row.decided_by_hr_id)),
     ]),
     // The venue each seated place sits in, by name — the Super Admin reads names, never ids.
     loadSharedPlaceNames(places.map((row) => text(row.shared_place_id))),
+    approvalLockFor(viewer),
   ]);
 
   const rows = places
@@ -1263,6 +1276,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         photo: reading(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
         photoPath: text(row.photo_path),
         trustedPoint: row.point_source === "trusted",
+        lockedBySuperAdmin: lockedFor(approvals.get(String(row.id))?.decided_by_hr_id, row.created_by_hr_id),
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),
@@ -1392,8 +1406,21 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // sign as read). What the row held is read first and kept under `before` — one level, never a `before`
   // inside a `before` (`evidenceToKeep`). Every reader of this column reads its top level, which is
   // still the hand refusal, so nothing on a screen changes. Still two steps, as it always was.
-  const earlier = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("google").eq("place_id", placeId).maybeSingle();
+  const earlier = await getSupabaseAdmin()
+    .from("phoenix_crm_validation_reviews")
+    .select("google, status, decided_by_hr_id")
+    .eq("place_id", placeId)
+    .maybeSingle();
   throwIfError(earlier.error);
+  // 🔴 WHAT THE SUPER ADMIN APPROVED, ONLY THE SUPER ADMIN REFUSES (owner, 2026-11-16: "when super admin
+  // approve something sfe or whoever cannot reject it back bec its approved by admin"). Asked HERE, before
+  // the upsert below puts the review back to pending and clears who approved it — after that the database's
+  // own guard can no longer see the approval (it still sees a place the Super Admin created himself).
+  const earlierRow = earlier.data as Row | null;
+  const lockedFor = await approvalLockFor(viewer);
+  if (lockedFor(earlierRow?.status === "approved" ? earlierRow.decided_by_hr_id : null, place.created_by_hr_id)) {
+    throw forbiddenError(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT);
+  }
   const before = evidenceToKeep((earlier.data as Row | null)?.google);
   const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_validation_reviews")
