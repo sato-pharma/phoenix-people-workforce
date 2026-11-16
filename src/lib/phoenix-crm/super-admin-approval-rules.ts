@@ -16,18 +16,15 @@
  * cannot work is never drawn.
  */
 
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 /** What the SFE Manager reads where the Reject button would have been, and what the refusal says. */
 export const SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT = "The administrator approved this, so only the administrator can take it back.";
 
-/** Normalised as the database normalises an actor: trimmed and upper-case. */
-export function hrIdKey(hrId: string | null | undefined): string | null {
-  const key = typeof hrId === "string" ? hrId.trim().toUpperCase() : "";
-  return key === "" ? null : key;
-}
-
 /**
  * Whether this viewer is refused a reject of this approval. `approvedBy` is who decided the review
- * `approved` (null when it is not an approval or nobody decided it); `placeCreatedBy` is who created the place.
+ * `approved` (null when it is not an approval or nobody decided it); `placeCreatedBy` is who created the place. `superAdmins` holds `canonicalHrIdKey` keys — the one HR id
+ * normaliser (trimmed, case-folded, legacy aliases resolved), so either side's spelling matches.
  */
 export function approvalLockedFor(input: {
   viewerIsSuperAdmin: boolean;
@@ -36,7 +33,7 @@ export function approvalLockedFor(input: {
   superAdmins: ReadonlySet<string>;
 }): boolean {
   if (input.viewerIsSuperAdmin) return false;
-  const approvedBy = hrIdKey(input.approvedBy);
-  const createdBy = hrIdKey(input.placeCreatedBy);
+  const approvedBy = canonicalHrIdKey(input.approvedBy);
+  const createdBy = canonicalHrIdKey(input.placeCreatedBy);
   return (approvedBy !== null && input.superAdmins.has(approvedBy)) || (createdBy !== null && input.superAdmins.has(createdBy));
 }

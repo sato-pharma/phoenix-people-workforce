@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
-import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, approvalLockedFor, hrIdKey } from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, approvalLockedFor } from "../src/lib/phoenix-crm/super-admin-approval-rules.ts";
 
 /**
  * Phoenix CRM — what the Super Admin approved, only the Super Admin rejects.
@@ -34,7 +35,8 @@ function readSql(path: string): string {
 }
 
 function checkRule(): void {
-  const superAdmins = new Set(["B-10"]);
+  // As the loader builds it: every key through the one HR id normaliser.
+  const superAdmins = new Set([canonicalHrIdKey("B-10") as string]);
 
   // The Super Admin's own approval, refused for anyone else.
   assert.equal(approvalLockedFor({ viewerIsSuperAdmin: false, approvedBy: "B-10", superAdmins }), true, "an approval the Super Admin decided is locked for the SFE Manager");
@@ -49,9 +51,6 @@ function checkRule(): void {
   // An empty set of Super Admins locks nothing — which is why the loader throws on a failed read.
   assert.equal(approvalLockedFor({ viewerIsSuperAdmin: false, approvedBy: "B-10", superAdmins: new Set() }), false);
 
-  assert.equal(hrIdKey("  b-10 "), "B-10");
-  assert.equal(hrIdKey(""), null);
-  assert.equal(hrIdKey(null), null);
   assert.match(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT, /^The administrator approved this, so only the administrator can take it back\.$/);
 
   const loader = read("src/lib/phoenix-crm/server/super-admin-approval.ts");

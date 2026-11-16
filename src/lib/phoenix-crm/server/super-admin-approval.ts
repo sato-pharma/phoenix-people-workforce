@@ -12,7 +12,8 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { approvalLockedFor, hrIdKey } from "@/lib/phoenix-crm/super-admin-approval-rules";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { approvalLockedFor } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 
 export async function loadSuperAdminHrIds(): Promise<Set<string>> {
@@ -20,7 +21,7 @@ export async function loadSuperAdminHrIds(): Promise<Set<string>> {
   if (error) throw error;
   const ids = new Set<string>();
   for (const value of (Array.isArray(data) ? data : []) as unknown[]) {
-    const key = hrIdKey(typeof value === "string" ? value : null);
+    const key = canonicalHrIdKey(typeof value === "string" ? value : null);
     if (key) ids.add(key);
   }
   return ids;
