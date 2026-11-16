@@ -58,6 +58,7 @@ import {
 } from "@/lib/phoenix-crm/failing-timetable-rules";
 import { adviseOnBuilding } from "@/lib/phoenix-crm/place-check-advice";
 import { sharedPlaceKindNoun } from "@/lib/phoenix-crm/shared-place-rules";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { cn } from "@/lib/utils";
 import type { VenueGroup } from "@/lib/phoenix-crm/shared-place-groups";
@@ -424,14 +425,16 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
           {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         </div>
       ) : null}
-      <Cost row={row} />
-      <RefusalReasonField
+      {/* What the administrator approved, only he rejects (owner, 2026-11-16). Approve-again stays: it changes nothing. */}
+      {row.lockedBySuperAdmin ? <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote> : null}
+      {row.lockedBySuperAdmin ? null : <Cost row={row} />}
+      {row.lockedBySuperAdmin ? null : <RefusalReasonField
         disabled={saving !== null}
         id={`shared-place-reason-${scope}-${row.sharedPlaceId}`}
         kind="building"
         onChange={setReason}
         value={reason}
-      />
+      />}
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${scope}-${row.sharedPlaceId}`}>
         {VALIDATION_NOTE_LABEL}
       </label>
@@ -449,11 +452,13 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : row.status === "held" ? "Approve" : "Keep it"}
         </CrmButton>
-        <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
-          {saving === "reject" ? "Rejecting…" : "Reject"}
-        </CrmButton>
+        {row.lockedBySuperAdmin ? null : (
+          <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
+            {saving === "reject" ? "Rejecting…" : "Reject"}
+          </CrmButton>
+        )}
       </div>
-      {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
+      {reason === "" && !row.lockedBySuperAdmin ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
@@ -572,7 +577,7 @@ const VENUE_ACTIONS: ReadonlyArray<BulkAction<SharedPlaceBoardRow>> = [
     needsReason: true,
     warning: (count) =>
       `This retires ${count === 1 ? "that building" : `those ${count} buildings`} and everybody seated in ${count === 1 ? "it" : "them"}; each of those customers goes back to To validate and must capture the building again at its door.`,
-    takes: (row) => !row.restorable,
+    takes: (row) => !row.restorable && !row.lockedBySuperAdmin,
     run: (row, answer) =>
       crmPost<unknown>(
         "/api/phoenix-crm/validation-reviews/shared-place",

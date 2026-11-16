@@ -443,7 +443,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
 
   // ── The server hands the board the building each row is seated in ─────────────────────────────
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
-  assert.ok(/photo_path, status, shared_place_id, signboard_check"/.test(reviews), "the review read selects the place's shared_place_id, and its signboard reading for the recommendation");
+  assert.ok(/photo_path, status, shared_place_id, signboard_check(?:, created_by_hr_id)?"/.test(reviews), "the review read selects the place's shared_place_id, and its signboard reading for the recommendation");
   assert.ok(reviews.includes("sharedPlaceId: text(place.shared_place_id)"), "and a review row carries it whatever the hold was about");
   assert.ok(reviews.includes("sharedPlaceId: text(row.shared_place_id)"), "as does a validated place");
   assert.ok(reviews.includes("sharedPlaceId: venue?.sharedPlaceId ?? null"), "and a customer sent back by his building's refusal");
