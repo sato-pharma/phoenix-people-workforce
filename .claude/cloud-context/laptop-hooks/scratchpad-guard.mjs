@@ -50,6 +50,11 @@ const LOG = 'F:/Claude Scratchpad Archive/_archive.log';
 const mode = process.argv[2];
 
 const DELETE_VERB = /(^|[\s;&|(`{])(rm|del|erase|rmdir|rd|ri|unlink|shred|rimraf|trash|Remove-Item|Clear-RecycleBin)(?=$|[\s;&|)}])|git\s+clean\b|\.(rmSync|unlinkSync|rmdirSync|unlink|rm)\s*\(|\[(System\.)?IO\.(File|Directory)\]::Delete|robocopy\b[^\n]*\/(MIR|PURGE)\b|\bdel\s*\/|Remove-Item/i;
+// DELETE_VERB split in two (2026-11-16). A SHELL delete is judged by the statement it sits in; an IN-CODE delete
+// (a script, git clean, robocopy) can carry its target in a variable the guard cannot follow, so it is still judged
+// by the whole command, exactly as before.
+const SHELL_DELETE = /(^|[\s;&|(`{])(rm|del|erase|rmdir|rd|ri|unlink|shred|rimraf|trash|Remove-Item|Clear-RecycleBin)(?=$|[\s;&|)}])|\bdel\s*\/|Remove-Item/i;
+const IN_CODE_DELETE = /git\s+clean\b|\.(rmSync|unlinkSync|rmdirSync|unlink|rm)\s*\(|\[(System\.)?IO\.(File|Directory)\]::Delete|robocopy\b[^\n]*\/(MIR|PURGE)\b/i;
 // 2026-09-20 (owner): images, csv, css, json and patch files are no longer protected. Previous list is in
 // backups/hook-backups/scratchpad-guard.mjs.pre-2026-09-20.
 const PROTECTED_EXT = /\.(html?|pdf|xlsx|xlsm|xls|docx?|svg)\b/i;
