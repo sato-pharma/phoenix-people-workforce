@@ -16,6 +16,8 @@ import { storeDisputeCenterAttachments } from "@/lib/dispute-center/attachment-s
 import { recordCaseEvent } from "@/lib/dispute-center/events.ts";
 import { tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import {
+  explainDatesPhrase,
+  explainDayLabel,
   explainReason,
   explanationSummary,
   explanationVerifySource,
@@ -178,7 +180,7 @@ export async function submitPrivateCalendarDataDispute(
     .sort((left, right) => left.dispute_date.localeCompare(right.dispute_date));
   const waiting = taken.find((row) => row.status === "pending_review");
   if (waiting) {
-    throw conflictError(`${waiting.dispute_date} is already waiting for a decision. Untick it, or wait for the answer.`);
+    throw conflictError(`${explainDayLabel(waiting.dispute_date)} is already waiting for a decision. Untick it, or wait for the answer.`);
   }
   const decided = taken[0];
   if (decided) {
@@ -280,7 +282,8 @@ export async function submitPrivateCalendarDataDispute(
   });
 
   const who = input.employeeName ?? employeeHrId;
-  const span = dates.length === 1 ? dates[0] : `${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`;
+  // The days as a person reads them, gaps kept ("2–3 Nov and 9 Nov"), never one run from first to last.
+  const span = dates.length === 1 ? explainDayLabel(dates[0]) : `${explainDatesPhrase(dates)} (${dates.length} days)`;
 
   // Manager first, then the Super Admin (owner, 2026-11-16): a reason with a confirmer goes to that
   // person, and the Super Admin hears once it is answered (explanations.ts answerExplanationGroup).
@@ -531,7 +534,7 @@ export async function decidePrivateCalendarDataDisputes(
     await Promise.all(
       Array.from(byEmployee.entries()).map(([employeeHrId, list]) => {
         const days = list.map((dispute) => dispute.disputeDate).sort();
-        const span = days.length === 1 ? days[0] : `${days.length} days (${days.join(", ")})`;
+        const span = days.length === 1 ? explainDayLabel(days[0]) : `${explainDatesPhrase(days)} (${days.length} days)`;
         return createSystemNotification({
           actorId: adminHrId,
           channels: ["email", "in_app", "push"],
@@ -549,7 +552,7 @@ export async function decidePrivateCalendarDataDisputes(
           priority: "normal",
           recipientHrId: employeeHrId,
           subjectHrId: employeeHrId,
-          title: `Explanation ${nextStatus} — ${days.length === 1 ? days[0] : `${days.length} days`}`,
+          title: `Explanation ${nextStatus} — ${days.length === 1 ? explainDayLabel(days[0]) : explainDatesPhrase(days)}`,
         });
       }),
     );
