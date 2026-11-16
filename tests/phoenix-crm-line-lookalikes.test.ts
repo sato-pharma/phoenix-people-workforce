@@ -216,6 +216,17 @@ function runSourceTests(): void {
   assert.ok(server.includes("actor_hr_id: viewer.hrId") && server.includes("validated_by_hr_id: plan.validatedByHrId"), "he is the actor; the other line's validator keeps the validation");
   assert.ok(server.includes("planLookalikeConfirm("), "every guard is asked again before it validates");
   assert.ok(server.includes('await afterResponse("phoenix-crm line look-alike: post-validation records"'), "the answer never waits for the records after it");
+  // 🔴 THE PHOTOGRAPH IS WHAT HE JUDGES A PAIR BY (owner, 2026-11-17: "must render the validation photo and details").
+  const evidenceColumns = (/const PLACE_EVIDENCE_COLUMNS =\s*"([^"]+)"/.exec(server)?.[1] ?? "").split(",").map((column) => column.trim());
+  assert.ok(
+    ["photo_path", "photo_lat", "pin_lat", "signboard_check", "schedule_check", "shared_place_id", "created_by_hr_id"].every((column) =>
+      evidenceColumns.includes(column),
+    ),
+    "🔴 every place a pair would copy is read with its photograph and the evidence Place checks shows beside it",
+  );
+  assert.ok(server.includes('selectByIds<Row>("phoenix_crm_places", PLACE_EVIDENCE_COLUMNS,'), "through that one column list");
+  assert.ok(server.includes("pairs.flatMap((pair) => pair.sourcePlaceIds)"), "every place a pair would copy, never only the first");
+  assert.ok(server.includes(".map((row) => placeEvidence(row, names, venueNames))"), "each one carried to the card");
 
   const route = read("app/api/phoenix-crm/validation-reviews/line-lookalikes/route.ts");
   assert.ok(route.includes('assertPermission(access, "phoenix_crm", "read")') && route.includes("loadLineLookalikeBoard(viewer)"), "a read behind `read`");
@@ -225,6 +236,12 @@ function runSourceTests(): void {
   const screen = read("src/components/phoenix-crm/line-lookalike-board.tsx");
   assert.ok(screen.includes('useCrmGet<LineLookalikeBoard>(ROUTE, "board")'), "read by the key the route answers under");
   assert.ok(screen.includes('"saved");'), "the answer read by the key the route answers under");
+  assert.ok(screen.includes("row.source.places.map((place) => ("), "🔴 every place the waiting row would take is drawn on the card");
+  assert.ok(
+    screen.includes("path={place.photoPath}") && screen.includes("className={PLACE_CHECK_PHOTO_CLASS}") && screen.includes("rotatable"),
+    "🔴 with its photograph, at Place checks' own size, whole and turnable",
+  );
+  assert.ok(screen.includes("<PlaceInUseEvidence row={place} />"), "and Place checks' own evidence block beside it, never a copy");
   assert.doesNotMatch(screen, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");
   assert.doesNotMatch(screen.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
 
