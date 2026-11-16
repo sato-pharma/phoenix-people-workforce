@@ -211,8 +211,10 @@ export const VALIDATION_NOTE_LABEL = "Comment — optional (the rep and their ma
 // ── A place check is not an add to the rep's list ────────────────────────────────────────────────
 
 /**
- * Under every control that approves a place check, and on the board's own explanation (owner,
+ * On the board's own explanation of what Approve does, once at the head of the waiting list (owner,
  * 2026-10-27, after a rep was told her doctors were "approved" and waited for them to reach her list).
+ * Under each Approve button the short line below says the same since 17 Nov 2026 (owner: "make it easier
+ * to use, simple to decide"): this sentence, repeated under twenty rows, was a paragraph each.
  *
  * 🔴 WORDING ONLY. Approving a place check confirms the place and nothing else; a customer outside the
  * rep's list stays outside until the rep asks to add them and that request is decided on its own. The
@@ -220,7 +222,7 @@ export const VALIDATION_NOTE_LABEL = "Comment — optional (the rep and their ma
  */
 export const PLACE_APPROVAL_IS_NOT_A_LIST_ADD =
   "Approving confirms the place only. It does not add the customer to the rep's list: a customer outside it stays outside until the rep asks to add them and that request is approved on its own.";
-/** Beside a settled or just-saved approval, where the long sentence above would crowd the row. */
+/** Under every Approve button, and beside a settled or just-saved approval, where the long sentence above would crowd the row. */
 export const PLACE_APPROVED_NOT_A_LIST_ADD = "The place only — this does not add the customer to the rep's list.";
 
 // ── A take-back is promised only to the one who has it ───────────────────────────────────────────
@@ -245,6 +247,29 @@ export function seatedRejectWarning(canRestore: boolean): string {
   const cost = "This retires their seat — the rep captures the customer again from their own list.";
   return canRestore ? `${cost} You can approve it after all from this row.` : cost;
 }
+
+/**
+ * Who can take back a refusal on Not confirmed, said under its warning — one row's and a bulk run's alike
+ * (17 Nov 2026, the audit's wording on screen). It said "cannot be undone", never true for the Super Admin:
+ * History's "Approve after all" brings the place back while it stays retired.
+ */
+export function refusalTakeBack(canRestore: boolean, count = 1): string {
+  const them = count === 1 ? "it" : "them";
+  return canRestore
+    ? `You can approve ${them} after all from History while ${count === 1 ? "it stays" : "they stay"} retired.`
+    : `Only the Super Admin can take ${them} back.`;
+}
+
+// ── A place the other decider settled first ──────────────────────────────────────────────────────
+
+/**
+ * 🔴 A PLACE ALREADY RETIRED, OR GONE, IS AN ANSWER ON THE BOARD, NOT A RED ERROR (owner, 17 Nov 2026, the
+ * audit's wording on screen). Refuse and Approve on Not confirmed answer with these codes when the other
+ * decider settled the place first (`server/validation-reviews.ts`), and the board's already-decided list
+ * (`place-check-done.tsx`) reads the same two constants, so a renamed code cannot turn the row red again.
+ */
+export const PLACE_RETIRED_CODE = "phoenix_crm_place_retired";
+export const PLACE_GONE_CODE = "phoenix_crm_place_not_found";
 
 // ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
 

@@ -15,9 +15,9 @@ export const dynamic = "force-dynamic";
 //
 // `approve` is gate one DELIBERATELY, not `update`: a District Manager holds
 // phoenix_crm ["read", "create", "approve"] and no `update` at all, so `update` here would 403 the one
-// person this route exists for. Gate two is the service — `savePlaceNote` admits the Super Admin and a
-// district manager on his OWN team's seats, and refuses the RSM, the NSM and the SFE Manager, who all
-// hold `approve` too. It decides nothing: the decision stays `canDecideValidationReviews`.
+// person this route exists for. Gate two is the service — `savePlaceNote` admits the deciders (the Super
+// Admin and the SFE Manager, `canDecideValidationReviews`) and a district manager on his OWN team's seats,
+// and refuses the RSM and the NSM, who hold `approve` too. A note decides nothing.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);

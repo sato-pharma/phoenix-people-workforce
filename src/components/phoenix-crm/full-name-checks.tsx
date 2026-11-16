@@ -12,10 +12,17 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { PLACE_SCHEDULE_TEXT, placeReadingText, placeSignboardText } from "@/components/phoenix-crm/validated-place-list";
 import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
-import { CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { phxButtonApproveClassName, phxButtonDangerClassName, phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { doctorFullNameProblem, splitDoctorName, type DoctorNameParts, type HeldFullName, type HeldFullNameBoard } from "@/lib/phoenix-crm/pm-name-rules";
+
+/**
+ * How many names the list opens on. 🔴 THE FIRST FIVE, THEN ONE PRESS FOR THE REST (owner, 17 Nov 2026: "make
+ * it easier to use, simple to decide"): 26 names stood three screens tall above every other decision on the
+ * page. A decided row stays on screen until the page reads again, and the next names then move up into the five.
+ */
+const FIRST_NAMES = 5;
 
 /**
  * PM customers' full names waiting for a decision (owner, 2026-11-07, pm-name-rules.ts): the name a rep
@@ -44,6 +51,8 @@ import { doctorFullNameProblem, splitDoctorName, type DoctorNameParts, type Held
  */
 export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: boolean; rows: HeldFullName[] }) {
   const shown = rows.filter((row) => !row.isTest);
+  const [showAll, setShowAll] = useState(false);
+  const listed = showAll ? shown : shown.slice(0, FIRST_NAMES);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (customerId: string) =>
     setOpen((current) => {
@@ -65,7 +74,7 @@ export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: bool
       title={`PM full names to check (${shown.length})`}
     >
       <CrmCardsOnPhone>
-        {shown.map((row) => (
+        {listed.map((row) => (
           <div className="space-y-2 px-4 py-4" key={row.customerId}>
             <p className="break-words font-bold text-slate-900" dir="auto">
               {row.fullName}
@@ -95,7 +104,7 @@ export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: bool
           </tr>
         </thead>
         <tbody>
-          {shown.map((row) => (
+          {listed.map((row) => (
             <Fragment key={row.customerId}>
               <tr>
                 <td className={crmTdClassName}>
@@ -127,6 +136,13 @@ export function FullNameChecks({ canCorrect = false, rows }: { canCorrect?: bool
           ))}
         </tbody>
       </CrmTable>
+      {shown.length > FIRST_NAMES ? (
+        <div className="border-t border-slate-200 px-4 py-2">
+          <CrmButton aria-expanded={showAll} onClick={() => setShowAll((current) => !current)} size="sm" variant="ghost">
+            {showAll ? `Show the first ${FIRST_NAMES} only` : `Show the other ${shown.length - FIRST_NAMES}`}
+          </CrmButton>
+        </div>
+      ) : null}
     </AdminTableShell>
   );
 }

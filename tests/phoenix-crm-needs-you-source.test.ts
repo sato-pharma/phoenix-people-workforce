@@ -304,19 +304,25 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
       "the role test travels with the gate; reading it again here is how two copies come apart",
     );
 
-    // Both worlds, exactly as the page lists them. A filter either way is the under-report.
+    // 🔴 REAL ENTRIES, EXACTLY AS THE PAGE DRAWS THEM (owner, 17 Nov 2026, the audit's wrong counts). The
+    // page has drawn no test entry since 2026-10-17 (`isReal`), so a count of both worlds read "1 place is
+    // held" over a page that showed none. Until then this asserted the opposite.
     const countBlock = reviews.slice(
       reviews.indexOf("export async function countValidationReviewsWaiting"),
       reviews.indexOf("function reviewNoticeKey"),
     );
     assert.ok(countBlock.length > 0, "the count could not be located");
-    assert.ok(!countBlock.includes("is_test"), "the page shows both worlds and marks each row, so the count filters neither");
+    assert.match(countBlock, /\.eq\("status", "pending"\)\s+\.eq\("is_test", false\)/, "the waiting reviews are the real ones the page draws");
+    assert.match(countBlock, /\.eq\("status", "held"\)\s+\.eq\("is_test", false\)/, "and so are the held buildings");
+    // A building is ONE decision, held or with anybody waiting behind it: the Needs you tab's own count.
+    assert.ok(countBlock.includes("return needsYouDecisionCount({"), "counted the way the Needs you tab counts");
+    assert.ok(countBlock.includes(".filter(sharedPlaceIsOnTheBoard)"), "a waiting customer is filed under his building exactly when the board files him there");
     // 14 Nov 2026: it was a head count of every pending review. A review left pending on a retired place
     // is nobody's to decide and the page no longer lists it, so the count reads the waiting rows whole,
     // paged, and asks the page's own test of each. A read it could not finish throws, never a short figure.
     assert.ok(countBlock.includes("readEveryPage<Row>("), "read whole and paged, so the 1,000-row ceiling cannot shorten it");
     assert.ok(!countBlock.includes(".limit("), "and never a bounded read");
-    assert.match(countBlock, /if \(capped\) throw new Error\(/, "a read that met its ceiling is refused, never counted short");
+    assert.match(countBlock, /if \(capped \|\| heldRead\.capped\) throw new Error\(/, "a read that met its ceiling is refused, never counted short");
     assert.ok(countBlock.includes("rows.filter((row) => reviewStillToDecide(row, placeById))"), "counted by the same test the page lists by");
     assert.ok(
       reviews.includes("reviews.filter((row) => reviewStillToDecide(row, placeById)).map((row): ValidationReviewRow =>"),
@@ -343,7 +349,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     // And it renders in HIS lane, with an age and no invented verdict.
     const held = item({
       key: "phoenix-crm-decisions:place-checks",
-      label: "2 places are held for your approval",
+      label: "2 place checks wait for your approval",
       href: "/admin/field-crm/validation-reviews",
       oldestAt: "2026-09-30T06:00:00.000Z",
       ageDays: 3,
@@ -356,7 +362,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.equal(row?.overdue, false, "no SLA upstream, so no verdict");
     assert.equal(board.allClearProvable, false, "a held place can never sit under the all-clear");
     const printed = [needsYouHeroDescription(board), ...needsYouSectionLines(buildNeedsYouSections(board))].join("\n");
-    assert.ok(printed.includes("held for your approval"), "the row is printed in his own words");
+    assert.ok(printed.includes("wait for your approval"), "the row is printed in his own words");
   }
 
   // ── 🔴 A REFUSED PLACE NOT YET CAPTURED AGAIN — his alone, worth knowing, with an age ────────────
@@ -373,7 +379,13 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     );
     const countBlock = reviews.slice(reviews.indexOf("export async function countReopenedCustomersWaiting"));
     const countBody = countBlock.slice(0, countBlock.indexOf("\n}\n"));
+    // 17 Nov 2026: the same customers the page lists, real and without anybody who captured again since —
+    // a head count and the oldest stamp, the database itself leaving out a customer with a place in use.
     assert.ok(countBody.includes('{ count: "exact", head: true }'), "a head count, so no row ceiling can shorten it");
+    assert.ok(countBody.includes('.eq("is_test", false)'), "real entries, as the page draws them");
+    assert.match(countBody, /\.eq\("active_place\.status", "active"\)\s*\.is\("active_place", null\)/, "and nobody who has captured again is still waiting to");
+    assert.ok(reviews.includes("const customers = await withoutACaptureSince(read.rows);"), "the page's list leaves the same customers out");
+    assert.ok(countBody.includes("throwIfError(waiting.error);"), "a failed read throws, never counted as zero");
     assert.ok(!countBody.includes("catch"), "a failed read travels");
 
     const adapterSource = source("src/lib/needs-you/sources.ts");

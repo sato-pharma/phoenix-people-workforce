@@ -188,6 +188,18 @@ function restorableSince(): string {
   return new Date(Date.now() - RESTORABLE_SHOWN_DAYS * 86_400_000).toISOString();
 }
 
+/**
+ * Whether the Place checks board holds this building — the same test as `loadSharedPlaceBoard`'s read (in
+ * use, held, or rejected inside the window) and the board's `isReal`, so a count made elsewhere files a
+ * waiting customer under his building exactly when the board does (`needsYouDecisionCount`).
+ */
+export function sharedPlaceIsOnTheBoard(row: { status?: unknown; is_test?: unknown; retired_at?: unknown }): boolean {
+  if (row.is_test === true) return false;
+  if (row.status === "active" || row.status === "held") return true;
+  if (row.status !== "retired" || typeof row.retired_at !== "string") return false;
+  return Date.parse(row.retired_at) >= Date.parse(restorableSince());
+}
+
 const SHARED_PLACE_COLUMNS =
   "id, seat_id, line_code, name, kind, status, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, " +
   "area_code, area_name, region_code, region_name, lat, lon, accuracy_meters, photo_path, captured_at, " +

@@ -443,7 +443,15 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
 
   // ── The server hands the board the building each row is seated in ─────────────────────────────
   const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
-  assert.ok(/photo_path, status, shared_place_id, signboard_check(?:, created_by_hr_id)?"/.test(reviews), "the review read selects the place's shared_place_id, and its signboard reading for the recommendation");
+  // Since 16 Nov 2026 the review read joins its place in (`REVIEW_SUBJECTS_SELECT`), and the signboard comes
+  // by the keys the board reads (`SIGNBOARD_CHECK_KEYS_SELECT`) — `tests/phoenix-crm-place-checks-speed.test.ts`.
+  const subjects = read("src/lib/phoenix-crm/place-checks-slim-read.ts");
+  const subjectsSelect = subjects.slice(subjects.indexOf("export const REVIEW_SUBJECTS_SELECT"));
+  assert.ok(
+    /photo_path, status, shared_place_id, created_by_hr_id, " \+\s*`\$\{SIGNBOARD_CHECK_KEYS_SELECT\}\)`/.test(subjectsSelect),
+    "the review read selects the place's shared_place_id, and its signboard reading for the recommendation",
+  );
+  assert.ok(reviews.includes("${REVIEW_SUBJECTS_SELECT}"), "and the review read is the one that joins it in");
   assert.ok(reviews.includes("sharedPlaceId: text(place.shared_place_id)"), "and a review row carries it whatever the hold was about");
   assert.ok(reviews.includes("sharedPlaceId: text(row.shared_place_id)"), "as does a validated place");
   assert.ok(reviews.includes("sharedPlaceId: venue?.sharedPlaceId ?? null"), "and a customer sent back by his building's refusal");

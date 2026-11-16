@@ -32,7 +32,7 @@ import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-re
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SeatedCustomers } from "@/components/phoenix-crm/shared-place-customers";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import {
@@ -42,7 +42,6 @@ import {
   CrmPill,
   CrmTable,
   crmTdClassName,
-  crmTextareaClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import {
@@ -351,18 +350,7 @@ function RestoreVenue({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueSc
         Bringing it back makes the building live again and gives every customer it retired their place back. One whose timetable still cannot
         answer for them stays under To validate.
       </p>
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-venue-note-${scope}-${row.sharedPlaceId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving}
-        id={`restore-venue-note-${scope}-${row.sharedPlaceId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
+      <DecisionComment disabled={saving} id={`restore-venue-note-${scope}-${row.sharedPlaceId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton busy={saving} disabled={saving} onClick={() => void restore()} variant="primary">
         {saving ? "Bringing it back" : "Approve it after all"}
       </CrmButton>
@@ -435,19 +423,7 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
         onChange={setReason}
         value={reason}
       />}
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`shared-place-note-${scope}-${row.sharedPlaceId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving !== null}
-        id={`shared-place-note-${scope}-${row.sharedPlaceId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving !== null} id={`shared-place-note-${scope}-${row.sharedPlaceId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : row.status === "held" ? "Approve" : "Keep it"}

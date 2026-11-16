@@ -3,26 +3,34 @@ import { parseDoctorFullName, type HeldFullName, type HeldFullNameBoard } from "
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { canDecideValidationReviews, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { scheduleOf, signboardOf } from "@/lib/phoenix-crm/server/validation-reviews";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
-const HELD_LIMIT = 200;
-
 export async function loadHeldFullNames(viewer: PhoenixCrmViewer): Promise<HeldFullName[]> {
   if (!canDecideValidationReviews(viewer)) return [];
-  const read = await getSupabaseAdmin()
-    .from("phoenix_crm_customers")
-    .select("id, name, is_test, full_name_held, full_name_held_at, full_name_held_by_hr_id, full_name_held_score, full_name_held_board")
-    .not("full_name_held", "is", null)
-    .order("full_name_held_at", { ascending: true })
-    .limit(HELD_LIMIT);
+  // 🔴 EVERY HELD NAME, READ WHOLE AND PAGED (owner, 17 Nov 2026, the audit's decision paths). It read the
+  // oldest 200 and stopped, with no word on the screen, so from the 201st the newest held names were
+  // silently missing and nobody could decide them. A read that meets its ceiling THROWS, as every Place
+  // checks read does, rather than drawing a short list as if it were whole.
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, name, is_test, full_name_held, full_name_held_at, full_name_held_by_hr_id, full_name_held_score, full_name_held_board")
+        .not("full_name_held", "is", null)
+        .order("full_name_held_at", { ascending: true })
+        .order("id", { ascending: true }),
+    { maxRows: 5_000, whenFull: "stop", what: "The PM full names waiting for a decision", uniqueBy: (row) => String(row.id) },
+  );
   throwIfError(read.error);
-  const rows = (read.data ?? []) as Row[];
-  // Each held customer's places in use, for the row that opens on its signboard (owner, 2026-11-08). At most
-  // HELD_LIMIT ids, sent in `selectByIds`'s chunks, never one long `.in()`.
+  if (read.capped) throw new Error("The PM full names waiting for a decision could not be read whole.");
+  const rows = read.rows;
+  // Each held customer's places in use, for the row that opens on its signboard (owner, 2026-11-08), sent
+  // in `selectByIds`'s chunks, never one long `.in()`.
   const places = await selectByIds<Row>(
     "phoenix_crm_places",
     "id, customer_id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",

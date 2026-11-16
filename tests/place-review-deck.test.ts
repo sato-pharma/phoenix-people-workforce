@@ -386,7 +386,10 @@ export function runPlaceReviewDeckTests(): void {
       const wrapped = body.match(/markSaved\(done\(/g) ?? [];
       assert.ok(calls.length > 0 && wrapped.length === calls.length, `${path} ${name}: every saved decision is marked saved the moment the server says yes (${wrapped.length} of ${calls.length})`);
       assert.match(body, /markSaved\(done\([^;]*\)\);\s*setSaving\((?:false|null)\);/, `${path} ${name} lets go of its busy state on success, not only on failure`);
-      const savedAt = body.search(/if \(saved\) return <PlaceCheckSaved outcome=\{saved\} \/>;/);
+      // 17 Nov 2026: the in-use list's Refuse sits beside its Approve on one row and both read the same saved
+      // mark, so Approve draws it and Refuse steps aside — one press, one mark. Every other control draws its own.
+      const sharesApprovesMark = path.endsWith("validated-place-list.tsx") && name === "Refuse";
+      const savedAt = body.search(sharesApprovesMark ? /if \(saved\) return null;/ : /if \(saved\) return <PlaceCheckSaved outcome=\{saved\} \/>;/);
       assert.ok(savedAt >= 0, `${path} ${name} draws the saved outcome instead of its buttons once the decision is saved`);
       const firstButton = body.search(/<CrmButton/);
       assert.ok(firstButton < 0 || savedAt < firstButton, `${path} ${name} checks the saved outcome before any button can be drawn`);

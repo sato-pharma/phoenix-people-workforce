@@ -21,15 +21,14 @@ import { approvalOutcome, isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, 
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
 import { RestoreAfterRejection, restoreRequest, useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
-import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
+import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
-import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import {
-  PLACE_APPROVAL_IS_NOT_A_LIST_ADD,
   PLACE_APPROVED_NOT_A_LIST_ADD,
   VALIDATION_NOTE_LABEL,
   VALIDATION_REASON_REQUIRED,
@@ -262,19 +261,7 @@ function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: 
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`reject-again-note-${scope}${row.reviewId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving}
-        id={`reject-again-note-${scope}${row.reviewId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving} id={`reject-again-note-${scope}${row.reviewId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <CrmButton disabled={saving || reason === ""} onClick={() => void reject()} variant="danger">
         {saving ? "Rejecting…" : "Reject it after all"}
       </CrmButton>
@@ -362,8 +349,11 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
     }
   }
 
+  // 🔴 THE DECISION READS TOP TO BOTTOM, THEN THE PRESS (owner, 17 Nov 2026: "simple to decide"): what the
+  // rep is told, an optional comment folded behind one link, the two buttons, and one short line each under
+  // them. The long "does not add to the list" sentence is the section's own description, once, not every row's.
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <RefusalReasonField
         disabled={saving !== null}
         id={`review-reason-${scope}${row.reviewId}`}
@@ -371,19 +361,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         onChange={setReason}
         value={reason}
       />
-      <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`review-note-${scope}${row.reviewId}`}>
-        {VALIDATION_NOTE_LABEL}
-      </label>
-      <textarea
-        className={crmTextareaClassName}
-        disabled={saving !== null}
-        id={`review-note-${scope}${row.reviewId}`}
-        maxLength={500}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        value={note}
-      />
-      <RefusalNoteHint />
+      <DecisionComment disabled={saving !== null} id={`review-note-${scope}${row.reviewId}`} label={VALIDATION_NOTE_LABEL} onChange={setNote} value={note} />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
         <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}
@@ -394,7 +372,7 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
       </div>
       {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
-      <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
+      <p className="break-words text-xs text-slate-500">{PLACE_APPROVED_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );
@@ -405,14 +383,17 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
  * the Super Admin keeps every control he has had since 2026-10-03 and reads what the manager wrote
  * under it; the manager gets the settled state, his comments and his two recommendation buttons, and
  * no decision control of any kind.
+ *
+ * `scope` keeps the phone cards' field ids apart from the table's (17 Nov 2026, the audit): both are on the
+ * page at once, one of them hidden, and the same id twice sent a label's tap to the hidden copy.
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnReview(row)} />}
-      {mode === "team" ? <Settled row={row} /> : <Decision row={row} />}
+      {mode === "team" ? <Settled row={row} /> : <Decision row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -536,7 +517,7 @@ export function ValidationReviewQueue({
             <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
             <Who row={row} />
             <Evidence row={row} />
-            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+            <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
           </div>
         ))}
       </CrmCardsOnPhone>
@@ -565,7 +546,7 @@ export function ValidationReviewQueue({
                 <Evidence row={row} />
               </td>
               <td className={crmTdClassName}>
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="" />
               </td>
             </tr>
           ))}

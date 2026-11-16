@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { errorCodeOf } from "@/components/phoenix-crm/api";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
-import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVED_NOT_A_LIST_ADD, PLACE_GONE_CODE, PLACE_RETIRED_CODE } from "@/lib/phoenix-crm/validation-feedback";
 
 /** What a saved decision did, in the review's own words. */
 export type PlaceCheckOutcome =
@@ -68,12 +68,15 @@ export function bulkOutcomeSummary(outcomes: ReadonlyArray<PlaceCheckOutcome>): 
   const counts = new Map<PlaceCheckOutcome, number>();
   for (const outcome of outcomes) counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
   const said = [...counts].map(([outcome, count]) => `${SAVED_LABEL[outcome].text}: ${count}`).join(" · ");
+  // A run whose every row another press had settled saved nothing of its own, so it never says "Saved."
+  // (17 Nov 2026, the audit's wording): "Already decided: 3." is the whole truth.
+  const lead = counts.size === 1 && counts.has("already") ? "" : "Saved. ";
   const waiting = counts.get("waiting_building") ?? 0;
   const notes = [
     counts.has("approved") || counts.has("restored") ? PLACE_APPROVED_NOT_A_LIST_ADD : "",
     waiting === 0 ? "" : waiting === 1 ? "The customer waiting is counted once the building is approved." : `The ${waiting} customers waiting are each counted once their building is approved.`,
   ].filter((note) => note !== "");
-  return [`Saved. ${said}.`, ...notes].join(" ");
+  return [`${lead}${said}.`, ...notes].join(" ");
 }
 
 /**
@@ -88,6 +91,10 @@ const ALREADY_DECIDED_CODES: ReadonlySet<string> = new Set([
   "phoenix_crm_review_not_found",
   "phoenix_crm_review_not_rejected",
   "phoenix_crm_full_name_not_held",
+  // Refuse and Approve on Not confirmed, when the other decider settled the place first (17 Nov 2026):
+  // the same two constants the server answers with, from the pure `validation-feedback.ts`.
+  PLACE_RETIRED_CODE,
+  PLACE_GONE_CODE,
   "phoenix_crm_place_not_retired",
   "phoenix_crm_shared_place_not_retired",
   "phoenix_crm_shared_place_retired",
@@ -196,6 +203,16 @@ function rememberSaved(snapshot: string, outcome: PlaceCheckOutcome) {
     if (oldest === undefined) break;
     SAVED_MARKS.delete(oldest);
   }
+}
+
+/**
+ * 🔴 A BULK RUN MARKS EVERY ROW IT SETTLED, AS THE ROW'S OWN CONTROL WOULD (17 Nov 2026, the audit's
+ * wording on screen). The bar answered twelve rows and said so above them, but each row below still stood
+ * with its live buttons until the page's re-read: a second press met "already decided". `subject` is the
+ * same row the control hands `useSavedOutcome`, so the mark lands under exactly that control.
+ */
+export function markRowSaved(subject: unknown, outcome: PlaceCheckOutcome) {
+  rememberSaved(JSON.stringify(subject), outcome);
 }
 
 /**
