@@ -374,7 +374,7 @@ async function subjectFor(viewer: PhoenixCrmViewer, kind: PlaceNoteSubjectKind, 
   // and a recommendation was upserted onto (place_id, manager_hr_id), OVERWRITING his own. Reading the
   // board stays exactly his; writing on it stays his alone. A test row is the test world's, as before.
   if (viewer.isTestPersona && !subject.isTest) {
-    throw forbiddenError("A test account reads this board as the manager sees it, and cannot comment or recommend on a real place.");
+    throw forbiddenError("A test login reads this board as the manager sees it, and cannot comment or recommend on a real place.");
   }
 
   if (canDecideValidationReviews(viewer)) return { source: "system_admin", subject };
