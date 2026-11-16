@@ -839,3 +839,24 @@ Owner: "when sfe or admin reject or approve validation and write the comment thi
 - **Failure.** The decision is already committed when the comment is written, so a failed write is logged (`phoenix_crm_decision_comment_failed`) and the words stay in `decision_note`.
 - **Printed once.** The deciders' page hides `decision_note` when the same words are already a visible comment on that row (`decisionNoteIsAComment`).
 - **The private column stays off a manager's browser (fixed 2026-11-01).** The board never drew `decision_note` or the decider's name for a manager, but the loaders still sent both, and a field a browser receives counts as shown. Every Place checks loader now nulls `decidedByName`, `refusedByName`, `decisionNote` and `timetableExempt.byName` for a viewer who is not `canDecideValidationReviews`. One line was drawn on their screen: a closed integrity case read "Settled by" and a name, and it now reads "Settled" and the time. The deciders' board, its "Decided by" filter and `decisionStamp` are unchanged. The Visit Report is a separate ruling: `docs/phoenix-crm-visit-report.md`.
+
+## What the Super Admin approved is final (2026-11-16)
+
+The owner, 16 November 2026: *"when super admin approve something sfe or whoever cannot reject it back bec its approved by admin"*.
+
+**What happened.** On 10 November he validated three doctors on one Pedia representative's list (Giza 1) as trusted points, which carry no photograph by design. At 18:58 Cairo on 15 November the SFE Manager refused all three through the validated-places Refuse, giving "no signboard". That path upserts the review back to `pending` (clearing who approved it) and then rejects it, so the three doctors fell back to To validate. They were the only three trusted-point places in the system. They were restored at 23:03 Cairo on 16 November through the Super Admin's own "Approve it after all" path, which sends no notice.
+
+**The rule.** An approval is the Super Admin's when:
+
+- the place's validation review was decided `approved` by a Super Admin;
+- the place itself was created by a Super Admin (a trusted point, a seat he placed); or
+- for a building, an active shared place a Super Admin approved.
+
+Nobody but a Super Admin may reject it. What the SFE Manager or the system approved stays rejectable by either decider, and the Super Admin himself is never blocked. A Super Admin is an active login with that role that is not a test account, so a test approval never locks anything.
+
+**Where it is enforced.**
+
+- Database, migration `20261116230741_phoenix_crm_super_admin_approval_is_final.sql`: `phoenix_crm_is_super_admin(text)` is the one test. `phoenix_crm_decide_validation_review` and `phoenix_crm_decide_shared_place` raise `phoenix_crm:approved_by_super_admin` for anyone else, which the service maps to a 403 with the sentence "The administrator approved this, so only the administrator can take it back." `phoenix_crm_super_admin_hr_ids()` returns the same list, built on the same test, for the screen.
+- Service: `refuseValidatedPlace` reads the review's status and approver and refuses BEFORE its upsert. After the upsert, the database could no longer see the approval (only a place he created).
+- Screens: the buildings board, the validated places (and the review deck, which reuses its Refuse button), the reviews queue and the customers seated in a polyclinic show the sentence instead of Reject or Refuse; bulk reject and bulk refuse skip locked rows. The rows carry `lockedBySuperAdmin`, which is computed only for a viewer who is not a Super Admin.
+- Shared logic: `src/lib/phoenix-crm/super-admin-approval-rules.ts` (the sentence and the pure check) and `src/lib/phoenix-crm/server/super-admin-approval.ts` (the list, which throws on a failed read rather than answering an empty set).

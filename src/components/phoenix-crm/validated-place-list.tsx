@@ -51,6 +51,7 @@ import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
@@ -280,6 +281,9 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
 
   if (saved) return <PlaceCheckSaved outcome={saved} />;
 
+  // 🔴 What the administrator approved — a trusted point included — only he refuses (owner, 2026-11-16).
+  if (row.lockedBySuperAdmin) return <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>;
+
   if (!open) {
     return (
       <CrmButton onClick={() => setOpen(true)} variant="danger">
@@ -476,7 +480,8 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     needsReason: true,
     warning: (count) =>
       `This retires ${count === 1 ? "that place" : `those ${count} places`} and cannot be undone here; each customer left without one validates again from their own list.`,
-    takes: () => true,
+    // What the administrator approved, only he refuses (owner, 2026-11-16).
+    takes: (row) => !row.lockedBySuperAdmin,
     run: (row, answer) =>
       crmPost<unknown>("/api/phoenix-crm/validation-reviews/refuse", { placeId: row.placeId, note: answer.note, refusalReason: answer.reason }, "refused"),
     outcomeOf: () => "refused",
