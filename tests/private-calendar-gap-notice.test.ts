@@ -72,7 +72,7 @@ export function runPrivateCalendarGapNoticeTests() {
   assert.deepEqual(two.dates, ["2026-10-04", "2026-10-05"], "the dates travel in order");
   assert.equal(two.title, "2 unexplained days on your calendar");
   assert.match(two.message, /Sun 4 Oct, Mon 5 Oct/, "the body spells the days out the way the calendar does");
-  assert.match(two.message, /Request review/, "and names the control that answers them");
+  assert.match(two.message, /Explain this day/, "and names the control that answers them");
   assert.ok(!two.message.includes("PD-0013"), "an HR code never appears in the body (owner rule)");
   assert.ok(!two.message.includes("…") && !two.message.includes("..."), "no ellipsis anywhere (owner rule)");
 

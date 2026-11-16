@@ -25,18 +25,25 @@ export async function POST(request: Request) {
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     const body = await request.json();
-    const dispute = await submitPrivateCalendarDataDispute(access, {
-      claimSourceText: String(body.claimSourceText ?? ""),
-      claimText: String(body.claimText ?? ""),
-      disputeDate: String(body.disputeDate ?? ""),
-      displayedSummary: String(body.displayedSummary ?? ""),
+    // The explanation (owner, 2026-11-16): a reason from the list, the days, who confirms, and words
+    // for "Something else". The domain helper checks every field; nothing here trusts the body.
+    const summaries: Record<string, string> = {};
+    if (body.displayedSummaries && typeof body.displayedSummaries === "object") {
+      for (const [date, text] of Object.entries(body.displayedSummaries as Record<string, unknown>)) {
+        if (typeof text === "string") summaries[String(date)] = text.slice(0, 500);
+      }
+    }
+    const disputes = await submitPrivateCalendarDataDispute(access, {
+      confirmerHrId: body.confirmerHrId,
+      dates: body.dates,
+      detailText: body.detailText,
+      displayedSummaries: summaries,
       employeeName: typeof body.employeeName === "string" ? body.employeeName : null,
-      itemSource: typeof body.itemSource === "string" ? body.itemSource : null,
-      itemSourceRecordId: typeof body.itemSourceRecordId === "string" ? body.itemSourceRecordId : null,
+      reasonCode: body.reasonCode,
     });
-    return NextResponse.json({ data: dispute, success: true });
+    return NextResponse.json({ data: disputes, success: true });
   } catch (error) {
-    const apiError = toApiError(error, "Unable to submit this dispute.");
+    const apiError = toApiError(error, "Unable to send this explanation.");
     return NextResponse.json({ error: apiError.code, message: apiError.message, success: false }, { status: apiError.status });
   }
 }

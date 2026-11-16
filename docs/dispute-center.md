@@ -331,10 +331,61 @@ deductions the company-wide readers who may read and not write. A named weekly-r
 rules on their own pay; the Super Admin is exempt, because nobody is above him. A line manager
 holding `attendance:read` opens the page and sees nothing of a rep's pay-affecting dispute.
 
+## Explaining a day — the reason list (16 November 2026)
+
+> "deeep audit the disputes … what comes to me in the calendar dispute for the admin that something is
+> wrong and is I don't like it. No, make the rep write whatever he wants … There's nothing wrong. He's
+> the one that has the issue … find a more professional, easier, accurate way."
+
+The audit behind it (production, 16 Nov 2026): 82 calendar requests, 70 accepted; 56 claims under 25
+characters; 37 requests for one training week, each decided alone; 21 filed more than 7 days late;
+one employee filed the same two days twice; leave claims accepted with no leave on file.
+
+So no dispute opens with free text saying the system is wrong. The employee **explains** the day:
+
+| Reason | Who confirms it |
+| --- | --- |
+| Training | his direct manager, the manager above, or the Training Manager |
+| Meeting | his manager |
+| Double visit | his manager |
+| Something else | nobody — at least 4 words and 25 characters, read by the Super Admin directly |
+
+His answers, each asked as multiple choice: **build it, one PR**; a day can be explained **until its
+payroll month is confirmed**; an unlogged visit is **not a reason** (Phoenix CRM is the only proof of a
+visit); **"manager first then me but remove device problem choice"** — there is no device-problem reason.
+A day that was leave is never explained: the form links to the leave request.
+
+- **One action for many days.** The calendar's "Explain this day" ticks other unexplained days of the
+  month with the same reason (14 days at most, never a future day). Each day is its own request row, all
+  sharing one explanation group, so the confirmer answers once and the Super Admin can accept the group.
+- **The confirmer answers first** at the top of his own Disputes page ("Waiting for your confirmation"),
+  told in-app and by push, never by email. His answer is information: the decision stays the Super
+  Admin's, who is told when it lands.
+- **The Super Admin's Calendar Disputes inbox** is grouped: *Ready for your decision* (confirmed, no
+  confirmer needed, or filed before the list), *Not confirmed*, *Waiting for the person they named* —
+  each by reason. **Accept all** takes two clicks and is offered only on a group where every request was
+  confirmed by the person named; never on Something else and never on a request filed before the list.
+- **Both deduction boxes** (the monthly ledger's and the released daily line's) open with the same list.
+  Their days are the deduction's own, fixed by HR, so neither the 14-day cap nor the date checks apply;
+  later comments on the conversation stay free text. A dispute opened before 16 Nov carries on as it was.
+- **One day, one review.** A day explained on the calendar is refused on a deduction dispute and the
+  other way round (`assertDaysNotExplainedElsewhere`), and a day whose payroll month is confirmed is
+  refused on the calendar with the way out named (dispute the deduction).
+- **What the reviewer reads first** on every case is the reason and where the confirmation stands
+  (`explanationFacts`), green when confirmed, red when declined.
+
+Where it lives: the list and its check in `src/lib/dispute-center/explain-reasons.ts` (pure, shared by
+the forms, the server and the test); who may confirm, saving and the confirmer's answer in
+`src/lib/dispute-center/explanations.ts`; the table `dispute_explanations`
+(`supabase/migrations/20261116234054_dispute_explanations_reason_list.sql`). That migration also added
+`private_calendar_data_disputes.day_part`; nothing writes it and it stays `whole` — an explanation covers
+the missing part of a day, so a half-day choice would have meant re-pricing the full-day charges.
+
 ## What it is pinned by
 
 | Test | What it refuses |
 | --- | --- |
+| `tests/dispute-explanations.test.ts` | a device-problem or leave reason, a named reason with no confirmer, "Something else" in a few words, a calendar explanation over 14 days or in the future, a confirmer told by email, a day explained in two modules, an inbox that calls the day wrong or bulk-accepts an unconfirmed or free-text request |
 | `tests/daily-deductions-disputes.test.ts` | a released daily line with no Dispute box, a won day charged again by either month-end door or the daily tally, an open or rejected dispute sparing a day, a reduce on a daily case |
 | `tests/dispute-center-state.test.ts` | a stored state, a case that expires, an employee reopening their own case |
 | `tests/dispute-center-participants.test.ts` | a case readable on `attendance:read` alone; a decide or reopen that does not assert the participant inside the domain helper |

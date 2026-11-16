@@ -2109,6 +2109,7 @@ import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
 import { runPhoenixCrmFraudScanTests } from "./phoenix-crm-fraud-scan.test.ts";
 import { runPrivateCalendarGapNoticeTests } from "./private-calendar-gap-notice.test.ts";
+import { runDisputeExplanationsTests } from "./dispute-explanations.test.ts";
 import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
 import { runCronAutoarmTests } from "./cron-autoarm.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
@@ -7804,6 +7805,11 @@ await runTest(
 await runTest(
   "the Private Calendar tells an employee when their OWN calendar has an unexplained day (owner, 2026-10-08, after the measurement that Request review had been used ONCE since 22 July across 111 active employees because nothing ever told anyone to look): Saturday 08:09 Cairo for the completed Sat-Thu week, one notice per employee and not one per day, to the EMPLOYEE ALONE and never a manager or HR; it judges nothing of its own but calls the same getCompanyNoActivityDays the Deductions connector calls, so the day the notice names, the day the calendar shows and the day that can become a deduction candidate are one day; a day already carrying a review request of any status is named to nobody and that suppression read fails CLOSED; in-app and push with no email channel at all; the cap counts the rest with no ellipsis; and the five registration sites agree so the cron is watched, armed and cannot strand",
   runPrivateCalendarGapNoticeTests,
+);
+
+await runTest(
+  "every dispute opens with a reason, not free text (owner, 2026-11-16: 'find a more professional, easier, accurate way'; 'manager first then me but remove device problem choice'): the list is Training, Meeting, Double visit and Something else, with no device problem and no leave; a named reason needs the manager or Training Manager who can confirm it and Something else needs at least 4 words and 25 characters; a calendar explanation covers 14 days at most and never a future day while a deduction's own days are never capped; the confirmer is told in-app and by push and never by email; the calendar and both deduction boxes refuse a day already explained in another; and the Super Admin's inbox never calls the day wrong and offers Accept all, in two clicks, only on a group every person named confirmed",
+  runDisputeExplanationsTests,
 );
 
 await runTest(
