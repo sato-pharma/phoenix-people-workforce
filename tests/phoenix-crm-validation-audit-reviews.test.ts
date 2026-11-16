@@ -207,7 +207,7 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     }
 
     const refuse = fn(reviews, "export async function refuseValidatedPlace(");
-    const read = refuse.indexOf('.select("google").eq("place_id", placeId).maybeSingle()');
+    const read = refuse.search(/\.select\("google(?:, status, decided_by_hr_id)?"\)\s*\.eq\("place_id", placeId\)\s*\.maybeSingle\(\)/);
     const written = refuse.indexOf(".upsert(");
     assert.ok(read > 0 && read < written, "🔴 the row's record is read BEFORE the upsert replaces it");
     assert.ok(refuse.includes("const before = evidenceToKeep((earlier.data as Row | null)?.google);"), "through the one function above");

@@ -951,7 +951,8 @@ export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
  * whoever rejected it; never the SFE Manager, never a test account, never a district manager.
  *
  * 🔴 NARROWER THAN `canDecideValidationReviews`, BY HIS WORD — the SFE Manager still approves, rejects and
- * rejects-after-approval on the company board; taking a REJECTION back is the one decision he lost. And the
+ * rejects-after-approval on the company board; taking a REJECTION back is the one decision he lost. His
+ * reject-after-approval stops at what the Super Admin approved (owner, 2026-11-16, `super-admin-approval-rules.ts`). And the
  * Super Admin's take-back is never refused for a short name: he approves as it stands or corrects the name
  * in the same press (his "Both", the same day).
  */

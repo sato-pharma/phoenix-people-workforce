@@ -34,6 +34,7 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
@@ -409,6 +410,8 @@ function Decision({ customer, noTimetable, scope }: { customer: SeatedCustomer; 
   if (customer.state === "rejected") return customer.restorable ? <RestoreSeated customer={customer} scope={scope} /> : null;
   // "Reject — not on the timetable" is meaningless where the administrator declared there is none, and
   // its refusal would tell the rep something false about his photograph.
+  // 🔴 What the administrator approved, only he rejects (owner, 2026-11-16).
+  if (customer.state === "in_use" && customer.lockedBySuperAdmin) return <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>;
   if (customer.state === "in_use" && customer.placeId && !noTimetable) return <RejectNotOnTimetable customer={customer} scope={scope} />;
   return null;
 }

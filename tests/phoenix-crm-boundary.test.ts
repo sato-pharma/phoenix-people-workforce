@@ -1140,6 +1140,10 @@ const LATER_MIGRATIONS = [
   // phoenix_crm_shared_place_timetable_marks, and one NEW function, phoenix_crm_set_shared_place_no_timetable.
   // It replaces nothing save_visit depends on.
   "supabase/migrations/20261114155530_phoenix_crm_shared_place_timetable_marks.sql",
+  // What the Super Admin approved, only the Super Admin rejects (owner, 16 Nov 2026): two NEW read-only
+  // functions, phoenix_crm_is_super_admin and phoenix_crm_super_admin_hr_ids, and the two decision functions
+  // replaced with one refusal each. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261116230741_phoenix_crm_super_admin_approval_is_final.sql",
   // The same customer on another line, written differently (owner, 16 Nov 2026, "Fix rule + review list"): one
   // NEW table, phoenix_crm_line_lookalike_answers, and no function — the confirmation validates through
   // phoenix_crm_share_line_validation. It replaces nothing save_visit depends on.
