@@ -259,7 +259,7 @@ export function compareLookalikeNames(
   const equal = short.length === long.length && short.every((word, at) => word === long[at]);
   if (equal) return short.length >= 3 ? "same" : short.length === 2 ? "same2" : "same1";
   if (short.length >= 2 && short.every((word, at) => long[at] === word)) return short.length >= 3 ? "prefix3" : "prefix2";
-  const slips = short.map((word, at) => (word === long[at] ? 0 : nearWord(word, long[at]) ? 1 : 9));
+  const slips: number[] = short.map((word, at) => (word === long[at] ? 0 : nearWord(word, long[at]) ? 1 : 9));
   const slipped = slips.reduce((total, slip) => total + slip, 0);
   if (short.length === long.length && short.length >= 2) {
     if (slipped === 1 && (slips[0] === 0 || short[0].length >= 5)) {
