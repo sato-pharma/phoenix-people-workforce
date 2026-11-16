@@ -73,6 +73,7 @@ import {
   type SharedPlaceNamed,
 } from "@/lib/phoenix-crm/shared-place-rules";
 import { placePoint } from "@/lib/phoenix-crm/entry-rules";
+import { approvalLockFor } from "@/lib/phoenix-crm/server/super-admin-approval";
 import { buildingRefusalReason, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -663,6 +664,11 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
    * retired. The mirror of a review row's `restorable`.
    */
   restorable: boolean;
+  /**
+   * 🔴 The Super Admin approved this building, so nobody else may reject it (owner, 2026-11-16). Always
+   * false for a Super Admin viewer, and for a building still held or already rejected.
+   */
+  lockedBySuperAdmin?: boolean;
 };
 
 function readingOf(lat: unknown, lon: unknown, accuracy: unknown): SharedPlaceReading | null {
@@ -752,7 +758,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
   const rows = read.rows;
   if (rows.length === 0) return { rows: [], capped: false };
 
-  const [counts, { takeBacks, names }] = await Promise.all([
+  const [counts, { takeBacks, names }, lockedFor] = await Promise.all([
     seatedCounts(rows.map((row) => String(row.id))),
     (async () => {
       // 🔴 The deciders alone are read the trail: a manager's board never learns who took anything back.
@@ -765,6 +771,8 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
       ]);
       return { takeBacks, names };
     })(),
+    // Only a decider is ever offered Reject, so only a decider needs the Super Admins read.
+    decides ? approvalLockFor(viewer) : Promise.resolve(() => false),
   ]);
 
   const now = new Date();
@@ -811,6 +819,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         noTimetableControl: noTimetableControl({ canDeclare, status: base.status, exempt: text(row.timetable_exempt_at) !== null }),
         // The same pair of tests the database makes, so the control appears exactly where it works.
         restorable: row.status === "retired" && text(row.retired_at) !== null,
+        lockedBySuperAdmin: row.status === "active" && lockedFor(row.decided_by_hr_id),
       };
     }),
   };

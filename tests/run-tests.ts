@@ -2203,6 +2203,7 @@ import { runPhoenixCrmSfePlaceChecksTests } from "./phoenix-crm-sfe-place-checks
 import { runPhoenixCrmListCurationTests } from "./phoenix-crm-list-curation.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmRefuseValidationTests } from "./phoenix-crm-refuse-validation.test.ts";
+import { runPhoenixCrmSuperAdminApprovalIsFinalTests } from "./phoenix-crm-super-admin-approval-is-final.test.ts";
 import { runPhoenixCrmPlaceNotesTests } from "./phoenix-crm-place-notes.test.ts";
 import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-correction.test.ts";
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
@@ -8521,6 +8522,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lets the Super Admin refuse a validation the Google check never held (2026-10-03, after one had to be undone in SQL): the check covers AM customers only, so a doctor's validation is never held and the page now lists every place validated in the last 30 days that is still in use and not already waiting in the queue; the service asks who before it reads anything, demands a written reason, refuses a place already retired, writes the SAME review row the automatic check would have written — in the rep's name, reason refused_by_admin — runs the SAME reject RPC so there is one audit shape, and measures every visit to that customer again; the screen arms the button only after the reason is typed, fits the screen as a fixed table and phone cards with no scroller, ellipsis or round corner, and nothing the rep receives says a person refused him",
   runPhoenixCrmRefuseValidationTests,
+);
+
+await runTest(
+  "Phoenix CRM keeps what the Super Admin approved final (owner, 2026-11-16, after the SFE Manager refused three of his trusted-point validations for a missing signboard): only an active, non-test Super Admin counts and a failed read of them throws; both database decisions refuse a reject of his approval, or of a place he created, for anyone but a Super Admin, with the helper closed to the browser roles; the refuse service asks before the upsert that would wipe who approved; the refusal reaches the screen as a 403 with one plain sentence; and the buildings board, the validated places, the reviews queue, the seated customers and the review deck draw that sentence instead of Reject, with bulk reject skipping locked rows",
+  runPhoenixCrmSuperAdminApprovalIsFinalTests,
 );
 
 await runTest(

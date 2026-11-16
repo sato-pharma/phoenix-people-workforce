@@ -27,6 +27,7 @@ import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName,
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import {
   PLACE_APPROVAL_IS_NOT_A_LIST_ADD,
   PLACE_APPROVED_NOT_A_LIST_ADD,
@@ -332,6 +333,8 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
         {row.decisionNote ? <p className="break-words text-xs text-slate-600">{row.decisionNote}</p> : null}
         {row.restorable ? <Restore row={row} scope={scope} /> : null}
         {row.refusable ? <RejectAfterApproval row={row} scope={scope} /> : null}
+        {/* What the administrator approved, only he rejects (owner, 2026-11-16). */}
+        {row.status === "approved" && row.lockedBySuperAdmin ? <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote> : null}
       </div>
     );
   }
