@@ -212,6 +212,10 @@ export type AuditEntityType =
   | "deduction_candidate"
   | "deduction_comment"
   | "deduction_decision"
+  // Added 2026-11-16: the person an employee named confirming or declining the reason given for a day
+  // with no record (calendar, deduction or daily deduction). The entity id is the explanation group,
+  // one row per answer however many days it covers. Days and the answer only, never EGP.
+  | "dispute_explanation"
   // Recording a new hire's CRM username and code from the New Hire CRM Setup tab, or ruling that
   // they need no CRM account. It is a write to the EMPLOYEE MASTER made by a role that does not
   // hold employees:update (Super Admin + SFE Manager, through canUseAdminCrmWorkspace), so who

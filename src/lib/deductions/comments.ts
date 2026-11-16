@@ -163,7 +163,8 @@ async function assertCandidateOpenForDispute(candidateId: string) {
   }
 }
 
-async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string) {
+/** Refuses anyone but the candidate's own employee; returns that employee's compact HR id. */
+async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candidateId: string): Promise<string> {
   const ownerCompactHrId = await findDeductionsCandidateOwner(candidateId);
   if (!ownerCompactHrId) throw new Error("Deduction candidate not found.");
   const actorHr = compactDeductionsHrId(access.hrId ?? access.loginId);
@@ -171,12 +172,13 @@ async function assertEmployeeCanCommentOnCandidate(access: AccessContext, candid
     throw new Error("Forbidden: employees can dispute only their own deductions.");
   }
   await assertCandidateOpenForDispute(candidateId);
+  return actorHr;
 }
 
 /**
  * The candidate's own days and person, for the explanation that opens its dispute — and whether this
  * comment IS the opening one (the employee has written nothing on it yet). A dispute opened before
- * 2026-11-16 already has his words, so it carries on as a plain conversation.
+ * 2026-11-16 already has their words, so it carries on as a plain conversation.
  */
 async function loadOpeningContext(candidateId: string, ownerCompactHrId: string) {
   const supabase = getSupabaseAdmin();
@@ -206,9 +208,8 @@ export async function addDeductionsComment(input: {
   /** Pictures the employee attached — owner, 2026-10-09: "upload a picture in both". */
   images?: CheckedDisputeImage[];
 }): Promise<DeductionsComment> {
-  await assertEmployeeCanCommentOnCandidate(input.access, input.candidateId);
+  const ownerCompactHrId = await assertEmployeeCanCommentOnCandidate(input.access, input.candidateId);
   const images = input.images ?? [];
-  const ownerCompactHrId = compactDeductionsHrId(input.access.hrId ?? input.access.loginId);
   const { candidate, opening } = await loadOpeningContext(input.candidateId, ownerCompactHrId);
   // The opening comment is the explanation itself — a reason from the list and who can confirm it —
   // never "why is this deduction wrong" in free text.

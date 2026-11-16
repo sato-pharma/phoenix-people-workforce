@@ -42,6 +42,7 @@ const ATTENDANCE_DIGEST = "src/lib/attendance/digest-notify.ts";
 const AUTOMATED_PAYROLL = "src/lib/automated-payroll/notify.ts";
 const DIRECT_ORDERS = "src/lib/direct-orders/service.ts";
 const DISPUTE_CENTER = "src/lib/dispute-center/notify.ts";
+const DISPUTE_EXPLANATIONS = "src/lib/dispute-center/explanations.ts";
 const EXCUSES = "src/lib/excuses/service.ts";
 const HR_OPS_REPORTS = "src/lib/hr-ops-reports/notify.ts";
 const MARKET_AWARENESS = "src/lib/market-awareness/notifications.ts";
@@ -103,6 +104,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "deductions", eventType: "dispute_center_reopen_requested", label: "An employee asked to reopen a decided deduction dispute", sentFrom: [DISPUTE_CENTER] },
   { module: "deductions", eventType: "dispute_center_reopened", label: "Your deduction dispute has been reopened", sentFrom: [DISPUTE_CENTER] },
   { module: "deductions", eventType: "dispute_center_reopen_declined", label: "Your request to reopen a deduction dispute was declined", sentFrom: [DISPUTE_CENTER] },
+  { module: "deductions", eventType: "dispute_explanation_confirm_requested", label: "An employee named you to confirm the reason for a deducted day", sentFrom: [DISPUTE_EXPLANATIONS] },
+  { module: "deductions", eventType: "dispute_explanation_answered", label: "The person named answered a deduction dispute's reason", sentFrom: [DISPUTE_EXPLANATIONS] },
 
   // ── Direct orders ───────────────────────────────────────────────────────────────────────────
   { module: "direct_orders", eventType: "submitted", label: "A direct order is waiting for your approval", sentFrom: [DIRECT_ORDERS] },
@@ -301,6 +304,8 @@ export const NOTIFICATION_TYPES: readonly NotificationTypeEntry[] = [
   { module: "private_calendar", eventType: "dispute_center_reopen_requested", label: "An employee asked to reopen a decided calendar dispute", sentFrom: [DISPUTE_CENTER] },
   { module: "private_calendar", eventType: "dispute_center_reopened", label: "Your calendar dispute has been reopened", sentFrom: [DISPUTE_CENTER] },
   { module: "private_calendar", eventType: "dispute_center_reopen_declined", label: "Your request to reopen a calendar dispute was declined", sentFrom: [DISPUTE_CENTER] },
+  { module: "private_calendar", eventType: "dispute_explanation_confirm_requested", label: "An employee named you to confirm the reason for a day with no record", sentFrom: [DISPUTE_EXPLANATIONS] },
+  { module: "private_calendar", eventType: "dispute_explanation_answered", label: "The person named answered a calendar request's reason", sentFrom: [DISPUTE_EXPLANATIONS] },
 
   // ── Production planning ─────────────────────────────────────────────────────────────────────
   { module: "production_planning", eventType: "production_expiry_alarm", label: "Production materials close to expiry", sentFrom: ["src/lib/production-planning/expiry-sweep.ts"], delivery: "direct_email" },

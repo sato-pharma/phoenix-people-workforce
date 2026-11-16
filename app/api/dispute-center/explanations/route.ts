@@ -8,7 +8,7 @@ import { toApiError } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// What is waiting for the signed-in person to confirm — only explanations that name HIM.
+// What is waiting for the signed-in person to confirm — only explanations that name them.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
