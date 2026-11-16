@@ -207,7 +207,8 @@ export async function runPhoenixCrmValidationAuditReviewsTests(): Promise<void> 
     }
 
     const refuse = fn(reviews, "export async function refuseValidatedPlace(");
-    const read = refuse.search(/\.select\("google(?:, status, decided_by_hr_id)?"\)\s*\.eq\("place_id", placeId\)\s*\.maybeSingle\(\)/);
+    // The review's id rides along since 17 Nov 2026: an approval is rejected on its own row through it.
+    const read = refuse.search(/\.select\("(?:id, )?google(?:, status, decided_by_hr_id)?"\)\s*\.eq\("place_id", placeId\)\s*\.maybeSingle\(\)/);
     const written = refuse.indexOf(".upsert(");
     assert.ok(read > 0 && read < written, "🔴 the row's record is read BEFORE the upsert replaces it");
     assert.ok(refuse.includes("const before = evidenceToKeep((earlier.data as Row | null)?.google);"), "through the one function above");
