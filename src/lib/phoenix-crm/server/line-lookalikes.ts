@@ -21,6 +21,7 @@
 
 import { afterResponse } from "@/lib/http/after-response";
 import { conflictError, forbiddenError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import {
   LOOKALIKE_CONFIDENCE_TEXT,
@@ -44,8 +45,6 @@ import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-loc
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What `phoenix_crm_share_line_validation` answers when a guard no longer holds. */
 const SHARE_SKIP_TEXT: Record<string, string> = {
@@ -192,7 +191,7 @@ export async function answerLineLookalike(viewer: PhoenixCrmViewer, raw: unknown
   if (!answer) throw validationError("Choose Same customer or Not the same.");
   const waitingCustomerId = String(body.waitingCustomerId ?? "");
   const sourceCustomerId = String(body.sourceCustomerId ?? "");
-  if (!UUID.test(waitingCustomerId) || !UUID.test(sourceCustomerId) || waitingCustomerId === sourceCustomerId) {
+  if (!isUuid(waitingCustomerId) || !isUuid(sourceCustomerId) || waitingCustomerId === sourceCustomerId) {
     throw validationError("That answer does not name two customers.");
   }
 
