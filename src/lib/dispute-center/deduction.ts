@@ -14,6 +14,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { payrollCharge } from "./charge.ts";
 import { loadDayFacts, loadEmployeeProfileFacts } from "./day-evidence.ts";
+import { explanationFactsFor } from "./explanations.ts";
 import { compareCasesForReviewer, deriveDisputeCaseState, isDecidedByEvents, lastActivityAt } from "./state.ts";
 import {
   claimDisputeDecision,
@@ -310,11 +311,12 @@ async function buildCase(input: {
   let factsIncomplete = false;
   if (input.withFacts) {
     const dates = Array.isArray(input.candidate.dates) ? (input.candidate.dates as unknown[]).map(String) : [];
-    const [profile, days] = await Promise.all([
+    const [profile, days, explained] = await Promise.all([
       loadEmployeeProfileFacts(input.candidate.employee_hr_id ?? ""),
       loadDayFacts(input.candidate.employee_hr_id ?? "", dates),
+      explanationFactsFor("deduction", input.candidate.id),
     ]);
-    facts = [...profile, ...moneyFacts({ ...input, charge }), ...days.facts];
+    facts = [...explained, ...profile, ...moneyFacts({ ...input, charge }), ...days.facts];
     factsIncomplete = days.incomplete;
   }
 

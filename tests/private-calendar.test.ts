@@ -557,10 +557,12 @@ export async function runPrivateCalendarTests() {
     assert.equal(privateCalendarHrIdPattern("A_1%\\"), "A\\_1\\%\\\\", "wildcards are escaped, so the pattern matches one id only");
     const disputesSource = readFileSync("src/lib/private-calendar/disputes.ts", "utf8");
     assert.doesNotMatch(disputesSource, /\.eq\(\s*"employee_hr_id"/, "a review request is never read by an exact, case-sensitive HR id");
+    // Three since 2026-11-16: the explanation's own "is this day already asked about?" check reads the
+    // same way, so a day asked about under the login's spelling is never asked twice.
     assert.equal(
       (disputesSource.match(/\.ilike\("employee_hr_id", privateCalendarHrIdPattern\(/g) ?? []).length,
-      2,
-      "the calendar's read and the employee's own list both match the HR id whatever its case",
+      3,
+      "the calendar's read, the employee's own list and the already-asked check all match the HR id whatever its case",
     );
   }
 

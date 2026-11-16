@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const disputes = await listPendingPrivateCalendarDataDisputes(access);
+    const disputes = await listPendingPrivateCalendarDataDisputes(access, { withExplanation: true });
     return NextResponse.json({ data: disputes, success: true });
   } catch (error) {
     const apiError = toApiError(error, "Unable to load pending disputes.");

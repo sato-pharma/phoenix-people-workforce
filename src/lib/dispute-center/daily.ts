@@ -20,6 +20,8 @@ import { compareCasesForReviewer, deriveDisputeCaseState, lastActivityAt, reopen
 import { dayLabel, daysLabel, moneyLabel, picturesNotice, picturesOnlyBody, tidyDisputeText } from "./text.ts";
 import type { DisputeCase, DisputeCaseEvent, DisputeCaseFact, DisputeMessage } from "./types.ts";
 import { currentDeductionReason } from "@/lib/deductions/reason-text.ts";
+import { caseDates, explanationSummary } from "./explain-reasons.ts";
+import { explanationFactsFor, prepareCaseExplanation, recordCaseExplanation } from "./explanations.ts";
 
 // DAILY DEDUCTION DISPUTES in the Dispute Center's shape (owner, 2026-11-13).
 //
@@ -247,20 +249,20 @@ function toMessages(rows: MessageRow[], names: Map<string, string>, pictures: Ma
 /**
  * The employee disputes one of HIS released daily lines. Only a line in the active snapshot can be
  * disputed, and only once — a decided dispute is reopened through the Dispute Center.
+ *
+ * It opens with an EXPLANATION from the reason list (owner, 2026-11-16), never free text saying the
+ * deduction is wrong: the reason, who can confirm it, and his words for "Something else". The line's
+ * own days are the explained days; one already explained on the calendar or on a monthly deduction
+ * dispute is refused.
  */
 export async function openDailyDeductionDispute(
   access: AccessContext,
-  input: { lineId: string; body: string },
+  input: { lineId: string; explanation: unknown },
 ): Promise<{ id: string }> {
   await assertPermission(access, "employee_profile", "read");
   const viewerHrId = viewerHrIdOf(access);
   const viewerCompact = compactDeductionsHrId(viewerHrId ?? "");
   if (!viewerHrId || !viewerCompact) throw new Error("Your employee profile is not linked. Contact HR.");
-  const claim = tidyDisputeText(input.body);
-  if (!claim) throw validationError("Write why you dispute this deduction first.");
-  if (claim.length > DAILY_DISPUTE_MESSAGE_MAX_LENGTH) {
-    throw validationError(`Keep it under ${DAILY_DISPUTE_MESSAGE_MAX_LENGTH} characters.`);
-  }
   if (!input.lineId) throw validationError("Choose the deduction you dispute.");
 
   const publication = await getActiveDailyPublication();
@@ -277,6 +279,23 @@ export async function openDailyDeductionDispute(
   // Self-only, exactly as the page that shows the line: nobody disputes another person's deduction.
   if (compactDeductionsHrId(line.employeeHrIdCompact || line.employeeHrId) !== viewerCompact) {
     throw forbiddenError("You can only dispute your own deduction.");
+  }
+
+  const prepared = await prepareCaseExplanation({
+    caseKind: "daily",
+    dates: caseDates(line.dates),
+    employeeHrId: line.employeeHrId,
+    explanation: input.explanation,
+  });
+  const claim = tidyDisputeText(
+    explanationSummary({
+      confirmerName: prepared.confirmer?.name ?? null,
+      detailText: prepared.explanation.detailText,
+      reasonCode: prepared.explanation.reasonCode,
+    }),
+  );
+  if (claim.length > DAILY_DISPUTE_MESSAGE_MAX_LENGTH) {
+    throw validationError(`Keep it under ${DAILY_DISPUTE_MESSAGE_MAX_LENGTH} characters.`);
   }
 
   const inserted = await getSupabaseAdmin()
@@ -308,13 +327,21 @@ export async function openDailyDeductionDispute(
   }
   const id = String((inserted.data as { id: string }).id);
 
+  // The explanation hangs off the dispute's id. If it cannot be written the dispute goes too.
+  try {
+    await recordCaseExplanation({ caseKind: "daily", employeeHrId: line.employeeHrId, employeeName: line.employeeName, prepared, ref: id });
+  } catch (explainError) {
+    await getSupabaseAdmin().from("daily_deductions_disputes").delete().eq("id", id);
+    throw explainError;
+  }
+
   await notifyDisputeCase({
     actorHrId: viewerHrId,
     audience: "reviewer",
     employeeHrId: line.employeeHrId,
     eventKey: "opened",
     kind: "daily",
-    message: `${line.employeeName ?? "An employee"} disputes the released ${categoryName(line.category)} deduction: "${claim}"`,
+    message: `${line.employeeName ?? "An employee"} explains the released ${categoryName(line.category)} deduction: "${claim}"`,
     recipientHrIds: await reviewerHrIdsFor("daily", line.employeeHrId),
     ref: id,
     title: `Daily deduction disputed — ${line.employeeName ?? "an employee"}`,
@@ -385,7 +412,7 @@ export async function listDailyCases(access: AccessContext): Promise<DisputeCase
 export async function loadDailyCase(access: AccessContext, disputeId: string): Promise<DisputeCase> {
   const participant = await resolveCaseParticipant(access, "daily", disputeId);
   const row = await loadDisputeOrThrow(disputeId);
-  const [messagesByDispute, eventsByRef, pictures, profile, day, released, monthLines] = await Promise.all([
+  const [messagesByDispute, eventsByRef, pictures, profile, day, released, monthLines, explained] = await Promise.all([
     listMessages([disputeId]),
     listCaseEvents("daily", [disputeId]),
     listDisputeCenterAttachments("daily", [disputeId]),
@@ -393,11 +420,12 @@ export async function loadDailyCase(access: AccessContext, disputeId: string): P
     loadDayFacts(row.employee_hr_id, datesOf(row)),
     lineStillReleased(row.line_id).catch(() => null),
     loadMonthLinesHoldingDays(row).catch(() => null),
+    explanationFactsFor("daily", disputeId),
   ]);
   const messages = messagesByDispute.get(disputeId) ?? [];
   const names = await resolvePeopleNames([row.decided_by_hr_id, ...messages.map((message) => message.author_hr_id)]);
 
-  const facts: DisputeCaseFact[] = [...profile, ...lineFacts(row)];
+  const facts: DisputeCaseFact[] = [...explained, ...profile, ...lineFacts(row)];
   facts.push({
     label: "On the employee's page now",
     tone: released ? "warning" : undefined,

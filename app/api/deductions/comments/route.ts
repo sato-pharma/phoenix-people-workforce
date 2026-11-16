@@ -4,7 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { addDeductionsComment, findDeductionsCandidateOwner } from "@/lib/deductions/comments.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { ApiError, clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,11 @@ export const dynamic = "force-dynamic";
 function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
   if (error instanceof SyntaxError) {
     return NextResponse.json({ success: false, message: "The request body is not valid JSON." }, { status: 400 });
+  }
+  // The reason list's own refusals (a missing reason, a day already explained elsewhere) carry their
+  // status; they are the employee's to fix, never a 500.
+  if (error instanceof ApiError) {
+    return NextResponse.json({ success: false, message: error.message }, { status: error.status });
   }
   if (isForbiddenError(error)) {
     return NextResponse.json({ success: false, message: (error as Error).message }, { status: 403 });
@@ -50,7 +55,7 @@ export async function POST(request: Request) {
     if (!ownsCandidate) {
       return NextResponse.json({ success: false, message: "Deduction not found." }, { status: 404 });
     }
-    const comment = await addDeductionsComment({ access, body: String(body.body ?? ""), candidateId });
+    const comment = await addDeductionsComment({ access, body: String(body.body ?? ""), candidateId, explanation: body.explanation });
     return NextResponse.json({ success: true, comment });
   } catch (error) {
     return jsonError(error, "Failed to save deduction comment.");
