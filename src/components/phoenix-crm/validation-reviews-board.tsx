@@ -46,6 +46,8 @@ import { CustomerMatchBoardView } from "@/components/phoenix-crm/customer-match-
 import { PlaceMatchBoardView } from "@/components/phoenix-crm/place-match-board";
 import { FailingTimetablesPanel } from "@/components/phoenix-crm/failing-timetables-panel";
 import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
+import { useBulkRunGoing } from "@/components/phoenix-crm/place-check-bulk";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { SharedPlaceList } from "@/components/phoenix-crm/shared-place-list";
 import { ValidatedPlaceList } from "@/components/phoenix-crm/validated-place-list";
 import { ValidationReviewQueue } from "@/components/phoenix-crm/validation-review-queue";
@@ -206,12 +208,14 @@ function Paged<Row>({ children, noun, rows, size }: { children: (shown: Row[]) =
  * What the board says while the click's read is on its way — every place in use and the older decisions —
  * and, when it fails, why, with the one button that asks again.
  */
-function ReadingEverything({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+function ReadingEverything({ error, onRetry, stale = false }: { error: string | null; onRetry: () => void; stale?: boolean }) {
   return (
     <AdminCallout tone={error ? "warning" : "neutral"}>
       <span className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="min-w-0 flex-1 basis-60 break-words">
-          {error ?? "Reading every place in use and every older decision, so each list and count here is complete."}
+          {stale
+            ? `Reading every place again did not work: ${error ?? ""} The lists and counts below are from the reading before it.`
+            : (error ?? "Reading every place in use and every older decision, so each list and count here is complete.")}
         </span>
         {error ? (
           <CrmButton onClick={onRetry} size="sm">
@@ -306,6 +310,12 @@ export function ValidationReviewsBoard({
   const [sameCustomerOpened, setSameCustomerOpened] = useState(false);
   const set = <Key extends keyof ValidationReviewFilters>(key: Key, value: ValidationReviewFilters[Key]) =>
     setFilters((current) => ({ ...current, [key]: value }));
+  // While a bulk run is going, the tabs, filters, counts and every switch that redraws a list wait for it
+  // (`useBulkRunGoing`, 17 Nov 2026): the run's own report is drawn in the bar the switch would remove.
+  const bulkRunning = useBulkRunGoing();
+  // 🔴 A DECISION'S RE-READ DIES WITH THE BOARD (17 Nov 2026): it waits for the decisions to pause, and
+  // pressed just before he left, it rebuilt whatever page he had opened since.
+  useEffect(() => () => placeCheckReread.cancel(), []);
 
   // ── The rows the page did not send (`onDemand`) ──────────────────────────────────────────────────
   // Asked for once, on the first click that needs them — Not confirmed, any filter or outcome, a tapped
@@ -552,6 +562,7 @@ export function ValidationReviewsBoard({
         {deckInput && reviewDeck
           ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything })
           : null}
+        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         <div className="min-w-0 border border-slate-200 bg-white">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
@@ -726,6 +737,17 @@ export function ValidationReviewsBoard({
             </button>
           ))}
         </div>
+        </fieldset>
+
+        {bulkRunning ? (
+          <p className="break-words border-l-4 border-orange-500 bg-white px-4 py-2 text-sm font-semibold text-slate-700" role="status">
+            Answering the rows you picked. The tabs and filters wait until it is done.
+          </p>
+        ) : null}
+
+        {onDemand && wanted && complete && everythingRead.error ? (
+          <ReadingEverything error={everythingRead.error} onRetry={reloadEverything} stale />
+        ) : null}
 
         {!reading && view === "needs" ? (
           <div aria-labelledby="vr-tab-needs" className="space-y-5" id="vr-panel-needs" role="tabpanel">
@@ -795,6 +817,7 @@ export function ValidationReviewsBoard({
                       "inline-flex min-h-10 min-w-0 items-center gap-2 rounded-none border px-3 py-1.5 text-left text-xs font-black",
                       chip === key ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
                     )}
+                    disabled={bulkRunning}
                     onClick={() => setChip(key)}
                     type="button"
                   >
@@ -845,6 +868,7 @@ export function ValidationReviewsBoard({
         {!reading && view === "polyclinics" ? (
           <div aria-labelledby="vr-tab-polyclinics" className="space-y-3" id="vr-panel-polyclinics" role="tabpanel">
             {!team && failingTimetables ? (
+              <fieldset className="m-0 min-w-0 border-0 p-0" disabled={bulkRunning}>
               <FailingTimetablesPanel
                 onOpen={(sharedPlaceId) => {
                   setOnlyBuilding(sharedPlaceId);
@@ -853,17 +877,18 @@ export function ValidationReviewsBoard({
                 opened={onlyBuilding}
                 view={failingTimetables}
               />
+              </fieldset>
             ) : null}
             {openedBuilding ? (
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="break-words text-sm text-slate-700">Showing the one building you opened, whatever the filters say.</span>
-                <CrmButton onClick={() => setOnlyBuilding(null)} size="sm">
+                <CrmButton disabled={bulkRunning} onClick={() => setOnlyBuilding(null)} size="sm">
                   Show every building
                 </CrmButton>
               </div>
             ) : null}
             {!openedBuilding && rejectedBuildings > 0 && filters.outcome !== "rejected" ? (
-              <CrmCheck checked={showRejectedBuildings} onChange={setShowRejectedBuildings}>
+              <CrmCheck checked={showRejectedBuildings} disabled={bulkRunning} onChange={setShowRejectedBuildings}>
                 {rejectedBuildingsSwitchLabel(rejectedBuildings, { team, canRestore })}
               </CrmCheck>
             ) : null}

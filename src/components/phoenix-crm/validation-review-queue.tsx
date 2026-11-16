@@ -383,14 +383,17 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
  * the Super Admin keeps every control he has had since 2026-10-03 and reads what the manager wrote
  * under it; the manager gets the settled state, his comments and his two recommendation buttons, and
  * no decision control of any kind.
+ *
+ * `scope` keeps the phone cards' field ids apart from the table's (17 Nov 2026, the audit): both are on the
+ * page at once, one of them hidden, and the same id twice sent a label's tap to the hidden copy.
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidationReviewRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnReview(row)} />}
-      {mode === "team" ? <Settled row={row} /> : <Decision row={row} />}
+      {mode === "team" ? <Settled row={row} /> : <Decision row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -514,7 +517,7 @@ export function ValidationReviewQueue({
             <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy path={row.photoPath} rotatable />
             <Who row={row} />
             <Evidence row={row} />
-            <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+            <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
           </div>
         ))}
       </CrmCardsOnPhone>
@@ -543,7 +546,7 @@ export function ValidationReviewQueue({
                 <Evidence row={row} />
               </td>
               <td className={crmTdClassName}>
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="" />
               </td>
             </tr>
           ))}

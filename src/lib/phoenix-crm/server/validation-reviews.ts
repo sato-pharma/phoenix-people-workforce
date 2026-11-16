@@ -16,7 +16,7 @@
  */
 
 import { raiseApproval } from "@/lib/approvals/raise-approval";
-import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { withdrawInAppNotificationsByEventKeyPrefix } from "@/lib/notifications/in-app";
@@ -27,7 +27,7 @@ import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { distanceMeters, type GeoPoint } from "@/lib/phoenix-crm/geo";
 import type { GoogleListing, LocationCheckState } from "@/lib/phoenix-crm/google-place-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { REVIEW_SUBJECTS_SELECT, SIGNBOARD_CHECK_KEYS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
+import { PLACE_CUSTOMER_STATUS_JOIN, REVIEW_SUBJECTS_SELECT, SIGNBOARD_CHECK_KEYS_SELECT, signboardCheckRead } from "@/lib/phoenix-crm/place-checks-slim-read";
 import {
   parseScheduleHeldBecause,
   parseScheduleLegibility,
@@ -48,7 +48,8 @@ import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/ser
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { followLineTwinCopiesQuietly, shareAcrossLinesQuietly } from "@/lib/phoenix-crm/server/line-twins";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
+import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers, sharedPlaceIsOnTheBoard } from "@/lib/phoenix-crm/server/shared-places";
+import { needsYouDecisionCount } from "@/lib/phoenix-crm/shared-place-groups";
 import {
   parseSignboardPhotoProblem,
   signboardHoldStillReading,
@@ -296,12 +297,13 @@ export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<
  * How many places are waiting on his decision right now, and when the oldest of them was held — the
  * one figure the central Needs You board asks of this queue (`src/lib/needs-you`, added 2026-10-05).
  *
- * 🔴 THE SAME TWO WORLDS THE PAGE SHOWS, and so no `is_test` filter. `loadValidationReviews` lists
- * every waiting review and marks each row's world rather than hiding one, so a count that filtered
- * either way would read 0 where the page shows a row — the under-report that `needs-you/types.ts`
- * exists to make impossible. The decider is the Super Admin alone and his own entries are test
- * entries (owner, 2026-09-16), so a real-only count would be a board permanently calm about the only
- * queue that is his by name.
+ * 🔴 REAL ENTRIES ONLY, BECAUSE THE PAGE DRAWS NO TEST ENTRY (owner, 17 Nov 2026, the audit's wrong
+ * counts). Until then it counted both worlds, on the ground that the page listed both; the page has drawn
+ * no test entry anywhere since 2026-10-17 (`isReal`, "a report that really shows me data"), so one held
+ * test validation read "1 place is held for your approval" over a page that showed none.
+ *
+ * 🔴 AND IT COUNTS THE WAY THE NEEDS YOU TAB COUNTS — a building is one decision, held or with anybody
+ * waiting behind it (`needsYouDecisionCount`); review rows alone missed every held building.
  *
  * Read whole and paged, so PostgREST's 1,000-row ceiling cannot shorten it, with the oldest stamp so the
  * row can state its age. It THROWS on a failed read, and on a read it could not finish: the board turns a
@@ -313,23 +315,46 @@ export async function countValidationReviewsWaiting(): Promise<{ count: number; 
   // left pending on a retired place (a rejected building, a place removed from the list) is nobody's to
   // decide and the page no longer lists it (`reviewStillToDecide`), so a head count of every pending
   // review would read 1 where the page shows nothing. The waiting rows are read whole, paged, oldest
-  // first, and the places they are about are asked for their status. Still throws on a failed read.
-  const { rows, error, capped } = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_validation_reviews")
-        .select("id, place_id, status, created_at")
-        .eq("status", "pending")
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true }),
-    { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) },
-  );
+  // first, and the places they are about are asked for their status and building. Still throws on a failed read.
+  const supabase = getSupabaseAdmin();
+  const [{ rows, error, capped }, heldRead] = await Promise.all([
+    readEveryPage<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_validation_reviews")
+          .select("id, place_id, status, created_at")
+          .eq("status", "pending")
+          .eq("is_test", false)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true }),
+      { maxRows: 50_000, whenFull: "stop", what: "The place checks waiting", uniqueBy: (row) => String(row.id) },
+    ),
+    readEveryPage<Row>(
+      () =>
+        supabase
+          .from("phoenix_crm_shared_places")
+          .select("id, status, is_test, created_at")
+          .eq("status", "held")
+          .eq("is_test", false)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true }),
+      { maxRows: 10_000, whenFull: "stop", what: "The buildings held for a decision", uniqueBy: (row) => String(row.id) },
+    ),
+  ]);
   throwIfError(error);
-  if (capped) throw new Error("The place checks waiting could not be counted whole.");
-  const places = await selectByIds<Row>("phoenix_crm_places", "id, status", "id", [...new Set(rows.map((row) => String(row.place_id)))]);
+  throwIfError(heldRead.error);
+  if (capped || heldRead.capped) throw new Error("The place checks waiting could not be counted whole.");
+  const places = await selectByIds<Row>("phoenix_crm_places", "id, status, shared_place_id", "id", [...new Set(rows.map((row) => String(row.place_id)))]);
   const placeById = new Map(places.map((row) => [String(row.id), row]));
   const waiting = rows.filter((row) => reviewStillToDecide(row, placeById));
-  return { count: waiting.length, oldestAt: waiting[0] ? String(waiting[0].created_at) : null };
+  const buildingOf = (row: Row) => text(placeById.get(String(row.place_id))?.shared_place_id);
+  const venues = await selectByIds<Row>("phoenix_crm_shared_places", "id, status, is_test, retired_at", "id", waiting.map(buildingOf));
+  const venuesOnBoard = new Set([...venues, ...heldRead.rows].filter(sharedPlaceIsOnTheBoard).map((row) => String(row.id)));
+  return needsYouDecisionCount({
+    waiting: waiting.map((row) => ({ id: String(row.id), at: String(row.created_at), sharedPlaceId: buildingOf(row) })),
+    heldVenues: heldRead.rows.map((row) => ({ id: String(row.id), at: String(row.created_at) })),
+    venuesOnBoard,
+  });
 }
 
 /**
@@ -893,7 +918,7 @@ export async function loadValidationReviews(
 export async function decideValidationReview(
   viewer: PhoenixCrmViewer,
   raw: unknown,
-): Promise<{ reviewId: string; status: "approved" | "rejected"; waitingForBuilding: boolean }> {
+): Promise<{ reviewId: string; status: "approved" | "rejected"; waitingForBuilding: boolean; reopened: boolean }> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the place to decide.");
@@ -954,7 +979,7 @@ export async function decideValidationReview(
   }
   // A rejected place leaves My map; its landing cards read again rather than waiting out their minute.
   invalidateMyMapSnapshotCache("phoenix-crm-decide-validation-review");
-  return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding };
+  return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding, reopened: result.reopened === true };
 }
 
 /**
@@ -1168,11 +1193,15 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           // The signboard by the keys the board reads, never whole (`SIGNBOARD_CHECK_KEYS_SELECT`): the
           // whole column was 7.7 of this read's 16 MB. The timetable check is kept whole — 0.4 MB, and
           // picking its seven keys out would cost more in empty keys than it saves.
-          `id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, ${SIGNBOARD_CHECK_KEYS_SELECT}, shared_place_id, schedule_check, point_source`,
+          `id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, ${SIGNBOARD_CHECK_KEYS_SELECT}, shared_place_id, schedule_check, point_source, ${PLACE_CUSTOMER_STATUS_JOIN}`,
         )
         .eq("status", "active")
         // A copy validated from another line has no evidence of its own to check; its source is on the board.
-        .neq("point_source", "line_twin");
+        .neq("point_source", "line_twin")
+        // 🔴 A DROPPED CUSTOMER'S PLACE IS NOT "Validated, in use" (owner, 17 Nov 2026, the audit's wrong
+        // counts): 77 places of dropped customers were counted there, 63 of them under "Never looked at".
+        // His place stays active for the day he is brought back; it is simply nobody's work here.
+        .neq("customer.status", "dropped");
       return seatScoped(query, seats).order("id", { ascending: false });
     },
     // Four pages at once (2026-11-08): ~5,400 active places are six pages, and one after another they
@@ -1360,6 +1389,16 @@ function evidenceToKeep(google: unknown): Row | null {
   return Object.keys(flat).length > 0 ? flat : null;
 }
 
+/**
+ * 🔴 A PLACE ALREADY RETIRED, OR GONE, IS AN ANSWER ON THE BOARD, NOT A RED ERROR (owner, 17 Nov 2026, the
+ * audit's wording on screen). Refuse and Approve on Not confirmed answered "This place is already retired.
+ * Reload the page." in red, with the generic `invalid_request` code, when the other decider had settled
+ * the place first. Their own codes put them on the board's already-decided list (`isAlreadyDecided` in
+ * `place-check-done.tsx`), so the row says "Already decided" and the page re-reads itself.
+ */
+export const PLACE_RETIRED_CODE = "phoenix_crm_place_retired";
+export const PLACE_GONE_CODE = "phoenix_crm_place_not_found";
+
 function isRecord(value: unknown): value is Row {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -1390,8 +1429,8 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
     .maybeSingle();
   throwIfError(error);
   const place = data as Row | null;
-  if (!place) throw notFoundError("This place is no longer there. Reload the page.");
-  if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
+  if (!place) throw notFoundError("This place is no longer there.", PLACE_GONE_CODE);
+  if (place.status !== "active") throw conflictError("This place is already retired.", PLACE_RETIRED_CODE);
 
   // The review the automatic check would have written, had this customer been in its scope.
   //
@@ -1408,7 +1447,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // still the hand refusal, so nothing on a screen changes. Still two steps, as it always was.
   const earlier = await getSupabaseAdmin()
     .from("phoenix_crm_validation_reviews")
-    .select("google, status, decided_by_hr_id")
+    .select("id, google, status, decided_by_hr_id")
     .eq("place_id", placeId)
     .maybeSingle();
   throwIfError(earlier.error);
@@ -1420,6 +1459,15 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   const lockedFor = await approvalLockFor(viewer);
   if (lockedFor(earlierRow?.status === "approved" ? earlierRow.decided_by_hr_id : null, place.created_by_hr_id)) {
     throw forbiddenError(SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT);
+  }
+  // 🔴 AN APPROVED PLACE IS REJECTED ON ITS OWN ROW, NEVER BY PUTTING IT BACK TO PENDING (owner, 17 Nov
+  // 2026, the audit's decision paths; the rule "an approved validation can be rejected on its own row").
+  // A customer seated in a building and approved more than 14 days ago reached the board with no review
+  // id, so his Reject posted here, and the upsert below overwrote who approved him and when. Whatever
+  // screen sends it, an approval is now rejected by the review route, which keeps that record.
+  if (earlierRow?.status === "approved" && typeof earlierRow.id === "string") {
+    const decided = await decideValidationReview(viewer, { reviewId: earlierRow.id, decision: "reject", note, refusalReason });
+    return { placeId, reopened: decided.reopened };
   }
   const before = evidenceToKeep((earlier.data as Row | null)?.google);
   const upserted = await getSupabaseAdmin()
@@ -1496,8 +1544,8 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
   throwIfError(placeRead.error);
   throwIfError(reviewRead.error);
   const place = placeRead.data as Row | null;
-  if (!place) throw notFoundError("This place is no longer there. Reload the page.");
-  if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
+  if (!place) throw notFoundError("This place is no longer there.", PLACE_GONE_CODE);
+  if (place.status !== "active") throw conflictError("This place is already retired.", PLACE_RETIRED_CODE);
   const existing = reviewRead.data as Row | null;
   // Decided already — by him, or by the system's own reading. Nothing to add but the comment he wrote.
   if (existing && existing.status !== "pending") {
@@ -1631,8 +1679,8 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
     { maxRows: 5_000, whenFull: "stop", what: "The customers waiting to be captured again", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);
-  const customers = read.rows;
-  if (customers.length === 0) return { rows: [], capped: false };
+  const customers = await withoutACaptureSince(read.rows);
+  if (customers.length === 0) return { rows: [], capped: read.capped };
 
   const reviews = await selectByIds<Row>(
     "phoenix_crm_validation_reviews",
@@ -1710,24 +1758,44 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
 }
 
 /**
+ * The sent-back customers who have NOT captured again (owner, 17 Nov 2026, the audit's wrong counts).
+ * `reopened_at` is cleared only when the customer is validated, so a customer whose new capture is held,
+ * or approved and waiting for its building, stayed under "waiting to be captured again" as well: the
+ * scorecard counted him in Waiting and in Sent back, and Needs you listed him in both rows (10 real
+ * customers on production that day). A place in use is a capture since the refusal — the refused place
+ * itself was retired — so a customer with one is left out here and is counted where his capture is.
+ */
+async function withoutACaptureSince(customers: Row[]): Promise<Row[]> {
+  if (customers.length === 0) return customers;
+  const places = await selectByIds<Row>("phoenix_crm_places", "id, customer_id", "customer_id", customers.map((row) => String(row.id)), (query) =>
+    query.eq("status", "active"),
+  );
+  const capturedAgain = new Set(places.map((row) => String(row.customer_id)));
+  return customers.filter((row) => !capturedAgain.has(String(row.id)));
+}
+
+/**
  * How many customers wait to be captured again, and since when — the figure the Needs You board asks.
- * A head count plus the oldest stamp, so PostgREST's 1,000-row ceiling cannot shorten it. Throws on a
- * failed read: the board turns that into "could not be read", never a zero it cannot prove.
+ * The same customers the page lists (`loadReopenedCustomers`): real entries only, because the page draws
+ * no test entry, and without anybody who has captured again (`withoutACaptureSince`). Read whole and
+ * paged, oldest first, so PostgREST's 1,000-row ceiling cannot shorten it. Throws on a failed read and on
+ * a read it could not finish: the board turns that into "could not be read", never a zero it cannot prove.
  */
 export async function countReopenedCustomersWaiting(): Promise<{ count: number; oldestAt: string | null }> {
-  const supabase = getSupabaseAdmin();
-  const [waiting, oldest] = await Promise.all([
-    supabase.from("phoenix_crm_customers").select("id", { count: "exact", head: true }).eq("status", "pending").not("reopened_at", "is", null),
-    supabase
-      .from("phoenix_crm_customers")
-      .select("reopened_at")
-      .eq("status", "pending")
-      .not("reopened_at", "is", null)
-      .order("reopened_at", { ascending: true })
-      .limit(1),
-  ]);
-  throwIfError(waiting.error);
-  throwIfError(oldest.error);
-  const first = ((oldest.data ?? []) as Row[])[0];
-  return { count: waiting.count ?? 0, oldestAt: first ? String(first.reopened_at) : null };
+  const read = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_customers")
+        .select("id, reopened_at")
+        .eq("status", "pending")
+        .eq("is_test", false)
+        .not("reopened_at", "is", null)
+        .order("reopened_at", { ascending: true })
+        .order("id", { ascending: true }),
+    { maxRows: 50_000, whenFull: "stop", what: "The customers waiting to be captured again", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(read.error);
+  if (read.capped) throw new Error("The customers waiting to be captured again could not be counted whole.");
+  const waiting = await withoutACaptureSince(read.rows);
+  return { count: waiting.length, oldestAt: waiting[0] ? String(waiting[0].reopened_at) : null };
 }

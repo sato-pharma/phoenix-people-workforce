@@ -23,6 +23,13 @@ export type PlaceCheckReread = {
   ask: (read: () => void) => void;
   /** The reviewer is back on the board: read now if a decision is waiting, and do nothing if none is. */
   flush: () => void;
+  /**
+   * Drop what is waiting without reading. 🔴 THE RE-READ DIES WITH THE PAGE (17 Nov 2026, the audit's
+   * background runs): this one lives for the tab, so a decision pressed just before leaving Place checks
+   * rebuilt whatever page he had opened since, thirty seconds later. The board calls it when it closes, and
+   * a control that refreshes the page at once calls it first, so the same page is never read twice.
+   */
+  cancel: () => void;
 };
 
 export function createPlaceCheckReread<Handle>(clock: Clock<Handle>, quietMs = PLACE_CHECK_REREAD_QUIET_MS): PlaceCheckReread {
@@ -42,6 +49,11 @@ export function createPlaceCheckReread<Handle>(clock: Clock<Handle>, quietMs = P
       waiting = { handle: clock.set(flush, quietMs), read };
     },
     flush,
+    cancel: () => {
+      if (!waiting) return;
+      clock.clear(waiting.handle);
+      waiting = null;
+    },
   };
 }
 

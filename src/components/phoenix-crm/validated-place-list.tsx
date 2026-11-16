@@ -31,6 +31,7 @@ import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
 import { isAlreadyDecided, PlaceCheckSaved, usePlaceCheckDone, useSavedOutcome } from "@/components/phoenix-crm/place-check-done";
 import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-crm/place-check-notes";
+import { useCanRestoreValidation } from "@/components/phoenix-crm/place-check-restore";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { DecisionComment, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
@@ -249,6 +250,7 @@ function Cost({ row }: { row: ValidatedPlaceRow }) {
  */
 function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string }) {
   const done = usePlaceCheckDone();
+  const canRestore = useCanRestoreValidation();
   const { saved, markSaved } = useSavedOutcome(row);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -316,7 +318,7 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
       />
       {armed ? (
         <div className="space-y-2">
-          <CrmNote tone="warn">This retires the place and cannot be undone — they validate the customer again from their own list.</CrmNote>
+          <CrmNote tone="warn">This retires the place — they validate the customer again from their own list. {refusalTakeBack(canRestore)}</CrmNote>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
             <CrmButton disabled={saving} onClick={() => void refuse()} variant="danger">
               {saving ? "Refusing…" : "Yes, refuse it"}
@@ -404,17 +406,20 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
  *
  * 🔴 `Refuse` IS NOT RENDERED FOR A MANAGER, AND NEITHER IS ITS WARNING. Refusing a validation retires
  * the place and can send the customer back to To validate — it is a decision, and the decision is the
- * Super Admin's alone. A manager comments and recommends, and the owner's instruction on 2026-10-13 was
- * that his screen does not say who makes the call.
+ * deciders' alone (the Super Admin and the SFE Manager). A manager comments and recommends, and the
+ * owner's instruction on 2026-10-13 was that his screen does not say who makes the call.
+ *
+ * `scope` keeps the phone cards' field ids apart from the table's (17 Nov 2026, the audit): both are on the
+ * page at once, one of them hidden, and the same id twice sent a label's tap to the hidden copy.
  */
-function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow }) {
+function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode; noteIndex: PlaceNoteIndex; row: ValidatedPlaceRow; scope: string }) {
   const key = placeNoteSubjectKey("place", row.placeId);
   return (
     <div className="min-w-0 space-y-2">
       {/* The system's recommendation and its reason (owner, 2026-10-17) — the Super Admin's board only. */}
       {mode === "team" ? null : <SystemAdvice advice={adviseOnPlaceInUse(row)} />}
       {mode === "team" ? null : <Approve row={row} />}
-      {mode === "team" ? null : <Refuse row={row} />}
+      {mode === "team" ? null : <Refuse row={row} scope={scope} />}
       <PlaceCheckNotes
         integrity={noteIndex.integrity[key] ?? []}
         mode={mode}
@@ -425,6 +430,16 @@ function LastColumn({ mode, noteIndex, row }: { mode: PlaceCheckNotesMode; noteI
       />
     </div>
   );
+}
+
+/**
+ * 🔴 A REFUSAL CAN BE TAKEN BACK — BY THE SUPER ADMIN (17 Nov 2026, the audit's wording on screen). The
+ * warning said "cannot be undone", which was never true for him: History's "Approve after all" brings the
+ * place back while it stays retired. The SFE Manager has no take-back (owner, 2026-11-10), so his line
+ * says who has.
+ */
+function refusalTakeBack(canRestore: boolean): string {
+  return canRestore ? "You can approve it after all from History while it stays retired." : "Only the Super Admin can take it back.";
 }
 
 /**
@@ -450,7 +465,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     variant: "danger",
     needsReason: true,
     warning: (count) =>
-      `This retires ${count === 1 ? "that place" : `those ${count} places`} and cannot be undone here; each customer left without one validates again from their own list.`,
+      `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one validates again from their own list. Only the Super Admin can take a refusal back, from History.`,
     // What the administrator approved, only he refuses (owner, 2026-11-16).
     takes: (row) => !row.lockedBySuperAdmin,
     run: (row, answer) =>
@@ -533,7 +548,7 @@ export function ValidatedPlaceList({
                 <CrmPhotoThumb alt={photoAlt(row)} className={PHOTO_CLASS} lazy missingText={row.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined} path={row.photoPath} rotatable />
                 <Who mode={mode} row={row} />
                 <Place row={row} />
-                <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="card-" />
               </div>
             ))}
           </CrmCardsOnPhone>
@@ -562,7 +577,7 @@ export function ValidatedPlaceList({
                     <Place row={row} />
                   </td>
                   <td className={crmTdClassName}>
-                    <LastColumn mode={mode} noteIndex={noteIndex} row={row} />
+                    <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="" />
                   </td>
                 </tr>
               ))}

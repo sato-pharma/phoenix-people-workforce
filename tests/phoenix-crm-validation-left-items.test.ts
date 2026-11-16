@@ -161,7 +161,7 @@ export function runPhoenixCrmValidationLeftItemsTests(): void {
   const reviews = stripComments(read("src/lib/phoenix-crm/server/validation-reviews.ts"));
   const decideTs = tsFn(reviews, "export async function decideValidationReview(");
   assert.ok(decideTs.includes('const waitingForBuilding = decision === "approve" && result.waiting_for_building === true;'), "the wait is the database's own answer, on an approve only");
-  assert.ok(decideTs.includes('return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding };'), "and the decision's answer carries it");
+  assert.ok(decideTs.includes('return { reviewId, status: decision === "approve" ? "approved" : "rejected", waitingForBuilding, reopened: result.reopened === true };'), "and the decision's answer carries it, with whether the customer went back to To validate (17 Nov 2026)");
   const restoreTs = tsFn(reviews, "export async function restoreValidation(");
   assert.ok(restoreTs.includes("waitingForBuilding: result.waiting_for_building === true,"), "the take-back's answer carries it too");
 

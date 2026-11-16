@@ -54,3 +54,10 @@ export const REVIEW_SUBJECTS_SELECT =
   "customer:phoenix_crm_customers!phoenix_crm_validation_reviews_customer_id_fkey(id, name, list_type, speciality), " +
   "place:phoenix_crm_places!phoenix_crm_validation_reviews_place_id_fkey(id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, status, shared_place_id, created_by_hr_id, " +
   `${SIGNBOARD_CHECK_KEYS_SELECT})`;
+
+/**
+ * The customer's status, joined into the places-in-use read so a dropped customer's place can be left out
+ * in the same request (owner, 17 Nov 2026: 77 such places counted as "Validated, in use"). `!inner` makes
+ * the filter on `customer.status` drop the place rather than blank the field; the key is NAMED, as above.
+ */
+export const PLACE_CUSTOMER_STATUS_JOIN = "customer:phoenix_crm_customers!phoenix_crm_places_customer_id_fkey!inner(status)";

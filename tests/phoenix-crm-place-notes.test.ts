@@ -209,7 +209,7 @@ function checkHeDecidesNothing(): void {
   assert.ok(!settled[0].includes("decidedByName"), "it never names who decided");
   assert.ok(!settled[0].includes("decisionNote"), "and never carries the decision note");
   assert.ok(!settled[0].includes("Restore"), "and offers no way to take a decision back");
-  assert.match(queue, /mode === "team" \? <Settled row=\{row\} \/> : <Decision row=\{row\} \/>/, "one switch, both modes, in one place");
+  assert.match(queue, /mode === "team" \? <Settled row=\{row\} \/> : <Decision row=\{row\} scope=\{scope\} \/>/, "one switch, both modes, in one place");
 
   // 🔴 NOT A WORD ABOUT WHO DECIDES, anywhere a manager can read. The owner's instruction was
   // "don't show this on the screen", so this sweeps the strings a well-meaning edit would add. The

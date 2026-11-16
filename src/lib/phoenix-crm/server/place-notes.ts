@@ -458,7 +458,13 @@ export async function savePlaceRecommendation(
   if (!recommendation) throw validationError(PLACE_RECOMMENDATION_REQUIRED);
   const subjectId = String(body.subjectId).toLowerCase();
 
-  const { subject } = await subjectFor(viewer, kind, subjectId);
+  const { source, subject } = await subjectFor(viewer, kind, subjectId);
+  // 🔴 A RECOMMENDATION IS THE DISTRICT MANAGER'S WORD ON HIS OWN TEAM'S PLACE, AND NOBODY ELSE'S (owner,
+  // 17 Nov 2026, the audit's decision paths). The company board draws no recommend buttons, but this save
+  // read only the subject from `subjectFor` and threw its source away, so a hand-built request from the
+  // Super Admin or the SFE Manager stored a "manager" recommendation under a decider's own HR id, and the
+  // manager board then named him beside it: the one payload that must carry no decider.
+  if (source !== "manager") throw forbiddenError("A recommendation is the district manager's own word on a place in their team. The company board decides it.");
   const upserted = await getSupabaseAdmin()
     .from("phoenix_crm_place_recommendations")
     .upsert(

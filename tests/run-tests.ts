@@ -2267,6 +2267,7 @@ import { runPhoenixCrmCommentReadingTests } from "./phoenix-crm-comment-reading.
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
+import { runPhoenixCrmPlaceChecksAuditFixesTests } from "./phoenix-crm-place-checks-audit-fixes.test.ts";
 import { runPhoenixCrmVendorLeftoverTests } from "./phoenix-crm-vendor-leftovers.test.ts";
 import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.test.ts";
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
@@ -8073,6 +8074,11 @@ await runTest(
 await runTest(
   "Phoenix CRM on the central Needs You board (the board had sixteen sources and none was Phoenix CRM, so a district manager's and the SFE Manager's decisions were visible only inside the module — and the off-plan visit, whose delay costs a rep his figures, counts in nothing until it is decided. This pins the source wired in all four places (id, label a person would say, destination, adapter) rather than one; the link pointing at the LIVE app's Team tab and not at the retired 2026-09-14 pilot path; ONE producer for the counts, read by the module page's own badge AND by the board, with overview.ts holding no private copy — a board reading a smaller number than the module is the under-report; a 403 from the module mapped to not-applicable rather than amber, because forbiddenError's message does not begin \"Forbidden:\"; a medical rep gated out by readsTeamReports instead of handed his own list progress; no catch and no ?? 0 anywhere on the path, so a failed read travels; no integrity signal reaching a central board; and the pure board classifying the two decisions into his own lane, the validation figure into worth-knowing, and a dead Phoenix CRM read into a named amber row that makes the all-clear unprovable)",
   runPhoenixCrmNeedsYouSourceTests,
+);
+
+await runTest(
+  "Place checks, the deep audit of 17 Nov 2026 (Wrong counts, Decision paths, Wording on screen, Background runs): the Needs You figure counts real entries only and a building with its customers as ONE decision, held buildings included; a sent-back customer who captured again is counted once; a dropped customer's place is not in use; a recommendation is the district manager's alone; the team board is the territories under his district seats; an approval is rejected on its own row whatever screen sends it; every held full name is read whole; a place the other decider settled first is 'Already decided', never red, in a row and in a bulk run, and each settled row is marked saved; no line says a refusal the Super Admin can take back cannot be undone; the Same place rule names both deciders; a failed reload of every place is said; the phone cards and every bulk bar carry their own field ids; a bulk run holds the tabs, filters and counts still until it ends; and a decision's re-read dies with the board",
+  runPhoenixCrmPlaceChecksAuditFixesTests,
 );
 
 await runTest(

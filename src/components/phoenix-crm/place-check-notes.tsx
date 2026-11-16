@@ -26,6 +26,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmButton, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import {
   placeRecommendationLabel,
@@ -132,6 +133,8 @@ function Recommendations({
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/place-notes/recommendation", { recommendation, subjectId, subjectKind }, "recommended");
+      // This reads the page now, so a decision's re-read still waiting would read it a second time.
+      placeCheckReread.cancel();
       router.refresh();
     } catch (error) {
       setProblem(messageOf(error));
@@ -223,6 +226,7 @@ function CommentBox({ subjectId, subjectKind }: { subjectId: string; subjectKind
       setBody("");
       setOpen(false);
       setSaving(null);
+      placeCheckReread.cancel();
       router.refresh();
     } catch (error) {
       setProblem(messageOf(error));
