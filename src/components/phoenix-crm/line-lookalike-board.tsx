@@ -21,8 +21,11 @@ import { useMemo, useState, type ReactNode } from "react";
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { crmPost, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText } from "@/components/phoenix-crm/format";
+import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { CrmButton, CrmFacts, CrmLoadError, CrmLoading, CrmNote, CrmPill, CrmShowMore, CrmStat, CrmStatGrid } from "@/components/phoenix-crm/ui";
-import type { LineLookalikeBoard, LineLookalikeRow, LineLookalikeSide, LineLookalikeSource } from "@/lib/phoenix-crm/line-lookalikes";
+import { PLACE_CHECK_PHOTO_CLASS, PlaceInUseEvidence } from "@/components/phoenix-crm/validated-place-list";
+import type { LineLookalikeBoard, LineLookalikePlace, LineLookalikeRow, LineLookalikeSide, LineLookalikeSource } from "@/lib/phoenix-crm/line-lookalikes";
+import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
 import { matchesValidationReviewFilters, type ValidationReviewFilters } from "@/lib/phoenix-crm/validation-review-filters";
 
 const ROUTE = "/api/phoenix-crm/validation-reviews/line-lookalikes";
@@ -64,6 +67,30 @@ function SideCard({ heading, side, children }: { heading: string; side: LineLook
       </p>
       {side.speciality ? <p className="break-words text-xs text-slate-500">{side.speciality}</p> : null}
       {children}
+    </div>
+  );
+}
+
+/**
+ * One place the waiting row would take, drawn as Place checks draws a validated place: the photograph
+ * large, whole and turnable, then who took it and the evidence beside it (owner, 2026-11-17: "must render
+ * the validation photo and details"). The photograph is what the Super Admin judges the pair by.
+ */
+function SourcePlace({ name, place }: { name: string; place: LineLookalikePlace }) {
+  return (
+    <div className="min-w-0 space-y-2 border-t border-slate-100 pt-2">
+      <CrmPhotoThumb
+        alt={`${place.photoKind === "schedule" ? "Timetable" : "Signboard"} photo for ${name}`}
+        className={PLACE_CHECK_PHOTO_CLASS}
+        lazy
+        missingText={place.trustedPoint ? TRUSTED_POINT_NO_PHOTO : undefined}
+        path={place.photoPath}
+        rotatable
+      />
+      <p className="break-words text-xs font-semibold text-slate-700">
+        Captured by {place.repName} · {place.validatedAtText}
+      </p>
+      <PlaceInUseEvidence row={place} />
     </div>
   );
 }
@@ -114,11 +141,9 @@ function PairCard({ row, onAnswered }: { row: LineLookalikeRow; onAnswered: (row
               { label: "Places it gives", value: countText(row.source.placeCount) },
             ]}
           />
-          {row.source.address ? (
-            <p className="break-words text-xs text-slate-500" dir="auto">
-              {row.source.address}
-            </p>
-          ) : null}
+          {row.source.places.map((place) => (
+            <SourcePlace key={place.placeId} name={row.source.name} place={place} />
+          ))}
         </SideCard>
       </div>
       {error ? <CrmNote tone="bad">{error}</CrmNote> : null}

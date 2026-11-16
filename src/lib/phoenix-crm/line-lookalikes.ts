@@ -37,6 +37,7 @@ import {
   type TwinPlace,
   type WaitingRefusal,
 } from "@/lib/phoenix-crm/line-twins";
+import type { ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /** A row as this list reads it: the three-lines rule's row, with the contact details it compares too. */
 export type LookalikeCustomer = TwinCustomer & {
@@ -118,6 +119,32 @@ export type LineLookalikeSide = {
   territory: string;
 };
 
+/**
+ * One place the waiting row would take, with the evidence the other line validated it on: the photograph
+ * and what Place checks reads beside it — the signboard or timetable read, where the rep stood, the map
+ * (owner, 2026-11-17: "must render the validation photo and details"). The same fields, under the same
+ * names, as a Place checks row, so the screen draws it with Place checks' own evidence block.
+ */
+export type LineLookalikePlace = Pick<
+  ValidatedPlaceRow,
+  | "placeId"
+  | "photoPath"
+  | "trustedPoint"
+  | "photoKind"
+  | "photo"
+  | "pin"
+  | "placeLabel"
+  | "sharedPlaceName"
+  | "address"
+  | "brickName"
+  | "areaName"
+  | "mapsLink"
+  | "schedule"
+  | "signboard"
+  | "repName"
+  | "validatedAtText"
+>;
+
 export type LineLookalikeSource = LineLookalikeSide & {
   validatedByName: string | null;
   validatedAtText: string | null;
@@ -125,6 +152,8 @@ export type LineLookalikeSource = LineLookalikeSide & {
   placeCount: number;
   brickName: string | null;
   address: string | null;
+  /** Those places, each with its photograph and evidence, the best point first. */
+  places: LineLookalikePlace[];
 };
 
 export type LineLookalikeRow = {
