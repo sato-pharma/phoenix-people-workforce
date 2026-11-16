@@ -230,6 +230,11 @@ const ROUTE_GATES: RouteGate[] = [
   // The fourth tab (owner, 2026-10-26): one customer several reps validated at places that do not agree.
   // A read only, the deciders alone — the loader refuses everyone else before a row is read.
   get("validation-reviews/same-customer"),
+  // The same customer on another line, written differently (owner, 2026-11-16, "Fix rule + review list"): the
+  // Super Admin's confirmation list. `read` to open it and `approve` to answer — "Same customer" validates — and
+  // `canReviewLineLookalikes` refuses everyone but the Super Admin before a row is read.
+  get("validation-reviews/line-lookalikes"),
+  post("validation-reviews/line-lookalikes", "approve"),
   // The part of Place checks that waits for the click (owner, 2026-11-14, "Load lists on demand"): every
   // place in use and every decision older than 14 days. `approve` at the route — it is the deciders' own
   // board — and `canDecideValidationReviews` refuses everyone else before a row is read.
@@ -1139,6 +1144,10 @@ const LATER_MIGRATIONS = [
   // functions, phoenix_crm_is_super_admin and phoenix_crm_super_admin_hr_ids, and the two decision functions
   // replaced with one refusal each. It replaces nothing save_visit depends on.
   "supabase/migrations/20261116230741_phoenix_crm_super_admin_approval_is_final.sql",
+  // The same customer on another line, written differently (owner, 16 Nov 2026, "Fix rule + review list"): one
+  // NEW table, phoenix_crm_line_lookalike_answers, and no function — the confirmation validates through
+  // phoenix_crm_share_line_validation. It replaces nothing save_visit depends on.
+  "supabase/migrations/20261116234831_phoenix_crm_line_lookalike_answers.sql",
 ];
 
 /**

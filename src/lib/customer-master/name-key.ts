@@ -152,4 +152,10 @@ export const CUSTOMER_NAME_FOLDS_THAT_DIFFER: readonly CustomerNameFoldThatDiffe
     usedBy: "The direct-order customer picker (phx_search_direct_order_customers), in the database",
     why: "Drops every space and folds ٱ, ة→ه, ئ→ي. It runs inside SQL, where the TypeScript key cannot.",
   },
+  {
+    name: "accountWords",
+    file: "src/lib/phoenix-crm/line-lookalikes.ts",
+    usedBy: "Phoenix CRM's Same customer, other line list: an AM account on one line against a validated one on another",
+    why: "Returns the name's WORDS, compared one by one with a typing-slip distance, never one key: the alef forms, ى and ة folded, the owner's spelling rulings (ذ and ز to د, خ to ح, the hamza seats), ال dropped, and the words every hospital carries and the descriptors (general, central…) left out. Switching it would change which pairs the Super Admin is shown.",
+  },
 ];

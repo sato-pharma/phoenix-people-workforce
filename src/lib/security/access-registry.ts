@@ -1104,6 +1104,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-customer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The same customer on another line, written differently (owner, 2026-11-16, "Fix rule + review list"): the
+  // Super Admin alone reads and answers it (`canReviewLineLookalikes` in the service); "Same customer" validates.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/line-lookalikes", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/line-lookalikes", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Approving a place AFTER it was rejected (owner, 2026-10-03). The same gate and the same decider.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The Master List (owner, 2026-10-26): the Super Admin confirms a profile or picks its photo. `update` at the

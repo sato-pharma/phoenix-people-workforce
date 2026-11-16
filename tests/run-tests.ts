@@ -2209,6 +2209,7 @@ import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-co
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
+import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -8547,6 +8548,11 @@ await runTest(
 await runTest(
   "Phoenix CRM shares one doctor's validation across the three lines (owner, 2026-11-12: \"if it is one place in the three or one customer, then and it is validated, make in the three lines validation\", only from a Phoenix validation, and \"Both\"): one doctor is the same list, the same area, another line and the same name of three words or more with no speciality against it — never two words, another area, the same line or a pharmacy; a waiting row takes the validated line's places (best point first, never two within 150 m, at most five) unless his own validation or a drop waits, a clinic doctor lacks his three names, two validated doctors of the name sit on one line, two different doctors match or he is on his list twice, and a copy never breeds a copy; validated twins whose photo or pin points agree move onto the best one, a chosen point is never moved and 400 m apart is two clinics; the migration copies under the seat's lock with no photo and the system as actor, a copy follows its source, and no copy ever reaches Place checks or the two match boards",
   runPhoenixCrmLineTwinsTests,
+);
+
+await runTest(
+  "Phoenix CRM lists the same customer on another line, written differently, for the Super Admin to confirm (owner, 2026-11-16: \"same customer diff rep same area diff line\", then \"Fix rule + review list\" — nothing is validated without that confirmation): a one-word slip, the words reordered or a middle name left out are one name, never محمد / محمود or two common given names; a waiting row and a validated row on another line of its area are listed Certain on the same phone or old-CRM contact and Very likely on the name, only where the three-lines rule did not pair them — never a clinic doctor without three names, a speciality against it, the same line, another area, a pharmacy, two kinds of facility, a copy as the source's place or a pair answered Not the same; a rep holding the customer twice is flagged; and the confirmation re-checks every guard and keeps the other line's validator",
+  runPhoenixCrmLineLookalikesTests,
 );
 
 await runTest(

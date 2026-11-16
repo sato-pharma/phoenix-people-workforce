@@ -21,7 +21,27 @@ Two customer rows are the same doctor on two lines when ALL of these hold:
 - each name has **at least three words** (two words — "Ahmed Mohamed" — is a hundred doctors), and
   `sameName` (the Customer matches board's own comparison: Arabic letter forms, spacing, the doctor prefix)
   says they are one name;
-- no speciality clash (`specialityFamily`), when both rows name one.
+- no speciality clash (`specialityFamily`), when both rows name one;
+- on the AM list, **the same kind of facility** (`sameFacilityKind`, below).
+
+### Two facilities of different kinds are never one — `sameFacilityKind`
+
+**Added 16 November 2026**, after the audit found the rule had treated the Kom Hamada fever hospital and the
+Kom Hamada general hospital as one account: "مستشفى كوم حمادة" and "مستشفى حميات كوم حمادة" share three
+words and `sameName` says yes. The owner's choice ("Fix rule + review list") was to stop two facilities of
+different kinds from ever pairing or merging.
+
+`facilityKindOf` reads the kind words of an account name (fever, chest, children, psychiatric, eye, liver,
+oncology, insurance, university, teaching, women, bones, kidney, heart, burns, urology, skin, dental,
+diabetes, emergency, isolation, dispensary, institute, centre, clinic, unit, health) and its descriptors
+(general, central, specialized, private, comprehensive, international), each folded off a leading و / ال /
+لل. Two AM rows are twins only when their kind words are the same set and they carry no two different
+descriptors: one row leaving off "العام" is still the general hospital; "حميات" on one row only is not.
+PM rows are people and are not read for kinds.
+
+The names written another way — a word spelled differently, reordered, a middle name left out, the same phone
+or old-CRM contact — are never twins: they go to the Super Admin's **Same customer, other line** list
+(`docs/phoenix-crm-line-lookalikes.md`), which validates only on his confirmation.
 
 ## The two halves
 
