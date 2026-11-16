@@ -10,6 +10,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { listDisputeCenterAttachments } from "./attachment-store.ts";
 import { loadDayFacts, loadEmployeeProfileFacts } from "./day-evidence.ts";
+import { explanationFactsFor } from "./explanations.ts";
 import { listCaseEvents, nameFor, recordCaseEvent, resolvePeopleNames } from "./events.ts";
 import { notifyDisputeCase, reviewerHrIdsFor } from "./notify.ts";
 import { resolveCaseParticipant, viewerHrIdOf } from "./participants.ts";
@@ -120,11 +121,13 @@ export async function buildCalendarCase(input: {
   let facts: DisputeCase["facts"] = [];
   let factsIncomplete = false;
   if (input.withFacts) {
-    const [profile, day] = await Promise.all([
+    const [profile, day, explained] = await Promise.all([
       loadEmployeeProfileFacts(dispute.employeeHrId),
       loadDayFacts(dispute.employeeHrId, [dispute.disputeDate]),
+      explanationFactsFor("calendar", dispute.id),
     ]);
     facts = [
+      ...explained,
       ...profile,
       { label: "What the calendar showed", value: dispute.displayedSummary || "(nothing was shown for this day)" },
       ...day.facts,

@@ -97,6 +97,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   device_assignment: true,
   device_import: true,
   direct_order_request: true,
+  dispute_explanation: true,
   distribution_list: true,
   doctor_coverage_config: true,
   double_visit_import: true,

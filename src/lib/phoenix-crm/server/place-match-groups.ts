@@ -239,10 +239,34 @@ function isSubjectKey(key: string): boolean {
   return colon > 0 && (key.slice(0, colon) === "place" || key.slice(0, colon) === "venue") && isUuid(key.slice(colon + 1));
 }
 
-export type PlaceMatchAnswerResult = { answer: "same" | "different" | "forget"; pairs: number };
+export type PlaceMatchAnswerResult = { answer: "same" | "different" | "forget" | "split"; pairs: number };
+
+const NOT_A_PAIR = "That answer does not name a pair of validations.";
+
+/** The ordered, de-duplicated pairs a request names, each held to the `place:`/`venue:` key shape. */
+function pairsOf(rawPairs: unknown[]): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  for (const entry of rawPairs) {
+    if (!Array.isArray(entry) || entry.length !== 2) throw validationError(NOT_A_PAIR);
+    const first = String(entry[0] ?? "");
+    const second = String(entry[1] ?? "");
+    if (!isSubjectKey(first) || !isSubjectKey(second) || first === second) throw validationError(NOT_A_PAIR);
+    const [low, high] = orderedPair(first, second);
+    const id = `${low}|${high}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    pairs.push([low, high]);
+  }
+  return pairs;
+}
 
 /**
  * Save an answer for the pairs of one question, or take it back (`forget`).
+ *
+ * `split` is his answer reading by reading (owner, 2026-11-17: "i want to accept 1 and reject 1"): the
+ * `same` pairs and the `different` pairs of one question, stored in ONE upsert so a half-saved answer can
+ * never leave a place confirmed without the reading he rejected walled out of it.
  *
  * The pairs are keys the board itself drew, so this validates their SHAPE and stores them — it does not
  * recompute the question: whether two readings are one place is his call, and a stored answer about a
@@ -251,26 +275,42 @@ export type PlaceMatchAnswerResult = { answer: "same" | "different" | "forget"; 
 export async function answerPlaceMatch(viewer: PhoenixCrmViewer, raw: unknown): Promise<PlaceMatchAnswerResult> {
   if (!canReadPlaceMatches(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager answer this.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
-  const answer = body.answer === "same" ? "same" : body.answer === "different" ? "different" : body.answer === "forget" ? "forget" : null;
+  const answer =
+    body.answer === "same" ? "same" : body.answer === "different" ? "different" : body.answer === "forget" ? "forget" : body.answer === "split" ? "split" : null;
   if (!answer) throw validationError("Choose same place, different places, or take the answer back.");
-  const rawPairs = Array.isArray(body.pairs) ? (body.pairs as unknown[]) : [];
-  if (rawPairs.length === 0 || rawPairs.length > MAX_ANSWER_PAIRS) throw validationError("That answer does not name a pair of validations.");
 
-  const pairs: Array<[string, string]> = [];
-  const seen = new Set<string>();
-  for (const entry of rawPairs) {
-    if (!Array.isArray(entry) || entry.length !== 2) throw validationError("That answer does not name a pair of validations.");
-    const first = String(entry[0] ?? "");
-    const second = String(entry[1] ?? "");
-    if (!isSubjectKey(first) || !isSubjectKey(second) || first === second) throw validationError("That answer does not name a pair of validations.");
-    const [low, high] = orderedPair(first, second);
-    const id = `${low}|${high}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    pairs.push([low, high]);
+  const decidedAt = new Date().toISOString();
+  const row = (low: string, high: string, verdict: "same" | "different") => ({
+    subject_a: low,
+    subject_b: high,
+    answer: verdict,
+    decided_by_hr_id: viewer.hrId,
+    decided_at: decidedAt,
+  });
+  const admin = getSupabaseAdmin();
+
+  if (answer === "split") {
+    const rawSame = Array.isArray(body.same) ? (body.same as unknown[]) : [];
+    const rawDifferent = Array.isArray(body.different) ? (body.different as unknown[]) : [];
+    const total = rawSame.length + rawDifferent.length;
+    if (total === 0 || total > MAX_ANSWER_PAIRS) throw validationError(NOT_A_PAIR);
+    const same = pairsOf(rawSame);
+    const different = pairsOf(rawDifferent);
+    const sameIds = new Set(same.map(([low, high]) => `${low}|${high}`));
+    if (different.some(([low, high]) => sameIds.has(`${low}|${high}`))) throw validationError("One pair cannot be the same place and different places at once.");
+    const { error } = await admin
+      .from("phoenix_crm_place_match_answers")
+      .upsert([...same.map(([low, high]) => row(low, high, "same")), ...different.map(([low, high]) => row(low, high, "different"))], {
+        onConflict: "subject_a,subject_b",
+      });
+    throwIfError(error);
+    return { answer, pairs: same.length + different.length };
   }
 
-  const admin = getSupabaseAdmin();
+  const rawPairs = Array.isArray(body.pairs) ? (body.pairs as unknown[]) : [];
+  if (rawPairs.length === 0 || rawPairs.length > MAX_ANSWER_PAIRS) throw validationError(NOT_A_PAIR);
+  const pairs = pairsOf(rawPairs);
+
   if (answer === "forget") {
     for (const [low, high] of pairs) {
       const { error } = await admin.from("phoenix_crm_place_match_answers").delete().eq("subject_a", low).eq("subject_b", high);
@@ -278,9 +318,8 @@ export async function answerPlaceMatch(viewer: PhoenixCrmViewer, raw: unknown): 
     }
     return { answer, pairs: pairs.length };
   }
-  const decidedAt = new Date().toISOString();
   const { error } = await admin.from("phoenix_crm_place_match_answers").upsert(
-    pairs.map(([low, high]) => ({ subject_a: low, subject_b: high, answer, decided_by_hr_id: viewer.hrId, decided_at: decidedAt })),
+    pairs.map(([low, high]) => row(low, high, answer)),
     { onConflict: "subject_a,subject_b" },
   );
   throwIfError(error);

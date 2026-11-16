@@ -1104,6 +1104,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/same-place", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/same-customer", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The same customer on another line, written differently (owner, 2026-11-16, "Fix rule + review list"): the
+  // Super Admin alone reads and answers it (`canReviewLineLookalikes` in the service); "Same customer" validates.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/validation-reviews/line-lookalikes", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/line-lookalikes", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Approving a place AFTER it was rejected (owner, 2026-10-03). The same gate and the same decider.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews/restore", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The Master List (owner, 2026-10-26): the Super Admin confirms a profile or picks its photo. `update` at the
@@ -2378,6 +2382,9 @@ export const accessRegistry = [
   // audit row: it is polled every 30 s from every open tab and reads nobody's data but the count.
   sessionApi({ methods: ["GET"], pattern: "/api/private-calendar/disputes/pending-count", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/private-calendar/disputes/:id/decide", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // "Accept all" / "Reject all" on one reason group of the Calendar Disputes inbox (owner, 2026-11-16).
+  // Same gate as the single decision; the Super Admin test is assertDisputeDecisionActor in the helper.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/private-calendar/disputes/decide-many", permission: { resource: "attendance", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // The reply thread on one review request. `attendance:read` is only the matrix gate; the real
   // audience test — the employee who raised it, or a Super Admin — is resolveDisputeThreadActor in
   // the domain helper, so a manager with attendance:read reaches the route and not the conversation.
@@ -2402,6 +2409,13 @@ export const accessRegistry = [
   // One picture from a dispute. Not audited: it is an image behind a conversation the reader already
   // has open, fetched once per thumbnail, and the participant check runs before a byte is read.
   sessionApi({ methods: ["GET"], pattern: "/api/dispute-center/attachments/:id", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  // THE EXPLANATION'S CONFIRMER (owner, 2026-11-16: "manager first then me"). `attendance:read` is the
+  // matrix gate; the real tests are in dispute-center/explanations.ts — the confirmer list is the
+  // session's own manager chain and the Training Managers, the waiting list holds only explanations
+  // naming the viewer, and only the person named may answer one.
+  sessionApi({ methods: ["GET"], pattern: "/api/dispute-center/explanations/confirmers", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/dispute-center/explanations", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/dispute-center/explanations/:groupId/answer", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/notification-confidence", permission: { resource: "communication", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/notification-confidence/pending", permission: { resource: "communication", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-confidence/:id/approve", permission: { resource: "communication", action: "update" }, guard: "domain-helper", csrfRequired: true }),

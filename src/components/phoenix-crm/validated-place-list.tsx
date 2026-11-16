@@ -149,7 +149,13 @@ function Who({ row, mode }: { row: ValidatedPlaceRow; mode: PlaceCheckNotesMode 
   );
 }
 
-function Place({ row }: { row: ValidatedPlaceRow }) {
+/** The fields the evidence block reads: a Place checks row, or a place another screen draws the same way. */
+type PlaceEvidence = Pick<
+  ValidatedPlaceRow,
+  "photoKind" | "photo" | "pin" | "placeLabel" | "sharedPlaceName" | "address" | "brickName" | "areaName" | "mapsLink" | "schedule" | "signboard"
+>;
+
+function Place({ row }: { row: PlaceEvidence }) {
   // A SEATED customer has no reading of his own: his point is the polyclinic's, frozen when the venue
   // itself was validated, so `pin` and `photo` are both empty by construction and saying "no reading"
   // is the honest line rather than an empty space the reader has to interpret.
@@ -594,6 +600,7 @@ export function ValidatedPlaceList({
 export {
   Approve as PlaceInUseApprove,
   Place as PlaceInUseEvidence,
+  PHOTO_CLASS as PLACE_CHECK_PHOTO_CLASS,
   Refuse as PlaceInUseRefuse,
   photoAlt as placeInUsePhotoAlt,
   readingText as placeReadingText,

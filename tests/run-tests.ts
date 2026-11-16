@@ -2109,6 +2109,7 @@ import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
 import { runPhoenixCrmFraudScanTests } from "./phoenix-crm-fraud-scan.test.ts";
 import { runPrivateCalendarGapNoticeTests } from "./private-calendar-gap-notice.test.ts";
+import { runDisputeExplanationsTests } from "./dispute-explanations.test.ts";
 import { runPhoenixCrmVisitRollupTests } from "./phoenix-crm-visit-rollup.test.ts";
 import { runCronAutoarmTests } from "./cron-autoarm.test.ts";
 import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
@@ -2210,6 +2211,7 @@ import { runPhoenixCrmFullNameCorrectionTests } from "./phoenix-crm-full-name-co
 import { runPhoenixCrmFullNameBoardTests } from "./phoenix-crm-full-name-board.test.ts";
 import { runPhoenixCrmValidationReviewFiltersTests } from "./phoenix-crm-validation-review-filters.test.ts";
 import { runPhoenixCrmTrustedPointTests } from "./phoenix-crm-trusted-point.test.ts";
+import { runPhoenixCrmLineLookalikesTests } from "./phoenix-crm-line-lookalikes.test.ts";
 import { runPhoenixCrmLineTwinsTests } from "./phoenix-crm-line-twins.test.ts";
 import { runPhoenixCrmPlanDeadlineTests } from "./phoenix-crm-plan-deadline.test.ts";
 import { runPhoenixCrmPlanWeeklyOnlyTests } from "./phoenix-crm-plan-weekly-only.test.ts";
@@ -7808,6 +7810,11 @@ await runTest(
 );
 
 await runTest(
+  "every dispute opens with a reason, not free text (owner, 2026-11-16: 'find a more professional, easier, accurate way'; 'manager first then me but remove device problem choice'): the list is Training, Meeting, Double visit and Something else, with no device problem and no leave; a named reason needs the manager or Training Manager who can confirm it and Something else needs at least 4 words and 25 characters; a calendar explanation covers 14 days at most and never a future day while a deduction's own days are never capped; the confirmer is told in-app and by push and never by email; the calendar and both deduction boxes refuse a day already explained in another; and the Super Admin's inbox never calls the day wrong and offers Accept all, in two clicks, only on a group every person named confirmed",
+  runDisputeExplanationsTests,
+);
+
+await runTest(
   "Phoenix CRM batches routine planned visits into an hourly rollup to the NSM and SFE in scope (Phase 2 — owner, 2026-10-05: 'Live + visit rollup' for ~600 visits a working day; the national sales manager hears the visits beneath him and every SFE Manager hears the whole hour, never the rep; a quiet hour tells nobody; counts per rep, caps its lines, and the key is per manager per hour so a retry reaches nobody twice; in-app and Telegram only; and the five registration sites agree so the cron is watched, armed and cannot strand)",
   runPhoenixCrmVisitRollupTests,
 );
@@ -8559,6 +8566,11 @@ await runTest(
 await runTest(
   "Phoenix CRM shares one doctor's validation across the three lines (owner, 2026-11-12: \"if it is one place in the three or one customer, then and it is validated, make in the three lines validation\", only from a Phoenix validation, and \"Both\"): one doctor is the same list, the same area, another line and the same name of three words or more with no speciality against it — never two words, another area, the same line or a pharmacy; a waiting row takes the validated line's places (best point first, never two within 150 m, at most five) unless his own validation or a drop waits, a clinic doctor lacks his three names, two validated doctors of the name sit on one line, two different doctors match or he is on his list twice, and a copy never breeds a copy; validated twins whose photo or pin points agree move onto the best one, a chosen point is never moved and 400 m apart is two clinics; the migration copies under the seat's lock with no photo and the system as actor, a copy follows its source, and no copy ever reaches Place checks or the two match boards",
   runPhoenixCrmLineTwinsTests,
+);
+
+await runTest(
+  "Phoenix CRM lists the same customer on another line, written differently, for the Super Admin to confirm (owner, 2026-11-16: \"same customer diff rep same area diff line\", then \"Fix rule + review list\" — nothing is validated without that confirmation): a one-word slip, the words reordered or a middle name left out are one name, never محمد / محمود or two common given names; a waiting row and a validated row on another line of its area are listed Certain on the same phone or old-CRM contact and Very likely on the name, only where the three-lines rule did not pair them — never a clinic doctor without three names, a speciality against it, the same line, another area, a pharmacy, two kinds of facility, a copy as the source's place or a pair answered Not the same; a rep holding the customer twice is flagged; and the confirmation re-checks every guard and keeps the other line's validator",
+  runPhoenixCrmLineLookalikesTests,
 );
 
 await runTest(

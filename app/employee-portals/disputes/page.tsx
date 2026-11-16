@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DisputeCenterWorkspace } from "@/components/disputes/dispute-center-workspace";
+import { ExplanationConfirmQueue } from "@/components/disputes/explanation-confirm-queue";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isDisputeCaseKind, type DisputeCaseKind } from "@/lib/dispute-center/types.ts";
@@ -28,9 +29,11 @@ export default async function EmployeeDisputesPage({
 
   return (
     <EmployeePortalPageShell
-      description="Everything you have disputed — a day on your calendar, a deduction, or a flagged day in your weekly attendance. Reply, add pictures, and read the decision with the reason for it."
+      description="Everything you have disputed — a day on your calendar, a deduction, or a flagged day in your weekly attendance — and anything your team asked you to confirm. Reply, add pictures, and read the decision with the reason for it."
       title="My Disputes"
     >
+      {/* What his team named him to confirm (owner, 2026-11-16: "manager first then me"). Nothing for anyone nobody named. */}
+      <ExplanationConfirmQueue />
       <DisputeCenterWorkspace audience="employee" initialCaseRef={params.case ?? null} initialKind={kind} />
     </EmployeePortalPageShell>
   );

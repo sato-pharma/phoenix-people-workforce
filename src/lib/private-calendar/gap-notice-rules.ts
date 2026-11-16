@@ -113,7 +113,7 @@ export function gapNoticeIdempotencyKey(input: { employeeHrId: string; windowEnd
  * The wording has a job beyond informing: it has to make clear that the employee is not being accused
  * of anything, and that the fix is a sentence they type. "Unexplained" is the strongest word it uses —
  * the day may be perfectly legitimate and simply unrecorded, which is the common case for someone the
- * fingerprint devices do not cover. It names the control ("Request review") and the page, because the
+ * fingerprint devices do not cover. It names the control ("Explain this day", since 2026-11-16) and the page, because the
  * portal page always opens on the CURRENT Cairo month and takes no date parameter, so a day in a
  * month already rolled over has to be stepped back to by hand.
  *
@@ -137,11 +137,11 @@ export function composeGapNotice(input: {
     dates,
     message:
       `Your Private Calendar has ${dates.length} ${plural} in ${input.window.label} with nothing recorded on `
-      + `it: ${list}. This is usually a recording gap rather than a problem — a day away from a `
-      + `fingerprint device, or work that was never logged — and it is worth putting right, because `
-      + `an unexplained workday can be read as absence. Open Private Calendar in your portal, pick the `
-      + `day, and use Request review to say what actually happened and who can confirm it. `
-      + `The calendar opens on the current month, so step back to the month you need.`,
+      + `it: ${list}. This is usually not a problem — a day in training, in a meeting or on a `
+      + `double visit with your manager — but it is worth explaining, because an unexplained workday `
+      + `can be read as absence. Open Private Calendar in your portal, pick the day, and use Explain `
+      + `this day to choose the reason and who can confirm it. If it was leave, request the leave `
+      + `instead. The calendar opens on the current month, so step back to the month you need.`,
     title: `${dates.length} unexplained ${plural} on your calendar`,
   };
 }
