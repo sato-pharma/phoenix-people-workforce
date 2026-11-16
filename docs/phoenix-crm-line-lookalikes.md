@@ -58,6 +58,15 @@ A pair is one waiting row and one validated row when ALL of these hold:
 Certain pairs come first, then Very likely. The waiting row may appear on several cards (one per validated
 row that looks like it); once one card validates it, the others leave the list.
 
+**Each card shows every place the waiting row would take, with its validation photograph and Place checks'
+own evidence** (owner, 2026-11-17: "must render the validation photo and details"). The photograph is drawn at
+Place checks' size, whole and turnable, with who captured it and when. Beside it sits `PlaceInUseEvidence`,
+the same block Place checks shows: the place's label, the polyclinic it is seated in, the address, brick and
+area, the photo's own GPS reading and the capture location, the map link, and the signboard or timetable
+reading. The board reads those places through
+`PLACE_EVIDENCE_COLUMNS` and builds each one with `placeEvidence`. A place the other line validated without a
+photo (a trusted point) says so in place of the picture.
+
 ## The answer — `answerLineLookalike`
 
 Two buttons on each card, nothing else acts:

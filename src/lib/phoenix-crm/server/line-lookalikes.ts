@@ -31,16 +31,19 @@ import {
   planLineLookalikes,
   planLookalikeConfirm,
   type LineLookalikeBoard,
+  type LineLookalikePlace,
   type LineLookalikeRow,
   type LookalikeCustomer,
   type LookalikeInput,
 } from "@/lib/phoenix-crm/line-lookalikes";
 import { territoryName, type OrgIndex } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, numberOrNull, selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadTwinWorld, withdrawValidateAgainNoticeQuietly, type WorldScope } from "@/lib/phoenix-crm/server/line-twins";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
-import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
+import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
+import { scheduleOf, signboardOf } from "@/lib/phoenix-crm/server/validation-reviews";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -55,6 +58,47 @@ const SHARE_SKIP_TEXT: Record<string, string> = {
   full_name_held: LOOKALIKE_REFUSAL_TEXT.full_name_held,
   source_gone: LOOKALIKE_REFUSAL_TEXT.source_not_validated,
 };
+
+/** What Place checks reads of a validated place, read here for the places a pair would copy. */
+const PLACE_EVIDENCE_COLUMNS =
+  "id, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check, point_source";
+
+function textOf(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function readingOf(lat: unknown, lon: unknown, accuracy: unknown): LineLookalikePlace["pin"] {
+  const latitude = numberOrNull(lat);
+  const longitude = numberOrNull(lon);
+  return latitude === null || longitude === null ? null : { lat: latitude, lon: longitude, accuracyMeters: numberOrNull(accuracy) };
+}
+
+/**
+ * One source place as the card draws it: its photograph and the evidence beside it, built the way
+ * `loadValidatedPlaces` builds a Place checks row (owner, 2026-11-17: "must render the validation photo
+ * and details").
+ */
+function placeEvidence(row: Row, names: PeopleNames, venueNames: ReadonlyMap<string, string>): LineLookalikePlace {
+  const point = { lat: numberOrNull(row.lat) ?? 0, lon: numberOrNull(row.lon) ?? 0 };
+  return {
+    placeId: String(row.id),
+    photoPath: textOf(row.photo_path),
+    trustedPoint: row.point_source === "trusted",
+    photoKind: textOf(row.shared_place_id) ? "schedule" : "signboard",
+    photo: readingOf(row.photo_lat, row.photo_lon, row.photo_accuracy_meters),
+    pin: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
+    placeLabel: textOf(row.label),
+    sharedPlaceName: venueNames.get(String(row.shared_place_id ?? "")) ?? null,
+    address: textOf(row.address),
+    brickName: textOf(row.brick_name),
+    areaName: textOf(row.area_name),
+    mapsLink: `https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lon}`,
+    schedule: scheduleOf(row.schedule_check),
+    signboard: signboardOf(row.signboard_check),
+    repName: nameOf(names, textOf(row.created_by_hr_id), "A rep"),
+    validatedAtText: formatPhoenixDateTime(String(row.created_at)),
+  };
+}
 
 /** The Super Admin alone, and never as a test account. */
 export function canReviewLineLookalikes(viewer: Pick<PhoenixCrmViewer, "isSuperAdmin" | "isTestPersona" | "canApprove">): boolean {
@@ -94,12 +138,18 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
   const pairs = planLineLookalikes(input);
 
   const customerById = new Map(input.customers.map((customer) => [customer.id, customer]));
-  const firstPlaces = await selectByIds<Row>("phoenix_crm_places", "id, brick_name, address", "id", [...new Set(pairs.map((pair) => pair.sourcePlaceIds[0]))]);
-  const placeById = new Map(firstPlaces.map((row) => [String(row.id), row]));
-  const names = await loadPeopleNames([
-    ...pairs.flatMap((pair) => [customerById.get(pair.waitingCustomerId)?.seatId, customerById.get(pair.sourceCustomerId)?.seatId]).map((seatId) => (seatId ? viewer.org.seats.get(seatId)?.occupantHrId : null)),
-    ...pairs.map((pair) => customerById.get(pair.sourceCustomerId)?.validatedByHrId),
+  // Every place a pair would copy, with its evidence — the photograph is what the Super Admin judges by.
+  const sourcePlaces = await selectByIds<Row>("phoenix_crm_places", PLACE_EVIDENCE_COLUMNS, "id", [...new Set(pairs.flatMap((pair) => pair.sourcePlaceIds))]);
+  const placeById = new Map(sourcePlaces.map((row) => [String(row.id), row]));
+  const [names, venues] = await Promise.all([
+    loadPeopleNames([
+      ...pairs.flatMap((pair) => [customerById.get(pair.waitingCustomerId)?.seatId, customerById.get(pair.sourceCustomerId)?.seatId]).map((seatId) => (seatId ? viewer.org.seats.get(seatId)?.occupantHrId : null)),
+      ...pairs.map((pair) => customerById.get(pair.sourceCustomerId)?.validatedByHrId),
+      ...sourcePlaces.map((row) => textOf(row.created_by_hr_id)),
+    ]),
+    loadSharedPlaceNames(sourcePlaces.map((row) => textOf(row.shared_place_id))),
   ]);
+  const venueNames = new Map([...venues].map(([id, venue]) => [id, venue.name]));
 
   const side = (customer: LookalikeCustomer) => {
     const seat = viewer.org.seats.get(customer.seatId);
@@ -148,6 +198,10 @@ export async function loadLineLookalikeBoard(viewer: PhoenixCrmViewer): Promise<
         placeCount: pair.sourcePlaceIds.length,
         brickName: typeof place?.brick_name === "string" ? place.brick_name : null,
         address: typeof place?.address === "string" ? place.address : null,
+        places: pair.sourcePlaceIds
+          .map((placeId) => placeById.get(placeId))
+          .filter((row): row is Row => row !== undefined)
+          .map((row) => placeEvidence(row, names, venueNames)),
       },
     });
   }
