@@ -214,7 +214,7 @@ function ReadingEverything({ error, onRetry, stale = false }: { error: string | 
       <span className="flex min-w-0 flex-wrap items-center gap-3">
         <span className="min-w-0 flex-1 basis-60 break-words">
           {stale
-            ? `Reading every place again did not work: ${error ?? ""} The lists and counts below are from the reading before it.`
+            ? `Reading every place again did not work${error ? `: ${error.trim().replace(/([^.!?])$/, "$1.")}` : "."} The lists and counts below are from the reading before it.`
             : (error ?? "Reading every place in use and every older decision, so each list and count here is complete.")}
         </span>
         {error ? (
@@ -559,10 +559,10 @@ export function ValidationReviewsBoard({
   return (
     <CrmSurfaceProvider surface="admin">
       <div className="space-y-5">
+        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         {deckInput && reviewDeck
           ? reviewDeck(deckInput, { ready: complete, want: askForDeck, error: everythingRead.error, retry: reloadEverything })
           : null}
-        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         <div className="min-w-0 border border-slate-200 bg-white">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
             <h2 className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Filters</h2>
@@ -583,7 +583,7 @@ export function ValidationReviewsBoard({
                   Clear filters
                 </CrmButton>
               ) : null}
-              <CrmButton aria-controls="vr-filter-fields" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
+              <CrmButton aria-controls={filtersOpen ? "vr-filter-fields" : undefined} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((current) => !current)} size="sm">
                 {filtersOpen ? "Hide filters" : "Show filters"}
               </CrmButton>
             </div>
@@ -741,7 +741,7 @@ export function ValidationReviewsBoard({
 
         {bulkRunning ? (
           <p className="break-words border-l-4 border-orange-500 bg-white px-4 py-2 text-sm font-semibold text-slate-700" role="status">
-            Answering the rows you picked. The tabs and filters wait until it is done.
+            Answering the rows you picked. The tabs, the filters and every other decision wait until it is done.
           </p>
         ) : null}
 
@@ -749,6 +749,10 @@ export function ValidationReviewsBoard({
           <ReadingEverything error={everythingRead.error} onRetry={reloadEverything} stale />
         ) : null}
 
+        {/* 🔴 EVERY ROW'S OWN BUTTONS WAIT FOR A BULK RUN TOO (17 Nov 2026, the review of the audit fixes): an
+            approved place can be rejected on its own row, so a row approved by hand mid-run was rejected
+            again when the run reached it. The running bar's own controls are already held by `busy`. */}
+        <fieldset className="m-0 min-w-0 space-y-5 border-0 p-0" disabled={bulkRunning}>
         {!reading && view === "needs" ? (
           <div aria-labelledby="vr-tab-needs" className="space-y-5" id="vr-panel-needs" role="tabpanel">
             {team ? null : <AdviceSummary advice={advice} />}
@@ -990,6 +994,7 @@ export function ValidationReviewsBoard({
             ) : null}
           </div>
         ) : null}
+        </fieldset>
       </div>
     </CrmSurfaceProvider>
   );

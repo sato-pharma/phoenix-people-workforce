@@ -110,7 +110,7 @@ export function DecisionComment({
         type="button"
       >
         <Plus aria-hidden className="h-3.5 w-3.5" />
-        Add a comment for the rep (optional)
+        Add a comment for the rep and their manager (optional)
       </button>
     );
   }

@@ -248,6 +248,29 @@ export function seatedRejectWarning(canRestore: boolean): string {
   return canRestore ? `${cost} You can approve it after all from this row.` : cost;
 }
 
+/**
+ * Who can take back a refusal on Not confirmed, said under its warning — one row's and a bulk run's alike
+ * (17 Nov 2026, the audit's wording on screen). It said "cannot be undone", never true for the Super Admin:
+ * History's "Approve after all" brings the place back while it stays retired.
+ */
+export function refusalTakeBack(canRestore: boolean, count = 1): string {
+  const them = count === 1 ? "it" : "them";
+  return canRestore
+    ? `You can approve ${them} after all from History while ${count === 1 ? "it stays" : "they stay"} retired.`
+    : `Only the Super Admin can take ${them} back.`;
+}
+
+// ── A place the other decider settled first ──────────────────────────────────────────────────────
+
+/**
+ * 🔴 A PLACE ALREADY RETIRED, OR GONE, IS AN ANSWER ON THE BOARD, NOT A RED ERROR (owner, 17 Nov 2026, the
+ * audit's wording on screen). Refuse and Approve on Not confirmed answer with these codes when the other
+ * decider settled the place first (`server/validation-reviews.ts`), and the board's already-decided list
+ * (`place-check-done.tsx`) reads the same two constants, so a renamed code cannot turn the row red again.
+ */
+export const PLACE_RETIRED_CODE = "phoenix_crm_place_retired";
+export const PLACE_GONE_CODE = "phoenix_crm_place_not_found";
+
 // ── When the POLYCLINIC was refused, not his own capture of the customer ─────────────────────────
 
 /** Said first, so the clause's "its" has a subject and the rep knows which photo is meant. */

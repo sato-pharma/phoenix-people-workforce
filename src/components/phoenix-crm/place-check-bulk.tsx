@@ -23,7 +23,7 @@
  * nothing about who decides).
  */
 
-import { useId, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
 import { messageOf } from "@/components/phoenix-crm/api";
@@ -198,6 +198,22 @@ export function BulkDecideBar<Row>({
   const needsReason = actions.some((action) => action.needsReason);
   const busy = running !== null || anyRunGoing;
 
+  // 🔴 A RUN DIES WITH ITS BAR (17 Nov 2026, the review of the audit fixes): leaving the page stops it
+  // before its next row, frees the board's lock at once, and never refreshes the page he went to — the
+  // same rule as the decisions' waiting re-read (`placeCheckReread.cancel`).
+  const alive = useRef(true);
+  const ownsRun = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (ownsRun.current) {
+        ownsRun.current = false;
+        setBulkRunGoing(false);
+      }
+    };
+  }, []);
+
   async function run(action: BulkAction<Row>) {
     const targets = picked.filter(action.takes);
     if (busy || targets.length === 0) return;
@@ -207,7 +223,11 @@ export function BulkDecideBar<Row>({
     }
     setArmed(null);
     setRunning(action.key);
+    ownsRun.current = true;
     setBulkRunGoing(true);
+    // A re-read still waiting from an earlier press would rebuild the rows under the run; this one reads
+    // the page itself when it ends.
+    placeCheckReread.cancel();
     setDone(0);
     setFailures([]);
     setSummary(null);
@@ -215,6 +235,7 @@ export function BulkDecideBar<Row>({
     const landed: PlaceCheckOutcome[] = [];
     try {
       for (const row of targets) {
+        if (!alive.current) break;
         const before = landed.length;
         try {
           landed.push(action.outcomeOf(await action.run(row, { note, reason }), row));
@@ -230,8 +251,12 @@ export function BulkDecideBar<Row>({
         setDone((current) => current + 1);
       }
     } finally {
-      setBulkRunGoing(false);
+      if (ownsRun.current) {
+        ownsRun.current = false;
+        setBulkRunGoing(false);
+      }
     }
+    if (!alive.current) return;
     setFailures(failed);
     setSummary(landed.length > 0 ? bulkOutcomeSummary(landed) : null);
     setRunning(null);

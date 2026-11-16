@@ -146,7 +146,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
         icon={<MapPinCheck className="h-3.5 w-3.5" />}
       />
       <details className="group min-w-0 border border-slate-200 bg-white">
-        <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
           <ChevronDown aria-hidden className="h-3.5 w-3.5 transition group-open:rotate-180" />
           How the checks work
         </summary>

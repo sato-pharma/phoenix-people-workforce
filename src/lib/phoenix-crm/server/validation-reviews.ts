@@ -58,6 +58,8 @@ import {
 } from "@/lib/phoenix-crm/signboard-rules";
 import {
   parseValidationRefusalReason,
+  PLACE_GONE_CODE,
+  PLACE_RETIRED_CODE,
   validationRefusalLabel,
   VALIDATION_REASON_REQUIRED,
   type ValidationPhotoKind,
@@ -344,11 +346,21 @@ export async function countValidationReviewsWaiting(): Promise<{ count: number; 
   throwIfError(error);
   throwIfError(heldRead.error);
   if (capped || heldRead.capped) throw new Error("The place checks waiting could not be counted whole.");
-  const places = await selectByIds<Row>("phoenix_crm_places", "id, status, shared_place_id", "id", [...new Set(rows.map((row) => String(row.place_id)))]);
+  // Each place's building comes joined into the same read, over its named key, so no lookup by id waits
+  // behind it (17 Nov 2026).
+  const places = await selectByIds<Row>(
+    "phoenix_crm_places",
+    "id, status, shared_place_id, venue:phoenix_crm_shared_places!phoenix_crm_places_shared_place_id_fkey(id, status, is_test, retired_at)",
+    "id",
+    [...new Set(rows.map((row) => String(row.place_id)))],
+  );
   const placeById = new Map(places.map((row) => [String(row.id), row]));
   const waiting = rows.filter((row) => reviewStillToDecide(row, placeById));
   const buildingOf = (row: Row) => text(placeById.get(String(row.place_id))?.shared_place_id);
-  const venues = await selectByIds<Row>("phoenix_crm_shared_places", "id, status, is_test, retired_at", "id", waiting.map(buildingOf));
+  const venues = waiting.flatMap((row) => {
+    const venue: unknown = placeById.get(String(row.place_id))?.venue;
+    return isRecord(venue) ? [venue] : [];
+  });
   const venuesOnBoard = new Set([...venues, ...heldRead.rows].filter(sharedPlaceIsOnTheBoard).map((row) => String(row.id)));
   return needsYouDecisionCount({
     waiting: waiting.map((row) => ({ id: String(row.id), at: String(row.created_at), sharedPlaceId: buildingOf(row) })),
@@ -1389,16 +1401,6 @@ function evidenceToKeep(google: unknown): Row | null {
   return Object.keys(flat).length > 0 ? flat : null;
 }
 
-/**
- * 🔴 A PLACE ALREADY RETIRED, OR GONE, IS AN ANSWER ON THE BOARD, NOT A RED ERROR (owner, 17 Nov 2026, the
- * audit's wording on screen). Refuse and Approve on Not confirmed answered "This place is already retired.
- * Reload the page." in red, with the generic `invalid_request` code, when the other decider had settled
- * the place first. Their own codes put them on the board's already-decided list (`isAlreadyDecided` in
- * `place-check-done.tsx`), so the row says "Already decided" and the page re-reads itself.
- */
-export const PLACE_RETIRED_CODE = "phoenix_crm_place_retired";
-export const PLACE_GONE_CODE = "phoenix_crm_place_not_found";
-
 function isRecord(value: unknown): value is Row {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -1774,28 +1776,46 @@ async function withoutACaptureSince(customers: Row[]): Promise<Row[]> {
   return customers.filter((row) => !capturedAgain.has(String(row.id)));
 }
 
+/** A customer's places in use, joined so the count below keeps only the customers with none. */
+const NO_PLACE_IN_USE_JOIN = "active_place:phoenix_crm_places!phoenix_crm_places_customer_id_fkey(id)";
+
 /**
  * How many customers wait to be captured again, and since when — the figure the Needs You board asks.
  * The same customers the page lists (`loadReopenedCustomers`): real entries only, because the page draws
- * no test entry, and without anybody who has captured again (`withoutACaptureSince`). Read whole and
- * paged, oldest first, so PostgREST's 1,000-row ceiling cannot shorten it. Throws on a failed read and on
- * a read it could not finish: the board turns that into "could not be read", never a zero it cannot prove.
+ * no test entry, and without anybody who has captured again (`withoutACaptureSince`).
+ *
+ * A head count plus the oldest stamp, so PostgREST's 1,000-row ceiling cannot shorten it and the backlog's
+ * size never decides its cost (17 Nov 2026). The database leaves out a customer with a place in use itself:
+ * his active places are joined over the named key and only the customers with none are kept
+ * (`is(…, null)`) — on production that day 237 of 247, the same 237 and the same oldest stamp as reading
+ * every one and taking away those with a place. Throws on a failed read: the board turns that into "could
+ * not be read", never a zero it cannot prove.
  */
 export async function countReopenedCustomersWaiting(): Promise<{ count: number; oldestAt: string | null }> {
-  const read = await readEveryPage<Row>(
-    () =>
-      getSupabaseAdmin()
-        .from("phoenix_crm_customers")
-        .select("id, reopened_at")
-        .eq("status", "pending")
-        .eq("is_test", false)
-        .not("reopened_at", "is", null)
-        .order("reopened_at", { ascending: true })
-        .order("id", { ascending: true }),
-    { maxRows: 50_000, whenFull: "stop", what: "The customers waiting to be captured again", uniqueBy: (row) => String(row.id) },
-  );
-  throwIfError(read.error);
-  if (read.capped) throw new Error("The customers waiting to be captured again could not be counted whole.");
-  const waiting = await withoutACaptureSince(read.rows);
-  return { count: waiting.length, oldestAt: waiting[0] ? String(waiting[0].reopened_at) : null };
+  const supabase = getSupabaseAdmin();
+  const [waiting, oldest] = await Promise.all([
+    supabase
+      .from("phoenix_crm_customers")
+      .select(`id, ${NO_PLACE_IN_USE_JOIN}`, { count: "exact", head: true })
+      .eq("status", "pending")
+      .eq("is_test", false)
+      .not("reopened_at", "is", null)
+      .eq("active_place.status", "active")
+      .is("active_place", null),
+    supabase
+      .from("phoenix_crm_customers")
+      .select(`reopened_at, ${NO_PLACE_IN_USE_JOIN}`)
+      .eq("status", "pending")
+      .eq("is_test", false)
+      .not("reopened_at", "is", null)
+      .eq("active_place.status", "active")
+      .is("active_place", null)
+      .order("reopened_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(1),
+  ]);
+  throwIfError(waiting.error);
+  throwIfError(oldest.error);
+  const first = ((oldest.data ?? []) as Row[])[0];
+  return { count: waiting.count ?? 0, oldestAt: first ? String(first.reopened_at) : null };
 }

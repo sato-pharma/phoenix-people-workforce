@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { errorCodeOf } from "@/components/phoenix-crm/api";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
-import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVED_NOT_A_LIST_ADD, PLACE_GONE_CODE, PLACE_RETIRED_CODE } from "@/lib/phoenix-crm/validation-feedback";
 
 /** What a saved decision did, in the review's own words. */
 export type PlaceCheckOutcome =
@@ -92,10 +92,9 @@ const ALREADY_DECIDED_CODES: ReadonlySet<string> = new Set([
   "phoenix_crm_review_not_rejected",
   "phoenix_crm_full_name_not_held",
   // Refuse and Approve on Not confirmed, when the other decider settled the place first (17 Nov 2026):
-  // `PLACE_RETIRED_CODE` and `PLACE_GONE_CODE` in `server/validation-reviews.ts`, spelt out because a
-  // client file cannot import the server's.
-  "phoenix_crm_place_retired",
-  "phoenix_crm_place_not_found",
+  // the same two constants the server answers with, from the pure `validation-feedback.ts`.
+  PLACE_RETIRED_CODE,
+  PLACE_GONE_CODE,
   "phoenix_crm_place_not_retired",
   "phoenix_crm_shared_place_not_retired",
   "phoenix_crm_shared_place_retired",

@@ -225,7 +225,7 @@ export function PlaceCheckScorecard({
           {total.places} {total.places === 1 ? "place" : "places"} · {problemsOf(total)} with a photo problem
           {open ? " · worst first · tap a name to see only that rep, a count to see its photos" : ` · ${reps.length} ${reps.length === 1 ? "rep" : "reps"}`}
         </p>
-        <CrmButton aria-controls="place-check-scorecard-body" aria-expanded={open} onClick={() => setOpen((current) => !current)} size="sm">
+        <CrmButton aria-controls={open ? "place-check-scorecard-body" : undefined} aria-expanded={open} onClick={() => setOpen((current) => !current)} size="sm">
           {open ? "Hide each rep" : "Show each rep"}
         </CrmButton>
       </div>

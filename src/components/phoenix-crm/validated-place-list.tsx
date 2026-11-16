@@ -53,7 +53,7 @@ import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT } from "@/lib/phoenix-crm/super-admin-approval-rules";
 import { TRUSTED_POINT_NO_PHOTO } from "@/lib/phoenix-crm/trusted-point-rules";
-import { PLACE_APPROVED_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
+import { PLACE_APPROVED_NOT_A_LIST_ADD, refusalTakeBack, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
 /**
@@ -280,7 +280,9 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
     }
   }
 
-  if (saved) return <PlaceCheckSaved outcome={saved} />;
+  // Approve, drawn beside this control on every row, reads the same saved mark and draws it once; drawn here
+  // too, one press showed its outcome twice (17 Nov 2026).
+  if (saved) return null;
 
   // 🔴 What the administrator approved — a trusted point included — only he refuses (owner, 2026-11-16).
   if (row.lockedBySuperAdmin) return <CrmNote tone="neutral">{SUPER_ADMIN_APPROVAL_IS_FINAL_TEXT}</CrmNote>;
@@ -433,21 +435,12 @@ function LastColumn({ mode, noteIndex, row, scope }: { mode: PlaceCheckNotesMode
 }
 
 /**
- * 🔴 A REFUSAL CAN BE TAKEN BACK — BY THE SUPER ADMIN (17 Nov 2026, the audit's wording on screen). The
- * warning said "cannot be undone", which was never true for him: History's "Approve after all" brings the
- * place back while it stays retired. The SFE Manager has no take-back (owner, 2026-11-10), so his line
- * says who has.
- */
-function refusalTakeBack(canRestore: boolean): string {
-  return canRestore ? "You can approve it after all from History while it stays retired." : "Only the Super Admin can take it back.";
-}
-
-/**
  * Answering several at once (owner, 2026-10-15: "also make me able to multiple select and response";
  * Approve added 2026-10-17). Each runs the row's OWN request per place — same route, same reason, same
- * note — so there is no second decision path; see `place-check-bulk.tsx`.
+ * note — so there is no second decision path; see `place-check-bulk.tsx`. The refusal's warning says who
+ * can take it back by who is reading (`refusalTakeBack`), as one row's does.
  */
-const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
+const inUseActions = (canRestore: boolean): ReadonlyArray<BulkAction<ValidatedPlaceRow>> => [
   {
     key: "approve",
     label: "Approve",
@@ -465,7 +458,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     variant: "danger",
     needsReason: true,
     warning: (count) =>
-      `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one validates again from their own list. Only the Super Admin can take a refusal back, from History.`,
+      `This retires ${count === 1 ? "that place" : `those ${count} places`}; each customer left without one validates again from their own list. ${refusalTakeBack(canRestore, count)}`,
     // What the administrator approved, only he refuses (owner, 2026-11-16).
     takes: (row) => !row.lockedBySuperAdmin,
     run: (row, answer) =>
@@ -488,6 +481,7 @@ export function ValidatedPlaceList({
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const bulk = mode === "company";
+  const canRestore = useCanRestoreValidation();
 
   const found = useMemo(() => {
     const wanted = query.trim().toLowerCase();
@@ -529,7 +523,7 @@ export function ValidatedPlaceList({
         <>
           {bulk ? (
             <BulkDecideBar
-              actions={IN_USE_ACTIONS}
+              actions={inUseActions(canRestore)}
               // Both answers are here since 2026-10-17, so both quick picks are offered; "look yourself" is neither.
               adviceOf={(row) => {
                 const advice = adviseOnPlaceInUse(row).kind;

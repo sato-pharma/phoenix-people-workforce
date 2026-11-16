@@ -349,7 +349,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     // And it renders in HIS lane, with an age and no invented verdict.
     const held = item({
       key: "phoenix-crm-decisions:place-checks",
-      label: "2 places are held for your approval",
+      label: "2 place checks wait for your approval",
       href: "/admin/field-crm/validation-reviews",
       oldestAt: "2026-09-30T06:00:00.000Z",
       ageDays: 3,
@@ -362,7 +362,7 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     assert.equal(row?.overdue, false, "no SLA upstream, so no verdict");
     assert.equal(board.allClearProvable, false, "a held place can never sit under the all-clear");
     const printed = [needsYouHeroDescription(board), ...needsYouSectionLines(buildNeedsYouSections(board))].join("\n");
-    assert.ok(printed.includes("held for your approval"), "the row is printed in his own words");
+    assert.ok(printed.includes("wait for your approval"), "the row is printed in his own words");
   }
 
   // ── 🔴 A REFUSED PLACE NOT YET CAPTURED AGAIN — his alone, worth knowing, with an age ────────────
@@ -379,13 +379,13 @@ export function runPhoenixCrmNeedsYouSourceTests(): void {
     );
     const countBlock = reviews.slice(reviews.indexOf("export async function countReopenedCustomersWaiting"));
     const countBody = countBlock.slice(0, countBlock.indexOf("\n}\n"));
-    // 17 Nov 2026: the same customers the page lists, real and without anybody who captured again since
-    // (`withoutACaptureSince`), so the rows are read whole and paged rather than counted by a head count.
-    assert.ok(countBody.includes("readEveryPage<Row>("), "read whole and paged, so no row ceiling can shorten it");
-    assert.match(countBody, /if \(read\.capped\) throw new Error\(/, "a read that met its ceiling is refused, never counted short");
+    // 17 Nov 2026: the same customers the page lists, real and without anybody who captured again since —
+    // a head count and the oldest stamp, the database itself leaving out a customer with a place in use.
+    assert.ok(countBody.includes('{ count: "exact", head: true }'), "a head count, so no row ceiling can shorten it");
     assert.ok(countBody.includes('.eq("is_test", false)'), "real entries, as the page draws them");
-    assert.ok(countBody.includes("await withoutACaptureSince(read.rows)"), "and nobody who has captured again is still waiting to");
+    assert.match(countBody, /\.eq\("active_place\.status", "active"\)\s*\.is\("active_place", null\)/, "and nobody who has captured again is still waiting to");
     assert.ok(reviews.includes("const customers = await withoutACaptureSince(read.rows);"), "the page's list leaves the same customers out");
+    assert.ok(countBody.includes("throwIfError(waiting.error);"), "a failed read throws, never counted as zero");
     assert.ok(!countBody.includes("catch"), "a failed read travels");
 
     const adapterSource = source("src/lib/needs-you/sources.ts");
