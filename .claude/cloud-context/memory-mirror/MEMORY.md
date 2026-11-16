@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Zoom account settings override the interview meeting](zoom-account-settings-override-the-interview-meeting.md) - 15 Nov 2026: a locked waiting room / join-before-host in the Zoom account beats Phoenix's per-meeting settings; the app cannot read them (no scopes), the owner fixed them in the Zoom portal.
 
 
 
