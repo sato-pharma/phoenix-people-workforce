@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs";
 
 import {
   areLineTwins,
+  facilityKindOf,
   LINE_TWIN_MAX_PLACES,
   LINE_TWIN_MOVE_REASON,
   lineTwinSummary,
   planLineTwinMerges,
   planLineTwinShares,
+  sameFacilityKind,
   twinNameWords,
   type TwinCustomer,
   type TwinPlace,
@@ -30,7 +32,11 @@ import {
  * 4. By source: the migration's guards, lock, grants and trigger; the RPC is a Customer 360 writer; copies
  *    are kept out of every piece of evidence; every validation path calls the share.
  *
+ *    On the AM list two facilities of different kinds (fever / general, a centre / a hospital) never pair,
+ *    and two different descriptors (general / central) separate them (owner, 2026-11-16).
+ *
  * Break direction: drop the three-word floor and the two-word case in section 1 fails; drop the
+ * `sameFacilityKind` line in `areLineTwins` and the Kom Hamada cases in sections 1 and 3 fail; drop the
  * `two_doctors` guard and its case in section 2 fails; let a `trusted` place move and section 3 fails;
  * remove a `.neq("point_source", "line_twin")` and section 4 fails.
  */
@@ -109,6 +115,18 @@ function runMatchTests(): void {
   );
   assert.equal(twin(customer({ speciality: "اطفال" }), validated({ seatId: "pedia-ca1", lineCode: "pedia", speciality: "Pediatrics" })), true, "one speciality written two ways");
   assert.equal(twin(customer({ isTest: true }), pedia), false, "the test world never meets the real one");
+
+  // Two facilities of different kinds are never one account (owner, 2026-11-16, "Fix rule + review list").
+  // The real case: Kom Hamada's fever hospital on CNS, its general hospital on Pedia, 19 m apart.
+  const am = (name: string) => customer({ listType: "AM", name });
+  const amOnPedia = (name: string) => validated({ seatId: "pedia-ca1", lineCode: "pedia", listType: "AM", name });
+  assert.equal(twin(am("مستشفي كوم حمادة حميات"), amOnPedia("مستشفي كوم حماده")), false, "the fever hospital is not the town's general hospital");
+  assert.equal(twin(am("مستشفى كوم حمادة حميات"), amOnPedia("مستشفي كوم حماده حميات")), true, "the fever hospital written two ways is one account");
+  assert.equal(twin(am("مستشفى كوم حمادة العام"), amOnPedia("مستشفي كوم حماده المركزي")), false, "the general and the central hospital are two");
+  assert.equal(twin(am("مستشفى كوم حمادة العام"), amOnPedia("مستشفي كوم حماده")), true, "one row leaving off its descriptor is still the same hospital");
+  assert.equal(twin(am("مستشفي كوم حماده للاطفال"), amOnPedia("مستشفي كوم حماده التامين")), false, "children and insurance are two kinds");
+  assert.deepEqual(facilityKindOf("مستشفى النسا والولادة العام"), { kinds: ["women"], descriptors: ["general"] }, "و, ال and ة are folded off the kind words");
+  assert.equal(sameFacilityKind("مركز كوم حماده", "مستشفي كوم حماده"), false, "a centre is not a hospital");
 }
 
 // ── 2. A waiting row joins ───────────────────────────────────────────────────────────────────────
@@ -228,6 +246,16 @@ function runMergeTests(): void {
     const photo = place(pedia, { pointSource: "photo", at: north(30), accuracyMeters: 25 });
     const moves = planLineTwinMerges({ customers: [cns, pedia], places: [pin, photo] });
     assert.deepEqual(moves.map((move) => move.placeId), [pin.id]);
+  }
+  {
+    // Kom Hamada (owner, 2026-11-16): the fever hospital and the general hospital, both validated 19 m
+    // apart, are two accounts — neither point moves onto the other. The same hospital on two lines does.
+    const fever = validated({ listType: "AM", name: "مستشفي كوم حمادة حميات" });
+    const general = validated({ seatId: "pedia-ca1", lineCode: "pedia", listType: "AM", name: "مستشفي كوم حماده" });
+    assert.deepEqual(planLineTwinMerges({ customers: [fever, general], places: [place(fever, {}), place(general, { at: north(19) })] }), [], "two kinds of hospital never share one door");
+    const generalToo = validated({ listType: "AM", name: "مستشفى كوم حمادة" });
+    const moves = planLineTwinMerges({ customers: [generalToo, general], places: [place(generalToo, {}), place(general, { at: north(19) })] });
+    assert.equal(moves.length, 1, "the general hospital on two lines shares one door");
   }
   {
     // Same line, or a waiting row: never merged.

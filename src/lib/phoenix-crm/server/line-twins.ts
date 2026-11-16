@@ -54,7 +54,8 @@ function text(value: unknown): string | null {
   return cleaned ? cleaned : null;
 }
 
-const CUSTOMER_COLUMNS = "id, seat_id, line_code, list_type, name, speciality, status, validated_at, validated_by_hr_id, full_name_held, reference_contact_crm_id";
+const CUSTOMER_COLUMNS =
+  "id, seat_id, line_code, list_type, name, speciality, phone, status, validated_at, validated_by_hr_id, full_name_held, reference_contact_crm_id";
 const PLACE_COLUMNS = "id, customer_id, seat_id, point_source, lat, lon, accuracy_meters, captured_at";
 const LOCATION_COLUMNS =
   "id, status, lat, lon, accuracy_meters, address, zone, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name";
@@ -89,7 +90,12 @@ export async function withdrawValidateAgainNoticeQuietly(customerId: string | nu
 }
 
 /** Where to look: one world (real or test), the whole country or the seats of one area. */
-type WorldScope = { isTest: boolean; seatIds: string[] | null };
+export type WorldScope = { isTest: boolean; seatIds: string[] | null };
+
+/** What the look-alike list compares beside the name (server/line-lookalikes.ts); the rule never reads it. */
+export type TwinContact = { phone: string | null; referenceContactId: string | null };
+
+export type TwinWorld = LineTwinInput & { contacts: Map<string, TwinContact> };
 
 async function readAll(table: string, columns: string, scope: WorldScope, tune: (query: any) => any, what: string): Promise<Row[]> { // eslint-disable-line @typescript-eslint/no-explicit-any
   const read = await readEveryPage<Row>(
@@ -105,7 +111,7 @@ async function readAll(table: string, columns: string, scope: WorldScope, tune: 
 }
 
 /** Every AM and PM row of the scope, with its active places and what each row is waiting on. */
-export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<LineTwinInput> {
+export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<TwinWorld> {
   const [customerRows, placeRows, reviewRows, dropRows] = await Promise.all([
     readAll("phoenix_crm_customers", CUSTOMER_COLUMNS, scope, (query) => query.in("list_type", ["AM", "PM"]).in("status", ["active", "pending"]), "The AM and PM customers"),
     readAll("phoenix_crm_places", PLACE_COLUMNS, scope, (query) => query.eq("status", "active"), "The active places"),
@@ -145,6 +151,15 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<L
       fullNameHeld: text(row.full_name_held) !== null,
     };
   });
+  const contacts = new Map<string, TwinContact>(
+    customerRows.map((row) => [
+      String(row.id),
+      {
+        phone: text(row.phone),
+        referenceContactId: row.reference_contact_crm_id === null || row.reference_contact_crm_id === undefined ? null : String(row.reference_contact_crm_id),
+      },
+    ]),
+  );
   const places: TwinPlace[] = placeRows.flatMap((row) => {
     const lat = numberOrNull(row.lat);
     const lon = numberOrNull(row.lon);
@@ -162,7 +177,7 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<L
       },
     ];
   });
-  return { customers, places };
+  return { customers, places, contacts };
 }
 
 // ── Carrying out the plan ────────────────────────────────────────────────────────────────────────
