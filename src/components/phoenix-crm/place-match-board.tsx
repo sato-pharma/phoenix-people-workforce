@@ -40,6 +40,7 @@ import { countText } from "@/components/phoenix-crm/format";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
   CrmButton,
+  CrmChoice,
   CrmCardsOnPhone,
   CrmFacts,
   CrmLoadError,
@@ -60,6 +61,7 @@ import {
   insightsOf,
   MAX_ANSWER_PAIRS,
   MEMBER_FLAG_TEXT,
+  questionSignature,
   splitAnswerPairs,
   type AnsweredDifferent,
   type MatchAnswer,
@@ -226,63 +228,65 @@ function MemberCard({ member }: { member: MatchMember }) {
 type SplitPairs = { same: Array<[string, string]>; different: Array<[string, string]> };
 
 /**
- * One side of a question. Every reading says how far it sits from the other side, and a side of several
- * readings says how far apart they are from each other (owner, 2026-11-17: "tell me the diff in m between
- * what we are checking"). While he answers reading by reading, each reading on a side of several carries
- * its own "Same place" / "A different place" choice; a side of one is what the others are compared with.
+ * One side of a question. Every reading says how far it sits from the nearest reading on the other side,
+ * and a side of several says how far apart all of its readings are, the counted ones included (owner,
+ * 2026-11-17: "tell me the diff in m between what we are checking"). While he answers reading by reading
+ * every reading is drawn, the ones counted as "and N more" too, and each on a side of several carries its
+ * own "Same place" / "A different place" choice; a side of one is what the others are compared with.
  */
 function QuestionSide({
   busy,
   choosing,
+  hidden,
   label,
   marks,
-  more,
   onMark,
   spreadMeters,
   subjects,
 }: {
   busy: boolean;
   choosing: boolean;
+  hidden: QuestionReading[];
   label: string;
   marks: Readonly<Record<string, MatchAnswer | undefined>>;
-  more: number;
   onMark: (key: string, mark: MatchAnswer) => void;
   spreadMeters: number;
   subjects: QuestionReading[];
 }) {
-  const several = subjects.length > 1;
+  const all = [...subjects, ...hidden];
+  const drawn = choosing ? all : subjects;
+  const several = all.length > 1;
   return (
     <div className="min-w-0 space-y-3 border border-slate-200 bg-slate-50/60 p-3">
       <p className="break-words text-phx-sm font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      {several || more > 0 ? (
-        <p className="break-words text-xs font-semibold text-slate-600">These readings are {meters(spreadMeters)} apart from each other</p>
+      {several ? (
+        <p className="break-words text-xs font-semibold text-slate-600">
+          The {countText(all.length)} readings on this side are up to {meters(spreadMeters)} apart
+        </p>
       ) : null}
-      {subjects.map((subject) => {
-        const mark = marks[subject.key];
-        return (
-          <div key={subject.key} className="min-w-0 space-y-2">
-            <Reading subject={subject} />
-            <p className="break-words text-xs font-black text-slate-800">{meters(subject.otherSideMeters)} from the other side</p>
-            {choosing && several ? (
-              <div aria-label={`Is ${subject.title}, validated by ${subject.repName}, the same place as the other side?`} className="flex min-w-0 flex-wrap gap-2" role="group">
-                <CrmButton aria-pressed={mark === "same"} disabled={busy} onClick={() => onMark(subject.key, "same")} size="sm" variant={mark === "same" ? "primary" : "secondary"}>
-                  Same place
-                </CrmButton>
-                <CrmButton
-                  aria-pressed={mark === "different"}
-                  disabled={busy}
-                  onClick={() => onMark(subject.key, "different")}
-                  size="sm"
-                  variant={mark === "different" ? "primary" : "secondary"}
-                >
-                  A different place
-                </CrmButton>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-      {more > 0 ? <p className="break-words text-xs font-semibold text-slate-500">and {countText(more)} more validation{more === 1 ? "" : "s"} beside these</p> : null}
+      {drawn.map((subject) => (
+        <div key={subject.key} className="min-w-0 space-y-2">
+          <Reading subject={subject} />
+          <p className="break-words text-xs font-black text-slate-800">{meters(subject.otherSideMeters)} from the nearest reading on the other side</p>
+          {choosing && several ? (
+            <CrmChoice
+              columns={2}
+              label={`Is ${subject.title}, validated by ${subject.repName}, the same place as the other side?`}
+              onChange={(next) => onMark(subject.key, next)}
+              options={[
+                { value: "same", label: "Same place", disabled: busy },
+                { value: "different", label: "A different place", disabled: busy },
+              ]}
+              value={marks[subject.key] ?? null}
+            />
+          ) : null}
+        </div>
+      ))}
+      {!choosing && hidden.length > 0 ? (
+        <p className="break-words text-xs font-semibold text-slate-500">
+          and {countText(hidden.length)} more validation{hidden.length === 1 ? "" : "s"} beside these
+        </p>
+      ) : null}
       {choosing && !several ? <p className="break-words text-xs font-semibold text-slate-500">The readings on the other side are each compared with this one.</p> : null}
     </div>
   );
@@ -301,7 +305,8 @@ function QuestionCard({
 }) {
   const names = `${question.left[0]?.title ?? "one side"} and ${question.right[0]?.title ?? "the other side"}`;
   // Answering reading by reading (owner, 2026-11-17: "i want to accept 1 and reject 1"): offered only when
-  // a side holds several readings, since a question of one reading a side has nothing to split.
+  // a side holds several readings, since a question of one reading a side has nothing to split, and only
+  // when every pair across fits in the one request the answer is saved in.
   const [choosing, setChoosing] = useState(false);
   const [marks, setMarks] = useState<Record<string, MatchAnswer | undefined>>({});
   const split = choosing ? splitAnswerPairs(question, marks) : null;
@@ -321,9 +326,9 @@ function QuestionCard({
         <QuestionSide
           busy={busy}
           choosing={choosing}
+          hidden={question.leftMore}
           label="One side"
           marks={marks}
-          more={question.moreLeft}
           onMark={mark}
           spreadMeters={question.leftSpreadMeters}
           subjects={question.left}
@@ -331,9 +336,9 @@ function QuestionCard({
         <QuestionSide
           busy={busy}
           choosing={choosing}
+          hidden={question.rightMore}
           label="The other side"
           marks={marks}
-          more={question.moreRight}
           onMark={mark}
           spreadMeters={question.rightSpreadMeters}
           subjects={question.right}
@@ -416,6 +421,9 @@ function GroupCard({ busy, group, onAnswer }: { busy: boolean; group: MatchGroup
 // ── What was answered "different" ────────────────────────────────────────────────────────────────
 
 function AnsweredCard({ busy, entry, onAnswer }: { busy: boolean; entry: AnsweredDifferent; onAnswer: (answer: Answer, pairs: ReadonlyArray<[string, string]>) => void }) {
+  // One rep's own two readings are never put to him as a question (answering reading by reading is what
+  // writes such a pair), so taking it back cannot ask again: it lets the system place them on distance.
+  const oneRep = entry.left.seatId === entry.right.seatId;
   return (
     <div className="min-w-0 space-y-3 border-t border-slate-100 px-4 py-4 first:border-t-0">
       <div className="grid min-w-0 gap-3 md:grid-cols-2">
@@ -423,9 +431,12 @@ function AnsweredCard({ busy, entry, onAnswer }: { busy: boolean; entry: Answere
         <Reading subject={entry.right} />
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="break-words text-xs font-semibold text-slate-600">{meters(entry.meters)} apart, answered as different places</span>
+        <span className="break-words text-xs font-semibold text-slate-600">
+          {meters(entry.meters)} apart, answered as different places
+          {oneRep ? ". Both are one rep's readings, so the system never asks about them: taking this back lets it group them by distance again." : ""}
+        </span>
         <CrmButton disabled={busy} onClick={() => onAnswer("forget", entry.pairs)} size="sm" variant="ghost">
-          Ask me again
+          {oneRep ? "Take my answer back" : "Ask me again"}
         </CrmButton>
       </div>
     </div>
@@ -515,7 +526,7 @@ export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilt
   const cutoff = useMemo(() => validationReviewPeriodCutoff(filters.period), [filters.period]);
   const groups = useMemo(() => (board ? board.groups.filter((group) => anyPasses(group.members, filters, cutoff)) : []), [board, filters, cutoff]);
   const questions = useMemo(
-    () => (board ? board.questions.filter((question) => !answered.has(question.id) && anyPasses([...question.left, ...question.right], filters, cutoff)) : []),
+    () => (board ? board.questions.filter((question) => !answered.has(questionSignature(question)) && anyPasses([...question.left, ...question.right], filters, cutoff)) : []),
     [board, filters, cutoff, answered],
   );
   const answeredDifferent = useMemo(
@@ -623,8 +634,8 @@ export function PlaceMatchBoardView({ filters }: { filters: ValidationReviewFilt
               <QuestionCard
                 key={question.id}
                 busy={locked}
-                onAnswer={(answer, pairs) => void send(answer, pairs, question.id)}
-                onSplit={(split) => void sendSplit(split, question.id)}
+                onAnswer={(answer, pairs) => void send(answer, pairs, questionSignature(question))}
+                onSplit={(split) => void sendSplit(split, questionSignature(question))}
                 question={question}
               />
             ))}

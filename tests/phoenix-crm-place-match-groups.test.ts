@@ -15,6 +15,7 @@ import {
   orderedPair,
   pairId,
   pairLimits,
+  questionSignature,
   SAME_GROUP_DIAMETER_METERS,
   splitAnswerPairs,
   subjectAccuracy,
@@ -302,7 +303,7 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
       [essamFirst.key, 34],
       [solimanSecond.key, 37],
     ],
-    "🔴 each reading says how far it sits from the other side, closest first (his 'tell me the diff in m')",
+    "🔴 each reading says how far it sits from the nearest reading on the other side, closest first by that number (his 'tell me the diff in m')",
   );
   assert.equal(oneSide[0].otherSideMeters, 34, "and so does the reading on the other side, to the nearest one facing it");
   assert.deepEqual([twoSpread, oneSpread], [3, 0], "each side says how far apart its own readings are, 0 for a side of one");
@@ -343,15 +344,60 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
     "🔴 HIS 'DIFFERENT' IS A WALL: the reading he rejected stays out of the place he confirmed, though it sits 3 m from one of its readings",
   );
   assert.equal(komAnswered.answeredDifferent.length, 1, "the rejected pair is listed so he can take it back");
-  const elsewhereLeft = subject({ meters: 900 });
-  const elsewhereRight = subject({ meters: 920 });
+  // The wall is reached through ANY chain: here his "same" links E1 to Y, Y sits 3 m from NE, and S sits
+  // 3 m from E1, so two distance joins and one "same" would put S and NE — answered different — together.
+  const chainS = subject({ meters: 0, accuracyMeters: 5 });
+  const chainE1 = subject({ meters: 3, accuracyMeters: 5 });
+  const chainY = subject({ meters: 80, accuracyMeters: 5 });
+  const chainNe = subject({ meters: 83, accuracyMeters: 5 });
+  const chained2 = board(
+    [chainS, chainE1, chainY, chainNe],
+    [
+      { a: chainS.key, b: chainNe.key, answer: "different" },
+      { a: chainE1.key, b: chainY.key, answer: "same" },
+    ],
+  );
+  assert.ok(
+    !chained2.groups.some((group) => group.members.some((member) => member.key === chainS.key) && group.members.some((member) => member.key === chainNe.key)),
+    "🔴 the wall holds through a chain of distance joins and his 'same' answers, in whatever order they fall",
+  );
+  assert.deepEqual(
+    chained2.groups.map((group) => group.members.length),
+    [3],
+    "and the place still forms with the readings the wall does not keep apart",
+  );
+
+  // A side bigger than the card draws: answering reading by reading draws and answers every reading, so
+  // no pair that raised the question is left open behind "and 1 more".
+  const wideA = subject({ meters: 0, nameKey: "wide", accuracyMeters: 5 });
+  const wideB = subject({ meters: 2, nameKey: "wide", accuracyMeters: 5 });
+  const wideC = subject({ meters: 4, nameKey: "wide", accuracyMeters: 5 });
+  const wideD = subject({ meters: 6, nameKey: "wide", accuracyMeters: 5 });
+  const wideF = subject({ meters: 45, nameKey: "wide", accuracyMeters: 5 });
+  const wideBoard = board([wideA, wideB, wideC, wideD, wideF]);
+  const wide = wideBoard.questions[0];
+  const wideSide = wide.left.length === 3 ? wide : { ...wide, left: wide.right, leftMore: wide.rightMore, right: wide.left, rightMore: wide.leftMore };
+  assert.deepEqual([wideSide.left.length, wideSide.leftMore.length], [3, 1], "three readings drawn and one counted");
+  assert.equal(wideSide.leftMore[0].key, wideA.key, "the counted one is the farthest from the other side");
+  assert.equal(answersEachReading(wide), true, "it can still be answered reading by reading");
+  assert.equal(splitAnswerPairs(wide, { [wideB.key]: "different", [wideC.key]: "different", [wideD.key]: "different" }), null, "🔴 the counted reading needs its own choice too");
+  const wideSplit = splitAnswerPairs(wide, { [wideA.key]: "different", [wideB.key]: "different", [wideC.key]: "different", [wideD.key]: "different" });
+  assert.equal(wideSplit?.different.length, 4, "every reading's pair is answered, the counted one's included");
+  const wideAnswered = board(
+    [wideA, wideB, wideC, wideD, wideF],
+    (wideSplit?.different ?? []).map(([a, b]) => ({ a, b, answer: "different" as const })),
+  );
+  assert.equal(wideAnswered.questions.length, 0, "🔴 so the question closes instead of coming back behind 'and 1 more'");
+  assert.notEqual(
+    questionSignature(wide),
+    questionSignature({ id: wide.id, pairs: wide.pairs.slice(0, 1) }),
+    "🔴 a question raised again over other pairs is a different question to the screen, so it is never hidden as answered",
+  );
+  const crowd = Array.from({ length: 9 }, (_, index) => subject({ meters: index, nameKey: "crowd", accuracyMeters: 5 }));
   assert.equal(
-    board(
-      [essamFirst, solimanSecond, essamSecond, elsewhereLeft, elsewhereRight],
-      [{ a: solimanSecond.key, b: essamSecond.key, answer: "different" }],
-    ).groups.some((group) => group.members.some((member) => member.key === elsewhereLeft.key)),
-    true,
-    "a wall holds only between the readings he named — a place elsewhere still forms",
+    answersEachReading({ left: crowd.slice(0, 3).map((one) => ({ ...one, otherSideMeters: 0 })), leftMore: crowd.slice(3).map((one) => ({ ...one, otherSideMeters: 0 })), right: crowd.map((one) => ({ ...one, otherSideMeters: 0 })), rightMore: crowd.map((one) => ({ ...one, otherSideMeters: 0 })) }),
+    false,
+    "a question with more pairs than one request holds (9 × 18) is answered whole",
   );
   assert.deepEqual(
     board(
@@ -420,10 +466,13 @@ export function runPhoenixCrmPlaceMatchGroupsTests(): void {
   assert.ok(widths.length === 5 && widths.reduce((total, width) => total + width, 0) <= 100, "five columns that fit the panel — a sixth clipped its header on a laptop");
   assert.equal((screen.match(/<th /g) ?? []).length, 5, "with a header for each");
   assert.ok(screen.includes('if (answer === "forget") setAnswered(new Set());'), "🔴 a question taken back must be able to return: the hidden-ids set is emptied on a forget");
-  assert.ok(screen.includes("{meters(subject.otherSideMeters)} from the other side"), "🔴 every reading on a question says how far it is from the other side");
-  assert.ok(screen.includes("These readings are {meters(spreadMeters)} apart from each other"), "and a side of several says how far apart they are");
+  assert.ok(screen.includes("{meters(subject.otherSideMeters)} from the nearest reading on the other side"), "🔴 every reading on a question says how far it is from the other side");
+  assert.ok(screen.includes("The {countText(all.length)} readings on this side are up to {meters(spreadMeters)} apart"), "and a side of several says how many readings its spread covers");
+  assert.ok(screen.includes("const drawn = choosing ? all : subjects;"), "🔴 while he answers reading by reading, the counted readings are drawn too");
   assert.ok(screen.includes("{answersEachReading(question) ? ("), "'Answer each reading' is offered only when a side holds several");
-  assert.ok(screen.includes('aria-pressed={mark === "same"}') && screen.includes('aria-pressed={mark === "different"}'), "each reading's choice says which is pressed");
+  assert.ok(screen.includes("<CrmChoice") && screen.includes('{ value: "different", label: "A different place", disabled: busy }'), "each reading's choice is the module's one-of-two pick");
+  assert.ok(screen.includes("!answered.has(questionSignature(question))"), "🔴 an answered question is hidden by its pairs, not its id alone");
+  assert.ok(screen.includes('{oneRep ? "Take my answer back" : "Ask me again"}'), "🔴 one rep's own pair is never promised a question it will not get");
   assert.ok(screen.includes("disabled={busy || split === null}"), "🔴 nothing is saved until every reading that needs a choice has one");
   assert.ok(
     screen.includes('crmPost<unknown>(ROUTE, { answer: "split", same: split.same, different: split.different }, "saved")'),
