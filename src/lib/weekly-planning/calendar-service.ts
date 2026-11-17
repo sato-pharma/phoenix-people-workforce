@@ -6,7 +6,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoDateKey } from "@/lib/activity/working-baseline";
-import { loadManagerPlanHalfDays, loadManagerVisitAreas, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { joinPeopleNames, loadManagerPlanHalfDays, loadManagerVisitAreas, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -221,6 +221,8 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
   // The person a district manager picked for a half-day with him always sees it (owner, 2026-10-24) — the
   // CNS Marketing Manager, for one, is otherwise shown no district manager's plan at all.
   if (item.withHrId && hrIdsMatch(item.withHrId, viewer.hrId)) return true;
+  // Everyone he picked, not only the first (owner, 2026-11-17: a half-day with his regional AND national manager).
+  if ((item.withHrIds ?? []).some((hrId) => hrIdsMatch(hrId, viewer.hrId))) return true;
 
   const role = normalizeLowerText(viewer.role);
   if (role === "ceo" || role === "super admin") return true;
@@ -511,8 +513,12 @@ function managerPlanCalendarItems(
     const medicalRepHrId = halfDay.kind === "with_rep" ? halfDay.repHrId : null;
     const medicalRepName = medicalRepHrId ? (rep?.fullName ?? null) : null;
     const medicalRepDisplayName = medicalRepHrId ? (rep?.displayName || medicalRepName) : null;
-    const senior = halfDay.seniorHrId ? directoryByHrId.get(normalizeHrId(halfDay.seniorHrId)) : undefined;
-    const seniorDisplayName = senior ? (senior.displayName || senior.fullName) : null;
+    const seniorIds = halfDay.seniorHrIds.length > 0 ? halfDay.seniorHrIds : halfDay.seniorHrId ? [halfDay.seniorHrId] : [];
+    const seniorNames = seniorIds.flatMap((hrId) => {
+      const senior = directoryByHrId.get(normalizeHrId(hrId));
+      return senior ? [senior.displayName || senior.fullName] : [];
+    });
+    const seniorDisplayName = joinPeopleNames(seniorNames) || null;
     const activityTitle = managerHalfDayText(halfDay, medicalRepDisplayName, seniorDisplayName);
     const storedArea = halfDay.kind === "single_visit" || halfDay.kind === "with_dm" || halfDay.kind === "with_senior" || halfDay.kind === "with_area" ? halfDay.areaName : null;
     const area = resolvePlanItemArea(storedArea, rep?.areaName, employee.areaName, placeEvidence.get(placeEvidenceKey(halfDay.managerHrId, halfDay.date)));
@@ -543,6 +549,7 @@ function managerPlanCalendarItems(
       status: managerPlanLegacyStatus(halfDay.status),
       time: halfDay.half,
       withHrId: halfDay.seniorHrId,
+      withHrIds: seniorIds,
       title: planningCalendarTitle(employeeDisplayName, region, area, activityTitle),
     };
     return [item];

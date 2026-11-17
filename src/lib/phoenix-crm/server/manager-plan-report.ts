@@ -37,7 +37,8 @@ import {
   managerPlanSummaryText,
   managerSlotKindLabel,
   managerDmVisitTitle,
-  managerSeniorVisitTitle,
+  managerSeniorPeopleTitle,
+  managerSeniorPeople,
   countsAsDmsVisitWithSenior,
   countsAsPlannersVisitWithPeer,
   isSeatlessPlannerKind,
@@ -277,7 +278,7 @@ export async function computeManagerReports(
     visitedBy.set(visit.managerHrId, keys);
   }
   const [repNames, deciderNames] = await Promise.all([
-    loadPeopleNames([...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.dmVisit?.dmHrId), ...slots.map((slot) => slot.seniorVisit?.seniorHrId)]),
+    loadPeopleNames([...slots.map((slot) => slot.repHrId), ...slots.map((slot) => slot.dmVisit?.dmHrId), ...slots.flatMap((slot) => managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId))]),
     loadPeopleNames(planRows.flatMap((plan) => [plan.firstApproverHrId, plan.secondApproverHrId, plan.decidedByHrId])),
   ]);
   const personName = (hrId: string) => (deciderNames.has(hrId) ? nameOf(deciderNames, hrId) : nameOf(names, hrId));
@@ -381,8 +382,9 @@ export async function computeManagerReports(
         continue;
       }
       if (slot.kind === "with_senior") {
-        const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
-        const seniorName = seniorHrId ? nameOf(repNames, seniorHrId) : null;
+        // Everyone he planned to go with (owner, 2026-11-17: one or more). A rep's chain visit answers the area only
+        // when it names him AND every one of them — the half-day he planned, not part of it.
+        const seniorPeople = managerSeniorPeople(slot.seniorVisit);
         const keys = withRepDone.get(managerHrId);
         // The doctors he named on it are optional (owner, 2026-10-27); a visit he logged to one of them answers
         // the area that doctor is in, and is a planned visit, never an unplanned one.
@@ -395,7 +397,8 @@ export async function computeManagerReports(
         const areaRows = (slot.seniorVisit?.areas ?? []).map((area): ManagerReportCustomer => {
           const done =
             area.seatIds.some((seatId) => visitedSeats.has(seatId)) ||
-            (Boolean(seniorHrId) && area.seatIds.some((seatId) => keys?.has(`sr|${seatId}|${slot.date}|${seniorHrId}`) ?? false));
+            (seniorPeople.length > 0 &&
+              area.seatIds.some((seatId) => seniorPeople.every((person) => keys?.has(`sr|${seatId}|${slot.date}|${person.hrId}`) ?? false)));
           const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
           countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: area.seatId }) });
           return { key: null, name: area.areaName, own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: null };
@@ -405,7 +408,10 @@ export async function computeManagerReports(
           half: slot.half,
           kind: slot.kind,
           kindLabel: managerSlotKindLabel(slot.kind),
-          title: managerSeniorVisitTitle(seniorName, slot.seniorVisit?.title ?? null, slot.areaName),
+          title: managerSeniorPeopleTitle(
+            seniorPeople.map((person) => ({ name: nameOf(repNames, person.hrId), title: person.title })),
+            slot.areaName,
+          ),
           note: slot.note,
           customers: areaRows,
         });

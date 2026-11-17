@@ -59,6 +59,9 @@ import {
   managerDmVisitTitle,
   managerSeniorTitle,
   managerSeniorVisitTitle,
+  managerSeniorPeopleTitle,
+  managerSeniorPeople,
+  joinPeopleNames,
   holdsPlannedDoctors,
   managerPlanWithYou,
   managerSlotScopeError,
@@ -348,10 +351,14 @@ export type ManagerBoardSlot = {
   areaSeatIds: string[];
   /** With a district manager: the district manager he goes with; null on a vacant district and every other kind. */
   dmName: string | null;
-  /** With my manager or product manager: the person a district manager goes with, and how the picker titled them. */
+  /** With my manager or product manager: the first person a district manager goes with, and how the picker titled them. */
   seniorHrId: string | null;
   seniorName: string | null;
   seniorTitle: string | null;
+  /** With my manager or product manager: EVERYONE he goes with, the first person first (owner, 2026-11-17). Empty otherwise; absent on an older payload. */
+  seniorHrIds?: string[];
+  /** Their names, in the same order — the week at a glance counts each person apart. Absent on an older payload. */
+  seniorNames?: string[];
   /** With a district manager, or with my manager or product manager: each ticked area by name, a vacant one marked. */
   tickedAreas: Array<{ seatId: string; name: string; vacant: boolean }>;
   /** The scope the half-day was planned in — a regional, national or product manager's only. */
@@ -493,6 +500,8 @@ function slotSummary(input: {
   dmName?: string | null;
   seniorName?: string | null;
   seniorTitle?: string | null;
+  /** Everyone a with-my-manager half-day goes with, by name and title; read before `seniorName` when present. */
+  seniorPeople?: ReadonlyArray<{ name: string | null; title: string | null }>;
   count: number;
   regionScoped?: boolean;
 }): string {
@@ -506,7 +515,7 @@ function slotSummary(input: {
   if (input.kind === "with_area") return `Area · ${input.areaName ?? "an area"}${scope}`;
   if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
   // The doctors are optional on it (owner, 2026-10-27), so a count shows only when he named some.
-  if (input.kind === "with_senior") return `${managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName)}${input.count > 0 ? ` · ${input.count} customer${input.count === 1 ? "" : "s"}` : ""}`;
+  if (input.kind === "with_senior") return `${input.seniorPeople && input.seniorPeople.length > 0 ? managerSeniorPeopleTitle(input.seniorPeople, input.areaName) : managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName)}${input.count > 0 ? ` · ${input.count} customer${input.count === 1 ? "" : "s"}` : ""}`;
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
   return `Single visit · ${input.areaName ?? "an area"}${named}${scope}`;
 }
@@ -754,7 +763,7 @@ async function buildBoard(
     asks[0]?.secondApproverHrId,
     ...slots.map((slot) => slot.repHrId),
     ...slots.map((slot) => slot.dmVisit?.dmHrId),
-    ...slots.map((slot) => slot.seniorVisit?.seniorHrId),
+    ...slots.flatMap((slot) => managerSeniorPeople(slot.seniorVisit).map((person) => person.hrId)),
     ...seniorOffers.map((offer) => offer.hrId),
   ]);
   view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind, writer.jobTitle) };
@@ -901,6 +910,7 @@ async function buildBoard(
           areaName: null,
           areaSeatIds: [],
           dmName: null,
+          seniorHrIds: [],
           seniorHrId: null,
           seniorName: null,
           seniorTitle: null,
@@ -943,6 +953,7 @@ async function buildBoard(
       const seniorHrId = slot.seniorVisit?.seniorHrId ?? null;
       const seniorName = seniorHrId ? nameOf(names, seniorHrId) : null;
       const seniorTitle = slot.seniorVisit?.title ?? null;
+      const seniorPeople = managerSeniorPeople(slot.seniorVisit);
       return {
         half,
         kind: slot.kind,
@@ -956,6 +967,7 @@ async function buildBoard(
           dmName,
           seniorName,
           seniorTitle,
+          seniorPeople: seniorPeople.map((person) => ({ name: nameOf(names, person.hrId), title: person.title })),
           count: customers.length,
           regionScoped: slot.scopeRegionCode !== null,
         }),
@@ -968,8 +980,10 @@ async function buildBoard(
         areaSeatIds: (slot.dmVisit ?? slot.seniorVisit)?.areas.map((area) => area.seatId) ?? [],
         dmName,
         seniorHrId,
-        seniorName,
-        seniorTitle,
+        seniorName: seniorPeople.length > 1 ? joinPeopleNames(seniorPeople.map((person) => nameOf(names, person.hrId))) : seniorName,
+        seniorTitle: seniorPeople.length > 1 ? null : seniorTitle,
+        seniorHrIds: seniorPeople.map((person) => person.hrId),
+        seniorNames: seniorPeople.map((person) => nameOf(names, person.hrId)),
         // Vacant as the organogram reads now: no territory of the area has a rep on it.
         tickedAreas: ((slot.dmVisit ?? slot.seniorVisit)?.areas ?? []).map((area) => ({
           seatId: area.seatId,
@@ -1216,13 +1230,25 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
     dmVisit = { dm_hr_id: personKey(dmSeat?.occupantHrId) ?? null, areas };
   }
 
-  // With my manager or product manager (owner, 2026-10-23: "follow organogram"): one of the people offered from
-  // the organogram above HIS seat and his line's product managers, and areas of his own district.
-  let seniorVisit: { senior_hr_id: string; role: ManagerSeniorOffer["role"]; title: string; areas: Array<{ seat_id: string; area_code: string | null; area_name: string; seat_ids: string[] }> } | null = null;
+  // With my manager or product manager (owner, 2026-10-23: "follow organogram"): people offered from the organogram
+  // above HIS seat and his line's product managers, and areas of his own district. One OR MORE of them (owner,
+  // 2026-11-17: Mohamed Eleiwa goes with Hany Saad and Ali Mohamed together) — the first in the list's own order is
+  // `senior_hr_id`, the shape every reader of "the manager" has always had; `people` holds everyone.
+  let seniorVisit: {
+    senior_hr_id: string;
+    role: ManagerSeniorOffer["role"];
+    title: string;
+    people: Array<{ hr_id: string; role: ManagerSeniorOffer["role"]; title: string }>;
+    areas: Array<{ seat_id: string; area_code: string | null; area_name: string; seat_ids: string[] }>;
+  } | null = null;
   if (draft.kind === "with_senior") {
     // A regional, national or product manager's list is the district's he picked (owner, 2026-10-25).
     const offers = seniorOffersForScope(await managerSeniorOffers(viewer, writer), own ? null : scope);
-    const offer = offers.find((entry) => entry.hrId === personKey(draft.seniorHrId));
+    const asked = draft.seniorHrIds.length > 0 ? draft.seniorHrIds : [draft.seniorHrId];
+    const askedKeys = new Set(asked.map((hrId) => personKey(hrId)).filter((key): key is string => Boolean(key)));
+    // Nearest first, as the list offers them — never in the order the phone happened to send.
+    const chosen = offers.filter((entry) => askedKeys.has(entry.hrId));
+    const offer = chosen.length === askedKeys.size ? chosen[0] : undefined;
     if (!offer) {
       throw forbiddenError(
         own ? "Choose your own manager or a product manager of your line, as the list shows them. Reload the page." : "Choose a manager or product manager of the district you chose, as the list shows them. Reload the page.",
@@ -1239,7 +1265,13 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
         seat_ids: district.filter((entry) => areaKey(entry) === areaKey(seat)).map((entry) => entry.seatId),
       };
     });
-    seniorVisit = { senior_hr_id: offer.hrId, role: offer.role, title: offer.title, areas };
+    seniorVisit = {
+      senior_hr_id: offer.hrId,
+      role: offer.role,
+      title: offer.title,
+      people: chosen.map((entry) => ({ hr_id: entry.hrId, role: entry.role, title: entry.title })),
+      areas,
+    };
     // The doctors are optional (owner, 2026-10-27) and each one is on a territory of an area he ticked.
     await assertDistrictCustomers(
       draft.customers.flatMap((entry) => ("customerId" in entry ? [entry.customerId] : [])),
