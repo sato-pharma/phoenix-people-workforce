@@ -157,6 +157,23 @@ export function runDepsRefreshTests() {
   }
   assert.match(installerCode, /-MultipleInstances IgnoreNew/, "a slow run is never overlapped by the next one");
 
+  // ---- playwright and @playwright/test are one version -----------------------------------------------
+  // #458 bumped `playwright` alone (17 Nov 2026). The 1.65.0 runner then refused the test() of
+  // @playwright/test 1.64.1, "did not expect test() to be called here", and main's login smoke test went
+  // red on every commit after it. The pins, the lockfile and the Dependabot group must keep them together.
+  const manifest = JSON.parse(read("package.json")) as { devDependencies?: Record<string, string>; dependencies?: Record<string, string> };
+  const pinOf = (name: string) => manifest.devDependencies?.[name] ?? manifest.dependencies?.[name];
+  assert.equal(pinOf("@playwright/test"), pinOf("playwright"), "HEADLINE: package.json pins playwright and @playwright/test to the same version");
+  const locked = resolvedVersions(read("pnpm-lock.yaml"));
+  for (const name of ["playwright", "playwright-core", "@playwright/test"]) {
+    assert.deepEqual([...(locked.get(name) ?? [])], [pinOf("playwright")], `HEADLINE: the lockfile resolves exactly one ${name}, the pinned version`);
+  }
+  assert.match(
+    stripHashComments(read(".github/dependabot.yml")),
+    /groups:\s*\n\s+playwright:\s*\n\s+patterns:\s*\n\s+- "playwright"\s*\n\s+- "@playwright\/test"/,
+    "Dependabot bumps playwright and @playwright/test in one PR",
+  );
+
   // ---- the floor that asked for it now points here -------------------------------------------------
   assert.match(read("pnpm-workspace.yaml"), /SCHEDULED 2026-10-23[\s\S]{0,200}scripts\/deps-refresh/, "the fast-uri note must say the refresh is scheduled, and where");
 }
