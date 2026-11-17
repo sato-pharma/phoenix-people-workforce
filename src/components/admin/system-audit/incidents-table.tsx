@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import {
   INCIDENT_COLUMN_HEADINGS,
@@ -31,6 +31,15 @@ import { cn } from "@/lib/utils";
  *
  * `table-fixed` with a `<colgroup>`, every cell wraps (`break-words`), nothing is cut with an
  * ellipsis and nothing scrolls sideways.
+ *
+ * THE COLUMN WIDTHS ARE SIZED SO NO WORD BREAKS IN THE MIDDLE (deep audit, 17 Nov 2026, measured on
+ * the live page). `break-words` only stops a word overflowing; a column narrower than its longest
+ * word still splits it, and at 1,140–1,250px the headings read "ERR/OR", "(CAI/RO)", "OCCURRENC/ES".
+ * Each column's share is set so that, at the SMALLEST width its variant shows (1,120px and 760px),
+ * it holds its longest heading word — and the status and scope words of its cells — plus the cell's
+ * 16px padding, with room for a wider typeface. The arithmetic is pinned word by word in
+ * tests/system-audit-page-design.test.ts; change a share or a breakpoint and that test says which
+ * word would break.
  */
 
 const STATUS_TONE: Record<SystemAuditStatus, string> = {
@@ -44,6 +53,29 @@ const STATUS_TONE: Record<SystemAuditStatus, string> = {
 
 const headCell = "px-2 py-2 text-left align-bottom text-phx-sm font-bold uppercase tracking-[0.06em] break-words";
 const bodyCell = "px-2 py-2 align-top break-words";
+
+/**
+ * The error code and short reference, allowed to wrap after each hyphen. The browser will not break
+ * between a hyphen and a digit ("SCREEN-1A2B3C4D"), so a code wider than its column split mid-token
+ * instead; the break opportunity keeps every piece whole.
+ */
+function CodeAndRef({ row }: { row: SystemAuditPageRow }) {
+  const pieces = incidentCodeAndRef(row).split("-");
+  return (
+    <>
+      {pieces.map((piece, index) => (
+        <Fragment key={index}>
+          {piece}
+          {index < pieces.length - 1 ? (
+            <>
+              -<wbr />
+            </>
+          ) : null}
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 function NameButton({ row, onOpen }: { row: SystemAuditPageRow; onOpen: (row: SystemAuditPageRow) => void }) {
   const system = isSystemRow(row);
@@ -108,15 +140,15 @@ function WideTable({ rows, onOpen, selectedId }: TableProps) {
     <table className="hidden w-full table-fixed border-collapse text-xs @min-[1120px]:table">
       <colgroup>
         <col className="w-[6%]" />
-        <col className="w-[10%]" />
-        <col className="w-[10%]" />
-        <col className="w-[7%]" />
-        <col className="w-[5%]" />
-        <col className="w-[14%]" />
-        <col className="w-[9%]" />
-        <col className="w-[13%]" />
         <col className="w-[9%]" />
         <col className="w-[8%]" />
+        <col className="w-[7%]" />
+        <col className="w-[7%]" />
+        <col className="w-[12%]" />
+        <col className="w-[9%]" />
+        <col className="w-[11%]" />
+        <col className="w-[11%]" />
+        <col className="w-[11%]" />
         <col className="w-[9%]" />
       </colgroup>
       <thead>
@@ -141,7 +173,9 @@ function WideTable({ rows, onOpen, selectedId }: TableProps) {
             <td className={bodyCell}>
               <Message row={row} />
             </td>
-            <td className={cn(bodyCell, "font-mono text-slate-600")}>{incidentCodeAndRef(row)}</td>
+            <td className={cn(bodyCell, "font-mono text-slate-600")}>
+              <CodeAndRef row={row} />
+            </td>
             <td className={bodyCell}>
               <Why row={row} />
             </td>
@@ -161,13 +195,13 @@ function MergedTable({ rows, onOpen, selectedId }: TableProps) {
   return (
     <table className="hidden w-full table-fixed border-collapse text-xs @min-[760px]:table @min-[1120px]:hidden">
       <colgroup>
-        <col className="w-[16%]" />
         <col className="w-[13%]" />
         <col className="w-[11%]" />
-        <col className="w-[18%]" />
         <col className="w-[11%]" />
+        <col className="w-[18%]" />
+        <col className="w-[13%]" />
         <col className="w-[17%]" />
-        <col className="w-[14%]" />
+        <col className="w-[17%]" />
       </colgroup>
       <thead>
         <tr className="bg-[#0B0B0B] text-white">
@@ -209,7 +243,9 @@ function MergedTable({ rows, onOpen, selectedId }: TableProps) {
             <td className={bodyCell}>
               <Message row={row} />
             </td>
-            <td className={cn(bodyCell, "font-mono text-slate-600")}>{incidentCodeAndRef(row)}</td>
+            <td className={cn(bodyCell, "font-mono text-slate-600")}>
+              <CodeAndRef row={row} />
+            </td>
             <td className={bodyCell}>
               <Why row={row} />
             </td>
@@ -260,7 +296,9 @@ function Cards({ rows, onOpen, selectedId }: TableProps) {
           </div>
           <dl className="mt-2 grid grid-cols-1 gap-2 @min-[420px]:grid-cols-2">
             <CardField label={INCIDENT_COLUMN_HEADINGS[6]}>
-              <span className="font-mono">{incidentCodeAndRef(row)}</span>
+              <span className="font-mono">
+                <CodeAndRef row={row} />
+              </span>
             </CardField>
             <CardField label={INCIDENT_COLUMN_HEADINGS[8]}>
               <Status row={row} />

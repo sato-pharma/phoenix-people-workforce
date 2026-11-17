@@ -6,7 +6,9 @@ import {
   buildSystemAuditDailyMessage,
   cairoDayKey,
   sendSystemAuditDailyMessage,
+  sweepHealthLine,
   systemAuditDailyKey,
+  type SweepHealth,
   type SystemAuditDailyMessageDeps,
 } from "../src/lib/system-audit/daily-message.ts";
 import type { SystemNotificationResult } from "../src/lib/notifications/system.ts";
@@ -247,10 +249,94 @@ async function testAlreadyToldToday() {
   assert.equal(two.notified[0]?.metadata?.idempotencyKey, "system-audit-daily:2026-10-23:B-20");
 }
 
+/**
+ * 13 Nov 2026: the database restarted at 20:23 Cairo on 12 Nov, the 04:57 sweep sat out, and with no
+ * new issue nothing was sent — a morning that looked exactly like a clean one. A night whose checks did
+ * not all run now says so in one plain line, even with no issue to list; a clean night still sends
+ * nothing, and the once-a-day key and the never-re-asked rule hold for this message too.
+ */
+async function testANightThatDidNotRun() {
+  const restart =
+    "The database restarted at 12 Nov 2026, 20:23 Cairo, so the detectors sit this night out; their watermarks stay where they are and tomorrow's run reads everything tonight's would have.";
+  const sat: SweepHealth = { status: "skipped", reason: restart, detectors: [] };
+  const clean: SweepHealth = {
+    status: "ok",
+    reason: null,
+    detectors: [
+      { detector: "app_error_fold", status: "ok", error: null },
+      { detector: "verifier", status: "ok", error: null },
+    ],
+  };
+  const stopped: SweepHealth = {
+    status: "aborted_db_unhealthy",
+    reason: "Stopped after app_error_fold: the database looked unhealthy, so the detectors after it were not run.",
+    detectors: [
+      { detector: "app_error_fold", status: "errored", error: "canceling statement due to statement timeout" },
+      { detector: "job_failures", status: "aborted_db_unhealthy", error: "Not run: the sweep stopped after app_error_fold found the database unhealthy." },
+    ],
+  };
+  const partial: SweepHealth = {
+    status: "ok",
+    reason: null,
+    detectors: [{ detector: "user_screens", status: "partial", error: "Storage refused a removal: 503" }],
+  };
+
+  assert.equal(sweepHealthLine(clean), null, "A clean night adds no line");
+  assert.equal(sweepHealthLine(undefined), null, "No sweep result (another caller) adds no line");
+  assert.match(String(sweepHealthLine(sat)), /^Last night's checks did not run\. The database restarted at 12 Nov 2026, 20:23 Cairo/, "A night the sweep sat out is said, with the reason, in Cairo time");
+  const stoppedLine = String(sweepHealthLine(stopped));
+  assert.match(stoppedLine, /errors shown to people: failed: canceling statement due to statement timeout/, "A failed check is named in words, with why");
+  assert.match(stoppedLine, /background jobs: not run: the database looked unhealthy/, "A check never run is named, with why");
+  assert.ok(!/app_error_fold|job_failures/.test(stoppedLine), "Checks are named in words, never by their detector ids");
+  assert.match(String(sweepHealthLine(partial)), /screenshots of errors and blocks: finished only in part: Storage refused a removal: 503/);
+  const long = String(sweepHealthLine({ status: "ok", reason: null, detectors: [{ detector: "sync_runs", status: "errored", error: "word ".repeat(300) }] }));
+  assert.match(long, /\(the full error is on the System Audit page\)\.$/, "A long error is cut at a word and says where the rest is");
+  assert.ok(long.length < 400);
+
+  // Zero issues, the sweep sat out: the message goes, and says why.
+  const quiet = harness({ loadCandidates: async () => [] });
+  const result = await sendSystemAuditDailyMessage(quiet.deps, { sweep: sat });
+  assert.equal(result.sent, true, "With nothing new, a night that did not run is still told");
+  assert.equal(quiet.notified.length, 1);
+  assert.equal(quiet.notified[0].title, "System Audit — last night's checks did not all run");
+  assert.match(String(quiet.notified[0].message), /^Last night's checks did not run\. The database restarted/, "The missing checks open the message");
+  assert.match(String(quiet.notified[0].message), /that is not a clean night/);
+  assert.deepEqual(quiet.notified[0].channels, ["in_app", "telegram"], "Still in-app and Telegram only");
+  assert.equal(
+    (quiet.notified[0].metadata as Record<string, unknown>).idempotencyKey,
+    "system-audit-daily:2026-10-23:B-10",
+    "The same once-a-Cairo-day key as every daily message",
+  );
+  assert.equal(quiet.marked.length, 0, "No issue was named, so nothing is marked as told");
+  assert.equal(result.checksNotClean, sweepHealthLine(sat));
+
+  // Issues AND a missing check: the line goes first, the issues follow.
+  const both = harness();
+  await sendSystemAuditDailyMessage(both.deps, { sweep: stopped });
+  const lines = String(both.notified[0].message).split("\n");
+  assert.match(lines[0], /^Not every check ran cleanly last night/, "The missing checks qualify everything under them, so they lead");
+  assert.equal(lines[2], "1 new · 0 newly shared · 0 reopened");
+  assert.equal(both.notified[0].title, "System Audit — 1 issue needs a look");
+  assert.deepEqual(both.marked, [["issue-1"]]);
+
+  // A clean night with nothing new: still nothing — no daily "all clear".
+  const allClear = harness({ loadCandidates: async () => [] });
+  const none = await sendSystemAuditDailyMessage(allClear.deps, { sweep: clean });
+  assert.equal(none.reason, "nothing new");
+  assert.equal(allClear.notified.length, 0, "A clean night with nothing new sends nothing");
+
+  // Never re-asked the same Cairo day, even to say the checks did not run.
+  const toldAlready = harness({ loadCandidates: async () => [], alreadyToldToday: async () => true });
+  const again = await sendSystemAuditDailyMessage(toldAlready.deps, { sweep: sat });
+  assert.equal(toldAlready.notified.length, 0, "A person already told today is not asked again for this either");
+  assert.equal(again.reason, "already sent today");
+}
+
 export async function runSystemAuditDailyMessageTests() {
   testMessageText();
   testNamesModuleAndWholeWords();
   await testSends();
   await testSendsNothing();
   await testAlreadyToldToday();
+  await testANightThatDidNotRun();
 }

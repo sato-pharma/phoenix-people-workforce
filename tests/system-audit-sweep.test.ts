@@ -5,9 +5,11 @@ import {
   PER_DETECTOR_MS,
   RESTART_QUIET_HOURS,
   SWEEP_BUDGET_MS,
+  SWEEP_RUN_DETECTOR,
   isDatabaseUnhealthy,
   runSystemAuditSweep,
   type SweepDeps,
+  type SweepResult,
 } from "../src/lib/system-audit/sweep.ts";
 import {
   emptyDetectorResult,
@@ -43,8 +45,10 @@ function detector(id: string, run: (ctx: DetectorContext) => Promise<DetectorRes
 
 function harness(overrides: Partial<SweepDeps> = {}) {
   const ran: string[] = [];
-  const finished: Array<{ runId: string; status: string; error: string | null }> = [];
+  const finished: Array<{ runId: string; detector: string; status: string; error: string | null }> = [];
   const leases = { acquired: 0, released: 0 };
+  const handed: SweepResult[] = [];
+  const detectorOf = new Map<string, string>();
   let messages = 0;
   let runs = 0;
   const deps: SweepDeps = {
@@ -57,19 +61,28 @@ function harness(overrides: Partial<SweepDeps> = {}) {
       leases.released += 1;
     },
     lastDatabaseRestart: async () => new Date(NOW - 3 * 24 * 3_600_000).toISOString(),
-    startRun: async () => `run-${(runs += 1)}`,
-    finishRun: async (runId, result) => {
-      finished.push({ runId, status: result.status, error: result.error ?? null });
+    startRun: async ({ detector: name }) => {
+      const runId = `run-${(runs += 1)}`;
+      detectorOf.set(runId, name);
+      return runId;
     },
-    sendDailyMessage: async () => {
+    finishRun: async (runId, result) => {
+      finished.push({ runId, detector: detectorOf.get(runId) ?? "?", status: result.status, error: result.error ?? null });
+    },
+    sendDailyMessage: async (sweep) => {
       messages += 1;
+      handed.push(structuredClone(sweep));
       return MESSAGE;
     },
     now: () => NOW,
     release: "abc1234",
     ...overrides,
   };
-  return { deps, ran, finished, leases, messages: () => messages };
+  /** The rows written for detectors, without the sweep's own row. */
+  const detectorRows = () => finished.filter((row) => row.detector !== SWEEP_RUN_DETECTOR);
+  /** The sweep's own row(s) — one a night. */
+  const sweepRows = () => finished.filter((row) => row.detector === SWEEP_RUN_DETECTOR);
+  return { deps, ran, finished, detectorRows, sweepRows, handed, leases, messages: () => messages };
 }
 
 function testUnhealthyWords() {
@@ -148,8 +161,8 @@ async function testAbortsWhenUnhealthy() {
     ],
     "Every detector it did not run is recorded as not run — a gap, never a quiet night",
   );
-  assert.equal(h.finished.length, 4, "Each one gets its run row, the ones not run included");
-  assert.match(String(h.finished[3].error), /Not run: the sweep stopped after second/);
+  assert.equal(h.detectorRows().length, 4, "Each one gets its run row, the ones not run included");
+  assert.match(String(h.detectorRows()[3].error), /Not run: the sweep stopped after second/);
   assert.equal(h.messages(), 1);
   assert.equal(h.leases.released, 1);
 
@@ -196,10 +209,70 @@ async function testBudget() {
   assert.equal(result.status, "partial");
 }
 
+/**
+ * 13 Nov 2026: the database restarted at 20:23 Cairo on 12 Nov; the 04:57 sweep sat the night out,
+ * wrote NO run row and sent no message — a morning indistinguishable from a clean one. A night that
+ * did not run now leaves the sweep's own row with the reason, and the message is handed the result.
+ */
+async function testANightThatDidNotRunIsNeverSilent() {
+  const restartAt = new Date(NOW - 8 * 3_600_000).toISOString();
+  const skipped = harness({ lastDatabaseRestart: async () => restartAt });
+  await runSystemAuditSweep({ ...skipped.deps, detectors: [detector("a", () => emptyDetectorResult(), skipped.ran)] });
+  assert.deepEqual(
+    skipped.sweepRows().map((row) => row.status),
+    ["skipped"],
+    "A night the detectors sat out leaves the sweep's own run row, status skipped",
+  );
+  assert.match(String(skipped.sweepRows()[0].error), /restarted at .* Cairo/, "…carrying the reason, where the Integrity tab prints it");
+  assert.equal(skipped.handed.length, 1);
+  assert.equal(skipped.handed[0]?.status, "skipped", "The daily message is handed the night's result, so it can say the checks did not run");
+  assert.match(String(skipped.handed[0]?.reason), /restarted at/);
+
+  const clean = harness();
+  await runSystemAuditSweep({ ...clean.deps, detectors: [detector("a", () => emptyDetectorResult(), clean.ran)] });
+  assert.deepEqual(clean.sweepRows().map((row) => row.status), ["ok"], "A clean night writes its own row too, so the tab never shows a stale skip as the latest");
+  assert.equal(clean.sweepRows()[0].error, null);
+  assert.ok(
+    clean.finished.indexOf(clean.sweepRows()[0]) > clean.finished.indexOf(clean.detectorRows()[0]),
+    "The sweep's row is finished after its detectors, with the night's final status",
+  );
+
+  const stopped = harness();
+  const errored = emptyDetectorResult("errored");
+  errored.error = "canceling statement due to statement timeout";
+  await runSystemAuditSweep({
+    ...stopped.deps,
+    detectors: [detector("first", () => errored, stopped.ran), detector("second", () => emptyDetectorResult(), stopped.ran)],
+  });
+  assert.deepEqual(stopped.sweepRows().map((row) => row.status), ["aborted_db_unhealthy"]);
+  assert.deepEqual(
+    stopped.handed[0].detectors.map((row) => [row.detector, row.status]),
+    [
+      ["first", "errored"],
+      ["second", "aborted_db_unhealthy"],
+    ],
+    "The message is handed every detector's ending, the ones not run included",
+  );
+
+  const unrecorded = harness({
+    startRun: async ({ detector: name }) => {
+      if (name === SWEEP_RUN_DETECTOR) throw new Error("insert refused");
+      return "run-a";
+    },
+  });
+  const ran = await runSystemAuditSweep({ ...unrecorded.deps, detectors: [detector("a", () => emptyDetectorResult(), unrecorded.ran)] }).catch(
+    (error: unknown) => assert.fail(`A sweep row that cannot be written never stops the sweep — it threw: ${String(error)}`),
+  );
+  assert.deepEqual(unrecorded.ran, ["a"], "A sweep row that cannot be written never stops the sweep");
+  assert.equal(unrecorded.messages(), 1, "…nor the message");
+  assert.equal(ran.status, "ok");
+}
+
 export async function runSystemAuditSweepTests() {
   testUnhealthyWords();
   await testLeaseHeld();
   await testAfterRestart();
   await testAbortsWhenUnhealthy();
   await testBudget();
+  await testANightThatDidNotRunIsNeverSilent();
 }

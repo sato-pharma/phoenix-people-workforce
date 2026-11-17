@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
-import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
+import { SHARED_ADDRESS_MIN_ACCOUNTS, getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { getCurrentReleaseTag, shouldPersistErrorEvents } from "@/lib/error-monitor/derived-status";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
 import { ERROR_SCREENSHOT_BUCKET } from "@/lib/error-monitor/screenshot-intake";
@@ -301,7 +301,23 @@ const DISTRIBUTED_ATTACK_MIN_IPS = 3;
  */
 export const KNOWN_LOCATION_BASELINE_DAYS = 90;
 
-export type BruteForceIp = { ip: string; failCount: number; distinctAccounts: number; lastSeen: string; credentialStuffing: boolean; blocked: boolean };
+/**
+ * One suspicious address. `successfulAccounts` is how many DIFFERENT accounts signed in successfully
+ * from it in the same window, and `sharedNetwork` is true from SHARED_ADDRESS_MIN_ACCOUNTS: three
+ * accounts failing from one address is also what an office or a mobile network looks like on an
+ * ordinary morning, and a 30-day block there locks every one of them out. The lens used to count the
+ * failures only (deep audit, 17 Nov 2026), so the screen offered that block with nothing to warn.
+ */
+export type BruteForceIp = {
+  ip: string;
+  failCount: number;
+  distinctAccounts: number;
+  successfulAccounts: number;
+  sharedNetwork: boolean;
+  lastSeen: string;
+  credentialStuffing: boolean;
+  blocked: boolean;
+};
 export type HammeredAccount = { hrId: string; name: string | null; failCount: number; distinctIps: number; lastSeen: string; distributed: boolean };
 export type LockedAccount = { hrId: string; name: string | null; failedAttempts: number; lockedUntil: string; lastFailedAt: string | null };
 export type NewLocationLogin = { hrId: string; name: string | null; ip: string; at: string };
@@ -434,6 +450,8 @@ export async function getLoginSecuritySignals(days = 7): Promise<LoginSecuritySi
   }
 
   const ipAgg = new Map<string, { failCount: number; accounts: Set<string>; lastSeen: string }>();
+  // Accounts that signed in successfully from each address in the window (the shared-network warning).
+  const ipSuccessAccounts = new Map<string, Set<string>>();
   const acctAgg = new Map<string, { failCount: number; ips: Set<string>; lastSeen: string }>();
   const newLocations: NewLocationLogin[] = [];
   const seenWindowPairs = new Set<string>();
@@ -462,7 +480,12 @@ export async function getLoginSecuritySignals(days = 7): Promise<LoginSecuritySi
       if (ip) a.ips.add(ip);
       if (at > a.lastSeen) a.lastSeen = at;
       acctAgg.set(acct, a);
-    } else if (ip && baselineRows) {
+    } else if (ip) {
+      const succeeded = ipSuccessAccounts.get(ip) ?? new Set<string>();
+      succeeded.add(acct);
+      ipSuccessAccounts.set(ip, succeeded);
+    }
+    if (success && ip && baselineRows) {
       // Without the baseline every success would read as a new location — so none is reported,
       // and "Known sign-in locations" is already named in `unavailable`.
       const pairKey = `${acct}|${ip}`;
@@ -475,7 +498,19 @@ export async function getLoginSecuritySignals(days = 7): Promise<LoginSecuritySi
 
   const bruteForceIps: BruteForceIp[] = Array.from(ipAgg.entries())
     .filter(([, e]) => e.failCount >= BRUTE_FORCE_IP_MIN_FAILS || e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS)
-    .map(([ip, e]) => ({ blocked: blockedIpSet.has(ip), credentialStuffing: e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS, distinctAccounts: e.accounts.size, failCount: e.failCount, ip, lastSeen: e.lastSeen }))
+    .map(([ip, e]) => {
+      const successfulAccounts = ipSuccessAccounts.get(ip)?.size ?? 0;
+      return {
+        blocked: blockedIpSet.has(ip),
+        credentialStuffing: e.accounts.size >= CREDENTIAL_STUFFING_MIN_ACCOUNTS,
+        distinctAccounts: e.accounts.size,
+        failCount: e.failCount,
+        ip,
+        lastSeen: e.lastSeen,
+        sharedNetwork: successfulAccounts >= SHARED_ADDRESS_MIN_ACCOUNTS,
+        successfulAccounts,
+      };
+    })
     .sort((a, b) => b.failCount - a.failCount)
     .slice(0, 25);
 

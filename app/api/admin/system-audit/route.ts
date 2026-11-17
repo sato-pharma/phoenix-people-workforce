@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { listAuditModuleLabels, lookupAuditPeople } from "@/lib/system-audit/incidents-lookup";
 import { isSystemAuditQueryError, parseSystemAuditQuery } from "@/lib/system-audit/page-query";
+import { recordSystemAuditRead } from "@/lib/system-audit/read-audit";
 import { loadSystemAuditPage } from "@/lib/system-audit/repository";
 
 export const runtime = "nodejs";
@@ -21,6 +22,10 @@ export const dynamic = "force-dynamic";
  * A filter value it does not recognise is a 400 with a plain sentence. A read that fails is a 500
  * that says "Unavailable — <reason>": the page shows that, never an empty table that would read as
  * "no errors".
+ *
+ * Every answered view writes ONE audit row (system_audit_view), awaited before the answer leaves: the
+ * access registry declares this read audited, because the ledger names who met which error (deep
+ * audit, 17 Nov 2026). A refused, invalid or failed read writes nothing — nothing was seen.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -31,9 +36,12 @@ export async function GET(request: NextRequest) {
 
     const params = new URL(request.url).searchParams;
     const view = params.get("view") ?? "page";
+    const reader = { hrId: access.hrId ?? null, loginId: access.loginId ?? null };
 
     if (view === "people") {
-      const people = await lookupAuditPeople(params.get("q") ?? "");
+      const search = params.get("q") ?? "";
+      const people = await lookupAuditPeople(search);
+      await recordSystemAuditRead(reader, { kind: "people", search: search.trim(), found: people.length });
       return NextResponse.json({ people }, { headers: { "cache-control": "no-store" } });
     }
 
@@ -45,6 +53,7 @@ export async function GET(request: NextRequest) {
         to: query.filters.to,
         includeTest: query.filters.includeTest,
       });
+      await recordSystemAuditRead(reader, { kind: "modules", filters: query.filters, found: modules.labels.length });
       return NextResponse.json({ labels: modules.labels }, { headers: { "cache-control": "no-store" } });
     }
 
@@ -60,6 +69,13 @@ export async function GET(request: NextRequest) {
       sort: query.sort,
       limit: query.limit,
       offset: query.offset,
+    });
+    await recordSystemAuditRead(reader, {
+      kind: "incidents",
+      filters: query.filters,
+      offset: page.offset,
+      rows: page.rows.length,
+      total: page.total,
     });
     return NextResponse.json({ page, query }, { headers: { "cache-control": "no-store" } });
   } catch (error) {

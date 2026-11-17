@@ -17,9 +17,21 @@ import {
   screenThrottleKey,
   type ScreenThrottleState,
 } from "../src/lib/error-monitor/screen-capture-rules.ts";
-import { installScreenCapture } from "../src/lib/error-monitor/screen-capture.ts";
-import { SCREEN_IMAGE_MAX_BYTES, parseScreenReport, screenStoragePath } from "../src/lib/error-monitor/screen-intake.ts";
-import { screenOwnerFor } from "../src/lib/error-monitor/user-error-screens.ts";
+import {
+  installScreenCapture,
+  isCaptureLockHeld,
+  releaseCaptureLock,
+  takeCaptureLock,
+  withCaptureLock,
+} from "../src/lib/error-monitor/screen-capture.ts";
+import {
+  SCREEN_IMAGE_MAX_BYTES,
+  USER_ERROR_SCREENS_BUCKET,
+  parseScreenReport,
+  screenStoragePath,
+} from "../src/lib/error-monitor/screen-intake.ts";
+import { ERROR_SCREENSHOT_BUCKET } from "../src/lib/error-monitor/screenshot-intake.ts";
+import { attachErrorScreenshot, screenOwnerFor, storeUserErrorScreen } from "../src/lib/error-monitor/user-error-screens.ts";
 import {
   USER_SCREENS_DETECTOR,
   buildUserScreenFindings,
@@ -38,7 +50,7 @@ import { stripComments } from "./system-audit-routes-access.test.ts";
 /**
  * THE ERROR SCREENSHOT (owner, 23 Oct 2026): every error or block a person meets leaves a picture of
  * what they saw, shown as-is to the Super Admin only, kept 90 days. docs/system-audit.md, "What the
- * person saw". Five things are pinned here:
+ * person saw". Seven things are pinned here:
  *
  *   1. the browser's rules — which answer is a refusal, which paths are never photographed, how a
  *      path is masked, the per-tab throttle, and the words read off a refusal;
@@ -47,7 +59,11 @@ import { stripComments } from "./system-audit-routes-access.test.ts";
  *   3. the intake — a real JPEG of at most 1.2 MB, capped fields, a test account filed under itself;
  *   4. the detector — the signature, the fold, the exact words in column 6, the watermark, and the
  *      90-day retention only on the nightly run and never past what the ledger holds;
- *   5. the picture route — Super Admin only, guard before any read.
+ *   5. the picture route — Super Admin only, guard before any read;
+ *   6. the capture lock both pictures share (17 Nov 2026) — one drawn at a time, the wrapper deaf
+ *      while one is drawn, and a stalled draw giving the lock back at its timeout;
+ *   7. no picture left without a row (17 Nov 2026) — a failed or zero-row row write, or a failed
+ *      upload, takes the file back out, and a clean-up that fails is logged, never swallowed.
  */
 
 // ─── 1. The rules ─────────────────────────────────────────────────────────────────────────────────
@@ -286,7 +302,32 @@ async function wrapperTests() {
     await sentForRefusal;
     await settle();
     assert.deepEqual(scheduled, [900, 900, 900, 900], "a refusal is photographed as before");
+
+    // While EITHER picture is being drawn the wrapper judges nothing (17 Nov 2026). html-to-image
+    // downloads every <img> again through window.fetch, so the crash picture's own download of an
+    // employee photo answering 403 filed a "refused request" picture of a request nobody made.
+    answers.set("/api/employees/B-21/photo", async () => new Response("", { status: 403 }));
+    assert.equal(takeCaptureLock(), true, "the crash picture takes the shared lock");
+    await wrapped("/api/employees/B-21/photo");
+    await settle();
+    assert.deepEqual(scheduled, [900, 900, 900, 900], "an image downloaded while a picture is drawn, refused 403, files no picture");
+    // Judged when SENT: a download sent under the lock and answered after it was given back is still nothing.
+    let answerLate: (response: Response) => void = () => undefined;
+    answers.set("/api/employees/B-30/photo", () => new Promise<Response>((resolve) => {
+      answerLate = resolve;
+    }));
+    const sentUnderLock = wrapped("/api/employees/B-30/photo");
+    releaseCaptureLock();
+    answerLate(new Response("", { status: 403 }));
+    await sentUnderLock;
+    await settle();
+    assert.deepEqual(scheduled, [900, 900, 900, 900], "a request sent while a picture was drawn is never judged, whenever it answers");
+    // The same refusal, met with no picture being drawn, is photographed as before.
+    await wrapped("/api/employees/B-21/photo");
+    await settle();
+    assert.deepEqual(scheduled, [900, 900, 900, 900, 900], "outside a capture the same refusal is a block the person met");
   } finally {
+    releaseCaptureLock();
     // Assigning undefined to process.env would store the string "undefined".
     if (previousEnv === undefined) delete env.NODE_ENV;
     else env.NODE_ENV = previousEnv;
@@ -405,7 +446,8 @@ function detectorFoldTests() {
   // one 11 minutes later is another; another person is another row of the same issue.
   const rows = [
     screen(),
-    screen({ id: "00000000-0000-4000-8000-000000000002", created_at: "2026-10-23T08:04:00.000Z" }),
+    // The second picture came from a newer build (a deploy between the two).
+    screen({ id: "00000000-0000-4000-8000-000000000002", created_at: "2026-10-23T08:04:00.000Z", release: "def456" }),
     screen({ id: "00000000-0000-4000-8000-000000000003", created_at: "2026-10-23T08:15:00.000Z" }),
     screen({ id: "00000000-0000-4000-8000-000000000004", hr_id: "B-30", login_id: "b-30", created_at: "2026-10-23T08:01:00.000Z" }),
   ];
@@ -418,6 +460,9 @@ function detectorFoldTests() {
   const firstOp = findings.occurrences.find((row) => row.relatedId === "00000000-0000-4000-8000-000000000001");
   assert.ok(firstOp);
   assert.equal(firstOp.attemptCount, 2);
+  // The verifier judges a recurrence by the LAST event (17 Nov 2026), so the build it sets an occurrence
+  // aside against is the last picture's, never the first one's.
+  assert.equal(firstOp.release, "def456", "an operation carries its LAST picture's build");
   assert.deepEqual(firstOp.evidence?.screenIds, ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"], "the occurrence names both pictures");
   assert.deepEqual(firstOp.sourceRefs, ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"]);
   assert.equal(firstOp.employeeName, "Mona Adel");
@@ -556,6 +601,205 @@ function screensRouteTests() {
   assert.doesNotMatch(intake, /console\.(log|error|warn)\([^)]*image/, "the picture is never logged");
 }
 
+// ─── 6. One picture drawn at a time, and never a lock held for ever ───────────────────────────────
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const GUARD = Symbol("the test's own guard timer fired first");
+
+async function captureLockTests() {
+  releaseCaptureLock();
+
+  // A draw stalled on a dead connection (html-to-image waits on downloads with no limit) gives the
+  // lock back at its timeout — or one stall would switch every picture off in that tab.
+  let stalledStarted = false;
+  const stalled = withCaptureLock(() => {
+    stalledStarted = true;
+    return new Promise<string>(() => undefined);
+  }, { timeoutMs: 40 });
+  assert.equal(isCaptureLockHeld(), true, "the lock is taken before anything is awaited — no gap for a second taker");
+  await pause(0);
+  assert.equal(stalledStarted, true, "the draw starts when the lock is free");
+  assert.equal(isCaptureLockHeld(), true, "and holds the lock while it runs");
+
+  // The other picture finds the lock taken and is not drawn on top of it.
+  let secondDrawn = false;
+  assert.equal(
+    await withCaptureLock(async () => {
+      secondDrawn = true;
+      return "second";
+    }, { timeoutMs: 1_000 }),
+    null,
+    "a refusal picture while a crash picture is drawn is not drawn",
+  );
+  assert.equal(secondDrawn, false, "two full-page copies never run on the main thread at once");
+
+  const timedOut = await Promise.race([stalled, pause(1_000).then(() => GUARD)]);
+  assert.equal(timedOut, null, "the stalled draw answers null at its timeout");
+  assert.equal(isCaptureLockHeld(), false, "and the lock is given back, so the next picture can be drawn");
+
+  // A crash picture waits for a refusal picture to finish rather than giving up at once.
+  let release: (value: string) => void = () => undefined;
+  const refusal = withCaptureLock(() => new Promise<string>((resolve) => {
+    release = resolve;
+  }), { timeoutMs: 5_000 });
+  const crash = withCaptureLock(async () => "crash picture", { timeoutMs: 1_000, waitMs: 2_000 });
+  await pause(20);
+  release("refusal picture");
+  assert.equal(await refusal, "refusal picture");
+  assert.equal(await Promise.race([crash, pause(1_500).then(() => GUARD)]), "crash picture", "the waiting crash picture is drawn once the lock is free");
+  assert.equal(isCaptureLockHeld(), false);
+
+  // A draw that throws still gives the lock back, and the throw reaches the caller's own catch.
+  await assert.rejects(withCaptureLock(async () => {
+    throw new Error("html-to-image failed");
+  }, { timeoutMs: 1_000 }), /html-to-image failed/);
+  assert.equal(isCaptureLockHeld(), false, "a draw that throws never keeps the lock");
+
+  // The refusal picture draws under the same lock, inside its own timeout.
+  const source = stripComments(readFileSync("src/lib/error-monitor/screen-capture.ts", "utf8"));
+  const send = source.slice(source.indexOf("async function captureAndSend("), source.indexOf("\nfunction later("));
+  assert.ok(send.indexOf("withCaptureLock(") >= 0 && send.indexOf("withCaptureLock(") < send.indexOf("drawViewport("), "every refusal draw runs inside withCaptureLock");
+  assert.match(send, /\{ timeoutMs: REFUSAL_DRAW_TIMEOUT_MS \}/, "with the refusal draw's own timeout");
+}
+
+// ─── 7. No picture is left in a bucket with nothing pointing at it ────────────────────────────────
+
+type FakeAnswer = { data?: unknown; error: unknown };
+
+function fakeStoreClient(answers: {
+  upload?: () => Promise<FakeAnswer>;
+  remove?: () => Promise<FakeAnswer>;
+  insert?: () => Promise<FakeAnswer>;
+  update?: () => Promise<FakeAnswer>;
+}) {
+  const calls = {
+    uploads: [] as Array<{ bucket: string; path: string; contentType: unknown }>,
+    removes: [] as Array<{ bucket: string; paths: string[] }>,
+    updates: [] as Array<{ table: string; values: unknown; column: string; value: unknown }>,
+  };
+  const client = {
+    storage: {
+      from: (bucket: string) => ({
+        async upload(path: string, _bytes: Uint8Array, options: { contentType?: string }) {
+          calls.uploads.push({ bucket, path, contentType: options?.contentType });
+          return answers.upload ? answers.upload() : { data: { path }, error: null };
+        },
+        async remove(paths: string[]) {
+          calls.removes.push({ bucket, paths });
+          return answers.remove ? answers.remove() : { data: [], error: null };
+        },
+      }),
+    },
+    from: (table: string) => ({
+      async insert() {
+        return answers.insert ? answers.insert() : { error: null };
+      },
+      update: (values: unknown) => ({
+        eq: (column: string, value: unknown) => ({
+          async select() {
+            calls.updates.push({ table, values, column, value });
+            return answers.update ? answers.update() : { data: [{ id: value }], error: null };
+          },
+        }),
+      }),
+    }),
+  };
+  return { client: client as unknown as NonNullable<Parameters<typeof attachErrorScreenshot>[1]>, calls };
+}
+
+/** The structured log lines written while `work` runs. */
+async function loggedLines(work: () => Promise<unknown>): Promise<Array<Record<string, unknown>>> {
+  const lines: Array<Record<string, unknown>> = [];
+  const original = { log: console.log, error: console.error };
+  const keep = (text: unknown) => {
+    try {
+      const parsed = JSON.parse(String(text)) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object") lines.push(parsed);
+    } catch {
+      // Not a structured line.
+    }
+  };
+  console.log = (first?: unknown) => keep(first);
+  console.error = (first?: unknown) => keep(first);
+  try {
+    await work().catch(() => undefined);
+  } finally {
+    console.log = original.log;
+    console.error = original.error;
+  }
+  return lines.filter((line) => line.event === "error_screenshot_orphan_cleanup_failed");
+}
+
+async function noOrphanTests() {
+  const eventId = "11111111-2222-3333-4444-555555555555";
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const now = new Date("2026-11-17T09:00:00Z");
+
+  // The crash picture, stored and attached: nothing removed.
+  const happy = fakeStoreClient({});
+  const stored = await attachErrorScreenshot({ eventId, bytes, contentType: "image/jpeg", now }, happy.client);
+  assert.deepEqual(stored, { ok: true, path: `2026/11/17/${eventId}.jpg` }, "a JPEG is stored at its .jpg path");
+  assert.deepEqual(happy.calls.uploads, [{ bucket: ERROR_SCREENSHOT_BUCKET, path: `2026/11/17/${eventId}.jpg`, contentType: "image/jpeg" }], "under the type its bytes proved");
+  assert.deepEqual(happy.calls.updates, [{ table: "app_error_events", values: { screenshot_path: `2026/11/17/${eventId}.jpg` }, column: "id", value: eventId }]);
+  assert.deepEqual(happy.calls.removes, [], "a picture with its row is never removed");
+
+  // The row write matched NO row: it answers no error, so only the empty list says so.
+  const noRow = fakeStoreClient({ update: async () => ({ data: [], error: null }) });
+  const missing = await attachErrorScreenshot({ eventId, bytes, contentType: "image/webp", now }, noRow.client);
+  assert.equal(missing.ok, false, "a row write that matched no row is a failure");
+  assert.deepEqual(noRow.calls.removes, [{ bucket: ERROR_SCREENSHOT_BUCKET, paths: [`2026/11/17/${eventId}.webp`] }], "and takes the picture back out");
+
+  // The row write failed, and so did the clean-up: an ERROR line naming the file, never silence.
+  const bothFail = fakeStoreClient({
+    update: async () => ({ data: null, error: { message: "statement timeout", code: "57014" } }),
+    remove: async () => ({ data: null, error: new Error("Storage unavailable") }),
+  });
+  const lines = await loggedLines(() => attachErrorScreenshot({ eventId, bytes, contentType: "image/webp", now }, bothFail.client));
+  assert.equal(bothFail.calls.removes.length, 1, "the clean-up is attempted");
+  assert.equal(lines.length, 1, "a clean-up that answers { error } is logged — supabase-js remove() never rejects, so a .catch() saw nothing");
+  assert.equal(lines[0].severity, "ERROR", "the file certainly exists and nothing points at it");
+  assert.deepEqual(
+    { bucket: (lines[0].labels as Record<string, string>).bucket, reason: (lines[0].labels as Record<string, string>).reason, path: (lines[0].labels as Record<string, string>).path },
+    { bucket: ERROR_SCREENSHOT_BUCKET, reason: "row_write_failed", path: `2026/11/17/${eventId}.webp` },
+    "labelled with the bucket, the reason and the path a person needs to remove it",
+  );
+
+  // The upload timed out (it throws, or answers an error): Storage may have kept the bytes anyway.
+  const timedOut = fakeStoreClient({ upload: () => Promise.reject(Object.assign(new Error("Supabase request timed out."), { name: "AbortError" })) });
+  const late = await attachErrorScreenshot({ eventId, bytes, contentType: "image/jpeg", now }, timedOut.client);
+  assert.equal(late.ok === false && late.stage, "upload");
+  assert.deepEqual(timedOut.calls.removes, [{ bucket: ERROR_SCREENSHOT_BUCKET, paths: [`2026/11/17/${eventId}.jpg`] }], "a timed-out upload is cleaned up too");
+  assert.deepEqual(timedOut.calls.updates, [], "and no row is pointed at it");
+
+  // The block screenshot: an insert that fails takes its file back out, and a failed clean-up is logged.
+  const report = parseScreenReport({ kind: "refused_request", status: 403, method: "POST", apiPath: "/api/leave-requests", image: JPEG });
+  assert.ok(report.ok);
+  if (!report.ok) return;
+  const owner = screenOwnerFor({ hrId: "b-21", loginId: "b-21", role: "Medical Representative", testPersona: null } as unknown as AccessContext);
+  const insertFails = fakeStoreClient({
+    insert: async () => ({ error: { message: "insert refused", code: "23514" } }),
+    remove: async () => ({ data: null, error: new Error("Storage unavailable") }),
+  });
+  const insertLines = await loggedLines(async () => {
+    await assert.rejects(storeUserErrorScreen({ owner, report: report.report, release: null }, insertFails.client), /insert failed/);
+  });
+  assert.equal(insertFails.calls.removes.length, 1, "the file of a row that could not be written is removed");
+  assert.equal(insertFails.calls.removes[0].bucket, USER_ERROR_SCREENS_BUCKET);
+  assert.equal(insertLines.length, 1, "and a removal that fails is logged, never swallowed");
+  assert.equal(insertLines[0].severity, "ERROR");
+  assert.equal((insertLines[0].labels as Record<string, string>).reason, "insert_failed");
+
+  const uploadFails = fakeStoreClient({
+    upload: async () => ({ data: null, error: new Error("The operation was aborted") }),
+    remove: async () => ({ data: null, error: new Error("Storage unavailable") }),
+  });
+  const uploadLines = await loggedLines(async () => {
+    await assert.rejects(storeUserErrorScreen({ owner, report: report.report, release: null }, uploadFails.client), /upload failed/);
+  });
+  assert.equal(uploadFails.calls.removes.length, 1, "a failed upload is cleaned up — the timeout can fire after Storage kept it");
+  assert.equal(uploadLines[0]?.severity, "WARNING", "a failed clean-up after a failed upload is a warning: the file may never have landed");
+}
+
 export async function runUserErrorScreensTests() {
   rulesTests();
   await wrapperTests();
@@ -563,4 +807,6 @@ export async function runUserErrorScreensTests() {
   detectorFoldTests();
   await detectorRunTests();
   screensRouteTests();
+  await captureLockTests();
+  await noOrphanTests();
 }

@@ -204,9 +204,22 @@ const REWRITTEN: Array<{ what: string; command: string; expect: string }> = [
   { what: "the real refusal that skipped only node_modules", command: 'grep -rn "admin_work\\|dayActivit" --include=*.ts -l . --exclude-dir=node_modules --exclude-dir=.next | head -50; ls supabase/migrations | tail -3', expect: 'grep --exclude-dir=.git --exclude-dir=worktrees --exclude-dir=.codex-worktrees -rn "admin_work\\|dayActivit" --include=*.ts -l . --exclude-dir=node_modules --exclude-dir=.next | head -50; ls supabase/migrations | tail -3' },
 ];
 
-/** A fixable root grep beside something that is not read-only: refused, WITH the fixed command. */
-const REFUSED_WITH_FIX: Array<{ what: string; command: string; expect: string | null; tool?: string }> = [
-  { what: "an output file", command: "grep -rln x . > hits.txt", expect: `grep ${EXCLUDES} -rln x . > hits.txt` },
+/**
+ * A fixable root grep beside something that is not read-only: refused, WITH the fixed command.
+ * `names` are the operands the refusal must name as the trigger (in backticks), `notNames` ones it
+ * must not — 2026-11-17 the old wording said "a grep of NAMED folders needs none of this", so a
+ * session swapped `.` for `src … .claude`, was refused again for the `.claude`, and never learnt why.
+ */
+const REFUSED_WITH_FIX: Array<{ what: string; command: string; expect: string | null; tool?: string; names?: string[]; notNames?: string[] }> = [
+  {
+    what: "the 2026-11-17 retry: named folders that include .claude, beside a sed -i and a git fetch",
+    command: 'sed -i s/a/b/ src/a.ts; grep -rn "x\\|y" src tests docs .claude 2>/dev/null | head; git fetch -q origin main',
+    expect: `sed -i s/a/b/ src/a.ts; grep ${EXCLUDES} -rn "x\\|y" src tests docs .claude 2>/dev/null | head; git fetch -q origin main`,
+    names: [".claude"],
+    notNames: ["src", "tests", "docs"],
+  },
+  { what: "no path at all names the cwd", command: "git fetch -q && grep -rn x", expect: `git fetch -q && grep ${EXCLUDES} -rn x`, names: [". (no path given)"] },
+  { what: "an output file", command: "grep -rln x . > hits.txt", expect: `grep ${EXCLUDES} -rln x . > hits.txt`, names: ["."] },
   { what: "a pipe into a writer", command: "grep -rln x . | xargs sed -i s/a/b/", expect: `grep ${EXCLUDES} -rln x . | xargs sed -i s/a/b/` },
   { what: "a git command beside it", command: "git fetch -q && grep -rn x .", expect: `git fetch -q && grep ${EXCLUDES} -rn x .` },
   { what: "a sed that edits in place", command: "grep -rl x . | head; sed -i s/a/b/ src/a.ts", expect: `grep ${EXCLUDES} -rl x . | head; sed -i s/a/b/ src/a.ts` },
@@ -272,12 +285,23 @@ export function runBashGrepGuardTests(): void {
       assert.equal(rewritten, fill(expect), `C1 must add exactly the excludes the grep lacks, after its grep word (${what}):\n  ${command}`);
     }
 
-    for (const { what, command, expect, tool } of REFUSED_WITH_FIX) {
+    for (const { what, command, expect, tool, names, notNames } of REFUSED_WITH_FIX) {
       const { decision, reason, command: rewritten } = runGuard(cwd, scratch, command, tool ?? "Bash");
       assert.equal(decision, "deny", `C1 must not auto-allow a root grep beside a command that is not read-only (${what}):\n  ${command}`);
       assert.equal(rewritten, null, `a refusal must not carry a rewritten input (${what})`);
       assert.match(reason, /--exclude-dir=worktrees/, `the refusal must name the excludes (${what}):\n${reason}`);
       if (expect) assert.ok(reason.includes(fill(expect)), `the refusal must hand back the exact fixed command (${what}):\n${reason}`);
+      // The refusal must say WHICH operand made it a root grep, and never claim that naming folders
+      // is enough on its own — that claim is what sent a session round twice.
+      const trigger = (/^Recursive grep of (.*?) — /.exec(reason)?.[1] ?? "").split(", ");
+      for (const name of names ?? []) assert.ok(trigger.includes(`\`${name}\``), `the refusal must name \`${name}\` as the trigger (${what}):\n${reason}`);
+      for (const name of notNames ?? []) assert.ok(!trigger.includes(`\`${name}\``), `the refusal must not blame \`${name}\` (${what}):\n${reason}`);
+      assert.doesNotMatch(reason, /NAMED folders needs none of this/, `the refusal must not say naming folders is always enough (${what}):\n${reason}`);
+      // And the command it hands back must clear C1 — a suggestion the hook refuses again is a loop.
+      if (expect) {
+        const again = runGuard(cwd, scratch, expect, tool ?? "Bash");
+        assert.doesNotMatch(again.reason, /Recursive grep/, `the fixed command must pass C1 when run as given (${what}):\n${again.reason}`);
+      }
     }
 
     for (const { what, command, tool } of REFUSED) {

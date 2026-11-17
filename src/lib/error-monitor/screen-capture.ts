@@ -25,8 +25,9 @@
  * itself cancelled, anything while the browser reports itself offline (the picture could not be sent),
  * a request with NO answer whose page was out of sight at any moment between sending and failing
  * (`noAnswerHappenedInSight` — a locked phone kills its requests, and the failure surfaced on a page
- * that was working again), and anything beyond the per-tab throttle — the same screen once in
- * 2 minutes, 12 a tab an hour.
+ * that was working again), anything sent or answered while either picture is being drawn (the
+ * shared capture lock — html-to-image downloads the page's images again through this wrapper), and
+ * anything beyond the per-tab throttle — the same screen once in 2 minutes, 12 a tab an hour.
  *
  * NOTHING WHILE THE SERVER CANNOT STORE ONE. An upload answered 5xx, 429 or not at all pauses every
  * tab of the browser — nothing drawn, nothing sent — for 5 minutes, doubling to an hour while it
@@ -52,6 +53,8 @@ import {
   pathWithoutQuery,
   sameOriginApiPath,
   screenThrottleKey,
+  serialiseUploadPause,
+  settleUploadPause,
   uploadPaused,
   UPLOAD_PAUSE_STORAGE_KEY,
   type ScreenKind,
@@ -88,8 +91,88 @@ type CaptureInput = {
 let throttle: ScreenThrottleState = EMPTY_SCREEN_THROTTLE;
 /** This tab's own copy of the outage pause, used only when localStorage cannot be read or written. */
 let tabPause: UploadPauseState = EMPTY_UPLOAD_PAUSE;
-let capturing = false;
 let realFetch: typeof fetch | null = null;
+
+/**
+ * ONE PICTURE BEING DRAWN AT A TIME IN A TAB — the crash picture (capture-screenshot.ts) and the
+ * refusal picture (here) take this same lock, and always give it back (17 Nov 2026).
+ *
+ * Until then only the refusal picture held a flag, and the crash picture held none, so two things went
+ * wrong. html-to-image downloads every `<img>` on the page again, through `window.fetch` — this file's
+ * wrapper — so an image under `/api/` (an employee photo, `/api/employees/<id>/photo`) answering 403 or
+ * 5xx while a CRASH was being drawn filed a "refused request" picture of a request nobody made. And the
+ * two could draw at once: two full-page copies on a phone's main thread together. While the lock is
+ * held the wrapper ignores every request, as it always did during its own picture.
+ */
+let captureLockHeld = false;
+
+/** Is a picture being drawn in this tab right now? */
+export function isCaptureLockHeld(): boolean {
+  return captureLockHeld;
+}
+
+/** Take the lock if it is free. Every taker gives it back in a `finally` (`withCaptureLock`). */
+export function takeCaptureLock(): boolean {
+  if (captureLockHeld) return false;
+  captureLockHeld = true;
+  return true;
+}
+
+export function releaseCaptureLock(): void {
+  captureLockHeld = false;
+}
+
+const CAPTURE_LOCK_POLL_MS = 100;
+
+/**
+ * Take the lock, waiting up to `waitMs` for it to come free (0: one try, no wait). The first try is
+ * made before anything is awaited, so a caller that has just checked the lock cannot lose it in a gap.
+ */
+export async function waitForCaptureLock(waitMs: number): Promise<boolean> {
+  const startedAt = Date.now();
+  while (!takeCaptureLock()) {
+    if (Date.now() - startedAt >= waitMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, CAPTURE_LOCK_POLL_MS));
+  }
+  return true;
+}
+
+/**
+ * Draw under the lock: take it (waiting up to `waitMs`), run `draw` for at most `timeoutMs`, and give
+ * it back whatever happens — a finished draw, a timeout or a throw (which is passed on). Null when the
+ * lock could not be had, or the draw ran out of time.
+ *
+ * WHY THE TIMEOUT RELEASES THE LOCK. html-to-image waits on every image and font download with no limit
+ * of its own, so one stalled download on a dead mobile connection would hold the lock — and so switch
+ * off every picture in that tab — for as long as the page stayed open. The timeout only stops WAITING:
+ * a stalled draw carries on in the background, idle on the network. Its downloads were sent while the
+ * lock was held, and the wrapper judges a request by whether the lock was held when it was SENT, so
+ * they still never become pictures of their own.
+ */
+export async function withCaptureLock<T>(
+  draw: () => Promise<T>,
+  options: { timeoutMs: number; waitMs?: number },
+): Promise<T | null> {
+  if (!(await waitForCaptureLock(options.waitMs ?? 0))) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      draw(),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), options.timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    releaseCaptureLock();
+  }
+}
+
+/**
+ * The refusal picture's whole drawing — one draw, or two when the first is too big to send — is given
+ * this long under the lock (`withCaptureLock`). A normal draw takes well under a second.
+ */
+export const REFUSAL_DRAW_TIMEOUT_MS = 5_000;
 /** Bumped each time the page goes out of sight, so a request can tell it was hidden while in flight. */
 let hiddenEpoch = 0;
 
@@ -99,20 +182,31 @@ function pageHidden(): boolean {
 
 type SendSight = { sentHidden: boolean; epochAtSend: number };
 
-/** The outage pause every tab shares; this tab's own copy when storage is blocked (a private window). */
-function readUploadPause(): UploadPauseState {
+/**
+ * The outage pause every tab shares, as it stands at `nowMs`; this tab's own copy when storage is
+ * blocked (a private window). A stored pause the read had to correct — an end further off than an
+ * hour, or a run of refusals long over (`settleUploadPause`) — is written back corrected: the cap is
+ * measured from now, so without the write-back it would move forward with every read and never end.
+ */
+function readUploadPause(nowMs: number): UploadPauseState {
+  let raw: string | null;
   try {
-    return parseUploadPause(window.localStorage.getItem(UPLOAD_PAUSE_STORAGE_KEY));
+    raw = window.localStorage.getItem(UPLOAD_PAUSE_STORAGE_KEY);
   } catch {
+    tabPause = settleUploadPause(tabPause, nowMs);
     return tabPause;
   }
+  const state = parseUploadPause(raw, nowMs);
+  if (raw !== serialiseUploadPause(state)) writeUploadPause(state);
+  return state;
 }
 
 function writeUploadPause(state: UploadPauseState): void {
   tabPause = state;
   try {
-    if (state.pausedUntil === 0 && state.strikes === 0) window.localStorage.removeItem(UPLOAD_PAUSE_STORAGE_KEY);
-    else window.localStorage.setItem(UPLOAD_PAUSE_STORAGE_KEY, JSON.stringify(state));
+    const text = serialiseUploadPause(state);
+    if (text === null) window.localStorage.removeItem(UPLOAD_PAUSE_STORAGE_KEY);
+    else window.localStorage.setItem(UPLOAD_PAUSE_STORAGE_KEY, text);
   } catch {
     // Storage blocked: the pause still holds in this tab.
   }
@@ -120,7 +214,7 @@ function writeUploadPause(state: UploadPauseState): void {
 
 /** Is the outage pause running for this browser? */
 export function screenUploadsPaused(nowMs: number): boolean {
-  return uploadPaused(readUploadPause(), nowMs);
+  return uploadPaused(readUploadPause(nowMs), nowMs);
 }
 
 /**
@@ -142,8 +236,9 @@ export async function uploadScreen(send: typeof fetch, body: string): Promise<vo
     answer = { status: null, retryAfter: null };
   }
   try {
-    const current = readUploadPause();
-    const next = nextUploadPause(current, answer, Date.now());
+    const now = Date.now();
+    const current = readUploadPause(now);
+    const next = nextUploadPause(current, answer, now);
     if (next !== current) writeUploadPause(next);
   } catch {
     // The pause is a saving, never a reason to surface an error.
@@ -208,8 +303,16 @@ async function drawViewport(pixelRatio: number, quality: number): Promise<{ data
   return { dataUrl, width, height };
 }
 
+/**
+ * This path's own one-at-a-time, from the start of a picture to the end of its upload — so a second
+ * refusal is not drawn and sent while the first one's upload is still waiting to hear whether the
+ * server can store it (the outage pause). Not the shared lock, which covers only the drawing: an
+ * upload is neither a page copy nor a request the wrapper sees (it goes out through `realFetch`).
+ */
+let refusalInFlight = false;
+
 async function captureAndSend(input: CaptureInput): Promise<void> {
-  if (capturing) return;
+  if (refusalInFlight || isCaptureLockHeld()) return;
   if (typeof document === "undefined" || document.visibilityState !== "visible") return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   // Before the throttle and before any drawing: a paused tab spends neither a slot nor the main thread.
@@ -222,12 +325,20 @@ async function captureAndSend(input: CaptureInput): Promise<void> {
   throttle = decision.state;
   if (!decision.allowed) return;
 
-  capturing = true;
+  refusalInFlight = true;
   try {
     const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-    let picture = await drawViewport(ratio, 0.6);
-    // Too big to send: drawn once more, smaller. Never a third time.
-    if (picture && decodedBytes(picture.dataUrl) > MAX_IMAGE_BYTES) picture = await drawViewport(1, 0.4);
+    // Under the lock both pictures share, for at most REFUSAL_DRAW_TIMEOUT_MS; a crash picture being
+    // drawn now means this one is not (it is a picture of the same screen).
+    const picture = await withCaptureLock(
+      async () => {
+        let drawn = await drawViewport(ratio, 0.6);
+        // Too big to send: drawn once more, smaller. Never a third time.
+        if (drawn && decodedBytes(drawn.dataUrl) > MAX_IMAGE_BYTES) drawn = await drawViewport(1, 0.4);
+        return drawn;
+      },
+      { timeoutMs: REFUSAL_DRAW_TIMEOUT_MS },
+    );
     if (!picture || decodedBytes(picture.dataUrl) > MAX_IMAGE_BYTES) return;
 
     const send = realFetch ?? window.fetch.bind(window);
@@ -248,7 +359,7 @@ async function captureAndSend(input: CaptureInput): Promise<void> {
   } catch {
     // A picture that cannot be drawn or sent is simply not kept.
   } finally {
-    capturing = false;
+    refusalInFlight = false;
   }
 }
 
@@ -271,7 +382,7 @@ function describeRequest(input: RequestInfo | URL, init: RequestInit | undefined
 }
 
 async function onAnswer(request: { path: string; method: string }, response: Response): Promise<void> {
-  if (capturing) return;
+  if (isCaptureLockHeld()) return;
   const kind = classifyScreenKind({ status: response.status, networkFailure: false, method: request.method });
   if (!kind) return;
   let message: string | null = null;
@@ -288,7 +399,7 @@ async function onAnswer(request: { path: string; method: string }, response: Res
 }
 
 function onFailure(request: { path: string; method: string }, error: unknown, sight: SendSight): void {
-  if (capturing) return;
+  if (isCaptureLockHeld()) return;
   // The page cancelled its own request — nobody was refused anything.
   if (error && typeof error === "object" && (error as { name?: unknown }).name === "AbortError") return;
   // Out of sight at any moment on the way: nobody met this failure (noAnswerHappenedInSight).
@@ -326,7 +437,9 @@ export function installScreenCapture(): void {
     const wrapped = function phoenixScreenCaptureFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const result = original.call(window, input, init);
       try {
-        if (!capturing) {
+        // Judged by whether a picture was being drawn when the request was SENT: html-to-image's own
+        // downloads of the page's images go out through here, and are never a block anyone met.
+        if (!isCaptureLockHeld()) {
           const request = describeRequest(input, init);
           if (request) {
             const sight: SendSight = { sentHidden: pageHidden(), epochAtSend: hiddenEpoch };

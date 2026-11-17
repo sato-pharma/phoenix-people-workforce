@@ -12,6 +12,7 @@
 
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { withCurrentPersonNames } from "@/lib/system-audit/person-names";
@@ -147,6 +148,15 @@ export type OccurrenceScreenshot = {
   route: string | null;
 };
 
+/**
+ * The crash pictures of this occurrence's own error events, or why they could not be listed. A read
+ * that failed used to come back as an empty list, and the drawer then said "No screen was captured
+ * for this one" about errors whose picture was sitting in the bucket (deep audit, 17 Nov 2026).
+ */
+export type OccurrenceScreenshots =
+  | { status: "ok"; screenshots: OccurrenceScreenshot[] }
+  | { status: "unavailable"; reason: string };
+
 export type OccurrenceDetail = {
   occurrence: OccurrenceDetailOccurrence;
   issue: OccurrenceDetailIssue;
@@ -154,7 +164,7 @@ export type OccurrenceDetail = {
   fixes: OccurrenceFix[];
   reproTrail: ReproTrail;
   screens: OccurrenceScreens;
-  screenshots: OccurrenceScreenshot[];
+  screenshots: OccurrenceScreenshots;
 };
 
 /** The screen ids an occurrence names, from its evidence (the detector's list), as valid ids only. */
@@ -312,15 +322,19 @@ async function loadReproTrail(occurrence: OccurrenceDetailOccurrence, supabase: 
  * The captures taken for this occurrence's own error events, newest first.
  *
  * `sourceRefs` are `app_error_events` ids (`collapse.ts`), capped at 50 by the repository — so this
- * is one bounded `in()` and never a wide read. Best-effort on purpose: a drawer that cannot show a
- * picture must still show the error, so a failure here returns no screenshots rather than throwing.
+ * is one bounded `in()` and never a wide read. A failure never throws — a drawer that cannot show a
+ * picture must still show the error — but it is reported as UNAVAILABLE with a client-safe reason,
+ * never as an empty list, which the drawer would read as "no screen was captured".
  *
  * Only ids that really are uuids are sent. A single non-uuid in an `in()` list answers 22P02 and
  * takes the whole read with it, and `source_refs` is jsonb that nothing constrains to a uuid.
  */
-async function loadScreenshots(occurrence: OccurrenceDetailOccurrence, supabase: Client): Promise<OccurrenceScreenshot[]> {
+export async function loadOccurrenceScreenshots(
+  occurrence: Pick<OccurrenceDetailOccurrence, "sourceRefs">,
+  supabase: Client,
+): Promise<OccurrenceScreenshots> {
   const eventIds = occurrence.sourceRefs.filter((ref): ref is string => typeof ref === "string" && isUuid(ref));
-  if (eventIds.length === 0) return [];
+  if (eventIds.length === 0) return { status: "ok", screenshots: [] };
   try {
     const { data, error } = await supabase
       .from("app_error_events")
@@ -329,14 +343,20 @@ async function loadScreenshots(occurrence: OccurrenceDetailOccurrence, supabase:
       .not("screenshot_path", "is", null)
       .order("created_at", { ascending: false })
       .limit(12);
-    if (error || !data) return [];
-    return (data as Row[]).map((row) => ({
-      eventId: String(row.id),
-      capturedAt: String(row.created_at),
-      route: row.route === null || row.route === undefined ? null : String(row.route),
-    }));
-  } catch {
-    return [];
+    if (error) throw error;
+    return {
+      status: "ok",
+      screenshots: ((data ?? []) as Row[]).map((row) => ({
+        eventId: String(row.id),
+        capturedAt: String(row.created_at),
+        route: row.route === null || row.route === undefined ? null : String(row.route),
+      })),
+    };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: `The screenshots could not be listed: ${clientSafeErrorMessage(error, "the error record did not answer")}`,
+    };
   }
 }
 
@@ -372,7 +392,7 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
       .order("generation", { ascending: true }),
     loadReproTrail(occurrence, supabase),
     loadScreens(occurrence, supabase),
-    loadScreenshots(occurrence, supabase),
+    loadOccurrenceScreenshots(occurrence, supabase),
   ]);
   if (issueResult.error) throw new Error(`The issue could not be read: ${issueResult.error.message}`);
   if (!issueResult.data) throw new Error(`The occurrence points at an issue that is missing (${occurrence.issueId}).`);

@@ -34,8 +34,11 @@ export const maxDuration = 300;
  * response starts, so a database that cannot answer returns a plain error rather than a half file.
  *
  * CSV has no limit. XLSX refuses above 100,000 rows with a sentence pointing at the CSV, checked
- * against the screen total BEFORE the download starts. One audit_logs row per export: who, the
- * filters and the row count actually written (or how far it got before it failed).
+ * against the screen total BEFORE the download starts. Two audit_logs rows per export: one written
+ * and awaited BEFORE the first byte leaves (who, the format, the filters), and one when the stream
+ * ends with the row count actually written (or how far it got before it failed). The end row alone
+ * was lost whenever the process died mid-download, and the file had already left (deep audit, 17 Nov
+ * 2026).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -80,10 +83,18 @@ export async function GET(request: NextRequest) {
         actorLoginId,
         entityId: filename,
         entityType: "system_audit_export",
-        newValues: { actorHrId, error: error ? clientSafeErrorMessage(error, "unknown") : null, filters: query.filters, format, rows },
+        newValues: { actorHrId, error: error ? clientSafeErrorMessage(error, "unknown") : null, filters: query.filters, format, rows, stage: "finished" },
         summary: `System audit ${format.toUpperCase()} export — ${outcome}. Filters: ${filtersLine}.`,
       });
     };
+
+    await writeAuditLog({
+      actorLoginId,
+      entityId: filename,
+      entityType: "system_audit_export",
+      newValues: { actorHrId, filters: query.filters, format, stage: "started" },
+      summary: `System audit ${format.toUpperCase()} export started. Filters: ${filtersLine}.`,
+    });
 
     if (format === "csv") {
       const body = createSystemAuditCsvStream(batches, recordExport);

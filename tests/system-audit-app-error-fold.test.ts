@@ -121,6 +121,8 @@ export async function runSystemAuditAppErrorFoldTests() {
       row(index * 250, {
         message: `Minified React error #418; visit https://react.dev/errors/418?args[]=${index % 2 ? "div" : "p"} for the full message`,
         stack: clientStack(5_000 + index * 250),
+        // The last error of the burst came from a newer build (a deploy mid-load).
+        ...(index === 23 ? { release: "def456" } : {}),
       }),
     );
   }
@@ -204,6 +206,9 @@ export async function runSystemAuditAppErrorFoldTests() {
   const hydration = byRef(sink, burst[0].id);
   assert.equal(hydration.occurrence.attemptCount, 24, "24 hydration errors in one page load must be ONE occurrence of 24 attempts");
   assert.equal(hydration.occurrence.pageLoads, 1);
+  // The verifier judges a recurrence by the LAST event (17 Nov 2026), so the build it sets an occurrence
+  // aside against must be the last event's — never the first one's.
+  assert.equal(hydration.occurrence.release, "def456", "an occurrence carries its LAST event's build");
   assert.equal(hydration.occurrence.hrIdDisplay, "B-10");
   assert.equal(hydration.occurrence.employeeName, "Omar Gawish");
   assert.equal(hydration.occurrence.moduleLabel, "Phoenix CRM");

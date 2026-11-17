@@ -217,7 +217,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/visit-report.ts": 5,
     "src/lib/phoenix-crm/server/visits.ts": 2,
     "src/lib/phoenix-crm/server/week-progress.ts": 1,
-    "src/lib/system-audit/detectors/visit-lifecycle.ts": 15,
+    // The visits-by-id read (2026-11-17) now fetches the mark itself, so a fact beside a copied or archived visit opens no door.
+    "src/lib/system-audit/detectors/visit-lifecycle.ts": 14,
   };
   const sources = (dir: string): string[] =>
     readdirSync(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true }).flatMap((entry) => {

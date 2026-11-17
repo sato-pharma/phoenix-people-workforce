@@ -73,6 +73,9 @@ import {
  * THE WATERMARK. Cron runs read every visit fact touched since the cursor (saves, approvals,
  * recordings, removals, edits), judge only the rep-days quiet for two hours, and write the cursor
  * with each batch's rows. The call rate is judged per rep-month, from a queue the cursor carries.
+ * A rep-day judged while a source was unreadable goes on a second queue the cursor carries (capped
+ * at REJUDGE_QUEUE_CAP, overflow counted as rejudge_queue_overflow) and is judged again first on the
+ * next night; it leaves only when it is judged with every source readable.
  * A historical run walks a Cairo date window and never moves the cron watermark.
  */
 
@@ -88,6 +91,12 @@ const DEFAULT_BATCH = 40;
 const DEFAULT_KPI_PER_RUN = 30;
 /** Rep-months waiting for a call-rate check; the oldest beyond this are dropped AND counted. */
 const KPI_QUEUE_CAP = 600;
+/**
+ * Rep-days waiting to be judged again after a night a source was down; the oldest beyond this are
+ * dropped AND counted (`rejudge_queue_overflow`). A night judges about 60–80 rep-days (production,
+ * 8–16 Nov 2026), so this holds about five whole nights of an outage.
+ */
+const REJUDGE_QUEUE_CAP = 400;
 const EVIDENCE_IDS = 20;
 const EVIDENCE_BYTES = 4_000;
 /**
@@ -960,12 +969,36 @@ async function judgeRepDays(ports: VisitLifecyclePorts, shared: Shared, wanted: 
 
 // ── The cursor ─────────────────────────────────────────────────────────────────────────────────────
 
-export type VisitLifecycleCursor = { touchedAfter: string; kpiQueue: string[] };
+/**
+ * A rep-day judged while a source was unreadable (the unified view, the countable view, the private
+ * calendar, the employee directory, the departed-agent list, the started seats, the seat history),
+ * waiting to be judged again. The cursor moves past every batch whatever was unreadable, so without
+ * this queue such a day kept its UNKNOWN row for ever. `hrIds` are the spellings its rows were
+ * written under; `lastTouchAt` keeps the row's last-event time when it is finally judged.
+ */
+export type RejudgeEntry = { hrKey: string; date: string; hrIds: string[]; lastTouchAt: string };
+
+export type VisitLifecycleCursor = { touchedAfter: string; kpiQueue: string[]; rejudgeQueue: RejudgeEntry[] };
+
+function repDayKey(day: { hrKey: string; date: string }): string {
+  return `${day.hrKey}|${day.date}`;
+}
+
+function asRejudgeEntry(value: unknown): RejudgeEntry | null {
+  if (!value || typeof value !== "object") return null;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.hrKey !== "string" || !entry.hrKey || typeof entry.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) return null;
+  if (typeof entry.lastTouchAt !== "string" || Number.isNaN(Date.parse(entry.lastTouchAt))) return null;
+  const hrIds = Array.isArray(entry.hrIds) ? entry.hrIds.filter((id): id is string => typeof id === "string" && id.trim() !== "") : [];
+  return { hrKey: entry.hrKey, date: entry.date, hrIds: hrIds.length > 0 ? hrIds : [entry.hrKey], lastTouchAt: entry.lastTouchAt };
+}
 
 function asCursor(value: Record<string, unknown> | null): VisitLifecycleCursor | null {
   if (!value || typeof value.touchedAfter !== "string" || Number.isNaN(Date.parse(value.touchedAfter))) return null;
   const queue = Array.isArray(value.kpiQueue) ? value.kpiQueue.filter((entry): entry is string => typeof entry === "string" && /^.+\|\d{4}-\d{2}$/.test(entry)) : [];
-  return { touchedAfter: value.touchedAfter, kpiQueue: queue };
+  // A cursor written before the re-judge queue existed has none — an empty queue, never a reset.
+  const rejudge = Array.isArray(value.rejudgeQueue) ? value.rejudgeQueue.map(asRejudgeEntry).filter((entry): entry is RejudgeEntry => entry !== null) : [];
+  return { touchedAfter: value.touchedAfter, kpiQueue: queue, rejudgeQueue: rejudge };
 }
 
 export function cairoDateOf(ms: number): string {
@@ -1022,6 +1055,10 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
         window: ctx.window ?? null,
         repDaysTouched: 0,
         repDaysJudged: 0,
+        /** Rep-days judged again because an earlier night judged them while a source was down. */
+        repDaysRejudged: 0,
+        /** Rep-days still waiting to be judged again when the run ended. */
+        rejudgeQueued: 0,
         visitsChecked: 0,
         findings: 0,
         linkedRows: 0,
@@ -1037,6 +1074,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
       // reported as an unreadable source.
       let stage: string | null = "system_audit_watermarks";
       let kpiQueue: string[] = [];
+      let rejudgeQueue: RejudgeEntry[] = [];
       let touchedAfter = "";
 
       const queueKpi = (hrKey: string, date: string) => {
@@ -1048,6 +1086,28 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           result.excludedCounts.kpi_queue_overflow = (result.excludedCounts.kpi_queue_overflow ?? 0) + 1;
         }
       };
+      /** One rep-day to judge again; already waiting, it keeps its place and gains any new hr id spelling. */
+      const queueRejudge = (day: Pick<RepDayTouch, "hrKey" | "date" | "hrIds" | "lastTouchAt">) => {
+        const waiting = rejudgeQueue.find((entry) => repDayKey(entry) === repDayKey(day));
+        if (waiting) {
+          waiting.hrIds = unique([...waiting.hrIds, ...day.hrIds]);
+          waiting.lastTouchAt = laterOf(waiting.lastTouchAt, day.lastTouchAt) ?? waiting.lastTouchAt;
+          return;
+        }
+        rejudgeQueue.push({ hrKey: day.hrKey, date: day.date, hrIds: [...day.hrIds], lastTouchAt: day.lastTouchAt });
+        if (rejudgeQueue.length > REJUDGE_QUEUE_CAP) {
+          // Never dropped silently: the run's excluded counts say how many rep-days will not be judged again.
+          const dropped = rejudgeQueue.length - REJUDGE_QUEUE_CAP;
+          rejudgeQueue = rejudgeQueue.slice(dropped);
+          result.excludedCounts.rejudge_queue_overflow = (result.excludedCounts.rejudge_queue_overflow ?? 0) + dropped;
+        }
+      };
+      /** The cron watermark as the run reports it; the re-judge count only once something waits. */
+      const cronWatermark = () => ({
+        touchedAfter,
+        kpiQueued: kpiQueue.length,
+        ...(rejudgeQueue.length > 0 ? { rejudgeQueued: rejudgeQueue.length } : {}),
+      });
       const write = async (findings: LifecycleFinding[], people: Map<string, PersonFacts> | null, lastTouch?: Map<string, string>) => {
         const rows = lifecycleRows({ findings, people, runAt, labels, lastTouch });
         stage = null;
@@ -1056,7 +1116,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           occurrences: rows.occurrences,
           merge: "max",
           // A historical run never moves the cron watermark.
-          cursor: historical ? null : { touchedAfter, kpiQueue: [...kpiQueue] },
+          cursor: historical ? null : { touchedAfter, kpiQueue: [...kpiQueue], rejudgeQueue: rejudgeQueue.map((entry) => ({ ...entry, hrIds: [...entry.hrIds] })) },
         });
         result.inserted += written.inserted;
         result.updated += written.updated;
@@ -1069,7 +1129,8 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
         const cursor = historical ? null : asCursor(await ctx.sink.readCursor(VISIT_LIFECYCLE_DETECTOR_ID));
         touchedAfter = cursor?.touchedAfter ?? new Date(startedAt - DEFAULT_LOOKBACK_MS).toISOString();
         kpiQueue = [...(cursor?.kpiQueue ?? [])];
-        result.watermarkFrom = historical ? { window: ctx.window } : { touchedAfter, kpiQueued: kpiQueue.length };
+        rejudgeQueue = (cursor?.rejudgeQueue ?? []).map((entry) => ({ ...entry, hrIds: [...entry.hrIds] }));
+        result.watermarkFrom = historical ? { window: ctx.window } : cronWatermark();
         result.watermarkTo = result.watermarkFrom;
 
         stage = historical ? "phoenix_crm_visits" : "phoenix_crm_visits and its approval, recording, removal and edit rows";
@@ -1127,17 +1188,18 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           unreadable.add("phoenix_crm_team_starts");
         }
         const shared: Shared = { today, quietCutoff, people, windows, excluded, doorDown };
+        // What the shared reads above could not read. A rep-day judged while any of these was down is
+        // judged again on a later night (the re-judge queue below), never left on its UNKNOWN row.
+        const sharedGaps = [...unreadable];
 
-        let index = 0;
-        let lastDone: RepDayTouch | null = null;
-        while (index < ready.length) {
-          if (clock() >= ctx.deadline) {
-            result.status = "budget_exhausted";
-            break;
-          }
-          const batch = ready.slice(index, index + batchSize);
+        /**
+         * One batch of rep-days, S0–S4 and lead R1: the findings it writes, and every source that could
+         * not be read while it was judged. A failed S0 read THROWS, as before.
+         */
+        const judgeBatch = async (batch: readonly RepDayTouch[]): Promise<{ findings: LifecycleFinding[]; gaps: Set<string> }> => {
+          const gaps = new Set<string>();
           stage = "phoenix_crm_visits and its approval, recording, removal and edit rows";
-          const judged = await judgeRepDays(ports, shared, batch.map((day) => ({ hrKey: day.hrKey, hrIds: day.hrIds, date: day.date })), unreadable);
+          const judged = await judgeRepDays(ports, shared, batch.map((day) => ({ hrKey: day.hrKey, hrIds: day.hrIds, date: day.date })), gaps);
 
           // S4: each day with something on its chip, one calendar read for the batch.
           const askCalendar = judged.days.filter(({ verdict }) => verdict.should.size > 0 || verdict.doorPhoenixKept.length > 0);
@@ -1149,7 +1211,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
               );
             } catch {
               calendar = null;
-              unreadable.add("private calendar");
+              gaps.add("private calendar");
             }
           }
           const asked = new Set(askCalendar.map(({ ref }) => `${ref.hrKey}|${ref.date}`));
@@ -1188,6 +1250,57 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
               report.teamMovesFound += moves.length;
             }
           }
+          for (const gap of gaps) unreadable.add(gap);
+          return { findings, gaps };
+        };
+        /** After a batch: every one of its rep-days judged while a source was down waits to be judged again. */
+        const requeueIfUnread = (batch: readonly RepDayTouch[], gaps: ReadonlySet<string>) => {
+          if (historical || (sharedGaps.length === 0 && gaps.size === 0)) return;
+          for (const day of batch) queueRejudge(day);
+        };
+        const lastTouchOf = (batch: readonly RepDayTouch[]) => new Map(batch.map((day) => [repDayKey(day), day.lastTouchAt]));
+
+        // RE-JUDGE FIRST: the rep-days an earlier night judged while a source was unreadable. The cursor
+        // has moved past them, so nothing else would ever read them again. A day touched again since is
+        // left to the pass below (it is in `ready`), so no day is judged twice in one run and no rule's
+        // exclusion is counted twice. Each entry leaves the queue in the same write as its rows, and
+        // comes back at its end only if a source is still down.
+        if (!historical && rejudgeQueue.length > 0) {
+          const readyByKey = new Map(ready.map((day) => [repDayKey(day), day]));
+          for (const entry of rejudgeQueue) {
+            const touchedAgain = readyByKey.get(repDayKey(entry));
+            // The rows an earlier night found under another spelling of the hr id are still his.
+            if (touchedAgain) touchedAgain.hrIds = unique([...touchedAgain.hrIds, ...entry.hrIds]);
+          }
+          rejudgeQueue = rejudgeQueue.filter((entry) => !readyByKey.has(repDayKey(entry)));
+          const waiting = [...rejudgeQueue];
+          for (let at = 0; at < waiting.length; at += batchSize) {
+            if (clock() >= ctx.deadline) {
+              result.status = "budget_exhausted";
+              break;
+            }
+            const batch = waiting.slice(at, at + batchSize);
+            const { findings, gaps } = await judgeBatch(batch);
+            const done = new Set(batch.map(repDayKey));
+            rejudgeQueue = rejudgeQueue.filter((entry) => !done.has(repDayKey(entry)));
+            requeueIfUnread(batch, gaps);
+            result.scanned += batch.length;
+            report.repDaysRejudged += batch.length;
+            await write(findings, people, lastTouchOf(batch));
+            result.watermarkTo = cronWatermark();
+          }
+        }
+
+        let index = 0;
+        let lastDone: RepDayTouch | null = null;
+        while (result.status !== "budget_exhausted" && index < ready.length) {
+          if (clock() >= ctx.deadline) {
+            result.status = "budget_exhausted";
+            break;
+          }
+          const batch = ready.slice(index, index + batchSize);
+          const { findings, gaps } = await judgeBatch(batch);
+          requeueIfUnread(batch, gaps);
           result.scanned += batch.length;
           report.repDaysJudged += batch.length;
           index += batch.length;
@@ -1200,10 +1313,10 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
             const lastAt = Date.parse(lastDone.lastTouchAt);
             touchedAfter = new Date(next && Date.parse(next.lastTouchAt) === lastAt ? lastAt - 1 : lastAt).toISOString();
           }
-          await write(findings, people, new Map(batch.map((day) => [`${day.hrKey}|${day.date}`, day.lastTouchAt])));
+          await write(findings, people, lastTouchOf(batch));
           result.watermarkTo = historical
             ? { window: ctx.window, resumeAfter: `${lastDone.date}|${lastDone.hrKey}`, kpiPending: kpiQueue.length }
-            : { touchedAfter, kpiQueued: kpiQueue.length };
+            : cronWatermark();
         }
 
         if (result.status !== "budget_exhausted" && !historical) {
@@ -1212,7 +1325,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           if (quietLine !== touchedAfter) {
             touchedAfter = quietLine;
             await write([], people);
-            result.watermarkTo = { touchedAfter, kpiQueued: kpiQueue.length };
+            result.watermarkTo = cronWatermark();
           }
         }
 
@@ -1336,7 +1449,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
           await write(findings, people);
           result.watermarkTo = historical
             ? { window: ctx.window, resumeAfter: lastDone ? `${lastDone.date}|${lastDone.hrKey}` : null, kpiPending: kpiQueue.length }
-            : { touchedAfter, kpiQueued: kpiQueue.length };
+            : cronWatermark();
         }
       } catch (error) {
         result.status = "errored";
@@ -1345,6 +1458,7 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
       }
 
       report.kpiQueued = kpiQueue.length;
+      report.rejudgeQueued = rejudgeQueue.length;
       result.unreadableSources = [...unreadable];
       if (result.status === "ok" && unreadable.size > 0) result.status = "partial";
       result.report = report;
@@ -1358,8 +1472,13 @@ export function createVisitLifecycleDetector(deps: VisitLifecycleDependencies): 
 const READ_PAGE = 1_000;
 const ID_CHUNK = 100;
 const CALENDAR_REPS_PER_CALL = 20;
+/**
+ * The last three columns are the countable view's import and archive clauses (20261110170000): without
+ * them a copied iReports360 visit or an archived one was predicted countable, and its absence from the
+ * view read as a lost visit and a call-rate shortfall.
+ */
 const SAVED_COLUMNS =
-  "id,seat_id,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id,customer_id,list_type,visit_date,captured_at,created_at,is_test,is_unplanned,unplanned_kind";
+  "id,seat_id,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id,customer_id,list_type,visit_date,captured_at,created_at,is_test,is_unplanned,unplanned_kind,imported_from_ireports360_at,ireports360_kpi_counted,archived_at";
 
 type PostgrestAnswer = { data: unknown; error: { message?: string; code?: string } | null };
 
@@ -1416,6 +1535,9 @@ type VisitRow = {
   is_test: boolean;
   is_unplanned: boolean;
   unplanned_kind: string | null;
+  imported_from_ireports360_at: string | null;
+  ireports360_kpi_counted: boolean | null;
+  archived_at: string | null;
 };
 
 type TouchRow = { rep_hr_id: string | null; visit_date: string; at: string };
@@ -1436,13 +1558,21 @@ function groupTouches(rows: readonly TouchRow[]): RepDayTouch[] {
 }
 
 export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecyclePorts {
-  /** The rep and day of visits named by id — for the facts that live beside a visit, not on it. */
+  /**
+   * The rep and day of visits named by id — for the facts that live beside a visit, not on it — and
+   * whether the visit is history (copied from iReports360, or archived), which no beside fact can
+   * bring into a count: the saves read above already leaves every copy out.
+   */
+  type VisitById = { rep_hr_id: string | null; visit_date: string; is_test: boolean; imported_from_ireports360_at: string | null; archived_at: string | null };
   const visitsById = async (ids: readonly string[]) => {
-    const out = new Map<string, { rep_hr_id: string | null; visit_date: string; is_test: boolean }>();
+    const out = new Map<string, VisitById>();
     for (const chunk of chunks(unique(ids), ID_CHUNK)) {
-      const { data, error } = await supabase.from("phoenix_crm_visits").select("id,rep_hr_id,visit_date,is_test").in("id", chunk);
+      const { data, error } = await supabase
+        .from("phoenix_crm_visits")
+        .select("id,rep_hr_id,visit_date,is_test,imported_from_ireports360_at,archived_at")
+        .in("id", chunk);
       if (error) throw readError("phoenix_crm_visits", error);
-      for (const row of (data ?? []) as Array<{ id: string; rep_hr_id: string | null; visit_date: string; is_test: boolean }>) out.set(row.id, row);
+      for (const row of (data ?? []) as Array<VisitById & { id: string }>) out.set(row.id, row);
     }
     return out;
   };
@@ -1501,7 +1631,10 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
       const visits = await visitsById(byVisit.map((row) => row.visit_id as string));
       for (const row of byVisit) {
         const visit = visits.get(row.visit_id as string);
-        if (visit && !visit.is_test) touches.push({ rep_hr_id: visit.rep_hr_id, visit_date: visit.visit_date, at: row.at });
+        // A copied or archived visit is history: a fact beside it touches nothing the doors should hold.
+        if (visit && !visit.is_test && !visit.imported_from_ireports360_at && !visit.archived_at) {
+          touches.push({ rep_hr_id: visit.rep_hr_id, visit_date: visit.visit_date, at: row.at });
+        }
       }
 
       // A removal: the visit row is gone, its copy keeps the rep and the day.
@@ -1626,6 +1759,9 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
           unplannedStatus: approval?.status ?? null,
           recordingStatuses: claimed.map((recording) => String(recording.review_status ?? "")),
           farHoldStatus: farHold?.status ?? null,
+          importedFromIreports360At: visit.imported_from_ireports360_at ?? null,
+          ireports360KpiCounted: visit.ireports360_kpi_counted ?? null,
+          archivedAt: visit.archived_at ?? null,
           // `coalesce(c.validated_at is not null or c.list_type = 'Pharmacy', false)` — a missing customer is false.
           customerValidated: customer ? customer.validated_at !== null || customer.list_type === "Pharmacy" : false,
           contactCrmId: customer ? (toNumber(customer.reference_contact_crm_id) ?? toNumber(customer.own_contact_crm_id)) : null,
@@ -1636,6 +1772,8 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
               ...claimed.flatMap((recording) => [recording.claimed_at, recording.reviewed_at, recording.deleted_at]),
               farHold?.held_at,
               farHold?.decided_at,
+              // Archiving takes a visit out of the countable view, so a fresh archive is a fact still settling.
+              visit.archived_at,
               removed.get(visit.id),
               edits.get(visit.id),
             ) ?? visit.created_at,

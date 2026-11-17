@@ -475,14 +475,16 @@ function DetailBody({ detail, onChanged }: { detail: OccurrenceDetail; onChanged
       </Section>
 
       <Section title="What the employee saw">
-        {screenshots.length === 0 ? (
+        {screenshots.status === "unavailable" ? (
+          <p className="break-words text-xs font-semibold text-rose-700">Unavailable — {screenshots.reason}</p>
+        ) : screenshots.screenshots.length === 0 ? (
           <p className="text-xs text-slate-500">
             No screen was captured for this one. A picture is taken only for an error the browser itself reported, and
             only from a build that carries the capture.
           </p>
         ) : (
           <ul className="space-y-2">
-            {screenshots.map((screenshot) => (
+            {screenshots.screenshots.map((screenshot) => (
               <ScreenshotView key={screenshot.eventId} screenshot={screenshot} />
             ))}
           </ul>

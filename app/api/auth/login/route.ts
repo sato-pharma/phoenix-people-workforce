@@ -18,7 +18,7 @@ import {
 } from "@/lib/auth/audit";
 import { CI_SMOKE_LOGIN_ID, isCiSmokeLoginEnabled } from "@/lib/auth/ci-smoke-login";
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
-import { readIpBlock } from "@/lib/auth/ip-blocklist";
+import { BLOCKED_SIGN_IN_MESSAGE, readIpBlock } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { mintTemporaryPasswordSetupToken } from "@/lib/auth/password-setup";
@@ -158,10 +158,13 @@ function loginFailureResponse(
   error: string,
   message: string,
   status: number,
+  // The code a no-script form post lands on, when the page must say something other than what the
+  // JSON code means to scripts (a blocked network keeps "rate_limited" for scripts, 17 Nov 2026).
+  redirectError: string = error,
 ) {
   if (payload.responseMode === "redirect") {
     const url = getRedirectUrl(request, "/login");
-    url.searchParams.set("error", error);
+    url.searchParams.set("error", redirectError);
 
     return NextResponse.redirect(url, 303);
   }
@@ -325,9 +328,11 @@ export async function POST(request: Request) {
         );
       }
 
-      // Admin-managed IP blocklist (System Issues security lens). A blocked address gets the SAME
-      // generic rate-limited response, so a blocked attacker gets no signal that their IP
-      // specifically is denied. Fail-closed since 2026-10-26: an unreadable blocklist refuses the
+      // Admin-managed IP blocklist (System Audit login security). A blocked address keeps the
+      // rate-limited code and its 429, but is TOLD the truth (deep audit, 17 Nov 2026): "too many
+      // failed attempts, try later" sent a whole office behind a 30-day block to retry a lockout
+      // that would never lift, instead of to HR. A no-script form post lands on "network_blocked", whose
+      // words on the login page are the same sentence. Fail-closed since 2026-10-26: an unreadable blocklist refuses the
       // sign-in too, but as what it is — a 503 "temporarily unavailable", audited on its own line
       // (risk review, 26 Oct) — never as a block nobody made.
       const blocklist = await blocklistCheck;
@@ -355,13 +360,7 @@ export async function POST(request: Request) {
           summary: "Login blocked: IP on blocklist",
         }).catch(() => undefined);
 
-        return loginFailureResponse(
-          request,
-          payload,
-          "rate_limited",
-          "Too many failed login attempts. Please try again later.",
-          429,
-        );
+        return loginFailureResponse(request, payload, "rate_limited", BLOCKED_SIGN_IN_MESSAGE, 429, "network_blocked");
       }
     }
 

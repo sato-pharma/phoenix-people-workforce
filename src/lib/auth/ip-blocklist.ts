@@ -5,10 +5,69 @@
 // `readIpBlock`, which tells an unreadable blocklist apart from a block, so an outage answers
 // "temporarily unavailable" and is audited as one instead of posing as a blocked address.
 
+import { isIP } from "node:net";
+
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const DEFAULT_BLOCK_DAYS = 30;
+
+/**
+ * What a blocked person is told at every sign-in door (password, fingerprint, face). It used to be
+ * "Too many failed login attempts. Please try again later." — untrue for a block, and a block lasts
+ * 30 days, so a whole office caught behind one blocked address kept retrying a lockout that would
+ * never lift (deep audit, 17 Nov 2026). Saying the network is blocked costs an attacker nothing he
+ * cannot learn by switching address, and it sends a real employee to HR, who can lift it.
+ */
+export const BLOCKED_SIGN_IN_MESSAGE = "Sign-in from this network has been blocked. Ask HR to lift it.";
+
+/**
+ * An address that two or more different people signed in to successfully from, in the last 7 days,
+ * is an office or a mobile network, not one attacker — blocking it locks all of them out. The block
+ * route refuses it (409) until the Super Admin presses a second time (deep audit, 17 Nov 2026).
+ */
+export const SHARED_ADDRESS_LOOKBACK_DAYS = 7;
+export const SHARED_ADDRESS_MIN_ACCOUNTS = 2;
+
+/**
+ * The one spelling of an address the blocklist stores and matches, or null when the text is not a
+ * single internet address. The match is exact text, so "10.0.0.0/8", a typo, or an upper-case IPv6
+ * used to be saved, showed "Blocked", and blocked nobody (deep audit, 17 Nov 2026). Trimmed and
+ * lower-cased — the sign-in side (client-address.ts) lower-cases the address it records the same way.
+ */
+export function normalizeIpAddress(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const address = value.trim().toLowerCase();
+  return address && isIP(address) !== 0 ? address : null;
+}
+
+/** How many different accounts signed in successfully, counted the way the security lens counts them. */
+export function countDistinctAccounts(rows: Array<{ login_id?: unknown }>): number {
+  const accounts = new Set<string>();
+  for (const row of rows) {
+    const account = canonicalHrIdKey(typeof row.login_id === "string" ? row.login_id : null);
+    if (account) accounts.add(account);
+  }
+  return accounts.size;
+}
+
+/**
+ * The number of different accounts that signed in SUCCESSFULLY from this exact address in the last
+ * SHARED_ADDRESS_LOOKBACK_DAYS. Fully paged; THROWS on a failed read, so the block route refuses
+ * rather than blocking a network it could not check.
+ */
+export async function countRecentSuccessfulAccounts(ip: string, now = Date.now()): Promise<number> {
+  const address = normalizeIpAddress(ip) ?? ip.trim();
+  const since = new Date(now - SHARED_ADDRESS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<{ login_id?: unknown }>(
+    () => supabase.from("auth_login_attempts").select("id, login_id").eq("ip", address).eq("success", true).gte("attempted_at", since),
+    "id",
+  );
+  return countDistinctAccounts(rows);
+}
 
 export type BlockedIp = {
   ip: string;
@@ -48,10 +107,11 @@ export async function readIpBlock(ip: string | null): Promise<IpBlockState> {
   if (!ip) return "clear";
   try {
     const nowIso = new Date().toISOString();
+    // The stored spelling (normalizeIpAddress), so a block saved from the screen always matches.
     const { data, error } = await getSupabaseAdmin()
       .from("blocked_ips")
       .select("ip, expires_at")
-      .eq("ip", ip)
+      .eq("ip", normalizeIpAddress(ip) ?? ip.trim())
       .limit(1);
     if (error) throw error;
     const row = (data ?? [])[0] as { expires_at: string | null } | undefined;
@@ -74,10 +134,14 @@ export async function isIpBlocked(ip: string | null, options: IpBlockCheckOption
   return state === "blocked";
 }
 
-/** Admin: block an IP (upsert). `days` null → permanent; otherwise expires in `days`. */
+/**
+ * Admin: block an IP (upsert). `days` null → permanent; otherwise expires in `days`. Stored in its
+ * normalised spelling; anything that is not one address is refused, never saved as a block that
+ * matches nothing.
+ */
 export async function blockIp(input: { ip: string; reason?: string | null; blockedBy?: string | null; days?: number | null }): Promise<void> {
-  const ip = input.ip.trim();
-  if (!ip) throw new Error("ip is required");
+  const ip = normalizeIpAddress(input.ip);
+  if (!ip) throw new Error("Only a single internet address can be blocked.");
   const days = input.days === null ? null : input.days ?? DEFAULT_BLOCK_DAYS;
   const expiresAt = days === null ? null : new Date(Date.now() + Math.max(1, days) * 24 * 60 * 60 * 1000).toISOString();
 

@@ -184,6 +184,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   system_audit_screenshot_view: true,
   system_audit_status: true,
   system_audit_triage: true,
+  system_audit_view: true,
   system_cleanup: true,
   territory_preview_link: true,
   territory_sync: true,

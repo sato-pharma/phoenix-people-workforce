@@ -21,6 +21,9 @@
  *     the Administrator approves the recording (`20261023040102_countable_visits_customer_join_is_removable`);
  *   · a visit saved and held for the SFE after five far refusals from one spot counts once he approves it
  *     (`phoenix_crm_far_visit_holds`, 20261110170000);
+ *   · a visit copied from iReports360 history counts only once the conversion marks it counted
+ *     (`ireports360_kpi_counted`), and an archived visit never (`archived_at`) — the countable view's
+ *     last two clauses (20261110170000);
  *   · the door serves a REP seat of a started team, from its start, before its stop — and, from the day
  *     iReports360 was retired, every REP seat whatever its start or stop (`phoenix_crm_counted_seat_windows()`,
  *     inner-joined in `crm_visits_unified`, 20261106235920);
@@ -67,6 +70,12 @@ export type SavedVisit = {
   recordingStatuses: string[];
   /** `phoenix_crm_far_visit_holds.status` — a visit held for the SFE (owner, 2026-11-10). Absent or null: no hold. */
   farHoldStatus?: string | null;
+  /** `imported_from_ireports360_at` — set on a visit copied from iReports360 history (20261029212200). Absent or null: a Phoenix CRM save. */
+  importedFromIreports360At?: string | null;
+  /** `ireports360_kpi_counted` — a copied visit counts only when this is true (the conversion, 20261107044059). */
+  ireports360KpiCounted?: boolean | null;
+  /** `archived_at` — a copy archived instead of deleted (no check-in, a campaign copy, too far). Absent or null: not archived. */
+  archivedAt?: string | null;
   /** The countable view's `customer_validated`: validated, or a pharmacy. Null when the customer was not read. */
   customerValidated: boolean | null;
   /** `coalesce(reference_contact_crm_id, own_contact_crm_id)` — the contact id every door emits. */
@@ -132,6 +141,8 @@ export type LifecycleExclusion =
   | "offplan_refused"
   | "recording_not_approved"
   | "far_visit_held"
+  | "archived_visit"
+  | "ireports360_copy_not_counted"
   | "seat_not_in_started_team"
   | "team_not_started"
   | "team_stopped"
@@ -171,12 +182,26 @@ export type CountableVerdict =
   | { countable: false; stuck: true };
 
 /**
- * `phoenix_crm_countable_visits`' WHERE clause, word for word:
+ * `phoenix_crm_countable_visits`' WHERE clause, word for word (live body read 17 Nov 2026, as
+ * 20261110170000 wrote it):
  *   (not is_unplanned or u.status = 'approved' or unplanned_kind = 'out_of_list')
  *   and not exists (a recording of this visit whose review_status <> 'approved')
  *   and id not in (a far-visit hold whose status <> 'approved')
+ *   and (imported_from_ireports360_at is null or ireports360_kpi_counted)
+ *   and archived_at is null
+ *
+ * The last two are asked FIRST. A copied iReports360 visit or an archived one is history the view
+ * leaves out whatever else is true of it, so it must never reach the "stuck off-plan visit" defect
+ * below or be expected at a door — without them, every copy the conversion left uncounted read as a
+ * lost visit and a call-rate shortfall.
  */
 export function countableVerdict(visit: SavedVisit): CountableVerdict {
+  if (visit.archivedAt) return { countable: false, stuck: false, reason: "archived_visit" };
+  // `(null is null or …)` passes; a copy passes only on `ireports360_kpi_counted` TRUE — SQL reads a
+  // null flag as not counted, so a null here is not counted either.
+  if (visit.importedFromIreports360At && visit.ireports360KpiCounted !== true) {
+    return { countable: false, stuck: false, reason: "ireports360_copy_not_counted" };
+  }
   if (visit.isUnplanned && visit.unplannedKind !== "out_of_list" && visit.unplannedStatus !== "approved") {
     switch (visit.unplannedStatus) {
       case "admin_pending":
