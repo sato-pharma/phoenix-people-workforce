@@ -25,7 +25,7 @@
  * docs/phoenix-intelligence/CHATGPT_INTERFACE.md.
  * stdout belongs to the protocol; this file logs to stderr only.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -60,7 +60,7 @@ export const MAX_IMAGES_PER_RESULT = 4;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 /** All the images of one result together, before base64 (which adds a third). */
 export const MAX_IMAGE_BYTES_PER_RESULT = 8 * 1024 * 1024;
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_TEXT = 60_000;
 const CALL_MINUTES = RUN_BOUNDS.maxMinutesPerToolCall;
 
@@ -181,13 +181,19 @@ function shotSummary(shot) {
 /**
  * The tool handler, without the protocol: `call(name, args)` answers an MCP CallTool result. The
  * runner is injected so the tests drive it without a browser. `imageLimits` lowers (never raises) the
- * per-result image count and byte caps.
- * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null, imageLimits?: { count?: number, bytes?: number } }} deps
+ * per-result image count and byte caps; `callLimits` lowers (never raises) the pages and minutes of one
+ * capture, and the minutes are a HARD stop: the runner gets an AbortSignal that closes its browser (or
+ * stops the spare's run), and the call answers at the limit. `maxResultBytes` caps the whole serialized
+ * result: images are dropped, last first, until it fits (the tunnel's envelope is 10 MiB).
+ * @param {{ runner: (options: Record<string, unknown>) => Promise<{ outDir: string, manifest: Record<string, unknown> }>, repoRoot?: string, now?: () => number, auditFile?: string|null, imageLimits?: { count?: number, bytes?: number }, callLimits?: { pages?: number, minutes?: number }, maxResultBytes?: number|null }} deps
  */
-export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile, imageLimits = {} } = {}) {
+export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date.now(), auditFile, imageLimits = {}, callLimits = {}, maxResultBytes = null } = {}) {
   const tools = toolDefinitions();
   const maxImages = Math.min(MAX_IMAGES_PER_RESULT, imageLimits.count ?? MAX_IMAGES_PER_RESULT);
   const maxImageBytes = Math.min(MAX_IMAGE_BYTES_PER_RESULT, imageLimits.bytes ?? MAX_IMAGE_BYTES_PER_RESULT);
+  const maxPages = Math.max(1, Math.min(RUN_BOUNDS.maxPagesPerToolCall, callLimits.pages ?? RUN_BOUNDS.maxPagesPerToolCall));
+  const callMinutes = Math.min(CALL_MINUTES, callLimits.minutes ?? CALL_MINUTES);
+  if (!(callMinutes > 0)) throw new Error("callLimits.minutes must be positive");
   const limiter = createRateLimiter(RUN_BOUNDS.toolCallsPerMinute, now);
   const flight = createSingleFlight();
   const auditPath = auditFile === undefined ? path.join(repoRoot, ...RUN_ROOT, "mcp-audit.jsonl") : auditFile;
@@ -212,12 +218,12 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     }
     const plan = buildPlan(spec, { personas: [persona], states, viewports });
     if (plan.jobs.length === 0) return refusal("refused: nothing to capture for that persona and those states");
-    if (plan.jobs.length > RUN_BOUNDS.maxPagesPerToolCall) {
-      return refusal(`refused: ${plan.jobs.length} pages asked; one call captures at most ${RUN_BOUNDS.maxPagesPerToolCall}`);
+    if (plan.jobs.length > maxPages) {
+      return refusal(`refused: ${plan.jobs.length} pages asked; one call captures at most ${maxPages}`);
     }
     const runId = `${cairoStamp(new Date(now())).id}-mcp`;
-    const { outDir, manifest } = await flight.run(() =>
-      runner({ module, personas: [persona], states, viewports: viewports ?? ["desktop"], runId, maxMinutes: CALL_MINUTES }),
+    const { outDir, manifest } = await runBounded((signal) =>
+      runner({ module, personas: [persona], states, viewports: viewports ?? ["desktop"], runId, maxMinutes: callMinutes, signal }),
     );
     const shots = manifest.shots ?? [];
     // The same summary as text AND as structuredContent: ChatGPT does not guarantee that a tool's image
@@ -243,7 +249,42 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
       images += 1;
       bytes += image.bytes;
     }
-    return { content, structuredContent: plain(summary), _manifest: manifest, _outDir: outDir };
+    return fit({ content, structuredContent: plain(summary), _manifest: manifest, _outDir: outDir });
+  }
+
+  /**
+   * The runner inside the one-capture-at-a-time rule, with the hard time limit. On the limit the signal
+   * aborts (the runner closes its browser) and the call answers; the single flight stays held until the
+   * runner has really stopped, so a second capture never starts beside a browser still closing.
+   */
+  function runBounded(start) {
+    const controller = new AbortController();
+    let timer = null;
+    const stopped = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`the capture was stopped at its ${Math.round(callMinutes * 60)}-second limit`));
+      }, callMinutes * 60_000);
+    });
+    const running = flight.run(() => start(controller.signal));
+    running.catch(() => {});
+    return Promise.race([running, stopped]).finally(() => clearTimeout(timer));
+  }
+
+  /** Drops screenshots (each with its label), last first, until the serialized result fits `maxResultBytes`. */
+  function fit(result) {
+    if (!maxResultBytes) return result;
+    const size = () => Buffer.byteLength(JSON.stringify({ content: result.content, structuredContent: result.structuredContent }));
+    let dropped = 0;
+    while (size() > maxResultBytes) {
+      const last = result.content.map((item) => item.type).lastIndexOf("image");
+      if (last === -1) break;
+      const labelled = last > 0 && /^masked screenshot:/.test(result.content[last - 1]?.text ?? "");
+      result.content.splice(labelled ? last - 1 : last, labelled ? 2 : 1);
+      dropped += 1;
+    }
+    if (dropped > 0) result.content.push(text(`${dropped} screenshot(s) left out to fit the ${Math.floor(maxResultBytes / 1_048_576)} MiB transport limit; capture fewer states per call`));
+    return result;
   }
 
   const handlers = {
@@ -318,7 +359,7 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
       if (aria) content.push(text(`masked accessibility snapshot:\n${clip(readFileSync(aria, "utf8"), 20_000)}`));
       const image = maskedImage(result._outDir, shot);
       if (image && image.bytes <= maxImageBytes) content.push(image.block);
-      return { content, structuredContent: plain(detail) };
+      return fit({ content, structuredContent: plain(detail) });
     },
     phoenix_get_component_map({ module }) {
       const doc = readRepoFile(repoRoot, MODULE_DOCS[module].componentMap);
@@ -380,7 +421,7 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
       const { _manifest, _outDir, ...clean } = result;
       return clean;
     } catch (error) {
-      record.outcome = /another capture is already running/.test(error.message) ? "busy" : "error";
+      record.outcome = /another capture is already running/.test(error.message) ? "busy" : /second limit/.test(error.message) ? "time-limit" : "error";
       return refusal(`${record.outcome === "busy" ? "refused" : "failed"}: ${String(error.message).slice(0, 300)}`);
     } finally {
       record.ms = now() - started;
@@ -414,11 +455,25 @@ export async function buildMcpServer(inspector, { observe } = {}) {
   return server;
 }
 
+/**
+ * The checkout's own commit, `+dirty` when tracked files changed, or null: the SOURCE revision a capture
+ * was read beside, recorded apart from the staging deployment's revision (the manifest's `revision`).
+ */
+export function sourceCommitOf(repoRoot = REPO_ROOT) {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? `${sha}${dirty ? "+dirty" : ""}` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Runs the explorer in this process (the machine holding the credentials file). */
 export function localRunner(repoRoot = REPO_ROOT) {
   return async (options) => {
     const { runExplorer } = await import("./explore.mjs");
-    return runExplorer({ ...options, out: path.join(repoRoot, ...RUN_ROOT) });
+    return runExplorer({ sourceCommit: sourceCommitOf(repoRoot) ?? undefined, ...options, out: path.join(repoRoot, ...RUN_ROOT) });
   };
 }
 
@@ -439,6 +494,7 @@ export function spareRunner(repoRoot = REPO_ROOT) {
       child.stdout.on("data", keep);
       child.stderr.on("data", keep);
       const timer = setTimeout(() => child.kill(), (options.maxMinutes + 5) * 60_000);
+      options.signal?.addEventListener("abort", () => child.kill(), { once: true });
       child.on("error", (error) => {
         clearTimeout(timer);
         reject(error);

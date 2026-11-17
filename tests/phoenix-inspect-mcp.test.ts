@@ -54,7 +54,7 @@ export async function runPhoenixInspectMcpTests() {
       const shots: Record<string, unknown>[] = [{ id: "escape", state: "summary", viewport: "desktop", outcome: "captured", image: "../../outside.png" }];
       for (let i = 0; i < 6; i += 1) {
         const image = `shots/${i}.png`;
-        writeFileSync(path.join(outDir, image), Buffer.from([0x89, 0x50, 0x4e, 0x47, i]));
+        writeFileSync(path.join(outDir, image), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, i]));
         shots.push({ id: `00${i}`, state: "summary", viewport: "desktop", outcome: "captured", image, writesStopped: [], console: [] });
       }
       return { outDir, manifest: { runId: options.runId, totals: { captured: 7 }, personas: [], shots, denied: [], notRun: [] } };

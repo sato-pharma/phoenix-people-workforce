@@ -1,7 +1,7 @@
 # ChatGPT ⇄ Phoenix Inspect — deployment runbook
 
-**Nothing here has been deployed.** Step 1 is built and tested on loopback only; Step 1b and Step 4 are
-not built. Each step that deploys, exposes or spends needs the owner's decision
+**Nothing here has been deployed.** Step 1 is built and tested on loopback only. Step 1b is built for the
+Secure MCP Tunnel route (Route C below), the route now in use; Step 4 is not built. Each step that deploys, exposes or spends needs the owner's decision
 first ([CHATGPT_MCP_CONNECTION_READINESS.md](CHATGPT_MCP_CONNECTION_READINESS.md) §5). The steps are written so the
 session that builds it can follow them in order and prove each one before the next.
 
@@ -44,9 +44,53 @@ Done in this branch, not deployed:
 
 **Proof still owed:** the PR's `validate` and `checks`.
 
-## Step 1b — The authorization server — NOT BUILT
+## Route C — OpenAI's Secure MCP Tunnel (the route in use) — BUILT, tested on loopback
 
-ChatGPT needs a server that issues the tokens Step 1 checks:
+No hosting, no public address, no paid service. The inspector runs on the owner's laptop on
+`127.0.0.1:8797`. OpenAI's `tunnel-client` dials OUT to OpenAI and carries ChatGPT's MCP calls in. The
+tunnel's supported shape is the one built here: a **local authorization server on the MCP server's own
+loopback origin**. The tunnel forwards protected-resource discovery, registration, the token exchange and
+revocation. The browser's sign-in step goes straight to `http://127.0.0.1:8797/authorize` on the same
+laptop, and that step is never tunnelled.
+
+- **Sign-in** (`scripts/phoenix-inspect/lib/authorization-server.mjs`, used when
+  `PHOENIX_INSPECT_GOOGLE_CLIENT_FILE` is set):
+  - Dynamic registration accepts only ChatGPT's redirect addresses, and at most 10 clients.
+  - `/authorize` needs PKCE S256 and the scope `phoenix-inspect:read`, then sends the browser to
+    Google (`openid email`, its own PKCE, state and nonce).
+  - The Google callback checks the id_token: issuer, audience, expiry, nonce, `email_verified`, and
+    that the address is the owner's (`PHOENIX_INSPECT_MCP_OWNER_SUBJECTS`). It then answers ChatGPT
+    with a one-time code and `iss`.
+  - `/token` issues a 1-hour ES256 access token whose audience is the local resource. The refresh token
+    rotates on every use, and a replayed refresh token revokes the whole grant.
+  - Clients, grants (hashes only) and the signing key live in `%LOCALAPPDATA%\PhoenixInspect\oauth`,
+    never in the repository.
+- **Tunnel limits:** one page per call, a hard 90-second stop (the browser is closed and the next capture
+  waits until it really stopped), one screenshot of at most 6 MB, and the whole result under 9 MB (the
+  tunnel's envelope is 10 MiB). Images are dropped, last first, until the result fits.
+- **Kill switch:** `connect-chatgpt.ps1 -RevokeAll` (or `node scripts/phoenix-inspect/mcp-http.mjs
+  --revoke-all`) stops every token at once, with no restart. The verifier re-reads the state file on
+  every call.
+- **Launcher:** `scripts/phoenix-inspect/connect-chatgpt.ps1` starts the inspector first, so it never
+  inherits the tunnel key. It then decrypts the DPAPI-saved runtime key into the tunnel client's
+  environment only, clears it from the shell, and stops both processes together. Port 8787 belongs to
+  the Phoenix Attendance Agent and is never used.
+- **Proven:** `tests/phoenix-inspect-authorization-server.test.ts` drives the full flow against a fake
+  Google, and the owner check, replay revoke and revoked-token check were each broken once to watch it
+  fail. `tunnel-client doctor` against the running inspector: `mcp_target` 8797, `mcp_server_reachable`
+  PASS, `oauth_metadata` PASS (HTTP 200), RESULT ok.
+
+**What only the owner does:**
+1. In Google Cloud, create an OAuth client of type **Desktop app**. Its consent screen stays in
+   **Testing**, with his Gmail as the only test user. Download the JSON into `%LOCALAPPDATA%\PhoenixInspect`;
+   it never goes in chat or Git.
+2. Run `connect-chatgpt.ps1`. On the first run it asks once for the Gmail allowed to sign in.
+3. In ChatGPT, add the connector for the tunnel, sign in with Google, and acknowledge ChatGPT's own
+   warnings himself.
+
+## Step 1b — The authorization server — BUILT for Route C; an external one is NOT BUILT
+
+For Routes A and B, ChatGPT would need a public server that issues the tokens Step 1 checks:
 - RFC 8414 metadata at `/.well-known/oauth-authorization-server` with an exact `issuer` and
   `code_challenge_methods_supported: ["S256"]`;
 - authorize and token endpoints;
@@ -151,6 +195,9 @@ the OAuth routes. Re-read the list monthly, because it changes.
 Record each answer, with the time in Cairo, in a dated section at the end of this file.
 
 ## Step 8 — Switching it off
+
+- Route C: `connect-chatgpt.ps1 -RevokeAll` stops every token at once; Ctrl+C in the launcher stops the
+  inspector and the tunnel client. Disable the tunnel at platform.openai.com/settings/organization/tunnels.
 
 - Option A: scale the service to zero or delete it. Option B: `cloudflared tunnel delete
   phoenix-inspect` and stop the server.

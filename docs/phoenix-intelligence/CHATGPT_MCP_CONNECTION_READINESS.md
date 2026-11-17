@@ -19,8 +19,8 @@ in [CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md](CHATGPT_MCP_DEPLOYMENT_RUNBOOK.md).
 | HTTPS: binds 127.0.0.1 by default. A public name needs `--public-url https://…/mcp` and `--trust-proxy`, and must arrive as https through that proxy. Metadata never takes its address from a request header | yes | yes, on loopback only | no | no |
 | Masked image blocks: only a shot marked `captured`, only a PNG under `shots/`, at most 4 images and 8 MB per result | yes | yes | no | no |
 | Audit: one line per HTTP request, with a keyed hash of the subject. Never a token, header or raw subject | yes | yes | no | no |
-| **Authorization server** (issues the tokens ChatGPT presents) | **no** (section 3) | no | no | no |
-| Somewhere the browser runs, always on, behind TLS | **no** (section 4) | no | no | no |
+| **Authorization server** (issues the tokens ChatGPT presents): built in, loopback-only, Google proves the owner; DCR for ChatGPT's redirects only, PKCE S256, refresh rotation with replay revoke, kill switch | yes (`lib/authorization-server.mjs`, for the Secure MCP Tunnel route) | yes. `tests/phoenix-inspect-authorization-server.test.ts` against a fake Google; three guards broken once each to watch it fail; `tunnel-client doctor` RESULT ok against the running inspector | no | no |
+| Somewhere the browser runs: the owner's laptop, reached through OpenAI's Secure MCP Tunnel (`scripts/phoenix-inspect/connect-chatgpt.ps1`), so no hosting and no TLS of our own | yes | the launcher's config check only; the tunnel has not carried a real call yet (it waits for his Google client) | no | no |
 | Works in ChatGPT Desktop on Windows | n/a | no | no | **unconfirmed** (section 2) |
 
 **Nothing is reachable from ChatGPT today, and nothing in this branch deploys or exposes anything.**

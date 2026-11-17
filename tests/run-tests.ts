@@ -56,6 +56,7 @@ import { runPhoenixInspectMcpTests } from "./phoenix-inspect-mcp.test.ts";
 import { runPhoenixInspectRouteFenceTests } from "./phoenix-inspect-route-fence.test.ts";
 import { runPhoenixInspectMeasureTests } from "./phoenix-inspect-measure.test.ts";
 import { runPhoenixInspectMcpHttpTests } from "./phoenix-inspect-mcp-http.test.ts";
+import { runPhoenixInspectAuthorizationServerTests } from "./phoenix-inspect-authorization-server.test.ts";
 import { runSystemAuditApiPageMapTests } from "./system-audit-api-page-map.test.ts";
 import { runSystemAuditPeriodCountsTests } from "./system-audit-period-counts.test.ts";
 import { runSystemAuditAppErrorFoldTests } from "./system-audit-app-error-fold.test.ts";
@@ -3385,6 +3386,7 @@ await runTest("the visual explorer's MCP server takes ids only, refuses a state 
 await runTest("the visual explorer never requests an address that acts when read: every GET route that writes, serves a file or spends a quota, and every page whose render writes, is found from source and refused, and no module may plan one", runPhoenixInspectRouteFenceTests);
 await runTest("the visual explorer reads every colour the browser computes (rgb, hex, lab, lch, oklab, oklch, color()), counts unreadable contrast as unmeasured, and never counts a closed drawer's links as tap targets", runPhoenixInspectMeasureTests);
 await runTest("the visual explorer's remote MCP door admits only the owner's token for this resource, refuses a foreign origin or host, production and oversized bodies, and sends only masked images within the byte cap", runPhoenixInspectMcpHttpTests);
+await runTest("the visual explorer's built-in sign-in registers only ChatGPT, checks the owner through Google, binds codes to PKCE, rotates refresh tokens and revokes on replay, stops every token at the kill switch, and holds one page per call under a hard time limit", runPhoenixInspectAuthorizationServerTests);
 await runTest("every API route maps to the sidebar page that calls it, or is listed as having no screen", runSystemAuditApiPageMapTests);
 await runTest("system audit columns 10 and 11 count over the period, so a filter never turns SHARED into UNIQUE", runSystemAuditPeriodCountsTests);
 await runTest("the app-error detector folds bursts into operations, writes at most 500 at a time, and a re-run changes nothing", runSystemAuditAppErrorFoldTests);

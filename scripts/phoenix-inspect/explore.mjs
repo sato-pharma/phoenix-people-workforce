@@ -176,7 +176,12 @@ export async function runExplorer(options) {
   const freeMb = () => Math.round(os.freemem() / 1_048_576);
   const guard = options.minFreeMb ? { pauseBelow: options.minFreeMb, resumeAt: options.minFreeMb + 350, relaunchEvery: options.relaunchEvery ?? 3 } : null;
   manifest.memoryGuard = guard ? { ...guard, pauses: 0, relaunches: 0 } : null;
+  // A hard stop from the caller (the MCP door's time limit): close whichever browser is open, so every
+  // page operation in flight rejects and the run ends rather than carrying on unseen.
+  if (options.signal?.aborted) throw new Error("the run was stopped before it started");
   let browser = await launchBrowser();
+  const stopBrowser = () => void browser.close().catch(() => {});
+  options.signal?.addEventListener("abort", stopBrowser, { once: true });
   let sinceLaunch = 0;
   const makeRoom = async () => {
     if (!guard) return;
@@ -225,6 +230,7 @@ export async function runExplorer(options) {
         continue;
       }
       for (const job of jobs) {
+        if (options.signal?.aborted) throw new Error("the run was stopped at its time limit");
         if (Date.now() > deadline) {
           manifest.notRun.push({ persona: personaId, state: job.state.id, viewport: job.viewport, reason: "run time limit reached" });
           continue;
@@ -260,6 +266,7 @@ export async function runExplorer(options) {
       }
     }
   } finally {
+    options.signal?.removeEventListener("abort", stopBrowser);
     await browser.close().catch(() => {});
   }
   manifest.finishedAt = cairoStamp().text;
