@@ -13,11 +13,13 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
 import { createAccessContext } from "@/lib/auth/permissions";
 import { connectorPdfHtml } from "@/lib/chatgpt-connector/files";
 import { decideLiveSubject, type LiveAccount } from "@/lib/chatgpt-connector/identity";
+import { withKnownProtocolVersion } from "@/lib/chatgpt-connector/protocol-version";
 import {
   bearerFrom,
   createConnectorOAuth,
@@ -374,6 +376,44 @@ function pdfInkRule() {
   assert.doesNotMatch(html, /border-radius|box-shadow|linear-gradient/);
 }
 
+/**
+ * ChatGPT sent `MCP-Protocol-Version: 2026-07-28` on production (17 Nov 2026), newer than the SDK knows;
+ * the transport answered 400 and ChatGPT, signed in, could list nothing. The real transport, stateless and
+ * JSON as /api/mcp builds it: the raw request is refused, the same request through
+ * `withKnownProtocolVersion` lists the tools, and a version the SDK knows passes through untouched.
+ */
+async function newerProtocolVersion() {
+  const ctx = createAccessContext({ hrId: "B-10", loginId: "owner", role: "Super Admin", source: "session" });
+  const tool = defineTool({ name: "phoenix_test_answer", title: "Answer", description: "test", input: {}, run: async () => ({ summary: "ok", data: {} }) });
+  const post = (version: string) =>
+    new Request("https://phoenix.test/api/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": version },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+  const answer = async (request: Request) => {
+    const server = buildConnectorServer(ctx, [tool as ConnectorTool]);
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    transport.onerror = () => undefined;
+    await server.connect(transport);
+    try {
+      const response = await transport.handleRequest(request);
+      return { status: response.status, text: await response.text() };
+    } finally {
+      await server.close().catch(() => undefined);
+    }
+  };
+
+  const raw = await answer(post("2026-07-28"));
+  assert.equal(raw.status, 400, "the SDK alone refuses ChatGPT's newer revision — the defect this guards");
+  const mended = await answer(await withKnownProtocolVersion(post("2026-07-28")));
+  assert.equal(mended.status, 200, mended.text);
+  assert.match(mended.text, /phoenix_test_answer/);
+
+  const known = post("2025-06-18");
+  assert.equal(await withKnownProtocolVersion(known), known, "a version the SDK knows is left exactly as sent");
+}
+
 export async function runChatgptConnectorOAuthTests() {
   await registrationAndAuthorize();
   await codeExchange();
@@ -381,4 +421,5 @@ export async function runChatgptConnectorOAuthTests() {
   liveAccountDecisions();
   await serverPieces();
   pdfInkRule();
+  await newerProtocolVersion();
 }
