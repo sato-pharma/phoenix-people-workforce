@@ -174,6 +174,10 @@ export function buildJobFailureFindings(input: {
       route: where.route,
       occurredAt,
       occurredAtKind,
+      // A stranded or misdeclared job is a STATE, re-found every night on the same row: its last
+      // event is tonight, so the verifier (which judges by the last event) never calls a job that is
+      // still stranded fixed. A failure is one event, dated by itself.
+      lastEventAt: kind === "failing" ? occurredAt : input.nowIso,
       userMessage: SILENT_DATA_MESSAGE,
       isSilent: true,
       technicalMessage: problem.detail,

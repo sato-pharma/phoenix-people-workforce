@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   EMPTY_UPLOAD_PAUSE,
   UPLOAD_PAUSE_FIRST_MS,
+  UPLOAD_PAUSE_FORGET_AFTER_MS,
   UPLOAD_PAUSE_MAX_MS,
   UPLOAD_PAUSE_STORAGE_KEY,
   isServerCannotStore,
@@ -23,7 +24,9 @@ import { stripComments } from "./system-audit-routes-access.test.ts";
  *
  *   1. the rules — which answers pause (5xx, 429, no answer) and which do not (400, 413, 401, 403),
  *      the 5-minute first pause doubling to an hour, Retry-After honoured up to that hour, a stored
- *      picture ending it, and a pause never cut short;
+ *      picture ending it, a pause never cut short, and (17 Nov 2026) a stored end never read as
+ *      further off than an hour — a phone clock put right — and a run of refusals forgotten an hour
+ *      after its pause ended;
  *   2. the upload — the answer moves the pause, the pause is shared by every tab through
  *      localStorage, and a tab whose storage is blocked still pauses itself;
  *   3. the order — a paused tab returns before the throttle and before anything is drawn.
@@ -79,10 +82,24 @@ function rulesTests() {
   assert.equal(uploadPaused({ pausedUntil: t0 + 1, strikes: 1 }, t0), true);
   assert.equal(uploadPaused({ pausedUntil: t0, strikes: 1 }, t0), false, "the pause ends at its own moment");
 
-  assert.deepEqual(parseUploadPause(JSON.stringify({ pausedUntil: t0, strikes: 3 })), { pausedUntil: t0, strikes: 3 });
+  assert.deepEqual(parseUploadPause(JSON.stringify({ pausedUntil: t0, strikes: 3 }), t0), { pausedUntil: t0, strikes: 3 });
   for (const raw of [null, "", "not json", "[]", JSON.stringify({ pausedUntil: "soon", strikes: 1 }), JSON.stringify({ pausedUntil: t0, strikes: -1 })]) {
-    assert.deepEqual(parseUploadPause(raw), EMPTY_UPLOAD_PAUSE, `${JSON.stringify(raw)} reads as no pause`);
+    assert.deepEqual(parseUploadPause(raw, t0), EMPTY_UPLOAD_PAUSE, `${JSON.stringify(raw)} reads as no pause`);
   }
+
+  // A pause written while the phone's clock ran a year ahead: once the clock is put right it reads as
+  // an hour at most — the longest pause there is — never a year nobody could end (17 Nov 2026).
+  const yearAhead = JSON.stringify({ pausedUntil: t0 + 365 * 24 * 60 * MINUTE, strikes: 4 });
+  assert.deepEqual(parseUploadPause(yearAhead, t0), { pausedUntil: t0 + UPLOAD_PAUSE_MAX_MS, strikes: 4 }, "an end further off than an hour reads as an hour from now");
+  // The run of refusals is forgotten an hour after its pause ended, so last week's outage does not
+  // start this week's at an hour. Within that hour it is kept: a refusal then still doubles.
+  assert.deepEqual(parseUploadPause(JSON.stringify({ pausedUntil: t0 - 61 * MINUTE, strikes: 5 }), t0), EMPTY_UPLOAD_PAUSE, "a run whose pause ended over an hour ago is forgotten");
+  assert.equal(UPLOAD_PAUSE_FORGET_AFTER_MS, 60 * MINUTE);
+  const recent = parseUploadPause(JSON.stringify({ pausedUntil: t0 - 30 * MINUTE, strikes: 2 }), t0);
+  assert.deepEqual(recent, { pausedUntil: t0 - 30 * MINUTE, strikes: 2 }, "a run whose pause ended half an hour ago is kept");
+  assert.equal(nextUploadPause(recent, { status: 503 }, t0).pausedUntil, t0 + 20 * MINUTE, "so the next refusal is the third step");
+  const forgotten = parseUploadPause(JSON.stringify({ pausedUntil: t0 - 2 * UPLOAD_PAUSE_MAX_MS, strikes: 6 }), t0);
+  assert.equal(nextUploadPause(forgotten, { status: 503 }, t0).pausedUntil, t0 + 5 * MINUTE, "and after a forgotten run the next refusal starts at 5 minutes again");
 }
 
 // ─── 2. The upload ────────────────────────────────────────────────────────────────────────────────
@@ -125,7 +142,7 @@ async function uploadTests() {
     await uploadScreen(send, "{}");
     assert.deepEqual(sent, [SCREEN_CAPTURE_ENDPOINT], "the picture went to the screen endpoint");
     assert.equal(screenUploadsPaused(Date.now()), true, "a 503 pauses the tab");
-    const shared = parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY));
+    const shared = parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY), Date.now());
     assert.equal(shared.strikes, 1);
     assert.ok(shared.pausedUntil >= before + UPLOAD_PAUSE_FIRST_MS && shared.pausedUntil <= Date.now() + UPLOAD_PAUSE_FIRST_MS, "for 5 minutes");
 
@@ -137,14 +154,14 @@ async function uploadTests() {
     // Unreachable: the second refusal in a row doubles it.
     reply = () => Promise.reject(new TypeError("Failed to fetch"));
     await uploadScreen(send, "{}");
-    const second = parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY));
+    const second = parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY), Date.now());
     assert.equal(second.strikes, 2, "no answer at all is a refusal too");
     assert.ok(second.pausedUntil - Date.now() > 9 * MINUTE, "10 minutes the second time");
 
     // A picture refused for itself changes nothing.
     reply = async () => new Response(JSON.stringify({ error: "too_large" }), { status: 413 });
     await uploadScreen(send, "{}");
-    assert.deepEqual(parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY)), second, "413 leaves the pause as it was");
+    assert.deepEqual(parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY), Date.now()), second, "413 leaves the pause as it was");
 
     // The server is back: one picture stored ends it for every tab.
     reply = async () => new Response(null, { status: 204 });
@@ -155,9 +172,21 @@ async function uploadTests() {
     // The intake's own rate limit says an hour.
     reply = async () => new Response(JSON.stringify({ error: "rate_limited" }), { status: 429, headers: { "Retry-After": "3600" } });
     await uploadScreen(send, "{}");
-    assert.ok(parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY)).pausedUntil - Date.now() > 59 * MINUTE, "429 with Retry-After 3600 pauses an hour");
+    assert.ok(parseUploadPause(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY), Date.now()).pausedUntil - Date.now() > 59 * MINUTE, "429 with Retry-After 3600 pauses an hour");
     reply = async () => new Response(null, { status: 204 });
     await uploadScreen(send, "{}");
+
+    // A pause stored while the clock ran a year ahead ends an hour after the clock is put right. The
+    // read writes the corrected end back: the cap is measured from now, so left unwritten it would move
+    // forward with every read, and nothing is sent while paused, so no stored picture could ever end it.
+    const clockPutRight = Date.now();
+    storage.items.set(UPLOAD_PAUSE_STORAGE_KEY, JSON.stringify({ pausedUntil: clockPutRight + 365 * 24 * 60 * MINUTE, strikes: 3 }));
+    assert.equal(screenUploadsPaused(clockPutRight), true, "still paused for now");
+    const corrected = JSON.parse(storage.items.get(UPLOAD_PAUSE_STORAGE_KEY) ?? "{}") as UploadPauseState;
+    assert.equal(corrected.pausedUntil, clockPutRight + UPLOAD_PAUSE_MAX_MS, "the corrected end is written back for every tab");
+    assert.equal(screenUploadsPaused(clockPutRight + UPLOAD_PAUSE_MAX_MS), false, "and the pause ends an hour later");
+    assert.equal(screenUploadsPaused(clockPutRight + UPLOAD_PAUSE_MAX_MS + UPLOAD_PAUSE_FORGET_AFTER_MS), false);
+    assert.equal(storage.items.has(UPLOAD_PAUSE_STORAGE_KEY), false, "an hour after that the run is forgotten and the key removed");
 
     // A private window that blocks storage still pauses its own tab, and never throws.
     globals.window = { localStorage: fakeStorage(true) };

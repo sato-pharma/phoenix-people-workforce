@@ -7,6 +7,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listAuditModuleLabels } from "@/lib/system-audit/incidents-lookup";
 import { loadIntegrityOverview, type IntegrityOverview } from "@/lib/system-audit/integrity-runs";
 import { parseSystemAuditQuery, type SystemAuditQuery } from "@/lib/system-audit/page-query";
+import { recordSystemAuditRead, type SystemAuditReader } from "@/lib/system-audit/read-audit";
 import { loadSystemAuditPage } from "@/lib/system-audit/repository";
 
 export const dynamic = "force-dynamic";
@@ -18,13 +19,20 @@ export const dynamic = "force-dynamic";
  *
  * The active tab's data is read here, on the server, for the first paint; the Incidents tab then
  * refetches through /api/admin/system-audit as the filters change. Nothing refreshes on a timer.
+ *
+ * The first paint is a read of the incidents ledger like any refetch, so it writes the same
+ * `system_audit_view` audit row (src/lib/system-audit/read-audit.ts) — awaited, after the read
+ * succeeded and before the page renders (deep audit, 17 Nov 2026).
  */
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : "the ledger did not answer";
 }
 
-async function loadIncidents(searchParams: Record<string, string | string[] | undefined>): Promise<IncidentsInitial> {
+async function loadIncidents(
+  searchParams: Record<string, string | string[] | undefined>,
+  reader: SystemAuditReader,
+): Promise<IncidentsInitial> {
   let query: SystemAuditQuery;
   try {
     query = parseSystemAuditQuery(searchParams);
@@ -44,6 +52,16 @@ async function loadIncidents(searchParams: Record<string, string | string[] | un
     loadSystemAuditPage({ filters: query.filters, sort: query.sort, limit: query.limit, offset: query.offset }),
     listAuditModuleLabels({ from: query.filters.from, to: query.filters.to, includeTest: query.filters.includeTest }),
   ]);
+
+  if (pageResult.status === "fulfilled") {
+    await recordSystemAuditRead(reader, {
+      kind: "incidents",
+      filters: query.filters,
+      offset: pageResult.value.offset,
+      rows: pageResult.value.rows.length,
+      total: pageResult.value.total,
+    });
+  }
 
   return {
     query,
@@ -84,7 +102,7 @@ export default async function SystemAuditRoute({
   const activeTab = parseSystemAuditTab(params.tab);
 
   if (activeTab === "incidents") {
-    return <SystemAuditPage activeTab={activeTab} incidents={await loadIncidents(params)} />;
+    return <SystemAuditPage activeTab={activeTab} incidents={await loadIncidents(params, { hrId: access.hrId ?? null, loginId: access.loginId ?? null })} />;
   }
   if (activeTab === "integrity") {
     return <SystemAuditPage activeTab={activeTab} integrity={await loadIntegrity()} />;

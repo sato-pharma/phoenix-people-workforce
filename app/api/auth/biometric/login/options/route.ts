@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestIp } from "@/lib/auth/audit";
-import { readIpBlock } from "@/lib/auth/ip-blocklist";
+import { BLOCKED_SIGN_IN_MESSAGE, readIpBlock } from "@/lib/auth/ip-blocklist";
 import { buildAuthenticationOptions, resolveRelyingParty } from "@/lib/auth/webauthn";
 import {
   assertApiRateLimit,
@@ -45,7 +45,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Same generic response as the rate limit above, so a blocked IP learns nothing about why.
     // Fail-closed, as at the password door: an unreadable blocklist refuses the sign-in (point 15),
     // as "temporarily unavailable" — it is an outage, not a block (risk review, 26 Oct).
     const blocklist = await readIpBlock(getRequestIp(request));
@@ -56,10 +55,9 @@ export async function POST(request: Request) {
       );
     }
     if (blocklist === "blocked") {
-      return NextResponse.json(
-        { error: "rate_limited", message: "Too many sign-in attempts. Please try again later." },
-        { status: 429 },
-      );
+      // The truth, with the same code and status (deep audit, 17 Nov 2026): a blocked network is
+      // told to ask HR, never to wait out a lockout that lasts 30 days.
+      return NextResponse.json({ error: "rate_limited", message: BLOCKED_SIGN_IN_MESSAGE }, { status: 429 });
     }
 
     const relyingParty = resolveRelyingParty(request);

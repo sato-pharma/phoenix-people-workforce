@@ -53,6 +53,8 @@ type World = {
   /** Extra visits the KPIs board counts, by `${hrKey}|${YYYY-MM}`. */
   kpiExtra?: Record<string, number>;
   failCalendar?: boolean;
+  /** The dated seat history cannot be read (a shared read: every rep-day of the run is judged without it). */
+  failSeatHistory?: boolean;
   /** The dated seat history; by default every started seat sat under its own team all along. */
   history?: SeatHistoryRow[];
   /** The team starts; by default each window's team, as the window says. */
@@ -200,6 +202,7 @@ function portsFor(world: World): VisitLifecyclePorts {
       return world.doorDown ?? null;
     },
     async readSeatHistory() {
+      if (world.failSeatHistory) throw new Error("the seat history could not be read");
       return (
         world.history ??
         world.windows.map((window) => ({ seatId: window.seatId, managerSeatId: window.teamSeatId, effectiveFrom: "2020-01-01", effectiveTo: null }))
@@ -458,6 +461,31 @@ export async function runSystemAuditVisitLifecycleTests() {
     assert.equal(issue?.rootCauseLevel, "confirmed", "a missing approval row is a confirmed cause");
   }
 
+  // ── The countable view's last two clauses: an archived visit, and an iReports360 copy not marked counted ──
+  // `(imported_from_ireports360_at is null or ireports360_kpi_counted) and archived_at is null`. Production
+  // holds 66,058 uncounted copies and 20,479 archived visits on real reps: each one, judged without these
+  // clauses, read as a visit lost at S1 and a call-rate shortfall.
+  {
+    const archived = fixture({ archivedAt: "2026-11-17T08:00:00.000Z" }, NONE);
+    const copy = fixture({ importedFromIreports360At: "2026-11-08T00:00:00.000Z", ireports360KpiCounted: false }, NONE);
+    // A copied off-plan visit with no approval row is history too — never the "stuck off-plan" S1 defect.
+    const stuckCopy = fixture(
+      { importedFromIreports360At: "2026-11-08T00:00:00.000Z", ireports360KpiCounted: false, isUnplanned: true, unplannedKind: "out_of_plan", unplannedStatus: null },
+      NONE,
+    );
+    // A copy the conversion marked counted is a counted visit like any other.
+    const countedCopy = fixture({ importedFromIreports360At: "2026-11-08T00:00:00.000Z", ireports360KpiCounted: true });
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), archived, copy, stuckCopy, countedCopy] };
+    const { result, occurrences } = await run(world);
+    assert.deepEqual(
+      occurrences.map((row) => `${row.signatureKey} ${JSON.stringify((row.evidence as { visitIds?: string[] }).visitIds ?? [])}`),
+      [],
+      "an archived visit and an uncounted iReports360 copy are left out as the view leaves them, and a counted copy counts — none is a finding",
+    );
+    assert.equal(result.excludedCounts.archived_visit, 1, "the archived visit is counted under archived_visit");
+    assert.equal(result.excludedCounts.ireports360_copy_not_counted, 2, "both uncounted copies, the off-plan one included, are counted under ireports360_copy_not_counted");
+  }
+
   // ── R8: the calendar counts a visit twice ──
   {
     const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), fixture()], calendarExtra: { [`b-200|${DAY}`]: 1 } };
@@ -623,6 +651,98 @@ export async function runSystemAuditVisitLifecycleTests() {
     assert.ok(result.unreadableSources.includes("private calendar"), "and names the source");
   }
 
+  // ── A rep-day judged while a source was down is judged again first, the next night ──
+  // The cursor moves past every batch whatever was unreadable; without the re-judge queue a day
+  // judged during an outage kept its UNKNOWN row for ever and was never checked again.
+  {
+    const missedByCalendar = fixture({}, { inCalendar: false });
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture(), missedByCalendar], failCalendar: true };
+    const outage = await run(world);
+    const outageCursor = outage.writes[outage.writes.length - 1].cursor as { touchedAfter: string; kpiQueue: string[]; rejudgeQueue: unknown[] };
+    assert.equal(outageCursor.touchedAfter, "2026-11-18T10:00:00.000Z", "the cursor still moves past the day judged during the outage");
+    assert.deepEqual(
+      outageCursor.rejudgeQueue,
+      [{ hrKey: "b-200", date: DAY, hrIds: [REP.hrId], lastTouchAt: missedByCalendar.visit.createdAt }],
+      "a rep-day judged while the calendar was down waits in the cursor's re-judge queue",
+    );
+    assert.equal((outage.result.report as { rejudgeQueued: number }).rejudgeQueued, 1, "the run reports the rep-day it left waiting");
+    assert.deepEqual(outage.result.watermarkTo, { touchedAfter: outageCursor.touchedAfter, kpiQueued: 0, rejudgeQueued: 1 }, "and the watermark it wrote");
+
+    // The calendar is back: the waiting day is judged again before anything new, and the loss shows.
+    world.failCalendar = false;
+    const recovered = await run(world, { cursor: outageCursor });
+    assert.equal((recovered.result.report as { repDaysRejudged: number }).repDaysRejudged, 1, "the waiting rep-day is judged again, though nothing touched it since");
+    assert.deepEqual(
+      roots(recovered.occurrences).map((row) => row.signatureKey),
+      ["visit:s4:private_calendar"],
+      "judged again with the calendar readable, the visit the calendar dropped is found",
+    );
+    const recoveredCursor = recovered.writes[recovered.writes.length - 1].cursor as { rejudgeQueue: unknown[] };
+    assert.deepEqual(recoveredCursor.rejudgeQueue, [], "judged with every source readable, the rep-day leaves the queue");
+
+    // Still down the next night: judged again, still unread, it stays — once.
+    world.failCalendar = true;
+    const stillDown = await run(world, { cursor: outageCursor });
+    const stillDownCursor = stillDown.writes[stillDown.writes.length - 1].cursor as { rejudgeQueue: Array<{ hrKey: string; date: string }> };
+    assert.deepEqual(
+      stillDownCursor.rejudgeQueue.map((entry) => `${entry.hrKey}|${entry.date}`),
+      [`b-200|${DAY}`],
+      "a rep-day judged again while the source is still down stays in the queue, once",
+    );
+  }
+
+  // ── A shared read that failed sends every rep-day of the run to the queue ──
+  {
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()], failSeatHistory: true };
+    const { result, writes } = await run(world);
+    assert.equal(result.status, "partial");
+    const cursor = writes[writes.length - 1].cursor as { rejudgeQueue: Array<{ hrKey: string; date: string }> };
+    assert.deepEqual(
+      cursor.rejudgeQueue.map((entry) => `${entry.hrKey}|${entry.date}`),
+      [`b-200|${DAY}`],
+      "a rep-day judged while the seat history (read once for the run) was down is judged again",
+    );
+  }
+
+  // ── A waiting rep-day touched again is judged once, by the night's own pass ──
+  {
+    const waiting = { hrKey: "b-200", date: DAY, hrIds: ["b200"], lastTouchAt: "2026-11-15T12:00:00.000Z" };
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()] };
+    const { result, writes } = await run(world, { cursor: { ...START_CURSOR, rejudgeQueue: [waiting] } });
+    const report = result.report as { repDaysJudged: number; repDaysRejudged: number };
+    assert.deepEqual(
+      [result.scanned, report.repDaysJudged, report.repDaysRejudged],
+      [1, 1, 0],
+      "a rep-day both waiting and touched again is judged once, in the night's pass, never twice",
+    );
+    assert.deepEqual((writes[writes.length - 1].cursor as { rejudgeQueue: unknown[] }).rejudgeQueue, [], "and, judged cleanly, leaves the queue");
+  }
+
+  // ── The queue is capped, and what falls off it is counted, never dropped in silence ──
+  {
+    const queued = Array.from({ length: 400 }, (_, index) => ({
+      hrKey: `b-${5000 + index}`,
+      date: "2026-11-10",
+      hrIds: [`B-${5000 + index}`],
+      lastTouchAt: "2026-11-10T09:00:00.000Z",
+    }));
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()], failSeatHistory: true };
+    const { result, writes } = await run(world, { cursor: { ...START_CURSOR, rejudgeQueue: queued } });
+    const cursor = writes[writes.length - 1].cursor as { rejudgeQueue: Array<{ hrKey: string; date: string }> };
+    const keys = cursor.rejudgeQueue.map((entry) => `${entry.hrKey}|${entry.date}`);
+    assert.equal(keys.length, 400, "the queue never holds more than 400 rep-days");
+    assert.equal(result.excludedCounts.rejudge_queue_overflow, 1, "the one rep-day pushed off the full queue is counted under rejudge_queue_overflow");
+    assert.ok(keys.includes(`b-200|${DAY}`) && !keys.includes("b-5000|2026-11-10"), "the oldest waiting rep-day is the one that falls off");
+  }
+
+  // ── A cursor written before the queue existed loads as it is, with an empty queue ──
+  {
+    const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture()] };
+    const { result, writes } = await run(world, { cursor: { touchedAfter: START_CURSOR.touchedAfter, kpiQueue: [], rejudgeQueue: [{ hrKey: 5 }] } });
+    assert.equal(result.scanned, 1, "an old or damaged queue never resets the cursor: the rep-day after it is still judged");
+    assert.deepEqual((writes[writes.length - 1].cursor as { rejudgeQueue: unknown[] }).rejudgeQueue, [], "a damaged entry is dropped, never judged");
+  }
+
   // ── A rep-day still in motion waits for the next run ──
   {
     const world: World = { people: [REP], windows: [SEAT_A], excluded: [], fixtures: [fixture({ visitDate: "2026-11-18", createdAt: "2026-11-18T11:00:00.000Z" }, NONE)] };
@@ -693,6 +813,12 @@ export async function runSystemAuditVisitLifecycleTests() {
     assert.ok(select.startsWith("path,"), `the recordings read selects \`path\`, not \`id\` (saw "${select}")`);
     assert.doesNotMatch(select, /(^|,)id(,|$)/, "and never names an `id` column on a table keyed by path");
     assert.match(chunked.slice(0, 400), /\.order\("path"\)/, "and pages by `path`");
+
+    // The saved-visits read carries the three columns the countable view's last two clauses ask.
+    const savedColumns = source.match(/const SAVED_COLUMNS =\s*"([^"]+)"/)?.[1]?.split(",") ?? [];
+    for (const column of ["imported_from_ireports360_at", "ireports360_kpi_counted", "archived_at"]) {
+      assert.ok(savedColumns.includes(column), `the saved-visits read selects \`${column}\`, which the countable view filters on`);
+    }
   }
 
   console.log("system-audit-visit-lifecycle: PASS");

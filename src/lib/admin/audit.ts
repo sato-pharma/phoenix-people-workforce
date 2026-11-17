@@ -445,6 +445,10 @@ export type AuditEntityType =
   // look at one is a read of whatever was on that person's screen. Written before the picture leaves
   // (src/lib/system-audit/screenshot-views.ts). `audit_logs.entity_type` is plain `text`: no migration.
   | "system_audit_screenshot_view"
+  // Who read the System Audit incidents, opened an occurrence (a person's last page visits) or the
+  // login-security list (people's sign-in addresses) — the three reads the access registry declares
+  // audited, which wrote no row until 17 Nov 2026 (src/lib/system-audit/read-audit.ts). Plain text, no migration.
+  | "system_audit_view"
   | "system_cleanup"
   | "user"
   | "user_activity_access"

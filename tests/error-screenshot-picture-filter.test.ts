@@ -69,6 +69,20 @@ export function runErrorScreenPictureFilterTests() {
   assert.equal(emptiesInPicture(sized(-500, 100), "table-row", VIEWPORT), false, "a table part's widths come from its cells, so they are copied");
   assert.equal(emptiesInPicture(sized(-500, 100), "contents", VIEWPORT), false, "a display:contents element has no box of its own to hold the place");
 
+  // 2b. The error toast stays in the picture (17 Nov 2026). Sonner's toaster is a fixed list inside a
+  //     <section> of zero height and full width at the end of <body>; on a page taller than the screen
+  //     that section sits below the fold. Spared only when BOTH sides were zero, it was emptied and the
+  //     toast on screen inside it — the refusal itself, on 23 toast.error call sites — was left out.
+  const toasterSection = box(page.body.box.bottom, 0, 0, 1920);
+  assert.equal(toasterSection.top > VIEWPORT.height, true, "model check: the toaster's section is below the fold");
+  assert.equal(emptiesInPicture(toasterSection, "block", VIEWPORT), false, "a box of zero height is never emptied, however far off screen");
+  assert.equal(emptiesInPicture(box(-800, 600, 0, 0), "block", VIEWPORT), false, "nor one of zero width");
+  const section = element("sonner section", toasterSection, page.body);
+  const toaster = element("sonner toaster (fixed, bottom-right)", { top: 700, bottom: 849, left: 1500, right: 1900, width: 400, height: 149 }, section);
+  const toast = element("the error toast", toaster.box, toaster);
+  assert.equal(filter(toaster), true, "the fixed toaster inside the zero-height section is copied");
+  assert.equal(filter(toast), true, "and so is the toast in it — the picture shows the refusal the person read");
+
   // 3. Each box is measured once per picture, not once per child.
   let measured = 0;
   const counting = createPictureFilter<FakeElement, FakeElement>((el) => {

@@ -47,9 +47,19 @@ import {
  *
  * The daily message goes out at the end even on a night the detectors sat out — the integrity
  * checks wrote their findings at 04:40 regardless, and those are owed a message too.
+ *
+ * A NIGHT THAT DID NOT RUN IS NEVER SILENT. The sweep writes its OWN row to
+ * system_audit_detector_runs every night (detector `sweep`): started once it holds the lease,
+ * finished with the night's status — ok, partial, skipped (and why) or aborted_db_unhealthy — before
+ * the message goes. And the message is handed the night's result: when the sweep sat out, stopped,
+ * or any detector did not finish ok, it says which checks did not run and why, even with no issue to
+ * list. On 13 Nov 2026 the database had restarted at 20:23 Cairo the evening before; the 04:57 sweep
+ * sat out, wrote no row and sent nothing, and the morning looked exactly like a clean one.
  */
 
 export const SWEEP_LEASE = "sweep";
+/** The sweep's own row in system_audit_detector_runs — one a night, whatever the night did. */
+export const SWEEP_RUN_DETECTOR = "sweep";
 export const SWEEP_LEASE_SECONDS = 300;
 export const SWEEP_BUDGET_MS = 240_000;
 export const PER_DETECTOR_MS = 90_000;
@@ -91,7 +101,8 @@ export type SweepDeps = {
   lastDatabaseRestart?: () => Promise<string | null>;
   startRun?: (input: { detector: string; mode: DetectorMode; runGroup: string; release: string | null }) => Promise<string>;
   finishRun?: (runId: string, result: DetectorResult) => Promise<void>;
-  sendDailyMessage?: () => Promise<SystemAuditDailyMessageResult>;
+  /** Handed the night's result, so a night whose checks did not all run is said out loud. */
+  sendDailyMessage?: (sweep: SweepResult) => Promise<SystemAuditDailyMessageResult>;
   now?: () => number;
   release?: string | null;
   mode?: DetectorMode;
@@ -123,6 +134,25 @@ function thrown(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The sweep's own run row, from the night's result. Every status it can carry is one the table allows. */
+function sweepRunResult(result: SweepResult): DetectorResult {
+  const run = emptyDetectorResult(result.status);
+  run.scanned = result.detectors.length;
+  const notClean = result.detectors.filter((row) => row.status !== "ok");
+  // `error` is the one line the Integrity tab prints under a run, so the reason a night did not run
+  // (or ran only in part) goes there, where it is seen.
+  run.error =
+    result.reason ??
+    (notClean.length > 0
+      ? `Not every detector finished ok: ${notClean.map((row) => `${row.detector} (${row.status})`).join(", ")}.`
+      : null);
+  run.report = {
+    reason: result.reason,
+    detectors: result.detectors.map((row) => ({ detector: row.detector, status: row.status })),
+  };
+  return run;
+}
+
 /**
  * Run the sweep once. Throws only when the lease itself cannot be taken — then the
  * database is not answering at all, and the cron route reports the run as failed.
@@ -137,7 +167,7 @@ export async function runSystemAuditSweep(deps: SweepDeps = {}): Promise<SweepRe
   const lastDatabaseRestart = deps.lastDatabaseRestart ?? readLastDatabaseRestart;
   const startRun = deps.startRun ?? ((input) => startDetectorRun(input));
   const finishRun = deps.finishRun ?? ((runId, result) => finishDetectorRun(runId, result));
-  const sendDailyMessage = deps.sendDailyMessage ?? (() => sendSystemAuditDailyMessage());
+  const sendDailyMessage = deps.sendDailyMessage ?? ((sweep: SweepResult) => sendSystemAuditDailyMessage({}, { sweep }));
   const release = deps.release === undefined ? getDeployRevision() : deps.release;
   const mode = deps.mode ?? "cron";
 
@@ -148,7 +178,19 @@ export async function runSystemAuditSweep(deps: SweepDeps = {}): Promise<SweepRe
     return { status: "skipped", reason: "Another sweep is already running.", runGroup: null, detectors: [], dailyMessage: null };
   }
 
-  const result: SweepResult = { status: "ok", reason: null, runGroup: null, detectors: [], dailyMessage: null };
+  const runGroup = crypto.randomUUID();
+  const result: SweepResult = { status: "ok", reason: null, runGroup, detectors: [], dailyMessage: null };
+  // The sweep's own row, started now so a sweep that dies part-way is left reading "running" on the
+  // Integrity tab rather than leaving no trace. A row that cannot be written never stops the sweep.
+  let sweepRunId: string | null = null;
+  try {
+    sweepRunId = await startRun({ detector: SWEEP_RUN_DETECTOR, mode, runGroup, release });
+  } catch (error) {
+    logError("System audit sweep could not record its own run", {
+      error,
+      labels: { event: "system_audit_sweep_run_unrecorded", job: JOB, detector: SWEEP_RUN_DETECTOR },
+    });
+  }
   try {
     let restartAt: string | null = null;
     try {
@@ -169,8 +211,6 @@ export async function runSystemAuditSweep(deps: SweepDeps = {}): Promise<SweepRe
       });
     } else {
       const sink = deps.sink ?? createDatabaseSink();
-      const runGroup = crypto.randomUUID();
-      result.runGroup = runGroup;
       const sweepDeadline = now() + SWEEP_BUDGET_MS;
       let abortedBy: string | null = null;
 
@@ -233,9 +273,19 @@ export async function runSystemAuditSweep(deps: SweepDeps = {}): Promise<SweepRe
       }
     }
 
+    if (sweepRunId) {
+      await finishRun(sweepRunId, sweepRunResult(result)).catch((error: unknown) => {
+        logError("System audit sweep could not record its own run", {
+          error,
+          labels: { event: "system_audit_sweep_run_unrecorded", job: JOB, detector: SWEEP_RUN_DETECTOR },
+        });
+      });
+    }
+
     // Best-effort and never throws (daily-message.ts). Sent while the lease is still held, so an
     // overlapping call cannot race it — and the per-day idempotency key would stop a second one anyway.
-    result.dailyMessage = await sendDailyMessage();
+    // It is handed the night's result: a night that sat out or stopped is said, never left silent.
+    result.dailyMessage = await sendDailyMessage(result);
     return result;
   } finally {
     await releaseLease(holder).catch((error: unknown) => {

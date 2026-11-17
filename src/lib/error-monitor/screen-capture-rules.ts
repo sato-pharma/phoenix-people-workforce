@@ -295,17 +295,44 @@ export function nextUploadPause(
  */
 export const UPLOAD_PAUSE_STORAGE_KEY = "phoenix:screen-upload-pause";
 
-export function parseUploadPause(raw: string | null | undefined): UploadPauseState {
+/** A run of refusals is forgotten this long after its pause ended: the next refusal starts at 5 minutes again. */
+export const UPLOAD_PAUSE_FORGET_AFTER_MS = HOUR_MS;
+
+/**
+ * A stored pause, read at `nowMs` (17 Nov 2026). Two corrections, because the state lives in the
+ * browser and outlasts the clock that wrote it:
+ *
+ *   - the end is never further off than the longest pause (an hour). A pause written while the phone's
+ *     clock ran ahead — a year, say — read as a year once the clock was put right, and since nothing is
+ *     sent while paused, no stored picture could ever end it. The caller writes the corrected state
+ *     back (screen-capture.ts), so it ends an hour later rather than moving forward with every read;
+ *   - the run of refusals is forgotten an hour after its pause ended. It used to be reset only by a
+ *     stored picture, so a tab that met one outage last week began the next at an hour, not 5 minutes.
+ */
+export function settleUploadPause(state: UploadPauseState, nowMs: number): UploadPauseState {
+  if (state.pausedUntil === 0 && state.strikes === 0) return EMPTY_UPLOAD_PAUSE;
+  const pausedUntil = Math.min(state.pausedUntil, nowMs + UPLOAD_PAUSE_MAX_MS);
+  if (nowMs - pausedUntil >= UPLOAD_PAUSE_FORGET_AFTER_MS) return EMPTY_UPLOAD_PAUSE;
+  if (pausedUntil === state.pausedUntil) return state;
+  return { pausedUntil, strikes: state.strikes };
+}
+
+export function parseUploadPause(raw: string | null | undefined, nowMs: number): UploadPauseState {
   if (!raw) return EMPTY_UPLOAD_PAUSE;
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
     const pausedUntil = Number(value?.pausedUntil);
     const strikes = Number(value?.strikes);
     if (!Number.isFinite(pausedUntil) || !Number.isInteger(strikes) || strikes < 0) return EMPTY_UPLOAD_PAUSE;
-    return { pausedUntil, strikes: Math.min(strikes, 16) };
+    return settleUploadPause({ pausedUntil, strikes: Math.min(strikes, 16) }, nowMs);
   } catch {
     return EMPTY_UPLOAD_PAUSE;
   }
+}
+
+/** The text a pause is stored as — null for no pause, which is stored as no key at all. */
+export function serialiseUploadPause(state: UploadPauseState): string | null {
+  return state.pausedUntil === 0 && state.strikes === 0 ? null : JSON.stringify(state);
 }
 
 /**
@@ -338,8 +365,13 @@ export function sameOriginApiPath(url: string, origin: string): string | null {
  * so it holds its place exactly, and only what is INSIDE it is left out — still most of the cost.
  * Only a box that keeps its own size is emptied. An inline element's size IS its text, and a table
  * part's widths are decided by its cells (a fixed table reads them off the first row), so emptying
- * either would move what is on screen; their contents are copied. A zero-size box is never off
- * screen: it may hold visible children positioned outside it.
+ * either would move what is on screen; their contents are copied.
+ *
+ * A box with no width OR no height is never emptied: it may hold visible children positioned outside
+ * it. Until 17 Nov 2026 only a box with neither was spared, and the toast went missing from the
+ * pictures — Sonner's toaster is a fixed list inside a `<section>` of zero height and full width at
+ * the end of `<body>`, so on any page taller than the screen that section sits below the fold, was
+ * emptied, and the error toast showing on screen inside it was left out of the picture of it.
  */
 export type PictureBox = { top: number; right: number; bottom: number; left: number; width: number; height: number };
 export type PictureViewport = { width: number; height: number };
@@ -348,7 +380,7 @@ const BOXES_THAT_KEEP_THEIR_SIZE = new Set(["block", "flex", "grid", "flow-root"
 
 /** Can this box stand in, empty, for everything inside it? Only when it cannot appear in the picture. */
 export function emptiesInPicture(box: PictureBox, display: string, viewport: PictureViewport): boolean {
-  if (box.width === 0 && box.height === 0) return false;
+  if (box.width === 0 || box.height === 0) return false;
   const outside = box.bottom < 0 || box.right < 0 || box.top > viewport.height || box.left > viewport.width;
   return outside && BOXES_THAT_KEEP_THEIR_SIZE.has(display);
 }

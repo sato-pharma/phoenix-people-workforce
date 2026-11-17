@@ -1,6 +1,11 @@
 "use client";
 
-import { SCREEN_MAX_ELEMENTS, pictureFilter } from "@/lib/error-monitor/screen-capture";
+import {
+  REFUSAL_DRAW_TIMEOUT_MS,
+  SCREEN_MAX_ELEMENTS,
+  pictureFilter,
+  withCaptureLock,
+} from "@/lib/error-monitor/screen-capture";
 import { ERROR_SCREENSHOT_MAX_BYTES } from "@/lib/error-monitor/screenshot-intake";
 
 /**
@@ -21,9 +26,12 @@ import { ERROR_SCREENSHOT_MAX_BYTES } from "@/lib/error-monitor/screenshot-intak
  * employee is sitting in front of, which is the boundary's fallback card, not the half-torn tree
  * behind it. Two animation frames plus a short settle gets past React's commit and the paint.
  *
- * NEVER COSTLY, NEVER LOUD. Bounded by a timeout, a size ceiling and a per-page-load count, wrapped
- * so nothing it does can surface as a second error on top of the one being reported, and entirely
+ * NEVER COSTLY, NEVER LOUD. Bounded by a timeout, a size ceiling and a per-page-load count, drawn
+ * under the one capture lock it shares with the refusal picture (screen-capture.ts), wrapped so
+ * nothing it does can surface as a second error on top of the one being reported, and entirely
  * absent from the path when the report found no row to attach to.
+ *
+ * WEBP, OR JPEG WHERE THE BROWSER CANNOT ENCODE WEBP (Safari, every Apple device) — `encodeCapture`.
  */
 
 /** Past React's commit and the browser's paint of the fallback, without pinning a frame. */
@@ -35,8 +43,15 @@ const CAPTURE_TIMEOUT_MS = 3_000;
 /** Downscale wide screens: a 2,560-pixel desktop is legible at this and a third of the bytes. */
 const MAX_CAPTURE_WIDTH = 1_280;
 
-/** WebP at this is visually clean for a UI screenshot and a fraction of the equivalent PNG. */
-const CAPTURE_QUALITY = 0.7;
+/** WebP (or the JPEG fallback) at this is visually clean for a UI screenshot and a fraction of the equivalent PNG. */
+export const CAPTURE_QUALITY = 0.7;
+
+/**
+ * How long a crash picture waits for the capture lock a REFUSAL picture is holding — that one gives it
+ * back within its own draw timeout — before letting this picture go. The crash picture is the one the
+ * owner asked for first, so it waits rather than gives up at once (screen-capture.ts, the shared lock).
+ */
+const CAPTURE_LOCK_WAIT_MS = REFUSAL_DRAW_TIMEOUT_MS + 1_000;
 
 /**
  * A single streamed tree being orphaned fires 16–23 errors at once (see `report-client-error.ts`).
@@ -56,16 +71,56 @@ function nextPaint(): Promise<void> {
   });
 }
 
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([
-    work,
-    new Promise<null>((resolve) => {
-      setTimeout(() => resolve(null), ms);
-    }),
-  ]);
+/** The one thing the encoder needs of a canvas, so the format choice is tested without a browser. */
+type EncodableCanvas = { toBlob(callback: (blob: Blob | null) => void, type?: string, quality?: number): void };
+
+function canvasBlob(canvas: EncodableCanvas, type: string, quality: number): Promise<Blob | null> {
+  return new Promise<Blob | null>((resolve) => {
+    try {
+      canvas.toBlob((blob) => resolve(blob), type, quality);
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
-/** The live document as a WebP blob, or null when it cannot be drawn within the bounds. */
+/**
+ * The picture as WebP, or as JPEG at the same quality when this browser cannot encode WebP; null
+ * when it can do neither. The blob's own `type` is what was really encoded, and it is sent as the
+ * upload's Content-Type.
+ *
+ * WHY THE FALLBACK (17 Nov 2026). WebKit cannot encode WebP: on an iPhone, an iPad or Safari on a
+ * Mac, `toBlob(…, "image/webp")` does not fail — it silently hands back a PNG. That PNG went up
+ * labelled `image/webp`, the route's magic-byte check refused it, and no crash picture from those
+ * devices was ever stored (production, 24 Oct – 17 Nov 2026: 593 iPhone/iPad and 228 Mac Safari
+ * signed-in crash reports, 0 pictures). Every browser encodes JPEG, and the route takes either.
+ */
+export async function encodeCapture(canvas: EncodableCanvas, quality: number = CAPTURE_QUALITY): Promise<Blob | null> {
+  const webp = await canvasBlob(canvas, "image/webp", quality);
+  if (webp && webp.type === "image/webp") return webp;
+  const jpeg = await canvasBlob(canvas, "image/jpeg", quality);
+  if (jpeg && jpeg.type === "image/jpeg") return jpeg;
+  return null;
+}
+
+/**
+ * Post one picture to the error row the ticket names, labelled with the format it really is.
+ *
+ * NOT `keepalive` — browsers cap a keepalive body at 64 KB, which is an eighth of a typical capture,
+ * so the request would be rejected before it left. An unload loses the picture; the report it
+ * belongs to was sent separately, and already landed.
+ */
+export async function sendErrorScreenshot(send: typeof fetch, blob: Blob, ticket: string): Promise<void> {
+  await send("/api/errors/client/screenshot", {
+    body: blob,
+    headers: { "Content-Type": blob.type, "x-phoenix-screenshot-ticket": ticket },
+    method: "POST",
+  }).catch(() => {
+    // Swallow — the picture is a nicety on top of a report that is already stored.
+  });
+}
+
+/** The live document as a WebP (or JPEG) blob, or null when it cannot be drawn within the bounds. */
 async function rasteriseViewport(): Promise<Blob | null> {
   const target = document.body;
   if (!target) return null;
@@ -97,9 +152,7 @@ async function rasteriseViewport(): Promise<Blob | null> {
     width,
   });
 
-  return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), "image/webp", CAPTURE_QUALITY);
-  });
+  return encodeCapture(canvas);
 }
 
 /**
@@ -115,19 +168,18 @@ export async function captureAndUploadErrorScreenshot(ticket: string): Promise<v
 
     await nextPaint();
 
-    const blob = await withTimeout(rasteriseViewport(), CAPTURE_TIMEOUT_MS);
+    // Under the capture lock the refusal picture shares (screen-capture.ts): while it is held the
+    // fetch wrapper ignores requests, so this picture's own downloads of the page's images — an
+    // employee photo under /api/ answering 403 — never file a "refused request" picture, and the two
+    // pictures never copy the page on the main thread at once. Given back when the draw ends or runs
+    // out of time, whichever is first.
+    const blob = await withCaptureLock(() => rasteriseViewport(), {
+      timeoutMs: CAPTURE_TIMEOUT_MS,
+      waitMs: CAPTURE_LOCK_WAIT_MS,
+    });
     if (!blob || blob.size === 0 || blob.size > ERROR_SCREENSHOT_MAX_BYTES) return;
 
-    // NOT `keepalive` — browsers cap a keepalive body at 64 KB, which is an eighth of a typical
-    // capture, so the request would be rejected before it left. An unload loses the picture; the
-    // report it belongs to was sent separately, and already landed.
-    await fetch("/api/errors/client/screenshot", {
-      body: blob,
-      headers: { "Content-Type": "image/webp", "x-phoenix-screenshot-ticket": ticket },
-      method: "POST",
-    }).catch(() => {
-      // Swallow — the picture is a nicety on top of a report that is already stored.
-    });
+    await sendErrorScreenshot(window.fetch.bind(window), blob, ticket);
   } catch {
     // Swallow — capturing the screen must never become the second error on it.
   }
