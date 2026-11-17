@@ -4,7 +4,9 @@ import { PremiumHero } from "@/components/ui/premium-hero";
 import { DailyDeductionsWorkspace } from "@/components/admin/daily-deductions-workspace";
 import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { loadHeadOfficeEmployeeCompacts } from "@/lib/daily-deductions/head-office.ts";
 import { cairoTodayIso, resolveDefaultRange } from "@/lib/daily-deductions/range.ts";
+import { parseDailyDeductionViewFilters } from "@/lib/daily-deductions/view-filters.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,11 @@ export const dynamic = "force-dynamic";
 // /release, /withdraw, /supersede and POST /publish assert deductions:approve plus Super Admin.
 const VIEW_ROLES = new Set(["Super Admin", "CEO", "HR Operations", "Finance Manager"]);
 
-export default async function AdminDailyDeductionsPage() {
+export default async function AdminDailyDeductionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   guardSeatPage(access, "/admin/daily-deductions");
   if (!VIEW_ROLES.has(access.role)) {
@@ -28,6 +34,12 @@ export default async function AdminDailyDeductionsPage() {
   const today = cairoTodayIso();
   const { from, to } = resolveDefaultRange(today);
 
+  // The two view filters (owner, 2026-11-17) start from the address, so a refresh or a shared link keeps
+  // them. The Head Office list is read here, on the server; null means it could not be read, and the
+  // screen then says the filter is not applied rather than guessing.
+  const initialFilters = parseDailyDeductionViewFilters(await searchParams);
+  const headOffice = await loadHeadOfficeEmployeeCompacts();
+
   return (
     <div className="space-y-6">
       <PremiumHero
@@ -35,7 +47,13 @@ export default async function AdminDailyDeductionsPage() {
         title="Daily Deductions"
         subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, Phoenix CRM, Vacation, No-records and Weekly-plan detection of the month-final module (days before 6 Nov 2026 read the iReports360 archive), counting only days that have fully elapsed. Each released employee is emailed the amount, the reason and the days. Releasing here feeds no salary run; payroll takes its figures from the Deductions screen."
       />
-      <DailyDeductionsWorkspace canPublish={access.role === "Super Admin"} defaultFrom={from} defaultTo={to} />
+      <DailyDeductionsWorkspace
+        canPublish={access.role === "Super Admin"}
+        defaultFrom={from}
+        defaultTo={to}
+        headOfficeCompacts={headOffice ? [...headOffice].sort() : null}
+        initialFilters={initialFilters}
+      />
     </div>
   );
 }

@@ -515,6 +515,7 @@ import { runDailyDeductionsReleaseTests } from "./daily-deductions-release.test.
 import { runDailyDeductionsReleaseByDayTests } from "./daily-deductions-release-by-day.test.ts";
 import { runDailyDeductionsNoRecordsTests } from "./daily-deductions-no-records.test.ts";
 import { runDailyDeductionsNoWeeklyPlanTests } from "./daily-deductions-no-weekly-plan.test.ts";
+import { runDailyDeductionsViewFiltersTests } from "./daily-deductions-view-filters.test.ts";
 import { runWeeklyPlansOneStoreTests } from "./weekly-plans-one-store.test.ts";
 import { runDeductionsExemptEmployeesTests } from "./deductions-exempt-employees.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
@@ -4418,6 +4419,10 @@ await runTest(
 await runTest(
   "daily deductions no-weekly-plan connector (head office only, one day on that Monday, NEVER an automatic month collector)",
   runDailyDeductionsNoWeeklyPlanTests,
+);
+await runTest(
+  "daily deductions view filters (owner, 17 Nov 2026): exclude fingerprint and exclude Head Office employees hide only their own lines, combine, start off, live in the address, and a release from the filtered list never carries a hidden line",
+  runDailyDeductionsViewFiltersTests,
 );
 await runTest(
   "one plan store, Phoenix CRM (owner, 14 Nov 2026, DR-02): the legacy Weekly Plans form refuses every write and keeps its history readable, and the no-weekly-plan deduction finds a week sent on time in Phoenix CRM",
