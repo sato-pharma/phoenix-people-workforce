@@ -14,6 +14,7 @@ person's own Phoenix screens show.
 | Who may connect it | Him and the CEO only (`Super Admin`, `CEO`) |
 | Who builds sheets and PDFs | Phoenix builds them, in the house identity |
 | The raw database tables | Every table, every row and every character, for him and the CEO: "read every single table in the system, every single letter … answer me or Dr. Anwar". Only credentials stay out |
+| The customer lists as a file | With names, not codes (17 Nov 2026: "export every doctor with names instead of codes via ChatGPT") — `phoenix_export_customer_list` |
 
 He has also switched off model training in ChatGPT, so OpenAI does not use these conversations to train its models.
 
@@ -48,6 +49,14 @@ Any seat other than the owner or the CEO sees "ChatGPT cannot be connected from 
   characters) is shortened in the sheet and named in the answer. What stays out, always: passwords and their
   hashes, tokens, one-time and recovery codes, keys, the tables that hold them (sign-in links, share links,
   OAuth codes) and the session id in `app_sessions` (`src/lib/chatgpt-connector/tools/table-guard.ts`).
+- **The customer lists, with names.** `phoenix_export_customer_list` (the owner and the CEO) puts every doctor
+  (the AM and PM lists), every pharmacy, or both into one workbook: the medical rep and the district manager by
+  name ("Vacant" where the territory has no rep), the line, region and area names, the status in words and the
+  dates in Cairo time, with dropped customers on a second sheet. It can narrow to one line, to on-the-list or
+  dropped, or to vacant territories only. Test rows never appear. It exists because `phoenix_export_table`
+  copies seat ids and line codes as stored, and ChatGPT cannot open the file to put the names back. After a new
+  tool ships, press **Refresh tools** in ChatGPT (Settings → Plugins → Phoenix) or ChatGPT keeps the old list
+  and falls back to paging the raw table (17 Nov 2026).
 - **Files only for the same person.** A sheet or PDF is kept in the private `job-exports` bucket. The
   link ChatGPT shows opens only in the same person's signed-in Phoenix session, for 7 days. Anyone else
   gets "not found".
