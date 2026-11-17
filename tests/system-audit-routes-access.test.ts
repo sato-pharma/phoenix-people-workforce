@@ -403,6 +403,25 @@ async function addressTests() {
   assert.equal(normalizeIpAddress(undefined), null);
   assert.equal(countDistinctAccounts([{ login_id: "B-10" }, { login_id: "b-10" }, { login_id: "M-204" }, { login_id: null }]), 2, "one person signing in twice is one person");
 
+  // The blocklist is reachable from the browser bundle (log.ts dynamic-imports the error-monitor
+  // service, which imports it), so a Node built-in there kills `next build` on /admin — `node:net`
+  // did, and every main commit after PR 472 failed its Build step and was never deployed (17 Nov 2026).
+  for (const file of ["src/lib/auth/ip-blocklist.ts", "src/lib/security/ip-address.ts"]) {
+    const code = stripComments(readFileSync(path.join(ROOT, file), "utf8"));
+    assert.doesNotMatch(code, /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']node:/, `HEADLINE: ${file} imports no Node built-in — it is in the browser bundle`);
+  }
+  // The pure check gives Node's own answer, so dropping node:net changed no address's verdict.
+  const { isIP } = await import("node:net");
+  const { ipAddressVersion } = await import("../src/lib/security/ip-address.ts");
+  const corpus = [
+    "203.0.113.7", "0.0.0.0", "255.255.255.255", "256.1.1.1", "01.2.3.4", "1.2.3", "1.2.3.4.5", "1.2.3.4/32", " 1.2.3.4",
+    "::", "::1", "2001:db8::1", "2001:DB8::1", "fe80::1%eth0", "::ffff:192.0.2.1", "2001:db8:0:0:0:0:2:1", "1:2:3:4:5:6:7:8",
+    "1:2:3:4:5:6:7:8:9", "1::2::3", "2001:db8::g", "12345::1", "::ffff:999.0.0.1", "1:2:3:4:5:6:1.2.3.4", "", "office wifi", "localhost",
+  ];
+  for (const value of corpus) {
+    assert.equal(ipAddressVersion(value), isIP(value), `ipAddressVersion(${JSON.stringify(value)}) gives Node's isIP answer`);
+  }
+
   await withStubbedSupabase(
     (call) => (call.url.includes("/auth_login_attempts") ? jsonResponse([{ id: "1", login_id: "B-10" }, { id: "2", login_id: "b-10" }, { id: "3", login_id: "M-204" }]) : null),
     async (seen) => {
