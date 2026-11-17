@@ -24,7 +24,9 @@
  * the credentials file). Default: spare when this is Windows and the spare scripts exist, else local.
  *
  * The same nine tools are served over Streamable HTTP, behind OAuth, by mcp-http.mjs: both doors build
- * their protocol server with `buildMcpServer` below. Remote use (ChatGPT) is NOT deployed anywhere: see
+ * their protocol server with `buildMcpServer` below. The four capture tools also name a screenshot viewer
+ * (widget.mjs, an MCP Apps view served by resources/read) that ChatGPT renders inside the conversation,
+ * because ChatGPT shows neither the model nor the reader a tool's image block. Remote use (ChatGPT) is NOT deployed anywhere: see
  * docs/phoenix-intelligence/CHATGPT_INTERFACE.md.
  * stdout belongs to the protocol; this file logs to stderr only.
  */
@@ -37,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { MODULES, buildPlan, cairoStamp } from "./explore.mjs";
 import { RUN_BOUNDS, VIEWPORTS, createRateLimiter, createSingleFlight, validateToolInput } from "./lib/safety.mjs";
 import { addressFor } from "./modules/kpis.mjs";
+import { WIDGET_TOOLS, WIDGET_URI, widgetListing, widgetResource, widgetToolMeta } from "./widget.mjs";
 import { refuseUnknownFlags } from "../lib/refuse-arguments.mjs";
 
 // A flag this script does not know is refused before anything runs (scripts/lib/refuse-arguments.mjs).
@@ -150,7 +153,7 @@ export function toolDefinitions() {
       inputSchema: schema({ module: moduleId }, ["module"]),
       annotations: read,
     },
-  ];
+  ].map((tool) => (WIDGET_TOOLS.includes(tool.name) ? { ...tool, _meta: widgetToolMeta() } : tool));
 }
 
 const text = (value) => ({ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
@@ -334,6 +337,8 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
     // reaches the model (OpenAI support, 22 Apr 2026), so the measurements must stand without it.
     const summary = {
       runId: manifest.runId,
+      module: manifest.module,
+      moduleTitle: manifest.moduleTitle,
       revision: manifest.revision,
       sourceCommit: manifest.sourceCommit ?? null,
       persona: manifest.personas,
@@ -553,7 +558,8 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
 }
 
 /**
- * The MCP protocol server over an inspector: tools/list and tools/call, nothing else. The stdio door
+ * The MCP protocol server over an inspector: tools/list and tools/call, plus resources/list and
+ * resources/read for the one screenshot viewer (widget.mjs) and nothing else. The stdio door
  * builds one for the process; the HTTP door builds one per request (stateless), sharing the inspector so
  * the rate limit and the one-capture-at-a-time rule hold across requests.
  * @param {{ tools: Array<{ name: string, description: string, inputSchema: Record<string, unknown>, annotations: Record<string, unknown> }>, call: (name: string, args?: unknown, observe?: (record: Record<string, unknown>) => void) => Promise<Record<string, unknown>> }} inspector
@@ -561,11 +567,17 @@ export function createInspector({ runner, repoRoot = REPO_ROOT, now = () => Date
  */
 export async function buildMcpServer(inspector, { observe } = {}) {
   const { Server } = await import("@modelcontextprotocol/sdk/server/index.js");
-  const { CallToolRequestSchema, ListToolsRequestSchema } = await import("@modelcontextprotocol/sdk/types.js");
-  const server = new Server({ name: "phoenix-inspect", version: "0.2.0" }, { capabilities: { tools: {} } });
+  const { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, McpError, ErrorCode, ReadResourceRequestSchema } = await import("@modelcontextprotocol/sdk/types.js");
+  const server = new Server({ name: "phoenix-inspect", version: "0.3.0" }, { capabilities: { tools: {}, resources: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: inspector.tools.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })),
+    tools: inspector.tools.map(({ name, description, inputSchema, annotations, _meta }) => ({ name, description, inputSchema, annotations, ...(_meta ? { _meta } : {}) })),
   }));
+  // The screenshot viewer is the only resource: a fixed page built in code, never a file read by a client-given path.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [widgetListing()] }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri !== WIDGET_URI) throw new McpError(ErrorCode.InvalidParams, "unknown resource");
+    return { contents: [widgetResource()] };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request) => inspector.call(request.params.name, request.params.arguments, observe));
   return server;
 }

@@ -53,6 +53,20 @@ through the Secure MCP Tunnel: the CEO's KPIs board took 38 s to capture, its 1 
 - Every picture goes out as a JPEG of the top 1,800 px of the masked page, scaled to 1,024 px wide
   (`PREVIEW`): about 150 KB instead of 1 MB. The measurements still cover the whole page, and the
   full-page PNG stays in the run folder.
+
+**The screenshot in the conversation.** ChatGPT passes a tool's image block neither to the model nor
+to the reader (live test, 17 Nov 2026 06:17: every measurement arrived, no picture). So the four
+capture tools (`phoenix_open_module`, `phoenix_capture_page`, `phoenix_inspect_ui_state`,
+`phoenix_get_capture`) name a viewer in `_meta.ui.resourceUri` (and `openai/outputTemplate`), an MCP
+Apps view built in `scripts/phoenix-inspect/widget.mjs` and served by `resources/read` as
+`ui://phoenix-inspect/screenshot-v1.html` (`text/html;profile=mcp-app`). ChatGPT renders it in a
+sandboxed frame and hands it the tool result over the MCP Apps bridge. It shows the masked JPEG previews
+the result already carries, each with its label, and the measurements table; a run still capturing is
+collected by the viewer itself through `tools/call phoenix_get_capture`. It loads nothing from anywhere
+(the host's default CSP allows `data:` pictures), and sets result text with `textContent` only.
+ChatGPT caches the viewer by its URI: after changing the page, bump the version in the URI and press
+**Refresh tools** on the plugin. Proven live 17 Nov 2026 09:40 Cairo: run `20261117-093945-mcp`,
+the SFE manager's KPIs board shown inside the conversation with its measurements.
 Viewports: `desktop` 1440×900, `tablet` 768×1024, `mobile` 390×844.
 
 ## 3. Why it is safe to hand to a model
