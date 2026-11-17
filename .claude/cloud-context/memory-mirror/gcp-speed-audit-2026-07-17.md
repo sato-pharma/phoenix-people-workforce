@@ -8,7 +8,7 @@ metadata:
 ---
 
 > **SUPERSEDED 2026-08-19 — history only, do NOT act on anything below.** This file describes the
-> Vercel / GCP Cloud Run / Sentry / npm era. Since 2026-08-01 production is **Railway** (service
+> Vercel / GCP Cloud Run / npm era. Since 2026-08-01 production is **Railway** (service
 > `phoenix-people-workforce`, region `europe-west4`): a merge to `main` ships to production
 > immediately, there is no deploy cron and no `gcloud` path, GCP billing is closed (every API
 > returns `BILLING_DISABLED`), and the live scheduler is the third-party cron-job.org. Current

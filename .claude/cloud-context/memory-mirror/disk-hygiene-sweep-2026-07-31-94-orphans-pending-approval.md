@@ -82,10 +82,10 @@ confirmed repeatedly mid-session (see below) — two more worktrees (`_wt-comple
    tree.** First diff pass against the primary checkout's live `src/` flagged 3 files as
    "unique to orphan" (suspected lost work). All 3 were false alarms caused by comparing against
    a *moving target*: the primary repo was mid-edit on an unrelated branch
-   (`codex/retire-sentry`, later `codex/config-hardening` — see point 5). Re-running the same
+   (the error-tracker retirement branch, later `codex/config-hardening` — see point 5). Re-running the same
    check against `origin/main` via `git cat-file -e origin/main:<path>` (safe — reads the primary
-   repo's git database, no risk) resolved all 3: 2 were Sentry components still present in
-   `origin/main` (retire-sentry branch just hadn't merged yet), 1 was intentionally deleted by an
+   repo's git database, no risk) resolved all 3: 2 were error-tracker components still present in
+   `origin/main` (the retirement branch just hadn't merged yet), 1 was intentionally deleted by an
    already-merged cleanup PR (#1436, "remove dead marketing-requests subtree"). **For any future
    worktree-content audit: diff against `origin/main`, never against a working tree that might be
    mid-task.**
@@ -121,7 +121,7 @@ confirmed repeatedly mid-session (see below) — two more worktrees (`_wt-comple
    like accidental repeat-downloads) — flagged for owner review, not read, not touched.
 7. **Confirmed concurrent-session activity mid-audit** — between the first and last
    `git worktree list` call in this session (~15 min apart), the primary checkout's branch moved
-   (`codex/retire-sentry` → `codex/config-hardening`) and `_wt-whatsapp-weekday-gate` flipped to
+   (the error-tracker retirement branch → `codex/config-hardening`) and `_wt-whatsapp-weekday-gate` flipped to
    `prunable`. Textbook [[parallel-session-swarm-hazard]] — didn't collide with this audit's
    candidate list (nothing on it was ever live), but confirms: re-check `git worktree list`
    immediately before executing any approved deletion, not just once at the start.

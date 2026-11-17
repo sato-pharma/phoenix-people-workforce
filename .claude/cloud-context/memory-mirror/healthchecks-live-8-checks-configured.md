@@ -1,6 +1,6 @@
 ---
 name: healthchecks-live-8-checks-configured
-description: "SUPERSEDED (Vercel/Cloud Run/GCP era) — Healthchecks.io cron-liveness monitor is LIVE and configured (8 checks, Cairo cron, email+Telegram) — unblocks the Sentry-retirement PR"
+description: "SUPERSEDED (Vercel/Cloud Run/GCP era) — Healthchecks.io cron-liveness monitor is LIVE and configured (8 checks, Cairo cron, email+Telegram) — unblocks the error-tracker retirement PR"
 metadata: 
   node_type: memory
   type: project
@@ -9,13 +9,13 @@ metadata:
 ---
 
 > **SUPERSEDED 2026-08-19 — history only, do NOT act on anything below.** This file describes the
-> Vercel / GCP Cloud Run / Sentry / npm era. Since 2026-08-01 production is **Railway** (service
+> Vercel / GCP Cloud Run / npm era. Since 2026-08-01 production is **Railway** (service
 > `phoenix-people-workforce`, region `europe-west4`): a merge to `main` ships to production
 > immediately, there is no deploy cron and no `gcloud` path, GCP billing is closed (every API
 > returns `BILLING_DISABLED`), and the live scheduler is the third-party cron-job.org. Current
 > truth: `AGENTS.md` §2/§3 and the Railway lines in `MEMORY.md`.
 
-**Status 2026-07-31 19:48 UTC: all 8 checks exist, are configured, and are `up`.** This was the blocker on PR #1514 (Sentry retirement) — it is now cleared.
+**Status 2026-07-31 19:48 UTC: all 8 checks exist, are configured, and are `up`.** This was the blocker on PR #1514 (error-tracker retirement) — it is now cleared.
 
 **What was already true before today:** the account existed, `HEALTHCHECKS_PING_KEY` was already set on the `phoenix-hr` production service, and 7 of 8 checks had been auto-created by real cron pings (7 slugs returned `OK`/200 on a manual ping, only `phoenix-background-jobs` returned `Created`/201 — the weekly Friday job had never fired since the key was set). Zero `deadmans_switch_ping_failed` warnings in 7 days of prod logs. So the switch was working; only the schedules were unconfigured.
 
