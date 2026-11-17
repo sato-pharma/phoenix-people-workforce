@@ -96,6 +96,12 @@ export const PRESTIGE_OFFER_SKIN = `
 .px-meta .k{color:${GN};font-size:6.4pt;letter-spacing:1.8px}
 .px-meta .v{margin-top:1.4mm;font-size:9pt;font-weight:700;color:#ffffff}
 .px-gild{height:0;margin-top:1.4mm;border-top:1.2pt solid ${G}}
+/* A second reference row, if a designer adds one, is drawn by the base — ruled here, never filled. */
+.control{gap:0;margin-top:5mm;background:none;border:0;border-top:.6pt solid ${H};border-bottom:.6pt solid ${H}}
+.control > div{background:none;padding:2mm 3mm;border-left:.6pt solid ${H}}
+.control > div:first-child{padding-left:0;border-left:0}
+.control .k{color:${GT}}
+.control .v{font-family:${SERIF};font-weight:400;color:${N}}
 
 /* ── The letter's voice ──────────────────────────────────────────────────────────────────────── */
 p{font-family:${SERIF};font-size:10pt;line-height:1.56;color:#1f2a36}
