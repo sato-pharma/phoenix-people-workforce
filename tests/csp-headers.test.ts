@@ -136,8 +136,7 @@ const read = (relative: string) => readFileSync(new URL(`../${relative}`, import
  *
  * The page policy must be next.config.ts's policy with ONE change — script-src's 'unsafe-inline'
  * becomes this request's nonce plus 'strict-dynamic' — so nothing else drifts: both are EVALUATED
- * here under the same environment (production or not, builder preview on or off, a Sentry DSN or
- * none) and compared whole, for the default page and every page override next.config.ts declares.
+ * here under the same environment (production or not, builder preview on or off) and compared whole, for the default page and every page override next.config.ts declares.
  */
 async function runPageCspNonceTests() {
   testThePagePolicyIsTheConfigPolicyWithANonce();
@@ -151,9 +150,7 @@ async function runPageCspNonceTests() {
 }
 
 const POLICY_ENVIRONMENTS: PagePolicyEnvironment[] = [false, true].flatMap((isProduction) =>
-  ["", "https://phoenix-hr.satopharma.com,https://builder.io"].flatMap((allowedOrigins) =>
-    ["", "https://0123456789abcdef@o1.ingest.de.sentry.io/42"].map((sentryDsn) => ({ allowedOrigins, isProduction, sentryDsn })),
-  ),
+  ["", "https://phoenix-hr.satopharma.com,https://builder.io"].map((allowedOrigins) => ({ allowedOrigins, isProduction })),
 );
 
 /**
@@ -175,7 +172,6 @@ function configPolicies(env: PagePolicyEnvironment): Record<string, string> {
   ) as (process: { env: Record<string, string> }) => Record<string, string>;
   return evaluate({
     env: {
-      NEXT_PUBLIC_SENTRY_DSN: env.sentryDsn,
       NODE_ENV: env.isProduction ? "production" : "development",
       PHOENIX_ALLOWED_ORIGINS: env.allowedOrigins,
     },

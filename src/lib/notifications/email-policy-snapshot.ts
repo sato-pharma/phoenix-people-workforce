@@ -7,8 +7,8 @@ import type { EmailNotificationPolicy } from "@/lib/notifications/email";
  *
  * `resolveNotificationDelivery` asks for a single notification type's policy, and the only way to get
  * one was `getEmailNotificationPolicies()` — a select of the WHOLE table. The outbox drain resolves a
- * delivery per email, so a run of ten read the same table ten times; Sentry flagged it as the
- * "N+1 API Call" on GET /api/notifications/process (PHOENIX-WORKFORCE-4).
+ * delivery per email, so a run of ten read the same table ten times — an "N+1 API Call" on
+ * GET /api/notifications/process.
  *
  * The snapshot is scoped to ONE run through AsyncLocalStorage, never module-level: nothing outside a
  * run is ever cached (an admin screen and a save always read the table fresh), and two runs, or two

@@ -277,13 +277,13 @@ overrides:
   "undici": 7.30.1
   # Added 2026-11-04 for GHSA-3g3m-2fjr-6pw4 (medium, Dependabot #19): an aborted async walk keeps
   # reading directories in the background after it rejects. Advisory covers `>=9.0.0 <=14.0.1`, so the
-  # whole 13.x line is affected and the fix exists only in the 14 line. Both parents declare
-  # `^13.0.6` even at their latest releases (@sentry/bundler-plugins 11.10.0, test-exclude 8.0.0), so
-  # no parent bump can clear it. Scoped to the 13 line so glob@7.2.3 (outside the advisory) is untouched.
+  # whole 13.x line is affected and the fix exists only in the 14 line. Its parent, test-exclude 8.0.0,
+  # declares `^13.0.6` even at its latest release, so no parent bump can clear it. Scoped to the 13 line
+  # so glob@7.2.3 (outside the advisory) is untouched.
   # 14 is a drop-in, checked against the published type declarations: the only removal is the `debug`
-  # option, and everything else is additive (`normalize`, readonly arrays). BUILD- AND TEST-TIME ONLY —
-  # Sentry's source-map upload plugin and c8's coverage file walker; neither globs untrusted input.
-  # Remove once both parents declare glob ^14.
+  # option, and everything else is additive (`normalize`, readonly arrays). TEST-TIME ONLY — c8's
+  # coverage file walker, which globs no untrusted input.
+  # Remove once test-exclude declares glob ^14.
   "glob@13": ^14.0.3
   # Added 2026-11-04 for GHSA-g3hv-75wg-m249 (medium, Dependabot #22): DoS via globparts
   # amplification, `>=7.0.0 <11.0.1`, published the same afternoon the glob 14 floor above landed.

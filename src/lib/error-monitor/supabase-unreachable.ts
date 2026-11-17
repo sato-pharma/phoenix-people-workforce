@@ -5,7 +5,7 @@
  * page instead: 521 "Web server is down", 520 "Unknown error", 525 "SSL handshake failed". postgrest-js
  * wraps that page in a plain `{ message: "<!DOCTYPE html>…" }`, this codebase rethrows it as-is, and every
  * downstream sink then titled its issue with the page itself. One restart (2026-10-17, 12:30 Cairo) filed
- * four unrelated-looking Sentry issues, two of them whole Cloudflare pages, and the same HTML filled the
+ * four unrelated-looking error reports, two of them whole Cloudflare pages, and the same HTML filled the
  * `app_error_events` message column.
  *
  * This recognises that page and gives it ONE stable name — "Supabase unreachable" — plus the code, so the
@@ -17,14 +17,10 @@
  * "Failed to fetch", "Connection closed." or the client's own "Supabase request timed out." are NOT this —
  * they do not say the database was unreachable, only that a request did not finish.
  *
- * ZERO IMPORTS, DELIBERATELY. `instrumentation.ts` and `sentry-policy.ts` are bundled for the Edge Runtime
- * as well as Node, and the browser bundle reaches this too. Do not add an import to this file.
+ * ZERO IMPORTS, DELIBERATELY. `instrumentation.ts` is bundled for the Edge Runtime as well as Node, and the browser bundle reaches this too. Do not add an import to this file.
  */
 
 export const SUPABASE_UNREACHABLE_TITLE = "Supabase unreachable";
-
-/** Sentry groups on this, so every outage page lands in the same issue whatever its code or route. */
-export const SUPABASE_UNREACHABLE_FINGERPRINT: readonly string[] = ["supabase-unreachable"];
 
 export type SupabaseUnreachable = {
   /** The Cloudflare status in the page title: 520, 521, 525… */

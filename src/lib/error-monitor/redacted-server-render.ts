@@ -8,7 +8,9 @@
  * occurred in the Server Components render. The specific message is omitted in production builds …").
  * The server already recorded the real error through `onRequestError`, so this copy carries no cause.
  *
- * ZERO IMPORTS, DELIBERATELY — read by the browser's Sentry forwarder.
+ * The new-error Telegram skips this copy (new-error-alert-rules.ts): the server's own row already sent it.
+ *
+ * ZERO IMPORTS, DELIBERATELY — the browser bundle reaches it through those rules.
  */
 const REDACTED_SERVER_RENDER = [
   /\bMinified React error #441\b/,

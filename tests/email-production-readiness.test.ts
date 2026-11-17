@@ -67,11 +67,11 @@ export function runEmailProductionReadinessTests() {
     "send-phoenix-email must support custom headers",
   );
 
-  // P1-6: Sentry capture
+  // P1-6: failures are logged
   assert.match(
     emailSource,
     /logError/,
-    "email module must report failures to Sentry",
+    "email module must report failures through logError",
   );
 
   // P1-7: health check endpoint

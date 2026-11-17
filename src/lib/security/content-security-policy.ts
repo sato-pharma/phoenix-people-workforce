@@ -13,7 +13,7 @@
  *
  * EVERY OTHER DIRECTIVE MIRRORS next.config.ts EXACTLY, and tests/csp-headers.test.ts proves it by
  * evaluating both under the same environment: the base policy, the builder-preview frame-ancestors,
- * the Sentry ingest host (site policy only), and the three page overrides (/whatsapp-connect, the
+ * and the three page overrides (/whatsapp-connect, the
  * managed Google Play console, the Milestones workspace — both spellings of each /hr page). The host
  * lists stay in script-src on purpose: a browser without CSP Level 3 ignores `'strict-dynamic'` and
  * falls back to them.
@@ -34,15 +34,12 @@ export type PagePolicyEnvironment = {
   isProduction: boolean;
   /** PHOENIX_ALLOWED_ORIGINS, comma-separated — the builder preview origin opens frame-ancestors. */
   allowedOrigins: string;
-  /** NEXT_PUBLIC_SENTRY_DSN — its ingest origin joins connect-src on the site policy. */
-  sentryDsn: string;
 };
 
 export function pagePolicyEnvironment(): PagePolicyEnvironment {
   return {
     isProduction: process.env.NODE_ENV === "production",
     allowedOrigins: String(process.env.PHOENIX_ALLOWED_ORIGINS ?? ""),
-    sentryDsn: String(process.env.NEXT_PUBLIC_SENTRY_DSN ?? ""),
   };
 }
 
@@ -80,15 +77,6 @@ function configuredOrigins(allowedOrigins: string): Set<string> {
       })
       .filter((origin): origin is string => Boolean(origin)),
   );
-}
-
-function sentryIngestOrigin(sentryDsn: string): string | null {
-  try {
-    const dsn = new URL(sentryDsn.trim());
-    return dsn.protocol === "https:" && dsn.username ? dsn.origin : null;
-  } catch {
-    return null;
-  }
 }
 
 function basePagePolicy(nonce: string, env: PagePolicyEnvironment): string {
@@ -142,10 +130,8 @@ export function pageContentSecurityPolicy(
     case "/milestones":
     case "/hr/milestones":
       return base.concat("; frame-src 'self' blob:");
-    default: {
-      const sentry = sentryIngestOrigin(env.sentryDsn);
-      return sentry ? base.replace("connect-src 'self'", `connect-src 'self' ${sentry}`) : base;
-    }
+    default:
+      return base;
   }
 }
 

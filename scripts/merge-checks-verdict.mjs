@@ -31,7 +31,7 @@ const FAILED = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 
  * commits that deployed — `verify-shipped.mjs` says the same). Only their never-started runs are
  * ignored; one that ran and failed still counts.
  */
-const FOREVER_QUEUED_APPS = new Set(['sentry', 'claude', 'vercel', 'railway-app']);
+const FOREVER_QUEUED_APPS = new Set(['claude', 'vercel', 'railway-app']);
 
 /** The newest run per name — a re-run leaves the earlier attempt in the list. */
 function latestByName(runs) {

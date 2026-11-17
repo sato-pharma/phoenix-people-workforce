@@ -131,8 +131,8 @@ export function runDeployDriftSettledRefTests() {
   assert.ok(
     /REFUSED BY/.test(source) && /classify_suites/.test(source),
     "The workflow no longer classifies the check suites itself. Until 2026-09-30 the alert told the " +
-      "reader to run `gh api …/check-suites` and which four apps to ignore — correct, and still a " +
-      "manual step at 4am for someone who has to know that `queued` on sentry means nothing while " +
+      "reader to run `gh api …/check-suites` and which apps to ignore — correct, and still a " +
+      "manual step at 4am for someone who has to know that `queued` on claude means nothing while " +
       "`failure` on a Dependabot run means everything. That cost a two-hour diagnosis on 2026-09-30 " +
       "for a withheld deploy whose cause was one line of JSON. The alarm must NAME the suite.",
   );
@@ -154,10 +154,10 @@ export function runDeployDriftSettledRefTests() {
   );
 
   assert.ok(
-    /"sentry","claude","vercel","railway-app"/.test(source),
-    "The classifier no longer excludes the four third-party suites that sit at `queued` FOREVER on " +
+    /"claude","vercel","railway-app"/.test(source),
+    "The classifier no longer excludes the three third-party suites that sit at `queued` FOREVER on " +
       "every commit. They do not hold the gate (measured on two commits that deployed normally), so " +
-      "counting them would make every alert name four innocent apps and bury the real one.",
+      "counting them would make every alert name three innocent apps and bury the real one.",
   );
 
   assert.ok(

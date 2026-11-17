@@ -18,13 +18,11 @@ import {
   normalizeMessage,
   postDeployVerdict,
   readErrorRows,
-  readSentryIssues,
-  sentryEventParams,
 } from "../scripts/lib/post-deploy-errors.mjs";
 
 /**
  * `scripts/post-deploy-errors.mjs` is the ship skill's phase 7b: once a merge is serving, did it bring an error
- * the week before never had? It reads the production `app_error_events` table and Sentry's events, so every
+ * the week before never had? It reads the production `app_error_events` table, so the
  * reader takes its `fetch` as an argument and these tests drive them with stand-ins, never the network.
  *
  * What is held, and the break that proves each one:
@@ -37,23 +35,13 @@ import {
  *      response at its max-rows setting, which can sit below the page size asked for; a reader that stopped at
  *      the first short page would judge 600 rows of 1,500 and say so to nobody. Swap the stop condition back
  *      to `page.length < pageSize` and the 1,500-row case reads 600.
- *   5. SENTRY IS READ THROUGH DISCOVER, and an unreadable Sentry is a stated "not read", never a pass. The read
- *      token answered 403 on the issue list and 200 on Discover (2026-10-19), which is why the reader asks
- *      `organizations/<org>/events/`.
- *   6. THE VERDICT: too early is NOT a pass, and an unreadable error table is CANNOT TELL, never CLEAN.
+ *   5. THE VERDICT: too early is NOT a pass, and an unreadable error table is CANNOT TELL, never CLEAN.
  */
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const classifiers = { isBrowserNoiseMessage, isModuleLockRefusal };
 
 type Row = { created_at: string; source: string; route?: string; module_label?: string; message: string; digest?: string | null; release: string | null };
-type SentryReading = {
-  read: boolean;
-  reason?: string;
-  fresh?: { shortId: string; link: string | null }[];
-  recurring?: { shortId: string }[];
-  capped?: boolean;
-};
 const row = (over: Partial<Row>): Row => ({
   created_at: "2026-10-19T09:00:00.000000+00:00",
   source: "server",
@@ -187,93 +175,6 @@ async function rowReaderTests() {
   );
 }
 
-async function sentryTests() {
-  let called = 0;
-  const never = (async () => {
-    called += 1;
-    return jsonResponse({});
-  }) as unknown as typeof fetch;
-  const unread = (await readSentryIssues({ token: "", releases: ["a"], fetchImpl: never })) as SentryReading;
-  assert.equal(unread.read, false);
-  assert.match(unread.reason ?? "", /NOT read/);
-  assert.equal(called, 0, "no token, no request");
-
-  const refused = (await readSentryIssues({ token: "sntryu_x", releases: ["a"], fetchImpl: (async () => jsonResponse({ detail: "no" }, { status: 403 })) as unknown as typeof fetch })) as SentryReading;
-  assert.equal(refused.read, false);
-  assert.match(refused.reason ?? "", /HTTP 403.*cannot read events in phoenix-crm/);
-
-  const TOKEN = "sntryu_SECRET_VALUE_0123";
-  const calls: { url: URL; auth: string }[] = [];
-  const discover = (async (input: string, init?: { headers?: Record<string, string> }) => {
-    const url = new URL(input);
-    calls.push({ url, auth: init?.headers?.Authorization ?? "" });
-    const query = url.searchParams.get("query") ?? "";
-    if (query.startsWith("release:")) {
-      return jsonResponse({
-        data: [
-          { issue: "PHOENIX-WORKFORCE-A", "issue.id": 11, title: "TypeError: x is undefined", level: "error", "count()": 4, "count_unique(user)": 2, "min(timestamp)": "2026-10-19T09:01:00+00:00", "max(timestamp)": "2026-10-19T09:09:00+00:00" },
-          { issue: "PHOENIX-WORKFORCE-6", "issue.id": 6, title: "captureStallInSentry", level: "warning", "count()": 1, "count_unique(user)": 0, "min(timestamp)": "2026-10-19T09:03:00+00:00", "max(timestamp)": "2026-10-19T09:03:00+00:00" },
-        ],
-      });
-    }
-    return jsonResponse({ data: [{ issue: "PHOENIX-WORKFORCE-6", "count()": 75 }] });
-  }) as unknown as typeof fetch;
-  const result = (await readSentryIssues({ token: TOKEN, releases: ["sha1", "sha2"], fetchImpl: discover })) as SentryReading;
-  assert.equal(result.read, true);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].url.origin + calls[0].url.pathname, "https://de.sentry.io/api/0/organizations/phoenix-crm/events/");
-  assert.equal(calls[0].url.searchParams.get("query"), "release:[sha1,sha2] !event.type:transaction");
-  assert.equal(calls[1].url.searchParams.get("query"), "issue:[PHOENIX-WORKFORCE-A,PHOENIX-WORKFORCE-6] !release:[sha1,sha2] !event.type:transaction");
-  assert.equal(calls[1].url.searchParams.get("statsPeriod"), "7d");
-  assert.equal(calls[0].auth, `Bearer ${TOKEN}`);
-  assert.deepEqual((result.fresh ?? []).map((i) => i.shortId), ["PHOENIX-WORKFORCE-A"]);
-  assert.deepEqual((result.recurring ?? []).map((i) => i.shortId), ["PHOENIX-WORKFORCE-6"]);
-  assert.equal(result.fresh?.[0]?.link, "https://phoenix-crm.sentry.io/issues/11/");
-  assert.ok(!JSON.stringify(result).includes(TOKEN), "the token never travels in the result");
-
-  calls.length = 0;
-  const empty = await readSentryIssues({ token: TOKEN, releases: ["sha1"], fetchImpl: (async (input: string) => { calls.push({ url: new URL(input), auth: "" }); return jsonResponse({ data: [] }); }) as unknown as typeof fetch });
-  assert.deepEqual(empty, { read: true, fresh: [], recurring: [], capped: false });
-  assert.equal(calls.length, 1, "nothing in the release, no baseline read");
-
-  // A dropped connection, a stall or a busy Sentry is tried again; the token's own refusal never is.
-  let refusals = 0;
-  await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { refusals += 1; return jsonResponse({}, { status: 403 }); }) as unknown as typeof fetch });
-  assert.equal(refusals, 1, "a 401 or 403 is the token's answer and is never retried");
-
-  const reset = () => new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
-  let flaky = 0;
-  let signal: unknown = null;
-  const recovered = (await readSentryIssues({
-    token: TOKEN,
-    releases: ["a"],
-    pauseMs: 0,
-    fetchImpl: (async (_input: string, init?: { signal?: unknown }) => {
-      flaky += 1;
-      signal = init?.signal ?? null;
-      if (flaky === 1) throw reset();
-      return jsonResponse({ data: [] });
-    }) as unknown as typeof fetch,
-  })) as SentryReading;
-  assert.equal(recovered.read, true, "one dropped connection no longer costs the whole Sentry read");
-  assert.equal(flaky, 2);
-  assert.ok(signal instanceof AbortSignal, "every try carries a time limit, so a stalled read cannot hang the check");
-
-  let busy = 0;
-  const afterBusy = (await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { busy += 1; return busy === 1 ? jsonResponse({}, { status: 503 }) : jsonResponse({ data: [] }); }) as unknown as typeof fetch })) as SentryReading;
-  assert.equal(afterBusy.read, true, "a 503 is tried again");
-  assert.equal(busy, 2);
-
-  let down = 0;
-  const lost = (await readSentryIssues({ token: TOKEN, releases: ["a"], pauseMs: 0, fetchImpl: (async () => { down += 1; throw reset(); }) as unknown as typeof fetch })) as SentryReading;
-  assert.equal(lost.read, false, "a Sentry that never answers is still not read, never a pass");
-  assert.equal(down, 3, "three tries, then it stops");
-  assert.match(lost.reason ?? "", /release read \(fetch failed: ECONNRESET\), after 3 tries/, "the reason names undici's real cause and the tries");
-
-  const fields = sentryEventParams({ releases: ["a"] }).getAll("field");
-  assert.ok(fields.includes("issue") && fields.includes("count()"));
-}
-
 function goLiveAndVerdictTests() {
   assert.equal(
     goLiveFrom([
@@ -311,22 +212,17 @@ function goLiveAndVerdictTests() {
   assert.match(probe, /goLiveFrom\(deployments, firstSeenServingAt\)/, "the script must hand its first serving observation to goLiveFrom, or a carried merge has no go-live time again");
   assert.match(probe, /HEALTHZ_TRIES = [2-9]/, "the health probe must retry: one stalled lookup on the laptop made a whole reading CANNOT TELL");
 
-  const unread = { read: false, reason: "no SENTRY_READ_TOKEN, so Sentry was NOT read" };
-  const clean = { read: true, fresh: [], recurring: [], capped: false };
   assert.equal(postDeployVerdict({ merged: false }).code, EXIT.NOT_MERGED);
   assert.equal(postDeployVerdict({ live: false }).code, EXIT.NOT_LIVE);
-  assert.equal(postDeployVerdict({ fresh: [{}], sentry: unread, liveMinutes: 1 }).code, EXIT.NEW, "a new error is reported at once, window or not");
-  const sentryFound = { read: true, fresh: [{}], recurring: [] };
-  assert.equal(postDeployVerdict({ sentry: sentryFound, liveMinutes: 30 }).code, EXIT.NEW);
-  assert.equal(postDeployVerdict({ appRead: false, sentry: clean, liveMinutes: 30 }).code, EXIT.CANNOT_TELL, "an unread error table is never CLEAN");
-  assert.equal(postDeployVerdict({ sentry: clean, liveMinutes: null }).code, EXIT.CANNOT_TELL);
-  const early = postDeployVerdict({ sentry: clean, liveMinutes: 4, windowMinutes: 15 });
+  assert.equal(postDeployVerdict({ fresh: [{}], liveMinutes: 1 }).code, EXIT.NEW, "a new error is reported at once, window or not");
+  assert.equal(postDeployVerdict({ appRead: false, liveMinutes: 30 }).code, EXIT.CANNOT_TELL, "an unread error table is never CLEAN");
+  assert.equal(postDeployVerdict({ liveMinutes: null }).code, EXIT.CANNOT_TELL);
+  const early = postDeployVerdict({ liveMinutes: 4, windowMinutes: 15 });
   assert.equal(early.code, EXIT.TOO_EARLY);
   assert.match(early.note, /NOT a pass/);
-  const passUnread = postDeployVerdict({ sentry: unread, liveMinutes: 15, windowMinutes: 15 });
-  assert.equal(passUnread.code, EXIT.CLEAN);
-  assert.match(passUnread.note, /Sentry not read/, "a clean table with an unread Sentry says Sentry was not read");
-  assert.match(postDeployVerdict({ sentry: clean, liveMinutes: 20, windowMinutes: 15 }).note, /or in Sentry/);
+  const pass = postDeployVerdict({ liveMinutes: 15, windowMinutes: 15 });
+  assert.equal(pass.code, EXIT.CLEAN);
+  assert.match(pass.note, /no new error in the app's error table after 15 minutes serving/);
 }
 
 function entryPointTests() {
@@ -357,7 +253,6 @@ export async function runPostDeployErrorsTests() {
   noiseTests();
   classifyTests();
   await rowReaderTests();
-  await sentryTests();
   goLiveAndVerdictTests();
   entryPointTests();
 }

@@ -37,6 +37,8 @@ const OPERATOR_WATCH_EVENTS: ReadonlySet<string> = new Set([
   "database_host_low_memory",
   "database_host_low_root_disk",
   "database_restarted",
+  // The new-error Telegram (17 Nov 2026), Telegram only by its owner's word.
+  "new_app_error",
   "notification_drain_stranded",
   "notification_held_for_review",
   "notification_holds_expired",

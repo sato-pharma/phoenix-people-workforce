@@ -62,7 +62,6 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/admin/scope-visibility": { admin: "/admin/scope-visibility" },
   "/api/admin/screening-questions": { admin: "/admin/screening-questions", hr: "/hr/admin/screening-questions" },
   "/api/admin/seat-view": { admin: "/admin/view-as-seat" },
-  "/api/admin/sentry-check": { admin: "/admin/sentry-check" },
   "/api/admin/support-requests": { admin: "/admin/support-requests", hr: "/hr/admin/support-requests" },
   "/api/admin/synthetic-journeys": { admin: "/admin/synthetic-journeys" },
   "/api/admin/system-audit": { admin: "/admin/system-audit" },

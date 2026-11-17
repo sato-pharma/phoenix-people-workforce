@@ -11,8 +11,6 @@ import type { Instrumentation } from "next";
 import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { isModuleLockRefusal } from "@/lib/error-monitor/expected-refusal";
-// Import-free as well. The SDK itself is only ever loaded dynamically, from inside the nodejs guards below.
-import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
 // Starts this process's in-process schedulers (the Early Birds fortnight close and the CRM
 // housekeeping timer) exactly once per server process. Their imports MUST stay dynamic and inside
@@ -51,31 +49,6 @@ export async function register() {
       );
     } catch (error) {
       console.error("[keep-alive] failed to pin:", error);
-    }
-
-    // Sentry (sentry.io), PRODUCTION ONLY — sentry-policy.ts decides, from APP_ENV and
-    // the DSN, so staging, the previews and a laptop never load the SDK. Second, so a scheduler that
-    // throws while starting below is already covered by its process handlers. Own try: Sentry must never
-    // be the reason Phoenix does not boot.
-    //
-    // The SDK import also sits inside a BLOCK-form NODE_ENV test — a compile-time gate, not a policy
-    // one. Next replaces process.env.NODE_ENV with a literal while it compiles, so under `next dev` the
-    // branch is `if (false)` and webpack never compiles the SDK at all (~20 MB of it per dev server);
-    // a runtime test such as status.enabled prunes nothing. Production is always a production build,
-    // so who runs Sentry is unchanged: the policy above still decides.
-    try {
-      const status = sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN });
-      if (!status.enabled) {
-        console.log(`[sentry] not started: ${status.reason}`);
-      } else if (process.env.NODE_ENV === "production") {
-        const { initSentryServer } = await import("@/lib/observability/sentry-server");
-        initSentryServer(process.env.SENTRY_DSN as string);
-        console.log("[sentry] started: production errors are forwarded to sentry.io");
-      } else {
-        console.log("[sentry] not started: not a production build");
-      }
-    } catch (error) {
-      console.error("[sentry] failed to start:", error);
     }
 
     // Which process this is. A `web` process answers pages and starts none of the schedulers below
@@ -209,29 +182,6 @@ async function forwardServerErrorToIngestion(
   }
 }
 
-// The Sentry half of onRequestError. Reached only in the nodejs runtime AND only when the policy says
-// production, so on every other deployment this is a no-op that never imports the SDK. Never throws.
-//
-// 🔴 The two build-time tests are BLOCKS, never early returns. They were `if (… !== "nodejs") return;`
-// until 2026-10-17, and webpack does not drop code after a return: the edge bundle carried the whole
-// SDK (6 MB of edge-instrumentation.js) and every `next dev` compiled it. Inside a block whose test
-// Next inlines to a literal, the import is never compiled where it cannot run.
-async function forwardRequestErrorToSentry(
-  ...args: Parameters<Instrumentation.onRequestError>
-): Promise<void> {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    if (process.env.NODE_ENV === "production") {
-      if (!sentryServerStatus({ appEnv: process.env.APP_ENV, dsn: process.env.SENTRY_DSN }).enabled) return;
-      try {
-        const { captureRequestErrorInSentry } = await import("@/lib/observability/sentry-server");
-        captureRequestErrorInSentry(...args);
-      } catch (sentryError) {
-        console.error("Failed to forward request error to Sentry:", sentryError);
-      }
-    }
-  }
-}
-
 // Captures errors thrown in nested React Server Components / route handlers —
 // forwards to our own error table.
 //
@@ -244,6 +194,5 @@ export async function onRequestError(...args: Parameters<Instrumentation.onReque
   const [error, request, context] = args;
   if (isBenignClientDisconnect(error)) return;
   if (isModuleLockRefusal(error)) return;
-  await forwardRequestErrorToSentry(error, request, context);
   await forwardServerErrorToIngestion(error, request, context);
 }

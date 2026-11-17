@@ -22,7 +22,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
 import { logWarning } from "@/lib/observability/log";
-import { scrubSentryPath } from "@/lib/observability/sentry-policy";
+import { scrubPath } from "@/lib/observability/scrub";
 import { recordTiming } from "@/lib/observability/timings";
 import { rowCapFinding, shouldNoteRowCap } from "@/lib/supabase/row-cap-watch";
 import { requestActorHeaders, withActorHeaders } from "@/lib/supabase/request-actor";
@@ -103,7 +103,7 @@ function describeSupabaseCall(input: RequestInfo | URL, init: RequestInit | unde
   const method = requestMethod(input, init);
   try {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return { method, path: scrubSentryPath(new URL(raw).pathname) };
+    return { method, path: scrubPath(new URL(raw).pathname) };
   } catch {
     return { method, path: "unknown" };
   }

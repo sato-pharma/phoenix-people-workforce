@@ -37,11 +37,11 @@ const COUNT_MISMATCH =
   "\u001b[2m  - waiting for locator('a[href*=\"&rep=\"]')\u001b[22m\n" +
   "\u001b[2m    24 × locator resolved to 2 elements\u001b[22m\n";
 
-/** What that same run recorded beside it: prefetches the browser cancelled, and the error tracker's rate limit. */
+/** What that same run recorded beside it: prefetches the browser cancelled, and an outside tracker's rate limit. */
 const ROUTINE_NOISE = [
   `GET ${BASE}/admin/access?_rsc=glHVoxLeNX9F91H4 — net::ERR_ABORTED`,
   `GET ${BASE}/admin/direct-orders/returned?_rsc=glHVoxLeNX9F91H4 — net::ERR_ABORTED`,
-  "429 POST https://o4512264026914816.ingest.de.sentry.io/api/4512264037662800/envelope/?sentry_version=7",
+  "429 POST https://telemetry.example.com/api/42/envelope/?version=7",
 ];
 const ROUTINE_CONSOLE = ["Failed to load resource: the server responded with a status of 429 ()"];
 

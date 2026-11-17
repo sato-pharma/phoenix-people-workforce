@@ -4,7 +4,7 @@
 -- email delivery rows, the quiet-hours deferral path created notification_deliveries
 -- rows with status='pending' but with no emailInput in metadata. The deferred-drain
 -- cron (GET /api/notifications/daily) cannot re-dispatch these legacy rows and
--- emits a Sentry warning for each one (PHOENIX-12).
+-- emits a warning for each one.
 --
 -- This migration terminally closes all such rows so they are never retried again.
 -- New deferred rows always carry metadata.emailInput (fixed in application code),

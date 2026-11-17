@@ -30,7 +30,7 @@ import { needsYouDestinations, type NeedsYouItem, type NeedsYouSourceId, type Ne
 export const VENDOR_GITHUB_SILENCE_HOURS = 12;
 
 export const NEEDS_YOU_VENDORS_NOT_READ_LINE =
-  "This board cannot read Supabase invoices, Railway standing, GitHub billing, OneSignal, Google Maps, Sentry or " +
+  "This board cannot read Supabase invoices, Railway standing, GitHub billing, OneSignal, Google Maps or " +
   "cron-job.org. Check those on their own screens.";
 
 export const VENDOR_GITHUB_REFUSED_LABEL = "GitHub refused Phoenix's hourly run. The account or its key needs you.";

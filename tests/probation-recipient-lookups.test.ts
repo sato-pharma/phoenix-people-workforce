@@ -7,9 +7,8 @@ import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The notifications cron's probation step read the same role lists once per employee on probation —
- * two to four identical `app_auth_users` selects each — so one request carried 30 of them. Sentry
- * flags it as the "N+1 API Call" on GET /api/notifications/process (PHOENIX-WORKFORCE-4); the spans
- * read "GET [Filtered]" because Sentry hides any URL that names "auth".
+ * two to four identical `app_auth_users` selects each — so one request carried 30 of them: an
+ * "N+1 API Call" on GET /api/notifications/process.
  *
  * The run now makes ONE read of each list and shares it between its employees. A shared read must not
  * widen a blip: a failed role read is never kept (the next employee asks again), and an empty approver
@@ -65,7 +64,7 @@ export async function runProbationRecipientLookupsTests() {
         reads.authReads,
         1,
         "ten employees resolved in one run must read app_auth_users ONCE — one identical select per "
-          + "employee is the N+1 Sentry reported on /api/notifications/process",
+          + "employee is the N+1 once seen on /api/notifications/process",
       );
       for (const answer of answers) {
         assert.deepEqual(answer.tmHrIds, ["tm-1"], "every employee still gets the role list the shared read returned");

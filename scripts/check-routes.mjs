@@ -2,7 +2,7 @@
 // Scans all tracked app/api/**/route.ts files and warns when the required Next.js
 // server-side exports are missing. Missing 'runtime' or 'dynamic' causes
 // route type-generation failures that cascade into typecheck + build errors.
-// Uses `git ls-files` so gitignored paths (e.g. sentry-example-api) are skipped.
+// Uses `git ls-files` so gitignored paths are skipped.
 // Exits non-zero on any violation so it can gate CI.
 'use strict';
 

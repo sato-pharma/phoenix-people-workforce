@@ -120,7 +120,7 @@ const cairo = (iso) =>
 //   * every suite green — it was SUPERSEDED before its build started, because a newer merge landed
 //     while it waited for CI (2026-09-28, 047a33388: one `inactive` status, no `in_progress`, and the
 //     commit was inside what was serving). Benign, and needs no action.
-// The four third-party app suites (sentry, claude, vercel, railway-app) sit at `queued` FOREVER on
+// The three third-party app suites (claude, vercel, railway-app) sit at `queued` FOREVER on
 // every commit and hold nothing — measured on two commits that deployed `success` — so `queued` must
 // not count as bad or every withheld deploy would read as refused.
 // Pure, and exported, so `--selftest` covers it without a network: the live refused case can age out
@@ -317,7 +317,7 @@ if (argv.includes('--selftest')) {
   // superseded deploy "refused" sends a reader hunting a failed suite that does not exist, and
   // calling a refused one "superseded" hides a commit that is merged, green and not serving.
   const suite = (slug, conclusion) => ({ app: { slug }, conclusion });
-  const QUEUED_APPS = [suite('sentry', null), suite('claude', null), suite('vercel', null), suite('railway-app', null)];
+  const QUEUED_APPS = [suite('claude', null), suite('vercel', null), suite('railway-app', null)];
   const WH = [
     ['a failing Actions suite is the gate refusing it',
       { suites: { check_suites: [...QUEUED_APPS, suite('github-actions', 'success'), suite('github-actions', 'failure')] }, hasNewerDeploy: true },
@@ -328,7 +328,7 @@ if (argv.includes('--selftest')) {
     ['every suite green plus a newer deploy is SUPERSEDED, not refused',
       { suites: { check_suites: [...QUEUED_APPS, suite('github-actions', 'success')] }, hasNewerDeploy: true },
       { refusedByGate: false, bad: 0, why: /superseded it while it waited/ }],
-    ['the four permanently-queued app suites alone are NOT bad',
+    ['the three permanently-queued app suites alone are NOT bad',
       { suites: { check_suites: QUEUED_APPS }, hasNewerDeploy: true },
       { refusedByGate: false, bad: 0 }],
     ['green with NO newer deploy says read railway directly rather than guessing',
@@ -663,15 +663,15 @@ function report(verdict, code, why) {
     L.push('            🔴 A GREEN ci.yml DOES NOT RULE THIS OUT. The gate waits on EVERY check suite');
     L.push('            on the commit, and a SCHEDULED workflow attaches its suite to whatever commit');
     L.push('            is main HEAD when it fires — so any flaky cron here can withhold a deploy.');
-    L.push('            But sentry/claude/vercel/railway-app sit at queued FOREVER and do NOT hold');
-    L.push('            the gate (measured on two commits that deployed) — never chase those four.');
+    L.push('            But claude/vercel/railway-app sit at queued FOREVER and do NOT hold');
+    L.push('            the gate (measured on two commits that deployed) — never chase those three.');
     // Name the suites rather than leaving the reader to hunt for them. Added 2026-09-28, after
     // cd9e0be03 was withheld with checks/mobile/validate ALL green: the red suite was this repo's
     // own scheduled Deploy Drift Check, which was raising a false alarm about the very deploy it
     // thereby withheld. A reader who trusts the CI line alone concludes the tool is lying.
     //
     // Best-effort by construction — wrapped, and only concluded-bad suites are named. The app
-    // suites here (sentry, vercel, claude, railway-app) sit at queued/- forever and are NOT a
+    // suites here (vercel, claude, railway-app) sit at queued/- forever and are NOT a
     // cause, so listing every non-success suite would bury the real one in permanent noise.
     for (const d of out.deployments.filter((x) => x.withheld)) {
       let suites = null;

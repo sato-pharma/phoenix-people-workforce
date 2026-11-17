@@ -1,35 +1,16 @@
 // scripts/lib/post-deploy-errors.mjs
 // ---------------------------------------------------------------------------
-// WHAT A DEPLOY BROKE, READ FROM THE TWO PLACES THAT RECORD IT. The pure half of
+// WHAT A DEPLOY BROKE, READ FROM THE APP'S OWN ERROR TABLE. The pure half of
 // scripts/post-deploy-errors.mjs, which the ship skill runs once verify-shipped.mjs answers SHIPPED.
 //
-// THE APP'S OWN ERROR TABLE IS THE SOURCE THAT ALWAYS ANSWERS. `app_error_events` records every server
-// error and every browser error the app sees, each stamped with the commit it came from (`release`, the same
-// sha Sentry names its release after). So "what is new since this deploy" is the error signatures seen in the
-// releases that carry the merge, minus every signature the other releases produced in the week before. Sentry
-// is the second sink beside that table, never instead of it (docs/observability.md, "Sentry"), so it is read
-// too WHEN a token that can read it exists, and the report says plainly when it was not read. An unread Sentry
-// is never a pass about Sentry.
-//
-// 🔴 SENTRY_AUTH_TOKEN IS NOT A READ TOKEN. The production one is the build plugin's organisation token
-// (releases and source maps only). The copy in the laptop's .env.local was, on 2026-10-19, still the RETIRED
-// account's (organisation sato-pharma) and answered 403 to every read of phoenix-crm. The read uses
-// SENTRY_READ_TOKEN (a Windows user variable on the laptop since 2026-10-19), a personal token that can read
-// phoenix-crm's events.
+// `app_error_events` records every server error and every browser error the app sees, each stamped with the
+// commit it came from (`release`). So "what is new since this deploy" is the error signatures seen in the
+// releases that carry the merge, minus every signature the other releases produced in the week before.
 //
 // Everything here is a pure function or takes its `fetch` as an argument, so tests/post-deploy-errors.test.ts
 // drives it with no network. Nothing here reads process.argv (refuse-arguments.mjs: never from a library).
 // ---------------------------------------------------------------------------
 
-export const SENTRY_API_BASE = "https://de.sentry.io/api/0";
-// The organisation next.config.ts uploads releases to (withSentryConfig({ org })).
-export const SENTRY_ORG_SLUG = "phoenix-crm";
-// One Discover read is tried up to SENTRY_TRIES times, each cut off after SENTRY_TRY_MS. On 24 Oct 2026 two deploy
-// checks in a row lost Sentry to one undici "fetch failed" while the same read answered in 200 ms a minute later, so a
-// dropped connection, a stall, a 429 or a 5xx is tried again. A 401 or 403 is the token's answer and is never retried.
-export const SENTRY_TRIES = 3;
-export const SENTRY_TRY_MS = 15_000;
-export const SENTRY_PAUSE_MS = 2_000;
 export const DEFAULT_WINDOW_MINUTES = 15;
 export const BASELINE_DAYS = 7;
 export const ROW_FIELDS = "created_at,source,route,module_label,message,digest,release";
@@ -93,7 +74,7 @@ export function errorSignature(row) {
 /**
  * Rows the repo already decided say nothing about Phoenix, using the repo's OWN classifiers (passed in, so this
  * file stays import-free of src/): a browser's network-failure wording on a browser row (browser-noise.ts), and a
- * locked module's refusal (expected-refusal.ts). Sentry skips both; the error table records both.
+ * locked module's refusal (expected-refusal.ts). The error table records both; this check sets them aside.
  */
 export function noiseReason(row, classifiers) {
   if (!classifiers) return null;
@@ -206,103 +187,6 @@ export async function readErrorRows({ supabaseUrl, serviceKey, filters, fetchImp
 }
 
 /**
- * Sentry's Discover reads, the two this check needs. 🔴 Discover, not the issue list: the read token's
- * `organizations/<org>/issues/` and `projects/<org>/<project>/issues/` both answered 403 on 2026-10-19 while
- * `organizations/<org>/events/` answered 200, so the issue list is not something this check can lean on.
- *   examined: every issue with an event in a release that carries the merge (transactions excluded).
- *   baseline: which of THOSE issues also had an event in any other release over the baseline week.
- * An issue in the first and not the second is new with these releases: the same rule the error table uses.
- */
-export function sentryEventParams({ releases, issueIds = null }) {
-  const fields = ["issue", "title", "level", "count()", "count_unique(user)", "min(timestamp)", "max(timestamp)"];
-  const list = `[${releases.join(",")}]`;
-  const query = issueIds
-    ? `issue:[${issueIds.join(",")}] !release:${list} !event.type:transaction`
-    : `release:${list} !event.type:transaction`;
-  return new URLSearchParams([
-    ...fields.map((field) => ["field", field]),
-    ["query", query],
-    ["statsPeriod", issueIds ? `${BASELINE_DAYS}d` : "14d"],
-    ["sort", "-count()"],
-    ["per_page", "100"],
-  ]);
-}
-
-// "fetch failed" alone names nothing; undici puts the real reason (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ENOTFOUND) in
-// the error's cause, and a timeout says it is one.
-function describeFetchError(error) {
-  if (!(error instanceof Error)) return String(error);
-  if (error.name === "TimeoutError") return "no answer in time";
-  const cause = error.cause;
-  const detail = cause && typeof cause === "object" ? cause.code ?? cause.message : cause;
-  return detail && !error.message.includes(String(detail)) ? `${error.message}: ${detail}` : error.message;
-}
-
-export async function readSentryIssues({
-  token,
-  releases,
-  fetchImpl = fetch,
-  base = SENTRY_API_BASE,
-  org = SENTRY_ORG_SLUG,
-  tries = SENTRY_TRIES,
-  tryMs = SENTRY_TRY_MS,
-  pauseMs = SENTRY_PAUSE_MS,
-}) {
-  if (!token) return { read: false, reason: "no SENTRY_READ_TOKEN, so Sentry was NOT read" };
-  async function discover(params, what) {
-    let failed = null;
-    for (let attempt = 1; attempt <= tries; attempt += 1) {
-      if (attempt > 1 && pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs));
-      const after = attempt > 1 ? `, after ${attempt} tries` : "";
-      try {
-        const res = await fetchImpl(`${base}/organizations/${org}/events/?${params}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(tryMs),
-        });
-        if (res.status === 401 || res.status === 403) {
-          return { failed: `Sentry answered HTTP ${res.status} to the ${what} read: the token cannot read events in ${org}` };
-        }
-        if (!res.ok) {
-          failed = `Sentry answered HTTP ${res.status} to the ${what} read${after}`;
-          if (res.status === 429 || res.status >= 500) continue;
-          return { failed };
-        }
-        const body = await res.json();
-        return { rows: Array.isArray(body?.data) ? body.data : [] };
-      } catch (error) {
-        failed = `Sentry did not answer the ${what} read (${describeFetchError(error)})${after}`;
-      }
-    }
-    return { failed };
-  }
-  const examined = await discover(sentryEventParams({ releases }), "release");
-  if (examined.failed) return { read: false, reason: examined.failed };
-  const issues = examined.rows
-    .filter((row) => row.issue)
-    .map((row) => ({
-      shortId: String(row.issue),
-      issueId: row["issue.id"] ?? null,
-      title: String(row.title ?? "").slice(0, SHOWN_MESSAGE_CHARS),
-      level: row.level ?? null,
-      count: Number(row["count()"]) || 0,
-      users: Number(row["count_unique(user)"]) || 0,
-      firstSeen: row["min(timestamp)"] ?? null,
-      lastSeen: row["max(timestamp)"] ?? null,
-      link: row["issue.id"] ? `https://${org}.sentry.io/issues/${row["issue.id"]}/` : null,
-    }));
-  if (issues.length === 0) return { read: true, fresh: [], recurring: [], capped: false };
-  const baseline = await discover(sentryEventParams({ releases, issueIds: issues.map((i) => i.shortId) }), "baseline");
-  if (baseline.failed) return { read: false, reason: baseline.failed };
-  const known = new Set(baseline.rows.map((row) => String(row.issue)));
-  return {
-    read: true,
-    fresh: issues.filter((i) => !known.has(i.shortId)),
-    recurring: issues.filter((i) => known.has(i.shortId)),
-    capped: examined.rows.length >= 100,
-  };
-}
-
-/**
  * The earliest moment a release carrying the merge is KNOWN to have served production: the first `success` status of
  * its production deployment, or the first reading of this run that saw production serving it (`observedServingAt`).
  * Both can only trail the real serving moment (the status once by 17 minutes,
@@ -349,27 +233,21 @@ export function hasProductionSuccess(deploymentsWithStatuses) {
  *   live?: boolean,
  *   appRead?: boolean,
  *   fresh?: unknown[],
- *   sentry?: { read: boolean, reason?: string, fresh?: unknown[] },
  *   liveMinutes?: number | null,
  *   windowMinutes?: number,
  * }} reading
  * @returns {{ code: number, label: string, note: string }}
  */
-export function postDeployVerdict({ merged = true, live = true, appRead = true, fresh = [], sentry = { read: false }, liveMinutes = null, windowMinutes = DEFAULT_WINDOW_MINUTES }) {
+export function postDeployVerdict({ merged = true, live = true, appRead = true, fresh = [], liveMinutes = null, windowMinutes = DEFAULT_WINDOW_MINUTES }) {
   if (!merged) return { code: EXIT.NOT_MERGED, label: "NOT MERGED", note: "the PR is not merged, so nothing of it can be serving" };
   if (!live) return { code: EXIT.NOT_LIVE, label: "NOT LIVE", note: "production is not serving this merge yet; verify-shipped.mjs answers that" };
-  const sentryNew = sentry.read ? sentry.fresh.length : 0;
-  if (fresh.length || sentryNew) {
-    const parts = [];
-    if (fresh.length) parts.push(`${fresh.length} new in the app's error table`);
-    if (sentryNew) parts.push(`${sentryNew} new in Sentry`);
-    return { code: EXIT.NEW, label: "NEW ERRORS", note: `${parts.join(", ")} since the merge went live` };
+  if (fresh.length) {
+    return { code: EXIT.NEW, label: "NEW ERRORS", note: `${fresh.length} new in the app's error table since the merge went live` };
   }
   if (!appRead) return { code: EXIT.CANNOT_TELL, label: "CANNOT TELL", note: "the app's error table could not be read" };
   if (liveMinutes === null) return { code: EXIT.CANNOT_TELL, label: "CANNOT TELL", note: "no production go-live time was found for the releases carrying the merge" };
   if (liveMinutes < windowMinutes) {
     return { code: EXIT.TOO_EARLY, label: "TOO EARLY", note: `serving ${liveMinutes} of the ${windowMinutes} minutes the window needs, nothing new so far, NOT a pass` };
   }
-  const sentryPart = sentry.read ? "or in Sentry" : `(Sentry not read: ${sentry.reason})`;
-  return { code: EXIT.CLEAN, label: "CLEAN", note: `no new error in the app's error table ${sentryPart} after ${liveMinutes} minutes serving` };
+  return { code: EXIT.CLEAN, label: "CLEAN", note: `no new error in the app's error table after ${liveMinutes} minutes serving` };
 }

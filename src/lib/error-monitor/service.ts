@@ -199,7 +199,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<string | nul
   }
 
   // Cloudflare's whole "521: Web server is down" page is what a Supabase outage used to leave in this column —
-  // thousands of characters of markup per row. It is stored as the one readable line the Sentry issue carries.
+  // thousands of characters of markup per row. It is stored as one readable line instead.
   const message = classifySupabaseUnreachable(input.message)?.line ?? input.message;
 
   try {
@@ -233,7 +233,17 @@ export async function logAppError(input: LogAppErrorInput): Promise<string | nul
       logError("Failed to persist app_error_events row", { labels: { event: "app_error_insert_failed" }, error });
       return null;
     }
-    return typeof data?.id === "string" ? data.id : null;
+    const id = typeof data?.id === "string" ? data.id : null;
+    if (id) {
+      // A NEW error reaches the Super Admin's Telegram once, the moment its first row lands (new-error-alert.ts).
+      // Fire and forget: the caller is on an error path and never waits for a notice. A dynamic import keeps the
+      // notification stack out of this module's graph, and the alert never throws.
+      const report = { message, moduleLabel: input.moduleLabel ?? null, route: redactSecretsFromRoute(input.route), source: input.source };
+      void import("@/lib/error-monitor/new-error-alert")
+        .then(({ alertNewError }) => alertNewError(report))
+        .catch(() => undefined);
+    }
+    return id;
   } catch (loggingError) {
     logError("logAppError threw", { labels: { event: "log_app_error_threw" }, error: loggingError });
     return null;
