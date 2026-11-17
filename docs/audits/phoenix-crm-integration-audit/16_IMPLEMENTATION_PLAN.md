@@ -1,6 +1,6 @@
 # 16 — Implementation Plan
 
-The order in which the audit's findings (report 11) and roadmap (report 10) are carried out, and where each one stands. This file is written by hand and updated in the pull request that changes a row; reports 00–15 are the audit as it was on 13 Nov 2026 and are not rewritten, apart from a sentence that was wrong about the repository itself.
+The order in which the audit's findings (report 11) and roadmap (report 10) are carried out, and where each one stands. This file is written by hand and updated in the pull request that changes a row; reports 00–15 are the audit as it was on 13 Nov 2026 and are not rewritten, apart from a sentence that was wrong about the repository itself and, on 17 Nov 2026, the removal of an outside service the app has since retired (with its findings, tests and recommendations).
 
 Status words: **DONE** (changed and read back), **IN PROGRESS**, **PLANNED**, **OWNER** (a decision, a payment or a click that is the owner's), **NO CHANGE** (the audit's own verdict).
 
@@ -53,7 +53,7 @@ Every finding was checked against the code before anything changed. The rows bel
 | ISS-015 | A CV link an applicant pastes: every redirect hop is checked before it is requested (https only, on the file-host list, five hops at most), and the body is read no further than the size cap |
 | ISS-011 · INT-064 | A deadline on the thirteen outbound calls that had none: seven to Zoom, the place search, place details, the trip review's map and photo, and two to Google Sheets. No retries were added: a repeated create would book a second meeting |
 | ISS-041 | The sales AI address is written out in the code (`api.openai.com` or `api.groq.com`); the two legs no environment had ever set are gone |
-| ISS-027 · ISS-028 · ISS-033 | The unused websocket allowance removed; the notification drain registered as a row per door; error tracking's Node-only start explained in `docs/observability.md` and kept true by a test |
+| ISS-027 · ISS-028 | The unused websocket allowance removed; the notification drain registered as a row per door |
 | ISS-047 · ISS-048 | Concurrency groups for the three workflows that had none; the browser cache key carries the runner image again (`playwright-ubuntu26-X64-…`, where the live keys read `playwright--X64-…`) |
 | ISS-021 · ISS-057 | The runner guide and `docs/testing.md` corrected from a live read: the repository is public, has no self-hosted runner, and GitHub's own scanning is on |
 
@@ -61,7 +61,7 @@ Checked and left alone, each for a stated reason:
 
 | Finding | Reason |
 |---|---|
-| ISS-053 | Already done before the audit: the error tracker drops every query string and the app's log redacts key, secret and token parameters |
+| ISS-053 | Already done before the audit: the app's log redacts key, secret and token parameters |
 | ISS-013 · INT-073 | The delivery webhook's provider does not sign, and a repeated event rewrites the same row, so a replay changes nothing. A freshness rule would drop the provider's own retries |
 | ISS-035 | Deliberate: the browser calls the attendance agent on its own computer, which the server cannot reach, with a weaker token that unlocks one action |
 | ISS-044 | No host sets the former host's variable, so the fallback changes nothing that runs; the starter images are SVG files, which are never deleted |
@@ -165,7 +165,7 @@ These are not code. Each is a decision, a payment or a click on the provider's o
 | ISS-036 | The retired vendor's five jobs and four stored credential names | The scheduler and the host's variables |
 | ISS-026 | The deployed edge function that has no source and no caller | Supabase dashboard |
 | ISS-054 | Which production secrets stay mirrored in CI | GitHub › Settings › Secrets |
-| ISS-052 · ISS-046 · ISS-032 | The non-expiring DNS token, disk encryption on the laptop, the refused error-tracking token | Each provider's token page; the laptop |
+| ISS-052 · ISS-046 | The non-expiring DNS token, disk encryption on the laptop | The DNS provider's token page; the laptop |
 | ISS-010 | Map key restrictions and the daily quota cap | Google Cloud console |
 | ISS-049 | The workflow that lives only on a side branch | GitHub › Actions |
 | ISS-018 | The Actions budget the cost alarm reads. "Cannot read the budget" stays a warning on purpose; the budget value is money, and a public repository is not metered | GitHub › Billing › Budgets |

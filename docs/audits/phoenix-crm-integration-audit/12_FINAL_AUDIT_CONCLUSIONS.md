@@ -11,12 +11,12 @@ The weaknesses are of one kind: **failures that would happen silently.** A finge
 | Proven by a read-only test | Not provable within the constraints |
 |---|---|
 | Production, staging, the database, storage, auth, both AI providers, Resend, Telegram, WhatsApp, Google Calendar, cron-job.org, Healthchecks, Cloudflare and GitHub answered and authenticated | Google Maps key restrictions, quotas and spend (console not readable) |
-| Delivery outcomes per channel over seven days (counts only) | Error-tracking event flow (the local token is no longer valid) |
-| Scheduler run times, job heartbeats, database advisors and grants | Whether six optional integrations are on in production |
-| GitHub settings, caches, secret names, scanning alerts and workflow history | Any company spending figure |
-| DNS mail-authentication records | Anything requiring a sent message, a triggered job or a billed call |
+| Delivery outcomes per channel over seven days (counts only) | Whether six optional integrations are on in production |
+| Scheduler run times, job heartbeats, database advisors and grants | Any company spending figure |
+| GitHub settings, caches, secret names, scanning alerts and workflow history | Anything requiring a sent message, a triggered job or a billed call |
+| DNS mail-authentication records | |
 
-24 of 56 integrations remain NOT VERIFIED for those reasons. That number is recorded as it is, and was not made smaller by assumption.
+23 of 55 integrations remain NOT VERIFIED for those reasons. That number is recorded as it is, and was not made smaller by assumption.
 
 ## Recommended next steps, in order
 

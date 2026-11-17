@@ -1,4 +1,4 @@
-## admin — 251 rows
+## admin — 250 rows
 ### Overview
 - **Dashboards**
   - Needs You — `/admin/needs-you` (roles: Super Admin)
@@ -62,7 +62,6 @@
 - **Platform Health**
   - System Audit — `/admin/system-audit` (roles: Super Admin)
   - Synthetic Journeys — `/admin/synthetic-journeys` (roles: Super Admin; perm: synthetic_journeys)
-  - Sentry Check — `/admin/sentry-check` (roles: Super Admin)
   - Activity Control — `/admin/activity-control` (roles: Super Admin; perm: user_activity:read)
 - **Email & Notifications**
   - Email Control Center — `/admin/email-control-center` (roles: Super Admin | CEO)
