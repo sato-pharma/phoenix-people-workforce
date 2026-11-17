@@ -41,7 +41,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
-import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
+import { dataUrlToBlob, prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import {
   MEDICAL_REP_MAX_PHOTOS,
   MEDICAL_REP_MIN_PHOTOS,
@@ -54,11 +54,12 @@ type PickedPhoto = { file: File; key: string; previewUrl: string };
 /**
  * One picked photo, shrunk to a JPEG in the browser (the submit wizard's own helper), so two to
  * six camera shots fit the proxy's 10 MB body and a HEIC or WebP arrives as a type the server
- * stores.
+ * stores. The shrunk JPEG is decoded in place: a fetch() of its data: address is refused by the
+ * app's security policy with "Failed to fetch" (17 Nov 2026), see dataUrlToBlob.
  */
 async function shrinkPhoto(file: File): Promise<File> {
   const prepared = await prepareTicketAttachment(file);
-  const blob = await (await fetch(prepared.dataUrl)).blob();
+  const blob = dataUrlToBlob(prepared.dataUrl);
   return new File([blob], prepared.name, { type: blob.type || "image/jpeg" });
 }
 
