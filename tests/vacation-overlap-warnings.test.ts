@@ -87,7 +87,8 @@ export function runVacationOverlapWarningsTests() {
     const b = baseRequest({ id: "b", employeeHrId: "B-1", managerHrId: "B-9", startDate: "2026-07-11", endDate: "2026-07-13" });
     const warnings = buildVacationOverlapWarnings({ holidays: [], rows: [a, b] });
     assert.deepEqual(codesFor(warnings, "a"), ["employee_overlap"]);
-    assert.deepEqual(codesFor(warnings, "b"), ["employee_overlap"]);
+    // b starts later and both are waiting in the annual pool, so b is also told to wait for a.
+    assert.deepEqual(codesFor(warnings, "b"), ["earlier_waiting_same_pool", "employee_overlap"]);
     assert.deepEqual(warnings.get("a")![0].relatedRequestIds, ["b"]);
     assert.deepEqual(warnings.get("b")![0].relatedRequestIds, ["a"]);
   }
@@ -98,7 +99,9 @@ export function runVacationOverlapWarningsTests() {
     const b = baseRequest({ id: "b", employeeHrId: "B-1", startDate: "2026-08-01", endDate: "2026-08-03" });
     const warnings = buildVacationOverlapWarnings({ holidays: [], rows: [a, b] });
     assert.equal(warnings.has("a"), false);
-    assert.equal(warnings.has("b"), false);
+    // No overlap — but b is later and a is still waiting in the same annual pool, so b alone is told
+    // to wait for a (approve the earlier request first, owner 2026-11-17).
+    assert.deepEqual(codesFor(warnings, "b"), ["earlier_waiting_same_pool"]);
   }
 
   // Different employees, same manager, overlapping dates -> team_overlap on both.
@@ -221,6 +224,6 @@ export function runVacationOverlapWarningsTests() {
       assert.equal(warnings.has(row.id), false, `unrelated bulk row ${row.id} must have no warnings`);
     }
     assert.deepEqual(codesFor(warnings, "overlap-a"), ["employee_overlap"]);
-    assert.deepEqual(codesFor(warnings, "overlap-b"), ["employee_overlap"]);
+    assert.deepEqual(codesFor(warnings, "overlap-b"), ["earlier_waiting_same_pool", "employee_overlap"]);
   }
 }

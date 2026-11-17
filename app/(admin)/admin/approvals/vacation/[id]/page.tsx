@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 
 import { VacationRequestDetail } from "@/components/approvals-hub/vacation-request-detail";
-import { getVacationApprovalDetail, getWhoElseIsOffForApprovalDetail } from "@/lib/approvals-hub/service";
+import {
+  getEarlierWaitingMessageForApprovalDetail,
+  getVacationApprovalDetail,
+  getWhoElseIsOffForApprovalDetail,
+} from "@/lib/approvals-hub/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -14,10 +18,13 @@ export default async function AdminVacationApprovalDetailPage({ params }: { para
     redirect(`/employee-portals/approvals/vacation/${encodeURIComponent(id)}`);
   }
   const detail = await getVacationApprovalDetail(access, id);
-  const whoElseIsOff = await getWhoElseIsOffForApprovalDetail(access, detail);
+  const [whoElseIsOff, earlierWaitingMessage] = await Promise.all([
+    getWhoElseIsOffForApprovalDetail(access, detail),
+    getEarlierWaitingMessageForApprovalDetail(access, detail),
+  ]);
   return (
     <div className="space-y-5">
-      <VacationRequestDetail detail={detail} backHref="/admin/approvals/vacation" whoElseIsOff={whoElseIsOff} />
+      <VacationRequestDetail detail={detail} backHref="/admin/approvals/vacation" whoElseIsOff={whoElseIsOff} earlierWaitingMessage={earlierWaitingMessage} />
     </div>
   );
 }
