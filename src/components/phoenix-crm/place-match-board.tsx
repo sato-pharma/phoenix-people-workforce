@@ -145,14 +145,16 @@ function subjectPasses(subject: MatchSubject, filters: ValidationReviewFilters, 
       filters,
     );
   }
-  return matchesValidationReviewFilters(
+  // One customer folded from several lines passes on any of his reps and lines.
+  const records = [{ repName: subject.repName, line: subject.line, territory: subject.territory }, ...(subject.sameCustomer ?? [])];
+  return records.some((record) => matchesValidationReviewFilters(
     {
-      repName: subject.repName,
-      line: subject.line,
+      repName: record.repName,
+      line: record.line,
       region: subject.region,
       listType: subject.listType,
       customerName: subject.title,
-      territory: subject.territory,
+      territory: record.territory,
       speciality: subject.speciality,
       placeLabel: null,
       address: subject.address,
@@ -160,7 +162,7 @@ function subjectPasses(subject: MatchSubject, filters: ValidationReviewFilters, 
       areaName: subject.areaName,
     },
     filters,
-  );
+  ));
 }
 
 function anyPasses(subjects: ReadonlyArray<MatchSubject>, filters: ValidationReviewFilters, cutoff: number | null): boolean {
@@ -180,7 +182,13 @@ function Reading({ subject }: { subject: MatchSubject }) {
         <p className="break-words text-sm font-black text-slate-950">{subject.title}</p>
         <p className="break-words text-xs font-semibold text-slate-700">
           {subject.repName} · {subject.territory}
+          {subject.sameCustomer && subject.sameCustomer.length > 0 && subject.line ? ` · ${subject.line}` : ""}
         </p>
+        {(subject.sameCustomer ?? []).map((record) => (
+          <p className="break-words text-xs font-semibold text-slate-700" key={record.key}>
+            The same customer{record.line ? ` on ${record.line}` : ""}: {record.repName} · {record.territory}
+          </p>
+        ))}
         <p className="break-words text-xs text-slate-500">
           {[subject.subtitle, subject.kind === "venue" && subject.seated > 0 ? `${countText(subject.seated)} seated` : null, subject.capturedAtText]
             .filter((part): part is string => typeof part === "string" && part.length > 0)
@@ -189,6 +197,9 @@ function Reading({ subject }: { subject: MatchSubject }) {
         <div className="flex min-w-0 flex-wrap gap-1">
           <CrmPill tone={sign.tone}>{sign.text}</CrmPill>
           {subject.waiting ? <CrmPill tone="warn">Waiting for a decision</CrmPill> : null}
+          {subject.sameCustomer && subject.sameCustomer.length > 0 ? (
+            <CrmPill tone="neutral">One customer · {subject.sameCustomer.length + 1} lines</CrmPill>
+          ) : null}
         </div>
         {subject.address ? <p className="break-words text-xs text-slate-500">{subject.address}</p> : null}
       </div>

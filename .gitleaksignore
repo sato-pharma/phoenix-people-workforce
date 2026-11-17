@@ -19,6 +19,12 @@
 ad9e9dfb050cf93e84ce5123dfe1450736c236b2:tests/new-hire-mailbox-robot.test.ts:generic-api-key:316
 e04e67aa9b901c9a27e28fd9a7698911febb7fcd:tests/error-monitor-redact-route.test.ts:generic-api-key:84
 
+# Added 17 Nov 2026: the invented set-your-password link token in the outbox seal test (a fixed
+# string the test seals and checks is gone). It lives only in the first commit of PR 183, kept on
+# refs/pull/183/head; the PR's next commit (c0343ebd6, "an obviously fake link") replaced it before
+# the merge, so main never carried it. It turned the nightly scan red from 10 Nov.
+e74d4fea83984ef73f00229d30f830c5240a5fa0:tests/credential-outbox-seal.test.ts:generic-api-key:24
+
 # Names in code, not values: field names, a map key, hiring-pack template keys.
 37a4b4c82207a8360def04dcde24696f0b3a6a29:tests/system-audit-moved-sections.test.ts:generic-api-key:121
 74b4cce1ec0d00c9f36e885e96310290ecf16dfb:tests/system-audit-moved-sections.test.ts:generic-api-key:121

@@ -87,6 +87,29 @@ rep never reads it.
 
 A refusal names its reason in words (`LOOKALIKE_REFUSAL_TEXT`), never a code.
 
+## Two validated rows — the join (owner, 17 November 2026)
+
+*"If same dr different reps visit but he is in phoenix recognized as 2 because everyone separately validates him,
+I want Phoenix to recognize him as 1"*, then *"and also the pedia"*, then *"Yes, add to 482"*.
+
+The three-lines rule joins two validated rows of one customer only when the names are the same name. When BOTH
+lines validated him under names written differently, nothing joined them, and Phoenix held him twice. Those
+pairs are now on this list too, as **join cards** (`planLineLookalikeJoins`):
+
+- the same guards as a validate card: one world, one area, two lines (CNS, Anti Infective and Pedia alike), one
+  list, not a pair the rule already joins, Certain or Very likely, never answered either way;
+- their own places sit within **150 m** of each other (`AGREE_METERS`) — farther may be two clinics;
+- one of them can move: the anchor is the better point (`compareAnchors`: moved > shared > trusted > photo > pin,
+  then the one more agree on, then the sharper fix), and only the other row's photo and pin places move. Two
+  points set by hand are never listed. Two rows already on one point are listed with nothing to move.
+
+The card draws both rows' photographs. **"Same customer — join them"** asks every guard again on a fresh read
+(`planLookalikeJoin`, either order), moves the places through the rule's own audited `phoenix_crm_move_place`
+(`applyLineTwinMerges`, with the Super Admin as the actor and `LINE_TWIN_MOVE_REASON`), re-measures their visits,
+and only then saves the answer as (joining, anchor) `same`. **Place checks reads that answer** and shows the two
+records as one reading, whatever the spelling (`oneCustomerJoins`' `confirmed`). "Not the same" is kept as for
+any card. Each line keeps its own row and its own visits.
+
 ## Who sees it
 
 **The Super Admin alone, never as a test persona** (`canReviewLineLookalikes`: Super Admin, approver, not a test

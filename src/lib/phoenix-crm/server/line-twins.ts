@@ -184,8 +184,8 @@ export async function loadTwinWorld(org: OrgIndex, scope: WorldScope): Promise<T
 
 export type MergeOutcome = { moved: number; failed: number };
 
-/** Each move goes through the audited `phoenix_crm_move_place`, onto the anchor's stored point and location. */
-export async function applyLineTwinMerges(moves: ReadonlyArray<LineTwinMove>, settings: Settings): Promise<MergeOutcome> {
+/** Each move goes through the audited `phoenix_crm_move_place`, onto the anchor's stored point and location. The actor is the system, or the Super Admin when his "Same customer" on the look-alike list asked for the join. */
+export async function applyLineTwinMerges(moves: ReadonlyArray<LineTwinMove>, settings: Settings, actorHrId: string = SIGNBOARD_SYSTEM_ACTOR): Promise<MergeOutcome> {
   if (moves.length === 0) return { moved: 0, failed: 0 };
   const anchors = new Map(
     (await selectByIds<Row>("phoenix_crm_places", LOCATION_COLUMNS, "id", [...new Set(moves.map((move) => move.anchorPlaceId))])).map((row) => [String(row.id), row]),
@@ -202,7 +202,7 @@ export async function applyLineTwinMerges(moves: ReadonlyArray<LineTwinMove>, se
       await callPhoenixCrm<Row>("phoenix_crm_move_place", {
         p: {
           seat_id: move.seatId,
-          actor_hr_id: SIGNBOARD_SYSTEM_ACTOR,
+          actor_hr_id: actorHrId,
           is_test: move.isTest,
           place_id: move.placeId,
           reason: LINE_TWIN_MOVE_REASON,
@@ -225,7 +225,7 @@ export async function applyLineTwinMerges(moves: ReadonlyArray<LineTwinMove>, se
       });
       outcome.moved += 1;
       movedPlaces.push(move.placeId);
-      await restampVisitLocationsQuietly({ seatId: move.seatId, isTest: move.isTest, customerId: move.customerId, actorHrId: SIGNBOARD_SYSTEM_ACTOR, settings, scope: "all" });
+      await restampVisitLocationsQuietly({ seatId: move.seatId, isTest: move.isTest, customerId: move.customerId, actorHrId, settings, scope: "all" });
     } catch (error) {
       outcome.failed += 1;
       logError("Phoenix CRM line twin place not moved", { labels: { event: "phoenix_crm_line_twin_move_failed" }, error });
