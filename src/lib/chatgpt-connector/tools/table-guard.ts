@@ -8,11 +8,12 @@
  * screens do, and that is the decision. Only credentials stay out (the deny lists below).
  */
 import { ToolRefusal, type ConnectorRole } from "@/lib/chatgpt-connector/types";
+import { POSTGREST_ROW_CEILING } from "@/lib/supabase/row-cap-watch";
 
 export const TABLE_TOOL_ROLES: readonly ConnectorRole[] = ["Super Admin", "CEO"];
 
-/** One page of a read. A whole table is read page after page with `offset`; nothing is left out. */
-export const TABLE_READ_MAX_ROWS = 1000;
+/** One page of a read — one PostgREST page. A whole table is read page after page with `offset`; nothing is left out. */
+export const TABLE_READ_MAX_ROWS = POSTGREST_ROW_CEILING;
 export const TABLE_READ_DEFAULT_ROWS = 200;
 /** A whole-table export reads at most this many rows into one workbook. */
 export const TABLE_EXPORT_MAX_ROWS = 50_000;

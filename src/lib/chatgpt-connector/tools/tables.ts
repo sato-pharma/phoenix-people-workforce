@@ -193,7 +193,7 @@ export const readTableTool = defineTool({
 const EXCEL_CELL_MAX_CHARS = 32_000;
 /** Stop reading pages here and hand over what was read, so the call finishes inside its 40-second limit. */
 const EXPORT_READ_BUDGET_MS = 25_000;
-const EXPORT_PAGE_ROWS = 1000;
+const EXPORT_PAGE_ROWS = TABLE_READ_MAX_ROWS;
 
 export function exportCell(value: unknown, cut: { count: number }): string | number | null {
   if (value === null || value === undefined) return null;
