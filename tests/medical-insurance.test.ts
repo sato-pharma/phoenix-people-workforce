@@ -29,6 +29,7 @@ import {
   type MedicalInsuranceAction,
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
+import { LIBANO_TABLE_OF_BENEFITS } from "../src/lib/medical-insurance/benefits.ts";
 import { buildMonthlySplit, LIFE_INSURANCE_PER_PERSON_MONTHLY, monthlyCoverPiastres, splitOwnCover } from "../src/lib/medical-insurance/monthly-split.ts";
 import { employeeRecordWords } from "../src/lib/medical-insurance/view.ts";
 import {
@@ -521,6 +522,45 @@ function testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees()
   assert.equal(split.totals.total, Math.round((split.totals.companyPays + split.totals.employeesPay) * 100) / 100);
 }
 
+/** The table of benefits is the signed one (Rev 1.3, pages 7 to 9): each plan's limit, network, room and shares. */
+function testTheTableOfBenefitsIsTheSignedOne() {
+  const find = (category: "A" | "B" | "C", section: string, benefit: string, part?: string) => {
+    const line = LIBANO_TABLE_OF_BENEFITS[category].sections.find((entry) => entry.key === section)?.lines.find((entry) => entry.benefit.en === benefit && entry.part?.en === part);
+    assert.ok(line, `plan ${category} has ${benefit}${part ? ` (${part})` : ""}`);
+    return line;
+  };
+  for (const category of ["A", "B", "C"] as const) {
+    const plan = LIBANO_TABLE_OF_BENEFITS[category];
+    assert.equal(plan.category, category);
+    assert.equal(plan.annualLimit, CARD.plans[category].annualLimit, `plan ${category}'s limit matches the rate card`);
+    const facts = Object.fromEntries(plan.facts.map((fact) => [fact.label.en, fact.value.en]));
+    assert.equal(facts["Medical network"], CARD.plans[category].network, `plan ${category}'s network matches the rate card`);
+    assert.equal(facts["Hospital room"], CARD.plans[category].room, `plan ${category}'s room matches the rate card`);
+    assert.deepEqual(plan.sections.map((section) => section.key), ["in-patient", "out-patient", "additional", "reimbursement"]);
+    for (const section of plan.sections) {
+      for (const line of section.lines) {
+        for (const text of [line.benefit, line.coverage, ...(line.part ? [line.part] : [])]) {
+          assert.ok(text.en.trim() && text.ar.trim(), "every line carries its English and the signed Arabic");
+        }
+      }
+    }
+    assert.equal(find(category, "additional", "Dental").memberShare, "20%");
+    assert.equal(find(category, "additional", "Optical").coverage.en, "Not covered");
+    assert.equal(find(category, "additional", "Pregnancy and childbirth", "Natural delivery").coverage.en, "Not covered");
+  }
+  assert.deepEqual([find("A", "out-patient", "Doctor visits").memberShare, find("B", "out-patient", "Doctor visits").memberShare, find("C", "out-patient", "Doctor visits").memberShare], ["10%", "25%", "25%"]);
+  assert.equal(find("B", "out-patient", "Prescribed medicines", "Chronic medicines").coverage.en, "Covered up to EGP 50,000");
+  assert.equal(find("C", "out-patient", "Prescribed medicines", "Chronic medicines").coverage.en, "Covered up to EGP 25,000");
+  assert.equal(find("A", "additional", "Organ transplant (the surgery only)").coverage.en, "Fully covered", "plan A covers a transplant");
+  assert.equal(find("B", "additional", "Organ transplant (the surgery only)").coverage.en, "Not covered");
+  assert.equal(find("C", "additional", "Congenital defects").coverage.en, "Not covered");
+
+  const page = readFileSync("src/components/medical-insurance/medical-insurance-page.tsx", "utf8");
+  assert.match(page, /\{tab === "benefits" \? <MedicalInsuranceBenefitsTab view=\{view\} \/> : null\}/, "the Benefits tab needs no money: every seat that opens the page sees it");
+  const benefits = readFileSync("src/lib/medical-insurance/benefits.ts", "utf8");
+  assert.doesNotMatch(benefits, /rateCard|premium|annualRate/, "the table of benefits carries no cost");
+}
+
 function testASeatNeverHoldsAnAmount() {
   const invoices = "medical_insurance_invoices";
   for (const role of ["HR Operations", "HR Administration"] as const) {
@@ -567,6 +607,7 @@ export async function runMedicalInsuranceTests() {
   testEachEmployeeShowsTheirHrNumberHireDayLineAndArea();
   testTheContractsAgeLimitsAreReviewed();
   testTheCompanyCarries70PercentOfTheEmployeeAndTheFamilyIsTheEmployees();
+  testTheTableOfBenefitsIsTheSignedOne();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
   testASeatNeverHoldsAnAmount();
