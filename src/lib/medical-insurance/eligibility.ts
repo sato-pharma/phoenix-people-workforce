@@ -39,6 +39,8 @@ export type EmployeeFacts = {
   name: string;
   jobTitle: string | null;
   lineName: string | null;
+  /** The Employee Master's area, shown beside the person. */
+  areaName?: string | null;
   hireDate: string | null;
   exitDay: string | null;
   employmentStatus: string | null;
@@ -117,6 +119,9 @@ export type MedicalInsuranceAction = {
   voidFromStart?: boolean;
   /** Covered from before their first day: `effectiveOn` is the day they joined, where cover should start. */
   lateStart?: boolean;
+  /** An employee's own record, shown beside them: blank for family and for someone with no record. */
+  hireDate?: string | null;
+  areaName?: string | null;
 };
 
 /**
@@ -335,6 +340,15 @@ export function buildMedicalInsuranceActions(input: {
         timing: "now",
       });
     }
+  }
+
+  // Every employee's row carries their own record's hire date, area and line; family carry none of theirs.
+  for (const action of actions) {
+    const record = action.memberType === "employee" && action.hrId ? employeesByHrId.get(action.hrId) : undefined;
+    if (!record) continue;
+    action.hireDate = record.hireDate;
+    action.areaName = record.areaName ?? null;
+    action.lineName = record.lineName;
   }
 
   const rank: Record<MedicalInsuranceActionKind, number> = { add: 1, remove: 0, review: 2 };

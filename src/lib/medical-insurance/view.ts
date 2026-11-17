@@ -5,6 +5,8 @@
 // is built only after medical_insurance_invoices:read has passed, so an amount that never leaves the
 // server cannot be read out of the page's data.
 
+import { formatLeftDay } from "@/lib/employees/left-flag";
+
 import type { InvoiceComparison, MedicalInsuranceInvoiceKind } from "./compare";
 import type { MedicalInsuranceCategory, MedicalInsuranceMemberType, MedicalInsuranceRateCard } from "./cost";
 import type { KeptException, MedicalInsuranceAction, MedicalInsuranceMovement, PolicyYearCost } from "./eligibility";
@@ -29,6 +31,10 @@ export type MedicalInsuranceMemberRow = {
   staffNumber: string | null;
   name: string;
   jobTitle: string | null;
+  /** An employee's own record: blank for family and for someone with no record. */
+  hireDate: string | null;
+  lineName: string | null;
+  areaName: string | null;
   category: MedicalInsuranceCategory;
   /** The member's own, else their employee record's. */
   birthDate: string | null;
@@ -150,4 +156,17 @@ export function monthWords(month: string): string {
 
 export function egpWords(value: number): string {
   return `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+}
+
+/**
+ * The two lines that place an employee: their HR number and the day they joined, then their line and area.
+ * A missing piece is left out, never shown as a blank or a dash; nothing at all is an empty list.
+ */
+export function employeeRecordWords(person: { hrId: string | null; hireDate?: string | null; lineName?: string | null; areaName?: string | null }): string[] {
+  const words: string[] = [];
+  const first = [person.hrId, person.hireDate ? `joined ${formatLeftDay(person.hireDate)}` : null].filter(Boolean).join(" · ");
+  if (first) words.push(first);
+  const second = [person.lineName, person.areaName].filter(Boolean).join(" · ");
+  if (second) words.push(second);
+  return words;
 }
