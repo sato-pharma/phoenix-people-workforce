@@ -111,6 +111,7 @@ export function runSosTeamPerformanceTests() {
   );
 
   runVacantDistrictAndRegionalManagerTests();
+  runGradedActualTests();
 
   // Chart axis labels are first + last name; a region row's label is not a person and stays whole.
   assert.equal(chartPersonName("Hany Mohamed Ali Saad"), "Hany Saad");
@@ -329,4 +330,32 @@ function runVacantDistrictAndRegionalManagerTests() {
   assert.deepEqual(performanceBoundFor("Regional Manager", { kind: "company" }), { kind: "none" });
   assert.equal(performanceBoundFor("Regional Manager", areasBound), areasBound, "a resolved seat keeps his areas");
   assert.equal(performanceBoundFor("National Sales Manager", lineBound), lineBound, "the NSM keeps his line");
+}
+
+/**
+ * 2026-11-17: the boards divide the GRADED actual — every sale in a month that carried a target — by
+ * the target, the Monthly Closing's own Ach %. CNS Qena 2 carries no target of its own (its target sits
+ * on Qena 1, owner 2026-10-13), and dividing only the target-carrying rows read Amgad Ibrahim's district
+ * at 83.23% on the landing against 91.35% on the Business Review and the closing.
+ */
+function runGradedActualTests() {
+  const seats = indexSalesSeats([]);
+  const names = new Map([["1001", "Qena Rep"]]);
+  const products = new Map<string, string>();
+  const rows: AchievementRow[] = [
+    // July: Qena 1 carries the target, Qena 2 sells beside it with none of its own.
+    row({ period: "2026-07", areaCode: "UE7", actualValue: 100, targetValue: 200, hasTarget: true }),
+    row({ period: "2026-07", areaCode: "UE8", actualValue: 50, targetValue: null, hasTarget: false }),
+    // August: no target anywhere — its sales are shown but grade nothing.
+    row({ period: "2026-08", areaCode: "UE8", actualValue: 40, targetValue: null, hasTarget: false }),
+  ];
+  const [member] = repMembersFromRows(rows, names, products, seats);
+  assert.equal(member.totalSales, 190, "Sales shows every pound sold");
+  assert.equal(member.totalTarget, 200);
+  assert.equal(
+    member.achievementPercent,
+    75,
+    "an untargeted area's sale in a targeted month counts toward achievement, as on the Monthly Closing (150 / 200, not 100 / 200)",
+  );
+  assert.equal(member.products[0].achievementPercent, 75, "the product row grades the same way");
 }
