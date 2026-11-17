@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import {
@@ -94,6 +95,31 @@ export async function storeDisputeAttachments(input: {
   } catch (error) {
     if (uploaded.length > 0) await supabase.storage.from(DISPUTE_ATTACHMENT_BUCKET).remove(uploaded);
     throw error;
+  }
+}
+
+/**
+ * Take the stored pictures of a comment out of the bucket before the comment itself is discarded (its
+ * attachment rows go with it, by cascade, but the files would stay behind with nothing naming them).
+ * Through the Storage API. Never throws: a file that cannot be removed is logged, and the caller still
+ * discards the comment.
+ */
+export async function removeCommentPictures(commentId: string): Promise<void> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from("deductions_comment_attachments").select("storage_path").eq("comment_id", commentId);
+    if (error) throw error;
+    const paths = ((data ?? []) as Array<{ storage_path: string | null }>)
+      .map((row) => String(row.storage_path ?? ""))
+      .filter(Boolean);
+    if (paths.length === 0) return;
+    const { error: removeError } = await supabase.storage.from(DISPUTE_ATTACHMENT_BUCKET).remove(paths);
+    if (removeError) throw removeError;
+  } catch (error) {
+    logError("The pictures of a discarded dispute comment could not be removed", {
+      error,
+      labels: { comment_id: commentId, event: "deductions_dispute_pictures_cleanup_failed" },
+    });
   }
 }
 
