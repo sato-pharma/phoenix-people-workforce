@@ -759,9 +759,9 @@ jobs:
           node build.mjs
 
       - name: Dependency audit (fail on high+ vulnerabilities)
-        # GHSA-fc5q-39xc-vjpf (picomatch, no fixed version yet) is ignored via
-        # pnpm-workspace.yaml's auditConfig, accepted by the owner on 2026-11-17 until a fix is
-        # published — see the comment there and docs/security/open-dependency-alerts.md.
+        # GHSA-fc5q-39xc-vjpf (picomatch, no patched version yet; build-time only) is ignored via
+        # pnpm-workspace.yaml's auditConfig on the owner's word of 17 Nov 2026 — see the comment
+        # there, and remove it the day picomatch 4.0.8 is published.
         #
         # Runs the SAME `pnpm audit --audit-level=high --prod`; the wrapper only tells an npm
         # outage apart from a real advisory. A bare audit exits non-zero for both, and an outage

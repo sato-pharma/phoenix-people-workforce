@@ -112,6 +112,25 @@ number in words, so the check cannot read it, and a new alert that later reaches
 taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
 cell, but only for the same advisory and manifest. Rows read 2026-11-03 17:02 Cairo.
 
+### `picomatch` — GHSA-fc5q-39xc-vjpf · HIGH
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted until a fix is published — ignored in the audit gate (`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`).** Recorded 2026-11-17 at the owner's instruction: "accept the picomatch advisory in 515". Earlier the same evening he had chosen to wait; he changed it once every pull request had been red for hours. |
+| Alert | none on this repository (no Dependabot alert was open when this was recorded) |
+| Scope | **`runtime`** in the root graph — this one DID turn `checks` red on every pull request, which is why it needed an ignore and not just a row |
+| Patched version | **none exists** — the advisory names 4.0.8; npm's `latest` was 4.0.7 on 17 Nov 2026 |
+| How it arrives | `picomatch@4.0.7` ← `@rollup/plugin-commonjs` (directly, and through `@rollup/pluginutils` and `fdir`) ← **`@sentry/nextjs`** |
+| What it is | Regular-expression denial of service through single-branch repeated extglobs |
+
+**Why accepting is safe enough.** `@rollup/plugin-commonjs` is the bundling plugin `@sentry/nextjs` runs while the
+app is **built**. It matches glob patterns written in this repository and its build config, never text from an
+employee, a rep or a request, and the Phoenix code imports picomatch nowhere. The worst case is a slow build.
+
+**What ends it.** The day picomatch publishes 4.0.8 or later: re-resolve it in the lockfile (the parents' `^4.0.2`
+already allows it — the Sunday dependency refresh does this), delete the `ignoreGhsas` line and this row in the same
+pull request, and see the audit pass without the ignore.
+
 ### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
 
 | | |
@@ -360,41 +379,6 @@ is already its newest release and asks for `archiver ^5.0.0`, and 120 files impo
 `risk ACCEPTED` only to an alert outside the audited tree, and both of these are in the root lockfile, so
 a recorded acceptance can never read as a reason to leave something that could turn `checks` red. Read
 the two rows above before acting on those lines.
-
-### `picomatch` — GHSA-fc5q-39xc-vjpf · CVE-2026-112366 · HIGH
-
-| | |
-| --- | --- |
-| **Decision** | **Accepted, and IGNORED in the audit gate, until a fixed version is published.** Recorded 2026-11-17 at the owner's instruction, choosing "Accept it until fixed" when asked. |
-| Alert | none read — the alerts could not be listed from the session that recorded this |
-| Scope | **`runtime`**, in the root `pnpm-lock.yaml`, so it DOES fail `pnpm audit --audit-level=high --prod` |
-| Patched version | **none exists** — GitHub lists "None"; npm's newest picomatch is 4.0.7 (24 Aug 2026), and 4.0.8 answers 404 (read 2026-11-17 20:40 Cairo) |
-| How it arrives | `picomatch@4.0.7` ← `@rollup/plugin-commonjs`, `@rollup/pluginutils` and `fdir` ← `@sentry/nextjs`, at build time. `tinyglobby` holds it too |
-| What it is | ReDoS through single-branch repeated extglobs — "allows attackers to block the event loop by supplying single-branch repeated extglob patterns" |
-
-🔴 **This is the one row here that SILENCES the gate, not one the gate cannot see.** Every other
-acceptance in this file is of an alert outside the audited tree, or below `high`. This one was
-inside it: it turned `checks` red on every pull request from 2026-11-17 (the advisory was updated
-that day), and through the release gate it would have held every production deploy. With no
-version to move to, `pnpm-workspace.yaml`'s own rule — raise the override floor for its major line —
-could not be followed, so the advisory id is in `auditConfig.ignoreGhsas` there, with its reasons.
-
-**Why accepting is safe here.** The advisory needs the attacker to SUPPLY THE GLOB PATTERN. picomatch
-reaches production only through Sentry's build tooling, matching patterns Sentry's own code and
-`next.config.ts` write. No file under `app/`, `src/` or `scripts/` imports `picomatch`, `micromatch` or
-`minimatch`, and no request reaches a glob — the same footing as the `minimatch` row above.
-
-**What would reverse this** — any one, and the ignore comes out in the same PR:
-
-1. **A fixed picomatch is published** → add `"picomatch@4": ^<fixed version>` to `overrides`, run
-   `pnpm install`, delete the `auditConfig` block, and prove `node scripts/ci-dependency-audit.mjs`
-   exits 0 without it. This is the expected end of the row.
-2. **Anything passes a pattern a user wrote** to picomatch, `tinyglobby`, `fdir` or a glob library.
-3. **The advisory's affected range grows to a line we move to** — re-read it before any bump.
-
-The ignore is by advisory id, so a NEW advisory against picomatch still fails the gate.
-`check-dependabot-alerts.mjs` does not read `auditConfig`, so if the alert appears there it will still
-read as reachable — this row is the answer.
 
 ## Reading it
 

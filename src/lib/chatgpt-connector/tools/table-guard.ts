@@ -3,15 +3,20 @@
  * fixed query shape a read may take. Pure — no database — so tests/chatgpt-connector-tools.test.ts
  * pins every rule here. The reader itself is tools/tables.ts.
  *
- * Owner seat only (`TABLE_TOOL_ROLES`): the CEO's visibility is application-scoped, never RLS-scoped
- * (AGENTS.md §8), so a raw read would show him more than his screens do.
+ * The owner and the CEO (`TABLE_TOOL_ROLES`) — the owner's word, 17 Nov 2026: "read every single table
+ * in the system, every single letter … answer me or Dr. Anwar". A raw read shows the CEO more than his
+ * screens do, and that is the decision. Only credentials stay out (the deny lists below).
  */
 import { ToolRefusal, type ConnectorRole } from "@/lib/chatgpt-connector/types";
+import { POSTGREST_ROW_CEILING } from "@/lib/supabase/row-cap-watch";
 
-export const TABLE_TOOL_ROLES: readonly ConnectorRole[] = ["Super Admin"];
+export const TABLE_TOOL_ROLES: readonly ConnectorRole[] = ["Super Admin", "CEO"];
 
-export const TABLE_READ_MAX_ROWS = 500;
-export const TABLE_READ_DEFAULT_ROWS = 100;
+/** One page of a read — one PostgREST page. A whole table is read page after page with `offset`; nothing is left out. */
+export const TABLE_READ_MAX_ROWS = POSTGREST_ROW_CEILING;
+export const TABLE_READ_DEFAULT_ROWS = 200;
+/** A whole-table export reads at most this many rows into one workbook. */
+export const TABLE_EXPORT_MAX_ROWS = 50_000;
 
 export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
@@ -21,8 +26,6 @@ export const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
  */
 const DENIED_TABLE_PATTERNS: readonly RegExp[] = [
   /^app_auth_(?!users$)/, // credentials, second step, recovery codes, trusted devices, webauthn
-  /^app_sessions$/,
-  /^auth_login_attempts$/,
   /^connector_oauth_/,
   /^connector_files$/,
   /^push_subscriptions$/,
@@ -77,16 +80,29 @@ export function isDeniedColumn(column: string): boolean {
   return DENIED_COLUMN_PATTERNS.some((pattern) => pattern.test(name));
 }
 
-/** The columns of a table that may be read: well-formed names, none on the deny list. */
-export function readableColumns(columns: readonly string[]): string[] {
-  return columns.filter((column) => TABLE_NAME_RE.test(column) && !isDeniedColumn(column));
+/**
+ * A column that is a credential in ONE table only. `app_sessions.id` is the session id a signed-in
+ * browser carries, so the sign-in history is readable without it.
+ */
+const DENIED_TABLE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  app_sessions: ["id"],
+};
+
+function isDeniedTableColumn(table: string | undefined, column: string): boolean {
+  if (!table) return false;
+  return (DENIED_TABLE_COLUMNS[table.trim().toLowerCase()] ?? []).includes(column.trim().toLowerCase());
+}
+
+/** The columns of a table that may be read: well-formed names, none on the deny lists. */
+export function readableColumns(columns: readonly string[], table?: string): string[] {
+  return columns.filter((column) => TABLE_NAME_RE.test(column) && !isDeniedColumn(column) && !isDeniedTableColumn(table, column));
 }
 
 /** The readable tables of a schema map (table → its columns), sorted, deny-listed ones gone. */
 export function readableTables(schema: ReadonlyMap<string, readonly string[]>): Array<{ table: string; columns: string[] }> {
   return [...schema.entries()]
     .filter(([table]) => TABLE_NAME_RE.test(table) && !isDeniedTable(table))
-    .map(([table, columns]) => ({ table, columns: readableColumns(columns) }))
+    .map(([table, columns]) => ({ table, columns: readableColumns(columns, table) }))
     .sort((left, right) => left.table.localeCompare(right.table));
 }
 
@@ -103,6 +119,7 @@ export type TableReadInput = {
   filters?: TableFilterInput[];
   orderBy?: { column: string; ascending?: boolean };
   limit?: number;
+  offset?: number;
 };
 
 export type TableReadPlan = {
@@ -111,6 +128,7 @@ export type TableReadPlan = {
   filters: Array<{ column: string; op: TableFilterOp; value: TableScalar | TableScalar[] }>;
   orderBy: { column: string; ascending: boolean } | null;
   limit: number;
+  offset: number;
 };
 
 function isScalar(value: unknown): value is TableScalar {
@@ -120,20 +138,27 @@ function isScalar(value: unknown): value is TableScalar {
 /**
  * Validate one read against the live schema and the deny lists, and return the only shape the
  * reader will run: an explicit column list (never `*`), filters on readable columns only (a filter
- * on a secret column would leak it one guess at a time), one order, a capped limit.
+ * on a secret column would leak it one guess at a time), one order, a page size and where the page
+ * starts. `maxRows` is the page ceiling (a whole-table export passes its own).
  */
-export function planTableRead(input: TableReadInput, schema: ReadonlyMap<string, readonly string[]>): TableReadPlan {
+export function planTableRead(
+  input: TableReadInput,
+  schema: ReadonlyMap<string, readonly string[]>,
+  maxRows: number = TABLE_READ_MAX_ROWS,
+): TableReadPlan {
   const table = String(input.table ?? "").trim();
   if (!TABLE_NAME_RE.test(table)) throw new ToolRefusal(`"${table}" is not a table name.`);
   if (isDeniedTable(table)) throw new ToolRefusal(`${table} holds sign-in or security data and is never read through this connector.`);
   const known = schema.get(table);
   if (!known) throw new ToolRefusal(`There is no table or view called ${table}. Call phoenix_list_tables for the list.`);
-  const allowed = new Set(readableColumns(known));
+  const allowed = new Set(readableColumns(known, table));
   if (allowed.size === 0) throw new ToolRefusal(`${table} has no column this connector may read.`);
 
   const askColumn = (column: string, purpose: string): string => {
     const name = String(column ?? "").trim();
-    if (isDeniedColumn(name)) throw new ToolRefusal(`${table}.${name} is a security column and is never read or filtered.`);
+    if (isDeniedColumn(name) || isDeniedTableColumn(table, name)) {
+      throw new ToolRefusal(`${table}.${name} is a security column and is never read or filtered.`);
+    }
     if (!allowed.has(name)) throw new ToolRefusal(`${table} has no readable column called ${name} (${purpose}).`);
     return name;
   };
@@ -170,9 +195,30 @@ export function planTableRead(input: TableReadInput, schema: ReadonlyMap<string,
     : null;
 
   const requested = Number(input.limit ?? TABLE_READ_DEFAULT_ROWS);
-  const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), TABLE_READ_MAX_ROWS) : TABLE_READ_DEFAULT_ROWS;
+  const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), maxRows) : Math.min(TABLE_READ_DEFAULT_ROWS, maxRows);
+  const from = Number(input.offset ?? 0);
+  const offset = Number.isFinite(from) ? Math.max(Math.trunc(from), 0) : 0;
 
-  return { table, columns, filters, orderBy, limit };
+  return { table, columns, filters, orderBy, limit, offset };
+}
+
+/**
+ * How many rows of a page fit in one answer without cutting a single character. ChatGPT's answer is
+ * capped (`CONNECTOR_MAX_TEXT_CHARS`), and a cut answer loses the end of the data; so a page is
+ * shortened to whole rows that fit, and the next read starts where this one stopped. At least one
+ * row is always sent.
+ */
+export const TABLE_PAGE_BUDGET_CHARS = 150_000;
+
+export function rowsThatFit(rows: readonly Record<string, unknown>[], budgetChars: number = TABLE_PAGE_BUDGET_CHARS): number {
+  let used = 2;
+  for (let index = 0; index < rows.length; index += 1) {
+    // Measured the way the answer is written (indented JSON, nested three deep), so the page fits.
+    const written = JSON.stringify(rows[index], null, 1);
+    used += written.length + written.split("\n").length * 4 + 2;
+    if (used > budgetChars) return Math.max(index, 1);
+  }
+  return rows.length;
 }
 
 /**

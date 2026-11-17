@@ -13,6 +13,7 @@ person's own Phoenix screens show.
 | What it may see | Everything his role can see, including bank details, ID numbers and medical information |
 | Who may connect it | Him and the CEO only (`Super Admin`, `CEO`) |
 | Who builds sheets and PDFs | Phoenix builds them, in the house identity |
+| The raw database tables | Every table, every row and every character, for him and the CEO: "read every single table in the system, every single letter … answer me or Dr. Anwar". Only credentials stay out |
 
 He has also switched off model training in ChatGPT, so OpenAI does not use these conversations to train its models.
 
@@ -39,6 +40,14 @@ Any seat other than the owner or the CEO sees "ChatGPT cannot be connected from 
 - **The person's own permissions.** Every tool asserts the same permission and applies the same scope as
   the matching Phoenix page. Sales and target figures come only from the published monthly closing.
 - **Read-only.** No tool changes, approves, sends or publishes anything.
+- **Every table, for the owner and the CEO.** `phoenix_list_tables`, `phoenix_read_table` and
+  `phoenix_export_table` read any public table or view. A read is one page of up to 1,000 rows; a page too big
+  for one answer is shortened to whole rows, and the answer gives `next_offset` so the next read carries on. Nothing
+  is cut mid-row. `phoenix_export_table` puts a whole table (up to 50,000 rows a file, or what it can read in 25
+  seconds) in one Excel workbook and names the offset for the next file. A cell over Excel's limit (32,000
+  characters) is shortened in the sheet and named in the answer. What stays out, always: passwords and their
+  hashes, tokens, one-time and recovery codes, keys, the tables that hold them (sign-in links, share links,
+  OAuth codes) and the session id in `app_sessions` (`src/lib/chatgpt-connector/tools/table-guard.ts`).
 - **Files only for the same person.** A sheet or PDF is kept in the private `job-exports` bucket. The
   link ChatGPT shows opens only in the same person's signed-in Phoenix session, for 7 days. Anyone else
   gets "not found".
