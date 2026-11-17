@@ -93,7 +93,12 @@ try {
   try {
     $tunnel = Start-Process -FilePath $tunnelExe -NoNewWindow -PassThru -ArgumentList @(
       'run', '--profile', 'phoenix-visual-inspector',
-      '--mcp.server-url', "url=http://127.0.0.1:$Port/mcp,channel=main"
+      '--mcp.server-url', "url=http://127.0.0.1:$Port/mcp,channel=main",
+      # ChatGPT reaches the sign-in endpoints (discovery, registration, token, revocation) through the
+      # tunnel's "harpoon" channel, which refuses a plain-http target unless told otherwise; without
+      # this, ChatGPT reports "Couldn't discover OAuth settings". The only targets it registers are
+      # the inspector's own discovered endpoints on 127.0.0.1, which never leave this laptop.
+      '--harpoon.allow-plaintext-http'
     )
   } finally {
     Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue
