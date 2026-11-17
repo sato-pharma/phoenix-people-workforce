@@ -48,7 +48,8 @@ export async function POST(request: Request) {
     if (!account) throw new OAuthError("access_denied", "The Phoenix account could not be found.", 403);
     const subject = {
       loginId: access.loginId,
-      hrId: access.hrId ?? null,
+      // The record's own spelling ("B-10"), not the session's canonical key ("b-10").
+      hrId: account.hr_id ?? access.hrId ?? null,
       role: access.role,
       sessionVersion: Number(account.session_version ?? 0),
     };
