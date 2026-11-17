@@ -146,4 +146,14 @@ export function runRecruitmentRoleTabsTests() {
   assert.match(migration, /when 'medical_rep' then nullif\(btrim\(coalesce\(p_region_code, ''\)\), ''\) is not null\s+and nullif\(btrim\(coalesce\(p_area_code, ''\)\), ''\) is not null/, "the database rule says the same for a Medical Rep");
   assert.match(migration, /when 'district_manager' then nullif\(btrim\(coalesce\(p_region_code, ''\)\), ''\) is not null/, "and for a District Manager");
   assert.equal((migration.match(/public\.ats_placement_is_complete\(/g) ?? []).length >= 8, true, "every Needs placing and tab test in the filter and the counts asks it");
+  // The helper carries a SET clause, so the planner cannot inline it (.claude/rules/database.md): the
+  // filter and the counts now write the same test out at each call site and call the helper nowhere.
+  const inlined = readFileSync("supabase/migrations/20261117190000_ats_workspace_inline_placement_completeness.sql", "utf8");
+  const inlinedBody = inlined.slice(inlined.indexOf("begin;"));
+  assert.doesNotMatch(inlinedBody, /ats_placement_is_complete\(/, "the redefined filter and counts call the helper nowhere");
+  assert.equal(
+    (inlinedBody.match(/when 'medical_rep' then nullif\(btrim\(coalesce\(\w+\.region_code, ''\)\), ''\) is not null and nullif\(btrim\(coalesce\(\w+\.area_code, ''\)\), ''\) is not null when 'district_manager' then nullif\(btrim\(coalesce\(\w+\.region_code, ''\)\), ''\) is not null else true end/g) ?? []).length,
+    7,
+    "the same completeness test stands at all seven call sites",
+  );
 }

@@ -346,23 +346,37 @@ export function createConnectorOAuth(options: {
       const presented = form.refresh_token ?? "";
       if (!presented) throw new OAuthError("invalid_request", "refresh_token is required.");
       const hash = fingerprint(presented);
-      const spent = await store.spendRefreshToken(hash, iso(now()));
-      if (!spent) {
+      const known = await store.findToken(hash);
+      const usable =
+        known !== null &&
+        known.kind === "refresh" &&
+        !known.usedAt &&
+        !known.revokedAt &&
+        Date.parse(known.expiresAt) > now();
+      if (!known || !usable) {
         // Unknown, expired, revoked — or a REPLAY of a spent one. A replay revokes the family.
-        const known = await store.findToken(hash);
         if (known && known.kind === "refresh" && known.usedAt) await store.revokeFamily(known.familyId, "refresh_replay", iso(now()));
         throw new OAuthError("invalid_grant", "The refresh token is unknown, used, revoked or expired.");
       }
-      if (spent.clientId !== clientId) {
-        await store.revokeFamily(spent.familyId, "refresh_wrong_client", iso(now()));
+      if (known.clientId !== clientId) {
+        await store.revokeFamily(known.familyId, "refresh_wrong_client", iso(now()));
         throw new OAuthError("invalid_grant", "The refresh token was issued to another client.");
       }
-      const live = await checkSubject(spent);
+      const live = await checkSubject(known);
       if (!live.ok) {
-        await store.revokeFamily(spent.familyId, "account_check_failed", iso(now()));
+        await store.revokeFamily(known.familyId, "account_check_failed", iso(now()));
         throw new OAuthError("invalid_grant", live.reason);
       }
-      return mintPair(spent, spent.clientId, spent.familyId);
+      // The new pair is written BEFORE the presented token is spent: a failed write leaves it unspent, so
+      // ChatGPT's retry refreshes normally instead of reading as a replay that revokes the family. The spend
+      // is still the one statement that decides a race — the loser revokes the family, new pair included.
+      const pair = await mintPair(known, known.clientId, known.familyId);
+      const spent = await store.spendRefreshToken(hash, iso(now()));
+      if (!spent) {
+        await store.revokeFamily(known.familyId, "refresh_replay", iso(now()));
+        throw new OAuthError("invalid_grant", "The refresh token is unknown, used, revoked or expired.");
+      }
+      return pair;
     }
     throw new OAuthError("unsupported_grant_type", "Only authorization_code and refresh_token are supported.");
   }

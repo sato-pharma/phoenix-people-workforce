@@ -482,7 +482,8 @@ export type AddMemberInput = {
 export async function addMedicalInsuranceMember(access: AccessContext, input: AddMemberInput) {
   const policy = await requirePolicy(todayInCairo());
   const memberType: MedicalInsuranceMemberType = input.memberType === "spouse" || input.memberType === "child" ? input.memberType : "employee";
-  const coverageStart = cleanDay(input.coverageStart, "The start of cover") ?? policy.startsOn;
+  const typedStart = cleanDay(input.coverageStart, "The start of cover");
+  let coverageStart = typedStart ?? policy.startsOn;
   if (coverageStart < policy.startsOn) throw new MedicalInsuranceInputError("Cover cannot start before the policy does.");
   if (coverageStart > policy.endsOn) throw new MedicalInsuranceInputError("Cover cannot start after the policy ends.");
 
@@ -513,13 +514,26 @@ export async function addMedicalInsuranceMember(access: AccessContext, input: Ad
     if (!principalMemberId) throw new MedicalInsuranceInputError("Choose the employee this family member sits under.");
     const { data, error } = await supabase
       .from("medical_insurance_members")
-      .select("id, hr_id, category, member_type")
+      .select("id, hr_id, category, member_type, coverage_starts_on, coverage_ends_on")
       .eq("id", principalMemberId)
       .eq("policy_id", policy.id)
       .maybeSingle();
     fail(error);
-    const principal = data as { hr_id: string | null; category: MedicalInsuranceCategory; member_type: string } | null;
+    const principal = data as {
+      hr_id: string | null;
+      category: MedicalInsuranceCategory;
+      member_type: string;
+      coverage_starts_on: string;
+      coverage_ends_on: string | null;
+    } | null;
     if (!principal || principal.member_type !== "employee") throw new MedicalInsuranceInputError("Choose the employee this family member sits under.");
+    // Only under an open employee row, as planFamilyMove asks: a family member never sits under an ended certificate.
+    if (principal.coverage_ends_on) throw new MedicalInsuranceInputError("That employee's cover has ended. Choose an employee who is on cover.");
+    // Nobody sits under a certificate before it begins: with no start typed, the family member starts with the employee.
+    if (!typedStart && principal.coverage_starts_on > coverageStart) coverageStart = principal.coverage_starts_on;
+    if (coverageStart < principal.coverage_starts_on) {
+      throw new MedicalInsuranceInputError(`Cover cannot start before the employee's own cover, on ${principal.coverage_starts_on}.`);
+    }
     hrId = principal.hr_id;
     category = category ?? principal.category;
   }
@@ -592,6 +606,25 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
     if (!endsOn) throw new MedicalInsuranceInputError("Enter the day cover ends.");
     if (!reason) throw new MedicalInsuranceInputError("Enter why cover is ending.");
     if (endsOn < member.coverage_starts_on) throw new MedicalInsuranceInputError("Cover cannot end before it started.");
+    // The family is ended on the same day below, so one whose cover starts AFTER it would be refused by the
+    // table (cover cannot end before it starts) once the employee row was already ended. Asked first, so
+    // nothing is written: the employee, the family, the keep-out and the audit row land together or not at all.
+    if (member.member_type === "employee") {
+      const { data: later, error: laterError } = await supabase
+        .from("medical_insurance_members")
+        .select("full_name, coverage_starts_on")
+        .eq("principal_member_id", memberId)
+        .is("coverage_ends_on", null)
+        .gt("coverage_starts_on", endsOn)
+        .limit(1);
+      fail(laterError);
+      const first = ((later ?? []) as Array<{ full_name: string; coverage_starts_on: string }>)[0];
+      if (first) {
+        throw new MedicalInsuranceInputError(
+          `${first.full_name}'s cover under ${member.full_name} starts on ${first.coverage_starts_on}, after this end day. End or correct ${first.full_name}'s cover first.`,
+        );
+      }
+    }
 
     fail((await supabase.from("medical_insurance_members").update({ ...stamp, coverage_ends_on: endsOn, end_reason: reason }).eq("id", memberId)).error);
     if (member.member_type === "employee") {
@@ -669,18 +702,34 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
   }
 
   if (input.action === "reinstate") {
+    // The family the end took with them comes back with them: exactly the rows that end wrote — the same day
+    // and its "<employee>: <reason>" — so a family member ended on their own keeps their end. Put back first,
+    // so a failure leaves the employee ended and a retry still finds them.
+    let familyBack = 0;
+    if (member.member_type === "employee" && member.coverage_ends_on && member.end_reason) {
+      const { data: back, error: backError } = await supabase
+        .from("medical_insurance_members")
+        .update({ ...stamp, coverage_ends_on: null, end_reason: null })
+        .eq("principal_member_id", memberId)
+        .eq("coverage_ends_on", member.coverage_ends_on)
+        .eq("end_reason", `${member.full_name}: ${member.end_reason}`)
+        .select("id");
+      fail(backError);
+      familyBack = (back ?? []).length;
+    }
     fail((await supabase.from("medical_insurance_members").update({ ...stamp, coverage_ends_on: null, end_reason: null }).eq("id", memberId)).error);
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? null,
       entityId: memberId,
       entityType: "medical_insurance_member",
-      summary: `Put ${member.full_name} back on the medical insurance register`,
+      summary: `Put ${member.full_name} back on the medical insurance register${familyBack > 0 ? `, with ${familyBack} family member${familyBack === 1 ? "" : "s"}` : ""}`,
     });
     return;
   }
 
   const coverageStart = cleanDay(input.coverageStart, "The start of cover") ?? member.coverage_starts_on;
   if (coverageStart < policy.startsOn) throw new MedicalInsuranceInputError("Cover cannot start before the policy does.");
+  if (coverageStart > policy.endsOn) throw new MedicalInsuranceInputError("Cover cannot start after the policy ends.");
   const patch = {
     ...stamp,
     birth_date: input.birthDate === undefined ? member.birth_date : cleanDay(input.birthDate, "The date of birth"),
@@ -692,6 +741,8 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
   };
   fail((await supabase.from("medical_insurance_members").update(patch).eq("id", memberId)).error);
   // An employee whose cover now starts later takes their family with them: nobody sits under a certificate before it begins.
+  // Open family only: a family member whose cover already ended keeps the period it had (and could not take a start
+  // after its own end, which the table refuses).
   if (member.member_type === "employee" && coverageStart > member.coverage_starts_on) {
     fail(
       (
@@ -699,6 +750,7 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
           .from("medical_insurance_members")
           .update({ ...stamp, coverage_starts_on: coverageStart })
           .eq("principal_member_id", memberId)
+          .is("coverage_ends_on", null)
           .lt("coverage_starts_on", coverageStart)
       ).error,
     );
