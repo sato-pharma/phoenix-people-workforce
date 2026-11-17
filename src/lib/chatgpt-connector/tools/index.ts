@@ -7,7 +7,7 @@ import { attendanceTool, leaveTool, payrollTool } from "@/lib/chatgpt-connector/
 import { crmKpisTool, orgChartTool } from "@/lib/chatgpt-connector/tools/org";
 import { findPeopleTool, personTool } from "@/lib/chatgpt-connector/tools/people";
 import { salesAchievementTool, salesRankingsTool } from "@/lib/chatgpt-connector/tools/sales";
-import { listTablesTool, readTableTool } from "@/lib/chatgpt-connector/tools/tables";
+import { exportTableTool, listTablesTool, readTableTool } from "@/lib/chatgpt-connector/tools/tables";
 import { asPlainRefusal } from "@/lib/chatgpt-connector/tools/helpers";
 import type { ConnectorTool } from "@/lib/chatgpt-connector/types";
 
@@ -38,4 +38,5 @@ export const DOMAIN_TOOLS: ConnectorTool<any>[] = [
   orgChartTool,
   listTablesTool,
   readTableTool,
+  exportTableTool,
 ].map(withPlainRefusals);
