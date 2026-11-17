@@ -3938,7 +3938,7 @@ CREATE FUNCTION public.ats_workspace_counts(p jsonb) RETURNS jsonb
     from public.ats_candidate_placements pl
     join base_tabs b on b.id = pl.candidate_id
     where pl.role_tab = any(coalesce(array(select jsonb_array_elements_text(coalesce(p->'allowed_tabs', '[]'::jsonb))), '{}'::text[]))
-      and public.ats_placement_is_complete(pl.role_tab, pl.region_code, pl.area_code)
+      and (case pl.role_tab when 'medical_rep' then nullif(btrim(coalesce(pl.region_code, '')), '') is not null and nullif(btrim(coalesce(pl.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(pl.region_code, '')), '') is not null else true end)
     group by pl.role_tab
     union all
     select 'needs_placing', count(*)
@@ -3946,7 +3946,7 @@ CREATE FUNCTION public.ats_workspace_counts(p jsonb) RETURNS jsonb
     where 'needs_placing' = any(coalesce(array(select jsonb_array_elements_text(coalesce(p->'allowed_tabs', '[]'::jsonb))), '{}'::text[]))
       and not exists (select 1 from public.ats_candidate_placements np
                       where np.candidate_id = b.id
-                        and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code))
+                        and (case np.role_tab when 'medical_rep' then nullif(btrim(coalesce(np.region_code, '')), '') is not null and nullif(btrim(coalesce(np.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(np.region_code, '')), '') is not null else true end))
   ),
   base_place as (select id from public.ats_workspace_filter(p - 'region' - 'area') as f(id)),
   place_rows as (
@@ -3961,7 +3961,7 @@ CREATE FUNCTION public.ats_workspace_counts(p jsonb) RETURNS jsonb
     from public.ats_candidate_placements pl
     join base_place b on b.id = pl.candidate_id
     where pl.role_tab = nullif(p->>'tab', '')
-      and public.ats_placement_is_complete(pl.role_tab, pl.region_code, pl.area_code)
+      and (case pl.role_tab when 'medical_rep' then nullif(btrim(coalesce(pl.region_code, '')), '') is not null and nullif(btrim(coalesce(pl.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(pl.region_code, '')), '') is not null else true end)
     group by 1, 2
   ),
   base_status as (select id from public.ats_workspace_filter(p - 'statuses' - 'exclude_statuses') as f(id)),
@@ -4046,17 +4046,17 @@ CREATE FUNCTION public.ats_workspace_filter(p jsonb) RETURNS SETOF uuid
         when pr.tab is null then (
           exists (select 1 from public.ats_candidate_placements ap
                   where ap.candidate_id = c.id and ap.role_tab = any(pr.allowed_tabs)
-                    and public.ats_placement_is_complete(ap.role_tab, ap.region_code, ap.area_code))
+                    and (case ap.role_tab when 'medical_rep' then nullif(btrim(coalesce(ap.region_code, '')), '') is not null and nullif(btrim(coalesce(ap.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(ap.region_code, '')), '') is not null else true end))
           or ('needs_placing' = any(pr.allowed_tabs)
               and not exists (select 1 from public.ats_candidate_placements np
                               where np.candidate_id = c.id
-                                and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code)))
+                                and (case np.role_tab when 'medical_rep' then nullif(btrim(coalesce(np.region_code, '')), '') is not null and nullif(btrim(coalesce(np.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(np.region_code, '')), '') is not null else true end)))
         )
         when pr.tab = 'needs_placing' then (
           'needs_placing' = any(pr.allowed_tabs)
           and not exists (select 1 from public.ats_candidate_placements np
                           where np.candidate_id = c.id
-                            and public.ats_placement_is_complete(np.role_tab, np.region_code, np.area_code))
+                            and (case np.role_tab when 'medical_rep' then nullif(btrim(coalesce(np.region_code, '')), '') is not null and nullif(btrim(coalesce(np.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(np.region_code, '')), '') is not null else true end))
         )
         else (
           pr.tab = any(pr.allowed_tabs)
@@ -4064,7 +4064,7 @@ CREATE FUNCTION public.ats_workspace_filter(p jsonb) RETURNS SETOF uuid
             select 1 from public.ats_candidate_placements tp
             where tp.candidate_id = c.id
               and tp.role_tab = pr.tab
-              and public.ats_placement_is_complete(tp.role_tab, tp.region_code, tp.area_code)
+              and (case tp.role_tab when 'medical_rep' then nullif(btrim(coalesce(tp.region_code, '')), '') is not null and nullif(btrim(coalesce(tp.area_code, '')), '') is not null when 'district_manager' then nullif(btrim(coalesce(tp.region_code, '')), '') is not null else true end)
               and (
                 pr.region is null
                 or (pr.region = 'unspecified' and (
