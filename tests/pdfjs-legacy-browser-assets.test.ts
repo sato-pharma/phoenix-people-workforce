@@ -84,7 +84,7 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     //    even in 5.4.296 — the build that has served the field correctly since 2026-09-14 — so
     //    checking them would fail on a known-good build. Every entry below was verified to report
     //    truthfully against 5.4.296 before being added.
-    //    `mustBeCalled` marks one we KNOW this pdfjs major uses, and it turns a zero count from a
+    //    `mustBeCalledIn` names the files we KNOW this pdfjs major uses it in, and there it turns a zero count from a
     //    skip into a failure. Without it the whole check is one stale pattern away from silence: a
     //    regex that stops matching reads exactly like a vendor that stopped calling, and this file
     //    would go green while covering nothing (the shape of trap AGENTS.md §2.1 names, where a gate
@@ -94,7 +94,7 @@ export function runPdfjsLegacyBrowserAssetsTests() {
       calledBy: RegExp;
       definedAs: string;
       since: string;
-      mustBeCalled?: boolean;
+      mustBeCalledIn?: string[];
     }[] = [
       {
         label: "Promise.withResolvers",
@@ -151,7 +151,11 @@ export function runPdfjsLegacyBrowserAssetsTests() {
         calledBy: /for await\s*\(/g,
         definedAs: "Symbol.asyncIterator]",
         since: "Chrome 124 / any Safari",
-        mustBeCalled: true,
+        // The library only, since pdfjs-dist 6.5.438: that version's worker has no `for await` and no
+        // Symbol.asyncIterator anywhere — read in its unminified legacy/build/pdf.worker.mjs, not only
+        // the minified file — while 6.4.299's worker had one. The vendor stopped there; the pattern is
+        // not stale, because the library still matches it. Our polyfill stays in both files regardless.
+        mustBeCalledIn: ["pdf.min.mjs"],
       },
     ];
 
@@ -178,8 +182,8 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     for (const builtin of RISKY_BUILTINS) {
       const calls = (vendor.match(builtin.calledBy) ?? []).length;
       assert.ok(
-        calls > 0 || !builtin.mustBeCalled,
-        `the scanner for ${builtin.label} matched NOTHING in pdfjs-dist ${installedVersion}'s legacy/build/${file}, and this major is known to use it. Either the pattern went stale — in which case every check below it has been passing on an empty count — or the vendor really did stop, which is a deliberate decision to record by dropping mustBeCalled, never something to leave reading as covered.`,
+        calls > 0 || !builtin.mustBeCalledIn?.includes(file),
+        `the scanner for ${builtin.label} matched NOTHING in pdfjs-dist ${installedVersion}'s legacy/build/${file}, and this major is known to use it. Either the pattern went stale — in which case every check below it has been passing on an empty count — or the vendor really did stop, which is a deliberate decision to record by taking this file out of mustBeCalledIn, never something to leave reading as covered.`,
       );
       if (calls === 0) continue;
       assert.ok(
