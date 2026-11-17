@@ -166,12 +166,15 @@ export async function runVulnScanTests() {
   // dead `@google-cloud/logging`, which is why these are floors with slack and not equalities.)
   // Do not lower either to quiet a red run — a drop means the parser regressed or the graph lost a
   // third of itself, and both deserve a human.
+  // Lowered once, by a measured removal: on 17 Nov 2026 the outside error tracker's SDK and its build
+  // plugin left, and the lockfile went from 1062 / 398 to 985 / 334 (counted on origin/main and on the
+  // branch with the same key pattern). 900 still refuses the broken parser's 800 above.
   const realLock = readFileSync(new URL("../pnpm-lock.yaml", import.meta.url), "utf8");
   const realPackages = parseLockfilePackages(realLock);
   const realCoverage = coverageOf(realPackages);
 
   assert.ok(
-    realCoverage.total >= 1000,
+    realCoverage.total >= 900,
     `the real lockfile parsed only ${realCoverage.total} packages — the parser is under-reading it, so a clean `
       + "scan would prove nothing",
   );

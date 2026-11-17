@@ -22,8 +22,8 @@ export type NewErrorReport = {
   source: string;
 };
 
-const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const HR_ID = /\b[A-Za-z]{1,3}-\d{1,8}\b/g;
+// A uuid is one long token (36 characters of hex and hyphens), so it is folded here whole, before the numbers in it.
 const LONG_TOKEN = /\b[A-Za-z0-9_-]{24,}\b/g;
 const NUMBER = /\d+(?:[.,]\d+)?/g;
 
@@ -32,9 +32,8 @@ export function normalizeErrorMessage(message: string | null | undefined): strin
   const text = String(message ?? "");
   if (classifySupabaseUnreachable(text)) return "supabase unreachable";
   return text
-    .replace(UUID, "#")
-    .replace(HR_ID, "#")
     .replace(LONG_TOKEN, "#")
+    .replace(HR_ID, "#")
     .replace(NUMBER, "#")
     .replace(/\s+/g, " ")
     .trim()

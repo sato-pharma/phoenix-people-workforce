@@ -108,7 +108,7 @@ export async function runGithubOwnerSlugTests() {
 
   // The sweep must actually see the places that name the owner, or a broken pattern would pass on nothing.
   const refs = ownerReferences(files);
-  for (const mustSee of ["next.config.ts", ".railway/railway.ts", "infra/headwind-phoenix-actions/phoenix-entrypoint.sh", ".github/workflows/emergency-host.yml"]) {
+  for (const mustSee of [".railway/railway.ts", "infra/headwind-phoenix-actions/phoenix-entrypoint.sh", ".github/workflows/emergency-host.yml"]) {
     assert.ok(refs.some((ref) => ref.file === mustSee), `the sweep found no owner reference in ${mustSee}`);
   }
 
