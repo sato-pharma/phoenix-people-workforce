@@ -1279,6 +1279,7 @@ import { runVacationCairoTodayTests } from "./vacation-cairo-today.test.ts";
 import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
 import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.test.ts";
 import { runVacationOwnOverlapRefusalTests } from "./vacation-own-overlap-refusal.test.ts";
+import { runVacationEarlierWaitingWarningTests } from "./vacation-earlier-waiting-warning.test.ts";
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
@@ -5884,6 +5885,7 @@ await runTest("vacation Cairo-today (balance-reference dates + Fri/Sat SLA weekd
 await runTest("vacation paid approval atomic", runVacationPaidApprovalAtomicTests);
 await runTest("vacation overlap warnings", runVacationOverlapWarningsTests);
 await runTest("vacation own-overlap refusal (a request touching the same person's own in-flight or approved leave is refused, never priced twice)", runVacationOwnOverlapRefusalTests);
+await runTest("vacation earlier-waiting warning (the approver of a later request is told to approve the earlier one in the same pool first)", runVacationEarlierWaitingWarningTests);
 await runTest(
   "vacation report filter equivalence (in-memory mirror of phx_vacation_report_rows: ILIKE case-insensitive/"
   + "anchored/wildcards, case-sensitive equality, concat_ws search incl id, date range, NULL-never-matches; "

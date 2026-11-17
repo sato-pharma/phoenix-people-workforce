@@ -10,6 +10,7 @@ import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-att
 import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
 import { WhoElseIsOffPanel } from "@/components/approvals-hub/who-else-is-off-panel";
+import { EarlierWaitingNotice } from "@/components/approvals-hub/earlier-waiting-notice";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import type { WhoElseIsOff } from "@/lib/vacation/who-else-is-off";
 
@@ -18,6 +19,8 @@ type Props = {
   backHref: string;
   /** Who else on the team is off on these dates. Null when there is no decision for it to inform. */
   whoElseIsOff?: WhoElseIsOff | null;
+  /** "Approve the earlier request first" (owner, 2026-11-17). Null when there is none. */
+  earlierWaitingMessage?: string | null;
 };
 
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
@@ -29,7 +32,7 @@ function Row({ label, value }: { label: string; value: string | number | null | 
   );
 }
 
-export function VacationRequestDetail({ detail, backHref, whoElseIsOff }: Props) {
+export function VacationRequestDetail({ detail, backHref, whoElseIsOff, earlierWaitingMessage }: Props) {
   const r = detail.record;
   if (detail.notFound || !r) {
     return (
@@ -128,6 +131,7 @@ export function VacationRequestDetail({ detail, backHref, whoElseIsOff }: Props)
             slaModule="leave"
             fallbackStatusLabel={`Status: ${requestStatusLabel(r.status)}`}
           />
+          <EarlierWaitingNotice message={earlierWaitingMessage} />
           {whoElseIsOff ? <WhoElseIsOffPanel data={whoElseIsOff} /> : null}
           {!detail.readOnly ? (
             <DecisionActions
