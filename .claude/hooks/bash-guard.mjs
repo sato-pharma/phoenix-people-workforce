@@ -2506,6 +2506,11 @@ try {
           }
         };
 
+        // What alreadyGreen saw, kept for the refusal: it must say WHICH not-green this is. On
+        // 2026-11-17 it told a session "THIS PR IS NOT GREEN YET" about #473, whose `validate` and
+        // `checks` had both passed — GitHub read it UNSTABLE because a CodeQL scan that is not
+        // required was still running. The owner pasted that refusal back.
+        const seen = { state: null, required: null };
         const alreadyGreen = async () => {
           try {
             let state = await readMergeState();
@@ -2546,8 +2551,10 @@ try {
             // else, so such a PR would reach `gh pr merge` instead of being refused here. That is
             // safe: GitHub itself refuses that merge. This clause exists to save CI minutes, not to
             // re-implement branch protection.
-            if ((state === 'OPEN/UNKNOWN' || state === 'OPEN/BLOCKED') && (await requiredChecksGreen()) === true) {
-              return true;
+            seen.state = state;
+            if (state === 'OPEN/UNKNOWN' || state === 'OPEN/BLOCKED') {
+              seen.required = await requiredChecksGreen();
+              if (seen.required === true) return true;
             }
             return state === 'OPEN/CLEAN';
           } catch {
@@ -2558,6 +2565,19 @@ try {
         };
 
         if (changedFiles !== null && changedFiles < minFiles && !(await alreadyGreen())) {
+          const unstable = seen.state === 'OPEN/UNSTABLE';
+          const why = unstable
+            ? '🔴 THE REQUIRED CHECKS PASSED, BUT GITHUB READS THIS PR UNSTABLE — a check that is NOT ' +
+              'required is red or still running (often a CodeQL `Analyze` scan). That is the only reason ' +
+              'you are reading this. Run `gh pr checks ' + prNumber + '`: if that check is still running, ' +
+              'wait for it — the merge goes straight through the moment it finishes green, with no ' +
+              'stand-down; if it failed, read it before merging past it.'
+            : seen.required === false
+              ? '🔴 THIS PR IS NOT GREEN YET — a required check on its head commit is still running or ' +
+                'failed (`gh pr checks ' + prNumber + '` names it). That is the only reason you are reading this.'
+              : '🔴 THIS PR IS NOT GREEN YET as far as this hook can tell — GitHub reads it ' +
+                (seen.state ? '`' + seen.state + '`' : 'as unreadable') +
+                ', and its required checks could not be read as passed. That is the only reason you are reading this.';
           deny(
             'C10 — PR #' +
               prNumber +
@@ -2574,10 +2594,9 @@ try {
               'Fold this into the branch carrying the rest of the task and merge once: the fix, ' +
               'its test, its doc, the follow-up already in view. Nothing here delays a merge — ' +
               'a finished PR of any real size goes the moment it is green.\n\n' +
-              '🔴 THIS PR IS NOT GREEN YET — that is the only reason you are reading this. An ' +
-              'already-open PR whose required checks have all passed goes ' +
-              'straight through from 2026-10-01, with no stand-down: its PR run is already paid, ' +
-              'so refusing the merge saves nothing. You are being stopped while folding is still ' +
+              why + ' An already-open PR goes straight through, with no stand-down, once GitHub ' +
+              'reads it CLEAN — or BLOCKED/UNKNOWN with every required check passed on its head: its ' +
+              'PR run is already paid, so refusing the merge saves nothing. You are being stopped while folding is still ' +
               'possible, because this branch has not shipped. NEVER CLOSE IT to satisfy this ' +
               'clause — closing refunds nothing and rebuilding the work later costs a fresh PR ' +
               'run AND the same `main` run. This clause is about what you OPEN.\n\n' +
@@ -2588,7 +2607,9 @@ try {
               'rather than merged twice. It writes nothing until `--apply`, and it never merges — ' +
               'the roll-up is ONE approval from the owner in place of several.\n\n' +
               'If this one genuinely has to ship alone (an urgent fix, a locked file, a migration ' +
-              'needing its own approval), run it again as:\n  ' +
+              'needing its own approval)' +
+              (unstable ? ' — and a check that is merely still running is not such a reason —' : '') +
+              ', run it again as:\n  ' +
               (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
                 ? '$env:PHX_MERGE_OK=1; <the same command>'
                 : 'PHX_MERGE_OK=1 <the same command>'),
