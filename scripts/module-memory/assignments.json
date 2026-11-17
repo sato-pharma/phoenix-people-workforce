@@ -883,6 +883,7 @@
   "never-hand-roll-a-rule-the-repo-already-implements": "engineering",
   "never-horizontal-scroll-always-mobile-and-desktop-friendly": "platform",
   "never-lower-the-compact-window-or-the-default-effort": "sessions",
+  "never-move-a-browser-program-folder-off-c": "platform-access",
   "never-put-his-physical-actions-in-the-next-step-box": "global",
   "never-rotate-the-supabase-db-password-with-alter-role": "database",
   "never-silent-drop-count-and-flag-instead": "sales-imports",

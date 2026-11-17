@@ -118,6 +118,14 @@ type EmployeeManagementProps = {
    * resignation and she follows it up) and 403'd her on press. Hides the two doors; grants nothing.
    */
   canStartResignation?: boolean;
+  /**
+   * Server-decided: may this viewer open an employee's CV — canDownloadEmployeeCv, the very
+   * predicate GET /api/employees/:hrId/cv refuses on. The CV panel sends its `?meta=1` read the
+   * moment it mounts, so mounting it for a seat outside that set put a refusal on the System Audit
+   * board every time somebody opened a person (56 of them from one seat on this screen, 28 Oct –
+   * 5 Nov 2026). False never mounts the panel; the route stays the boundary and is unchanged.
+   */
+  canReadEmployeeCv?: boolean;
   initialData?: EmployeeDirectoryData | null;
   initialError?: string | null;
   /**
@@ -1090,6 +1098,9 @@ export function EmployeeManagement({
   canEdit = false,
   canCreate = false,
   canStartResignation = false,
+  // Fails closed for the same reason canEdit does: a page that forgets the prop costs its viewers
+  // a CV panel, never a refusal on every person they open.
+  canReadEmployeeCv = false,
   initialData = null,
   initialError = null,
   salaryBlind = false,
@@ -3431,13 +3442,15 @@ export function EmployeeManagement({
               />
               {/* The CV lives beside the photo because they are the same kind of thing: two files
                   hanging off one master record, both stored privately and both read through a
-                  route rather than a URL. It renders nothing at all for a reader without the
-                  grant — see EmployeeCvManager. */}
-              <EmployeeCvManager
-                employeeName={masterDetailsEmployee.fullName}
-                hrId={masterDetailsEmployee.hrId}
-                key={`cv-${masterDetailsEmployee.hrId}`}
-              />
+                  route rather than a URL. Mounted only for a viewer the page already knows may
+                  open CVs (canReadEmployeeCv), because the panel reads the route as it mounts. */}
+              {canReadEmployeeCv ? (
+                <EmployeeCvManager
+                  employeeName={masterDetailsEmployee.fullName}
+                  hrId={masterDetailsEmployee.hrId}
+                  key={`cv-${masterDetailsEmployee.hrId}`}
+                />
+              ) : null}
               {/* The checklist beside the record it belongs to — the same join the Employee Master
                   workbook makes, on the screen somebody is actually looking at. Read-only, and it
                   renders nothing at all without the employee_documents grant. */}
@@ -4428,17 +4441,21 @@ export function EmployeeManagement({
                   record can be read back and replaced, while a record being CREATED has nothing to
                   read and instead stages the file so the save can attach it before the SFE
                   Manager's notice is composed (src/lib/employees/employee-cv.ts). */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-phx-ink-soft" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">CV</h3>
+              {/* An existing record's CV reads the route as it mounts, so it shows only for a
+                  viewer who may open CVs; the create picker reads nothing and stays. */}
+              {!editingHrId || canReadEmployeeCv ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-phx-ink-soft" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">CV</h3>
+                  </div>
+                  {editingHrId ? (
+                    <EmployeeCvManager employeeName={form.fullName} hrId={editingHrId} />
+                  ) : (
+                    <EmployeeCvPicker onChange={setStagedCv} staged={stagedCv} />
+                  )}
                 </div>
-                {editingHrId ? (
-                  <EmployeeCvManager employeeName={form.fullName} hrId={editingHrId} />
-                ) : (
-                  <EmployeeCvPicker onChange={setStagedCv} staged={stagedCv} />
-                )}
-              </div>
+              ) : null}
 
               {/* Payroll Information Note */}
               <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-phx-xs leading-relaxed text-phx-ink-2">

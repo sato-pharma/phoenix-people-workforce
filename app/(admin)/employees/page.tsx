@@ -6,6 +6,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canAccess, filterEmployeeDirectoryForAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canDownloadEmployeeCv } from "@/lib/employees/employee-cv";
 import {
   employeeDirectoryErrorMessage,
   getEmployeeDirectory,
@@ -83,6 +84,9 @@ async function EmployeesContent({ access }: { access: AccessContext }) {
     <EmployeeManagement
       canCreate={canCreate}
       canEdit={canEdit}
+      // The CV route's own predicate, asked here so the directory never mounts a CV panel the
+      // route would refuse (GET /api/employees/:hrId/cv).
+      canReadEmployeeCv={canDownloadEmployeeCv(access)}
       canStartResignation={canStartResignation}
       initialData={initialData}
       initialError={initialError}
