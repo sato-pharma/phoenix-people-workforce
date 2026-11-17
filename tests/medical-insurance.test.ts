@@ -23,6 +23,7 @@ import {
   buildMedicalInsuranceActions,
   buildPolicyYearCost,
   employeeCoverWindow,
+  plannedLinesTotal,
   type EmployeeFacts,
   type MedicalInsuranceAction,
   type MemberFacts,
@@ -34,6 +35,8 @@ import {
   LIBANO_MEMBER_FILE_HEADERS,
   splitLibanoName,
 } from "../src/lib/medical-insurance/workbooks.ts";
+
+import { stripComments } from "./support/comment-strip.ts";
 
 const POLICY = { endsOn: "2027-11-14", startsOn: "2026-11-15" };
 const MIGRATION = "supabase/migrations/20261117041500_medical_insurance_libano_suisse.sql";
@@ -301,6 +304,17 @@ function testEachBillIsComparedWithThePlan() {
   const other = compareInvoiceToPlan({ coversFrom: null, coversTo: null, kind: "other", totalDue: 30 }, year);
   assert.equal(other.expected, null, "the plan has nothing to say about another kind of bill");
   assert.equal(other.difference, null);
+
+  // "Still to do": the day-one joiner's share of the opening bill is counted, and the table's total under it
+  // is the same figure as the tile above it (they disagreed on production, 17 Nov 2026: +681.73 vs -3,695.63).
+  const dayOneStatement = openingStatement(CARD, [{ birthDate: "2000-06-01", category: "C", coverageStart: POLICY.startsOn }]);
+  const dayOneShare = Math.round((dayOneStatement.total - dayOneStatement.issueFee) * 100) / 100;
+  assert.deepEqual(year.plannedOpening, { people: 1, total: dayOneShare }, "the day-one joiner adds premium, tax and card, not a second issue fee");
+  assert.equal(plannedLinesTotal(year), Math.round((dayOneShare + marchCharge) * 100) / 100, "the table total counts the day-one joiner as well as the March charge");
+  assert.equal(year.totals.planned, plannedLinesTotal(year), "the Still to do tile and the table total are one figure");
+  const costTab = stripComments(readFileSync("src/components/medical-insurance/medical-insurance-cost.tsx", "utf8"));
+  assert.match(costTab, /openingAddition=\{view\.year\.plannedOpening\}/, "the Still to do table shows the day-one joiners' row");
+  assert.match(costTab, /total=\{plannedLinesTotal\(view\.year\)\}/, "the Still to do table totals with the same function as the tile");
 }
 
 /** Libano-Suisse's own sheet: their 39 headings, one text row per person. */
