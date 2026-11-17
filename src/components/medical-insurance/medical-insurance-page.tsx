@@ -130,7 +130,7 @@ function Overview({ money, onOpenActions, view }: { money: MedicalInsuranceMoney
         <Figure label="Covered" note={`${counts.coveredEmployees} employees, ${counts.coveredFamily} family`} value={String(counts.covered)} />
         <Figure label="To add" note={counts.addSoon ? `${counts.addSoon} more in the next 30 days` : "Should be on, and are not"} value={String(counts.addNow)} />
         <Figure label="To remove" note={counts.removeSoon ? `${counts.removeSoon} more in the next 30 days` : "Should be off, and are not"} value={String(counts.removeNow)} />
-        <Figure label="To check" note="No employee record, no date of birth, or over the age limit" value={String(counts.review)} />
+        <Figure label="To check" note="No employee record, no date of birth, over the age limit, or covered before they joined" value={String(counts.review)} />
         <Figure label="Exceptions" note="Kept on or off by decision" value={String(counts.exceptions)} />
       </div>
 

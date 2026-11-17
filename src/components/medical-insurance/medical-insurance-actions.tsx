@@ -128,6 +128,8 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   function renderOpenButton(action: MedicalInsuranceAction) {
+    // A late joiner's cover is moved to their first day in one press; nothing else on the row changes.
+    if (action.lateStart) return canEdit && action.memberId ? <StartOnFirstDayButton action={action} /> : null;
     const allowed = action.kind === "add" ? canCreate : canEdit;
     const excludable = canEdit && action.kind === "add" && Boolean(action.hrId);
     if (!allowed && !excludable) return null;
@@ -398,6 +400,25 @@ function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone
  * want to be in medical insurance so make an option of exclude"). One press records that they are
  * kept off the policy, so the add list stops asking; the exceptions list below reverses it.
  */
+function StartOnFirstDayButton({ action }: { action: MedicalInsuranceAction }) {
+  const { busy, error, save } = useSave();
+  const day = formatLeftDay(action.effectiveOn);
+  return (
+    <span className="inline-flex flex-col">
+      <button
+        aria-label={`Start ${action.name}'s cover on ${day}, the day they join`}
+        className={textLinkClassName}
+        disabled={busy}
+        onClick={() => void save(() => sendJson(`/api/medical-insurance/members/${action.memberId}`, "PATCH", { coverageStart: action.effectiveOn }))}
+        type="button"
+      >
+        {busy ? "Saving" : `Start cover on ${day}`}
+      </button>
+      <SaveError error={error} />
+    </span>
+  );
+}
+
 function ExcludeButton({ action }: { action: MedicalInsuranceAction }) {
   const { busy, error, save } = useSave();
   return (

@@ -684,6 +684,18 @@ export async function updateMedicalInsuranceMember(access: AccessContext, member
     staff_number: input.staffNumber === undefined ? member.staff_number : cleanText(input.staffNumber),
   };
   fail((await supabase.from("medical_insurance_members").update(patch).eq("id", memberId)).error);
+  // An employee whose cover now starts later takes their family with them: nobody sits under a certificate before it begins.
+  if (member.member_type === "employee" && coverageStart > member.coverage_starts_on) {
+    fail(
+      (
+        await supabase
+          .from("medical_insurance_members")
+          .update({ ...stamp, coverage_starts_on: coverageStart })
+          .eq("principal_member_id", memberId)
+          .lt("coverage_starts_on", coverageStart)
+      ).error,
+    );
+  }
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? null,
     entityId: memberId,

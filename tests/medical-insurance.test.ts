@@ -264,6 +264,20 @@ function testSomeoneWhoDeclinesIsExcluded() {
 }
 
 /** The contract's age limits: over 64 for an employee or spouse, over 18 for a child, and no birth date. */
+/** A late joiner on the register from the policy's first day is flagged, and the fix is their own first day. */
+function testALateJoinerIsCoveredFromTheDayTheyJoin() {
+  const early = actionsFor([employee({ hireDate: "2026-11-22" })], [member({ coverageStart: "2026-11-15" })]);
+  const row = early.find((action) => action.key === "start:m-1");
+  assert.ok(row, "cover that starts before the person joined is listed");
+  assert.equal(row.kind, "review");
+  assert.equal(row.lateStart, true);
+  assert.equal(row.effectiveOn, "2026-11-22", "cover should start on the day they join");
+  assert.equal(row.timing, "now");
+
+  assert.equal(actionsFor([employee({ hireDate: "2026-11-22" })], [member({ coverageStart: "2026-11-22" })]).length, 0, "cover from the first day is nothing to do");
+  assert.equal(actionsFor([employee({ hireDate: "2020-01-01" })], [member({ coverageStart: "2026-11-15" })]).length, 0, "someone working before the policy started is covered from its first day");
+}
+
 function testTheContractsAgeLimitsAreReviewed() {
   const review = (members: MemberFacts[]) =>
     buildMedicalInsuranceActions({ ageLimits: CARD.ageLimits, asOf: "2026-11-17", employees: [employee()], exceptions: [], members, policy: POLICY }).actions.filter((action) => action.key.startsWith("age:"));
@@ -447,6 +461,7 @@ export async function runMedicalInsuranceTests() {
   testFamilyFollowTheirEmployee();
   testSomeoneIsPutUnderAnEmployeeWithTheirFamily();
   testSomeoneWhoDeclinesIsExcluded();
+  testALateJoinerIsCoveredFromTheDayTheyJoin();
   testTheContractsAgeLimitsAreReviewed();
   testEachBillIsComparedWithThePlan();
   await testTheMemberFileIsTheInsurersOwnSheet();
