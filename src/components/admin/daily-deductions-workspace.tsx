@@ -15,6 +15,12 @@ import {
   type ReleasedIndex,
   type ReleaseState,
 } from "@/lib/daily-deductions/release-state.ts";
+import {
+  applyDailyDeductionViewFilters,
+  isAnyDailyDeductionViewFilterOn,
+  writeDailyDeductionViewFilters,
+  type DailyDeductionViewFilters,
+} from "@/lib/daily-deductions/view-filters.ts";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import {
   adminChipDepthClassName,
@@ -23,7 +29,8 @@ import {
   adminPanelHeaderClassName,
 } from "@/components/admin/admin-design-tokens";
 import { DeductionsConfirmDialog } from "@/components/admin/deductions-confirm-dialog";
-import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
+import { CheckTile } from "@/components/ui/form-kit";
+import { phxFieldClassName, phxHintClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
 // The tally line the compute route returns (DailyDeductionTallyLine). Sent back
@@ -225,10 +232,16 @@ export function DailyDeductionsWorkspace({
   canPublish,
   defaultFrom,
   defaultTo,
+  headOfficeCompacts,
+  initialFilters,
 }: {
   canPublish: boolean;
   defaultFrom: string;
   defaultTo: string;
+  /** Compact HR ids of the Head Office line, read on the server; null when that read failed. */
+  headOfficeCompacts: string[] | null;
+  /** The two view filters as the address carried them. */
+  initialFilters: DailyDeductionViewFilters;
 }) {
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
@@ -259,6 +272,12 @@ export function DailyDeductionsWorkspace({
   // "Show me the 9th" — narrows the list to one day; it never ties that day's deductions together.
   const [dayFilter, setDayFilter] = useState<string>("all");
   const [releasedSearch, setReleasedSearch] = useState("");
+  // The two VIEW filters (owner, 2026-11-17) — exclude fingerprint, exclude Head Office employees. They
+  // narrow the SCOPE everything below is derived from (counts, totals, ticks, Release ticked), so a
+  // hidden deduction can never ride along in a release. They change, release and re-price nothing.
+  const [viewFilters, setViewFilters] = useState<DailyDeductionViewFilters>(initialFilters);
+  const headOfficeSet = useMemo(() => (headOfficeCompacts ? new Set(headOfficeCompacts) : null), [headOfficeCompacts]);
+  const filtersOn = isAnyDailyDeductionViewFilterOn(viewFilters);
 
   function loadActive() {
     setActiveLoading(true);
@@ -283,7 +302,7 @@ export function DailyDeductionsWorkspace({
   // Every deduction across the connectors, ONE PER EMPLOYEE × TYPE × DAY (owner, 2026-11-13: "never
   // group a group of deductions ... I want each deduction to be single"). A release click sends exactly
   // these single rows — what the owner sees is what is stored.
-  const allLines = useMemo<SingleLine[]>(() => {
+  const tallyLines = useMemo<SingleLine[]>(() => {
     const lines: TallyLine[] = [];
     for (const run of runs) {
       if (run.tally) lines.push(...run.tally.lines);
@@ -296,15 +315,33 @@ export function DailyDeductionsWorkspace({
     );
   }, [runs]);
 
+  // What the view filters leave — the ONLY list the tally below counts, ticks and releases from.
+  const tallyScope = useMemo(
+    () => applyDailyDeductionViewFilters(tallyLines, viewFilters, headOfficeSet),
+    [tallyLines, viewFilters, headOfficeSet],
+  );
+  const allLines = tallyScope.lines;
+  const releasedScope = useMemo(
+    () => applyDailyDeductionViewFilters(releasedLines, viewFilters, headOfficeSet),
+    [releasedLines, viewFilters, headOfficeSet],
+  );
+  const shownReleasedLines = releasedScope.lines;
+  const headOfficeUnavailable = viewFilters.excludeHeadOffice && headOfficeSet === null;
+
   const totals = useMemo(() => {
     const employees = new Set(allLines.map((line) => line.employeeHrIdCompact));
     return { amount: sumAmount(allLines), employeeCount: employees.size, lineCount: allLines.length };
   }, [allLines]);
 
-  const releasedTotals = useMemo(() => {
+  // The whole snapshot — what "Withdraw all" would take back — and the part the filters leave on screen.
+  const releasedTotalsAll = useMemo(() => {
     const employees = new Set(releasedLines.map((line) => line.employeeHrIdCompact));
     return { amount: sumAmount(releasedLines), employeeCount: employees.size, lineCount: releasedLines.length };
   }, [releasedLines]);
+  const releasedTotals = useMemo(() => {
+    const employees = new Set(shownReleasedLines.map((line) => line.employeeHrIdCompact));
+    return { amount: sumAmount(shownReleasedLines), employeeCount: employees.size, lineCount: shownReleasedLines.length };
+  }, [shownReleasedLines]);
 
   const anyComputed = runs.some((run) => run.state === "done");
   const failedRuns = runs.filter((run) => run.state === "failed");
@@ -339,12 +376,12 @@ export function DailyDeductionsWorkspace({
   const visibleReleased = useMemo(() => {
     const needle = releasedSearch.trim().toLowerCase();
     const rows = needle
-      ? releasedLines.filter((line) => (line.employeeName ?? "").toLowerCase().includes(needle))
-      : releasedLines;
+      ? shownReleasedLines.filter((line) => (line.employeeName ?? "").toLowerCase().includes(needle))
+      : shownReleasedLines;
     return [...rows].sort(
       (a, b) => (a.employeeName ?? "").localeCompare(b.employeeName ?? "") || (a.dates[0] ?? "").localeCompare(b.dates[0] ?? ""),
     );
-  }, [releasedLines, releasedSearch]);
+  }, [shownReleasedLines, releasedSearch]);
 
   // The window the tally counted — what a whole-request deduction is checked against.
   const countedWindow = useMemo(
@@ -368,6 +405,23 @@ export function DailyDeductionsWorkspace({
       else next.add(key);
       return next;
     });
+  }
+
+  // Turn a view filter on or off. The address follows (replaceState — no reload, no recompute), and a
+  // tick on a deduction the filter now hides is dropped, so it can never come back ticked unseen.
+  function setViewFilter(key: keyof DailyDeductionViewFilters, on: boolean) {
+    const next = { ...viewFilters, [key]: on };
+    setViewFilters(next);
+    try {
+      const query = writeDailyDeductionViewFilters(window.location.search, next);
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${query}${window.location.hash}`);
+    } catch {
+      // The address could not be rewritten; the filter still applies on this screen.
+    }
+    if (on) {
+      const keep = new Set(applyDailyDeductionViewFilters(tallyLines, next, headOfficeSet).lines.map((line) => lineKey(line)));
+      setSelected((prev) => new Set([...prev].filter((key) => keep.has(key))));
+    }
   }
 
   function applyPreset(nextFrom: string, nextTo: string) {
@@ -547,6 +601,15 @@ export function DailyDeductionsWorkspace({
 
   return (
     <div className="space-y-5">
+      {/* ── What the screen shows — the two view filters ────────────────── */}
+      <ViewFilterStrip
+        filters={viewFilters}
+        headOfficeUnavailable={headOfficeUnavailable}
+        hiddenReleased={releasedScope.hidden}
+        hiddenTally={tallyScope.hidden}
+        onChange={setViewFilter}
+      />
+
       {/* ── The figures at a glance ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile
@@ -579,7 +642,7 @@ export function DailyDeductionsWorkspace({
       <section className={PANEL}>
         <div className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", adminPanelHeaderClassName)}>
           <h2 className={PANEL_TITLE}>Released to employees</h2>
-          {canPublish && active ? (
+          {canPublish && active && !filtersOn ? (
             <button
               className={cn(SMALL_BUTTON, "border-white/25 bg-white/10 text-white hover:border-rose-300 hover:text-rose-100")}
               disabled={publishing}
@@ -619,11 +682,21 @@ export function DailyDeductionsWorkspace({
                 <CategoryTotals totals={active.categoryTotals} />
               </div>
 
+              {canPublish && filtersOn ? (
+                <p className="text-xs font-semibold text-slate-500">
+                  Withdraw all is off while a filter hides deductions — it would take back the hidden ones too.
+                  Each shown deduction can still be withdrawn on its own.
+                </p>
+              ) : null}
               {releasedLines.length > 0 ? (
                 <>
                   <SearchField onChange={setReleasedSearch} placeholder="Find an employee" value={releasedSearch} />
                   {visibleReleased.length === 0 ? (
-                    <p className="text-sm text-slate-500">No released deduction matches “{releasedSearch}”.</p>
+                    <p className="text-sm text-slate-500">
+                      {shownReleasedLines.length === 0
+                        ? "Every released deduction is hidden by the filters above."
+                        : `No released deduction matches “${releasedSearch}”.`}
+                    </p>
                   ) : null}
                   {/* Desktop: fixed-layout, merged columns, no horizontal scroll. */}
                   <div className="hidden md:block">
@@ -877,6 +950,7 @@ export function DailyDeductionsWorkspace({
 
           {allLines.length > 0 ? (
             <div className="space-y-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+              {/* The type chips count the lines the view filters leave, like every other figure here. */}
               <div className="flex flex-wrap items-center gap-2">
                 <SearchField onChange={setSearch} placeholder="Find an employee" value={search} />
                 <select
@@ -960,7 +1034,11 @@ export function DailyDeductionsWorkspace({
           ) : null}
 
           <div className="p-4">
-            {allLines.length === 0 ? (
+            {allLines.length === 0 && tallyLines.length > 0 ? (
+              <p className="text-sm text-slate-500">
+                Every deduction in this range is hidden by the filters above ({plural(tallyScope.hidden.length, "deduction")}).
+              </p>
+            ) : allLines.length === 0 ? (
               <p className="text-sm text-slate-500">
                 {failedRuns.length > 0
                   ? "No deductions found by the sources that could be read. The failed sources above were not counted."
@@ -1039,7 +1117,7 @@ export function DailyDeductionsWorkspace({
         confirmLabel={
           pending?.kind === "release" ? `Release ${plural(pending.lines.length, "deduction")}` : pending?.kind === "withdraw_all" ? "Withdraw everything" : "Withdraw"
         }
-        facts={pendingFacts(pending, releasedTotals)}
+        facts={pendingFacts(pending, releasedTotalsAll)}
         onCancel={() => setPending(null)}
         onConfirm={confirmPending}
         open={pending !== null}
@@ -1102,6 +1180,59 @@ function pendingFacts(
     { label: "Amount", value: `${money(releasedTotals.amount)} EGP` },
     { label: "People", value: plural(releasedTotals.employeeCount, "employee") },
   ];
+}
+
+// The two view filters, above everything they narrow. A filter that hides something says how much; a
+// Head Office filter whose list could not be read says it is NOT applied, never a silent no-op.
+function ViewFilterStrip({
+  filters,
+  headOfficeUnavailable,
+  hiddenReleased,
+  hiddenTally,
+  onChange,
+}: {
+  filters: DailyDeductionViewFilters;
+  headOfficeUnavailable: boolean;
+  hiddenReleased: ReadonlyArray<{ amount: number }>;
+  hiddenTally: ReadonlyArray<{ amount: number }>;
+  onChange: (key: keyof DailyDeductionViewFilters, on: boolean) => void;
+}) {
+  const on = isAnyDailyDeductionViewFilterOn(filters);
+  const hiddenParts: string[] = [];
+  if (hiddenTally.length > 0) hiddenParts.push(`${plural(hiddenTally.length, "deduction")} in the tally (${money(sumAmount(hiddenTally))} EGP)`);
+  if (hiddenReleased.length > 0) hiddenParts.push(`${plural(hiddenReleased.length, "released deduction")} (${money(sumAmount(hiddenReleased))} EGP)`);
+  return (
+    <section className={PANEL}>
+      <div className={cn("px-4 py-3", adminPanelHeaderClassName)}>
+        <h2 className={PANEL_TITLE}>View</h2>
+      </div>
+      <div className="space-y-2 p-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <CheckTile checked={filters.excludeFingerprint} onChange={(next) => onChange("excludeFingerprint", next)}>
+            <span className="min-w-0 break-words">Exclude fingerprint</span>
+          </CheckTile>
+          <CheckTile checked={filters.excludeHeadOffice} onChange={(next) => onChange("excludeHeadOffice", next)}>
+            <span className="min-w-0 break-words">Exclude Head Office employees</span>
+          </CheckTile>
+        </div>
+        {headOfficeUnavailable ? (
+          <p className="flex items-start gap-1.5 text-xs font-bold text-rose-700">
+            <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 break-words">
+              The Head Office list could not be read, so Head Office employees are NOT hidden. Refresh the page to try again.
+            </span>
+          </p>
+        ) : null}
+        <p className={cn(phxHintClassName, "mt-0")}>
+          {on
+            ? hiddenParts.length > 0
+              ? `Hidden: ${hiddenParts.join(" · ")}. Counts, totals, ticks and releases below cover only what is shown. Nothing hidden is changed.`
+              : "Nothing on screen matches the filters, so nothing is hidden. Counts, totals, ticks and releases below cover only what is shown."
+            : "Fingerprint lines are the fingerprint device's late, absent and missing-punch days. Head Office is the employee master's Head Office line. These only change what is shown."}
+        </p>
+      </div>
+    </section>
+  );
 }
 
 function KpiTile({
